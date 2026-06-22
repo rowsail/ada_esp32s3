@@ -1,0 +1,1265 @@
+------------------------------------------------------------------------------
+--                                                                          --
+--                         GNAT COMPILER COMPONENTS                         --
+--                                                                          --
+--                       A D A . E X C E P T I O N S                        --
+--                                                                          --
+--                                 B o d y                                  --
+--                                                                          --
+--          Copyright (C) 1992-2025, Free Software Foundation, Inc.         --
+--                                                                          --
+-- GNAT is free software;  you can  redistribute it  and/or modify it under --
+-- terms of the  GNU General Public License as published  by the Free Soft- --
+-- ware  Foundation;  either version 3,  or (at your option) any later ver- --
+-- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
+-- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
+-- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
+--                                                                          --
+-- As a special exception under Section 7 of GPL version 3, you are granted --
+-- additional permissions described in the GCC Runtime Library Exception,   --
+-- version 3.1, as published by the Free Software Foundation.               --
+--                                                                          --
+-- You should have received a copy of the GNU General Public License and    --
+-- a copy of the GCC Runtime Library Exception along with this program;     --
+-- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
+-- <http://www.gnu.org/licenses/>.                                          --
+--                                                                          --
+-- GNAT was originally developed  by the GNAT team at  New York University. --
+-- Extensive contributions were provided by Ada Core Technologies Inc.      --
+--                                                                          --
+------------------------------------------------------------------------------
+
+--  This body is part of rts-cert, rts-ravenscar-cert and
+--  rts-ravenscar-cert-rtp. It implements Ada 83 exception handling, plus a
+--  subset of the operations available in Ada 95 for Exception_Occurrences
+--  and Exception_Ids (Exception_Name, Exception_Identity ...).
+
+with System;                    use System;
+with System.Standard_Library;   use System.Standard_Library;
+with System.Soft_Links;         use System.Soft_Links;
+with System.Exceptions.Machine; use System.Exceptions.Machine;
+
+package body Ada.Exceptions is
+
+   procedure Last_Chance_Handler (Except :  Exception_Occurrence);
+   pragma Import (C, Last_Chance_Handler, "__gnat_last_chance_handler");
+   pragma No_Return (Last_Chance_Handler);
+
+   pragma Suppress (All_Checks);
+   --  We definitely do not want exceptions occurring within this unit, or
+   --  we are in big trouble. If an exceptional situation does occur, better
+   --  that it not be raised, since raising it can cause confusing chaos.
+
+   -----------------------
+   -- Local Subprograms --
+   -----------------------
+
+   procedure AAA;
+   procedure ZZZ;
+   --  Return start and end of procedures in this package
+   --
+   --  These procedures are used to provide exclusion bounds in
+   --  calls to Call_Chain at exception raise points from this unit. The
+   --  purpose is to arrange for the exception tracebacks not to include
+   --  frames from subprograms involved in the raise process, as these are
+   --  meaningless from the user's standpoint.
+   --
+   --  For these bounds to be meaningful, we need to ensure that the object
+   --  code for the subprograms involved in processing a raise is located after
+   --  the object code AAA and before the object code ZZZ. This will indeed be
+   --  the case as long as the following rules are respected:
+   --
+   --  1) The bodies of the subprograms involved in processing a raise
+   --     are located after the body of AAA and before the body of ZZZ.
+   --
+   --  2) No pragma Inline applies to any of these subprograms, as this
+   --     could delay the corresponding assembly output until the end of
+   --     the unit.
+   --
+   --  To obtain the address of AAA and ZZZ, use the Code_Address attribute
+   --  instead of the Address attribute as the latter will return the address
+   --  of a stub or descriptor on some platforms. This include IA-64,
+   --  PowerPC/AIX, big-endian PowerPC64 and HPUX.
+
+   --  Hooks called when entering/leaving an exception handler for a given
+   --  occurrence, aimed at handling the stack of active occurrences. The
+   --  calls are generated by gigi in tree_transform/N_Exception_Handler.
+
+   procedure GNAT_GCC_Exception_Cleanup
+     (Reason : Unwind_Reason_Code;
+      Excep  : not null GNAT_GCC_Exception_Access);
+   pragma Convention (C, GNAT_GCC_Exception_Cleanup);
+   --  Procedure called when a GNAT GCC exception is free.
+
+   procedure Unwind_RaiseException
+     (UW_Exception : not null GNAT_GCC_Exception_Access);
+   pragma Import (C, Unwind_RaiseException, "__gnat_Unwind_RaiseException");
+
+   procedure Set_Exception_Parameter
+     (Excep         : EOA;
+      GCC_Exception : not null GNAT_GCC_Exception_Access);
+   pragma Export
+     (C, Set_Exception_Parameter, "__gnat_set_exception_parameter");
+   --  Called inserted by gigi to set the exception choice parameter from the
+   --  gcc occurrence.
+
+   procedure Reraise_GCC_Exception
+     (GCC_Exception : not null GNAT_GCC_Exception_Access);
+   pragma No_Return (Reraise_GCC_Exception);
+   pragma Export (C, Reraise_GCC_Exception, "__gnat_reraise_zcx");
+   --  Called to implement raise without exception, ie reraise. Called
+   --  directly from gigi.
+
+   --  Hooks called when entering/leaving an exception handler for a
+   --  given occurrence.  The calls are generated by gigi in
+   --  Exception_Handler_to_gnu_gcc.
+
+   --  Begin_Handler_v1, called when entering an exception handler,
+   --  claims responsibility for the handler to release the
+   --  GCC_Exception occurrence.  End_Handler_v1, called when
+   --  leaving the handler, releases the occurrence, unless the
+   --  occurrence is propagating further up, or the handler is
+   --  dynamically nested in the context of another handler that
+   --  claimed responsibility for releasing that occurrence.
+
+   --  Responsibility is claimed by changing the Cleanup field to
+   --  Claimed_Cleanup, which enables claimed exceptions to be
+   --  recognized, and avoids accidental releases even by foreign
+   --  handlers.
+
+   function Begin_Handler_v1
+     (GCC_Exception : not null GCC_Exception_Access)
+     return System.Address;
+   pragma Export (C, Begin_Handler_v1, "__gnat_begin_handler_v1");
+   --  Called when entering an exception handler.  Claim
+   --  responsibility for releasing GCC_Exception, by setting the
+   --  cleanup/release function to Claimed_Cleanup, and return the
+   --  address of the previous cleanup/release function.
+
+   procedure End_Handler_v1
+     (GCC_Exception : not null GCC_Exception_Access;
+      Saved_Cleanup : System.Address;
+      Propagating_Exception : GCC_Exception_Access);
+   pragma Export (C, End_Handler_v1, "__gnat_end_handler_v1");
+   --  Called when leaving an exception handler.  Restore the
+   --  Saved_Cleanup in the GCC_Exception occurrence, and then release
+   --  it, unless it remains claimed by an enclosing handler, or
+   --  GCC_Exception and Propagating_Exception are the same
+   --  occurrence.  Propagating_Exception could be either an
+   --  occurrence (re)raised within the handler of GCC_Exception, when
+   --  we're executing as an exceptional cleanup, or null, if we're
+   --  completing the handler of GCC_Exception normally.
+
+   procedure Claimed_Cleanup
+     (Reason : Unwind_Reason_Code;
+      GCC_Exception : not null GCC_Exception_Access);
+   pragma Export (C, Claimed_Cleanup, "__gnat_claimed_cleanup");
+   --  A do-nothing placeholder installed as GCC_Exception.Cleanup
+   --  while handling GCC_Exception, to claim responsibility for
+   --  releasing it, and to stop it from being accidentally released.
+
+   --  The following are version 0 implementations of the version 1
+   --  hooks above.  They remain in place for compatibility with the
+   --  output of compilers that still use version 0, such as those
+   --  used during bootstrap.  They are interoperable with the v1
+   --  hooks, except that the older versions may malfunction when
+   --  handling foreign exceptions passed to Reraise_Occurrence.
+
+   procedure Begin_Handler (GCC_Exception : not null GCC_Exception_Access);
+   pragma Export (C, Begin_Handler, "__gnat_begin_handler");
+   --  Called when entering an exception handler translated by an old
+   --  compiler.  It does nothing.
+
+   procedure End_Handler (GCC_Exception : GCC_Exception_Access);
+   pragma Export (C, End_Handler, "__gnat_end_handler");
+   --  Called when leaving an exception handler translated by an old
+   --  compiler.  It releases GCC_Exception, unless it is null.  It is
+   --  only ever null when the handler has a 'raise;' translated by a
+   --  v0-using compiler.  The artificial handler variable passed to
+   --  End_Handler was set to null to tell End_Handler to refrain from
+   --  releasing the reraised exception.  In v1 safer ways are used to
+   --  accomplish that.
+
+   procedure Abort_Propagation;
+   pragma Export (C, Abort_Propagation, "__gnat_raise_abort");
+   --  Called in case of error during propagation
+
+   --------------------------------------------------------------------
+   -- Accessors to Basic Components of a GNAT Exception Data Pointer --
+   --------------------------------------------------------------------
+
+   --  As of today, these are only used by the C implementation of the GCC
+   --  propagation personality routine to avoid having to rely on a C
+   --  counterpart of the whole exception_data structure, which is both
+   --  painful and error prone. These subprograms could be moved to a more
+   --  widely visible location if need be.
+
+   function Is_Handled_By_Others (E : Exception_Data_Ptr) return Boolean;
+   pragma Export (C, Is_Handled_By_Others, "__gnat_is_handled_by_others");
+   pragma Warnings (Off, Is_Handled_By_Others);
+
+   function EID_For (GNAT_Exception : not null GNAT_GCC_Exception_Access)
+     return Exception_Id;
+   pragma Export (C, EID_For, "__gnat_eid_for");
+
+   ---------------------------------------------------------------------------
+   -- Objects to materialize "others" and "all others" in the GCC EH tables --
+   ---------------------------------------------------------------------------
+
+   --  Currently, these only have their address taken and compared so there is
+   --  no real point having whole exception data blocks allocated. Note that
+   --  there are corresponding declarations in gigi (trans.c) which must be
+   --  kept properly synchronized.
+
+   Others_Value : constant Character := 'O';
+   pragma Export (C, Others_Value, "__gnat_others_value");
+
+   All_Others_Value : constant Character := 'A';
+   pragma Export (C, All_Others_Value, "__gnat_all_others_value");
+
+   Unhandled_Others_Value : constant Character := 'U';
+   pragma Export (C, Unhandled_Others_Value, "__gnat_unhandled_others_value");
+   --  Special choice (emitted by gigi) to catch and notify unhandled
+   --  exceptions on targets which always handle exceptions (such as SEH).
+   --  The handler will simply call Unhandled_Except_Handler.
+
+   procedure Allocate_Exception (Excep : out GNAT_GCC_Exception_Access);
+   --  Allocate an occurrence for propagation
+
+   procedure Call_Chain (Excep : EOA);
+   --  Generate traceback if enabled
+
+   procedure Process_Exception (Excep : not null GNAT_GCC_Exception_Access);
+   --  Shared exception processing for raise / reraise
+   pragma No_Return (Process_Exception);
+
+   procedure Raise_Constraint_Error
+     (File : System.Address;
+      Line : Integer);
+   pragma No_Return (Raise_Constraint_Error);
+   pragma Export
+     (C, Raise_Constraint_Error, "__gnat_raise_constraint_error");
+   --  Raise constraint error
+
+   procedure Raise_Current_Excep (E : Exception_Id);
+   pragma No_Return (Raise_Current_Excep);
+   pragma Export (C, Raise_Current_Excep, "__gnat_raise_nodefer_with_msg");
+   --  This is a simple wrapper to Process_Exception
+   --
+   --  This external name for Raise_Current_Excep is historical, and probably
+   --  should be changed but for now we keep it, because gdb and gigi know
+   --  about it.
+
+   --  Make it callable from strub contexts.
+   --  There is a matching setting in trans.c,
+   --  for calls issued by Gigi.
+   pragma Machine_Attribute (Raise_Current_Excep,
+                             "strub", "callable");
+
+   procedure Raise_Program_Error
+     (File : System.Address;
+      Line : Integer);
+   pragma No_Return (Raise_Program_Error);
+   pragma Export
+     (C, Raise_Program_Error, "__gnat_raise_program_error");
+   --  Raise program error
+
+   procedure Raise_Storage_Error
+     (File : System.Address;
+      Line : Integer);
+   pragma No_Return (Raise_Storage_Error);
+   pragma Export
+     (C, Raise_Storage_Error, "__gnat_raise_storage_error");
+   --  Raise storage error
+
+   -----------------------------
+   -- Run-Time Check Routines --
+   -----------------------------
+
+   --  These routines raise a specific exception with a reason message
+   --  attached. The parameters are the file name and line number in each
+   --  case. The names are defined by Exp_Ch11.Get_RT_Exception_Name.
+
+   procedure Rcheck_CE_Access_Check
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Null_Access_Parameter
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Discriminant_Check
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Divide_By_Zero
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Explicit_Raise
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Index_Check
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Invalid_Data
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Length_Check
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Null_Exception_Id
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Null_Not_Allowed
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Overflow_Check
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Partition_Check
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Range_Check
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_CE_Tag_Check
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Access_Before_Elaboration
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Accessibility_Check
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Address_Of_Intrinsic
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Aliased_Parameters
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_All_Guards_Closed
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Bad_Predicated_Generic_Type
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Build_In_Place_Mismatch
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Current_Task_In_Entry_Body
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Duplicated_Entry_Address
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Explicit_Raise
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Finalize_Raised_Exception
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Implicit_Return
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Misaligned_Address_Value
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Missing_Return
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Non_Transportable_Actual
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Overlaid_Controlled_Object
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Potentially_Blocking_Operation
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Stream_Operation_Not_Allowed
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Stubbed_Subprogram_Called
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_PE_Unchecked_Union_Restriction
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_SE_Empty_Storage_Pool
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_SE_Explicit_Raise
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_SE_Infinite_Recursion
+     (File : System.Address; Line : Integer);
+   procedure Rcheck_SE_Object_Too_Large
+     (File : System.Address; Line : Integer);
+
+   pragma Export (C, Rcheck_CE_Access_Check,
+                  "__gnat_rcheck_CE_Access_Check");
+   pragma Export (C, Rcheck_CE_Null_Access_Parameter,
+                  "__gnat_rcheck_CE_Null_Access_Parameter");
+   pragma Export (C, Rcheck_CE_Discriminant_Check,
+                  "__gnat_rcheck_CE_Discriminant_Check");
+   pragma Export (C, Rcheck_CE_Divide_By_Zero,
+                  "__gnat_rcheck_CE_Divide_By_Zero");
+   pragma Export (C, Rcheck_CE_Explicit_Raise,
+                  "__gnat_rcheck_CE_Explicit_Raise");
+   pragma Export (C, Rcheck_CE_Index_Check,
+                  "__gnat_rcheck_CE_Index_Check");
+   pragma Export (C, Rcheck_CE_Invalid_Data,
+                  "__gnat_rcheck_CE_Invalid_Data");
+   pragma Export (C, Rcheck_CE_Length_Check,
+                  "__gnat_rcheck_CE_Length_Check");
+   pragma Export (C, Rcheck_CE_Null_Exception_Id,
+                  "__gnat_rcheck_CE_Null_Exception_Id");
+   pragma Export (C, Rcheck_CE_Null_Not_Allowed,
+                  "__gnat_rcheck_CE_Null_Not_Allowed");
+   pragma Export (C, Rcheck_CE_Overflow_Check,
+                  "__gnat_rcheck_CE_Overflow_Check");
+   pragma Export (C, Rcheck_CE_Partition_Check,
+                  "__gnat_rcheck_CE_Partition_Check");
+   pragma Export (C, Rcheck_CE_Range_Check,
+                  "__gnat_rcheck_CE_Range_Check");
+   pragma Export (C, Rcheck_CE_Tag_Check,
+                  "__gnat_rcheck_CE_Tag_Check");
+   pragma Export (C, Rcheck_PE_Access_Before_Elaboration,
+                  "__gnat_rcheck_PE_Access_Before_Elaboration");
+   pragma Export (C, Rcheck_PE_Accessibility_Check,
+                  "__gnat_rcheck_PE_Accessibility_Check");
+   pragma Export (C, Rcheck_PE_Address_Of_Intrinsic,
+                  "__gnat_rcheck_PE_Address_Of_Intrinsic");
+   pragma Export (C, Rcheck_PE_Aliased_Parameters,
+                  "__gnat_rcheck_PE_Aliased_Parameters");
+   pragma Export (C, Rcheck_PE_All_Guards_Closed,
+                  "__gnat_rcheck_PE_All_Guards_Closed");
+   pragma Export (C, Rcheck_PE_Bad_Predicated_Generic_Type,
+                  "__gnat_rcheck_PE_Bad_Predicated_Generic_Type");
+   pragma Export (C, Rcheck_PE_Build_In_Place_Mismatch,
+                  "__gnat_rcheck_PE_Build_In_Place_Mismatch");
+   pragma Export (C, Rcheck_PE_Current_Task_In_Entry_Body,
+                  "__gnat_rcheck_PE_Current_Task_In_Entry_Body");
+   pragma Export (C, Rcheck_PE_Duplicated_Entry_Address,
+                  "__gnat_rcheck_PE_Duplicated_Entry_Address");
+   pragma Export (C, Rcheck_PE_Explicit_Raise,
+                  "__gnat_rcheck_PE_Explicit_Raise");
+   pragma Export (C, Rcheck_PE_Finalize_Raised_Exception,
+                  "__gnat_rcheck_PE_Finalize_Raised_Exception");
+   pragma Export (C, Rcheck_PE_Implicit_Return,
+                  "__gnat_rcheck_PE_Implicit_Return");
+   pragma Export (C, Rcheck_PE_Misaligned_Address_Value,
+                  "__gnat_rcheck_PE_Misaligned_Address_Value");
+   pragma Export (C, Rcheck_PE_Missing_Return,
+                  "__gnat_rcheck_PE_Missing_Return");
+   pragma Export (C, Rcheck_PE_Non_Transportable_Actual,
+                  "__gnat_rcheck_PE_Non_Transportable_Actual");
+   pragma Export (C, Rcheck_PE_Overlaid_Controlled_Object,
+                  "__gnat_rcheck_PE_Overlaid_Controlled_Object");
+   pragma Export (C, Rcheck_PE_Potentially_Blocking_Operation,
+                  "__gnat_rcheck_PE_Potentially_Blocking_Operation");
+   pragma Export (C, Rcheck_PE_Stream_Operation_Not_Allowed,
+                  "__gnat_rcheck_PE_Stream_Operation_Not_Allowed");
+   pragma Export (C, Rcheck_PE_Stubbed_Subprogram_Called,
+                  "__gnat_rcheck_PE_Stubbed_Subprogram_Called");
+   pragma Export (C, Rcheck_PE_Unchecked_Union_Restriction,
+                  "__gnat_rcheck_PE_Unchecked_Union_Restriction");
+   pragma Export (C, Rcheck_SE_Empty_Storage_Pool,
+                  "__gnat_rcheck_SE_Empty_Storage_Pool");
+   pragma Export (C, Rcheck_SE_Explicit_Raise,
+                  "__gnat_rcheck_SE_Explicit_Raise");
+   pragma Export (C, Rcheck_SE_Infinite_Recursion,
+                  "__gnat_rcheck_SE_Infinite_Recursion");
+   pragma Export (C, Rcheck_SE_Object_Too_Large,
+                  "__gnat_rcheck_SE_Object_Too_Large");
+
+   --  None of these procedures ever returns (they raise an exception). By
+   --  using pragma No_Return, we ensure that any junk code after the call,
+   --  such as normal return epilogue stuff, can be eliminated).
+
+   pragma No_Return (Rcheck_CE_Access_Check);
+   pragma No_Return (Rcheck_CE_Null_Access_Parameter);
+   pragma No_Return (Rcheck_CE_Discriminant_Check);
+   pragma No_Return (Rcheck_CE_Divide_By_Zero);
+   pragma No_Return (Rcheck_CE_Explicit_Raise);
+   pragma No_Return (Rcheck_CE_Index_Check);
+   pragma No_Return (Rcheck_CE_Invalid_Data);
+   pragma No_Return (Rcheck_CE_Length_Check);
+   pragma No_Return (Rcheck_CE_Null_Exception_Id);
+   pragma No_Return (Rcheck_CE_Null_Not_Allowed);
+   pragma No_Return (Rcheck_CE_Overflow_Check);
+   pragma No_Return (Rcheck_CE_Partition_Check);
+   pragma No_Return (Rcheck_CE_Range_Check);
+   pragma No_Return (Rcheck_CE_Tag_Check);
+   pragma No_Return (Rcheck_PE_Access_Before_Elaboration);
+   pragma No_Return (Rcheck_PE_Accessibility_Check);
+   pragma No_Return (Rcheck_PE_Address_Of_Intrinsic);
+   pragma No_Return (Rcheck_PE_Aliased_Parameters);
+   pragma No_Return (Rcheck_PE_All_Guards_Closed);
+   pragma No_Return (Rcheck_PE_Bad_Predicated_Generic_Type);
+   pragma No_Return (Rcheck_PE_Build_In_Place_Mismatch);
+   pragma No_Return (Rcheck_PE_Current_Task_In_Entry_Body);
+   pragma No_Return (Rcheck_PE_Duplicated_Entry_Address);
+   pragma No_Return (Rcheck_PE_Explicit_Raise);
+   pragma No_Return (Rcheck_PE_Implicit_Return);
+   pragma No_Return (Rcheck_PE_Misaligned_Address_Value);
+   pragma No_Return (Rcheck_PE_Missing_Return);
+   pragma No_Return (Rcheck_PE_Non_Transportable_Actual);
+   pragma No_Return (Rcheck_PE_Overlaid_Controlled_Object);
+   pragma No_Return (Rcheck_PE_Potentially_Blocking_Operation);
+   pragma No_Return (Rcheck_PE_Stream_Operation_Not_Allowed);
+   pragma No_Return (Rcheck_PE_Stubbed_Subprogram_Called);
+   pragma No_Return (Rcheck_PE_Unchecked_Union_Restriction);
+   pragma No_Return (Rcheck_PE_Finalize_Raised_Exception);
+   pragma No_Return (Rcheck_SE_Empty_Storage_Pool);
+   pragma No_Return (Rcheck_SE_Explicit_Raise);
+   pragma No_Return (Rcheck_SE_Infinite_Recursion);
+   pragma No_Return (Rcheck_SE_Object_Too_Large);
+
+   --  Make all of these procedures callable from strub contexts.
+
+   pragma Machine_Attribute (Rcheck_CE_Access_Check,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Null_Access_Parameter,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Discriminant_Check,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Divide_By_Zero,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Explicit_Raise,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Index_Check,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Invalid_Data,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Length_Check,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Null_Exception_Id,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Null_Not_Allowed,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Overflow_Check,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Partition_Check,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Range_Check,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_CE_Tag_Check,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Access_Before_Elaboration,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Accessibility_Check,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Address_Of_Intrinsic,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Aliased_Parameters,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_All_Guards_Closed,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Bad_Predicated_Generic_Type,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Build_In_Place_Mismatch,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Current_Task_In_Entry_Body,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Duplicated_Entry_Address,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Explicit_Raise,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Implicit_Return,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Misaligned_Address_Value,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Missing_Return,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Non_Transportable_Actual,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Overlaid_Controlled_Object,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Potentially_Blocking_Operation,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Stream_Operation_Not_Allowed,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Stubbed_Subprogram_Called,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Unchecked_Union_Restriction,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_PE_Finalize_Raised_Exception,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_SE_Empty_Storage_Pool,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_SE_Explicit_Raise,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_SE_Infinite_Recursion,
+                             "strub", "callable");
+   pragma Machine_Attribute (Rcheck_SE_Object_Too_Large,
+                             "strub", "callable");
+
+   ---------
+   -- AAA --
+   ---------
+
+   --  This function gives us the start of the PC range for addresses within
+   --  the exception unit itself. We hope that gigi/gcc keep all the procedures
+   --  in their original order.
+
+   procedure AAA is null;
+
+   -----------------------
+   -- Abort_Propagation --
+   -----------------------
+
+   procedure Abort_Propagation is
+      Excep : Exception_Occurrence;
+   begin
+      Excep.Id := Program_Error_Def'Access;
+      Excep.Num_Tracebacks := 0;
+
+      Last_Chance_Handler (Excep);
+   end Abort_Propagation;
+
+   ------------------------
+   -- Allocate_Exception --
+   ------------------------
+
+   procedure Allocate_Exception (Excep : out GNAT_GCC_Exception_Access) is
+      My_TSD : constant TSD_Access := Get_TSD_Addr.all;
+   begin
+      if My_TSD.Last_Exception = My_TSD.Exceptions'Last then
+
+         --  No more occurence available. Raise Storage_Error.
+
+         Excep := My_TSD.Exceptions (My_TSD.Exceptions'Last)'Access;
+         Excep.Occurrence.Id := Storage_Error_Def'Access;
+         Excep.Occurrence.Num_Tracebacks := 0;
+         Process_Exception (Excep);
+      end if;
+
+      --  Allocate an occurence and fill it
+
+      My_TSD.Last_Exception := My_TSD.Last_Exception + 1;
+      Excep := My_TSD.Exceptions (My_TSD.Last_Exception)'Access;
+      Excep.Header.Class := GNAT_Exception_Class;
+      Excep.Header.Cleanup := GNAT_GCC_Exception_Cleanup'Address;
+   end Allocate_Exception;
+
+   --------------------------------
+   -- GNAT_GCC_Exception_Cleanup --
+   --------------------------------
+
+   procedure GNAT_GCC_Exception_Cleanup
+     (Reason : Unwind_Reason_Code;
+      Excep  : not null GNAT_GCC_Exception_Access)
+   is
+      pragma Unreferenced (Reason);
+      My_TSD : constant TSD_Access := Get_TSD_Addr.all;
+   begin
+      if My_TSD.Last_Exception = My_TSD.Exceptions'Last - 1
+        and then Excep = My_TSD.Exceptions (My_TSD.Exceptions'Last)'Access
+      then
+         return;
+      end if;
+
+      pragma Assert (Excep = My_TSD.Exceptions (My_TSD.Last_Exception)'Access);
+
+      My_TSD.Last_Exception := My_TSD.Last_Exception - 1;
+   end GNAT_GCC_Exception_Cleanup;
+
+   ----------------
+   -- Call_Chain --
+   ----------------
+
+   procedure Call_Chain (Excep : EOA) is separate;
+
+   ------------------------
+   -- Exception_Identity --
+   ------------------------
+
+   function Exception_Identity
+     (X : Exception_Occurrence) return Exception_Id
+   is
+   begin
+      return X.Id;
+   end Exception_Identity;
+
+   --------------------
+   -- Exception_Name --
+   --------------------
+
+   function Exception_Name (X : Exception_Occurrence) return String is
+   begin
+      return Exception_Name (X.Id);
+   end Exception_Name;
+
+   function Exception_Name (Id : Exception_Id) return String is
+   begin
+      return To_Ptr (Id.Full_Name).all (1 .. Id.Name_Length - 1);
+   end Exception_Name;
+
+   --------------------------------------
+   -- Calls to Run-Time Check Routines --
+   --------------------------------------
+
+   procedure Rcheck_CE_Access_Check
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Access_Check;
+
+   procedure Rcheck_CE_Null_Access_Parameter
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Null_Access_Parameter;
+
+   procedure Rcheck_CE_Discriminant_Check
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Discriminant_Check;
+
+   procedure Rcheck_CE_Divide_By_Zero
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Divide_By_Zero;
+
+   procedure Rcheck_CE_Explicit_Raise
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Explicit_Raise;
+
+   procedure Rcheck_CE_Index_Check
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Index_Check;
+
+   procedure Rcheck_CE_Invalid_Data
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Invalid_Data;
+
+   procedure Rcheck_CE_Length_Check
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Length_Check;
+
+   procedure Rcheck_CE_Null_Exception_Id
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Null_Exception_Id;
+
+   procedure Rcheck_CE_Null_Not_Allowed
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Null_Not_Allowed;
+
+   procedure Rcheck_CE_Overflow_Check
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Overflow_Check;
+
+   procedure Rcheck_CE_Partition_Check
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Partition_Check;
+
+   procedure Rcheck_CE_Range_Check
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Range_Check;
+
+   procedure Rcheck_CE_Tag_Check
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Constraint_Error (File, Line);
+   end Rcheck_CE_Tag_Check;
+
+   procedure Rcheck_PE_Access_Before_Elaboration
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Access_Before_Elaboration;
+
+   procedure Rcheck_PE_Accessibility_Check
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Accessibility_Check;
+
+   procedure Rcheck_PE_Address_Of_Intrinsic
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Address_Of_Intrinsic;
+
+   procedure Rcheck_PE_Aliased_Parameters
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Aliased_Parameters;
+
+   procedure Rcheck_PE_All_Guards_Closed
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_All_Guards_Closed;
+
+   procedure Rcheck_PE_Bad_Predicated_Generic_Type
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Bad_Predicated_Generic_Type;
+
+   procedure Rcheck_PE_Build_In_Place_Mismatch
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Build_In_Place_Mismatch;
+
+   procedure Rcheck_PE_Current_Task_In_Entry_Body
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Current_Task_In_Entry_Body;
+
+   procedure Rcheck_PE_Duplicated_Entry_Address
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Duplicated_Entry_Address;
+
+   procedure Rcheck_PE_Explicit_Raise
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Explicit_Raise;
+
+   procedure Rcheck_PE_Implicit_Return
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Implicit_Return;
+
+   procedure Rcheck_PE_Misaligned_Address_Value
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Misaligned_Address_Value;
+
+   procedure Rcheck_PE_Missing_Return
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Missing_Return;
+
+   procedure Rcheck_PE_Non_Transportable_Actual
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Non_Transportable_Actual;
+
+   procedure Rcheck_PE_Overlaid_Controlled_Object
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Overlaid_Controlled_Object;
+
+   procedure Rcheck_PE_Potentially_Blocking_Operation
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Potentially_Blocking_Operation;
+
+   procedure Rcheck_PE_Stream_Operation_Not_Allowed
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Stream_Operation_Not_Allowed;
+
+   procedure Rcheck_PE_Stubbed_Subprogram_Called
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Stubbed_Subprogram_Called;
+
+   procedure Rcheck_PE_Unchecked_Union_Restriction
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Unchecked_Union_Restriction;
+
+   procedure Rcheck_SE_Empty_Storage_Pool
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Storage_Error (File, Line);
+   end Rcheck_SE_Empty_Storage_Pool;
+
+   procedure Rcheck_SE_Explicit_Raise
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Storage_Error (File, Line);
+   end Rcheck_SE_Explicit_Raise;
+
+   procedure Rcheck_SE_Infinite_Recursion
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Storage_Error (File, Line);
+   end Rcheck_SE_Infinite_Recursion;
+
+   procedure Rcheck_SE_Object_Too_Large
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Storage_Error (File, Line);
+   end Rcheck_SE_Object_Too_Large;
+
+   procedure Rcheck_PE_Finalize_Raised_Exception
+     (File : System.Address; Line : Integer)
+   is
+   begin
+      Raise_Program_Error (File, Line);
+   end Rcheck_PE_Finalize_Raised_Exception;
+
+   ----------------------------
+   -- Raise_Constraint_Error --
+   ----------------------------
+
+   procedure Raise_Constraint_Error (File : System.Address; Line : Integer) is
+      pragma Unreferenced (File, Line);
+   begin
+      Raise_Current_Excep (Constraint_Error_Def'Access);
+   end Raise_Constraint_Error;
+
+   -----------------------------
+   -- Set_Exception_Parameter --
+   -----------------------------
+
+   procedure Set_Exception_Parameter
+     (Excep         : EOA;
+      GCC_Exception : not null GNAT_GCC_Exception_Access)
+   is
+   begin
+      Save_Occurrence (Excep.all, GCC_Exception.Occurrence);
+   end Set_Exception_Parameter;
+
+   -----------------------------
+   -- Reraise_GCC_Exception --
+   -----------------------------
+
+   procedure Reraise_GCC_Exception
+     (GCC_Exception : not null GNAT_GCC_Exception_Access)
+   is
+   begin
+      --  Simply propagate it
+
+      Process_Exception (GCC_Exception);
+   end Reraise_GCC_Exception;
+
+   -----------------------
+   -- Process_Exception --
+   -----------------------
+
+   procedure Process_Exception (Excep : not null GNAT_GCC_Exception_Access) is
+   begin
+      --  Generate traceback if enabled. Call_Chain determines whether this
+      --  is a reraise, as is done for the full run-time.
+
+      Call_Chain (Excep.Occurrence'Access);
+
+      --  Perform a standard raise first. If a regular handler is found, it
+      --  will be entered after all the intermediate cleanups have run. If
+      --  there is no regular handler, it will return.
+
+      Unwind_RaiseException (Excep);
+
+      --  Code to be executed for unhandled exceptions
+
+      Last_Chance_Handler (Excep.Occurrence);
+   end Process_Exception;
+
+   -------------------------
+   -- Raise_Current_Excep --
+   -------------------------
+
+   procedure Raise_Current_Excep (E : Exception_Id) is
+
+      pragma Inspection_Point (E);
+      --  This is so the debugger can reliably inspect the parameter when
+      --  inserting a breakpoint at the start of this procedure.
+
+      --  To provide support for breakpoints on unhandled exceptions, the
+      --  debugger will also need to be able to inspect the value of E from
+      --  inner frames so we need to make sure that its value is also spilled
+      --  on stack.  We take the address and dereference using volatile local
+      --  objects for this purpose.
+
+      Excep : GNAT_GCC_Exception_Access;
+   begin
+      Allocate_Exception (Excep);
+
+      --  This is done in Exception_Data.Set_Exception_Msg in the full run-time
+      --  but we do not support exception messages here.
+
+      Excep.Occurrence.Id := E;
+      Excep.Occurrence.Num_Tracebacks := 0;
+
+      Process_Exception (Excep);
+   end Raise_Current_Excep;
+
+   ---------------------
+   -- Raise_Exception --
+   ---------------------
+
+   procedure Raise_Exception (E : Exception_Id; Message : String := "") is
+      pragma Unreferenced (Message);
+      --  This appears to be as early as we can start ignoring the "Message"
+      --  parameter, since "Raise_Exception" is externally callable.
+   begin
+      Raise_Current_Excep (E);
+   end Raise_Exception;
+
+   ----------------------------
+   -- Raise_Exception_Always --
+   ----------------------------
+
+   procedure Raise_Exception_Always
+     (E       : Exception_Id;
+      Message : String := "") renames Raise_Exception;
+
+   -------------------------
+   -- Raise_Program_Error --
+   -------------------------
+
+   procedure Raise_Program_Error (File : System.Address; Line : Integer) is
+      pragma Unreferenced (File, Line);
+   begin
+      Raise_Current_Excep (Program_Error_Def'Access);
+   end Raise_Program_Error;
+
+   -------------------------
+   -- Raise_Storage_Error --
+   -------------------------
+
+   procedure Raise_Storage_Error (File : System.Address; Line : Integer) is
+      pragma Unreferenced (File, Line);
+   begin
+      Raise_Current_Excep (Storage_Error_Def'Access);
+   end Raise_Storage_Error;
+
+   ------------------------
+   -- Reraise_Occurrence --
+   ------------------------
+
+   procedure Reraise_Occurrence (X : Exception_Occurrence) is
+      Excep : GNAT_GCC_Exception_Access;
+   begin
+      Allocate_Exception (Excep);
+
+      Excep.Occurrence := X;
+
+      Process_Exception (Excep);
+   end Reraise_Occurrence;
+
+   -------------------------------
+   -- Reraise_Occurrence_Always --
+   -------------------------------
+
+   procedure Reraise_Occurrence_Always (X : Exception_Occurrence)
+     renames Reraise_Occurrence;
+
+   ---------------------------------
+   -- Reraise_Occurrence_No_Defer --
+   ---------------------------------
+
+   procedure Reraise_Occurrence_No_Defer (X : Exception_Occurrence)
+     renames Reraise_Occurrence;
+
+   ---------------------
+   -- Save_Occurrence --
+   ---------------------
+
+   procedure Save_Occurrence
+     (Target : out Exception_Occurrence;
+      Source : Exception_Occurrence)
+   is
+   begin
+      Target.Id             := Source.Id;
+      Target.Num_Tracebacks := Source.Num_Tracebacks;
+
+      Target.Tracebacks (1 .. Target.Num_Tracebacks) :=
+        Source.Tracebacks (1 .. Target.Num_Tracebacks);
+   end Save_Occurrence;
+
+   ----------------------
+   -- Begin_Handler_v1 --
+   ----------------------
+
+   function Begin_Handler_v1
+     (GCC_Exception : not null GCC_Exception_Access)
+     return System.Address is
+      Saved_Cleanup : constant System.Address := GCC_Exception.Cleanup;
+   begin
+      --  Claim responsibility for releasing this exception, and stop
+      --  others from releasing it.
+      GCC_Exception.Cleanup := Claimed_Cleanup'Address;
+      return Saved_Cleanup;
+   end Begin_Handler_v1;
+
+   --------------------
+   -- End_Handler_v1 --
+   --------------------
+
+   procedure End_Handler_v1
+     (GCC_Exception : not null GCC_Exception_Access;
+      Saved_Cleanup : System.Address;
+      Propagating_Exception : GCC_Exception_Access) is
+   begin
+      GCC_Exception.Cleanup := Saved_Cleanup;
+      --  Restore the Saved_Cleanup, so that it is either used to
+      --  release GCC_Exception below, or transferred to the next
+      --  handler of the Propagating_Exception occurrence.  The
+      --  following test ensures that an occurrence is only released
+      --  once, even after reraises.
+      --
+      --  The idea is that the GCC_Exception is not to be released
+      --  unless it had an unclaimed Cleanup when the handler started
+      --  (see Begin_Handler_v1 above), but if we propagate across its
+      --  handler a reraise of the same exception, we transfer to the
+      --  Propagating_Exception the responsibility for running the
+      --  Saved_Cleanup when its handler completes.
+      --
+      --  This ownership transfer mechanism ensures safety, as in
+      --  single release and no dangling pointers, because there is no
+      --  way to hold on to the Machine_Occurrence of an
+      --  Exception_Occurrence: the only situations in which another
+      --  Exception_Occurrence gets the same Machine_Occurrence are
+      --  through Reraise_Occurrence, and plain reraise, and so we
+      --  have the following possibilities:
+      --
+      --  - Reraise_Occurrence is handled within the running handler,
+      --  and so when completing the dynamically nested handler, we
+      --  must NOT release the exception.  A Claimed_Cleanup upon
+      --  entry of the nested handler, installed when entering the
+      --  enclosing handler, ensures the exception will not be
+      --  released by the nested handler, but rather by the enclosing
+      --  handler.
+      --
+      --  - Reraise_Occurrence/reraise escapes the running handler,
+      --  and we run as an exceptional cleanup for GCC_Exception.  The
+      --  Saved_Cleanup was reinstalled, but since we're propagating
+      --  the same machine occurrence, we do not release it.  Instead,
+      --  we transfer responsibility for releasing it to the eventual
+      --  handler of the propagating exception.
+      --
+      --  - An unrelated exception propagates through the running
+      --  handler.  We restored GCC_Exception.Saved_Cleanup above.
+      --  Since we're propagating a different exception, we proceed to
+      --  release GCC_Exception, unless Saved_Cleanup was
+      --  Claimed_Cleanup, because then we know we're not in the
+      --  outermost handler for GCC_Exception.
+      --
+      --  - The handler completes normally, so it reinstalls the
+      --  Saved_Cleanup and runs it, unless it was Claimed_Cleanup.
+      --  If Saved_Cleanup is null, Unwind_DeleteException (currently)
+      --  has no effect, so we could skip it, but if it is ever
+      --  changed to do more in this case, we're ready for that,
+      --  calling it exactly once.
+      if Saved_Cleanup /= Claimed_Cleanup'Address
+        and then
+        Propagating_Exception /= GCC_Exception
+      then
+         Unwind_DeleteException (GCC_Exception);
+      end if;
+   end End_Handler_v1;
+
+   ---------------------
+   -- Claimed_Cleanup --
+   ---------------------
+
+   procedure Claimed_Cleanup
+     (Reason : Unwind_Reason_Code;
+      GCC_Exception : not null GCC_Exception_Access) is
+      pragma Unreferenced (Reason);
+      pragma Unreferenced (GCC_Exception);
+   begin
+      --  This procedure should never run.  If it does, it's either a
+      --  version 0 handler or a foreign handler, attempting to
+      --  release an exception while a version 1 handler that claimed
+      --  responsibility for releasing the exception remains still
+      --  active.  This placeholder stops GCC_Exception from being
+      --  released by them.
+
+      --  We could get away with just Null_Address instead, with
+      --  nearly the same effect, but with this placeholder we can
+      --  detect and report unexpected releases, and we can tell apart
+      --  a GCC_Exception without a Cleanup, from one with another
+      --  active handler, so as to still call Unwind_DeleteException
+      --  exactly once: currently, Unwind_DeleteException does nothing
+      --  when the Cleanup is null, but should it ever be changed to
+      --  do more, we'll still be safe.
+      null;
+   end Claimed_Cleanup;
+
+   -------------------
+   -- Begin_Handler --
+   -------------------
+
+   procedure Begin_Handler (GCC_Exception : not null GCC_Exception_Access) is
+      pragma Unreferenced (GCC_Exception);
+   begin
+      null;
+   end Begin_Handler;
+
+   -----------------
+   -- End_Handler --
+   -----------------
+
+   procedure End_Handler (GCC_Exception : GCC_Exception_Access) is
+   begin
+      if GCC_Exception /= null then
+
+         --  The exception might have been reraised, in this case the cleanup
+         --  mustn't be called.
+
+         Unwind_DeleteException (GCC_Exception);
+      end if;
+   end End_Handler;
+
+   -------------
+   -- EID_For --
+   -------------
+
+   function EID_For
+     (GNAT_Exception : not null GNAT_GCC_Exception_Access) return Exception_Id
+   is
+   begin
+      return GNAT_Exception.Occurrence.Id;
+   end EID_For;
+
+   --------------------------
+   -- Is_Handled_By_Others --
+   --------------------------
+
+   function Is_Handled_By_Others (E : SSL.Exception_Data_Ptr) return Boolean is
+   begin
+      return not E.all.Not_Handled_By_Others;
+   end Is_Handled_By_Others;
+
+   ---------
+   -- ZZZ --
+   ---------
+
+   --  This function gives us the end of the PC range for addresses
+   --  within the exception unit itself. We hope that gigi/gcc keeps all the
+   --  procedures in their original order.
+
+   procedure ZZZ is null;
+
+end Ada.Exceptions;

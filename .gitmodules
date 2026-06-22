@@ -1,4 +1,0 @@
-[submodule "crates/bb-runtimes"]
-	path = crates/bb-runtimes
-	url = https://github.com/rowsail/bb-runtimes.git
-	branch = xtensa-esp32s3-port

@@ -1,0 +1,1356 @@
+{
+  "gnarl": {
+    "scenarios": {
+      "CPU_Family": [
+        "arm",
+        "aarch64",
+        "leon",
+        "powerpc",
+        "powerpc64",
+        "x86",
+        "x86_64",
+        "riscv32",
+        "riscv64",
+        "xtensa"
+      ],
+      "Has_CHERI": [
+        "no",
+        "yes"
+      ],
+      "RTS_Profile": [
+        "light",
+        "light-tasking",
+        "embedded",
+        "cert"
+      ],
+      "Timer": [
+        "n/a",
+        "timer32",
+        "timer64"
+      ]
+    },
+    "sources": {
+      "CPU_Family:aarch64": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/spinlock-gcc"
+        ]
+      },
+      "CPU_Family:arm": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/spinlock-gcc"
+        ]
+      },
+      "CPU_Family:leon": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/spinlock-leon"
+        ]
+      },
+      "CPU_Family:powerpc": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/spinlock-gcc"
+        ]
+      },
+      "CPU_Family:powerpc64": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/spinlock-gcc"
+        ]
+      },
+      "CPU_Family:riscv32": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/spinlock-gcc"
+        ]
+      },
+      "CPU_Family:riscv64": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/spinlock-gcc"
+        ]
+      },
+      "CPU_Family:xtensa": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/spinlock-gcc"
+        ]
+      },
+      "CPU_Family:x86": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/spinlock-gcc"
+        ]
+      },
+      "CPU_Family:x86_64": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/spinlock-gcc"
+        ]
+      },
+      "Has_CHERI:no": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/common-no-cheri"
+        ]
+      },
+      "Has_CHERI:yes": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/common-cheri"
+        ]
+      },
+      "RTS_Profile:embedded": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/full",
+          "../../include/rts-sources/gnarl/full/extended"
+        ]
+      },
+      "RTS_Profile:light-tasking": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/sfp"
+        ]
+      },
+      "Timer:timer32": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/timer32"
+        ]
+      },
+      "Timer:timer64": {
+        "_srcs": [
+          "../../include/rts-sources/gnarl/timer64"
+        ]
+      },
+      "_srcs": [
+        "../../include/rts-sources/gnarl/common"
+      ]
+    }
+  },
+  "gnat": {
+    "scenarios": {
+      "Add_Arith128": [
+        "no",
+        "yes"
+      ],
+      "Add_Arith64": [
+        "no",
+        "yes"
+      ],
+      "Add_C_Integration": [
+        "no",
+        "ada_clib",
+        "newlib"
+      ],
+      "Add_Case_Util": [
+        "no",
+        "yes"
+      ],
+      "Add_Command_Line": [
+        "no",
+        "yes"
+      ],
+      "Add_Complex_Type_Support": [
+        "no",
+        "yes"
+      ],
+      "Add_Exponent_Float": [
+        "no",
+        "yes"
+      ],
+      "Add_Exponent_Int": [
+        "no",
+        "yes"
+      ],
+      "Add_Exponent_LLL_Int": [
+        "no",
+        "yes"
+      ],
+      "Add_Exponent_LL_Int": [
+        "no",
+        "yes"
+      ],
+      "Add_Exponent_Modular": [
+        "no",
+        "yes"
+      ],
+      "Add_Float_Util": [
+        "no",
+        "yes"
+      ],
+      "Add_IO_Exceptions": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_Char": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_Decimal": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_Enum": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_Fixed": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_Float": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_Int": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_LLL_Decimal": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_LLL_Fixed": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_LLL_Int": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_LL_Decimal": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_LL_Fixed": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_LL_Int": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_Util": [
+        "no",
+        "yes"
+      ],
+      "Add_Image_Wide_Char": [
+        "no",
+        "yes"
+      ],
+      "Add_Math_Lib": [
+        "no",
+        "softfloat",
+        "hardfloat",
+        "hardfloat_dp",
+        "hardfloat_sp"
+      ],
+      "Add_Pack": [
+        "no",
+        "yes"
+      ],
+      "Add_Pack64": [
+        "no",
+        "yes"
+      ],
+      "Add_Streams": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_Bool": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_Char": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_Decimal": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_Enum": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_Fixed": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_Float": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_Int": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_LLL_Decimal": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_LLL_Fixed": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_LLL_Int": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_LLL_Spec": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_LL_Decimal": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_LL_Fixed": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_LL_Int": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_LL_Spec": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_Spec": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_Utils": [
+        "no",
+        "yes"
+      ],
+      "Add_Value_Wide_Char": [
+        "no",
+        "yes"
+      ],
+      "CPU_Family": [
+        "arm",
+        "aarch64",
+        "leon",
+        "powerpc",
+        "powerpc64",
+        "x86",
+        "x86_64",
+        "riscv32",
+        "riscv64",
+        "xtensa"
+      ],
+      "Certifiable_Packages": [
+        "no",
+        "yes"
+      ],
+      "Compiler_Backend": [
+        "gcc",
+        "llvm"
+      ],
+      "Has_CHERI": [
+        "no",
+        "yes"
+      ],
+      "Has_Compare_And_Swap": [
+        "yes",
+        "no"
+      ],
+      "Has_FMA": [
+        "no",
+        "yes"
+      ],
+      "Has_libc": [
+        "no",
+        "yes"
+      ],
+      "Memory_Profile": [
+        "small",
+        "large",
+        "huge"
+      ],
+      "RTS_Profile": [
+        "light",
+        "light-tasking",
+        "embedded",
+        "cert"
+      ],
+      "Target_Word_Size": [
+        "32",
+        "64"
+      ],
+      "Text_IO": [
+        "serial",
+        "semihosting"
+      ]
+    },
+    "sources": {
+      "Add_Arith128:yes": {
+        "_srcs": [
+          "../../include/rts-sources/arith128"
+        ]
+      },
+      "Add_Arith64:yes": {
+        "_srcs": [
+          "../../include/rts-sources/arith64"
+        ]
+      },
+      "Add_C_Integration:ada_clib": {
+        "_srcs": [
+          "../../include/rts-sources/libc"
+        ]
+      },
+      "Add_C_Integration:newlib": {
+        "_srcs": [
+          "../../include/rts-sources/newlib"
+        ]
+      },
+      "Add_Case_Util:yes": {
+        "_srcs": [
+          "../../include/rts-sources/utils/case_util"
+        ]
+      },
+      "Add_Command_Line:yes": {
+        "_srcs": [
+          "../../include/rts-sources/command_line"
+        ]
+      },
+      "Add_Exponent_Float:yes": {
+        "_srcs": [
+          "../../include/rts-sources/exponent/float"
+        ]
+      },
+      "Add_Exponent_Int:yes": {
+        "_srcs": [
+          "../../include/rts-sources/exponent/int"
+        ]
+      },
+      "Add_Exponent_LLL_Int:yes": {
+        "_srcs": [
+          "../../include/rts-sources/exponent/int_lll"
+        ]
+      },
+      "Add_Exponent_LL_Int:yes": {
+        "_srcs": [
+          "../../include/rts-sources/exponent/int_ll"
+        ]
+      },
+      "Add_Exponent_Modular:yes": {
+        "_srcs": [
+          "../../include/rts-sources/exponent/mod"
+        ]
+      },
+      "Add_Float_Util:yes": {
+        "Has_FMA:no": {
+          "_srcs": [
+            "../../include/rts-sources/utils/float"
+          ]
+        },
+        "Has_FMA:yes": {
+          "_srcs": [
+            "../../include/rts-sources/utils/float_fma"
+          ]
+        }
+      },
+      "Add_IO_Exceptions:yes": {
+        "_srcs": [
+          "../../include/rts-sources/ioexce"
+        ]
+      },
+      "Add_Image_Char:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/char"
+        ]
+      },
+      "Add_Image_Decimal:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/decimal"
+        ]
+      },
+      "Add_Image_Enum:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/enum"
+        ]
+      },
+      "Add_Image_Fixed:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/fixed"
+        ]
+      },
+      "Add_Image_Float:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/float"
+        ]
+      },
+      "Add_Image_Int:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/int"
+        ]
+      },
+      "Add_Image_LLL_Decimal:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/decimal_lll"
+        ]
+      },
+      "Add_Image_LLL_Fixed:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/fixed_lll"
+        ]
+      },
+      "Add_Image_LLL_Int:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/int_lll"
+        ]
+      },
+      "Add_Image_LL_Decimal:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/decimal_ll"
+        ]
+      },
+      "Add_Image_LL_Fixed:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/fixed_ll"
+        ]
+      },
+      "Add_Image_LL_Int:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/int_ll"
+        ]
+      },
+      "Add_Image_Util:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/util"
+        ]
+      },
+      "Add_Image_Wide_Char:yes": {
+        "_srcs": [
+          "../../include/rts-sources/image/wide_char"
+        ]
+      },
+      "Add_Math_Lib:hardfloat": {
+        "Add_Complex_Type_Support:yes": {
+          "_srcs": [
+            "../../include/rts-sources/math/complex"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/math/hardsp",
+          "../../include/rts-sources/math/harddp",
+          "../../include/rts-sources/math"
+        ]
+      },
+      "Add_Math_Lib:hardfloat_dp": {
+        "Add_Complex_Type_Support:yes": {
+          "_srcs": [
+            "../../include/rts-sources/math/complex"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/math/softsp",
+          "../../include/rts-sources/math/harddp",
+          "../../include/rts-sources/math"
+        ]
+      },
+      "Add_Math_Lib:hardfloat_sp": {
+        "Add_Complex_Type_Support:yes": {
+          "_srcs": [
+            "../../include/rts-sources/math/complex"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/math/softdp",
+          "../../include/rts-sources/math/hardsp",
+          "../../include/rts-sources/math"
+        ]
+      },
+      "Add_Math_Lib:softfloat": {
+        "Add_Complex_Type_Support:yes": {
+          "_srcs": [
+            "../../include/rts-sources/math/complex"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/math",
+          "../../include/rts-sources/math/softsp",
+          "../../include/rts-sources/math/softdp"
+        ]
+      },
+      "Add_Pack64:yes": {
+        "_srcs": [
+          "../../include/rts-sources/pack64"
+        ]
+      },
+      "Add_Pack:yes": {
+        "_srcs": [
+          "../../include/rts-sources/pack"
+        ]
+      },
+      "Add_Streams:yes": {
+        "_srcs": [
+          "../../include/rts-sources/streams"
+        ]
+      },
+      "Add_Value_Bool:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/Boolean"
+        ]
+      },
+      "Add_Value_Char:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/char"
+        ]
+      },
+      "Add_Value_Decimal:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/decimal"
+        ]
+      },
+      "Add_Value_Enum:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/enum"
+        ]
+      },
+      "Add_Value_Fixed:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/fixed"
+        ]
+      },
+      "Add_Value_Float:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/float"
+        ]
+      },
+      "Add_Value_Int:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/int"
+        ]
+      },
+      "Add_Value_LLL_Decimal:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/decimal_lll"
+        ]
+      },
+      "Add_Value_LLL_Fixed:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/fixed_lll"
+        ]
+      },
+      "Add_Value_LLL_Int:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/int_lll"
+        ]
+      },
+      "Add_Value_LLL_Spec:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/spec_lll"
+        ]
+      },
+      "Add_Value_LL_Decimal:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/decimal_ll"
+        ]
+      },
+      "Add_Value_LL_Fixed:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/fixed_ll"
+        ]
+      },
+      "Add_Value_LL_Int:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/int_ll"
+        ]
+      },
+      "Add_Value_LL_Spec:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/spec_ll"
+        ]
+      },
+      "Add_Value_Spec:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/spec"
+        ]
+      },
+      "Add_Value_Utils:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/utils"
+        ]
+      },
+      "Add_Value_Wide_Char:yes": {
+        "_srcs": [
+          "../../include/rts-sources/value/wide_char"
+        ]
+      },
+      "CPU_Family:aarch64": {
+        "Add_Math_Lib:hardfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_dp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_sp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:softfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Certifiable_Packages:yes": {
+          "_srcs": [
+            "../../include/rts-sources/libgcc/other_archs"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/atomics/64"
+        ]
+      },
+      "CPU_Family:arm": {
+        "Add_Math_Lib:hardfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_dp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_sp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:softfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Certifiable_Packages:yes": {
+          "_srcs": [
+            "../../include/rts-sources/libgcc/arm"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/atomics/32"
+        ]
+      },
+      "CPU_Family:leon": {
+        "Add_Math_Lib:hardfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_dp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_sp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:softfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Certifiable_Packages:yes": {
+          "_srcs": [
+            "../../include/rts-sources/libgcc/other_archs"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/atomics/32"
+        ]
+      },
+      "CPU_Family:powerpc": {
+        "Add_Math_Lib:hardfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_dp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_sp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:softfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Certifiable_Packages:yes": {
+          "_srcs": [
+            "../../include/rts-sources/libgcc/other_archs"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/atomics/32"
+        ]
+      },
+      "CPU_Family:powerpc64": {
+        "Add_Math_Lib:hardfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_dp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_sp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:softfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Certifiable_Packages:yes": {
+          "_srcs": [
+            "../../include/rts-sources/libgcc/other_archs"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/atomics/64"
+        ]
+      },
+      "CPU_Family:riscv32": {
+        "Add_Math_Lib:hardfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_dp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_sp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:softfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Certifiable_Packages:yes": {
+          "_srcs": [
+            "../../include/rts-sources/libgcc/other_archs"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/atomics/32"
+        ]
+      },
+      "CPU_Family:riscv64": {
+        "Add_Math_Lib:hardfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_dp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_sp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:softfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Certifiable_Packages:yes": {
+          "_srcs": [
+            "../../include/rts-sources/libgcc/other_archs"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/atomics/64"
+        ]
+      },
+      "CPU_Family:xtensa": {
+        "Add_Math_Lib:hardfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_dp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_sp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Add_Math_Lib:softfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_64bit"
+          ]
+        },
+        "Certifiable_Packages:yes": {
+          "_srcs": [
+            "../../include/rts-sources/libgcc/other_archs"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/atomics/32"
+        ]
+      },
+      "CPU_Family:x86": {
+        "Add_Math_Lib:hardfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_80bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_dp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_80bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_sp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_80bit"
+          ]
+        },
+        "Add_Math_Lib:softfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_80bit"
+          ]
+        },
+        "Certifiable_Packages:yes": {
+          "_srcs": [
+            "../../include/rts-sources/libgcc/other_archs"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/atomics/64"
+        ]
+      },
+      "CPU_Family:x86_64": {
+        "Add_Math_Lib:hardfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_80bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_dp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_80bit"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_sp": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_80bit"
+          ]
+        },
+        "Add_Math_Lib:softfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/long_long_80bit"
+          ]
+        },
+        "Certifiable_Packages:yes": {
+          "_srcs": [
+            "../../include/rts-sources/libgcc/other_archs"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/atomics/64"
+        ]
+      },
+      "Certifiable_Packages:yes": {
+        "_srcs": [
+          "../../include/rts-sources/libgcc"
+        ]
+      },
+      "Has_CHERI:no": {
+        "Add_Streams:yes": {
+          "_srcs": [
+            "../../include/rts-sources/streams/no_cheri"
+          ]
+        },
+        "Has_libc:no": {
+          "_srcs": [
+            "../../include/rts-sources/mem/no-cheri"
+          ]
+        }
+      },
+      "Has_CHERI:yes": {
+        "Add_Streams:yes": {
+          "_srcs": [
+            "../../include/rts-sources/streams/cheri"
+          ]
+        },
+        "Has_libc:no": {
+          "_srcs": [
+            "../../include/rts-sources/mem/cheri"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/common/cheri"
+        ]
+      },
+      "Has_libc:no": {
+        "_srcs": [
+          "../../include/rts-sources/mem"
+        ]
+      },
+      "RTS_Profile:cert": {
+        "CPU_Family:arm": {
+          "_srcs": [
+            "../../include/rts-sources/cert/arm"
+          ]
+        },
+        "Has_libc:yes": {
+          "_srcs": [
+            "../../include/rts-sources/alloc/c"
+          ]
+        },
+        "Memory_Profile:huge": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/huge"
+          ]
+        },
+        "Memory_Profile:large": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/large"
+          ]
+        },
+        "Memory_Profile:small": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/small"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/secondary_stack/softlinks",
+          "../../include/rts-sources/cert",
+          "../../include/rts-sources/light/non-tasking",
+          "../../include/rts-sources/light"
+        ]
+      },
+      "RTS_Profile:embedded": {
+        "Add_Math_Lib:hardfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/full"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_dp": {
+          "_srcs": [
+            "../../include/rts-sources/math/full"
+          ]
+        },
+        "Add_Math_Lib:hardfloat_sp": {
+          "_srcs": [
+            "../../include/rts-sources/math/full"
+          ]
+        },
+        "Add_Math_Lib:softfloat": {
+          "_srcs": [
+            "../../include/rts-sources/math/full"
+          ]
+        },
+        "CPU_Family:aarch64": {
+          "Compiler_Backend:gcc": {
+            "_srcs": [
+              "../../include/rts-sources/full/zcx-dw2-gcc"
+            ]
+          },
+          "_srcs": [
+            "../../include/rts-sources/full/zcx-dw2",
+            "../../include/rts-sources/full/zcx-aarch64"
+          ]
+        },
+        "CPU_Family:arm": {
+          "_srcs": [
+            "../../include/rts-sources/full/zcx-arm"
+          ]
+        },
+        "CPU_Family:leon": {
+          "Compiler_Backend:gcc": {
+            "_srcs": [
+              "../../include/rts-sources/full/zcx-dw2-gcc"
+            ]
+          },
+          "_srcs": [
+            "../../include/rts-sources/full/zcx-leon",
+            "../../include/rts-sources/full/zcx-dw2"
+          ]
+        },
+        "CPU_Family:powerpc": {
+          "Compiler_Backend:gcc": {
+            "_srcs": [
+              "../../include/rts-sources/full/zcx-dw2-gcc"
+            ]
+          },
+          "_srcs": [
+            "../../include/rts-sources/full/zcx-ppc",
+            "../../include/rts-sources/full/zcx-dw2"
+          ]
+        },
+        "CPU_Family:powerpc64": {
+          "Compiler_Backend:gcc": {
+            "_srcs": [
+              "../../include/rts-sources/full/zcx-dw2-gcc"
+            ]
+          },
+          "_srcs": [
+            "../../include/rts-sources/full/zcx-dw2"
+          ]
+        },
+        "CPU_Family:riscv32": {
+          "Compiler_Backend:gcc": {
+            "_srcs": [
+              "../../include/rts-sources/full/zcx-dw2-gcc"
+            ]
+          },
+          "_srcs": [
+            "../../include/rts-sources/full/zcx-riscv",
+            "../../include/rts-sources/full/zcx-dw2"
+          ]
+        },
+        "CPU_Family:riscv64": {
+          "Compiler_Backend:gcc": {
+            "_srcs": [
+              "../../include/rts-sources/full/zcx-dw2-gcc"
+            ]
+          },
+          "_srcs": [
+            "../../include/rts-sources/full/zcx-riscv",
+            "../../include/rts-sources/full/zcx-dw2"
+          ]
+        },
+        "CPU_Family:xtensa": {
+          "Compiler_Backend:gcc": {
+            "_srcs": [
+              "../../include/rts-sources/full/zcx-dw2-gcc"
+            ]
+          },
+          "_srcs": [
+            "../../include/rts-sources/full/zcx-xtensa",
+            "../../include/rts-sources/full/zcx-dw2"
+          ]
+        },
+        "CPU_Family:x86": {
+          "Compiler_Backend:gcc": {
+            "_srcs": [
+              "../../include/rts-sources/full/zcx-dw2-gcc"
+            ]
+          },
+          "_srcs": [
+            "../../include/rts-sources/full/zcx-x86",
+            "../../include/rts-sources/full/zcx-dw2"
+          ]
+        },
+        "CPU_Family:x86_64": {
+          "Compiler_Backend:gcc": {
+            "_srcs": [
+              "../../include/rts-sources/full/zcx-dw2-gcc"
+            ]
+          },
+          "_srcs": [
+            "../../include/rts-sources/full/zcx-x86_64",
+            "../../include/rts-sources/full/zcx-dw2"
+          ]
+        },
+        "Compiler_Backend:gcc": {
+          "_srcs": [
+            "../../include/rts-sources/full/gcc"
+          ]
+        },
+        "Has_CHERI:no": {
+          "_srcs": [
+            "../../include/rts-sources/secondary_stack/symbol"
+          ]
+        },
+        "Has_CHERI:yes": {
+          "_srcs": [
+            "../../include/rts-sources/secondary_stack/symbol-cheri"
+          ]
+        },
+        "Memory_Profile:huge": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/huge"
+          ]
+        },
+        "Memory_Profile:large": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/large"
+          ]
+        },
+        "Memory_Profile:small": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/small"
+          ]
+        },
+        "Target_Word_Size:32": {
+          "_srcs": [
+            "../../include/rts-sources/full/32"
+          ]
+        },
+        "Target_Word_Size:64": {
+          "_srcs": [
+            "../../include/rts-sources/full/64"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/full",
+          "../../include/rts-sources/containers"
+        ]
+      },
+      "RTS_Profile:light": {
+        "Has_CHERI:no": {
+          "Has_libc:no": {
+            "_srcs": [
+              "../../include/rts-sources/alloc/no-tasking"
+            ]
+          },
+          "_srcs": [
+            "../../include/rts-sources/secondary_stack/symbol"
+          ]
+        },
+        "Has_CHERI:yes": {
+          "Has_libc:no": {
+            "_srcs": [
+              "../../include/rts-sources/alloc/no-tasking-cheri"
+            ]
+          },
+          "_srcs": [
+            "../../include/rts-sources/secondary_stack/symbol-cheri"
+          ]
+        },
+        "Has_libc:yes": {
+          "_srcs": [
+            "../../include/rts-sources/alloc/c"
+          ]
+        },
+        "Memory_Profile:huge": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/light-huge"
+          ]
+        },
+        "Memory_Profile:large": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/light-large"
+          ]
+        },
+        "Memory_Profile:small": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/light-small"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/light",
+          "../../include/rts-sources/light/exceptions",
+          "../../include/rts-sources/light/non-tasking"
+        ]
+      },
+      "RTS_Profile:light-tasking": {
+        "Has_CHERI:no": {
+          "Has_libc:no": {
+            "Certifiable_Packages:no": {
+              "Has_Compare_And_Swap:yes": {
+                "_srcs": [
+                  "../../include/rts-sources/alloc/tasking"
+                ]
+              }
+            },
+            "Certifiable_Packages:yes": {
+              "Has_Compare_And_Swap:yes": {
+                "_srcs": [
+                  "../../include/rts-sources/alloc/tasking-noc"
+                ]
+              }
+            }
+          },
+          "_srcs": [
+            "../../include/rts-sources/secondary_stack/symbol"
+          ]
+        },
+        "Has_CHERI:yes": {
+          "Has_libc:no": {
+            "Certifiable_Packages:no": {
+              "Has_Compare_And_Swap:yes": {
+                "_srcs": [
+                  "../../include/rts-sources/alloc/tasking-cheri"
+                ]
+              }
+            }
+          },
+          "_srcs": [
+            "../../include/rts-sources/secondary_stack/symbol-cheri"
+          ]
+        },
+        "Has_libc:no": {
+          "Has_Compare_And_Swap:no": {
+            "_srcs": [
+              "../../include/rts-sources/alloc/no-cas"
+            ]
+          }
+        },
+        "Has_libc:yes": {
+          "_srcs": [
+            "../../include/rts-sources/alloc/c"
+          ]
+        },
+        "Memory_Profile:huge": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/huge"
+          ]
+        },
+        "Memory_Profile:large": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/large"
+          ]
+        },
+        "Memory_Profile:small": {
+          "_srcs": [
+            "../../include/rts-sources/gnat/parameters/small"
+          ]
+        },
+        "_srcs": [
+          "../../include/rts-sources/light-tasking",
+          "../../include/rts-sources/light",
+          "../../include/rts-sources/light/exceptions"
+        ]
+      },
+      "Target_Word_Size:32": {
+        "_srcs": [
+          "../../include/rts-sources/common/32"
+        ]
+      },
+      "Target_Word_Size:64": {
+        "_srcs": [
+          "../../include/rts-sources/common/64"
+        ]
+      },
+      "Text_IO:semihosting": {
+        "_srcs": [
+          "../../include/rts-sources/semihosting"
+        ]
+      },
+      "Text_IO:serial": {
+        "_srcs": [
+          "../../include/rts-sources/system_io"
+        ]
+      },
+      "_srcs": [
+        "../../include/rts-sources/common",
+        "../../include/rts-sources/fpu",
+        "../../include/rts-sources/atomics"
+      ]
+    }
+  },
+  "version": "26"
+}

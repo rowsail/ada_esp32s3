@@ -40,28 +40,6 @@ if [ -z "$XTENSA_GNU_CONFIG" ]; then
 fi
 echo "[esp32s3_rts] profile=$PROFILE  XTENSA_GNU_CONFIG=$XTENSA_GNU_CONFIG"
 
-# bb-runtimes is a SUBMODULE, and `git pull` on the superproject does NOT move
-# submodule working trees.  A stale bb-runtimes silently generates a runtime out of
-# sync with the rest of the tree (e.g. a new highint5.S referencing context-switch
-# symbols an old context_switch.S doesn't define -> cryptic undefined-reference link
-# errors).  Fail loudly with the fix.  Bypass with ESP32S3_RTS_ALLOW_STALE_BB=1
-# (intentional submodule work).
-if [ ! -d "$RTS" ] && command -v git >/dev/null 2>&1 && [ -z "${ESP32S3_RTS_ALLOW_STALE_BB:-}" ]; then
-    SUPER="$(cd "$HERE/../.." && pwd)"   # crates/esp32s3_rts -> repo root
-    want="$(git -C "$SUPER" ls-tree HEAD -- crates/bb-runtimes 2>/dev/null | awk '{print $3}')"
-    have="$(git -C "$BBRT" rev-parse HEAD 2>/dev/null || true)"
-    if [ -n "$want" ] && [ -n "$have" ] && [ "$want" != "$have" ]; then
-        echo "[esp32s3_rts] ERROR: the bb-runtimes submodule is OUT OF SYNC with the repo." >&2
-        echo "    recorded:    $want" >&2
-        echo "    checked out: $have" >&2
-        echo "    A 'git pull' does not move submodules.  Sync them, then force a fresh runtime:" >&2
-        echo "      git -C \"$SUPER\" submodule update --init --recursive" >&2
-        echo "      rm -rf \"$HERE\"/*-esp32s3" >&2
-        echo "    (or set ESP32S3_RTS_ALLOW_STALE_BB=1 to build with the current submodule)" >&2
-        exit 1
-    fi
-fi
-
 # 1. Generate the runtime source tree from the bb-runtimes esp32s3 board.
 #    build_rts.py emits a dir per profile the board declares (light-tasking +
 #    embedded); we then build the selected one.
