@@ -1,0 +1,17 @@
+name = "esp32s3_tca9555"
+description = "Bare-metal Ada TCA9555 16-bit I2C GPIO expander driver demo on the ESP32-S3 Jorvik runtime"
+version = "0.1.0-dev"
+
+authors = ["D. Howells"]
+maintainers = ["D. Howells <dhowells@motium.us>"]
+licenses = "Apache-2.0 WITH LLVM-exception"
+tags = ["embedded", "esp32s3", "i2c", "gpio", "expander", "driver", "example"]
+
+project-files = ["tca9555.gpr"]
+
+[[depends-on]]
+esp32s3_rts = "*"
+
+[[pins]]
+esp32s3_rts = { path = "../../crates/esp32s3_rts" }
+xtensa_dynconfig       = { path = "../../crates/xtensa-dynconfig" }
