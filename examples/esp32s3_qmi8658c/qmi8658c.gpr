@@ -1,0 +1,33 @@
+--  Relative paths (matching the Alire pin) so the project resolves WITHOUT
+--  GPR_PROJECT_PATH -- needed for the Ada Language Server (IntelliSense) when the
+--  repo root is the workspace; gprbuild/alr resolve them the same way.  (Standalone
+--  projects use the by-name forms `with "esp32s3_rts.gpr"` / `with "esp32s3_hal.gpr"`.)
+with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
+with "../../libs/esp32s3_hal/esp32s3_hal.gpr";   --  ESP32S3.QMI8658C + I2C + GPIO
+
+--  QMI8658C IMU demo: drive the bare-metal Ada I2C IMU driver against a real
+--  QMI8658C on the bus (SDA = IO8, SCL = IO7), against the pinned Jorvik runtime,
+--  built to a relocatable object the bootloader links.
+project Qmi8658C is
+   for Target use "xtensa-esp32-elf";
+   for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;
+   for Source_Dirs use ("src");   --  the HAL units come via the `with` above
+   for Object_Dir use "obj";
+   for Main use ("main.adb");
+
+   package Builder is
+      for Executable ("main.adb") use "ada_app.o";
+   end Builder;
+
+   package Binder is
+      for Switches ("Ada") use ("-D8k", "-Q2", "-Mada_main");
+   end Binder;
+
+   package Compiler is
+      for Switches ("Ada") use ("-O2", "-g", "-gnata");   --  -g: DWARF for source-level debug
+   end Compiler;
+
+   package Linker is
+      for Default_Switches ("Ada") use ("-Wl,-r", "-nostdlib");
+   end Linker;
+end Qmi8658C;
