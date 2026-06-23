@@ -65,6 +65,7 @@ project ESP32S3_HAL is
             "esp32s3-tca9555-interrupts.adb",
             "esp32s3-st7789.ads",       "esp32s3-st7789.adb",
             "esp32s3-st7789-text.ads",  "esp32s3-st7789-text.adb",
+            "esp32s3-st7789-fonts.ads",
             "esp32s3-gps.ads",          "esp32s3-gps.adb",
             "esp32s3-gps-nmea.ads",     "esp32s3-gps-nmea.adb",
             "esp32s3-gps-l76k.ads",     "esp32s3-gps-l76k.adb",

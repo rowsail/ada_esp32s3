@@ -1,8 +1,9 @@
 # B612 font on an ST7789 display — bare-metal Ada (ESP32-S3)
 
 Renders the **B612** typeface (Airbus's cockpit font, SIL OFL 1.1) on a 240×240
-ST7789 panel, anti-aliased, at three sizes, with a reusable proportional-font
-renderer.
+ST7789 panel, anti-aliased, at three sizes, through the **panel-agnostic HAL
+text engine** — `ESP32S3.Fonts` (data model) + the generic `ESP32S3.Fonts.Render`
+(blitting engine), here instantiated as `ESP32S3.ST7789.Fonts`.
 
 ```
 [b612] anti-aliased B612 font: 12/16/24 px -> ST7789 240x240
@@ -24,8 +25,8 @@ Each size is fully independent:
 
 - its glyph data is a separate C header (`main/b612_<sz>.h`) compiled into its
   own `.rodata.b612_<sz>_*` linker section (`-fdata-sections`);
-- it has its own one-line Ada package (`src/b612_<sz>.ads`) exposing a
-  `Glyph_Fonts.Font` constant.
+- it has its own one-line Ada package (`src/b612_<sz>.ads`) exposing an
+  `ESP32S3.Fonts.Font` constant.
 
 So a program links a size's bytes **only if** it both `#include`s that header in
 `glue.c` *and* `with`s that package. Need only 16 px? `#include "b612_16.h"` and
@@ -33,14 +34,22 @@ So a program links a size's bytes **only if** it both `#include`s that header in
 all three** to show them together; trim the `#include`s in `glue.c` and the
 `with`s in `main.adb` for a real build.
 
-## The renderer — `Glyph_Fonts`
+## The text engine (in the HAL, panel-agnostic)
 
-One font-agnostic renderer serves every size. A `Font` is a light descriptor
-that points (by address) at the atlas arrays plus `First / Count / Height /
-Ascent`. `Draw_Text (S, Font, X, Baseline, Str, FG, BG)` blits each glyph with
-`ESP32S3.ST7789.Draw_Bitmap`, advancing the pen by each glyph's metric;
-`Text_Width` measures a string. (Productising this would move `Glyph_Fonts` into
-the HAL alongside the existing 5×7 `ESP32S3.ST7789.Text`.)
+- **`ESP32S3.Fonts`** — the data model: the `Font` descriptor (address-based
+  metrics + 4-bit/1-bit coverage), `Text_Width`, an `RGB` colour triple. No
+  display dependency, so it compiles under every profile.
+- **`ESP32S3.Fonts.Render`** — a *generic* engine parameterised by a panel's
+  pixel type, `To_Color`, and `Blit`. It builds each glyph cell by blending FG↔BG
+  per coverage (anti-aliasing against a *known* background — no read-back) and
+  blits it; the pen advances proportionally.
+- **`ESP32S3.ST7789.Fonts`** — a one-line instantiation binding the engine to
+  this driver's `Color`/`Draw_Bitmap`. A different panel just adds its own
+  instantiation; the atlas data and `Font` values are reused unchanged.
+
+This example calls `ESP32S3.ST7789.Fonts.Draw_Text (S, B612_16.Font, X,
+Baseline, Str, FG, BG)` with `FG`/`BG` as `ESP32S3.Fonts.RGB` triples. (Distinct
+from the built-in 5×7 `ESP32S3.ST7789.Text`.)
 
 ## Glyphs
 
@@ -50,13 +59,19 @@ Extended, etc.); reaching those would need UTF-8 input + a cmap lookup (future).
 
 ## Regenerating the atlases
 
+The atlases are produced by the **shared, font-agnostic** generator
+`libs/esp32s3_hal/tools/gen_font.py` (works on any TTF/OTF). This example wraps
+the invocation:
+
 ```sh
-./main/gen_b612.py        # B612-Regular.ttf -> b612_<sz>.h + src/b612_<sz>.ads
+./main/regen.sh           # B612-Regular.ttf -> b612_<sz>.h + src/b612_<sz>.ads
 ```
 
-Re-run only when the sizes/range/font change; the committed headers and Ada
-packages are the build inputs. Needs Pillow (with FreeType). `B612-Regular.ttf`
-and `OFL.txt` are vendored under `main/`. (To add a size, append it to `SIZES`.)
+i.e. `gen_font.py --ttf B612-Regular.ttf --name b612 --sizes 12,16,24
+--range 0x20-0xFF --bpp 4`. Re-run only when the sizes/range/font change; the
+committed headers and Ada packages are the build inputs. Needs Pillow (with
+FreeType). `B612-Regular.ttf` and `OFL.txt` are vendored under `main/`. (Add a
+size by appending to `--sizes`; `--bpp 1` would emit a monochrome atlas.)
 
 ## Licensing
 
