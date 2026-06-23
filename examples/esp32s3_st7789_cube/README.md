@@ -1,12 +1,13 @@
 # Bouncing hidden-line wireframe cube — bare-metal Ada (ESP32-S3)
 
-A rotating 3D wireframe cube drawn with **hidden-line removal**, its window
-bouncing around the edges of a 240×240 ST7789 panel. Runs at ~64 fps.
+A rotating 3D wireframe cube drawn with **hidden-line removal** and
+**perspective**, each visible face's edges in its own colour, its window
+bouncing around the edges of a 240×240 ST7789 panel. Runs at ~60 fps.
 
 ```
 [cube] bouncing hidden-line wireframe cube -> ST7789 240x240
 [cube]   SPI2 sclk=12 mosi=13 dc=16 cs=10 bl=6
-[cube] ~64 fps
+[cube] ~61 fps
 ```
 
 ## How it works
@@ -31,14 +32,18 @@ outward normal; the normal is rotated with the cube, and the face is drawn only
 if it points toward the viewer (rotated normal *z* > 0). Edges shared only by
 back faces are never drawn — hidden. From a generic angle exactly 3 faces are
 front-facing → 9 of the 12 edges are drawn, and the 3 edges meeting at the far
-(hidden) corner are removed. (Shared visible edges are drawn twice, which is
-harmless.)
+(hidden) corner are removed. Each visible edge is drawn in the colour of
+whichever front face draws it last (shared visible edges are drawn twice, which
+is harmless).
 
 ### Maths
 
 Fixed-point **Q12 integers** with an embedded 256-entry sine table — no
 floating-point and no `libm`/trig dependency. Rotation is about the Y then X
-axis; projection is orthographic (`model 1.0 → ~30 px`).
+axis. Projection is **perspective**: with the eye on +Z at distance `Eye`, a
+vertex maps to `Centre + coord · Focal / (Eye − z)`, so nearer faces project
+larger than far ones. `Eye`/`Focal`/`FB_W` were chosen (via a host sweep over
+all rotations) so the largest near-face vertex stays inside the window.
 
 ## Display wiring
 
@@ -59,8 +64,9 @@ axis; projection is orthographic (`model 1.0 → ~30 px`).
 
 ## Notes
 
-- The framebuffer window (`FB_W = 120`) is sized to hold the rotating cube
-  (vertex reach ≈ √3 · Zoom around the centre). Larger `FB_W` / `Zoom` make a
-  bigger cube; the bounce range is `240 − FB_W` each axis.
+- The framebuffer window (`FB_W = 128`) is sized to hold the rotating cube under
+  perspective (near faces project larger). Raising `Focal` / lowering `Eye`
+  strengthens the perspective and enlarges the cube; the bounce range is
+  `240 − FB_W` each axis.
 - Uses the controlled-`Session` display driver, so it targets the **embedded /
   full** profiles, not light-tasking.

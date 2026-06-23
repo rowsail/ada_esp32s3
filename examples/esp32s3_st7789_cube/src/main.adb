@@ -1,6 +1,7 @@
 --  Bouncing hidden-line wireframe cube on a 240x240 ST7789 panel (bare-metal
 --  ESP32-S3, no FreeRTOS, no IDF).  A rotating 3D cube drawn with hidden-line
---  removal, its bounding window bouncing around the edges of the screen.
+--  removal and perspective, each visible face's edges in its own colour, its
+--  bounding window bouncing around the edges of the screen.
 --
 --  Rendering (the panel is write-only -- no framebuffer to read back):
 --    * The cube is drawn into a small in-RAM framebuffer (FB_W x FB_W RGB565)
@@ -13,9 +14,8 @@
 --
 --  Hidden-line removal: for a convex cube, HLR is back-face culling.  Each
 --  face's outward normal is rotated; if it points toward the viewer (rotated
---  normal z > 0) the face is front-facing and its four edges are drawn.  Edges
---  shared only by back faces are never drawn -- hidden.  (Shared visible edges
---  draw twice, which is harmless.)
+--  normal z > 0) the face is front-facing and its four edges are drawn (in that
+--  face's colour).  Edges shared only by back faces are never drawn -- hidden.
 --
 --  Maths is fixed-point Q12 integers with an embedded sine table -- no libm /
 --  trig dependency, no floating point needed.
@@ -40,21 +40,24 @@ procedure Main is
    Backlight : constant ESP32S3.GPIO.Pin_Id := 6;
    Screen    : constant := 240;
 
-   --  Moving framebuffer window: big enough to hold the rotating cube (vertex
-   --  reach ~sqrt(3) * Zoom around the centre).
-   FB_W   : constant := 120;
-   Centre : constant := FB_W / 2;
-   Zoom   : constant := 30;        --  model unit (Q12 = 4096) -> ~30 px
-
    One : constant := 4096;         --  1.0 in Q12
+
+   --  Moving framebuffer window: big enough to hold the rotating cube under
+   --  perspective (near faces project larger -- sized from a host sweep so the
+   --  worst-case vertex stays inside).
+   FB_W   : constant := 128;
+   Centre : constant := FB_W / 2;
+
+   --  Perspective: eye on +Z at distance Eye (Q12); a vertex projects to
+   --  Centre + coord * Focal / (Eye - z), so nearer (larger z) faces are bigger.
+   Eye   : constant := 4 * One;
+   Focal : constant := 120;
 
    Dev : LCD.Device;
    S   : LCD.Session;
 
    --  The framebuffer (row-major RGB565), held in internal RAM.
    FB : LCD.Color_Array (0 .. FB_W * FB_W - 1) := (others => LCD.Black);
-
-   Cube : constant LCD.Color := LCD.RGB (0, 255, 140);
 
    --  Q12 sine table (4096 * sin), 256 steps around the circle.
    Sin_T : constant array (0 .. 255) of Integer :=
@@ -102,20 +105,23 @@ procedure Main is
      ((-One, -One, -One), (One, -One, -One), (One, One, -One), (-One, One, -One),
       (-One, -One,  One), (One, -One,  One), (One, One,  One), (-One, One,  One));
 
-   --  Six faces: an outward normal + the four corner vertices in boundary order.
+   --  Six faces: an outward normal, the four corner vertices in boundary order,
+   --  and the colour to draw that face's edges in (a distinct hue per face -- a
+   --  shared visible edge takes the colour of whichever front face draws last).
    type Corners is array (0 .. 3) of Integer;
    type Face is record
       N    : Vec3;
       Corn : Corners;
+      Col  : LCD.Color;
    end record;
 
    Faces : constant array (0 .. 5) of Face :=
-     (((0, 0, -One), (0, 1, 2, 3)),     --  -Z
-      ((0, 0,  One), (4, 5, 6, 7)),     --  +Z
-      ((0, -One, 0), (0, 1, 5, 4)),     --  -Y
-      ((0,  One, 0), (3, 2, 6, 7)),     --  +Y
-      ((-One, 0, 0), (0, 3, 7, 4)),     --  -X
-      (( One, 0, 0), (1, 2, 6, 5)));    --  +X
+     (((0, 0, -One), (0, 1, 2, 3), LCD.RGB (255,  40,  40)),   --  -Z  red
+      ((0, 0,  One), (4, 5, 6, 7), LCD.RGB ( 60, 255,  60)),   --  +Z  green
+      ((0, -One, 0), (0, 1, 5, 4), LCD.RGB ( 60, 120, 255)),   --  -Y  blue
+      ((0,  One, 0), (3, 2, 6, 7), LCD.RGB (255, 230,   0)),   --  +Y  yellow
+      ((-One, 0, 0), (0, 3, 7, 4), LCD.RGB (230,  60, 255)),   --  -X  magenta
+      (( One, 0, 0), (1, 2, 6, 5), LCD.RGB (  0, 230, 255)));  --  +X  cyan
 
    --  Projected screen coords of each vertex within the FB.
    SX, SY : array (0 .. 7) of Integer;
@@ -174,15 +180,20 @@ procedure Main is
       Say : constant Integer := Sin (Ay);
       R   : Vec3;
    begin
-      --  Clear the window, project the 8 vertices.
+      --  Clear the window, rotate + perspective-project the 8 vertices.
       FB := (others => LCD.Black);
       for I in Verts'Range loop
          R := Rotate (Verts (I), Cax, Sax, Cay, Say);
-         SX (I) := Centre + (R.X * Zoom) / One;
-         SY (I) := Centre + (R.Y * Zoom) / One;
+         declare
+            Den : constant Integer := Eye - R.Z;   --  > 0 (Eye > max |z|)
+         begin
+            SX (I) := Centre + (R.X * Focal) / Den;
+            SY (I) := Centre + (R.Y * Focal) / Den;
+         end;
       end loop;
 
-      --  Draw the edges of front-facing faces only (hidden-line removal).
+      --  Draw the edges of front-facing faces only (hidden-line removal), each
+      --  in its own colour.
       for F of Faces loop
          if Rotate (F.N, Cax, Sax, Cay, Say).Z > 0 then    --  faces the viewer
             for K in 0 .. 3 loop
@@ -190,7 +201,7 @@ procedure Main is
                   A : constant Integer := F.Corn (K);
                   B : constant Integer := F.Corn ((K + 1) mod 4);
                begin
-                  Line (SX (A), SY (A), SX (B), SY (B), Cube);
+                  Line (SX (A), SY (A), SX (B), SY (B), F.Col);
                end;
             end loop;
          end if;
