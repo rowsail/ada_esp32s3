@@ -14,10 +14,10 @@
 --
 --  Hidden-surface removal: for a convex cube, the visible faces are exactly the
 --  front-facing ones (back-face culling).  Each face's outward normal is
---  rotated; if it points toward the viewer (rotated normal z > 0) the face is
---  filled solid (scanline) in its colour and outlined in black.  A convex
---  cube's front faces tile the silhouette with no overlap, so they can be filled
---  in any order with no depth sort.
+--  rotated; if it points toward the EYE point (perspective test, Render_Cube)
+--  the face is filled solid (scanline) in its colour and outlined in black.  A
+--  convex cube's front faces tile the silhouette with no overlap, so they can be
+--  filled in any order with no depth sort.
 --
 --  Maths is fixed-point Q12 integers with an embedded sine table -- no libm /
 --  trig dependency, no floating point needed.
@@ -129,13 +129,20 @@ procedure Main is
    SX, SY : array (0 .. 7) of Integer;
 
    --  Rotation angles (table steps) and the moving-window state.
-   Ax : Integer := 0;
+   --  Motion is paced in 1/Slow sub-steps so rotation and bounce advance well
+   --  under one unit per frame -- the cube moves slowly and is easy to follow --
+   --  WITHOUT touching the frame rate (the loop delay below is unchanged).
+   --  Larger Slow = slower motion.
+   Slow : constant := 6;
+
+   Ax : Integer := 0;            --  angle accumulators, in 1/Slow table steps
    Ay : Integer := 0;
-   Px : Integer := 12;       --  FB window top-left
-   Py : Integer := 20;
-   Vx : Integer := 2;        --  window velocity
+   PxA : Integer := 12 * Slow;   --  window top-left accumulators, in 1/Slow px
+   PyA : Integer := 20 * Slow;
+   Vx : Integer := 2;            --  window velocity, in 1/Slow px per frame
    Vy : Integer := 3;
-   OPx, OPy : Integer;       --  previous window position (for strip clearing)
+   Px, Py   : Integer := 0;      --  integer window top-left this frame (PxA/Slow)
+   OPx, OPy : Integer;           --  previous integer window position
 
    --  Rotate a Q12 vector by Ay (about Y) then Ax (about X).
    function Rotate (V : Vec3; Cax, Sax, Cay, Say : Integer) return Vec3 is
@@ -228,10 +235,10 @@ procedure Main is
    end Line;
 
    procedure Render_Cube is
-      Cax : constant Integer := Cos (Ax);
-      Sax : constant Integer := Sin (Ax);
-      Cay : constant Integer := Cos (Ay);
-      Say : constant Integer := Sin (Ay);
+      Cax : constant Integer := Cos (Ax / Slow);   --  accumulator -> table step
+      Sax : constant Integer := Sin (Ax / Slow);
+      Cay : constant Integer := Cos (Ay / Slow);
+      Say : constant Integer := Sin (Ay / Slow);
       R   : Vec3;
    begin
       --  Clear the window, rotate + perspective-project the 8 vertices.
@@ -249,11 +256,19 @@ procedure Main is
       --  Which faces point at the viewer (hidden-surface removal: a convex
       --  cube's front faces tile the silhouette with no overlap, so they can be
       --  filled in any order with no depth sort).
+      --
+      --  PERSPECTIVE back-face test: a face is visible iff its outward normal
+      --  points toward the EYE point, dot(N, Eye - C) > 0.  For this cube the
+      --  rotated face centre C equals the rotated normal Nr (each face centre
+      --  lies one unit along its normal), so this reduces to Nr.z*Eye > |Nr|^2 =
+      --  One^2.  (Using the orthographic test Nr.z > 0 would wrongly draw faces
+      --  with 0 < Nr.z < One^2/Eye, which are back-facing under perspective.)
       declare
          Vis : array (Faces'Range) of Boolean;
       begin
          for I in Faces'Range loop
-            Vis (I) := Rotate (Faces (I).N, Cax, Sax, Cay, Say).Z > 0;
+            Vis (I) :=
+              Rotate (Faces (I).N, Cax, Sax, Cay, Say).Z * Eye > One * One;
          end loop;
 
          --  Fill pass: each visible face solid in its own colour.
@@ -308,29 +323,35 @@ begin
    LCD.Init (S);
    LCD.Fill (S, LCD.Black);
 
+   Px  := PxA / Slow;
+   Py  := PyA / Slow;
    OPx := Px;
    OPy := Py;
    T0  := Clock;
 
    loop
+      Px := PxA / Slow;          --  integer window position for this frame
+      Py := PyA / Slow;
       Render_Cube;
       Clear_Trail;
       LCD.Draw_Bitmap (S, Px, Py, FB_W, FB_W, FB);
 
-      --  Advance rotation.
-      Ax := (Ax + 2) mod 256;
-      Ay := (Ay + 3) mod 256;
+      --  Advance rotation (1/Slow table steps per frame).
+      Ax := (Ax + 2) mod (256 * Slow);
+      Ay := (Ay + 3) mod (256 * Slow);
 
-      --  Advance + bounce the window within [0 .. Screen - FB_W].
+      --  Advance + bounce the window within [0 .. Screen - FB_W] (sub-pixel).
       OPx := Px;
       OPy := Py;
-      Px := Px + Vx;
-      Py := Py + Vy;
-      if Px <= 0 then Px := 0; Vx := -Vx;
-      elsif Px >= Screen - FB_W then Px := Screen - FB_W; Vx := -Vx;
+      PxA := PxA + Vx;
+      PyA := PyA + Vy;
+      if PxA <= 0 then PxA := 0; Vx := -Vx;
+      elsif PxA >= (Screen - FB_W) * Slow then
+         PxA := (Screen - FB_W) * Slow; Vx := -Vx;
       end if;
-      if Py <= 0 then Py := 0; Vy := -Vy;
-      elsif Py >= Screen - FB_W then Py := Screen - FB_W; Vy := -Vy;
+      if PyA <= 0 then PyA := 0; Vy := -Vy;
+      elsif PyA >= (Screen - FB_W) * Slow then
+         PyA := (Screen - FB_W) * Slow; Vy := -Vy;
       end if;
 
       --  Report frame-rate roughly once a second.
