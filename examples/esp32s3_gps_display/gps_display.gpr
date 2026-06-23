@@ -1,0 +1,29 @@
+--  Relative paths (matching the Alire pin) so the project resolves WITHOUT
+--  GPR_PROJECT_PATH -- needed for the Ada Language Server; gprbuild/alr too.
+with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
+with "../../libs/esp32s3_hal/esp32s3_hal.gpr";   --  ESP32S3.GPS + ST7789 + UART + SPI + GPIO
+
+--  GPS-on-display demo: the task-driven NMEA GPS driver (UART0: GPS TXD->U0RXD
+--  =IO44, our U0TXD->GPS RXD=IO43, 9600 baud) feeding live lat/lon/UTC onto an
+--  ST7789 240x240 panel (SPI2: SCLK=IO12 MOSI=IO13 DC=IO16 CS=IO10; backlight
+--  IO6 driven by the example).
+project Gps_Display is
+   for Target use "xtensa-esp32-elf";
+   for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;
+   for Source_Dirs use ("src");
+   for Object_Dir use "obj";
+   for Main use ("main.adb");
+
+   package Builder is
+      for Executable ("main.adb") use "ada_app.o";
+   end Builder;
+   package Binder is
+      for Switches ("Ada") use ("-D8k", "-Q2", "-Mada_main");
+   end Binder;
+   package Compiler is
+      for Switches ("Ada") use ("-O2", "-g", "-gnata");
+   end Compiler;
+   package Linker is
+      for Default_Switches ("Ada") use ("-Wl,-r", "-nostdlib");
+   end Linker;
+end Gps_Display;

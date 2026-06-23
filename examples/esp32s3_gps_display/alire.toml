@@ -1,0 +1,17 @@
+name = "esp32s3_gps_display"
+description = "Bare-metal Ada demo: live GPS lat/lon/UTC on an ST7789 SPI display (ESP32-S3)"
+version = "0.1.0-dev"
+
+authors = ["D. Howells"]
+maintainers = ["D. Howells <dhowells@motium.us>"]
+licenses = "Apache-2.0 WITH LLVM-exception"
+tags = ["embedded", "esp32s3", "gps", "nmea", "spi", "display", "lcd", "example"]
+
+project-files = ["gps_display.gpr"]
+
+[[depends-on]]
+esp32s3_rts = "*"
+
+[[pins]]
+esp32s3_rts = { path = "../../crates/esp32s3_rts" }
+xtensa_dynconfig       = { path = "../../crates/xtensa-dynconfig" }
