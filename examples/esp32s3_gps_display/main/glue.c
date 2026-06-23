@@ -4,6 +4,10 @@
    serial too (the panel is write-only). */
 extern int esp_rom_printf(const char *fmt, ...);
 
+/* 240x240 RGB565 Ada-mascot splash; the symbol ada_logo_rgb565 is imported by
+   Ada (src/ada_logo.ads) and blitted at startup via ESP32S3.ST7789.Draw_Bitmap. */
+#include "ada_logo.h"
+
 void native_gd_banner(void)
 {
     esp_rom_printf("[dash] multi-sensor dashboard -> ST7789 240x240\n");

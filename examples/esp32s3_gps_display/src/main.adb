@@ -29,6 +29,7 @@ with ESP32S3.PCF85063A;
 with ESP32S3.QMI8658C;
 with ESP32S3.ST7789;
 with ESP32S3.ST7789.Text;
+with Ada_Logo;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -275,6 +276,13 @@ begin
    LCD.Setup (Disp, Sclk => 12, Mosi => 13, DC => 16, CS => 10);   --  240x240
    LCD.Acquire (S, Disp);
    LCD.Init (S);
+
+   --  Startup splash: the textless Ada mascot, full screen for ~2.5 s.
+   LCD.Draw_Bitmap (S, X => 0, Y => 0,
+                    W => Ada_Logo.Width, H => Ada_Logo.Height,
+                    Pixels => Ada_Logo.Pixels);
+   Console ("splash: Ada logo");
+   delay until Clock + Milliseconds (2500);
    LCD.Fill (S, LCD.Black);
 
    --  Bring up the GPS service (releases its reader task) and the I2C sensors.

@@ -35,6 +35,27 @@ Text is rendered with the `ESP32S3.ST7789.Text` 5×7 font layer.
 The panel is the real output — the console mirrors each row pushed to it so a
 live run can be checked over serial too (the display is write-only).
 
+At power-on it shows a **240×240 Ada-mascot splash** for ~2.5 s, then begins the
+cycle.
+
+## Startup splash
+
+The textless Ada mascot is rasterised to a 240×240 RGB565 image and blitted
+full-screen with `ESP32S3.ST7789.Draw_Bitmap` before the dashboard starts:
+
+- `main/ada_logo.svg` — the source art (a copy of `book/AdaNoText.svg`).
+- `main/gen_ada_logo.py` — rasterises the SVG (Inkscape) and emits the pixel
+  table (Pillow). Re-run only if the art or size changes.
+- `main/ada_logo.h` — the generated `const unsigned short ada_logo_rgb565[]`,
+  `#include`d by `glue.c`.
+- `src/ada_logo.ads` — imports that C symbol as a `Color_Array`, so the image is
+  blitted with the normal driver call (importing the C array keeps the
+  57 600-element table out of the Ada source and compiles instantly).
+
+```sh
+./main/gen_ada_logo.py     # ada_logo.svg -> ada_logo.h  (needs inkscape + Pillow)
+```
+
 ## How it works
 
 Each view does `Header` (clear the panel, draw a scale-3 title + scale-1
