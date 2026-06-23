@@ -37,6 +37,39 @@ void native_sd_init(int status, int kind)
     esp_rom_printf("[sd] init: %s   card: %s\n", status_name(status), kind_name(kind));
 }
 
+/* Decoded CID + capacity. */
+void native_sd_id(int mid, const char *oem, const char *pnm,
+                  int rmaj, int rmin, unsigned serial, int year, int month)
+{
+    esp_rom_printf("[sd] CID: mfr=0x%x  oem=%s  name=%s  rev %d.%d\n",
+                   mid & 0xff, oem, pnm, rmaj, rmin);
+    esp_rom_printf("[sd]      serial=0x%x  manufactured %d-%d\n",
+                   serial, year, month);
+}
+
+void native_sd_cap(unsigned mb)
+{
+    esp_rom_printf("[sd] capacity: %u MB  (~%u.%u GB)\n",
+                   mb, mb / 1024, (mb % 1024) * 10 / 1024);
+}
+
+void native_sd_caps(int max_mhz, unsigned ccc, int rbl,
+                    int spec_maj, int spec_min, int bus4, int hs)
+{
+    esp_rom_printf("[sd] caps: spec %d.%d  default-speed max %d MHz  "
+                   "High-Speed %s  4-bit %s\n",
+                   spec_maj, spec_min, max_mhz, hs ? "yes" : "no",
+                   bus4 ? "yes" : "no");
+    esp_rom_printf("[sd]        cmd-classes 0x%x  read-block %d B\n",
+                   ccc & 0xfff, rbl);
+}
+
+void native_sd_speed(int active_mhz, int hs_active)
+{
+    esp_rom_printf("[sd] running: %d MHz  (High Speed %s)\n",
+                   active_mhz, hs_active ? "ON" : "off");
+}
+
 /* block 0 first bytes + the 0x55AA boot signature at offset 510. */
 void native_sd_read(int status, int b0, int b1, int b2, int b3, int sig_ok)
 {

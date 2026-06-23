@@ -244,7 +244,7 @@ package body ESP32S3.SDMMC is
    --  PIO data transfer through the FIFO (no DMA).
    ---------------------------------------------------------------------------
 
-   procedure Prepare_Data is
+   procedure Prepare_Data (Bytes : Natural := 512) is
    begin
       SDHOST_Periph.CTRL.FIFO_RESET := True;
       declare
@@ -254,9 +254,60 @@ package body ESP32S3.SDMMC is
             exit when Past (D);
          end loop;
       end;
-      SDHOST_Periph.BLKSIZ.BLOCK_SIZE := 512;
-      SDHOST_Periph.BYTCNT := 512;
+      SDHOST_Periph.BLKSIZ.BLOCK_SIZE := BLKSIZ_BLOCK_SIZE_Field (Bytes);
+      SDHOST_Periph.BYTCNT := UInt32 (Bytes);
    end Prepare_Data;
+
+   --  Read N bytes (N <= 64, multiple of 4) of a SMALL data block (SCR, CMD6
+   --  switch status) into Buf, big-endian (Buf (0) = first byte on the wire).
+   --  The data command must already have been issued with Dir => Read_Data.
+   subtype Small_Index is Natural range 0 .. 63;
+   type Small_Buf is array (Small_Index) of Unsigned_8;
+
+   function Read_Small (N : Natural; Buf : out Small_Buf) return Status is
+      W : UInt32;
+   begin
+      Buf := (others => 0);
+      for Word in 0 .. N / 4 - 1 loop
+         declare
+            Ready : Boolean := False;
+            D     : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
+         begin
+            loop
+               if (RINT and Data_Err) /= 0 then
+                  RINT := Data_Err;
+                  return Read_Error;
+               end if;
+               if not SDHOST_Periph.STATUS.FIFO_EMPTY then
+                  Ready := True;
+                  exit;
+               end if;
+               exit when Past (D);
+            end loop;
+            if not Ready then
+               return Read_Error;
+            end if;
+         end;
+         W := FIFO;
+         Buf (Word * 4)     := Unsigned_8 (W and 16#FF#);
+         Buf (Word * 4 + 1) := Unsigned_8 (Shift_Right (W, 8)  and 16#FF#);
+         Buf (Word * 4 + 2) := Unsigned_8 (Shift_Right (W, 16) and 16#FF#);
+         Buf (Word * 4 + 3) := Unsigned_8 (Shift_Right (W, 24) and 16#FF#);
+      end loop;
+      declare
+         D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
+      begin
+         while (RINT and (Int_Data_Over or Data_Err)) = 0 loop
+            exit when Past (D);
+         end loop;
+      end;
+      if (RINT and Data_Err) /= 0 then
+         RINT := Data_Err or Int_Data_Over;
+         return Read_Error;
+      end if;
+      RINT := Int_Data_Over;
+      return OK;
+   end Read_Small;
 
    --  Pull 512 bytes (128 words, little-endian) out of the read FIFO.
    function Read_FIFO (Data : out Block) return Status is
@@ -364,6 +415,29 @@ package body ESP32S3.SDMMC is
       then UInt32 (LBA)
       else UInt32 (LBA) * 512);
 
+   --  Decode the 8-byte SCR (Buf big-endian) into spec version + bus widths.
+   procedure Decode_SCR (C : in out Card; Buf : Small_Buf) is
+      Sd_Spec  : constant Natural := Natural (Buf (0) and 16#0F#);   --  [59:56]
+      Sd_Spec3 : constant Boolean := (Buf (2) and 16#80#) /= 0;      --  [47]
+      Sd_Spec4 : constant Boolean := (Buf (2) and 16#04#) /= 0;      --  [42]
+      Sd_Specx : constant Natural :=                                 --  [41:38]
+        Natural (Shift_Left (Buf (2) and 16#03#, 2) or Shift_Right (Buf (3), 6));
+   begin
+      C.Bus_4bit := (Buf (1) and 16#04#) /= 0;     --  SD_BUS_WIDTHS bit 2
+      C.Spec_Minor := 0;
+      if Sd_Spec = 0 then
+         C.Spec_Major := 1;
+      elsif Sd_Spec = 1 then
+         C.Spec_Major := 1; C.Spec_Minor := 1;
+      elsif Sd_Spec = 2 then
+         if not Sd_Spec3 then       C.Spec_Major := 2;
+         elsif Sd_Specx >= 1 then   C.Spec_Major := 4 + Sd_Specx;  --  5/6/7..
+         elsif Sd_Spec4 then        C.Spec_Major := 4;
+         else                       C.Spec_Major := 3;
+         end if;
+      end if;
+   end Decode_SCR;
+
    procedure Do_Initialize (C : in out Card; Result : out Status) is
       N         : constant Natural := Card_No (C.On);
       St        : Status;
@@ -406,8 +480,10 @@ package body ESP32S3.SDMMC is
       C.Block_Addressed := (R0 and 16#4000_0000#) /= 0;          --  CCS bit
       C.Kind := (if C.Block_Addressed then SDHC else SDSC);
 
-      --  CMD2: read CID (long response, value discarded).
+      --  CMD2: read CID (long response: R3w:R2w:R1w:R0 = CID[127:0]).
       St := Issue (2, 0, Long_Resp, Slot_No => N);
+      C.CID := (Unsigned_32 (R0), Unsigned_32 (R1w),
+                Unsigned_32 (R2w), Unsigned_32 (R3w));
 
       --  CMD3: publish a relative card address (R6: RCA in the high half-word).
       St := Issue (3, 0, Short_Resp, Slot_No => N);
@@ -416,6 +492,11 @@ package body ESP32S3.SDMMC is
          return;
       end if;
       C.RCA := Unsigned_16 (Shift_Right (R0, 16) and 16#FFFF#);
+
+      --  CMD9: read CSD (addressed by RCA, valid in standby -> before CMD7).
+      St := Issue (9, Shift_Left (UInt32 (C.RCA), 16), Long_Resp, Slot_No => N);
+      C.CSD := (Unsigned_32 (R0), Unsigned_32 (R1w),
+                Unsigned_32 (R2w), Unsigned_32 (R3w));
 
       --  CMD7: select the card (R1b -> may go busy).
       St := Issue (7, Shift_Left (UInt32 (C.RCA), 16), Short_Resp,
@@ -434,7 +515,48 @@ package body ESP32S3.SDMMC is
       --  CMD16: 512-byte blocks (required for SDSC, harmless for SDHC).
       St := Issue (16, 512, Short_Resp, Slot_No => N);
 
-      Set_Card_Clock (N, C.Data_Hz);            --  switch to the fast clock
+      --  SCR (ACMD51): SD spec version + supported bus widths (8-byte data read).
+      declare
+         Buf : Small_Buf;
+      begin
+         St := Issue (55, Shift_Left (UInt32 (C.RCA), 16), Short_Resp,
+                      Slot_No => N);
+         Prepare_Data (8);
+         St := Issue (51, 0, Short_Resp, Dir => Read_Data, Slot_No => N);
+         if St = OK and then Read_Small (8, Buf) = OK then
+            Decode_SCR (C, Buf);
+         end if;
+      end;
+
+      --  CMD6 SWITCH_FUNC: query High-Speed support, optionally switch to it
+      --  (64-byte status data read).  Arg bit 31 = 0 check / 1 set; group 1
+      --  (access mode) function 1 = High Speed; other groups 0xF = no change.
+      declare
+         Buf : Small_Buf;
+      begin
+         Prepare_Data (64);
+         St := Issue (6, 16#00FF_FFF1#, Short_Resp, Dir => Read_Data, Slot_No => N);
+         if St = OK and then Read_Small (64, Buf) = OK then
+            C.HS_Supported := (Buf (13) and 16#02#) /= 0;  --  group 1 function 1
+         end if;
+         if C.Want_HS and then C.HS_Supported then
+            Prepare_Data (64);
+            St := Issue (6, 16#80FF_FFF1#, Short_Resp, Dir => Read_Data,
+                         Slot_No => N);
+            if St = OK and then Read_Small (64, Buf) = OK then
+               C.HS_Active := (Buf (16) and 16#0F#) = 1;   --  selected function
+            end if;
+         end if;
+      end;
+
+      --  Raise the clock: High Speed allows up to 50 MHz, else the 25 MHz limit.
+      declare
+         Cap : constant Positive :=
+           (if C.HS_Active then 50_000_000 else 25_000_000);
+      begin
+         C.Active_Hz := Positive'Min (C.Data_Hz, Cap);
+      end;
+      Set_Card_Clock (N, C.Active_Hz);
       Result := OK;
    end Do_Initialize;
 
@@ -510,7 +632,8 @@ package body ESP32S3.SDMMC is
                     D1, D2, D3    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
                     Width         : Bus_Width := Width_1;
                     Init_Clock_Hz : Positive := 400_000;
-                    Data_Clock_Hz : Positive := 20_000_000)
+                    Data_Clock_Hz : Positive := 20_000_000;
+                    High_Speed    : Boolean  := False)
    is
       use ESP32S3_Registers.SYSTEM;
       use type ESP32S3.GPIO.Pad_Number;
@@ -524,6 +647,15 @@ package body ESP32S3.SDMMC is
       C.Kind    := Unknown;
       C.RCA     := 0;
       C.Block_Addressed := False;
+      C.CID     := (others => 0);
+      C.CSD     := (others => 0);
+      C.Want_HS      := High_Speed;
+      C.HS_Supported := False;
+      C.HS_Active    := False;
+      C.Active_Hz    := 0;
+      C.Spec_Major   := 0;
+      C.Spec_Minor   := 0;
+      C.Bus_4bit     := False;
 
       --  Peripheral clock + release reset.
       SYSTEM_Periph.PERIP_CLK_EN1.SDIO_HOST_CLK_EN := True;
@@ -578,6 +710,97 @@ package body ESP32S3.SDMMC is
    end Initialize;
 
    function Kind (C : Card) return Card_Kind is (C.Kind);
+
+   --  Extract Width bits (<= 32) starting at bit Lo from a 128-bit register
+   --  (word 0 = bits [31:0]).  Fields may straddle a 32-bit word boundary.
+   function Field (R : Reg128; Lo, Width : Natural) return Unsigned_32 is
+      W    : constant Natural := Lo / 32;
+      Off  : constant Natural := Lo mod 32;
+      Low  : constant Unsigned_64 := Unsigned_64 (R (W));
+      High : constant Unsigned_64 :=
+        (if W < 3 then Unsigned_64 (R (W + 1)) else 0);
+      V    : constant Unsigned_64 :=
+        Shift_Right (Low or Shift_Left (High, 32), Off);
+      Mask : constant Unsigned_64 :=
+        (if Width >= 32 then 16#FFFF_FFFF#
+         else Shift_Left (Unsigned_64 (1), Width) - 1);
+   begin
+      return Unsigned_32 (V and Mask);
+   end Field;
+
+   --------------
+   -- Identity --
+   --------------
+
+   function Identity (C : Card) return Card_Id is
+      function F (Lo, W : Natural) return Unsigned_32 is (Field (C.CID, Lo, W));
+      function Ch (Lo : Natural) return Character is
+        (Character'Val (Natural (F (Lo, 8))));
+      Id : Card_Id;
+   begin
+      Id.Manufacturer   := Unsigned_8 (F (120, 8));        --  MID
+      Id.OEM            := (Ch (112), Ch (104));           --  OID (2 ASCII)
+      Id.Product        := (Ch (96), Ch (88), Ch (80), Ch (72), Ch (64));  --  PNM
+      Id.Revision_Major := Natural (F (60, 4));            --  PRV high nibble
+      Id.Revision_Minor := Natural (F (56, 4));            --  PRV low nibble
+      Id.Serial         := F (24, 32);                     --  PSN
+      Id.Mfg_Month      := Natural (F (8, 4));             --  MDT month
+      Id.Mfg_Year       := 2000 + Natural (F (12, 8));     --  MDT year
+      return Id;
+   end Identity;
+
+   ---------------------
+   -- Capacity_Blocks --
+   ---------------------
+
+   function Capacity_Blocks (C : Card) return Unsigned_64 is
+      Structure : constant Unsigned_32 := Field (C.CSD, 126, 2);
+   begin
+      if Structure = 1 then
+         --  CSD v2 (SDHC/SDXC): capacity = (C_SIZE + 1) * 512 KB = * 1024 blocks.
+         return (Unsigned_64 (Field (C.CSD, 48, 22)) + 1) * 1024;
+      else
+         --  CSD v1 (SDSC): bytes = (C_SIZE+1) * 2**(C_SIZE_MULT+2) * 2**READ_BL_LEN.
+         declare
+            C_Size : constant Unsigned_64 := Unsigned_64 (Field (C.CSD, 62, 12));
+            C_Mult : constant Natural     := Natural (Field (C.CSD, 47, 3));
+            Rd_Len : constant Natural     := Natural (Field (C.CSD, 80, 4));
+            Bytes  : constant Unsigned_64 :=
+              (C_Size + 1) * Shift_Left (Unsigned_64 (1), C_Mult + 2)
+              * Shift_Left (Unsigned_64 (1), Rd_Len);
+         begin
+            return Bytes / 512;
+         end;
+      end if;
+   end Capacity_Blocks;
+
+   ------------------
+   -- Capabilities --
+   ------------------
+
+   function Capabilities (C : Card) return Card_Caps is
+      --  TRAN_SPEED [103:96]: bits [2:0] = rate unit, [6:3] = time value index.
+      TS   : constant Unsigned_32 := Field (C.CSD, 96, 8);
+      Unit : constant array (0 .. 3) of Natural :=
+        (100, 1_000, 10_000, 100_000);                       --  kbit/s
+      Mult : constant array (0 .. 15) of Natural :=          --  x10 (avoid frac)
+        (0, 10, 12, 13, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80);
+      U    : constant Natural := Natural (TS and 7);
+      M    : constant Natural := Natural (Shift_Right (TS, 3) and 16#F#);
+      Caps : Card_Caps;
+   begin
+      Caps.Max_Speed_MHz   := Unit (U) * Mult (M) / 10 / 1000;
+      Caps.Command_Classes := Unsigned_16 (Field (C.CSD, 84, 12));   --  CCC
+      Caps.Read_Block_Len  := 2 ** Natural (Field (C.CSD, 80, 4));   --  READ_BL_LEN
+      Caps.Spec_Major      := C.Spec_Major;                          --  SCR
+      Caps.Spec_Minor      := C.Spec_Minor;
+      Caps.Supports_4bit   := C.Bus_4bit;
+      Caps.High_Speed      := C.HS_Supported;                        --  CMD6
+      return Caps;
+   end Capabilities;
+
+   function High_Speed_Active (C : Card) return Boolean is (C.HS_Active);
+   function Active_Clock_Hz   (C : Card) return Natural is (C.Active_Hz);
 
    procedure Read_Block (C : in out Card; LBA : Block_Address;
                          Data : out Block; Result : out Status) is

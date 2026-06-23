@@ -10,11 +10,46 @@ in SD mode), and `ESP32S3.SDMMC` talks to the card on CLK/CMD/D0.
 [sd]   SDMMC: CLK=IO12 CMD=IO11 D0=IO13   CH422G: I2C0 SDA=8 SCL=9
 [sd] CH422G IO bank -> 0x10 (DAT3 high) : OK
 [sd] init: OK   card: SDHC/SDXC
+[sd] CID: mfr=0x3  oem=SD  name=ASTC?  rev 3.4
+[sd]      serial=0x458a  manufactured 2022-8
+[sd] capacity: 29818 MB  (~29.1 GB)
+[sd] caps: spec 6.0  default-speed max 25 MHz  High-Speed yes  4-bit yes
+[sd]        cmd-classes 0x5b5  read-block 512 B
+[sd] running: 50 MHz  (High Speed ON)
 [sd] read block 0: OK   first bytes = 00 00 00 00   boot sig 0x55AA: present
 ```
 
-**Read-only:** it identifies the card and reads block 0 (checking the 0x55AA boot
-signature). It never writes — no card content can be lost.
+**Read-only:** it identifies the card, decodes its registers, and reads block 0
+(checking the 0x55AA boot signature). It never writes — no card content can be
+lost.
+
+## Decoding the card's identity
+
+`Initialize` reads the card's **CID** (CMD2) and **CSD** (CMD9) registers; the
+driver decodes them:
+
+- `ESP32S3.SDMMC.Identity (C)` → a `Card_Id` record: manufacturer ID, OEM string,
+  product name, revision, **serial number**, and **manufacture date** (from CID).
+- `ESP32S3.SDMMC.Capacity_Blocks (C)` → usable size in 512-byte blocks (from CSD;
+  MB = blocks / 2048). Handles both CSD v2 (SDHC/SDXC) and v1 (SDSC) layouts.
+- `ESP32S3.SDMMC.Capabilities (C)` → CSD speed/command-classes/block-size **plus**
+  SCR spec version and 4-bit support and CMD6 High-Speed support.
+
+### Running at the card's optimum speed
+
+`Setup` takes `High_Speed => True`: `Initialize` then queries the card's **SCR**
+(ACMD51 — spec version, bus widths) and **CMD6 SWITCH_FUNC** (High-Speed
+support), and if High Speed is available it switches the card into it and runs at
+`min (Data_Clock_Hz, 50 MHz)` — twice the 25 MHz default-speed limit. Without it,
+the bus is capped at 25 MHz. `Active_Clock_Hz (C)` and `High_Speed_Active (C)`
+report what was negotiated. (4-bit mode — another 4× — needs DAT1–3 wired, which
+this board doesn't have, so it stays 1-bit here.)
+
+In the sample run above, `mfr=0x03` + `oem="SD"` are SanDisk's identifiers and
+29.1 GB is the usable size of a 32 GB card (marketing GB vs GiB) — the decode is
+self-consistent. (An odd product name / tiny serial on an otherwise
+SanDisk-branded card can be a sign of a counterfeit; here it's reported
+faithfully from the card's CID.)
 
 ## Wiring
 
