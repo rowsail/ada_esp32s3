@@ -1,0 +1,13 @@
+--  Native (host) build of the HAL reference generator.  Run from the repo:
+--     gprbuild -P libs/esp32s3_hal/docs/gen_reference.gpr
+--     libs/esp32s3_hal/docs/gen_reference libs/esp32s3_hal
+project Gen_Reference is
+   for Source_Dirs use (".");
+   for Object_Dir use "obj";
+   for Exec_Dir use ".";
+   for Main use ("gen_reference.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use ("-g", "-O1", "-gnat2022", "-gnatwa");
+   end Compiler;
+end Gen_Reference;
