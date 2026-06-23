@@ -1,0 +1,4 @@
+# Build artifacts of the reference generator (committed: the .adb/.gpr + the PDF).
+/obj/
+/gen_reference
+/HAL_Reference.md

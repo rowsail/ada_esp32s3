@@ -30,6 +30,7 @@
 #    ./x install-ide                   install the VS Code extension (committed .vsix; no Node)
 #    ./x build-ide                     (maintainer) rebuild the committed .vsix (needs Node)
 #    ./x install-vim                   symlink the Vim/Neovim plugin (auto-updates on git pull)
+#    ./x docs                          build the HAL API reference PDF (libs/esp32s3_hal/docs/)
 #
 #  <example> accepts the short name (gpio0_blink) or the full dir
 #  (esp32s3_gpio0_blink).  PORT defaults to $ESPPORT or /dev/ttyACM0.
@@ -527,6 +528,16 @@ cmd_install_vim () {   # symlink the Vim plugin into Vim's + Neovim's native pac
     echo "x: restart Vim to load it.  'git pull' updates the plugin in place (no reinstall)."
 }
 
+# -- docs ---------------------------------------------------------------------
+cmd_docs () {   # build + run the HAL reference generator -> docs/HAL_Reference.pdf
+    local hal="$ROOT/libs/esp32s3_hal"
+    local docs="$hal/docs"
+    . "$ROOT/tools/sdk-env.sh"
+    esp32s3_toolchain_on_path
+    gprbuild -q -P "$docs/gen_reference.gpr" || die "gen_reference build failed"
+    "$docs/gen_reference" "$hal"
+}
+
 # -- dispatch -----------------------------------------------------------------
 # Skipped when this file is SOURCED (not executed) -- the standalone-project
 # launcher `tools/bin/esp32-ada` sources x to reuse its helpers (monitor_tool,
@@ -552,6 +563,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     install-ide)        cmd_install_ide "$@" ;;
     build-ide)          cmd_build_ide "$@" ;;
     install-vim)        cmd_install_vim "$@" ;;
+    docs)               cmd_docs "$@" ;;
     ""|-h|--help|help)
         sed -n '3,36p' "$0" | sed 's/^#  \{0,1\}//; s/^#//' ;;
     *) die "unknown command '$cmd' (try './x help')" ;;
