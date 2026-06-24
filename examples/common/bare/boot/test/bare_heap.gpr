@@ -1,0 +1,14 @@
+--  Native (host) build of the Bare_Heap_Core allocator test.  Compiles the SAME
+--  bare_heap_core.adb the firmware links (from the parent boot/ dir) with the
+--  host GNAT, so a bug found here is a real allocator bug.  Run via run.sh.
+project Bare_Heap is
+   for Source_Dirs use (".", "..");
+   for Source_Files use ("bare_heap_test.adb", "bare_heap_core.ads", "bare_heap_core.adb");
+   for Main use ("bare_heap_test.adb");
+   for Object_Dir use "obj";
+   for Exec_Dir use ".";
+
+   package Compiler is
+      for Switches ("Ada") use ("-g", "-O2", "-gnatwa", "-gnata");
+   end Compiler;
+end Bare_Heap;
