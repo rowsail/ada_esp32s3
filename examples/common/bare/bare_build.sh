@@ -5,7 +5,8 @@
 # from-source Xtensa support (vendor/), link with the vendored linker scripts,
 # package with our own Ada elf2image (../elf2image).
 #
-#   $1 = example directory (must contain main/glue.c + main/build_ada.sh)
+#   $1 = example directory (must contain main/build_ada.sh; main/glue.c optional
+#        -- examples that format output via ESP32S3.Log need no example C glue)
 #   $2 = the example's Ada main symbol, e.g. _ada_example (GNAT "_ada_<mainunit>")
 # Produces $1/app.bin; flash it with bare_flash.sh.
 set -e
@@ -174,7 +175,12 @@ fi
 
 $GCC $CFLAGS -DADA_MAIN="$ADA_MAIN" -DENV_STACK_SIZE="$ENV_STACK_SIZE" $ENV_STACK_GLUE_DEF $SO_DEF -c "$BARE/bare_glue.c" -o "$OBJ/bare_glue.o"
 $GCC $CFLAGS -c "$BARE/bare_log.c" -o "$OBJ/bare_log.o"   # ESP32S3.Log shim (hal_log_*)
-$GCC $CFLAGS ${EXTRA_CFLAGS:-} -c "$EX/main/glue.c" -o "$OBJ/glue.o"   # $EXTRA_CFLAGS: example build options
+# Per-example C glue is optional (examples that log via ESP32S3.Log need none).
+GLUE_OBJ=""
+if [ -f "$EX/main/glue.c" ]; then
+    $GCC $CFLAGS ${EXTRA_CFLAGS:-} -c "$EX/main/glue.c" -o "$OBJ/glue.o"   # $EXTRA_CFLAGS: example build options
+    GLUE_OBJ="$OBJ/glue.o"
+fi
 # Boot-support shims (the former stubs.c) as ZFP Ada over the svd-derived
 # ESP32S3_Registers: compile-only to a relocatable object (no binder/runtime,
 # runs before adainit), then linked like any other .o.
@@ -239,7 +245,7 @@ $GCC -nostdlib -no-pie \
     -Wl,--defsym=__heap_start=_heap_low_start \
     -Wl,--defsym=__heap_end=_bare_heap_top \
     -o "$EX/app.elf" \
-    "$EX/main/app_main.o" "$OBJ/bare_glue.o" "$OBJ/bare_log.o" "$OBJ/glue.o" "$OBJ/bare_boot.o" "$OBJ/app_desc.o" \
+    "$EX/main/app_main.o" "$OBJ/bare_glue.o" "$OBJ/bare_log.o" $GLUE_OBJ "$OBJ/bare_boot.o" "$OBJ/app_desc.o" \
     "$OBJ/start.o" "$OBJ/highint5.o" $SO_OBJ "${LIB_OBJS[@]}" $EXTRA_OBJS \
     "$OBJ/xtensa_context.o" "$OBJ/xtensa_vectors.o" \
     "$OBJ/xtensa_intr_asm.o" "$OBJ/xtensa_intr.o" \
