@@ -1,4 +1,7 @@
-# Build artifacts of the reference generator (committed: the .adb/.gpr + the PDF).
+# Build artifacts of the reference generator (committed: the .adb/.gpr only).
+# The generated reference (.md and .pdf) is a build output -- rebuild with
+# `./x docs` -- so it is not version-controlled.
 /obj/
 /gen_reference
 /HAL_Reference.md
+/HAL_Reference.pdf

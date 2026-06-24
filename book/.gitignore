@@ -6,5 +6,7 @@
 *.ind
 *.ilg
 *.pdf
-!main.pdf
+# main.pdf is a build output (rebuild with `make`) -- not version-controlled.
+# Ada.pdf is the committed cover asset (from Ada.svg), so the book builds
+# without inkscape; keep it tracked.
 !Ada.pdf
