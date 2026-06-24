@@ -144,7 +144,7 @@ The user's suggestion to single-step is the right instinct; the cheaper equivale
 let the existing blob bring PSRAM up, then **read the final MSPI register state** — that
 *is* the tuning answer, no stepping required. Read-only, no code change.
 
-On a board with PSRAM mapped (the `esp32s3_psram` example on a DevKitC), after boot, via
+On a board with PSRAM mapped (the `esp32s3_psram` example on a Meshnology LoRa AIOT board), after boot, via
 the OpenOCD telnet port 4444 (`halt` then `mdw`):
 
 | capture | register(s) | why |
@@ -168,7 +168,7 @@ post-boot snapshot is enough for Option C.
 
 ---
 
-## Hardware test results (2026-06-24, DevKitC on /dev/ttyACM0)
+## Hardware test results (2026-06-24, Meshnology LoRa AIOT board on /dev/ttyACM0)
 
 Flashed the `esp32s3_psram` example (blob bring-up) and captured the live MSPI state via
 OpenOCD (`tools/openocd.sh`, telnet/`-c` `mdw`), plus single-stepped the bootloader sweep
@@ -212,7 +212,7 @@ three constants `din_mode=1, din_num=0, extra_dummy=2` — not by any per-board 
 Implemented a from-scratch sweep in `psram_boot.c` (replacing FIX 2): write a reference
 to a scratch PSRAM page, then for each of the 8 sampling modes set `SMEM_DIN_MODE`
 (0x600030C0), re-read through the cache, and compare; pick the centre of the widest
-passing run. Tested live on the DevKitC. Outcome, in order of what we learned:
+passing run. Tested live on the Meshnology LoRa AIOT board. Outcome, in order of what we learned:
 
 1. **The measurement works.** The sweep correctly finds the window: **modes 0 and 1 read
    back perfectly, mode 1 chosen as centre** — independently confirming FIX 2's mode 1 from
@@ -298,7 +298,7 @@ Values from the live golden state + the blobs' own divider math:
 single core-clk-sel `0x600030EC` (0=80 MHz, 2=160 MHz). The app build no longer links any
 blob (`glue.c PSRAM_ENABLE=0`; it maps PSRAM via ROM `Cache_Dbus_MMU_Set` only).
 
-**Validated (DevKitC):** `octal PSRAM up rc=0 8 MB`; final regs byte-identical to golden
+**Validated (Meshnology LoRa AIOT board):** `octal PSRAM up rc=0 8 MB`; final regs byte-identical to golden
 (din `0x01249249`, core `2`, clk `0x00010001`); `big.adb checksum=0x07f80000` deterministic
 across 3 resets.
 
@@ -362,5 +362,26 @@ golden register state; clocks/din are `mspi_timing_src.c`:
 - size hardcoded 8 MB (the density read is elided; the connect probe proves presence).
 
 Deleted `vendor_psram/` (all 5 blobs gone) and the now-dead leaf stubs in `psram_glue.c`.
-**Validated (DevKitC), 4/4 resets:** `octal PSRAM up rc=0 8 MB`, din tuned mode 0,
+**Validated (Meshnology LoRa AIOT board), 4/4 resets:** `octal PSRAM up rc=0 8 MB`, din tuned mode 0,
 `checksum=0x07f80000`. The entire octal-PSRAM bring-up is now readable source + ROM calls.
+
+## Cross-validated on a second board — genuine ESP32-S3-DevKitC (2026-06-24)
+
+All of the above was developed on a **Meshnology LoRa AIOT board**. The finished
+from-source bring-up was then run unchanged on a genuine **Espressif ESP32-S3-DevKitC**
+(WROOM module). The bootloader now reads the device mode registers and reports what it
+finds; on the DevKitC:
+
+```
+PSRAM: AP Memory octal DDR @80MHz, 64 Mbit (8 MB), dev gen 3, Vcc 3.0V
+  latency: read 10-cyc (fixed), write 5-cyc;  MR0=28 MR1=0d MR2=93 MR3=60 MR4=40 MR8=05
+octal PSRAM up: rc=0  8 MB
+PSRAM din tuned @80MHz: passmask=0xc3 -> mode 0
+checksum=0x07f80000      (deterministic across resets)
+```
+
+Same AP Memory 8 MB octal chip, and the per-board din tune **independently measured the
+same window** (`0xc3` -> mode 0) — confirming it tracks a real, stable chip+controller
+property, not a per-board fluke. The size is now decoded from the density mode-register
+(no longer hardcoded), so the bring-up self-describes the part it finds (vendor, density,
+voltage, read/write latency) and would adapt to a different-size octal PSRAM.

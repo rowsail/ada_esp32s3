@@ -27,6 +27,57 @@ extern void mspi_timing_psram_tuning(void);
 #define OPI_DTR   7          /* ESP_ROM_SPIFLASH_OPI_DTR_MODE */
 #define CS1       2u         /* BIT(1) -- the PSRAM chip select */
 
+static uint32_t s_psram_size;   /* decoded from the density mode-register */
+
+/* Read an octal-PSRAM mode register (or a pair: a 16-bit read returns MRn in the
+ * low byte and MR(n+1) in the high byte). */
+static unsigned read_mr(unsigned addr, int bits)
+{
+    unsigned char b[2] = { 0, 0 };
+    esp_rom_opiflash_exec_cmd(1, OPI_DTR, 0x4040u, 16, addr, 32, 8, 0, 0, b, bits, CS1, 0);
+    return (unsigned) b[0] | ((unsigned) b[1] << 8);
+}
+
+/* Read the device's mode registers, decode + print what the chip reports (vendor,
+ * density/size, voltage, latency), and record the physical size.  Runs at the
+ * slow clock, right after the connectivity probe. */
+static void psram_report(void)
+{
+    unsigned r01 = read_mr(0x0, 16);   /* MR0 (low) + MR1 (high) */
+    unsigned r23 = read_mr(0x2, 16);   /* MR2 (low) + MR3 (high) */
+    unsigned mr4 = read_mr(0x4, 8);
+    unsigned mr8 = read_mr(0x8, 8);
+    unsigned mr0 = r01 & 0xFF, mr1 = (r01 >> 8) & 0xFF;
+    unsigned mr2 = r23 & 0xFF, mr3 = (r23 >> 8) & 0xFF;
+
+    unsigned vendor  = mr1 & 0x1F;
+    unsigned density = mr2 & 0x07;
+    unsigned devid   = (mr2 >> 3) & 0x03;
+    unsigned rlat    = (mr0 >> 2) & 0x07;        /* read-latency code */
+    unsigned lt      = (mr0 >> 5) & 0x01;        /* 1=fixed, 0=variable */
+    unsigned wlat    = (mr4 >> 5) & 0x07;        /* write-latency code */
+    unsigned vcc     = (mr3 >> 6) & 0x01;        /* 1=3.0V, 0=1.8V */
+
+    const char *vname = (vendor == 0x0D) ? "AP Memory"
+                      : (vendor == 0x1A) ? "UnilC" : "unknown";
+    unsigned mbit;
+    switch (density) {
+        case 0x1: mbit = 32;  s_psram_size = 4u  << 20; break;
+        case 0x3: mbit = 64;  s_psram_size = 8u  << 20; break;
+        case 0x5: mbit = 128; s_psram_size = 16u << 20; break;
+        case 0x7: mbit = 256; s_psram_size = 32u << 20; break;
+        case 0x6: mbit = 512; s_psram_size = 64u << 20; break;
+        default:  mbit = 0;   s_psram_size = 0;         break;
+    }
+    esp_rom_printf("[ada-free-boot] PSRAM: %s octal DDR @80MHz, %u Mbit (%u MB), "
+                   "dev gen %u, Vcc %s\n",
+                   vname, mbit, s_psram_size >> 20, devid + 1, vcc ? "3.0V" : "1.8V");
+    esp_rom_printf("[ada-free-boot]   latency: read %u-cyc (%s), write %u-cyc;  "
+                   "MR0=%02x MR1=%02x MR2=%02x MR3=%02x MR4=%02x MR8=%02x\n",
+                   rlat * 2 + 6, lt ? "fixed" : "variable", wlat + 3,
+                   mr0, mr1, mr2, mr3, mr4, mr8);
+}
+
 int psram_impl_enable_src(void);
 int psram_impl_enable_src(void)
 {
@@ -63,6 +114,8 @@ int psram_impl_enable_src(void)
         return -1;
     }
 
+    psram_report();    /* read + print vendor / density / latency (still slow clock) */
+
     mspi_timing_psram_tuning();            /* no-op */
     mspi_timing_enter_high_speed_mode(1);  /* 80 MHz */
     /* spi_flash_set_rom/vendor_required_regs: no-op stubs, skipped. */
@@ -77,12 +130,11 @@ int psram_impl_enable_src(void)
     return 0;
 }
 
-/* esp_psram_impl_get_physical_size: the chip is a fixed 8 MB octal part on this
- * board (the density read is elided -- the connect probe already proves presence). */
+/* Physical size as decoded from the density mode-register by psram_report(). */
 int psram_impl_get_physical_size_src(uint32_t *out);
 int psram_impl_get_physical_size_src(uint32_t *out)
 {
     if (!out) return -1;
-    *out = 8u * 1024u * 1024u;
-    return 0;
+    *out = s_psram_size;
+    return s_psram_size ? 0 : -1;
 }
