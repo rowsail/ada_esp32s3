@@ -318,6 +318,28 @@ if [ "$PROFILE" = "embedded" ] || [ "$PROFILE" = "full" ]; then
     cp -a "$HERE/calendar_overlay/gnarl/." "$RTS/gnarl/"
     chmod -R u+w "$RTS/gnat" "$RTS/gnarl"
     echo "[gen_runtime] Ada.Calendar children + J.1 rename: applied ($PROFILE)"
+
+    # Extend Ada.Calendar.Year_Number to the Ada 2005+ range 1901..2399 (the stock
+    # bare a-calend is Ada 95, 1901..2099).  It stores Time as a fixed-point Modified
+    # Julian Day; at 1 ns a 64-bit value spans only ~292 yr from the 1858 MJD epoch
+    # (reaches ~2150), so Year_Number was capped at 2099.  Coarsen the fixed-point 5x
+    # (1 ns -> 5 ns -- still far finer than the 4.17 ns clock resolves, so no real
+    # precision lost) and widen the type ranges to MJD/JD for 2399-12-31 (197_640 /
+    # 2_597_640.5).  The Time range then reaches 2399 in signed 64 bits, with the 1858
+    # epoch and the astronomical Split/Time_Of algorithm UNCHANGED.  (ACATS C96004;
+    # compile-verified Time'Last = 197_641.)
+    CAL_ADS="$RTS/gnat/a-calend.ads"
+    if grep -q 'range 1901 .. 2099' "$CAL_ADS" 2>/dev/null; then
+        sed -i 's/range 1901 \.\. 2099/range 1901 .. 2399/'         "$CAL_ADS"
+        # 5x coarsen written as /17_280.0 (= 86_400/5): same value, same line length
+        # as the original /86_400.0 (so it stays within the runtime's -gnatyM limit).
+        sed -i "s#Duration'Small / 86_400.0#Duration'Small / 17_280.0#g" "$CAL_ADS"
+        sed -i 's/range 0\.0 \.\. 88_069\.0/range 0.0 .. 197_641.0/'  "$CAL_ADS"
+        sed -i 's/range 2415_385\.5 \.\. 2488_069\.5/range 2415_385.5 .. 2597_641.5/' \
+            "$RTS/gnat/a-calend.adb"
+        rm -f "$RTS/adalib/libgnat.a" "$RTS/adalib/libgnarl.a"   # force recompile
+        echo "[gen_runtime] Ada.Calendar Year_Number 2099 -> 2399 (5x coarsen): applied"
+    fi
 fi
 
 # 1c. System.Tick must be the basic clock PERIOD, not 0.0.  This port's clock runs
