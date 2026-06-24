@@ -1,0 +1,5 @@
+obj/
+bare_heap_test
+b~*
+*.ali
+*.o
