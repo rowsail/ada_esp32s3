@@ -42,6 +42,11 @@ private package ESP32S3.I2S.Engine is
    --  Stop a continuous transmit (TX clock off).
    procedure Stop (B : Bus);
 
+   --  Blocking RX-only capture of Length bytes into Rx that does NOT touch the
+   --  TX path -- so it can run while a continuous transmit (Start_Continuous)
+   --  keeps the shared master clock running.  Rx in internal SRAM, 1 .. 4095.
+   procedure Capture (B : Bus; Rx : System.Address; Length : Natural);
+
    procedure Close (B : in out Bus);
 
 private

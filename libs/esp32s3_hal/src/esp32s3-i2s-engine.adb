@@ -331,6 +331,50 @@ package body ESP32S3.I2S.Engine is
       end if;
    end Stop;
 
+   -------------
+   -- Capture --
+   -------------
+
+   --  RX-only blocking transfer.  Deliberately touches ONLY the RX path (no
+   --  TX_UPDATE / TX_START), so a continuous transmit driving the shared master
+   --  clock keeps running while we sample the data-in line.
+   procedure Capture (B : Bus; Rx : System.Address; Length : Natural) is
+      R : constant Periph_Ref := B.Regs;
+   begin
+      if not B.Valid or else Length = 0 or else Length > 4095 then
+         return;
+      end if;
+
+      R.RX_CONF.RX_FIFO_RESET := True;  R.RX_CONF.RX_FIFO_RESET := False;
+      R.RXEOF_NUM.RX_EOF_NUM := RXEOF_NUM_RX_EOF_NUM_Field (Length);
+      GD.Start (B.Chan, GD.Periph_To_Mem, Rx, Length);
+      --  Latch RX config.  Bounded: while a continuous TX is driving the shared
+      --  clock, RX_UPDATE does not always self-clear, so never spin on it.
+      R.RX_CONF.RX_UPDATE := True;
+      declare
+         Guard : Natural := 0;
+      begin
+         while R.RX_CONF.RX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+      R.RX_CONF.RX_START := True;
+      --  Wait for the RX success-EOF.  A capture is clock-paced: Length bytes
+      --  take Length/(rate*frame_bytes) seconds (tens of ms), far longer than
+      --  GD.Wait's short guard -- which would return early on a half-filled
+      --  buffer.  Spin on Done with a generous bound so the buffer is complete.
+      declare
+         Guard : Natural := 0;
+      begin
+         while not GD.Done (B.Chan, GD.Periph_To_Mem)
+           and then Guard < 50_000_000
+         loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+      R.RX_CONF.RX_START := False;
+   end Capture;
+
    -----------
    -- Close --
    -----------

@@ -122,6 +122,12 @@ package ESP32S3.I2S is
    --  Raises Not_Owned unless S holds a port.
    procedure Stop (S : Session);
 
+   --  Capture Length bytes (1 .. 4095) from the data-in line into Rx WITHOUT
+   --  disturbing the TX path -- so it can run concurrently with a continuous
+   --  transmit (Start_Continuous), which supplies the shared master clock.
+   --  Blocking.  Raises Not_Owned unless S holds a port.
+   procedure Capture (S : Session; Rx : System.Address; Length : Natural);
+
    --  Relinquish ownership (lets a waiting task proceed).  Idempotent.
    procedure Release (S : in out Session);
 

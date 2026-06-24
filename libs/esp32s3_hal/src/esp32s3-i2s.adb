@@ -180,6 +180,15 @@ package body ESP32S3.I2S is
    end Stop;
 
    -------------
+   -- Capture --
+   -------------
+
+   procedure Capture (S : Session; Rx : System.Address; Length : Natural) is
+   begin
+      E.Capture (State.Owned (S).all, Rx, Length);
+   end Capture;
+
+   -------------
    -- Release --
    -------------
 

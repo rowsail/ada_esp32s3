@@ -37,6 +37,10 @@ package ESP32S3.ES8311 is
    --  brought up here); Mclk/Sclk/Lrck/Dsdin are the I2S pads.  The codec's
    --  ASDOUT (its ADC out) is not used for output and is left unwired.
    --  Ok is False if the codec did not ACK on I2C (check wiring/address).
+   --  Asdout is the codec's ADC data-out line (the ESP's data-in).  Leave it
+   --  No_Pin for output only; pass a pin (e.g. IO3) to also bring up the ADC /
+   --  microphone capture path, then read it with Capture.  Mic_Gain_Db sets the
+   --  ADC PGA gain in 6 dB steps (0 .. 42 dB), used only when Asdout is given.
    procedure Setup
      (I2C_Bus      : ESP32S3.I2C.I2C_Host;
       Sda          : ESP32S3.GPIO.Pin_Id;
@@ -46,8 +50,10 @@ package ESP32S3.ES8311 is
       Sclk         : ESP32S3.GPIO.Pin_Id;
       Lrck         : ESP32S3.GPIO.Pin_Id;
       Dsdin        : ESP32S3.GPIO.Pin_Id;
+      Asdout       : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Sample_Rate  : Positive := 16_000;
       Volume       : Natural  := 70;          --  DAC volume, 0 .. 100 %
+      Mic_Gain_Db  : Natural  := 24;          --  ADC PGA gain, 0 .. 42 dB
       I2C_Clock_Hz : Positive := 100_000;
       Addr         : Address  := Default_Address;
       Ok           : out Boolean);
@@ -86,6 +92,13 @@ package ESP32S3.ES8311 is
 
    --  Stop a continuous playback started by Play_Continuous.
    procedure Stop (O : Output);
+
+   --  Capture Length BYTES of 16-bit PCM from the codec's ADC (microphone) into
+   --  Samples.  Setup must have been given an Asdout pin.  Blocking, and does
+   --  NOT disturb playback -- so you can capture while Play_Continuous keeps the
+   --  tone (and the shared master clock) running.  The mono ADC fills the left
+   --  slot of each stereo frame.  Length 1 .. 4095.
+   procedure Capture (O : Output; Samples : System.Address; Length : Natural);
 
    --  Relinquish the port (also done automatically on scope exit).
    procedure Release (O : in out Output);

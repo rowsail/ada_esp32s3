@@ -1,19 +1,26 @@
-# ES8311 audio codec — gapless 440 Hz tone — bare-metal Ada (ESP32-S3)
+# ES8311 audio codec — full-duplex 440 Hz loopback — bare-metal Ada (ESP32-S3)
 
-Brings up an **Everest ES8311** low-power mono audio codec for **output** and
-plays a **click-free 440 Hz sine** on its DAC. Control is over **I2C**; audio is
-over **I2S**. The codec runs as an **I2S slave** clocked from the ESP's
-**MCLK = 256 × sample-rate** (4.096 MHz at 16 kHz).
+Brings up an **Everest ES8311** low-power mono audio codec **full-duplex**: it
+plays a **click-free 440 Hz sine** on its DAC **and at the same time captures the
+codec's ADC (microphone)** and estimates the tone it hears back — a loopback
+test. Control is over **I2C**; audio is over **I2S**. The codec runs as an **I2S
+slave** clocked from the ESP's **MCLK = 256 × sample-rate** (4.096 MHz at 16 kHz).
 
 ```
 [es8311] ES8311 codec: 440 Hz test tone on the DAC output (I2C control + I2S audio)
 [es8311] codec init: OK
 [es8311] playing 440 Hz... (connect a speaker/headphone to the codec output)
+[es8311] mic capture on (ADC PGA 24 dB) -- play feeds the speaker, mic should hear it
+[es8311] captured: peak=3116  est tone=434 Hz
+[es8311] captured: peak=3102  est tone=434 Hz
+...
 ```
 
 `codec init: OK` means the codec **ACKed on I2C** and the full register-init
-sequence completed — connect a speaker/headphone to the codec's output to hear
-the tone. (`FAILED` means no ACK: check the I2C address/wiring.)
+sequence completed. With the board's speaker and mic, the **mic acoustically
+picks up the 440 Hz playback**, so each `captured:` line reports ~440 Hz (the
+±11 Hz scatter is the zero-crossing estimator's resolution over the ~46 ms
+window). (`FAILED` means no I2C ACK: check the address/wiring.)
 
 ## Wiring
 
@@ -25,7 +32,7 @@ the tone. (`FAILED` means no ACK: check the I2C address/wiring.)
 | SCLK     | IO2      | I2S bit clock (BCLK)                   |
 | LRCK     | IO4      | I2S word/frame clock (WS)              |
 | DSDIN    | IO5      | I2S data **to** the codec (playback)   |
-| ASDOUT   | IO3      | I2S data **from** the codec — unused   |
+| ASDOUT   | IO3      | I2S data **from** the codec (capture)  |
 
 I2C address is **0x18** (CE/AD0 low; 0x19 if CE is high).
 
@@ -45,11 +52,16 @@ that owns the I2S port exclusively and **releases it automatically on scope exit
 ESP32S3.ES8311.Setup
   (I2C_Bus => ESP32S3.I2C.I2C0, Sda => 8, Scl => 7,
    Port    => ESP32S3.I2S.I2S0, Mclk => 1, Sclk => 2, Lrck => 4, Dsdin => 5,
-   Sample_Rate => 16_000, Volume => 75, Ok => Ok);
+   Asdout  => 3,                          --  ADC out in -> brings up capture
+   Sample_Rate => 16_000, Volume => 75, Mic_Gain_Db => 24, Ok => Ok);
 
 ESP32S3.ES8311.Acquire (Audio);                         --  take the I2S port
 ESP32S3.ES8311.Play_Continuous (Audio, Buf'Address, Buf_Bytes);  --  gapless loop
+ESP32S3.ES8311.Capture (Audio, Cap'Address, Cap_Bytes);          --  read the mic
 ```
+
+Pass `Asdout` (the codec's ADC-out line) to also bring up the **ADC / mic** path;
+`Mic_Gain_Db` (0 .. 42 dB) sets the ADC PGA. Leave `Asdout` off for output only.
 
 `Set_Volume (0 .. 100 %)` adjusts the DAC level after `Setup`. Note the codec's
 DAC volume (reg 0x32) is **0.5 dB/step**: **~75 % ≈ 0 dB (unity)**, and higher is
@@ -78,6 +90,33 @@ and stays valid for the life of the program, which the looping DMA requires.
 The sine itself is built with an **integer-only** Bhaskara I approximation
 (`sin(πt) ≈ 16 t(1−t) / (5 − 4 t(1−t))`) — no math library — sampled at the 400
 unit-circle points.
+
+## Full-duplex capture — `Capture`
+
+Playback and capture share one I2S port and **one clock** (the ESP is master,
+clocking the codec). The clean way to run both is to keep **playback continuous**
+— `Play_Continuous` leaves the I2S TX clock running forever — and toggle capture
+underneath it. `Capture` is an **RX-only** blocking read that deliberately
+touches *only* the RX path (no `TX_UPDATE` / `TX_START`), so it samples the
+data-in line **without disturbing the running tone**. The mono ADC lands in the
+**left** slot of each stereo frame.
+
+`SIG_LOOPBACK` (set during port setup) shares only **WS + BCLK** between the TX
+and RX units — it does **not** loop the TX data internally — so capture reads the
+codec's *real* ADC output on ASDOUT, not a digital echo of what we play. That
+makes the loopback an honest acoustic test: the speaker plays, the mic hears.
+
+Three things this example had to get right (all now handled in the HAL/example):
+
+- **RX latch:** while a continuous TX drives the shared clock, the RX `RX_UPDATE`
+  bit doesn't self-clear, so the wait on it is **bounded** (an unbounded spin
+  hangs the core).
+- **Completion:** a capture is **clock-paced** — *Length /(rate·frame)* seconds
+  (tens of ms) — so `Capture` waits on the real RX success-EOF, not a short spin
+  guard that would return a half-filled buffer.
+- **Analysis:** the estimator skips the RX-start FIFO-priming transient, removes
+  the ADC's DC offset, and thresholds on the **mean-absolute-deviation** (not a
+  lone peak), so a stray start-up spike can't mask the tone.
 
 ## The I2S MCLK output
 

@@ -70,13 +70,20 @@ package body ESP32S3.ES8311 is
       Sclk         : ESP32S3.GPIO.Pin_Id;
       Lrck         : ESP32S3.GPIO.Pin_Id;
       Dsdin        : ESP32S3.GPIO.Pin_Id;
+      Asdout       : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Sample_Rate  : Positive := 16_000;
       Volume       : Natural  := 70;
+      Mic_Gain_Db  : Natural  := 24;
       I2C_Clock_Hz : Positive := 100_000;
       Addr         : Address  := Default_Address;
       Ok           : out Boolean)
    is
       use ESP32S3.GPIO;
+      use type ESP32S3.GPIO.Pad_Number;
+      Capture_In : constant Boolean := Asdout /= ESP32S3.GPIO.No_Pin;
+      --  ADC PGA gain register (reg 0x16) = gain in 6 dB steps, 0 .. 7.
+      Mic_Step   : constant Byte :=
+        Byte (Natural'Min (7, Mic_Gain_Db / 6));
    begin
       Cfg_I2C  := I2C_Bus;
       Cfg_Port := Port;
@@ -99,6 +106,7 @@ package body ESP32S3.ES8311 is
          Bclk => Optional_Pin (Sclk),
          Ws   => Optional_Pin (Lrck),
          Dout => Optional_Pin (Dsdin),
+         Din  => (if Capture_In then Asdout else ESP32S3.GPIO.No_Pin),
          Mclk => Optional_Pin (Mclk));
 
       --  2. I2C control: run the codec register-init sequence.
@@ -140,6 +148,16 @@ package body ESP32S3.ES8311 is
 
          --  DAC volume.
          Write_Reg (S, 16#32#, Vol_Reg (Volume), Ok);
+
+         --  ADC / microphone path (only when an Asdout pin was given).  The
+         --  analog power (REG0D/0E), ADC settings (REG1C) and the ADC serial-out
+         --  format (REG0A) are already set above; here we enable the analog mic
+         --  input + PGA and set the ADC gain.
+         if Capture_In then
+            Write_Reg (S, 16#14#, 16#1A#, Ok);      --  analog MIC on + PGA
+            Write_Reg (S, 16#16#, Mic_Step, Ok);    --  ADC PGA gain (6 dB steps)
+            Write_Reg (S, 16#17#, 16#C8#, Ok);      --  ADC volume
+         end if;
 
          ESP32S3.I2C.Release (S);
       end;
@@ -202,6 +220,15 @@ package body ESP32S3.ES8311 is
    begin
       ESP32S3.I2S.Stop (O.Audio);
    end Stop;
+
+   -------------
+   -- Capture --
+   -------------
+
+   procedure Capture (O : Output; Samples : System.Address; Length : Natural) is
+   begin
+      ESP32S3.I2S.Capture (O.Audio, Samples, Length);
+   end Capture;
 
    -------------
    -- Release --
