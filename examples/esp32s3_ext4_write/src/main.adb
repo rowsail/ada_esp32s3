@@ -32,6 +32,7 @@ with ESP32S3.Block_Dev.SDMMC_Source;
 with ESP32S3.Ext4;       use ESP32S3.Ext4;
 with ESP32S3.Ext4.FS;
 with ESP32S3.Ext4.Inode;
+with ESP32S3.Ext4.Bitmap;   --  Phantom_Free_Count tripwire
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -172,6 +173,7 @@ begin
    begin
       M.Open (BD, Read_Only => False, Cache_Blocks => 16);
       Mount_R (1);
+      Bitmap.Reset_Phantom_Free_Count;   --  arm the stale-read / double-free tripwire
 
       --  0. Remove any leftovers from a previous run.
       Step ("cleanup");
@@ -298,6 +300,13 @@ begin
       --  Commit the whole battery as one journaled transaction.
       Step ("commit");
       M.Commit;
+
+      --  TRIPWIRE: the idempotent Free keeps the free count consistent with the
+      --  bitmap on an already-clear bit (a double-free, or a stale/incoherent read
+      --  from a flaky card) -- but we surface it rather than mask it.  0 on a
+      --  healthy card; >0 means stale cleanup reads (suspect the SD card).
+      Check ("no phantom frees (count consistent with bitmap)",
+             Bitmap.Phantom_Free_Count = 0);
       Write_R (1, System.Null_Address);
 
    exception

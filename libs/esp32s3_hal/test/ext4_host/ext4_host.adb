@@ -11,6 +11,7 @@ with ESP32S3.Block_Dev;
 with ESP32S3.Ext4;       use ESP32S3.Ext4;
 with ESP32S3.Ext4.FS;
 with ESP32S3.Ext4.Inode;
+with ESP32S3.Ext4.Bitmap;   --  Phantom_Free_Count tripwire (double-free guard)
 
 procedure Ext4_Host is
    package DIO is new Ada.Direct_IO (ESP32S3.Block_Dev.Sector);
@@ -136,5 +137,15 @@ begin
    end if;
 
    DIO.Close (F);
+
+   --  TRIPWIRE: with the idempotent Free, a double-free no longer drifts the free
+   --  count (so e2fsck stays clean) -- so assert it here instead, or a real
+   --  double-free bug would pass silently.  On a coherent file-backed image this
+   --  is always 0; >0 means a genuine FS double-free bug.
+   if Bitmap.Phantom_Free_Count > 0 then
+      Put_Line ("[host] scenario=" & Scenario & " *** PHANTOM FREES:"
+                & Natural'Image (Bitmap.Phantom_Free_Count) & " (double-free bug) ***");
+      Set_Exit_Status (Failure);
+   end if;
    Put_Line ("[host] scenario=" & Scenario & " done");
 end Ext4_Host;

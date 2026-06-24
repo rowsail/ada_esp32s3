@@ -74,7 +74,17 @@ static unsigned psram_tune_din(void)
             }
         }
 
-    REG(SMEM_DIN_MODE_0) = din_word(best);   /* apply the measured cache din */
+    /* IMPORTANT: the sweep above runs over a SPI1 manual transaction, but PSRAM is
+     * actually read through the SPI0 *cache*, whose optimal din is OFFSET from the
+     * SPI1 window -- and that offset's marginality does NOT show up in a quick
+     * read-back (a 1 MB checksum passes at the SPI1-centre mode), it only corrupts
+     * a heap-heavy app under sustained access (it crashed the ext4 battery on one
+     * board).  din_mode 1 is the validated-robust cache point for this octal chip
+     * on every board tested and always lands inside the SPI1 window, so prefer it;
+     * the centre above is kept only as the fallback for a window that excludes it. */
+    if (pass & (1u << 1)) best = 1;
+
+    REG(SMEM_DIN_MODE_0) = din_word(best);   /* apply the chosen cache din */
     REG(MSPI_DIN_MODE_1) = 0;                 /* SPI1 din back to default */
     esp_rom_printf("[ada-free-boot] PSRAM din tuned @80MHz: passmask=0x%02x -> mode %u\n",
                    pass, best);

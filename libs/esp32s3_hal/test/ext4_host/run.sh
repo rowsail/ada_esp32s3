@@ -30,8 +30,11 @@ fresh() { rm -f "$IMG"; truncate -s 64M "$IMG"; mkfs.ext4 -q -F -O ^metadata_csu
 # Scenarios mirror examples/esp32s3_ext4_write and the re-run drift hunt.
 for S in one two rerun battery dirty_battery; do
    fresh
-   ./ext4_host "$IMG" "$S" >/dev/null
-   if e2fsck -f -n "$IMG" >/tmp/ext4_host.fsck 2>&1; then
+   if ! ./ext4_host "$IMG" "$S" >/tmp/ext4_host.out 2>&1; then
+      # harness exits non-zero on a phantom free (double-free bug)
+      printf '  %-14s HARNESS FAIL: %s\n' "$S" \
+             "$(grep -i 'PHANTOM' /tmp/ext4_host.out | head -1)"
+   elif e2fsck -f -n "$IMG" >/tmp/ext4_host.fsck 2>&1; then
       printf '  %-14s e2fsck CLEAN\n' "$S"
    else
       printf '  %-14s e2fsck ERRORS:\n' "$S"

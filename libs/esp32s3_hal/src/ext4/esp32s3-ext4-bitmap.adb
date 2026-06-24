@@ -4,6 +4,15 @@ with ESP32S3.Ext4.Group_Desc;
 
 package body ESP32S3.Ext4.Bitmap is
 
+   --  TRIPWIRE counter (see the spec): frees that hit an already-clear bit.
+   Phantom_Frees : Natural := 0;
+
+   function  Phantom_Free_Count return Natural is (Phantom_Frees);
+   procedure Reset_Phantom_Free_Count is
+   begin
+      Phantom_Frees := 0;
+   end Reset_Phantom_Free_Count;
+
    --  Find the first 0 bit (0 .. Count-1) in bitmap block Bmp; set it; return its
    --  index, or -1 if the group is full.  One byte at a time -> no big buffer.
    function Claim_Bit (V : in out Volume.Context; Bmp : Block_Number; Count : U32)
@@ -81,15 +90,25 @@ package body ESP32S3.Ext4.Bitmap is
       raise No_Space with "no free inodes";
    end Alloc_Inode;
 
-   --  Clear bit Index in bitmap block Bmp.
-   procedure Clear_Bit (V : in out Volume.Context; Bmp : Block_Number; Index : Natural) is
+   --  Clear bit Index in bitmap block Bmp.  Returns True iff the bit was SET (a
+   --  real free); on an ALREADY-clear bit it leaves the block untouched and
+   --  returns False, so a double/phantom free becomes a no-op rather than a
+   --  count corruption.  (Clear_Bit already reads the byte, so the test is free.)
+   function Clear_Bit (V : in out Volume.Context; Bmp : Block_Number; Index : Natural)
+      return Boolean
+   is
       Byte_Idx : constant Natural := Index / 8;
       Bit      : constant Natural := Index mod 8;
+      Mask     : constant U8 := Shift_Left (U8 (1), Bit);
       Byte     : Byte_Array (0 .. 0);
    begin
       ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Bmp, Byte_Idx, Byte);
-      Byte (0) := Byte (0) and not Shift_Left (U8 (1), Bit);
+      if (Byte (0) and Mask) = 0 then
+         return False;                        --  already clear -> no-op
+      end if;
+      Byte (0) := Byte (0) and not Mask;
       ESP32S3.Ext4.Block_Cache.Write_At (V.Cache, Bmp, Byte_Idx, Byte);
+      return True;
    end Clear_Bit;
 
    ----------------
@@ -103,10 +122,13 @@ package body ESP32S3.Ext4.Bitmap is
       GD    : Group_Desc.Desc;
    begin
       Group_Desc.Read (V, Group, GD);
-      Clear_Bit (V, GD.Block_Bitmap, Index);
-      GD.Free_Blocks := GD.Free_Blocks + 1;
-      Group_Desc.Write (V, Group, GD);
-      V.SB.Free_Blocks := V.SB.Free_Blocks + 1;
+      if Clear_Bit (V, GD.Block_Bitmap, Index) then
+         GD.Free_Blocks := GD.Free_Blocks + 1;
+         Group_Desc.Write (V, Group, GD);
+         V.SB.Free_Blocks := V.SB.Free_Blocks + 1;
+      else
+         Phantom_Frees := Phantom_Frees + 1;   --  already free: no drift, but flag it
+      end if;
    end Free_Block;
 
    ----------------
@@ -121,13 +143,16 @@ package body ESP32S3.Ext4.Bitmap is
       GD    : Group_Desc.Desc;
    begin
       Group_Desc.Read (V, Group, GD);
-      Clear_Bit (V, GD.Inode_Bitmap, Index);
-      GD.Free_Inodes := GD.Free_Inodes + 1;
-      if Was_Dir and then GD.Used_Dirs > 0 then
-         GD.Used_Dirs := GD.Used_Dirs - 1;
+      if Clear_Bit (V, GD.Inode_Bitmap, Index) then
+         GD.Free_Inodes := GD.Free_Inodes + 1;
+         if Was_Dir and then GD.Used_Dirs > 0 then
+            GD.Used_Dirs := GD.Used_Dirs - 1;
+         end if;
+         Group_Desc.Write (V, Group, GD);
+         V.SB.Free_Inodes := V.SB.Free_Inodes + 1;
+      else
+         Phantom_Frees := Phantom_Frees + 1;   --  already free: no drift, but flag it
       end if;
-      Group_Desc.Write (V, Group, GD);
-      V.SB.Free_Inodes := V.SB.Free_Inodes + 1;
    end Free_Inode;
 
 end ESP32S3.Ext4.Bitmap;
