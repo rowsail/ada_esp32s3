@@ -25,4 +25,15 @@ package ESP32S3.RSA is
                  and then X'Length = M'Length and then Y'Length = M'Length
                  and then R2'Length = M'Length and then Z'Length = M'Length;
 
+   --  As above, but compute the Montgomery constant R^2 mod M in software
+   --  (shift / compare / subtract -- no multiply, the hardware does that), so it
+   --  works on any modulus, e.g. an X.509 certificate's, with no host-precomputed
+   --  constant.  M must be odd.
+   procedure Mod_Exp (X, Y, M : Word_Array;
+                      Z  : out Word_Array;
+                      Ok : out Boolean)
+     with Pre => M'Length in 1 .. 128
+                 and then X'Length = M'Length and then Y'Length = M'Length
+                 and then Z'Length = M'Length;
+
 end ESP32S3.RSA;

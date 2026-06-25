@@ -83,4 +83,68 @@ package body ESP32S3.RSA is
       Disable;
    end Mod_Exp;
 
+   --  R2 := R^2 mod M, R = 2^(32*N).  Compute 2^(2*32*N) mod M by doubling from 1,
+   --  reducing with a conditional subtract each step -- only shift / compare /
+   --  subtract on N-word little-endian values.  (Keeps the invariant T < M.)
+   procedure Compute_R2 (M : Word_Array; R2 : out Word_Array) is
+      N : constant Natural := M'Length;
+      T : Word_Array (0 .. N - 1) := (0 => 1, others => 0);
+
+      --  T >= M ?
+      function Ge return Boolean is
+      begin
+         for I in reverse 0 .. N - 1 loop
+            if T (I) /= M (M'First + I) then
+               return T (I) > M (M'First + I);
+            end if;
+         end loop;
+         return True;                       --  equal
+      end Ge;
+
+      --  T := T - M  (mod 2^(32N); borrow discarded, the caller guarantees T >= M
+      --  in value once the shifted-out carry is accounted for).
+      procedure Sub_M is
+         Borrow : Word := 0;
+      begin
+         for I in 0 .. N - 1 loop
+            declare
+               Ai : constant Word := T (I);
+               Bi : constant Word := M (M'First + I);
+            begin
+               T (I) := Ai - Bi - Borrow;
+               if Borrow = 0 then
+                  Borrow := (if Ai < Bi then 1 else 0);
+               else
+                  Borrow := (if Ai <= Bi then 1 else 0);
+               end if;
+            end;
+         end loop;
+      end Sub_M;
+
+      Carry, Top : Word;
+   begin
+      for Step in 1 .. 2 * N * 32 loop      --  double 2*(32N) times: -> 2^(2*32N)
+         Carry := 0;                        --  T := T << 1 (capturing carry-out)
+         for I in 0 .. N - 1 loop
+            Top    := T (I) / 16#8000_0000#;          --  old bit 31
+            T (I)  := (T (I) * 2) or Carry;           --  << 1, bring in low carry
+            Carry  := Top;
+         end loop;
+         if Carry = 1 or else Ge then       --  2T >= M -> reduce once
+            Sub_M;
+         end if;
+      end loop;
+      R2 := T;
+   end Compute_R2;
+
+   procedure Mod_Exp (X, Y, M : Word_Array;
+                      Z  : out Word_Array;
+                      Ok : out Boolean)
+   is
+      R2 : Word_Array (0 .. M'Length - 1);
+   begin
+      Compute_R2 (M, R2);
+      Mod_Exp (X, Y, M, R2, Z, Ok);
+   end Mod_Exp;
+
 end ESP32S3.RSA;

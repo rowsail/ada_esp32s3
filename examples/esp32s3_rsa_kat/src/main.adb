@@ -85,11 +85,21 @@ begin
    ESP32S3.RNG.Enable_Entropy_Source;            --  CSPRNG entropy (RF-free target)
 
    Put_Line ("[rsa] ESP32-S3 RSA accelerator KAT (X^65537 mod M, 2048-bit)");
+
+   --  (1) HW modexp with a host-precomputed Montgomery constant R^2.
    Mod_Exp (X => X_Base, Y => Y_Exp, M => M_Mod, R2 => R2, Z => Z, Ok => Ok);
    if not Ok then
-      Put_Line ("[rsa] hardware did not complete (timeout)");
+      Put_Line ("[rsa] host-R2 : hardware did not complete (timeout)");
    else
-      Put_Line ("[rsa] X^65537 mod M : " & (if Eq (Z, Z_Want) then "PASS" else "FAIL"));
+      Put_Line ("[rsa] host-R2 : " & (if Eq (Z, Z_Want) then "PASS" else "FAIL"));
+   end if;
+
+   --  (2) Same, but R^2 computed in software -- works on any modulus (e.g. a cert).
+   Mod_Exp (X => X_Base, Y => Y_Exp, M => M_Mod, Z => Z, Ok => Ok);
+   if not Ok then
+      Put_Line ("[rsa] soft-R2 : hardware did not complete (timeout)");
+   else
+      Put_Line ("[rsa] soft-R2 : " & (if Eq (Z, Z_Want) then "PASS" else "FAIL"));
    end if;
    Put_Line ("[rsa] done");
 
