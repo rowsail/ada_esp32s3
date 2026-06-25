@@ -121,7 +121,7 @@ are restricted to the richer two.
 \texttt{embedded} &
   Still Jorvik, but exception-capable: full exception propagation with messages,
   controlled-type \emph{finalization} (RAII), a secondary stack, and a real
-  first-fit heap. This is the default target for most of the HAL and for the
+  heap (the O(1) TLSF allocator, \S\ref{ch:heap}). This is the default target for most of the HAL and for the
   ext4 filesystem. The RAII driver handles (SPI/I2C/UART sessions, GDMA/LEDC/RMT/
   \dots\ channels) live here. \\
 \texttt{full} &

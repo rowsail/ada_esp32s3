@@ -1,0 +1,352 @@
+\chapter{GNARL and GNULL: The Two-Layer Runtime}
+\label{ch:gnarl-gnull}
+
+When you write \texttt{task}, \texttt{protected}, \texttt{delay until}, or an entry
+call in Ada, the compiler does not emit instructions to suspend a thread or to
+read a hardware timer. It emits \emph{calls} into the GNAT tasking runtime, and
+that runtime is what actually talks to the machine. This chapter is about the
+internal architecture of that runtime: two stacked layers named \textbf{GNARL}
+and \textbf{GNULL}, and how this bare-metal port wires the bottom of the stack
+onto the ESP32-S3 instead of onto an operating system.
+
+The user-facing side --- what the language constructs mean and how you use them
+--- is covered in \S\ref{ch:tasking}. Here we look underneath: who is called,
+what each layer is responsible for, and which real source units implement it.
+
+\section{Two names, two layers}
+
+The runtime that implements Ada tasking is split into two libraries with two
+deliberately retro acronyms.
+
+\begin{itemize}
+  \item \textbf{GNARL} --- the \emph{GNat Ada Run-time Library}. This is the
+        \emph{upper} layer. It knows Ada semantics: what a task control block is,
+        how rendezvous and protected-object queues work, how a task is created,
+        activated, and terminated, how priorities and the ceiling protocol
+        behave. It is portable: it is written in terms of an abstract notion of
+        ``a thread'' and ``the clock,'' and it does not name any specific
+        hardware or OS.
+  \item \textbf{GNULL} --- the \emph{GNu Low-Level (Library)}. This is the
+        \emph{lower} layer. Its one job is to satisfy GNARL's abstract needs ---
+        create a thread, find the current thread, set a priority, sleep, wake,
+        delay until an absolute time, read a monotonic clock --- by mapping each
+        of them onto the services of the underlying platform.
+\end{itemize}
+
+The split exists so that GNARL can be written once and ported many times: only
+GNULL changes per target. On a hosted GNAT (Linux, Windows) the ``underlying
+platform'' GNULL targets is the OS thread library --- pthreads. \textbf{The
+single most important idea in this chapter is that here there is no OS, so the
+platform GNULL targets is the bare-board kernel} shipped with the bb-runtimes:
+the \texttt{System.BB.*} packages. Every place a hosted runtime would call
+\texttt{pthread\_create} or \texttt{clock\_gettime}, this port calls into
+\texttt{System.BB.Threads} or \texttt{System.BB.Time} instead.
+
+\cnote{On a hosted target the ``OS'' under GNULL is pthreads: \texttt{Self}
+becomes \texttt{pthread\_self}, \texttt{Sleep} becomes a condition-variable
+wait, the clock is \texttt{clock\_gettime(CLOCK\_MONOTONIC)}. On the ESP32-S3
+there is no pthreads and (after FreeRTOS is removed) no scheduler at all but the
+one we ship. The bb-runtimes \texttt{System.BB} kernel \emph{is} the OS:
+\texttt{System.BB.Threads} provides the ready queue and context switch,
+\texttt{System.BB.Time} provides the alarm timer and monotonic clock. GNULL is
+the thin Ada shim that names those as ``the OS.''}
+
+\section{The layer cake}
+
+From the source line you write down to the silicon, a tasking operation passes
+through five strata. Reading top to bottom:
+
+\begin{enumerate}
+  \item \textbf{Ada tasking source} --- \texttt{task}, \texttt{protected},
+        \texttt{delay until}, entry calls. The compiler expands these into calls
+        into GNARL via \texttt{Rtsfind}.
+  \item \textbf{GNARL (upper)} --- \texttt{System.Tasking} and its children. The
+        Task Control Block (ATCB), task stages, rendezvous, protected entries.
+  \item \textbf{GNULL} --- \texttt{System.Task\_Primitives.Operations} plus the
+        abstraction boundary \texttt{System.OS\_Interface}. The primitive set
+        (\texttt{Create\_Task}, \texttt{Self}, \texttt{Sleep},
+        \texttt{Delay\_Until}, \texttt{Monotonic\_Clock}, \dots).
+  \item \textbf{Bare-board kernel} --- \texttt{System.BB.Threads},
+        \texttt{System.BB.Time}, \texttt{System.BB.Parameters}, and the Xtensa
+        register-level context switch.
+  \item \textbf{Hardware} --- the two Xtensa LX7 cores, the system timer that
+        drives alarms, and the windowed register file the context switch saves
+        and restores.
+\end{enumerate}
+
+Table~\ref{tab:gnarl-units} maps the layers to the actual units you will find in
+\texttt{crates/esp32s3\_rts/light-tasking-esp32s3/gnarl/}.
+
+\begin{longtable}{@{}p{0.16\linewidth}p{0.34\linewidth}p{0.42\linewidth}@{}}
+\caption{The tasking stack, by layer and real source unit}
+\label{tab:gnarl-units}\\
+\hline
+\textbf{Layer} & \textbf{Unit (file)} & \textbf{Role} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Layer} & \textbf{Unit (file)} & \textbf{Role} \\
+\hline
+\endhead
+GNARL & \texttt{System.Tasking} (\texttt{s-taskin}) & The ATCB type and task-state model \\
+GNARL & \texttt{System.Tasking.Restricted.Stages} (\texttt{s-tarest}) & Task creation/activation under Ravenscar \\
+GNARL & \texttt{System.Tasking.Protected\_Objects.Single\_Entry} (\texttt{s-tposen}) & Single-entry protected objects (Ravenscar) \\
+GNARL & \texttt{System.Tasking.Stages} (\texttt{s-tassta}), \texttt{...Rendezvous} (\texttt{s-tasren}) & Full-profile task stages and rendezvous (full only) \\
+GNULL & \texttt{System.Task\_Primitives.Operations} (\texttt{s-taprop}) & The primitive set GNARL calls \\
+GNULL & \texttt{System.OS\_Interface} (\texttt{s-osinte}) & The ``this is the OS'' renaming boundary \\
+Kernel & \texttt{System.BB.Threads} (\texttt{s-bbthre}) & Threads, ready queue, scheduling \\
+Kernel & \texttt{System.BB.Time} (\texttt{s-bbtime}) & Monotonic clock + alarm queue \\
+Kernel & \texttt{System.BB.Parameters} (\texttt{s-bbpara}) & Board constants (\texttt{Ticks\_Per\_Second}, \dots) \\
+Kernel & \texttt{context\_switch.S} & Xtensa windowed-register switch (\S\ref{ch:context-switch}) \\
+\hline
+\end{longtable}
+
+The header comment at the top of \texttt{s-taprop.ads} is the canonical
+statement of where the boundary sits. It reads ``GNAT RUN-TIME LIBRARY (GNARL)
+COMPONENTS'' and then, in the body of the comment, ``This package contains all
+the GNULL primitives that interface directly with the underlying OS.'' That one
+file \emph{is} the GNULL spec; everything below it in the table is ``the OS.''
+
+\section{GNARL's upper layer: the ATCB}
+
+The central data structure of GNARL is the \emph{Ada Task Control Block}. In
+\texttt{System.Tasking} (\texttt{s-taskin.ads}) it is the type
+\texttt{Ada\_Task\_Control\_Block}, and a \texttt{Task\_Id} is simply an access
+to one:
+
+\begin{lstlisting}
+type Ada_Task_Control_Block;
+type Task_Id is access all Ada_Task_Control_Block;
+Null_Task : constant Task_Id := null;
+\end{lstlisting}
+
+The ATCB holds the Ada-level facts about a task: its state
+(\texttt{Unactivated}, \texttt{Runnable}, and so on), its priority, its entry
+queues, its activation chain. This is the bare-board ``Jorvik/HI-E version'' of
+the package, as its header says --- a restricted, static cut of the full ATCB
+with no fields for features the profile forbids. GNARL operates entirely on
+\texttt{Task\_Id} values; it never touches a register or a timer directly.
+When it needs the machine to actually \emph{do} something --- run this task,
+suspend that one --- it calls down into GNULL.
+
+\section{The GNULL primitive set}
+
+\texttt{System.Task\_Primitives.Operations} is a small, fixed menu. Walking the
+real spec of the Ravenscar version (\texttt{s-taprop.ads}), the operations GNARL
+relies on are:
+
+\begin{lstlisting}
+procedure Initialize (Environment_Task : ST.Task_Id);
+procedure Create_Task
+  (T          : ST.Task_Id;
+   Wrapper    : System.Address;
+   Stack_Size : System.Parameters.Size_Type;
+   Priority   : ST.Extended_Priority;
+   Base_CPU   : System.Multiprocessors.CPU_Range;
+   Succeeded  : out Boolean);
+procedure Enter_Task (Self_ID : ST.Task_Id);
+function  Self return ST.Task_Id;
+procedure Set_Priority (T : ST.Task_Id; Prio : ST.Extended_Priority);
+function  Get_Priority (T : ST.Task_Id) return ST.Extended_Priority;
+procedure Sleep (Self_ID : ST.Task_Id; Reason : ST.Task_States);
+procedure Wakeup (T : ST.Task_Id; Reason : ST.Task_States);
+procedure Delay_Until (Abs_Time : Time);
+function  Monotonic_Clock return Time;
+function  Is_Task_Context return Boolean;
+\end{lstlisting}
+
+Each one is a thin adapter onto the bare kernel. The mapping is the whole point
+of the port:
+
+\begin{itemize}
+  \item \texttt{Initialize} --- one-time bring-up of the environment task.
+        Renames through to \texttt{System.BB.Threads.Initialize}, which sets up
+        the ready queue, the alarm timer, and the FPU, and installs the
+        environment thread as the first runnable thread.
+  \item \texttt{Create\_Task} --- allocate a kernel thread for a new Ada task. It
+        calls \texttt{System.BB.Threads.Thread\_Create} with the task's entry
+        wrapper, priority, CPU affinity, and a preallocated stack. (Ravenscar
+        forbids task termination, so there is deliberately no destroy
+        primitive.)
+  \item \texttt{Self} --- ``which task is running right now?'' Implemented as
+        \texttt{To\_Task\_Id (System.OS\_Interface.Get\_ATCB)} --- the kernel
+        stores the ATCB pointer inside each thread descriptor, and
+        \texttt{Get\_ATCB} returns the one for the running thread. This is the
+        bare-board equivalent of \texttt{pthread\_self} plus thread-local
+        storage, but it is a single pointer load.
+  \item \texttt{Set\_Priority} / \texttt{Get\_Priority} --- rename onto
+        \texttt{System.BB.Threads.Set\_Priority} / \texttt{Get\_Priority}. A
+        priority \emph{decrease} (leaving a protected action) is a scheduling
+        point; that is where the bare kernel may pick a different thread.
+  \item \texttt{Sleep} --- suspend the caller. The body asserts
+        \texttt{Self\_ID = Self} (a task can only suspend itself) and then calls
+        \texttt{System.OS\_Interface.Sleep}, which renames
+        \texttt{System.BB.Threads.Sleep}. The kernel marks the thread
+        \texttt{Suspended} and switches away (honoring the \texttt{Wakeup\_Signaled}
+        token so a wakeup racing the sleep is not lost).
+  \item \texttt{Wakeup} --- make a suspended task runnable again, via
+        \texttt{System.BB.Threads.Wakeup}. Note this is \emph{not} itself a
+        scheduling point under Ravenscar: the woken task enters the ready queue,
+        but the switch happens later when the waker lowers its own priority.
+  \item \texttt{Delay\_Until} --- the engine of \texttt{delay until}. It sets the
+        caller's state to \texttt{Delay\_Sleep} and arms the kernel alarm queue
+        in \texttt{System.BB.Time} for the absolute wake time. When the system
+        timer fires at that time, the kernel makes the thread runnable.
+  \item \texttt{Monotonic\_Clock} --- the time source behind \texttt{Ada.Real\_Time.Clock}.
+        \texttt{System.OS\_Interface} renames \texttt{Clock} onto
+        \texttt{System.BB.Time.Clock}, which reads the hardware timer;
+        \texttt{Ticks\_Per\_Second} comes from \texttt{System.BB.Parameters}.
+  \item \texttt{Is\_Task\_Context} --- ``are we in a task, or in an interrupt
+        handler?'' True for task context, False inside an ISR. The kernel tracks
+        this with the \texttt{In\_Interrupt} flag on the thread descriptor; the
+        restricted runtime uses it to keep tasking operations out of interrupt
+        context.
+\end{itemize}
+
+The pivot file is \texttt{System.OS\_Interface} (\texttt{s-osinte.ads}). It is
+almost entirely \texttt{renames} declarations --- it does no work itself, it just
+\emph{relabels} the bare kernel as ``the OS.'' For example:
+
+\begin{lstlisting}
+function  Clock return Time renames System.BB.Time.Clock;
+procedure Sleep            renames System.BB.Threads.Sleep;
+procedure Wakeup (Id : Thread_Id) renames System.BB.Threads.Wakeup;
+function  Thread_Self return Thread_Id
+                           renames System.BB.Threads.Thread_Self;
+function  Get_ATCB return System.Address
+                           renames System.BB.Threads.Get_ATCB;
+\end{lstlisting}
+
+This is the literal seam between the two worlds: above it, GNARL and GNULL speak
+of \texttt{Time} and \texttt{Thread\_Id}; below it, everything is
+\texttt{System.BB}. Swapping \texttt{s-osinte} for a pthreads version is, in
+principle, all it takes to retarget the runtime to a hosted OS --- which is
+exactly how AdaCore ships GNAT on Linux.
+
+\subsection{Where the context switch lives}
+
+The very bottom GNULL primitive --- the moment one task stops running and another
+starts --- is not Ada at all. \texttt{Sleep}, \texttt{Delay\_Until}, and priority
+changes ultimately reach the kernel's scheduler, which performs the actual
+register save/restore in \texttt{context\_switch.S}. On the Xtensa LX7 that means
+flushing and restoring the \emph{windowed} register file, not a flat set of
+callee-saved registers. That mechanism is intricate enough to have its own
+chapter; see \S\ref{ch:context-switch}. From GNULL's point of view the context
+switch is simply ``the OS does this''; from the silicon's point of view it is the
+single most ESP32-S3-specific line of the whole runtime.
+
+\section{The thread descriptor: GNULL's view of a task}
+
+GNARL has the ATCB; the kernel has its own, leaner record, the
+\texttt{Thread\_Descriptor} in \texttt{System.BB.Threads} (\texttt{s-bbthre.ads}).
+The two are linked: each \texttt{Thread\_Descriptor} carries an \texttt{ATCB}
+field (a \texttt{System.Address}) pointing back at the Ada task, which is what
+makes \texttt{Self}/\texttt{Get\_ATCB} a one-pointer lookup. The descriptor holds
+exactly what the kernel needs to schedule the thread and nothing more:
+
+\begin{lstlisting}
+type Thread_Descriptor is record
+   Context         : aliased System.BB.CPU_Primitives.Context_Buffer;
+   ATCB            : System.Address;       --  back-pointer to the Ada ATCB
+   Base_CPU        : System.Multiprocessors.CPU_Range;
+   Base_Priority   : Integer;
+   Active_Priority : Integer;              --  raised during protected actions
+   Top_Of_Stack    : System.Address;
+   Bottom_Of_Stack : System.Address;
+   Next            : Thread_Id;            --  ready-queue link
+   Alarm_Time      : System.BB.Time.Time;  --  for delay until
+   Next_Alarm      : Thread_Id;            --  alarm-queue link
+   State           : Thread_States;        --  Runnable | Suspended | Delayed
+   In_Interrupt    : Boolean;
+   Wakeup_Signaled : Boolean;
+   ...
+end record;
+\end{lstlisting}
+
+Note the deliberate ordering: the comment in the spec insists that
+\texttt{Context} sit at the very start of the record, because the assembly
+context switch assumes the saved-register buffer is at offset zero of the thread
+descriptor. The three-valued \texttt{State} type --- \texttt{Runnable},
+\texttt{Suspended}, \texttt{Delayed} --- is the entire scheduling vocabulary of
+the restricted profile: a thread is either eligible to run, blocked on an entry,
+or waiting out a delay. There is no ``zombie,'' no ``joining,'' no dynamic
+priority band, because the profile forbids the features that would need them.
+
+\section{Three profiles, one boundary}
+
+This repository builds three runtime profiles, and the GNARL/GNULL split is the
+hinge on which they differ. The selection happens in
+\texttt{crates/esp32s3\_rts/gen\_runtime.sh} via the \texttt{ESP32S3\_RTS\_PROFILE}
+environment variable; \S\ref{ch:runtime-build} covers the build mechanics in
+full.
+
+\begin{itemize}
+  \item \textbf{light-tasking} (the default) and \textbf{embedded} both use the
+        \emph{restricted} GNARL+GNULL --- the Ravenscar/Jorvik runtime described
+        so far. The ATCB is the small \texttt{s-taskin} cut; task creation goes
+        through \texttt{s-tarest} (\texttt{Tasking.Restricted.Stages}); protected
+        objects are single-entry (\texttt{s-tposen}). There is no rendezvous, no
+        \texttt{abort}, no dynamic priority change beyond ceiling locking. The
+        two differ only in exception/finalization support
+        (\texttt{No\_Exception\_Propagation} + \texttt{No\_Finalization} for
+        light-tasking; full ZCX exceptions and finalization for embedded) --- not
+        in the tasking model.
+  \item \textbf{full} swaps in the \emph{complete} GNARL and a different GNULL.
+        \texttt{gen\_runtime.sh} synthesizes it by cloning the embedded source
+        tree and overlaying \texttt{crates/esp32s3\_rts/full\_overlay/}: it
+        imports the full GNARL units (\texttt{s-tassta}, \texttt{s-tasren} for
+        rendezvous, dynamic priorities, abort/ATC machinery) from a native GNAT,
+        deletes the restricted stages (\texttt{rm -f s-tarest.*}), and drops in
+        \texttt{full\_overlay/gnarl/s-taprop} --- a from-scratch GNULL spec/body
+        written against the same \texttt{System.BB} kernel.
+\end{itemize}
+
+The full GNULL spec is visibly larger than the Ravenscar one. Its own header
+calls it ``the STANDARD Task\_Primitives.Operations interface (as the full GNARL
+--- s-tassta / s-tasren --- expects it), implemented over the bare-board BB
+kernel.'' Beyond the restricted set it must provide the full lock family
+(\texttt{Write\_Lock}/\texttt{Read\_Lock}/\texttt{Unlock} on \texttt{Lock} and
+\texttt{RTS\_Lock}), \texttt{Timed\_Sleep}/\texttt{Timed\_Delay},
+suspension-object operations, dynamic \texttt{Set\_Priority} with inheritance,
+SMP affinity (\texttt{Set\_Task\_Affinity}, \texttt{Get\_CPU}), and the abort/ATC
+family (\texttt{Abort\_Task}, \texttt{Suspend\_Task}, \texttt{Stop\_All\_Tasks},
+\dots). The crucial design fact: \emph{the bottom of the stack did not change.}
+Both the restricted and the full GNULL sit on the same \texttt{System.BB}
+kernel. Going to the full profile means a richer upper layer and a fatter
+adapter, but the ``OS'' underneath --- threads, clock, alarm queue, context
+switch --- is the same bare-board executive in both cases.
+
+\section{Following one operation all the way down}
+
+To make the layering concrete, trace a single \texttt{delay until Next} for a
+periodic task:
+
+\begin{enumerate}
+  \item \textbf{Source / compiler.} The compiler turns \texttt{delay until Next}
+        into a call to a GNARL delay routine, passing the absolute wake time.
+  \item \textbf{GNARL.} GNARL converts the \texttt{Ada.Real\_Time.Time} to the
+        runtime's internal \texttt{Time} and calls the GNULL primitive
+        \texttt{System.Task\_Primitives.Operations.Delay\_Until}.
+  \item \textbf{GNULL.} \texttt{Delay\_Until} records
+        \texttt{Self\_ID.Common.State := Delay\_Sleep} on the ATCB, then calls
+        through \texttt{System.OS\_Interface.Delay\_Until}, which renames
+        \texttt{System.BB.Time.Delay\_Until}.
+  \item \textbf{Kernel.} \texttt{System.BB.Time} writes the wake time into the
+        thread descriptor's \texttt{Alarm\_Time}, links it into the alarm queue
+        ordered by expiry, marks the thread \texttt{Delayed}, and programs the
+        hardware timer for the nearest alarm. It then invokes the scheduler.
+  \item \textbf{Hardware + context switch.} With the caller no longer runnable,
+        the scheduler picks the next ready thread and \texttt{context\_switch.S}
+        restores its windowed registers. Later, the timer interrupt fires at
+        \texttt{Next}, the kernel moves the thread back to \texttt{Runnable}, and
+        at the next scheduling point it resumes --- on the line after the
+        \texttt{delay until}.
+\end{enumerate}
+
+Five layers, one statement. That is the whole reason the runtime is split this
+way: GNARL wrote step~2 once, for every Ada target in the world, and this port
+only had to supply steps~3--5 by pointing \texttt{System.OS\_Interface} at
+\texttt{System.BB} instead of at pthreads. The user view of these same
+constructs is in \S\ref{ch:tasking}; the interrupt that ends the delay is in
+\S\ref{ch:interrupts}; and the register-level switch in step~5 is in
+\S\ref{ch:context-switch}.

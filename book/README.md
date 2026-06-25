@@ -29,5 +29,8 @@ dispatching the workflow by hand uploads it as a build artifact.
 | `ch_hal3.tex` | RTC, RTC-IO, Touch, SHA, AES |
 | `ch_driver_design.tex` | How to write a task-safe driver (Engine / ownership gateway); why and benefits |
 | `ch_storage.tex` | SD\_SPI, SDMMC, and the ext4 filesystem |
+| `ch_psram.tex` | Bringing up the octal PSRAM; the 80 MHz din-timing tune |
+| `ch_heap.tex` | `malloc`/`free` in Ada via the O(1) TLSF allocator |
+| `ch_gnarl_gnull.tex` | The GNARL/GNULL two-layer tasking runtime architecture |
 | `ch_app_internal.tex` | Appendix B — reference for every on-chip peripheral driver |
 | `ch_app_external.tex` | Appendix C — reference for every external-device driver |

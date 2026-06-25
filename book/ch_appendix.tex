@@ -31,7 +31,7 @@ Tasks, protected objects, \texttt{delay until} & yes & yes & yes \\
 Exception propagation (ZCX)        & no  & yes & yes \\
 Controlled types / finalization (RAII) & no & yes & yes \\
 Secondary stack                    & no  & yes & yes \\
-Heap                               & bump only & first-fit & first-fit \\
+Heap                               & bump only & TLSF (O(1)) & TLSF (O(1)) \\
 \texttt{select} / rendezvous / \texttt{abort} & no & no & yes \\
 RAII-handle HAL drivers (SPI, I2S, \ldots) & no & yes & yes \\
 Smallest footprint                 & yes & --- & --- \\
