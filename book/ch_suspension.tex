@@ -1,0 +1,178 @@
+\chapter{Suspension Objects}
+\label{ch:suspension}
+
+A \emph{suspension object} is the lightest synchronisation primitive Ada offers: a
+single Boolean flag with one special power --- a task can \emph{block} on it until
+the flag is set, consuming the signal as it wakes. It is the idiomatic way to hand
+an event from an interrupt handler to a normal task (``the edge fired, go look''),
+and it costs almost nothing. The tasking chapter introduced it in passing while
+surveying ways to wait for an event (\S\ref{sec:waiting}); this chapter is the
+focused account --- the exact semantics, the rules that bite, and when to reach for
+one instead of a protected entry.
+
+Suspension objects live in \texttt{Ada.Synchronous\_Task\_Control} (ARM~D.10) and
+are available under \emph{every} profile --- \texttt{light-tasking},
+\texttt{embedded}, and \texttt{full} alike --- because they are a core Ravenscar
+primitive.
+
+\section{The interface}
+
+The whole package is four operations over one opaque, limited type:
+
+\begin{lstlisting}
+package Ada.Synchronous_Task_Control with Preelaborate is
+   type Suspension_Object is limited private;     --  one bit; starts False
+
+   procedure Set_True  (S : in out Suspension_Object);   --  raise the flag
+   procedure Set_False (S : in out Suspension_Object);   --  lower it
+   function  Current_State (S : Suspension_Object) return Boolean;
+   procedure Suspend_Until_True (S : in out Suspension_Object);  --  block + consume
+end Ada.Synchronous_Task_Control;
+\end{lstlisting}
+
+\texttt{Suspend\_Until\_True} is the one with teeth. If the flag is already
+\texttt{True} it returns at once, leaving it \texttt{False}; if it is \texttt{False}
+the calling task \emph{blocks} --- descheduled, burning no CPU --- until some other
+task (typically an interrupt handler) calls \texttt{Set\_True}, at which point it
+wakes and, in the same indivisible step, clears the flag back to \texttt{False}.
+
+There is no magic inside. On the bare runtime a \texttt{Suspension\_Object} is just
+a protected object with a one-line barrier, and the whole of D.10 is this:
+
+\begin{lstlisting}
+protected body Suspension_Object is
+   procedure Set_True  is begin Open := True;  end Set_True;
+   procedure Set_False is begin Open := False; end Set_False;
+
+   entry Wait when Open is        --  Suspend_Until_True calls this entry
+   begin
+      Open := False;              --  consume the signal as we pass the barrier
+   end Wait;
+end Suspension_Object;
+\end{lstlisting}
+
+Seeing the implementation explains every rule that follows.
+
+\section{The signalling pattern}
+
+The canonical use is interrupt-to-task hand-off. A protected interrupt handler does
+the absolute minimum --- set the flag --- and a worker task does the real work after
+\texttt{Suspend\_Until\_True} wakes it. The handler stays tiny (it runs at a high
+interrupt ceiling, \S\ref{ch:interrupts}); the work runs at ordinary task priority.
+
+\begin{lstlisting}
+with Ada.Synchronous_Task_Control;  use Ada.Synchronous_Task_Control;
+with ESP32S3.GPIO;
+with ESP32S3.GPIO.Interrupts;
+
+Edge_Seen : Suspension_Object;       --  library level
+
+procedure On_Edge is                 --  runs in interrupt context: keep it tiny
+begin
+   Set_True (Edge_Seen);             --  "an edge happened"
+end On_Edge;
+
+task Worker;
+task body Worker is
+begin
+   ESP32S3.GPIO.Configure (0, ESP32S3.GPIO.Input, Pull => ESP32S3.GPIO.Pull_Up);
+   ESP32S3.GPIO.Interrupts.Enable
+     (Pin => 0, On => ESP32S3.GPIO.Interrupts.Falling_Edge, Action => On_Edge'Access);
+   loop
+      Suspend_Until_True (Edge_Seen);   --  sleep here, zero CPU, until an edge
+      --  ... handle the edge ...
+   end loop;
+end Worker;
+\end{lstlisting}
+
+This is exactly how the HAL's own interrupt children (GPIO, and the
+\texttt{*-interrupts} packages for the I2C devices) deliver their events.
+
+\section{Level-triggered, so no lost wake-ups}
+
+The flag is \emph{sticky}. A \texttt{Set\_True} that happens \emph{before} the task
+reaches \texttt{Suspend\_Until\_True} is not lost: the task finds the flag already
+\texttt{True} and returns immediately, consuming it. That closes the classic
+lost-wake-up race --- the one a raw ``wake'' signal or a bare condition variable
+suffers when the signal arrives a moment before the wait. With a suspension object
+the order does not matter.
+
+The flip side is that it is a \emph{binary flag, not a counter}. Several
+\texttt{Set\_True} calls before a single \texttt{Suspend\_Until\_True} collapse into
+\emph{one} wake-up. A suspension object therefore means ``at least one event has
+happened since you last looked,'' never ``exactly $N$ events.'' For a stream where
+every event must be accounted for, that coalescing is a bug waiting to happen --- see
+the protected-entry upgrade below.
+
+\section{One waiter, and only self-suspension}
+
+Two rules fall straight out of that \texttt{entry Wait}:
+
+\begin{itemize}
+\item \textbf{A task may only suspend \emph{itself}.} \texttt{Suspend\_Until\_True}
+  blocks the caller; there is no operation to suspend another task. Any task (or
+  handler) may \emph{resume} a blocked one with \texttt{Set\_True}.
+\item \textbf{At most one task may wait on a given object at a time.} A second task
+  that calls \texttt{Suspend\_Until\_True} while another is already blocked raises
+  \texttt{Program\_Error}. This is not an arbitrary limit: the object is a protected
+  object with a single entry, and the Jorvik/Ravenscar restriction
+  \texttt{Max\_Entry\_Queue\_Length =>\ 1} caps that entry's queue at one caller.
+  One suspension object serves one waiter.
+\end{itemize}
+
+If several tasks must wake on the same event, give each its own suspension object
+and signal them in turn, or use a protected object whose barrier they all share.
+
+\section{Suspension object or protected entry?}
+
+A suspension object carries \emph{no data} --- it only says ``something happened.''
+When you need to pass a value across the hand-off, or to count events rather than
+coalesce them, the natural upgrade is a protected object with an entry: the same
+block-until-ready behaviour, but the barrier can be any condition and the entry can
+deliver a payload. The coalescing problem above, fixed, is just such an entry:
+
+\begin{lstlisting}
+protected Edge_Box is
+   procedure Note;                       --  called from the ISR callback
+   entry     Wait (Count : out Natural); --  block until >= 1, return how many
+private
+   N : Natural := 0;
+end Edge_Box;
+
+protected body Edge_Box is
+   procedure Note is begin N := N + 1; end Note;       --  never loses a count
+   entry Wait (Count : out Natural) when N > 0 is
+   begin
+      Count := N;  N := 0;               --  consume all of them, atomically
+   end Wait;
+end Edge_Box;
+\end{lstlisting}
+
+So: reach for a \textbf{suspension object} when the signal is simply ``it happened,
+go and look,'' and the latest state is what matters (a DMA completion, a button
+edge, ``data is ready in the shared buffer''). Reach for a \textbf{protected entry}
+when you must not lose counts, must transfer a value atomically, or must block on a
+richer condition than one bit. The protected-entry half of this trade is developed
+further in the tasking chapter's waiting patterns (\S\ref{sec:waiting}).
+
+\section{No timeout of its own}
+
+\texttt{Suspend\_Until\_True} blocks until the flag is set, full stop --- there is no
+``wait, but give up after $T$'' form. When you need a bounded wait, the approach
+depends on the profile, and the tasking chapter works all three through in detail
+(\S\ref{sec:waiting}): under Jorvik a protected entry barriered on the event
+\emph{or} a deadline (an \texttt{Ada.Real\_Time.Timing\_Events} handler); under
+\texttt{full} a \texttt{select \ldots\ Suspend\_Until\_True; or delay until \ldots}
+asynchronous transfer of control. For the simple ``poll the hardware but give up''
+case that needs no interrupt at all, \texttt{ESP32S3.Wait.Until\_True} is a
+lock-free helper that works under every profile.
+
+\section{Cost and when it shines}
+
+A suspension object is about the cheapest blocking primitive there is: one protected
+object, a one-line barrier, no payload to copy, no ceiling negotiation beyond the
+protected action itself. \texttt{Set\_True} from an interrupt handler is a couple of
+instructions, and the woken task was genuinely asleep --- no spinning, no polling,
+no wasted power --- until the hardware had something to say. For the overwhelmingly
+common embedded shape ``a short ISR notices an event; a normal task does the work,''
+it is the right tool, and the one the HAL reaches for first.
