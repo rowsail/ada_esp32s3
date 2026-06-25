@@ -27,10 +27,10 @@ begin
    end if;
 
    Put_Line ("[dns] resolving " & Hostname & " ...");
-   if DNS_Client.Resolve (DNS_Server, Hostname, Addr) then
+   if DNS_Client.Resolve (DNS_Server, Hostname, Addr, Timeout => 3.0) then
       Put_Line ("[dns] " & Hostname & " = " & Image (Addr));
    else
-      Put_Line ("[dns] no A record in the response");
+      Put_Line ("[dns] no answer (timed out) or no A record");
    end if;
 
    loop delay until Clock + Seconds (3600); end loop;

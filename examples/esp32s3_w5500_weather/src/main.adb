@@ -135,8 +135,8 @@ begin
 
    --  Resolve the API host by name (portable DNS_Client over GNAT.Sockets).
    Put_Line ("[wx] resolving " & Host_Name & " ...");
-   if not DNS_Client.Resolve (DNS_Server, Host_Name, Server_IP) then
-      Put_Line ("[wx] DNS resolution failed");
+   if not DNS_Client.Resolve (DNS_Server, Host_Name, Server_IP, Timeout => 5.0) then
+      Put_Line ("[wx] DNS resolution failed (no resolver reply)");
       loop delay until Clock + Seconds (3600); end loop;
    end if;
    Put_Line ("[wx] " & Host_Name & " = " & Image (Server_IP));

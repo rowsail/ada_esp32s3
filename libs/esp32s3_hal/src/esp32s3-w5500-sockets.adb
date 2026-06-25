@@ -236,10 +236,20 @@ package body ESP32S3.W5500.Sockets is
       end loop;
    end Wait_Connected;
 
+   procedure Set_Receive_Timeout (S : in out Socket; To : Duration) is
+   begin
+      S.Recv_Timeout := (if To < 0.0 then 0.0 else To);
+   end Set_Receive_Timeout;
+
    procedure Wait_Data (S : in out Socket; Result : out Status) is
+      Timed    : constant Boolean := S.Recv_Timeout > 0.0;
+      Deadline : Time;
    begin
       if not S.Is_Open then
          Result := Not_Open;  return;
+      end if;
+      if Timed then
+         Deadline := Clock + To_Time_Span (S.Recv_Timeout);
       end if;
       loop
          if R16_Stable (S, Sn_RX_RSR) > 0 then
@@ -247,8 +257,14 @@ package body ESP32S3.W5500.Sockets is
          end if;
          case State (S) is
             when Close_Wait | Closed => Result := Closed_By_Peer;  return;
-            when others              => Wait_Event (S);
+            when others              => null;
          end case;
+         --  The INTn heartbeat re-signals every ~50 ms, so a Wait_Event sleeping
+         --  on the interrupt still wakes in time to honour the deadline.
+         if Timed and then Clock >= Deadline then
+            Result := Timed_Out;  return;
+         end if;
+         Wait_Event (S);
       end loop;
    end Wait_Data;
 

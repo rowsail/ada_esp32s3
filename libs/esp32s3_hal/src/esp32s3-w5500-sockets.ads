@@ -105,8 +105,14 @@ package ESP32S3.W5500.Sockets is
 
    --  Block until data is available to Receive, or the peer closes.  Sleeps on
    --  INTn if an Event_Waiter is registered, else polls.  Result = OK when data
-   --  is ready, Closed_By_Peer when the connection has closed.
+   --  is ready, Closed_By_Peer when the connection has closed, Timed_Out if no
+   --  data arrived within the receive timeout (see Set_Receive_Timeout).
    procedure Wait_Data (S : in out Socket; Result : out Status);
+
+   --  Cap how long Wait_Data blocks before returning Timed_Out.  Zero (the
+   --  default) means block indefinitely.  Backs the GNAT.Sockets facade's
+   --  Receive_Timeout socket option.
+   procedure Set_Receive_Timeout (S : in out Socket; To : Duration);
 
    --  Send up to Data'Length bytes; Sent = how many were transmitted (may be less
    --  than Data'Length if the TX buffer was partly full).
@@ -149,5 +155,6 @@ private
       Index : Socket_Id     := 0;
       Proto : Protocol      := None;
       Is_Open : Boolean     := False;
+      Recv_Timeout : Duration := 0.0;   --  0 => Wait_Data blocks forever
    end record;
 end ESP32S3.W5500.Sockets;

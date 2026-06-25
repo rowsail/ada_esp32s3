@@ -7,6 +7,7 @@ package body DNS_Client is
      (Server     : Inet_Addr_Type;
       Name       : String;
       Addr       : out Inet_Addr_Type;
+      Timeout    : Duration  := 0.0;
       Local_Port : Port_Type := 13_001) return Boolean
    is
       Sock  : Socket_Type;
@@ -77,8 +78,17 @@ package body DNS_Client is
       Build_Query;
       Create_Socket (Sock, Family_Inet, Socket_Datagram);
       Bind_Socket   (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
-      Send_Socket    (Sock, Query (Query'First .. QLen - 1), SLast, To => To'Access);
-      Receive_Socket (Sock, Resp, RLast, From => From'Access);
+      if Timeout > 0.0 then
+         Set_Socket_Option (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
+      end if;
+      Send_Socket (Sock, Query (Query'First .. QLen - 1), SLast, To => To'Access);
+      begin
+         Receive_Socket (Sock, Resp, RLast, From => From'Access);
+      exception
+         when Socket_Error =>                --  no reply within Timeout
+            Close_Socket (Sock);
+            return False;
+      end;
 
       declare
          AnCount : constant Integer := U16 (Resp'First + 6);   --  answer count

@@ -17,6 +17,7 @@ package body GNAT.Sockets is
    Local_Ports    : array (W5500.Socket_Id) of WS.Port_Number := (others => 0);
    Modes          : array (W5500.Socket_Id) of Mode_Type := (others => Socket_Stream);
    Opened         : array (W5500.Socket_Id) of Boolean := (others => False);
+   Recv_Timeout   : array (W5500.Socket_Id) of Duration := (others => 0.0);
 
    procedure Initialize (Device : ESP32S3.W5500.Sockets.Device_Access) is
    begin
@@ -101,10 +102,11 @@ package body GNAT.Sockets is
       end if;
       for I in W5500.Socket_Id loop
          if not In_Use (I) then
-            In_Use (I)      := True;
-            Local_Ports (I) := 0;
-            Modes (I)       := Mode;
-            Opened (I)      := False;
+            In_Use (I)        := True;
+            Local_Ports (I)   := 0;
+            Modes (I)         := Mode;
+            Opened (I)        := False;
+            Recv_Timeout (I)  := 0.0;
             Socket := (Index => Integer (I));
             return;
          end if;
@@ -194,7 +196,12 @@ package body GNAT.Sockets is
                 with Import, Address => Item'Address;
    begin
       Ensure_Open (I);
+      --  Re-apply the option (Ensure_Open may have just opened the chip socket).
+      WS.Set_Receive_Timeout (Engine_Sockets (I), Recv_Timeout (I));
       WS.Wait_Data (Engine_Sockets (I), St);
+      if St = WS.Timed_Out then
+         raise Socket_Error;                      --  receive timeout elapsed
+      end if;
       if From = null and then St = WS.Closed_By_Peer then
          Last := Item'First - 1;                  --  end of stream
          return;
@@ -223,6 +230,19 @@ package body GNAT.Sockets is
       end if;
       Socket := No_Socket;
    end Close_Socket;
+
+   procedure Set_Socket_Option (Socket : Socket_Type;
+                               Level   : Level_Type := Socket_Level;
+                               Option  : Option_Type) is
+      pragma Unreferenced (Level);
+      I : constant W5500.Socket_Id := Idx (Socket);
+   begin
+      case Option.Name is
+         when Receive_Timeout =>
+            Recv_Timeout (I) := Option.Timeout;
+            WS.Set_Receive_Timeout (Engine_Sockets (I), Option.Timeout);
+      end case;
+   end Set_Socket_Option;
 
    ---------------------------------------------------------------------------
    --  Stream over a socket
