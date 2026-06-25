@@ -219,6 +219,49 @@ kernel); a loss before it has no effect.
    M.Commit;         --  one atomic, journaled, crash-safe transaction
 \end{lstlisting}
 
+\subsection{Concurrency: one owner per mount}
+
+A \texttt{Mount} is a \emph{single-owner} handle, not a shared service. Every
+operation takes it \texttt{in out} and mutates shared state, and the filesystem
+holds no internal lock or protected object: drive one mount from one task, and let
+its calls run to completion in sequence.
+
+That rule is stricter than it first looks, because even reads have side effects.
+Underneath the mount sits a write-back LRU block cache, and \texttt{Read\_File}
+fetches-on-miss and reorders it --- so two tasks ``only reading'' the same mount
+still race on the cache. Writes are stronger still: \texttt{Create\_File},
+\texttt{Write\_File}, \texttt{Mkdir} and the rest accumulate a dirty-metadata
+write-set that \texttt{Commit} flushes as \emph{one} journaled transaction (the
+crash-safe commit above). Interleaving two tasks' writes scrambles that write-set
+and breaks the crash-safety guarantee, which assumes a single writer building one
+coherent transaction. The block drivers \emph{beneath} the filesystem
+(\texttt{SD\_SPI}, \texttt{SDMMC}) are themselves task-safe, but that only
+serialises the \emph{bus}; it does nothing for the filesystem state above it.
+
+If more than one task must reach the filesystem, give the mount a single owner and
+funnel every request through it: a dedicated task that owns the \texttt{Mount} and
+performs the I/O, with other tasks handing it work through a \texttt{protected}
+request queue (Ravenscar-compatible) or, on the \texttt{full} profile, a rendezvous
+entry. The I/O itself must stay in the owning task --- never inside a protected
+action, because the SD drivers can suspend and a protected operation must not block.
+
+\begin{lstlisting}
+--  One task owns the Mount and is the only code that touches it; other tasks
+--  hand it work (a protected request queue under Ravenscar, or a rendezvous
+--  entry on the full profile).  The blocking I/O stays in this task.
+task body File_Server is
+   M : ESP32S3.Ext4.FS.Mount;          --  the single owner
+begin
+   M.Open (Dev, Read_Only => False);
+   loop
+      --  take the next request, then service it on the one mount:
+      --     M.Read_File (...)              --  a read request
+      --     M.Write_File (...);  M.Commit; --  a write request, committed
+      null;
+   end loop;
+end File_Server;
+\end{lstlisting}
+
 \subsection{Errors}
 
 Filesystem operations raise: the standard \texttt{Ada.IO\_Exceptions} names
