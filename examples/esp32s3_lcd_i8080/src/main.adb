@@ -20,12 +20,20 @@ procedure Main is
    Pclk_Pin : constant ESP32S3.GPIO.Pin_Id := 13;
    D_Pins   : constant Data_Pins := (4, 5, 6, 7, 8, 9, 10, 11);
 
-   Set_Khz : constant := 200;               --  200 kHz pixel clock for the test
+   --  2 MHz: a realistic display clock, and crucially ABOVE ~625 kHz, where the
+   --  pixel division has to be carried by the prescale (CLKCNT_N).  Below that
+   --  threshold the divider lands entirely in the module stage and the prescale
+   --  path is never exercised -- which is why the old 200 kHz test ran green even
+   --  while CLKCNT_N was left at 0.  (This timing check validates clock
+   --  GENERATION; data-edge setup integrity needs a hardware loopback / scope.)
+   Set_Khz : constant := 2_000;
 
-   --  4000 bytes, one byte per PCLK -> a ~20 ms transfer at 200 kHz, long enough
-   --  to time the pixel clock off the runtime wall clock.
+   --  One byte per PCLK.  At 2 MHz a single 4000-byte transfer is only 2 ms, too
+   --  short to time accurately off the wall clock, so the transfer is repeated to
+   --  build a ~50 ms window.
    type Buffer is array (0 .. 3_999) of Unsigned_8;
-   Buf : Buffer;
+   Buf  : Buffer;
+   Reps : constant := 25;
 begin
    delay until Clock + Milliseconds (200);
    Put_Line ("[lcd] bare-metal LCD i80 8-bit parallel DMA-TX self-test "
@@ -46,8 +54,12 @@ begin
    begin
       Acquire (S);
       Configure_Pins (S, D_Pins, Pclk => Pclk_Pin);   --  route pads on held ctrl
+      Ok := True;
       T0 := Clock;
-      Transmit (S, Buf'Address, Buffer'Length, Ok);     --  blocks until done
+      for R in 1 .. Reps loop
+         Transmit (S, Buf'Address, Buffer'Length, Ok);  --  blocks until done
+         exit when not Ok;
+      end loop;
       Secs := Float (To_Duration (Clock - T0));
       Release (S);
 
@@ -61,13 +73,14 @@ begin
       Put_Line (if Ok then "PASS" else "FAIL");
 
       Meas := (if Secs = 0.0 then 0
-               else Integer (Float (Buffer'Length) / Secs / 1000.0));
+               else Integer (Float (Buffer'Length * Reps) / Secs / 1000.0));
       Put ("[lcd] pclk: set=");
       Put (Set_Khz);
       Put (" kHz measured=");
       Put (Meas);
       Put (" kHz  ");
-      Put_Line (if Ok and then abs (Meas - Set_Khz) <= 20 then "PASS"
+      --  +/-5 %: the wall-clock timing has some jitter at MHz rates.
+      Put_Line (if Ok and then abs (Meas - Set_Khz) <= Set_Khz / 20 then "PASS"
                 else "FAIL");
    end;
 
