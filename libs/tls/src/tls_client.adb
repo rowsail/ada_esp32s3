@@ -230,6 +230,10 @@ package body TLS_Client is
       --  supported_versions: TLS 1.3
       P16 (B, 43);  P16 (B, 3);  P8 (B, 2);  P16 (B, 16#0304#);
 
+      --  psk_key_exchange_modes: psk_dhe_ke (real clients always send this; some
+      --  servers drop a ClientHello without it even when no PSK is offered).
+      P16 (B, 45);  P16 (B, 2);  P8 (B, 1);  P8 (B, 1);
+
       --  key_share: one x25519 entry
       P16 (B, 51);  P16 (B, 38);  P16 (B, 36);             --  ext, ext len, list len
       P16 (B, 16#001D#);  P16 (B, 32);                     --  group, key length
