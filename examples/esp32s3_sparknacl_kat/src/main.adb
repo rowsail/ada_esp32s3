@@ -1,8 +1,33 @@
 --  SPARKNaCl known-answer tests on the bare-metal ESP32-S3.
+--  ========================================================
 --
---  Proves the vendored, formally-verified SPARKNaCl crypto primitives compute
---  correct results on this target -- the foundation for a pure-Ada TLS stack.
---  Each check compares a primitive's output against a published test vector.
+--  What it demonstrates
+--    Runs the vendored, formally-verified SPARKNaCl crypto primitives on this
+--    target and checks each one against a published test vector -- proving the
+--    pure-Ada/SPARK crypto computes correct results on the S3 (the foundation
+--    for a pure-Ada TLS stack).  Two primitives are exercised:
+--      * SHA-256 hashing       (SPARKNaCl.Hashing.SHA256)
+--      * X25519 scalar mult    (SPARKNaCl.Scalar.Mult, Curve25519 ECDH)
+--    Then it shows the hardware RNG is producing live entropy.
+--
+--  Build & run
+--    ./x run esp32s3_sparknacl_kat
+--    Needs the embedded profile (not the default light-tasking); build.sh sets
+--    ESP32S3_RTS_PROFILE=embedded.
+--
+--  How to read the output
+--    Each known-answer test prints "[kat] <name> : PASS" (or FAIL).  A run that
+--    passes prints PASS on both checks, then a line of three RNG words (which
+--    differ from run to run, and from each other), then "[kat] done":
+--      [kat] SPARKNaCl known-answer tests (pure Ada/SPARK on the S3)
+--      [kat] SHA-256(abc)   : PASS
+--      [kat] X25519 RFC7748 : PASS
+--      [kat] RNG (entropy on): <w0> <w1> <w2>
+--      [kat] done
+--
+--  Hardware / wiring
+--    None (self-contained): the test vectors are compiled in and the RNG is
+--    on-chip.
 with Ada.Real_Time; use Ada.Real_Time;
 with Interfaces;
 with SPARKNaCl;
@@ -23,6 +48,17 @@ procedure Main is
    begin
       Put_Line ("[kat] " & Name & " : " & (if Pass then "PASS" else "FAIL"));
    end Check;
+
+   --  Known-answer vectors.  Legend:
+   --    Abc      message input to hash, the three ASCII bytes "abc"
+   --    SHA_Want expected SHA-256 digest of Abc
+   --    X_Scalar X25519 scalar  (the "k" / private value)
+   --    X_U      X25519 base point coordinate (the "u" input)
+   --    X_Want   expected X25519 result, Mult (X_Scalar, X_U)
+   --  Provenance:
+   --    SHA-256("abc") digest -- FIPS 180-4, Appendix B.1 worked example.
+   --    X25519 triple (k, u, result) -- RFC 7748 section 5.2, first test
+   --    vector.  Both are reproducible from those documents.
 
    --  SHA-256("abc") (FIPS 180-4 example).
    Abc      : constant Byte_Seq (0 .. 2) := (16#61#, 16#62#, 16#63#);
@@ -48,8 +84,21 @@ procedure Main is
       16#8e#, 16#94#, 16#ea#, 16#4d#, 16#f2#, 16#8d#, 16#08#, 16#4f#,
       16#32#, 16#ec#, 16#cf#, 16#03#, 16#49#, 16#1c#, 16#71#, 16#f7#,
       16#54#, 16#b4#, 16#07#, 16#55#, 16#77#, 16#a2#, 16#85#, 16#52#);
+
+   --  Let the console come up before the first line (USB-serial settle).
+   Console_Settle_Ms : constant := 200;
+
+   --  Print width, in hex digits, of one 32-bit RNG word.
+   RNG_Word_Hex_Digits : constant := 8;
+
+   --  Number of RNG words to sample as the liveness check.
+   RNG_Sample_Count : constant := 3;
+
+   --  Park here forever once the tests are done; one-hour ticks just keep the
+   --  task alive without busy-waiting.
+   Idle_Tick_Seconds : constant := 3600;
 begin
-   delay until Clock + Milliseconds (200);
+   delay until Clock + Milliseconds (Console_Settle_Ms);
 
    --  Enable a real hardware entropy source (internal 8 MHz clock + SAR ADC
    --  sampling) before using the RNG for anything cryptographic -- required on
@@ -60,14 +109,16 @@ begin
    Check ("SHA-256(abc)  ", SPARKNaCl.Hashing.SHA256.Hash (Abc) = SHA_Want);
    Check ("X25519 RFC7748", SPARKNaCl.Scalar.Mult (X_Scalar, X_U) = X_Want);
 
-   --  Show the entropy source is live: three RNG words (should all differ).
+   --  Show the entropy source is live: a few RNG words (which should all differ).
    Put ("[kat] RNG (entropy on):");
-   for K in 1 .. 3 loop
+   for K in 1 .. RNG_Sample_Count loop
       Put (" ");
-      Put_Hex (Interfaces.Unsigned_32 (ESP32S3.RNG.Read), 8);
+      Put_Hex (Interfaces.Unsigned_32 (ESP32S3.RNG.Read), RNG_Word_Hex_Digits);
    end loop;
    New_Line;
    Put_Line ("[kat] done");
 
-   loop delay until Clock + Seconds (3600); end loop;
+   loop
+      delay until Clock + Seconds (Idle_Tick_Seconds);
+   end loop;
 end Main;

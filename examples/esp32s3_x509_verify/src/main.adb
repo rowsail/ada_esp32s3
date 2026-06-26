@@ -1,9 +1,31 @@
---  End-to-end certificate signature verification: parse a self-signed RSA-2048
---  certificate, then verify its signature -- SHA-256 of the TBS region, RSA-recover
---  the PKCS#1 block with the cert's own public key, and compare.  A self-signed
---  cert verifies under its own key, so a PASS exercises the whole stack: the DER
---  parser, the RSA accelerator, and SPARKNaCl's SHA-256.  A tampered copy must be
---  rejected.
+--  What it demonstrates
+--  ---------------------
+--  End-to-end X.509 certificate signature verification as a known-answer test.
+--  Parse a self-signed RSA-2048 certificate, then verify its signature: SHA-256 the
+--  TBS (signed) region, RSA-recover the PKCS#1 block with the cert's own public key,
+--  and compare.  A self-signed cert verifies under its own key, so a PASS exercises
+--  the whole stack -- the DER parser, the RSA accelerator, and SPARKNaCl's SHA-256.
+--  A copy with one signed byte flipped must be rejected.
+--
+--  Build & run
+--  -----------
+--  ./x run esp32s3_x509_verify
+--  Needs the embedded profile; build.sh sets ESP32S3_RTS_PROFILE=embedded.
+--
+--  Output
+--  ------
+--  Four lines.  PASS is both "[verify]" check lines reading PASS:
+--    [verify] self-signed RSA-2048 certificate signature
+--    [verify] signature valid : PASS
+--    [verify] tampered rejected : PASS
+--    [verify] done
+--  "[verify] parse failed" appears instead of the two check lines only if the
+--  bundled DER fails to parse (it should not -- the bytes are a fixed test vector).
+--
+--  Hardware / wiring
+--  -----------------
+--  None (self-contained): the certificate is a compiled-in byte vector and the RSA
+--  math runs on the on-chip accelerator.
 with Ada.Real_Time; use Ada.Real_Time;
 with Interfaces;
 with X509;          use X509;
@@ -17,6 +39,18 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 procedure Main is
    use type Interfaces.Unsigned_8;
 
+   --  Test vector: a self-signed RSA-2048 X.509 v3 certificate, DER-encoded.
+   --  Legend (decoded with `openssl x509 -inform DER -text`):
+   --    Subject = Issuer : CN=test.example.com  (self-signed)
+   --    Serial           : 0x0123456789ABCDEF
+   --    Signature alg    : sha256WithRSAEncryption (RSASSA-PKCS1-v1.5)
+   --    Public key       : RSA 2048-bit, exponent 65537 (0x10001)
+   --    Validity         : 2020-01-01 .. 2049-12-31
+   --  Provenance: a fixed, throwaway test certificate (private key discarded after
+   --  signing -- it authenticates nothing).  `openssl verify` confirms it is a valid
+   --  self-signed certificate, so RSA_PKCS1_SHA256 over its own key must return True.
+   --  The 698 bytes below are the exact DER, so a reader can write them out and
+   --  re-decode to check every field above.
    Cert_DER : constant Byte_Array (0 .. 697) :=
      (16#30#, 16#82#, 16#02#, 16#B6#, 16#30#, 16#82#, 16#01#, 16#9E#, 16#A0#, 16#03#, 16#02#, 16#01#,
       16#02#, 16#02#, 16#08#, 16#01#, 16#23#, 16#45#, 16#67#, 16#89#, 16#AB#, 16#CD#, 16#EF#, 16#30#,
@@ -78,6 +112,13 @@ procedure Main is
       16#AC#, 16#D1#, 16#6D#, 16#B9#, 16#7B#, 16#13#, 16#47#, 16#4C#, 16#62#, 16#AE#, 16#E1#, 16#A2#,
       16#7C#, 16#28#);
 
+   --  Negative test: which signed byte to corrupt, and how.  Any offset inside the
+   --  TBS region works; 20 lands in the early version/serial fields.  XOR with all-
+   --  ones flips every bit of that byte, guaranteeing a different SHA-256 of the TBS
+   --  and therefore a signature that no longer matches.
+   Tamper_Offset : constant := 20;
+   All_Ones      : constant := 16#FF#;
+
    C : Certificate;
 
    function Bytes (S : Slice) return Byte_Array is (Cert_DER (S.First .. S.Last));
@@ -105,16 +146,22 @@ begin
 
       --  Negative: flip one byte of the signed region; verification must fail.
       declare
-         Bad : Byte_Array := Bytes (C.TBS);
+         Bad      : Byte_Array := Bytes (C.TBS);
+         Position : constant Natural := Bad'First + Tamper_Offset;
       begin
-         Bad (Bad'First + 20) := Bad (Bad'First + 20) xor 16#FF#;
+         Bad (Position) := Bad (Position) xor All_Ones;
          Check ("tampered rejected",
                 not Cert_Verify.RSA_PKCS1_SHA256
-                      (TBS => Bad, Signature => Bytes (C.Signature),
-                       Modulus => Bytes (C.RSA_Modulus), Exponent => Bytes (C.RSA_Exponent)));
+                      (TBS       => Bad,
+                       Signature => Bytes (C.Signature),
+                       Modulus   => Bytes (C.RSA_Modulus),
+                       Exponent  => Bytes (C.RSA_Exponent)));
       end;
    end if;
    Put_Line ("[verify] done");
 
-   loop delay until Clock + Seconds (3600); end loop;
+   --  Self-test is one-shot; idle so the console output stays put for the runner.
+   loop
+      delay until Clock + Seconds (3600);
+   end loop;
 end Main;

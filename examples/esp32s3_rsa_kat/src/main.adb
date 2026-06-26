@@ -1,7 +1,41 @@
---  RSA accelerator known-answer test: verify an RSA-2048 modular exponentiation
---  (Z = X^65537 mod M -- exactly an RSA signature verify) on the hardware RSA/MPI
---  unit, against a host-computed vector.  Also enables the RNG entropy source, as
---  every crypto example should on this RF-free target.
+--  ESP32-S3 RSA accelerator known-answer test (KAT)
+--  ================================================
+--  What it demonstrates: one RSA-2048 modular exponentiation
+--    Z = X^65537 mod M -- exactly an RSA signature *verify* (recover the padded
+--    hash from a signature X under public key (M, e=65537)) -- on the hardware
+--    RSA/MPI unit (ESP32S3.RSA.Mod_Exp), checked against a precomputed answer.
+--    It runs the modexp twice: once with a host-supplied Montgomery constant
+--    R^2, once letting the driver compute R^2 in software (works on any modulus,
+--    e.g. an X.509 cert's).  Both must reproduce the same answer.
+--
+--  Build & run: ./x run esp32s3_rsa_kat
+--    Uses the embedded runtime profile (build.sh sets ESP32S3_RTS_PROFILE=embedded).
+--
+--  How to read the output: four lines after the banner.  PASS looks like:
+--    [rsa] ESP32-S3 RSA accelerator KAT (X^65537 mod M, 2048-bit)
+--    [rsa] host-R2 : PASS
+--    [rsa] soft-R2 : PASS
+--    [rsa] done
+--    A "FAIL" means the hardware finished but the result mismatched the vector;
+--    a "hardware did not complete (timeout)" line means the accelerator never
+--    signalled done within the bounded wait (a hardware fault).
+--
+--  Hardware: none (self-contained -- the modexp engine is on-chip).
+--
+--  Vector legend (all operands are 64-word little-endian limb arrays = 2048 bit):
+--    M_Mod   M  -- the RSA public modulus (an RSA-2048 N; odd, as every N is).
+--    X_Base  X  -- the base, i.e. the signature value being exponentiated.
+--    Y_Exp   Y  -- the public exponent e = 65537, the conventional RSA "F4".
+--    R2      R^2 mod M, the Montgomery constant with R = 2^(32*64) = 2^2048;
+--               an optimisation input, redundant with M (recomputable from it).
+--    Z_Want  the expected result X^Y mod M.
+--
+--  Vector provenance: computed on the host (Python/OpenSSL bignum) for a fixed
+--    RSA-2048 key; no generator script is committed in this repo, so M/X/R2/Z are
+--    carried here as literals.  (Inferred from the driver/source comments: there
+--    is no committed script to cite, and these are not a published NIST count.)
+--    The soft-R2 path independently recomputes R^2 from M on-chip, so it also
+--    serves as a cross-check that R2 below is the correct Montgomery constant.
 with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.RSA;    use ESP32S3.RSA;
 with ESP32S3.RNG;
@@ -65,8 +99,12 @@ procedure Main is
       16#4329AADF#, 16#37C3E4C0#, 16#14AC7524#, 16#37A6B927#, 16#00F15285#, 16#9AED8D00#,
       16#BB6C496C#, 16#F55FA5B6#, 16#066967B6#, 16#AE7C4572#);
 
-   --  Public exponent 65537 as a 64-word little-endian operand.
-   Y_Exp : constant Word_Array (0 .. 63) := (0 => 16#00010001#, others => 0);
+   --  RSA public exponent e = 65537 = 2^16 + 1 (the conventional "F4" exponent),
+   --  encoded as 16#0001_0001# in the least-significant 32-bit limb of a 64-word
+   --  little-endian operand.
+   Public_Exponent_F4 : constant Word := 16#0001_0001#;   --  65537 = 2^16 + 1
+
+   Y_Exp : constant Word_Array (0 .. 63) := (0 => Public_Exponent_F4, others => 0);
 
    Z  : Word_Array (0 .. 63);
    Ok : Boolean;
@@ -103,5 +141,8 @@ begin
    end if;
    Put_Line ("[rsa] done");
 
-   loop delay until Clock + Seconds (3600); end loop;
+   --  Nothing more to do; idle forever so the console output stays readable.
+   loop
+      delay until Clock + Seconds (3600);
+   end loop;
 end Main;

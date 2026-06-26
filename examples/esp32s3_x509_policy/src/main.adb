@@ -1,6 +1,28 @@
---  X.509 leaf-certificate policy checks: validity dates (against a supplied "now",
---  e.g. from NTP) and hostname matching via subjectAltName (with wildcard).  The
---  test cert has SANs test.example.com and *.example.org, valid 2020..2049.
+--  X.509 leaf-certificate policy checks on the bare-metal ESP32-S3 (no FreeRTOS,
+--  no IDF)
+--  =====================================================================
+--  What it demonstrates:
+--    The two policy checks the TLS client applies to a parsed leaf certificate,
+--    on a single embedded test cert -- no chain, no signature crypto here:
+--      * validity-window:  notBefore <= "now" <= notAfter, where "now" is a
+--        wall-clock time the caller supplies (e.g. derived from NTP), so the
+--        device decides freshness rather than trusting the cert blindly; and
+--      * hostname matching:  does a requested host match a subjectAltName
+--        dNSName, case-insensitively, honouring a single leftmost "*" wildcard
+--        label per RFC 6125.
+--    Each Check line asserts one expected verdict; together they cover the in-,
+--    past- and future-window cases and the exact / case-fold / wrong-host /
+--    wildcard-hit / wildcard-miss name cases.
+--
+--  Build & run:  ./x run esp32s3_x509_policy
+--    Runs under the embedded profile (build.sh sets ESP32S3_RTS_PROFILE=embedded).
+--
+--  Output:
+--    A banner, then one "[pol] <name> : PASS" line per case (the check returned
+--    what was expected), then "[pol] done".  A failing assertion prints "FAIL"
+--    instead.  The board then idles forever.
+--
+--  Hardware:  none (self-contained; the test certificate is embedded below).
 with Ada.Real_Time; use Ada.Real_Time;
 with X509;          use X509;
 with ESP32S3.RNG;
@@ -11,6 +33,26 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
 
+   --  The embedded test certificate, as raw DER (the bytes of a single ASN.1
+   --  Certificate SEQUENCE).  Decode with:  openssl x509 -inform DER -text.
+   --
+   --  Legend (what these bytes decode to, confirmed with openssl):
+   --    Version            : v3
+   --    Serial             : 0x42 (66)
+   --    Issuer / Subject   : CN=test.example.com  (self-signed: issuer = subject)
+   --    Validity           : 2020-01-01 00:00:00Z .. 2049-12-31 23:59:59Z (UTCTime)
+   --    Subject public key : RSA 2048-bit, exponent 65537
+   --    subjectAltName     : DNS:test.example.com, DNS:*.example.org  (the two SANs
+   --                         the hostname cases below probe)
+   --    Signature          : sha256WithRSAEncryption  (not checked here -- this
+   --                         example exercises only the date/hostname policy, so
+   --                         the self-signed signature is never verified)
+   --
+   --  Provenance:  a fixed, hand-built test vector committed with the parser
+   --  (commit 2d794bc, "hal: X.509 validity-date and hostname (SAN) checks").
+   --  No generator script is checked in; the field shapes (self-signed leaf,
+   --  RSA-2048/SHA-256, the 2020..2049 window, the two SANs) are the canonical
+   --  output of `openssl req -x509`, which is the presumed generator.
    Cert_DER : constant Byte_Array (0 .. 738) :=
      (16#30#, 16#82#, 16#02#, 16#DF#, 16#30#, 16#82#, 16#01#, 16#C7#, 16#A0#, 16#03#, 16#02#, 16#01#,
       16#02#, 16#02#, 16#01#, 16#42#, 16#30#, 16#0D#, 16#06#, 16#09#, 16#2A#, 16#86#, 16#48#, 16#86#,
@@ -75,34 +117,56 @@ procedure Main is
       16#60#, 16#17#, 16#5F#, 16#B0#, 16#88#, 16#34#, 16#DA#, 16#BA#, 16#BE#, 16#6B#, 16#59#, 16#EF#,
       16#53#, 16#2A#, 16#0C#, 16#8A#, 16#F7#, 16#6B#, 16#52#);
 
-   C : Certificate;
+   --  The parsed view of Cert_DER (slices into the buffer; see X509.Certificate).
+   Parsed_Cert : Certificate;
+
+   --  Report one policy assertion: print "[pol] <name> : PASS" when the check
+   --  matched its expected outcome, "FAIL" otherwise.
    procedure Check (Name : String; Pass : Boolean) is
    begin
       Put_Line ("[pol] " & Name & " : " & (if Pass then "PASS" else "FAIL"));
    end Check;
-   function At_Time (Y, Mo, D, H, Mi, S : Natural) return Time_64 is (Pack_Time (Y, Mo, D, H, Mi, S));
+
+   --  Pack a civil date/time into the comparable Time_64 that Valid_At expects,
+   --  so each case below reads as plain calendar fields.
+   function At_Time (Year, Month, Day, Hour, Minute, Second : Natural)
+                     return Time_64 is
+     (Pack_Time (Year, Month, Day, Hour, Minute, Second));
+
+   --  Let the RNG/console come up before the first line is printed; the value is
+   --  not load-bearing, just long enough to settle.
+   Startup_Settle : constant Time_Span := Milliseconds (200);
+
+   --  This example never returns; park the core for an hour at a time instead of
+   --  spinning, so the last output stays on screen.
+   Idle_Interval : constant Time_Span := Seconds (3600);
 begin
-   delay until Clock + Milliseconds (200);
+   delay until Clock + Startup_Settle;
    ESP32S3.RNG.Enable_Entropy_Source;
 
    Put_Line ("[pol] X.509 validity + hostname (SAN) checks");
-   Parse (Cert_DER, C);
-   Check ("parsed",            C.Valid);
-   Check ("SAN count = 2",     C.SAN_Count = 2);
+   Parse (Cert_DER, Parsed_Cert);
+   Check ("parsed",            Parsed_Cert.Valid);
+   Check ("SAN count = 2",     Parsed_Cert.SAN_Count = 2);
 
-   --  Validity (cert valid 2020..2049).
-   Check ("valid now (2025)",  Valid_At (Cert_DER, C, At_Time (2025, 6, 1, 12, 0, 0)));
-   Check ("expired (2050)",    not Valid_At (Cert_DER, C, At_Time (2050, 1, 1, 0, 0, 0)));
-   Check ("not yet (2019)",    not Valid_At (Cert_DER, C, At_Time (2019, 1, 1, 0, 0, 0)));
+   --  Validity window: the cert is valid 2020-01-01 .. 2049-12-31 (see legend),
+   --  so a "now" inside the window passes and one on either side fails.
+   Check ("valid now (2025)",  Valid_At (Cert_DER, Parsed_Cert, At_Time (2025, 6, 1, 12, 0, 0)));
+   Check ("expired (2050)",    not Valid_At (Cert_DER, Parsed_Cert, At_Time (2050, 1, 1, 0, 0, 0)));
+   Check ("not yet (2019)",    not Valid_At (Cert_DER, Parsed_Cert, At_Time (2019, 1, 1, 0, 0, 0)));
 
-   --  Hostname matching.
-   Check ("exact match",       Host_Matches (Cert_DER, C, "test.example.com"));
-   Check ("case-insensitive",  Host_Matches (Cert_DER, C, "TEST.Example.COM"));
-   Check ("wrong host",        not Host_Matches (Cert_DER, C, "evil.example.com"));
-   Check ("wildcard match",    Host_Matches (Cert_DER, C, "foo.example.org"));
-   Check ("wildcard no-label", not Host_Matches (Cert_DER, C, "example.org"));
-   Check ("wildcard 1 label",  not Host_Matches (Cert_DER, C, "a.b.example.org"));
+   --  Hostname matching against the two SANs (test.example.com, *.example.org).
+   --  The wildcard label matches exactly one label and only with >= 2 labels of
+   --  remainder, so "example.org" (no label) and "a.b.example.org" (two) miss.
+   Check ("exact match",       Host_Matches (Cert_DER, Parsed_Cert, "test.example.com"));
+   Check ("case-insensitive",  Host_Matches (Cert_DER, Parsed_Cert, "TEST.Example.COM"));
+   Check ("wrong host",        not Host_Matches (Cert_DER, Parsed_Cert, "evil.example.com"));
+   Check ("wildcard match",    Host_Matches (Cert_DER, Parsed_Cert, "foo.example.org"));
+   Check ("wildcard no-label", not Host_Matches (Cert_DER, Parsed_Cert, "example.org"));
+   Check ("wildcard 1 label",  not Host_Matches (Cert_DER, Parsed_Cert, "a.b.example.org"));
    Put_Line ("[pol] done");
 
-   loop delay until Clock + Seconds (3600); end loop;
+   loop
+      delay until Clock + Idle_Interval;
+   end loop;
 end Main;

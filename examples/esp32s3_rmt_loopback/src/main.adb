@@ -1,10 +1,29 @@
 --  Ada RMT self-test on the bare-metal ESP32-S3 (no FreeRTOS, no IDF)
 --  ==================================================================
---  Exercises the reusable HAL RMT driver (ESP32S3.RMT): a TX channel transmits a
---  burst of {level, duration} symbols on a GPIO pad; an RX channel reads that
---  SAME pad back (the matrix loops the pad's output into the RX input -- no
---  wiring) and captures the burst; the received durations are compared to what
---  was sent.  This verifies both the TX and RX paths plus the tick divider.
+--
+--  What it demonstrates
+--  --------------------
+--  The reusable HAL RMT driver (ESP32S3.RMT).  A TX channel transmits a burst of
+--  {level, duration} symbols on a GPIO pad; an RX channel reads that SAME pad
+--  back and captures the burst; the received durations are compared to what was
+--  sent.  This verifies both the TX and RX paths plus the tick divider.
+--
+--  Build & run
+--  -----------
+--     ./x run esp32s3_rmt_loopback
+--  Built as the EMBEDDED profile (build.sh sets ESP32S3_RTS_PROFILE=embedded):
+--  the channel handles use finalization, which light-tasking forbids.
+--
+--  Output
+--  ------
+--  A banner, then one result line; PASS means the four symbols round-tripped and
+--  every compared duration matched.  Up to eight captured symbols are then dumped
+--  as "[rmt]   got[I] = {level0:duration0, level1:duration1}".
+--
+--  Hardware / wiring
+--  -----------------
+--  None.  TX and RX share one pad (GPIO4); the GPIO matrix loops the pad's
+--  output straight into the RX input, so no external jumper is needed.
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.RMT;   use ESP32S3.RMT;
@@ -54,23 +73,41 @@ procedure Main is
       Put_Line ("[rmt] done.");
    end Done;
 
-   Pad : constant ESP32S3.GPIO.Pin_Id := 4;     --  TX drives it, RX reads it back
-   Res : constant := 1_000_000;                 --  1 MHz -> 1 tick = 1 us
+   --  The single GPIO pad TX drives and RX reads back through the matrix loop.
+   Loopback_Pad : constant ESP32S3.GPIO.Pin_Id := 4;
 
-   --  Four distinctive symbols (high then low, microsecond durations).
+   --  Channel tick rate.  1 MHz means one tick = 1 / 1_000_000 s = 1 us, so the
+   --  symbol durations below read directly as microseconds.
+   Resolution_Hz : constant := 1_000_000;
+
+   --  Both channels use index 0 (TX channel 0 and RX channel 0 are independent).
+   TX_Channel_Index : constant := 0;
+   RX_Channel_Index : constant := 0;
+
+   --  End reception after the line stays idle this many ticks (= 1_000 us here).
+   --  Comfortably longer than the longest gap inside the burst, so it only fires
+   --  once the whole burst has been sent.
+   RX_Idle_Ticks : constant Tick_Count := 1_000;
+
+   --  Four distinctive symbols: each is a high pulse then a low pulse, durations
+   --  in ticks (= microseconds at Resolution_Hz).  Distinct, monotonically rising
+   --  durations make a mismatch easy to spot in the dump.
    Sent : constant Symbol_Array :=
      ((Level0 => True, Duration0 =>  50, Level1 => False, Duration1 =>  60),
       (Level0 => True, Duration0 =>  80, Level1 => False, Duration1 =>  90),
       (Level0 => True, Duration0 => 120, Level1 => False, Duration1 => 130),
       (Level0 => True, Duration0 => 160, Level1 => False, Duration1 => 170));
 
+   --  Capture buffer.  The RX symbol RAM is one 48-symbol block; 16 slots is far
+   --  more than the four symbols we expect, leaving headroom for the dump.
    Got   : Symbol_Array (0 .. 15);
    Count : Natural;
 
-   --  A received duration matches a sent one within +/- Tol ticks.
-   Tol : constant := 4;
+   --  A received duration matches a sent one within +/- this many ticks (= us),
+   --  absorbing the one-tick rounding the TX/RX dividers can introduce.
+   Match_Tolerance_Ticks : constant := 4;
    function Near (A, B : Tick_Count) return Boolean is
-     (abs (Integer (A) - Integer (B)) <= Tol);
+     (abs (Integer (A) - Integer (B)) <= Match_Tolerance_Ticks);
 begin
    delay until Clock + Milliseconds (200);
    Banner;
@@ -80,10 +117,11 @@ begin
       Rx : RX_Channel;
       Ok : Boolean := False;
    begin
-      Claim (Tx, 0);
-      Claim (Rx, 0);
-      Configure (Tx, Resolution_Hz => Res, Pin => Pad);
-      Configure (Rx, Resolution_Hz => Res, Pin => Pad, Idle_Ticks => 1_000);
+      Claim (Tx, TX_Channel_Index);
+      Claim (Rx, RX_Channel_Index);
+      Configure (Tx, Resolution_Hz => Resolution_Hz, Pin => Loopback_Pad);
+      Configure (Rx, Resolution_Hz => Resolution_Hz, Pin => Loopback_Pad,
+                 Idle_Ticks => RX_Idle_Ticks);
 
       Start (Rx);                              --  arm the receiver first
       Transmit (Tx, Sent);                     --  drive the burst onto the pad
