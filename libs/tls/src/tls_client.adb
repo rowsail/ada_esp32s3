@@ -9,6 +9,7 @@ with SPARKNaCl;               use SPARKNaCl;
 with SPARKNaCl.Scalar;
 with SPARKNaCl.Hashing.SHA256;
 with SPARKNaCl.HKDF;
+with P256;
 
 package body TLS_Client is
 
@@ -65,13 +66,32 @@ package body TLS_Client is
    end From_B32;
 
    procedure Make_Key_Pair (S : in out Session) is
-      Rnd : ESP32S3.RNG.Byte_Array (0 .. 31);
+      Rnd  : ESP32S3.RNG.Byte_Array (0 .. 31);
+      Priv : P256.Bytes_32;
+      PubX, PubY : P256.Bytes_32;
+      Ok   : Boolean := False;
    begin
+      --  X25519 ephemeral.
       ESP32S3.RNG.Fill (Rnd);
       for I in 0 .. 31 loop
          S.Priv (I) := U8 (Rnd (I));
       end loop;
       S.Pub := From_B32 (SPARKNaCl.Scalar.Mult_Base (To_B32 (S.Priv)));
+
+      --  P-256 ephemeral (retry on the negligible chance the scalar is out of range).
+      for Attempt in 1 .. 8 loop
+         ESP32S3.RNG.Fill (Rnd);
+         for I in 0 .. 31 loop Priv (I) := P256.Byte (Rnd (I)); end loop;
+         Ok := P256.Public_Key (Priv, PubX, PubY);
+         exit when Ok;
+      end loop;
+      if Ok then
+         for I in 0 .. 31 loop
+            S.P256_Priv  (I) := U8 (Priv (I));
+            S.P256_Pub_X (I) := U8 (PubX (I));
+            S.P256_Pub_Y (I) := U8 (PubY (I));
+         end loop;
+      end if;
    end Make_Key_Pair;
 
    ---------------------------------------------------------------------------
@@ -221,8 +241,9 @@ package body TLS_Client is
       P16 (B, Host'Length);  PString (B, Host);
       Patch16 (B, M);
 
-      --  supported_groups: x25519
-      P16 (B, 10);  P16 (B, 4);  P16 (B, 2);  P16 (B, 16#001D#);
+      --  supported_groups: x25519, secp256r1
+      P16 (B, 10);  P16 (B, 6);  P16 (B, 4);
+      P16 (B, 16#001D#);  P16 (B, 16#0017#);
 
       --  signature_algorithms
       P16 (B, 13);  P16 (B, 8);  P16 (B, 6);
@@ -235,10 +256,15 @@ package body TLS_Client is
       --  servers drop a ClientHello without it even when no PSK is offered).
       P16 (B, 45);  P16 (B, 2);  P8 (B, 1);  P8 (B, 1);
 
-      --  key_share: one x25519 entry
-      P16 (B, 51);  P16 (B, 38);  P16 (B, 36);             --  ext, ext len, list len
-      P16 (B, 16#001D#);  P16 (B, 32);                     --  group, key length
+      --  key_share: an x25519 entry (36) and a secp256r1 entry (69) -- offer both so
+      --  the server can choose either without a HelloRetryRequest.
+      P16 (B, 51);  P16 (B, 107);  P16 (B, 105);           --  ext, ext len, list len
+      P16 (B, 16#001D#);  P16 (B, 32);                     --  x25519 group + key length
       PBytes (B, S.Pub);
+      P16 (B, 16#0017#);  P16 (B, 65);                     --  secp256r1 group + point length
+      P8  (B, 16#04#);                                     --  uncompressed point
+      PBytes (B, S.P256_Pub_X);
+      PBytes (B, S.P256_Pub_Y);
 
       Patch16 (B, Ext_Mark);                               --  extensions length
 
@@ -290,13 +316,24 @@ package body TLS_Client is
             Ext_Len  : constant Natural := Natural (U16_At (P + 2));
             EBody    : constant Natural := P + 4;
          begin
-            if Ext_Type = 51 and then Ext_Len >= 36 then
-               --  KeyShareEntry: group (2) + length (2) + key_exchange
-               if U16_At (EBody) = 16#001D# and then Natural (U16_At (EBody + 2)) = 32 then
+            if Ext_Type = 51 and then Ext_Len >= 4 then
+               --  KeyShareEntry: group (2) + length (2) + key_exchange.
+               if U16_At (EBody) = 16#001D#
+                 and then Natural (U16_At (EBody + 2)) = 32
+               then
                   for I in 0 .. 31 loop
                      S.Server_Pub (I) := Frag (EBody + 4 + I);
                   end loop;
-                  S.Have_Share := True;
+                  S.Group := 16#001D#;  S.Have_Share := True;
+               elsif U16_At (EBody) = 16#0017#
+                 and then Natural (U16_At (EBody + 2)) = 65
+                 and then Frag (EBody + 4) = 16#04#         --  uncompressed point
+               then
+                  for I in 0 .. 31 loop
+                     S.Server_P256_X (I) := Frag (EBody + 5 + I);
+                     S.Server_P256_Y (I) := Frag (EBody + 37 + I);
+                  end loop;
+                  S.Group := 16#0017#;  S.Have_Share := True;
                end if;
             end if;
             P := EBody + Ext_Len;
@@ -358,13 +395,33 @@ package body TLS_Client is
    end Derive_Secret;
 
    procedure Derive_Keys (S : in out Session) is
-      Shared : constant Bytes_32 :=
-        SPARKNaCl.Scalar.Mult (To_B32 (S.Priv), To_B32 (S.Server_Pub));
+      Shared : Bytes_32 := (others => 0);
       Z32    : constant Byte_Seq (0 .. 31) := (others => 0);
       No_Ctx : constant Byte_Seq (1 .. 0)  := (others => 0);   --  empty
       TH_Seq : Byte_Seq (0 .. N32 (TR_Len) - 1);
       Early, Derived, HS_Secret, S_HS, C_HS, TH : SHA.Digest;
    begin
+      --  ECDHE shared secret, by the group the server chose.
+      if S.Group = 16#0017# then                       --  secp256r1 (P-256 ECDH)
+         declare
+            Priv, PX, PY, ShB : P256.Bytes_32;
+            Ok : Boolean;
+         begin
+            for I in 0 .. 31 loop
+               Priv (I) := P256.Byte (S.P256_Priv (I));
+               PX   (I) := P256.Byte (S.Server_P256_X (I));
+               PY   (I) := P256.Byte (S.Server_P256_Y (I));
+            end loop;
+            Ok := P256.ECDH (Priv, PX, PY, ShB);
+            if Ok then
+               for I in 0 .. 31 loop
+                  Shared (Index_32 (I)) := SPARKNaCl.Byte (ShB (I));
+               end loop;
+            end if;
+         end;
+      else                                              --  x25519 (default)
+         Shared := SPARKNaCl.Scalar.Mult (To_B32 (S.Priv), To_B32 (S.Server_Pub));
+      end if;
       for I in 0 .. TR_Len - 1 loop                   --  Transcript-Hash(CH||SH)
          TH_Seq (N32 (I)) := Byte (TR (I));
       end loop;

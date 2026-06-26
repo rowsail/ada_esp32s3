@@ -84,6 +84,13 @@ private
       Priv, Pub     : Key32 := (others => 0);   --  our X25519 key pair
       Client_Random : Key32 := (others => 0);   --  our ClientHello random
       Server_Pub    : Key32 := (others => 0);   --  server's X25519 key share
+      --  We also offer secp256r1 (P-256) ECDHE; the server picks one group.
+      P256_Priv     : Key32 := (others => 0);   --  our P-256 ephemeral private
+      P256_Pub_X    : Key32 := (others => 0);   --  our P-256 public key (X, Y)
+      P256_Pub_Y    : Key32 := (others => 0);
+      Server_P256_X : Key32 := (others => 0);   --  server's P-256 key share (X, Y)
+      Server_P256_Y : Key32 := (others => 0);
+      Group         : U16   := 0;               --  negotiated group: 0x001D x25519, 0x0017 P-256
       Suite         : U16   := 0;
       Have_Share    : Boolean := False;
       --  Key schedule outputs (handshake phase).
