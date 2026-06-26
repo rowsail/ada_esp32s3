@@ -36,6 +36,19 @@ package body Chain_Verify is
               (TBS, Sig,
                Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
                Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
+         when X509.Sig_RSA_SHA384 =>
+            return Iss.Key_Kind = X509.Key_RSA and then Cert_Verify.RSA_PKCS1_SHA384
+              (TBS, Sig,
+               Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
+               Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
+         when X509.Sig_RSA_SHA512 =>
+            return Iss.Key_Kind = X509.Key_RSA and then Cert_Verify.RSA_PKCS1_SHA512
+              (TBS, Sig,
+               Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
+               Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
+         when X509.Sig_Ed25519 =>
+            return Iss.Key_Kind = X509.Key_Ed25519 and then Cert_Verify.Ed25519_Verify
+              (TBS, Sig, Iss_Buf (Iss.Ed_Pub.First .. Iss.Ed_Pub.Last));
          when X509.Sig_ECDSA_SHA256 =>
             return Iss.Key_Kind = X509.Key_EC_P256 and then Cert_Verify.ECDSA_P256_SHA256
               (TBS, Sig,

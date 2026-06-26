@@ -2,6 +2,8 @@ with ESP32S3.RSA;
 with SPARKNaCl;
 with SPARKNaCl.Hashing.SHA256;
 with SPARKNaCl.Hashing.SHA384;
+with SPARKNaCl.Hashing.SHA512;
+with SPARKNaCl.Sign;
 with P256;
 
 package body Cert_Verify is
@@ -10,12 +12,17 @@ package body Cert_Verify is
    subtype U8 is X509.U8;
    subtype Byte_Array is X509.Byte_Array;
 
-   --  DigestInfo prefix for SHA-256 (the DER of the algorithm + the OCTET STRING
-   --  header that precedes the 32-byte hash in a PKCS#1 v1.5 block).
-   DI_Prefix : constant Byte_Array (0 .. 18) :=
+   --  DigestInfo prefixes (DER of the digest algorithm + the OCTET STRING header)
+   --  that precede the hash in a PKCS#1 v1.5 block -- one per SHA variant.
+   DI_SHA256 : constant Byte_Array :=
      (16#30#, 16#31#, 16#30#, 16#0D#, 16#06#, 16#09#, 16#60#, 16#86#, 16#48#,
-      16#01#, 16#65#, 16#03#, 16#04#, 16#02#, 16#01#, 16#05#, 16#00#, 16#04#,
-      16#20#);
+      16#01#, 16#65#, 16#03#, 16#04#, 16#02#, 16#01#, 16#05#, 16#00#, 16#04#, 16#20#);
+   DI_SHA384 : constant Byte_Array :=
+     (16#30#, 16#41#, 16#30#, 16#0D#, 16#06#, 16#09#, 16#60#, 16#86#, 16#48#,
+      16#01#, 16#65#, 16#03#, 16#04#, 16#02#, 16#02#, 16#05#, 16#00#, 16#04#, 16#30#);
+   DI_SHA512 : constant Byte_Array :=
+     (16#30#, 16#51#, 16#30#, 16#0D#, 16#06#, 16#09#, 16#60#, 16#86#, 16#48#,
+      16#01#, 16#65#, 16#03#, 16#04#, 16#02#, 16#03#, 16#05#, 16#00#, 16#04#, 16#40#);
 
    --  Big-endian bytes -> little-endian 32-bit words (word 0 least significant).
    --  W may hold more words than B fills; the high words are zeroed.
@@ -53,92 +60,7 @@ package body Cert_Verify is
       end loop;
    end Words_To_BE;
 
-   function RSA_PKCS1_SHA256 (TBS, Signature, Modulus, Exponent : Byte_Array)
-      return Boolean
-   is
-      M_First : Natural := Modulus'First;
-   begin
-      --  Drop a single leading 0x00 (DER positive-sign byte) from the modulus.
-      if Modulus'Length >= 1 and then Modulus (Modulus'First) = 0 then
-         M_First := Modulus'First + 1;
-      end if;
-
-      declare
-         K : constant Natural :=
-           (if Modulus'Last >= M_First then Modulus'Last - M_First + 1 else 0);
-      begin
-         --  k must be a whole number of words, RSA-sized, and big enough for the
-         --  block (00 01 || >=8 * FF || 00 || 19-byte DigestInfo || 32-byte hash).
-         if K = 0 or else K mod 4 /= 0 or else K > 512
-           or else K < 62 or else Signature'Length /= K
-         then
-            return False;
-         end if;
-
-         declare
-            use ESP32S3.RSA;
-            N             : constant Natural := K / 4;
-            Nm, Sg, Ex, Z : Word_Array (0 .. N - 1);
-            Ok            : Boolean;
-            EM, Want      : Byte_Array (0 .. K - 1);
-            PS_Len        : constant Natural := K - 3 - (DI_Prefix'Length + 32);
-            Dg            : SPARKNaCl.Hashing.SHA256.Digest;
-            Diff          : U8 := 0;
-            Pos           : Natural;
-         begin
-            BE_To_Words (Modulus (M_First .. Modulus'Last), Nm);
-            BE_To_Words (Signature, Sg);
-            BE_To_Words (Exponent, Ex);
-
-            --  Recover the padded block: EM = Signature^Exponent mod Modulus.
-            Mod_Exp (Sg, Ex, Nm, Z, Ok);
-            if not Ok then
-               return False;
-            end if;
-            Words_To_BE (Z, EM);
-
-            --  SHA-256 of the signed region (TBS).
-            declare
-               Msg : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (TBS'Length - 1));
-            begin
-               for I in 0 .. TBS'Length - 1 loop
-                  Msg (SPARKNaCl.N32 (I)) := SPARKNaCl.Byte (TBS (TBS'First + I));
-               end loop;
-               Dg := SPARKNaCl.Hashing.SHA256.Hash (Msg);
-            end;
-
-            --  Build the expected block: 00 01 FF..FF 00 || DigestInfo || hash.
-            Want (0) := 16#00#;
-            Want (1) := 16#01#;
-            Pos := 2;
-            for I in 0 .. PS_Len - 1 loop
-               Want (Pos + I) := 16#FF#;
-            end loop;
-            Pos := Pos + PS_Len;
-            Want (Pos) := 16#00#;
-            Pos := Pos + 1;
-            for I in DI_Prefix'Range loop
-               Want (Pos) := DI_Prefix (I);
-               Pos := Pos + 1;
-            end loop;
-            for I in 0 .. 31 loop
-               Want (Pos) := U8 (Dg (SPARKNaCl.N32 (I)));
-               Pos := Pos + 1;
-            end loop;
-
-            --  Constant-time compare.
-            for I in EM'Range loop
-               Diff := Diff or (EM (I) xor Want (I));
-            end loop;
-            return Diff = 0;
-         end;
-      end;
-   end RSA_PKCS1_SHA256;
-
-   ---------------------------------------------------------------------------
-   --  RSASSA-PSS (MGF1-SHA-256, salt length 32)
-   ---------------------------------------------------------------------------
-
+   --  Big-endian SHA digests of Data, as Byte_Array (full length per variant).
    function SHA256_BA (Data : Byte_Array) return Byte_Array is
       Msg : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
       Dg  : SPARKNaCl.Hashing.SHA256.Digest;
@@ -148,11 +70,126 @@ package body Cert_Verify is
          Msg (SPARKNaCl.N32 (I)) := SPARKNaCl.Byte (Data (Data'First + I));
       end loop;
       Dg := SPARKNaCl.Hashing.SHA256.Hash (Msg);
-      for I in 0 .. 31 loop
+      for I in R'Range loop
          R (I) := U8 (Dg (SPARKNaCl.Index_32 (I)));
       end loop;
       return R;
    end SHA256_BA;
+
+   function SHA384_BA (Data : Byte_Array) return Byte_Array is
+      Msg : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
+      Dg  : SPARKNaCl.Hashing.SHA384.Digest;
+      R   : Byte_Array (0 .. 47);
+   begin
+      for I in 0 .. Data'Length - 1 loop
+         Msg (SPARKNaCl.N32 (I)) := SPARKNaCl.Byte (Data (Data'First + I));
+      end loop;
+      Dg := SPARKNaCl.Hashing.SHA384.Hash (Msg);
+      for I in R'Range loop
+         R (I) := U8 (Dg (SPARKNaCl.Index_48 (I)));
+      end loop;
+      return R;
+   end SHA384_BA;
+
+   function SHA512_BA (Data : Byte_Array) return Byte_Array is
+      Msg : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
+      Dg  : SPARKNaCl.Hashing.SHA512.Digest;
+      R   : Byte_Array (0 .. 63);
+   begin
+      for I in 0 .. Data'Length - 1 loop
+         Msg (SPARKNaCl.N32 (I)) := SPARKNaCl.Byte (Data (Data'First + I));
+      end loop;
+      Dg := SPARKNaCl.Hashing.SHA512.Hash (Msg);
+      for I in R'Range loop
+         R (I) := U8 (Dg (SPARKNaCl.Index_64 (I)));
+      end loop;
+      return R;
+   end SHA512_BA;
+
+   --  RSASSA-PKCS1-v1.5 verify with a precomputed digest Hash and its matching
+   --  DigestInfo prefix DI: recover EM = Signature^Exponent mod Modulus and
+   --  constant-time compare it to 00 01 FF..FF 00 || DI || Hash.
+   function RSA_PKCS1_Core
+     (Hash, DI, Signature, Modulus, Exponent : Byte_Array) return Boolean
+   is
+      M_First : Natural := Modulus'First;
+   begin
+      --  Drop a single leading 0x00 (DER positive-sign byte) from the modulus.
+      if Modulus'Length >= 1 and then Modulus (Modulus'First) = 0 then
+         M_First := Modulus'First + 1;
+      end if;
+      declare
+         K : constant Natural :=
+           (if Modulus'Last >= M_First then Modulus'Last - M_First + 1 else 0);
+      begin
+         --  k a whole number of words, RSA-sized, and big enough for the block
+         --  (00 01 || >=8 FF || 00 || DigestInfo || hash).
+         if K = 0 or else K mod 4 /= 0 or else K > 512
+           or else Signature'Length /= K
+           or else K < 11 + DI'Length + Hash'Length
+         then
+            return False;
+         end if;
+         declare
+            use ESP32S3.RSA;
+            N             : constant Natural := K / 4;
+            Nm, Sg, Ex, Z : Word_Array (0 .. N - 1);
+            Ok            : Boolean;
+            EM, Want      : Byte_Array (0 .. K - 1);
+            PS_Len        : constant Natural := K - 3 - (DI'Length + Hash'Length);
+            Diff          : U8 := 0;
+            Pos           : Natural;
+         begin
+            BE_To_Words (Modulus (M_First .. Modulus'Last), Nm);
+            BE_To_Words (Signature, Sg);
+            BE_To_Words (Exponent, Ex);
+            Mod_Exp (Sg, Ex, Nm, Z, Ok);          --  EM = sig^e mod n
+            if not Ok then
+               return False;
+            end if;
+            Words_To_BE (Z, EM);
+
+            Want (0) := 16#00#;
+            Want (1) := 16#01#;
+            Pos := 2;
+            for I in 0 .. PS_Len - 1 loop
+               Want (Pos + I) := 16#FF#;
+            end loop;
+            Pos := Pos + PS_Len;
+            Want (Pos) := 16#00#;
+            Pos := Pos + 1;
+            for I in DI'Range loop
+               Want (Pos) := DI (I);
+               Pos := Pos + 1;
+            end loop;
+            for I in Hash'Range loop
+               Want (Pos) := Hash (I);
+               Pos := Pos + 1;
+            end loop;
+
+            for I in EM'Range loop                --  constant-time compare
+               Diff := Diff or (EM (I) xor Want (I));
+            end loop;
+            return Diff = 0;
+         end;
+      end;
+   end RSA_PKCS1_Core;
+
+   function RSA_PKCS1_SHA256 (TBS, Signature, Modulus, Exponent : Byte_Array)
+      return Boolean is
+     (RSA_PKCS1_Core (SHA256_BA (TBS), DI_SHA256, Signature, Modulus, Exponent));
+
+   function RSA_PKCS1_SHA384 (TBS, Signature, Modulus, Exponent : Byte_Array)
+      return Boolean is
+     (RSA_PKCS1_Core (SHA384_BA (TBS), DI_SHA384, Signature, Modulus, Exponent));
+
+   function RSA_PKCS1_SHA512 (TBS, Signature, Modulus, Exponent : Byte_Array)
+      return Boolean is
+     (RSA_PKCS1_Core (SHA512_BA (TBS), DI_SHA512, Signature, Modulus, Exponent));
+
+   ---------------------------------------------------------------------------
+   --  RSASSA-PSS (MGF1-SHA-256, salt length 32).  SHA256_BA is defined above.
+   ---------------------------------------------------------------------------
 
    --  MGF1 with SHA-256.
    function MGF1 (Seed : Byte_Array; Mask_Len : Natural) return Byte_Array is
@@ -375,5 +412,58 @@ package body Cert_Verify is
    function ECDSA_P256_SHA384
      (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean is
      (ECDSA_Core (SHA384_BA_32 (Message), Sig_DER, Pub_X, Pub_Y));
+
+   ---------------------------------------------------------------------------
+   --  Ed25519 (RFC 8032)
+   ---------------------------------------------------------------------------
+
+   --  Detached verify: NaCl exposes the combined form (signature || message), so
+   --  reconstruct SM = Signature || Message, run Open (which cryptographically
+   --  verifies), and confirm it recovered exactly Message.
+   function Ed25519_Verify (Message, Signature, Pub_Key : X509.Byte_Array)
+                            return Boolean
+   is
+      use type SPARKNaCl.I32;
+      use type SPARKNaCl.Byte;
+      PKB : SPARKNaCl.Bytes_32;
+      PK  : SPARKNaCl.Sign.Signing_PK;
+   begin
+      if Signature'Length /= 64 or else Pub_Key'Length /= 32
+        or else Message'Length = 0
+      then
+         return False;
+      end if;
+      for I in 0 .. 31 loop
+         PKB (SPARKNaCl.Index_32 (I)) := SPARKNaCl.Byte (Pub_Key (Pub_Key'First + I));
+      end loop;
+      SPARKNaCl.Sign.PK_From_Bytes (PKB, PK);
+
+      declare
+         Total  : constant Natural := 64 + Message'Length;
+         SM     : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Total - 1));
+         M      : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Total - 1));
+         Status : Boolean;
+         MLen   : SPARKNaCl.I32;
+      begin
+         for I in 0 .. 63 loop
+            SM (SPARKNaCl.N32 (I)) := SPARKNaCl.Byte (Signature (Signature'First + I));
+         end loop;
+         for I in 0 .. Message'Length - 1 loop
+            SM (SPARKNaCl.N32 (64 + I)) :=
+              SPARKNaCl.Byte (Message (Message'First + I));
+         end loop;
+         SPARKNaCl.Sign.Open (M, Status, MLen, SM, PK);
+         if not Status or else MLen /= SPARKNaCl.I32 (Message'Length) then
+            return False;
+         end if;
+         for I in 0 .. Message'Length - 1 loop
+            if M (SPARKNaCl.N32 (I)) /= SPARKNaCl.Byte (Message (Message'First + I))
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end;
+   end Ed25519_Verify;
 
 end Cert_Verify;

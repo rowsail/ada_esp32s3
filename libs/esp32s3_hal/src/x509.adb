@@ -42,6 +42,12 @@ package body X509 is
      (16#2A#, 16#86#, 16#48#, 16#CE#, 16#3D#, 16#04#, 16#03#, 16#02#);
    OID_ECDSA_SHA384 : constant Byte_Array :=          --  1.2.840.10045.4.3.3
      (16#2A#, 16#86#, 16#48#, 16#CE#, 16#3D#, 16#04#, 16#03#, 16#03#);
+   OID_RSA_SHA384   : constant Byte_Array :=          --  1.2.840.113549.1.1.12
+     (16#2A#, 16#86#, 16#48#, 16#86#, 16#F7#, 16#0D#, 16#01#, 16#01#, 16#0C#);
+   OID_RSA_SHA512   : constant Byte_Array :=          --  1.2.840.113549.1.1.13
+     (16#2A#, 16#86#, 16#48#, 16#86#, 16#F7#, 16#0D#, 16#01#, 16#01#, 16#0D#);
+   OID_Ed25519      : constant Byte_Array :=          --  1.3.101.112 id-Ed25519
+     (16#2B#, 16#65#, 16#70#);
    OID_Server_Auth  : constant Byte_Array :=          --  1.3.6.1.5.5.7.3.1 id-kp-serverAuth
      (16#2B#, 16#06#, 16#01#, 16#05#, 16#05#, 16#07#, 16#03#, 16#01#);
    OID_Client_Auth  : constant Byte_Array :=          --  1.3.6.1.5.5.7.3.2 id-kp-clientAuth
@@ -298,6 +304,8 @@ package body X509 is
                      else
                         Ok := False;                       --  unsupported curve
                      end if;
+                  elsif OID_Match (Cert, Alg.Content, OID_Ed25519) then
+                     Result.Key_Kind := Key_Ed25519;       --  no params / no curve
                   else
                      Ok := False;                          --  unsupported key type
                   end if;
@@ -334,6 +342,13 @@ package body X509 is
                                Last  => Bits.Content.First + 33);
                Result.EC_Y := (First => Bits.Content.First + 34,
                                Last  => Bits.Content.First + 65);
+
+            elsif Ok and then Result.Key_Kind = Key_Ed25519
+              and then Length (Bits.Content) >= 33
+            then
+               --  BIT STRING content = unused-bits(1) || 32-byte Ed25519 public key.
+               Result.Ed_Pub := (First => Bits.Content.First + 1,
+                                 Last  => Bits.Content.First + 32);
             else
                Ok := False;
             end if;
@@ -357,10 +372,16 @@ package body X509 is
       if Ok then
          if OID_Match (Cert, OID.Content, OID_RSA_SHA256) then
             Result.Sig_Kind := Sig_RSA_SHA256;
+         elsif OID_Match (Cert, OID.Content, OID_RSA_SHA384) then
+            Result.Sig_Kind := Sig_RSA_SHA384;
+         elsif OID_Match (Cert, OID.Content, OID_RSA_SHA512) then
+            Result.Sig_Kind := Sig_RSA_SHA512;
          elsif OID_Match (Cert, OID.Content, OID_ECDSA_SHA256) then
             Result.Sig_Kind := Sig_ECDSA_SHA256;
          elsif OID_Match (Cert, OID.Content, OID_ECDSA_SHA384) then
             Result.Sig_Kind := Sig_ECDSA_SHA384;
+         elsif OID_Match (Cert, OID.Content, OID_Ed25519) then
+            Result.Sig_Kind := Sig_Ed25519;
          end if;
       end if;
       P := SigAlg.Elem_Last + 1;

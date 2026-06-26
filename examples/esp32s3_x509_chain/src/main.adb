@@ -12,7 +12,9 @@
 --    window (Expired), a forged link (Bad_Signature), an unpinned root
 --    (Untrusted_Root), an issuer that is not a CA -- basicConstraints cA=FALSE --
 --    even though its signature verifies (Not_A_CA), and a leaf whose extKeyUsage
---    permits only clientAuth (Bad_Key_Usage).
+--    permits only clientAuth (Bad_Key_Usage).  A final trio validates chains in
+--    the other signature algorithms the verifier supports: Ed25519, and RSA with
+--    SHA-384 / SHA-512 links (the default fixtures above are RSA with SHA-256).
 --
 --  Build & run:  ./x run esp32s3_x509_chain
 --    Runs under the embedded profile (build.sh sets ESP32S3_RTS_PROFILE=embedded).
@@ -28,6 +30,7 @@ with X509;
 with Chain_Verify;  use Chain_Verify;
 with Chain_Certs;    use Chain_Certs;
 with Neg_Certs;      use Neg_Certs;
+with Alg_Certs;      use Alg_Certs;
 with ESP32S3.RNG;
 with ESP32S3.Log;    use ESP32S3.Log;
 
@@ -47,6 +50,15 @@ procedure Main is
    N_Rogue : constant Cert_Ref := (Data => Neg_Rogue_DER'Access);     --  CA:FALSE issuer
    N_Leaf  : constant Cert_Ref := (Data => Neg_Leaf_DER'Access);      --  signed by the rogue
    N_EKU   : constant Cert_Ref := (Data => Neg_EKU_Leaf_DER'Access);  --  EKU clientAuth only
+
+   --  Chains exercising the other signature algorithms (see Alg_Certs): Ed25519,
+   --  and RSA with SHA-384 / SHA-512 links.
+   Ed_Lf   : constant Cert_Ref := (Data => Ed_Leaf_DER'Access);
+   Ed_Rt   : constant Cert_Ref := (Data => Ed_Root_DER'Access);
+   R384_Lf : constant Cert_Ref := (Data => R384_Leaf_DER'Access);
+   R384_Rt : constant Cert_Ref := (Data => R384_CA_DER'Access);
+   R512_Lf : constant Cert_Ref := (Data => R512_Leaf_DER'Access);
+   R512_Rt : constant Cert_Ref := (Data => R512_CA_DER'Access);
 
    --  Evaluation times (UTC, packed as YYYYMMDDhhmmss).  All three certificates
    --  are valid 2020..2049, so Within_Window evaluates inside the window, while
@@ -93,6 +105,10 @@ begin
    Check ("non-CA issuer",        Validate ((N_Leaf, N_Rogue), (1 => N_Root), Host, Within_Window), Not_A_CA);
    --  Negative: the leaf chains and dates fine, but its EKU forbids serverAuth.
    Check ("leaf EKU clientAuth",  Validate ((1 => N_EKU),      (1 => N_Root), Host, Within_Window), Bad_Key_Usage);
+   --  Positive: other signature algorithms -- Ed25519, and RSA with SHA-384/512.
+   Check ("Ed25519 chain",        Validate ((Ed_Lf, Ed_Rt),     (1 => Ed_Rt),   Host, Within_Window), Valid);
+   Check ("RSA-SHA384 chain",     Validate ((R384_Lf, R384_Rt), (1 => R384_Rt), Host, Within_Window), Valid);
+   Check ("RSA-SHA512 chain",     Validate ((R512_Lf, R512_Rt), (1 => R512_Rt), Host, Within_Window), Valid);
    Put_Line ("[chain] done");
 
    loop

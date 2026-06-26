@@ -24,8 +24,10 @@ package X509 is
    --  Public-key algorithm of the certificate's subject key, and the algorithm the
    --  certificate's issuer used to sign it -- the parser classifies both so the
    --  verifier can dispatch RSA vs ECDSA without re-walking the DER.
-   type Key_Algorithm is (Key_RSA, Key_EC_P256, Key_Other);
-   type Sig_Algorithm is (Sig_RSA_SHA256, Sig_ECDSA_SHA256, Sig_ECDSA_SHA384, Sig_Other);
+   type Key_Algorithm is (Key_RSA, Key_EC_P256, Key_Ed25519, Key_Other);
+   type Sig_Algorithm is
+     (Sig_RSA_SHA256, Sig_RSA_SHA384, Sig_RSA_SHA512,
+      Sig_ECDSA_SHA256, Sig_ECDSA_SHA384, Sig_Ed25519, Sig_Other);
 
    --  Civil time packed as YYYYMMDDHHMMSS in one comparable integer (lexicographic
    --  on the fixed-width fields), the form Valid_At compares against.
@@ -55,6 +57,7 @@ package X509 is
       RSA_Exponent : Slice;            --  RSA public exponent
       EC_X         : Slice;            --  P-256 public-key affine X (32 bytes) when Key_EC_P256
       EC_Y         : Slice;            --  P-256 public-key affine Y (32 bytes)
+      Ed_Pub       : Slice;            --  Ed25519 public key (32 bytes) when Key_Ed25519
       SAN          : Slice_Array;      --  subjectAltName dNSName entries
       SAN_Count    : Natural := 0;
 
