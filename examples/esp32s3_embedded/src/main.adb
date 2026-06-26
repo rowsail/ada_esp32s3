@@ -23,7 +23,7 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 --    3. exception propagation across a frame, reporting the exception's real
 --       name and message (needs ZCX unwinding + the exception table).
 --
---  main/build_ada.sh selects the embedded profile; the light-tasking profile
+--  build.sh selects the embedded profile; the light-tasking profile
 --  omits these for code size (a raised exception would reset the board, and
 --  finalization is restricted away).  Expected console transcript:
 --

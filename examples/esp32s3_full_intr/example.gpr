@@ -2,7 +2,7 @@ with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
 
 --  Full-profile interrupt-attach regression test.  Builds the Ada.Interrupts /
 --  pragma Attach_Handler protected handlers (src/blink.adb) against the FULL
---  runtime (ESP32S3_RTS_PROFILE=full, set by build.sh / main/build_ada.sh),
+--  runtime (ESP32S3_RTS_PROFILE=full, set by build.sh),
 --  which now provides the bareboard full System.Interrupts.  The full RTS uses
 --  exceptions + finalization + a heap, so the binder requests heap-backed
 --  secondary stacks like the other full-profile examples.

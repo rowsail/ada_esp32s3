@@ -2,7 +2,7 @@ with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
 
 --  PSRAM example: enables the module's external PSRAM and uses a 1 MB static
 --  Ada array placed in it, built against the pinned Jorvik runtime to a
---  relocatable object the ESP-IDF bootloader's image links.
+--  relocatable object the bare-metal 2nd-stage bootloader's image links.
 project Psram is
    for Target use "xtensa-esp32-elf";
    for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;

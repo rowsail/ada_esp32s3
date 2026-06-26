@@ -1,6 +1,6 @@
 /* Bare reset/startup for the IDF-free image (Level B).
  *
- * The vendored ESP-IDF bootloader (flash 0x0) does flash/cache/MMU/clock-pin
+ * Our own IDF-free 2nd-stage bootloader (flash 0x0) does flash/cache/MMU/clock-pin
  * bring-up, then jumps to this ELF entry (_start).  We establish a clean
  * register window, VECBASE (our vendored Xtensa vector table), the env-task
  * stack, enable the FPU coprocessor (no lazy trap), clear .bss, then call the C

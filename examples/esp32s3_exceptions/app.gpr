@@ -3,7 +3,7 @@ with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
 --  Exception demonstration for the embedded runtime profile: local handling,
 --  propagation across a call, re-raise, and an unhandled exception reaching a
 --  custom last-chance handler (see src/main.adb, src/last_chance.adb).
---  main/build_ada.sh selects the embedded profile (light-tasking is
+--  build.sh selects the embedded profile (light-tasking is
 --  No_Exception_Propagation).
 project App is
    for Target use "xtensa-esp32-elf";

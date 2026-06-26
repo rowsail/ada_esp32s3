@@ -1,11 +1,11 @@
 name = "esp32s3_full_tasking"
-description = "ESP32-S3 demo of the embedded runtime profile (dispatching, finalization, exceptions)"
+description = "ESP32-S3 demo of the full tasking runtime profile (dynamic tasks, hierarchy, rendezvous, protected entries)"
 version = "0.1.0-dev"
 
 authors = ["D. Howells"]
 maintainers = ["D. Howells <dhowells@motium.us>"]
 licenses = "Apache-2.0 WITH LLVM-exception"
-tags = ["embedded", "esp32s3", "smp", "baremetal", "exceptions", "finalization"]
+tags = ["tasking", "esp32s3", "smp", "baremetal", "rendezvous", "finalization"]
 
 project-files = ["app.gpr"]
 

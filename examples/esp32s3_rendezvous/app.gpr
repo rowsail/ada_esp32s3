@@ -1,10 +1,11 @@
 with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
 
---  Embedded-profile demonstration app for the dual-core ESP32-S3 Jorvik
---  runtime: library-level tagged dispatching, controlled-type finalization and
---  exception propagation (see src/main.adb).  The runtime profile is selected
---  by the ESP32S3_RTS_PROFILE scenario variable (consumed by the runtime crate
---  and gen_runtime.sh); main/build_ada.sh sets it to "embedded" before building.
+--  Task-rendezvous demonstration app for the dual-core ESP32-S3 full-tasking
+--  runtime: task entries / accept / entry calls with out parameters -- the
+--  complete Ada tasking model, beyond Jorvik (see src/main.adb).  The runtime
+--  profile is selected by the ESP32S3_RTS_PROFILE scenario variable (consumed by
+--  the runtime crate and gen_runtime.sh); build.sh sets it to "full" before
+--  building.
 project App is
    for Target use "xtensa-esp32-elf";
    for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;

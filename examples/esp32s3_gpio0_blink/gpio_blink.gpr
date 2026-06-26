@@ -7,7 +7,7 @@ with "../../libs/esp32s3_hal/esp32s3_hal.gpr";   --  ESP32S3.GPIO + svd register
 
 --  GPIO0 blink: a bare-metal Ada peripheral driver (no ESP-IDF) that toggles
 --  ESP32-S3 GPIO0 from a task, against the pinned Jorvik runtime, built to a
---  relocatable object the ESP-IDF bootloader's image links.
+--  relocatable object the bare-metal 2nd-stage bootloader's image links.
 project Gpio_Blink is
    for Target use "xtensa-esp32-elf";
    for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;

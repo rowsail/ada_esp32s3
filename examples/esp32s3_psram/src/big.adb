@@ -6,8 +6,9 @@ package body Big is
 
    Size : constant := 1024 * 1024;   --  1 MB
 
-   --  Placed in the external-RAM bss section (mapped to PSRAM by ESP-IDF when
-   --  CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY is set).
+   --  Placed in the external-RAM bss section, mapped into the PSRAM window at
+   --  0x3D000000 by this example's psram.ld (the 2nd-stage bootloader brings the
+   --  octal PSRAM up and maps it; glue.c re-applies the cache map after start.S).
    Buffer : array (0 .. Size - 1) of Unsigned_8
      with Linker_Section => ".ext_ram.bss";
 

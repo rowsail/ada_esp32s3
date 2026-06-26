@@ -1,7 +1,7 @@
 with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
 
 --  Dual-core SMP example: builds the cross-core mailbox demo against the
---  pinned Jorvik runtime to a relocatable object (linked by ESP-IDF).
+--  pinned Jorvik runtime to a relocatable object (linked by the bare-boot).
 project Comm_Demo is
    for Target use "xtensa-esp32-elf";
    for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;

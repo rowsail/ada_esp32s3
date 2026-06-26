@@ -6,13 +6,18 @@
  * 1 MB array (Linker_Section .ext_ram.bss, placed at 0x3D000000 by psram.ld) is
  * backed by real PSRAM.
  *
- * We reuse the IDF's vendored, prebuilt octal-PSRAM + MSPI-timing objects
- * (vendor_psram/, copied from this example's idf.py build/) and call their
+ * Active path (PSRAM_ENABLE 0): our own 2nd-stage bootloader (../../common/bare/
+ * bootloader) already brought the octal PSRAM up -- it runs from SRAM, so the MSPI
+ * reconfig that crashed an app-side init is safe.  bare_board_init() here then does
+ * ONLY the cache-MMU map, which must run AFTER the app's start.S (whose
+ * Cache_Set_IDROM_MMU_Size wipes the d-bus MMU), using the ROM Cache_Dbus_MMU_Set.
+ *
+ * The PSRAM_ENABLE 1 block below is a retained (disabled) alternative that brings
+ * PSRAM up app-side by calling prebuilt octal-PSRAM + MSPI-timing objects'
  * esp_psram_impl_enable() directly -- NOT the full esp_psram_init(), which would
- * drag in heap_caps/esp_mmu.  That leaves a small, cascade-free dependency
- * closure: a few ROM functions (rom_syms.ld), the bare_libc.c mem helpers + abort,
- * the GPIO IO-MUX table (vendored gpio_periph.c.obj), and the leaf stubs below.
- * The cache-MMU mapping we do ourselves with the ROM Cache_Dbus_MMU_Set. */
+ * drag in heap_caps/esp_mmu.  It needs those objects supplied via EXTRA_OBJS plus
+ * the leaf stubs below; they are no longer vendored in-tree, so build it only if
+ * you re-supply them. */
 #include <stdint.h>
 #include <stddef.h>
 
