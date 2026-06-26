@@ -37,7 +37,7 @@ git submodule update --init --recursive
 
 \section{The \texttt{./x} dispatcher}
 
-The repository ships with around forty ready-to-run examples, and one script at
+The repository ships with over sixty ready-to-run examples, and one script at
 its root --- \texttt{./x} --- drives all of them \emph{from inside the clone}. (For
 your \emph{own} application, kept outside the repo, the counterpart command is
 \texttt{esp32-ada}, \S\ref{sec:esp32-ada}; the two share the same verbs.) List the
@@ -63,6 +63,16 @@ The pieces are also separate commands when you want them:
 ./x monitor -p /dev/ttyACM0                # just the serial console (115200)
 ./x clean   esp32s3_gpio0_blink
 \end{lstlisting}
+
+The examples are meant to be \emph{read}, not just run: each opens with a header
+that says what it demonstrates, how to build and run it, what the console should
+print, and what hardware (if any) it needs; magic numbers are named, and the
+``why'' is in the code rather than only in this book. A short house style at
+\texttt{examples/STYLE.md} records the bar, with \texttt{esp32s3\_gpio0\_blink}
+and \texttt{esp32s3\_gdma\_copy} as the models to copy; \texttt{./x new} (and
+\texttt{esp32-ada init}, \S\ref{sec:esp32-ada}) scaffold a new project already in
+that shape. So once a chapter here points you at an example, the example itself
+carries the rest of the explanation.
 
 \section{Choosing a profile}
 
