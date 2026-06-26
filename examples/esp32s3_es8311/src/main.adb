@@ -1,16 +1,38 @@
---  ES8311 audio-codec full-duplex test: play a gapless 440 Hz sine on the DAC
---  and, at the same time, capture the codec's ADC (microphone) and estimate the
---  tone we hear back -- a loopback test (acoustic, speaker -> mic, or electrical).
+--  ES8311 audio codec -- full-duplex 440 Hz loopback -- bare-metal ESP32-S3
+--  ========================================================================
+--  What it demonstrates
+--    Brings up an Everest ES8311 mono audio codec full-duplex: it plays a
+--    click-free 440 Hz sine on the codec's DAC and, at the same time, captures
+--    the codec's ADC (microphone) and estimates the tone it hears back -- a
+--    loopback test (acoustic speaker -> mic, or an electrical loop).  Control
+--    is over I2C; audio is over I2S.  The codec is an I2S slave clocked from
+--    the ESP's MCLK = 256 * sample-rate.
 --
---  Control is over I2C (SDA=IO8, SCL=IO7); audio is over I2S (MCLK=IO1, SCLK=IO2,
---  LRCK=IO4, DSDIN=IO5 out to the codec, ASDOUT=IO3 in from the codec's ADC).
---  The codec is an I2S slave clocked from the ESP's MCLK = 256*fs.
+--    Playback runs continuously on a self-looping DMA (Play_Continuous), which
+--    keeps the shared I2S master clock running; capture (Capture) then samples
+--    the data-in line underneath it without disturbing playback.  We estimate
+--    the captured frequency by counting threshold zero-crossings -- it should
+--    read ~440 Hz, confirming the mic picks up the tone.
 --
---  Playback runs continuously on a self-looping DMA (Play_Continuous), which
---  keeps the shared I2S master clock running; capture (Capture) then samples the
---  data-in line underneath it without disturbing playback.  We estimate the
---  captured frequency by counting threshold zero-crossings -- it should read
---  ~440 Hz, confirming the mic picks up the tone.
+--  Build & run
+--    ./x run esp32s3_es8311
+--    Needs the embedded runtime profile, which the example's build.sh selects
+--    (ESP32S3_RTS_PROFILE=embedded).
+--
+--  Output
+--    A banner, then `codec init: OK` once the codec ACKs on I2C and the
+--    register-init sequence completes (`FAILED` = no I2C ACK: check
+--    address/wiring), then one `captured: peak=... est tone=... Hz` line per
+--    second.  With the board's speaker + mic the mic picks up the 440 Hz
+--    playback, so each line reports ~440 Hz (+/-11 Hz is the zero-crossing
+--    estimator's resolution over the ~46 ms window).
+--
+--  Hardware -- ES8311 codec (e.g. on the Waveshare ESP32-S3 audio board)
+--    I2C control : SDA = IO8, SCL = IO7, codec at 7-bit address 0x18
+--                  (CE/AD0 low; 0x19 if CE is high).
+--    I2S audio   : MCLK = IO1, BCLK/SCLK = IO2, WS/LRCK = IO4,
+--                  DOUT/DSDIN = IO5 (data out to the codec, playback),
+--                  DIN/ASDOUT = IO3 (data in from the codec's ADC, capture).
 with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
@@ -25,10 +47,19 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
 
-   Rate     : constant := 16_000;      --  sample rate (Hz)
-   Freq     : constant := 440;         --  tone frequency (Hz)
-   Amp      : constant := 30_000;      --  ~-1 dBFS peak (full-scale Int16)
-   Mic_Gain : constant := 24;          --  ADC PGA gain (dB)
+   Rate     : constant := 16_000;      --  I2S sample rate (Hz)
+   Freq     : constant := 440;         --  test-tone frequency (Hz), concert A
+   Amp      : constant := 30_000;      --  sine peak ~-1 dBFS (full-scale Int16)
+   Mic_Gain : constant := 24;          --  ADC PGA gain (dB), range 0 .. 42
+   --  Samples are signed 16-bit per channel; the codec runs MCLK = 256 * Rate
+   --  (= 4.096 MHz at 16 kHz), the 256x ratio the driver's coefficient table
+   --  is built for.
+
+   --  Codec DAC volume, 0 .. 100 %.  Reg 0x32 is 0.5 dB/step, so ~75 % ~= 0 dB
+   --  (unity) and higher is positive gain (100 % ~= +32 dB) that CLIPS.  Drive
+   --  loudness from a full-scale digital signal at unity codec gain, not by
+   --  boosting the codec -- so this stays at 75 % and feeds the ~-1 dBFS sine.
+   Dac_Volume : constant := 75;
 
    type Sample is new Interfaces.Integer_16;
    type Frame is record
@@ -76,6 +107,8 @@ procedure Main is
    Cap_Bytes  : constant := Cap_Frames * 4;    --  3200 bytes (<= 4095)
    type Cap_Buffer is array (0 .. Cap_Frames - 1) of Frame;
    Cap : Cap_Buffer;
+
+   Quiet_Peak : constant := 200;               --  captured peak below this = silence
 
    --  Estimate the level and frequency of the captured (left) channel.
    --
@@ -147,9 +180,10 @@ begin
    end loop;
 
    declare
-      Ok    : Boolean;
-      Audio : ESP32S3.ES8311.Output;
-      Peak, Est : Integer;
+      Ok        : Boolean;
+      Audio     : ESP32S3.ES8311.Output;
+      Peak      : Integer;     --  estimated sine peak of the captured tone
+      Est_Tone  : Integer;     --  estimated captured frequency (Hz)
    begin
       ESP32S3.ES8311.Setup
         (I2C_Bus => ESP32S3.I2C.I2C0,
@@ -157,12 +191,17 @@ begin
          Port    => ESP32S3.I2S.I2S0,
          Mclk    => 1,  Sclk  => 2,  Lrck => 4,  Dsdin => 5,
          Asdout  => 3,                        --  codec ADC out -> our data in
-         Sample_Rate => Rate, Volume => 75, Mic_Gain_Db => Mic_Gain, Ok => Ok);
+         Sample_Rate => Rate,
+         Volume      => Dac_Volume,
+         Mic_Gain_Db => Mic_Gain,
+         Ok          => Ok);
       if Ok then
          Put_Line ("[es8311] codec init: OK");
       else
          Put_Line ("[es8311] codec init: FAILED (I2C no ACK? check address/wiring)");
-         loop delay until Clock + Seconds (3600); end loop;
+         loop
+            delay until Clock + Seconds (3600);   --  init failed: stop here
+         end loop;
       end if;
 
       Put_Line ("[es8311] playing 440 Hz... (connect a speaker/headphone to "
@@ -177,8 +216,10 @@ begin
       Put_Line (" dB) -- play feeds the speaker, mic should hear it");
       loop
          ESP32S3.ES8311.Capture (Audio, Cap'Address, Cap_Bytes);
-         Analyse (Peak, Est);
-         if Peak < 200 then
+         Analyse (Peak, Est_Tone);
+         --  Below this captured-peak level the line is treated as silence, so
+         --  the (meaningless) frequency estimate is suppressed.
+         if Peak < Quiet_Peak then
             Put ("[es8311] captured: peak=");
             Put (Peak);
             Put_Line (" (quiet -- no tone picked up?)");
@@ -186,7 +227,7 @@ begin
             Put ("[es8311] captured: peak=");
             Put (Peak);
             Put ("  est tone=");
-            Put (Est);
+            Put (Est_Tone);
             Put_Line (" Hz");
          end if;
          delay until Clock + Milliseconds (1000);
