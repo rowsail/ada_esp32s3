@@ -9,6 +9,7 @@ package body GNAT.Sockets is
    use type Net_Devices.Status;
    use type Net_Devices.Device_Access;
    use type Net_Devices.Interface_Id;
+   use type Net_Devices.IPv4_Address;
    use type Interfaces.Unsigned_16;
 
    Max_Sockets : constant := 8;                 --  most any one interface provides
@@ -147,9 +148,25 @@ package body GNAT.Sockets is
          Opened       (Target, New_J) := False;
          In_Use (Old_Id, Old_J) := False;
          Opened (Old_Id, Old_J) := False;
-         Socket := (Iface => Integer (Target), Index => New_J);
+         Socket := (Iface => Integer (Target), Index => New_J, Pin => Socket.Pin);
       end;
    end Move_To;
+
+   --  Find the interface whose own IP is Addr (for bind-to-address pinning).
+   procedure Iface_Of_Addr (Addr  : Net_Devices.IPv4_Address;
+                            Id    : out Interface_Id;
+                            Found : out Boolean) is
+   begin
+      Id := 0;
+      Found := False;
+      for I in Interface_Id'Range loop
+         if Registry (I) /= null and then Registry (I).Local_IP = Addr then
+            Id := I;
+            Found := True;
+            return;
+         end if;
+      end loop;
+   end Iface_Of_Addr;
 
    ---------------------------------------------------------------------------
    --  Addresses
@@ -217,21 +234,43 @@ package body GNAT.Sockets is
             Modes        (Id, J) := Mode;
             Opened       (Id, J) := False;
             Recv_Timeout (Id, J) := 0.0;
-            Socket := (Iface => Integer (Id), Index => J);
+            Socket := (Iface => Integer (Id), Index => J, Pin => -1);
             return;
          end if;
       end loop;
       raise Socket_Error;                        --  all of this interface's sockets in use
    end Create_Socket;
 
-   procedure Bind_Socket (Socket : in out Socket_Type; Address : Sock_Addr_Type) is
-      Id : constant Interface_Id := If_Of (Socket);
-      J  : constant Sock_Index   := Ix_Of (Socket);
+   procedure Set_Interface (Socket : in out Socket_Type; Iface : Interface_Id) is
    begin
-      Local_Ports (Id, J) := Net_Devices.Port_Number (Address.Port);
-      if Modes (Id, J) = Socket_Datagram then
-         Ensure_Open (Id, J);                    --  UDP is ready to send/recv now
+      Move_To (Socket, Iface);
+      Socket.Pin := Integer (Iface);
+   end Set_Interface;
+
+   procedure Bind_Socket (Socket : in out Socket_Type; Address : Sock_Addr_Type) is
+   begin
+      --  Binding to a specific interface's own address pins the socket there (so a
+      --  server listens on just that interface); Any_Inet_Addr leaves it free.
+      if Address.Addr /= Any_Inet_Addr then
+         declare
+            Owner : Interface_Id;
+            Found : Boolean;
+         begin
+            Iface_Of_Addr (Address.Addr.B, Owner, Found);
+            if Found then
+               Set_Interface (Socket, Owner);
+            end if;
+         end;
       end if;
+      declare
+         Id : constant Interface_Id := If_Of (Socket);
+         J  : constant Sock_Index   := Ix_Of (Socket);
+      begin
+         Local_Ports (Id, J) := Net_Devices.Port_Number (Address.Port);
+         if Modes (Id, J) = Socket_Datagram then
+            Ensure_Open (Id, J);                 --  UDP is ready to send/recv now
+         end if;
+      end;
    end Bind_Socket;
 
    procedure Listen_Socket (Socket : in out Socket_Type; Length : Natural := 15) is
@@ -267,12 +306,20 @@ package body GNAT.Sockets is
       Target : Interface_Id;
       Found  : Boolean;
    begin
-      --  Route by destination, then bind the socket to the chosen interface.  With
-      --  no routes configured this is the default interface (unchanged behaviour);
-      --  with routes, a down interface yields no route -> Socket_Error.
-      Resolve_Iface (Server.Addr.B, Target, Found);
-      if not Found then
-         raise Socket_Error;
+      --  A pinned socket uses only its interface and fails closed if it is down --
+      --  never re-routed.  Otherwise route by destination; with no routes this is
+      --  the default interface (unchanged behaviour), with routes a down interface
+      --  yields no route -> Socket_Error.
+      if Socket.Pin >= 0 then
+         Target := Interface_Id (Socket.Pin);
+         if not Iface_Is_Up (Target) then
+            raise Socket_Error;                  --  fail closed, do not fall through
+         end if;
+      else
+         Resolve_Iface (Server.Addr.B, Target, Found);
+         if not Found then
+            raise Socket_Error;
+         end if;
       end if;
       Move_To (Socket, Target);
       declare
