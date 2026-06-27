@@ -151,6 +151,7 @@ All 31 examples share the same FreeRTOS-free bare boot
 | `esp32s3_sd_spi` / `esp32s3_sdmmc` | SD over SPI / native SDHOST — non-destructive sector round-trip |
 | `esp32s3_w25q` | W25Q256FV SPI NOR flash — JEDEC ID, 4-byte mode, erase + page-program + read-back (CS via the SPI callback on a shared bus) |
 | `esp32s3_wl` | Dynamic wear-leveling FTL (`Block_Dev.WL`) over the SPI NOR flash — format, write/verify across mapping moves, remount and re-verify |
+| `esp32s3_ext4_flash` | A real ext4 filesystem on the SPI NOR flash — install an embedded image through `Ext4 → Block_Dev.WL → W25Q_Source`, mount read-only, read files |
 | `esp32s3_ext4` | Mount a real ext4/3/2 SD card with the pure-Ada filesystem and read a file |
 
 **Tasking & runtime profiles**
