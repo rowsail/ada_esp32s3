@@ -1,0 +1,20 @@
+--  Native (x86) host test for the wear-leveling FTL (ESP32S3.Block_Dev.WL).
+--  Brute-forces the sector remap + ping-pong config persistence against a
+--  reference model over a RAM-backed lower block device -- no flash needed, the
+--  FTL is plain Block_Dev-over-Block_Dev.  Whitelist build (only portable units).
+project Wl_Host is
+   for Source_Dirs use (".", "../../src", "../../src/ext4");
+   for Object_Dir use "obj";
+   for Exec_Dir use ".";
+   for Main use ("wl_host.adb");
+   for Source_Files use
+     ("wl_host.adb",
+      "esp32s3.ads",
+      "esp32s3-block_dev.adb",
+      "esp32s3-block_dev.ads",
+      "esp32s3-block_dev-wl.adb",
+      "esp32s3-block_dev-wl.ads");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-g", "-O0", "-gnata", "-gnat2022");
+   end Compiler;
+end Wl_Host;

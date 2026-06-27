@@ -1,0 +1,17 @@
+name = "esp32s3_wl"
+description = "Bare-metal Ada dynamic wear-leveling FTL (Block_Dev.WL) over the W25Q256FV SPI NOR flash: format, write/verify across moves, remount and re-verify"
+version = "0.1.0-dev"
+
+authors = ["D. Howells"]
+maintainers = ["D. Howells <dhowells@motium.us>"]
+licenses = "Apache-2.0 WITH LLVM-exception"
+tags = ["embedded", "esp32s3", "flash", "wear-leveling", "ftl", "filesystem", "example"]
+
+project-files = ["w25q_wl.gpr"]
+
+[[depends-on]]
+esp32s3_rts = "*"
+
+[[pins]]
+esp32s3_rts = { path = "../../crates/esp32s3_rts" }
+xtensa_dynconfig       = { path = "../../crates/xtensa-dynconfig" }
