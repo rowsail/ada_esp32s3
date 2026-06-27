@@ -32,6 +32,7 @@ private
    overriding function Socket_Count (Self : Instance) return Positive;
    overriding function Local_IP     (Self : Instance) return Net_Devices.IPv4_Address;
    overriding function Subnet_Mask  (Self : Instance) return Net_Devices.IPv4_Address;
+   overriding function Is_Up        (Self : Instance) return Boolean;
 
    overriding procedure Open (Self : in out Instance; Index : Natural;
                               Mode : Net_Devices.Transport;

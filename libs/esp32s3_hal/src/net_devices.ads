@@ -30,10 +30,16 @@ package Net_Devices is
    type Device_Access is access all Device'Class;
 
    --  How many sockets this interface offers, and its current IPv4 configuration
-   --  (used later for routing a destination to the right interface).
+   --  (used for routing a destination to the right interface).
    function Socket_Count (Self : Device) return Positive is abstract;
    function Local_IP     (Self : Device) return IPv4_Address is abstract;
    function Subnet_Mask  (Self : Device) return IPv4_Address is abstract;
+
+   --  Is this interface usable right now -- physically up and with an address?
+   --  Routing consults this so traffic only goes out a live interface and can fail
+   --  over when one drops; a pinned socket uses it to fail closed when its
+   --  interface is down.  (For the W5500: PHY link up and a non-zero IP.)
+   function Is_Up (Self : Device) return Boolean is abstract;
 
    --  Open socket Index for TCP or UDP on Local_Port (0 = unbound/ephemeral).
    procedure Open (Self       : in out Device;

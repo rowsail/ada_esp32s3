@@ -40,6 +40,14 @@ package body ESP32S3.W5500.Net_Device is
       return To_N (Tmp);
    end Subnet_Mask;
 
+   --  Usable now = a chip is attached, the PHY link is up, and an address is set.
+   overriding function Is_Up (Self : Instance) return Boolean is
+   begin
+      return Self.Dev /= null
+        and then Link (Self.Dev.all) = Up
+        and then Get_IP (Self.Dev.all) /= IPv4_Address'(0, 0, 0, 0);
+   end Is_Up;
+
    overriding procedure Open (Self : in out Instance; Index : Natural;
                               Mode : Net_Devices.Transport;
                               Local_Port : Net_Devices.Port_Number;
