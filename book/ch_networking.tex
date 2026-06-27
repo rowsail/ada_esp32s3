@@ -626,3 +626,106 @@ HW-verified against \texttt{ftplib} (\texttt{NLST "/"} returns \texttt{flash};
 read-back, \texttt{MKD}, \texttt{DELE} all under \texttt{/flash}). An SD card would
 join the tree at \texttt{/sd} with one more \texttt{VFS.Add} call and no change to
 the server.
+
+\section{Multiple interfaces: routing, metrics, and pinning}
+\label{ch:net:multinic}\index{routing}\index{interface!multiple}\index{failover}
+
+A board may carry more than one way onto a network --- two W5500s, or a wired NIC
+plus a cellular modem. The registry of \S\ref{ch:net:netdevice} already allows it:
+\texttt{Add\_Interface} registers several \texttt{Net\_Devices.Device}s, and a
+\texttt{Socket\_Type} records which one it is on. What that section left open ---
+its own comment said routing was \emph{``not wired yet''} --- is the policy: which
+interface a given connection should use. This section is that policy.
+
+It rests on one new fact each interface reports, \texttt{Is\_Up}: is it usable right
+now --- physically up, with an address? (For the W5500, PHY link up and a non-zero
+IP.) Routing consults it so traffic only leaves a live interface; pinning uses it to
+fail closed.
+
+\subsection{The routing table}
+\index{Net\_Routes}\index{metric}
+
+\texttt{Net\_Routes} is a small table --- the network analogue of the VFS mount
+table of \S\ref{ch:net:vfs}, a neutral interface plus a table that maps a key (here
+a destination address) to a backend (here an interface):
+
+\begin{lstlisting}
+Net_Routes.Set_Default (Eth,  Metric => 10);    -- 0.0.0.0/0 out the wired NIC
+Net_Routes.Set_Default (Cell, Metric => 100);   -- ... or cellular, less preferred
+Net_Routes.Add_Route ((10,0,0,0), (255,0,0,0), Eth, Metric => 10);  -- 10/8 is wired
+\end{lstlisting}
+
+A destination is resolved in a fixed order: among routes that \emph{match} and whose
+interface is \emph{up}, take the \textbf{longest prefix}, then the \textbf{lowest
+metric}. The two keys do different jobs. Prefix length is specificity --- a
+\texttt{10.0.0.0/8} route beats a \texttt{0.0.0.0/0} default regardless of metric, so
+``LAN traffic goes out the wired port'' is expressed by a more specific route, not a
+number. Metric breaks ties \emph{among equally-specific routes} --- two defaults, one
+per interface, are decided by metric, so the wired default (10) wins over the
+cellular default (100). ``Cellular is billed --- always last'' is a metric.
+
+The \texttt{Is\_Up} filter is what turns preference into \textbf{failover}. Give both
+interfaces a default route, wired cheaper; normally the wired default wins. Unplug the
+wired link and its routes drop out of consideration, so the cellular default takes
+over --- automatically, no application code. Plug it back in and it preempts again
+(lower metric, and now up). One subtlety worth stating: an existing connection stays
+on the interface it was opened on (the socket remembers it); failover re-routes only
+\emph{new} connections. You cannot migrate a live TCP socket between interfaces, and
+the design does not pretend to.
+
+The table is pure logic --- liveness is \emph{injected} (the facade hands it a query
+backed by the registry), so it is unit-tested natively with a mock up-state, no
+hardware: longest-prefix, metric tie-break, failover, preempt-back, and the no-route
+cases all checked on the host before any of it touches silicon.
+
+\subsection{Pinning: this link and no other}
+\index{pinning}\index{interface!pinning}
+
+Routing is for ``reach this sensibly, survive a link loss.'' The opposite need ---
+``this traffic is allowed on exactly one link and nowhere else'' --- is
+\textbf{pinning}:
+
+\begin{lstlisting}
+GNAT.Sockets.Set_Interface (S, Eth);   -- S uses Eth only
+\end{lstlisting}
+
+A pinned socket bypasses the table entirely: \texttt{Connect} uses that interface and
+\textbf{fails closed} --- \texttt{Socket\_Error} if it is down --- rather than falling
+back. That difference is the whole point. ``Prefer wired'' (a metric) silently fails
+over; ``only wired'' (a pin) must not, or it is a security or billing bug. Binding a
+socket to a specific interface's own address pins it the same way, so a server can be
+made to listen on just one interface. Inbound is otherwise pinned for free --- a
+listener lives on the chip it was created on.
+
+\subsection{How a connect chooses}
+
+For an \emph{unpinned} socket, \texttt{Connect\_Socket} resolves the destination
+through the table and then re-homes the socket onto the chosen interface before it
+opens the chip socket. The design stays invisible to single-interface boards by
+construction: with no routes configured the resolver returns the default interface
+and the re-home is a no-op, so every existing client --- the weather fetch, the FTP
+client, DNS --- behaves exactly as before. Only once routes exist does a destination
+with no live route raise \texttt{Socket\_Error} instead of leaking out some default.
+
+\noindent\textbf{Example:} \texttt{examples/esp32s3\_multinic} brings up two W5500s
+--- the primary by DHCP, a second on \texttt{CS=IO40} whose reset is shared on
+\texttt{IO11} (so it uses a software reset, \texttt{MR.RST}, leaving the primary
+alone) and which is left uncabled on purpose. The board reports \texttt{eth0} up and
+\texttt{eth1} down; routes \texttt{8.8.8.8} out \texttt{eth0}; falls a \texttt{10/8}
+destination back to the default when its specific route (\texttt{eth1}) is down;
+\emph{refuses} a connect pinned to the down \texttt{eth1}; and connects for real out
+the live \texttt{eth0} --- the routing table, liveness, and fail-closed pinning, all
+on hardware.
+
+\subsection{Beyond W5500: cellular and friends}
+
+The reason a cellular modem slots in here is that \texttt{Net\_Devices.Device} is a
+\emph{socket-level} contract (\texttt{Connect}/\texttt{Listen}/\texttt{Send} by
+address and port), not a packet-level one. A hardware-offload NIC like the W5500 and a
+firmware-stack modem driven by AT commands both implement it directly, with no on-chip
+TCP/IP stack --- the modem's \texttt{Connect} issues an AT command, the W5500's writes
+a socket register, and the facade above neither knows nor cares. A new interface ---
+another W5500, or \texttt{Cell\_Modem.Net\_Device} --- is one more
+\texttt{Add\_Interface} call and a route or two; nothing above the facade changes. (A
+raw Ethernet MAC or Wi-Fi part would \emph{not} fit so cleanly: those are packet-level
+and would need a software IP stack beneath this interface.)
