@@ -107,7 +107,8 @@ project ESP32S3_HAL is
             "ntp_client.ads",          "ntp_client.adb",
             "ftp_client.ads",          "ftp_client.adb",
             "ftp_server.ads",          "ftp_server.adb",
-            "modbus-master.ads",       "modbus-master.adb");
+            "modbus-master.ads",       "modbus-master.adb",
+            "modbus-slave.ads",        "modbus-slave.adb");
       when "embedded" | "full" =>
          for Source_Dirs use ("src", "svd", "src/ext4");
    end case;
