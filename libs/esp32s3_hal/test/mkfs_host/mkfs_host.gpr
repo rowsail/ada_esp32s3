@@ -1,0 +1,53 @@
+--  Native (x86) host test harness for the pure-Ada ext4 filesystem.
+--  Builds the FS (libs/esp32s3_hal/src/ext4, minus the on-target block-device
+--  adapters) against a file-backed block device, so the FS can be exercised and
+--  cross-checked with the host's own e2fsck.  See README.md.
+--
+--  Source_Files is an explicit whitelist (not an exclude): only the portable
+--  units are compiled, so new on-target HAL drivers never affect this build.
+project Mkfs_Host is
+   for Source_Dirs use (".", "../../src", "../../src/ext4");
+   for Object_Dir use "obj";
+   for Exec_Dir use ".";
+   for Main use ("mkfs_host.adb");
+   for Source_Files use
+     ("mkfs_host.adb",
+      "esp32s3.ads",
+      "esp32s3-block_dev.adb",
+      "esp32s3-block_dev.ads",
+      "esp32s3-ext4.adb",
+      "esp32s3-ext4.ads",
+      "esp32s3-ext4-mkfs.adb",
+      "esp32s3-ext4-mkfs.ads",
+      "esp32s3-ext4-bitmap.adb",
+      "esp32s3-ext4-bitmap.ads",
+      "esp32s3-ext4-block_cache.adb",
+      "esp32s3-ext4-block_cache.ads",
+      "esp32s3-ext4-block_map.adb",
+      "esp32s3-ext4-block_map.ads",
+      "esp32s3-ext4-crc32c.adb",
+      "esp32s3-ext4-crc32c.ads",
+      "esp32s3-ext4-dir.adb",
+      "esp32s3-ext4-dir.ads",
+      "esp32s3-ext4-file.adb",
+      "esp32s3-ext4-file.ads",
+      "esp32s3-ext4-fs.adb",
+      "esp32s3-ext4-fs.ads",
+      "esp32s3-ext4-group_desc.adb",
+      "esp32s3-ext4-group_desc.ads",
+      "esp32s3-ext4-inode.adb",
+      "esp32s3-ext4-inode.ads",
+      "esp32s3-ext4-journal.adb",
+      "esp32s3-ext4-journal.ads",
+      "esp32s3-ext4-path.adb",
+      "esp32s3-ext4-path.ads",
+      "esp32s3-ext4-superblock.adb",
+      "esp32s3-ext4-superblock.ads",
+      "esp32s3-ext4-volume.ads",
+      "esp32s3-ext4-writer.adb",
+      "esp32s3-ext4-writer.ads"
+     );
+   package Compiler is
+      for Default_Switches ("Ada") use ("-g", "-O0", "-gnata", "-gnat2022");
+   end Compiler;
+end Mkfs_Host;
