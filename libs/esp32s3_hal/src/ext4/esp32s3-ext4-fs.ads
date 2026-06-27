@@ -47,8 +47,15 @@ package ESP32S3.Ext4.FS is
    function Create_File (M : in out Mount; Dir_Path, Name : String)
       return Inode_Number;
 
-   --  Set the entire contents of (empty) file inode N (<= 12 * block_size bytes).
+   --  Set the entire contents of (empty) file inode N from one in-memory buffer
+   --  (up to ~4 MiB at 4 KiB blocks: 12 direct + one single-indirect block).
    procedure Write_File (M : in out Mount; N : Inode_Number; Data : Byte_Array);
+
+   --  Append Data to the end of regular file inode N.  Streaming: call it
+   --  repeatedly with small chunks to grow a file WITHOUT holding the whole
+   --  thing in memory.  Reaches direct + single + double indirect (~4 GiB at
+   --  4 KiB blocks).
+   procedure Append (M : in out Mount; N : Inode_Number; Data : Byte_Array);
 
    --  Create a subdirectory / remove a regular file / remove an empty directory.
    procedure Mkdir  (M : in out Mount; Dir_Path, Name : String);

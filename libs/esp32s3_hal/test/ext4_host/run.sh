@@ -49,8 +49,16 @@ run_scenario() { # $1 = scenario, $2 = label
 
 # Scenarios mirror examples/esp32s3_ext4_write and the re-run drift hunt.
 echo "journaled:"
-for S in one two rerun battery dirty_battery; do fresh; run_scenario "$S" "$S"; done
+for S in one two rerun battery dirty_battery stream; do fresh; run_scenario "$S" "$S"; done
+grep -h '^stream:' /tmp/ext4_host.out | sed 's/^/      /'
+
+echo "double-indirect (Append/Truncate/Unlink > 4 MiB):"
+for S in dindirect dtrunc dunlink; do
+   fresh; run_scenario "$S" "$S"
+   grep -hE "^(dindirect|dtrunc|dunlink):" /tmp/ext4_host.out | sed 's/^/      /'
+done
 
 echo "no-journal:"
-for S in one two battery; do fresh_nojournal; run_scenario "$S" "$S"; done
+for S in one two battery stream; do fresh_nojournal; run_scenario "$S" "$S"; done
+grep -h '^stream:' /tmp/ext4_host.out | sed 's/^/      /'
 echo "done."

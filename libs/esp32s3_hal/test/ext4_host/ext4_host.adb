@@ -73,6 +73,49 @@ procedure Ext4_Host is
       N := M.Create_File (Path, Name);
       M.Write_File (N, Big.all);
    end Make_Big;
+
+   --  Append Bytes bytes to inode N in 8 KB chunks; byte at offset O = O mod 251.
+   procedure Build (N : Inode_Number; Bytes : Natural) is
+      Chunk : Byte_Array (0 .. 8191);
+      Done  : Natural := 0;
+   begin
+      while Done < Bytes loop
+         declare
+            This : constant Natural := Natural'Min (8192, Bytes - Done);
+         begin
+            for K in 0 .. This - 1 loop
+               Chunk (K) := U8 ((Done + K) mod 251);
+            end loop;
+            M.Append (N, Chunk (0 .. This - 1));
+            Done := Done + This;
+         end;
+      end loop;
+   end Build;
+
+   --  Re-read inode N and confirm its size + every byte = (offset) mod 251.
+   function Verify (N : Inode_Number; Bytes : Natural) return Boolean is
+      Info : Inode.Info;
+      Got  : Byte_Array (0 .. 8191);
+      Last : Natural;
+      Off  : Natural := 0;
+      Ok   : Boolean := True;
+   begin
+      M.Stat (N, Info);
+      if Info.Size /= U64 (Bytes) then
+         Ok := False;
+      end if;
+      while Off < Bytes loop
+         M.Read_File (Info, U64 (Off), Got, Last);
+         exit when Last = 0;
+         for K in 0 .. Last - 1 loop
+            if Got (K) /= U8 ((Off + K) mod 251) then
+               Ok := False;
+            end if;
+         end loop;
+         Off := Off + Last;
+      end loop;
+      return Ok and then Off = Bytes;
+   end Verify;
 begin
    DIO.Open (F, DIO.Inout_File, Argument (1));
    M.Open (Dev, Read_Only => False, Cache_Blocks => 16);
@@ -102,6 +145,105 @@ begin
       Make_File ("/", "ada_write.txt");
       M.Mkdir ("/", "ada_dir");
       M.Commit;                          --  operations transaction
+      M.Close;
+   elsif Scenario = "stream" then
+      --  Build a file with many small, block-crossing Appends (well into the
+      --  single-indirect range), then read every byte back and check it.
+      declare
+         N     : constant Inode_Number := M.Create_File ("/", "stream.bin");
+         Chunk : constant := 137;          --  odd size -> crosses block bounds
+         Count : constant := 1500;         --  ~200 KB -> > 12 blocks (indirect)
+         Buf   : Byte_Array (0 .. Chunk - 1);
+         Pos   : Natural := 0;
+      begin
+         for C in 1 .. Count loop
+            for K in Buf'Range loop
+               Buf (K) := U8 ((Pos + K) mod 251);
+            end loop;
+            M.Append (N, Buf);
+            Pos := Pos + Chunk;
+         end loop;
+         M.Commit;
+
+         declare
+            Info : Inode.Info;
+            Got  : Byte_Array (0 .. 4095);
+            Last : Natural;
+            Off  : Natural := 0;
+            Ok   : Boolean := True;
+         begin
+            M.Stat (N, Info);
+            if Info.Size /= U64 (Pos) then
+               Ok := False;
+            end if;
+            while Off < Pos loop
+               M.Read_File (Info, U64 (Off), Got, Last);
+               exit when Last = 0;
+               for K in 0 .. Last - 1 loop
+                  if Got (K) /= U8 ((Off + K) mod 251) then
+                     Ok := False;
+                  end if;
+               end loop;
+               Off := Off + Last;
+            end loop;
+            Put_Line ("stream:" & Pos'Image & " bytes via Append, readback "
+                      & (if Ok and then Off = Pos then "OK" else "MISMATCH"));
+            if not (Ok and then Off = Pos) then
+               Set_Exit_Status (Failure);
+            end if;
+         end;
+      end;
+      M.Close;
+   elsif Scenario = "dindirect" then
+      --  Create a > 4 MiB file via Append (into the DOUBLE-indirect map) and
+      --  read it back; leaves it in place for e2fsck to validate the structure.
+      declare
+         MB5 : constant := 5 * 1024 * 1024;
+         N   : constant Inode_Number := M.Create_File ("/", "big.bin");
+         Ok  : Boolean;
+      begin
+         Build (N, MB5);
+         M.Commit;
+         Ok := Verify (N, MB5);
+         Put_Line ("dindirect: 5 MB via Append (double-indirect), readback "
+                   & (if Ok then "OK" else "MISMATCH"));
+         if not Ok then
+            Set_Exit_Status (Failure);
+         end if;
+      end;
+      M.Close;
+   elsif Scenario = "dtrunc" then
+      --  Build a double-indirect file, then truncate it WITHIN the double region
+      --  and down into the single region; verify the surviving prefix each time.
+      declare
+         N   : constant Inode_Number := M.Create_File ("/", "big.bin");
+         Ok1, Ok2 : Boolean;
+      begin
+         Build (N, 5 * 1024 * 1024);
+         M.Truncate (N, 4_500_000);          --  partial double-indirect
+         Ok1 := Verify (N, 4_500_000);
+         M.Truncate (N, 100_000);            --  down to single-indirect
+         Ok2 := Verify (N, 100_000);
+         M.Commit;
+         Put_Line ("dtrunc: truncate double->single, readback "
+                   & (if Ok1 and then Ok2 then "OK" else "MISMATCH"));
+         if not (Ok1 and then Ok2) then
+            Set_Exit_Status (Failure);
+         end if;
+      end;
+      M.Close;
+   elsif Scenario = "dunlink" then
+      --  Create a double-indirect file then unlink it -- exercises the free path
+      --  for the whole double-indirect tree; e2fsck confirms no leaked blocks.
+      declare
+         N : constant Inode_Number := M.Create_File ("/", "big.bin");
+      begin
+         Build (N, 5 * 1024 * 1024);
+      end;
+      M.Commit;
+      M.Unlink ("/", "big.bin");
+      M.Commit;
+      Put_Line ("dunlink: 5 MB double-indirect file created + unlinked");
       M.Close;
    end if;
 

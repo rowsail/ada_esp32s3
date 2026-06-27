@@ -10,11 +10,21 @@ package ESP32S3.Ext4.Writer is
    function Create_File (V : in out Volume.Context; Dir_Path, Name : String)
       return Inode_Number;
 
-   --  Set the entire contents of (currently empty) file inode N.  Allocates up
-   --  to 12 direct blocks, i.e. up to 12 * block_size bytes (indirect-block
-   --  allocation is a later step).
+   --  Set the entire contents of (currently empty) file inode N in one call,
+   --  from an in-memory buffer.  Allocates 12 direct + one single-indirect
+   --  block, so up to (12 + block_size/4) * block_size bytes (~4 MiB at 4 KiB).
    procedure Write_Small (V : in out Volume.Context; N : Inode_Number;
                           Data : Byte_Array);
+
+   --  Append Data to the END of regular file inode N, growing it block by block.
+   --  Streaming: call it repeatedly with small chunks to build a large file
+   --  without holding the whole thing in memory.  Reaches 12 direct + single +
+   --  double indirect = ~4 GiB at 4 KiB blocks (triple indirect unsupported); a
+   --  final size past that raises Use_Error before allocating anything.  If the
+   --  volume fills mid-append (No_Space) the bytes written so far are committed
+   --  (no leaked blocks) and the exception propagates.
+   procedure Append (V : in out Volume.Context; N : Inode_Number;
+                     Data : Byte_Array);
 
    --  Create an empty subdirectory Name in directory Dir_Path (with "."/"..").
    procedure Mkdir (V : in out Volume.Context; Dir_Path, Name : String);

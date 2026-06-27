@@ -135,6 +135,11 @@ package body ESP32S3.Ext4.FS is
       Writer.Write_Small (M.V, N, Data);
    end Write_File;
 
+   procedure Append (M : in out Mount; N : Inode_Number; Data : Byte_Array) is
+   begin
+      Writer.Append (M.V, N, Data);
+   end Append;
+
    procedure Mkdir (M : in out Mount; Dir_Path, Name : String) is
    begin
       Writer.Mkdir (M.V, Dir_Path, Name);

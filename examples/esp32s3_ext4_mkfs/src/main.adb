@@ -9,8 +9,10 @@
 --    minimal mkfs.ext4 (single block group, 4 KiB blocks, with or without a JBD2
 --    journal -- see Use_Journal) -- straight onto the wear-leveling volume.  Then
 --    it mounts the new filesystem read-write, creates a file and a subdirectory
---    with a file in it, commits (through the journal if there is one, else a
---    direct flush), remounts read-only, and reads the files back.
+--    with a file in it, STREAMS a 64 KB file with Append (256-byte chunks, never
+--    holding the whole file -- into the single-indirect block map), commits
+--    (through the journal if there is one, else a direct flush), remounts
+--    read-only, reads the files back and byte-checks the streamed one.
 --
 --    Nothing is pre-baked: the filesystem is created from a blank volume on the
 --    device.  The host's e2fsck validates the very same formatter in
@@ -28,12 +30,13 @@
 --    [mkfs] wear-leveling volume: 65512 logical sectors
 --    [mkfs] formatted ext4 (journaled); WL moves: <n>
 --    [mkfs] mounted read-write; block size 4096
---    [mkfs] wrote /boot.txt + mkdir /logs + /logs/1.txt; committed
+--    [mkfs] wrote /boot.txt, /logs/1.txt, streamed /logs/stream.bin; committed
 --    [mkfs] remounted; reading back:
 --    [mkfs] /boot.txt (42 bytes):
 --    formatted on-device by ESP32S3.Ext4.Mkfs!
 --    [mkfs] /logs/1.txt (14 bytes):
 --    log entry one
+--    [mkfs] /logs/stream.bin 65536 bytes via Append, readback PASS
 --    [mkfs] done.
 --
 --  Hardware
@@ -70,6 +73,14 @@ procedure Main is
    MISO_Pin : constant := 45;
    CS_Pin   : constant ESP32S3.GPIO.Pin_Id := 21;
    Clock_Hz : constant := 8_000_000;
+
+   --  Streamed-file shape: 256 chunks of 256 bytes = 64 KiB (> 12 blocks, so the
+   --  single-indirect map is used).  Byte at file offset O is O mod Pattern_Period;
+   --  251 is the largest prime < 256, coprime with both the chunk and the 4 KiB
+   --  block, so no boundary lines up with a repeat -- a mistake would show.
+   Chunk_Bytes    : constant := 256;
+   Chunk_Count    : constant := 256;
+   Pattern_Period : constant := 251;
 
    --  Create a JBD2 journal (crash-safe commits) vs a no-journal volume.  A
    --  journal costs a fixed 4 MiB here, so for a small SPI flash the lighter
@@ -198,9 +209,25 @@ begin
          M.Mkdir ("/", "logs");
          N := M.Create_File ("/logs", "1.txt");
          M.Write_File (N, To_Bytes ("log entry one" & ASCII.LF));
+
+         --  Streaming: build the file a chunk at a time via Append, never holding
+         --  the whole thing -- and large enough to use the single-indirect map.
+         N := M.Create_File ("/logs", "stream.bin");
+         declare
+            Chunk : Byte_Array (0 .. Chunk_Bytes - 1);
+         begin
+            for C in 0 .. Chunk_Count - 1 loop
+               for K in Chunk'Range loop
+                  Chunk (K) :=
+                    Unsigned_8 ((C * Chunk_Bytes + K) mod Pattern_Period);
+               end loop;
+               M.Append (N, Chunk);
+            end loop;
+         end;
+
          M.Commit;
          M.Close;
-         Log.Put_Line ("[mkfs] wrote /boot.txt + mkdir /logs + /logs/1.txt; committed");
+         Log.Put_Line ("[mkfs] wrote /boot.txt, /logs/1.txt, streamed /logs/stream.bin; committed");
       exception
          when others =>
             Log.Put_Line ("[mkfs] format/write FAILED");
@@ -214,6 +241,32 @@ begin
          Log.Put_Line ("[mkfs] remounted; reading back:");
          Show_File (M, "/boot.txt");
          Show_File (M, "/logs/1.txt");
+
+         --  Verify the streamed file: every byte must equal offset mod Period.
+         declare
+            Info : ESP32S3.Ext4.Inode.Info;
+            Got  : Byte_Array (0 .. Chunk_Bytes - 1);
+            Last : Natural;
+            Off  : Natural := 0;
+            OK   : Boolean := True;
+         begin
+            M.Stat (M.Lookup ("/logs/stream.bin"), Info);
+            while Off < Natural (Info.Size) loop
+               M.Read_File (Info, ESP32S3.Ext4.U64 (Off), Got, Last);
+               exit when Last = 0;
+               for K in 0 .. Last - 1 loop
+                  if Got (K) /= Unsigned_8 ((Off + K) mod Pattern_Period) then
+                     OK := False;
+                  end if;
+               end loop;
+               Off := Off + Last;
+            end loop;
+            Log.Put ("[mkfs] /logs/stream.bin ");
+            Log.Put_Unsigned (Unsigned_32 (Info.Size));
+            Log.Put_Line (" bytes via Append, readback "
+                          & (if OK and then Off = Natural (Info.Size) then "PASS"
+                             else "FAIL"));
+         end;
          M.Close;
       exception
          when others =>

@@ -34,9 +34,12 @@ log entry one
    a `lost+found`. The `Use_Journal` constant chooses a **JBD2 journal** (4 MiB,
    crash-safe commits — the default here) or a lighter no-journal volume.
 3. **Mounts read-write**, creates `/boot.txt`, `mkdir /logs`, writes `/logs/1.txt`,
-   and commits (through the journal if there is one, else a direct flush).
-4. **Remounts** read-only and reads both files back — including the one in the
-   subdirectory it just created.
+   **streams a 64 KB `/logs/stream.bin`** with `Append` (256-byte chunks — never
+   buffering the whole file, and large enough to use the single-indirect block
+   map), and commits (through the journal if there is one, else a direct flush).
+4. **Remounts** read-only, reads the files back — including the one in the
+   subdirectory it just created — and **byte-checks the streamed file**
+   (every byte = its file offset mod 251).
 
 Unlike [`esp32s3_ext4_flash`](../esp32s3_ext4_flash) (which installs a host-built
 image), nothing here is pre-baked: the filesystem is created from a blank volume
