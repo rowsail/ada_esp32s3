@@ -1,0 +1,20 @@
+--  Native (x86) host test harness for FTP_Client.  Because FTP_Client is written
+--  entirely against the GNAT.Sockets subset, the SAME source compiles against the
+--  native runtime's real GNAT.Sockets here (the bare-metal W5500 facade is NOT a
+--  project source -- the whitelist below leaves it out), so the protocol logic can
+--  be exercised end to end against a local Python FTP server.  See run.sh.
+project FTP_Host is
+   for Source_Dirs use (".", "../../src");
+   for Object_Dir use "obj";
+   for Exec_Dir use ".";
+   for Main use ("ftp_host.adb");
+   for Source_Files use
+     ("ftp_host.adb",
+      "ftp_test_support.ads",
+      "ftp_test_support.adb",
+      "ftp_client.ads",
+      "ftp_client.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-g", "-O0", "-gnata", "-gnat2022");
+   end Compiler;
+end FTP_Host;
