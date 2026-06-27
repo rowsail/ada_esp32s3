@@ -1,9 +1,10 @@
-\chapter{Mass Storage: SD Cards and the ext4 Filesystem}
+\chapter{Mass Storage: SD Cards, SPI Flash, and the ext4 Filesystem}
 \label{ch:storage}
 
-The final layer is mass storage: two block drivers for SD cards, and a complete
-pure-Ada ext2/3/4 filesystem (a reimplementation of lwext4) that sits on top of
-them and mounts real \texttt{mkfs.ext4} cards.
+The final layer is mass storage: block drivers for SD cards and for a raw SPI NOR
+flash chip, and a complete pure-Ada ext2/3/4 filesystem (a reimplementation of
+lwext4) that sits on top of them --- mounting real \texttt{mkfs.ext4} cards,
+\emph{and} wear-leveling and formatting a bare flash chip entirely on-device.
 
 \section{SD\_SPI --- an SD card over the SPI master}\index{SD card}\index{SD\_SPI}\index{SPI SD mode}
 
@@ -203,6 +204,31 @@ The full POSIX-like set is available: \texttt{Create\_File}, \texttt{Write\_File
    end;
 \end{lstlisting}
 
+\subsection{Streaming writes and file-size limits}\index{streaming write}\index{Append}\index{block map}\index{single-indirect block}\index{double-indirect block}
+
+\texttt{Write\_File} sets a file's whole contents from one in-memory buffer ---
+fine for a small file, but you cannot hand an embedded part a gigabyte-sized
+array. \texttt{Append} grows a file at its end one chunk at a time, so a large
+file is built from small writes with no buffer to hold it all:
+
+\begin{lstlisting}
+   N := M.Create_File ("/", "big.log");
+   for I in 1 .. 1000 loop          --  e.g. 1000 records, streamed
+      M.Append (N, Chunk);          --  grows the file; no whole-file buffer
+   end loop;
+   M.Commit;
+\end{lstlisting}
+
+What bounds a single file is the \emph{block map}. The writer allocates classic
+indirect blocks --- 12 direct, then single-indirect, then double-indirect --- so
+on a 4\,KiB-block volume one file reaches about 4\,MiB through the single-indirect
+tier and about 4\,GiB through the double-indirect tier; the matching free and
+truncate paths walk the same tiers, so a file that can be written can always be
+deleted and shrunk. The \emph{read} path goes further --- it follows the full
+classic map (through triple-indirect) and ext4 extent trees --- so a
+multi-gigabyte file written by a host is readable on-device, bounded only by the
+volume's free space.
+
 \subsection{Crash-safe transactions}\index{crash-safe transactions}\index{journaling}\index{commit barrier}
 
 For atomicity, group an operation behind \texttt{Commit}: the dirty metadata and
@@ -218,6 +244,13 @@ kernel); a loss before it has no effect.
    M.Write_File (N, Payload);
    M.Commit;         --  one atomic, journaled, crash-safe transaction
 \end{lstlisting}
+
+A volume formatted \emph{without} a journal (\texttt{mke2fs -O \textasciicircum
+has\_journal}) has no log to write through, so \texttt{Commit} instead flushes the
+dirty metadata and superblock straight to their final locations. The filesystem
+detects which kind it mounted and routes \texttt{Commit} automatically --- a
+no-journal volume trades the crash-safety barrier for smaller size and fewer
+writes, the right choice on a small flash chip.\index{no-journal volume}
 
 \subsection{Concurrency: one owner per mount}\index{block cache}\index{single-owner mount}
 
@@ -332,6 +365,99 @@ source file, every mutation is checked with \texttt{e2fsck -fn}, and journal
 replay and commit are cross-checked against the kernel's own recovery. The same
 code cross-compiles for the ESP32-S3 and runs over the SD drivers above. See
 \texttt{tests/ext4\_host/} and \texttt{libs/esp32s3\_hal/src/ext4/REFERENCES.md}.
+
+\section{Putting ext4 on raw SPI NOR flash}\index{SPI NOR flash}\index{wear leveling}\index{flash translation layer}
+
+The same filesystem runs on a bare SPI NOR flash chip, no SD card in sight. Four
+pure-Ada layers stack up, each a thin adapter over the one below:
+
+\begin{center}
+\texttt{ESP32S3.Ext4} $\rightarrow$ \texttt{Block\_Dev.WL} $\rightarrow$
+\texttt{Block\_Dev.W25Q\_Source} $\rightarrow$ \texttt{ESP32S3.W25Q}
+\end{center}
+
+\noindent The flash driver speaks to the chip; \texttt{W25Q\_Source} presents it
+as a 512-byte block device; \texttt{WL} is a wear-leveling flash translation
+layer that spreads writes so no sector wears out first; and \texttt{Ext4} mounts
+the result. The reference part is a Winbond \texttt{W25Q256FV} (32\,MB) that shares
+the SPI2 bus with the W5500 Ethernet chip.
+
+\subsection{The W25Q flash driver}\index{W25Q}\index{JEDEC ID}\index{4-byte addressing}\index{chip-select callback}
+
+\texttt{ESP32S3.W25Q} reads the JEDEC id, then programs, erases and reads in
+\emph{4-byte address mode} (a part larger than 16\,MB needs four address bytes).
+Two design points stand out. The chip size is \emph{detected}, not hard-coded: the
+JEDEC density byte is a power of two, so \texttt{Capacity\_Bytes} turns
+\texttt{EF\,40\,19} into 32\,MB, and because each layer above sizes itself from the
+one below, fitting a different W25Q part (8/16/32/64\,MB) needs no code change.
+And the chip-select is \emph{application-driven}: sharing a bus with another
+device, the flash brings its own active-low select on a GPIO through a callback
+(\texttt{GPIO\_Select} over IO21 here), rather than the SPI host's single hardware
+\texttt{CS0}.
+
+\begin{lstlisting}
+with ESP32S3.W25Q; use ESP32S3.W25Q;
+--  Select_Pad : aliased Pin_Cell := (Pin => 21);    --  active-low CS on IO21
+--  Flash : ESP32S3.W25Q.Flash :=
+--    (Host => ESP32S3.SPI.SPI2, CS => GPIO_Select'Access,
+--     Ctx => Select_Pad'Address);
+   ID      : JEDEC_ID;
+   Mode_OK : Boolean;
+begin
+   Read_Identification (Flash, ID);          --  EF 40 19 on a W25Q256FV
+   Initialize (Flash, Mode_OK);              --  enter 4-byte address mode
+   if ID.Manufacturer = 16#EF# and then Capacity_Bytes (ID) /= 0 then
+      null;                                  --  Capacity_Bytes (ID) = 32 MB
+   end if;
+\end{lstlisting}
+
+\subsection{Block device and wear leveling}\index{W25Q\_Source}\index{block-erase}\index{ping-pong configuration}
+
+NOR flash must be \emph{erased} (to all-ones, in 4\,KiB sectors) before it can be
+re-programmed, so \texttt{W25Q\_Source} hides an erase-aware, write-through
+512-byte sector interface over the chip; an optional block-erase capability lets
+the layer above clear a whole 4\,KiB block in one operation.
+
+\texttt{Block\_Dev.WL} is the wear-leveling FTL. It keeps an $O(1)$ state --- a
+single move counter --- and maps a logical 4\,KiB block to a physical one by a
+shifting offset, with one always-free ``hole''. Every few writes it advances the
+hole by copying one block, so over time every logical block visits every physical
+block and a hot block (an ext4 bitmap, say) never wears out one sector. The state
+is written to two configuration blocks \emph{ping-pong} (alternating, each with a
+higher sequence number and a CRC), so a power loss mid-update always leaves a
+consistent earlier state; \texttt{Mount} picks the highest valid sequence. The
+whole stack --- erase-aware writes, the wear-level remap, the auto-detected size
+--- comes together in four calls:
+
+\begin{lstlisting}
+   BDW.Configure (Raw, Flash => Flash);      --  auto-size from the JEDEC id
+   WL.Attach (Vol, BDW.Make (Raw'Access));   --  wear-leveling volume over it
+   WL.Mount  (Vol, Formatted);               --  recover the saved wear state
+   Dev := WL.Make (Vol'Access);              --  a 512-byte Block_Dev for ext4
+\end{lstlisting}
+
+\subsection{Formatting on-device: \texttt{Ext4.Mkfs}}\index{mkfs}\index{Ext4.Mkfs}\index{on-device format}
+
+The external flash is not on the host flasher's path, and the filesystem reads and
+writes but does not format --- so to start from a blank chip the board makes the
+filesystem itself. \texttt{ESP32S3.Ext4.Mkfs} is a minimal pure-Ada
+\texttt{mkfs.ext4}: it writes a single-block-group ext4 (4\,KiB blocks, classic
+block-mapped inodes, a root directory and \texttt{lost+found}), with an optional
+4\,MiB JBD2 journal (\texttt{Journal => True}). It is the inverse of the read path,
+validated against the host's \texttt{e2fsck}. From a blank chip to a mounted,
+written filesystem is then:
+
+\begin{lstlisting}
+   --  ... build Dev as above, but WL.Format (Vol) for a fresh volume ...
+   ESP32S3.Ext4.Mkfs.Format (Dev, Volume_Label => "FLASH", Journal => True);
+   M.Open (Dev, Read_Only => False);
+   N := M.Create_File ("/", "boot.txt");
+   M.Write_File (N, (Character'Pos ('h'), Character'Pos ('i'), 10));
+   M.Commit;                                 --  through the journal just created
+\end{lstlisting}
+
+\noindent The on-target examples \texttt{esp32s3\_w25q}, \texttt{esp32s3\_wl} and
+\texttt{esp32s3\_ext4\_mkfs} run this stack end to end on the hardware.
 
 \vfill
 \noindent\rule{\linewidth}{0.4pt}\\[4pt]

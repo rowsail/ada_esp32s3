@@ -28,7 +28,7 @@ dispatching the workflow by hand uploads it as a build artifact.
 | `ch_hal2.tex` | GDMA, MCPWM, I2S, LEDC, RMT, PCNT, SDM, TWAI, Timer, LCD, ADC |
 | `ch_hal3.tex` | RTC, RTC-IO, Touch, SHA, AES |
 | `ch_driver_design.tex` | How to write a task-safe driver (Engine / ownership gateway); why and benefits |
-| `ch_storage.tex` | SD\_SPI, SDMMC, and the ext4 filesystem |
+| `ch_storage.tex` | SD\_SPI, SDMMC, ext4; ext4 on raw SPI NOR flash (W25Q, wear leveling, on-device mkfs) |
 | `ch_networking.tex` | GNAT.Sockets over the W5500; DNS, NTP, the weather example |
 | `ch_tls.tex` | Pure-Ada TLS 1.3 (HTTPS) — SPARKNaCl + HW crypto, X.509, ECDHE |
 | `ch_psram.tex` | Bringing up the octal PSRAM; the 80 MHz din-timing tune |

@@ -229,7 +229,10 @@ procedure Setup (Host : SPI_Host; Mode : SPI_Mode := 0;
                  Clock_Hz : Positive := 1_000_000);
 procedure Configure_Pins (Host : SPI_Host; Sclk, Mosi, Miso : Optional_Pin;
                           Cs : Optional_Pin := No_Pin);
-procedure Acquire  (S : in out Session; Host : SPI_Host);
+procedure Acquire  (S : in out Session; Host : SPI_Host;
+                    Select_CB : CS_Select    := null;       --  app chip select
+                    Ctx : System.Address := System.Null_Address);
+procedure Select_Device (S : in out Session; On : Boolean);
 procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural);
 procedure Release  (S : in out Session);
 \end{lstlisting}
@@ -242,8 +245,12 @@ procedure Release  (S : in out Session);
 \item[\texttt{Clock\_Hz}] bit clock in Hz; default \texttt{1\_000\_000}, clamped to
   roughly 80\,kHz\,..\,80\,MHz.
 \item[\texttt{Sclk}, \texttt{Mosi}, \texttt{Miso}, \texttt{Cs}] the four lines as
-  \texttt{Optional\_Pin}; \texttt{Cs} defaults to \texttt{No\_Pin} (drive it as a
-  plain GPIO when you have more than one device).
+  \texttt{Optional\_Pin}; \texttt{Cs} is the host's single hardware chip-select and
+  defaults to \texttt{No\_Pin} --- with more than one device on the bus, register a
+  \texttt{CS\_Select} callback at \texttt{Acquire} instead (below).
+\item[\texttt{Select\_CB}, \texttt{Ctx}] an optional application chip-select
+  callback and its opaque context (below); leave them out for the hardware
+  \texttt{CS0}.
 \item[\texttt{Tx}, \texttt{Rx}, \texttt{Length}] transmit/receive buffer
   \texttt{'Address}es and a byte count, \texttt{1\,..\,4095}; full-duplex, so both
   move \texttt{Length} bytes together.
@@ -282,6 +289,34 @@ begin
    Transfer (S, Tx'Address, Rx'Address, 32);
    --  Rx = Tx
 end SPI_Loopback;
+\end{lstlisting}
+
+\textbf{Application-driven chip select.}\index{chip-select callback}\index{shared SPI bus}
+The host has one hardware chip-select (\texttt{CS0}); to put several devices on one
+bus, a device can bring its \emph{own} select instead. Pass a \texttt{CS\_Select}
+callback --- and an opaque \texttt{Ctx} --- to \texttt{Acquire}: the driver then
+suppresses the hardware \texttt{CS0} for that session, and \texttt{Select\_Device}
+calls back to assert and deassert the line around the transaction. The select can
+be a plain GPIO, several GPIOs into a 3:8 decoder, or an I/O-expander pin --- the
+mapping lives entirely in the callback, keyed by \texttt{Ctx}. The callback must be
+\emph{library-level and closure-free} (this HAL builds under
+\texttt{No\_Implicit\_Dynamic\_Code}, so a nested closure would emit a faulting
+trampoline; per-device state travels in \texttt{Ctx}). This is how the W25Q flash
+shares the SPI2 bus with the W5500 in Chapter~\ref{ch:storage}.
+
+\begin{lstlisting}
+--  Library-level, closure-free: drive IO10 low to select, high to release.
+procedure CS_IO10 (Ctx : System.Address; Active : Boolean) is
+begin
+   if Active then ESP32S3.GPIO.Clear (10); else ESP32S3.GPIO.Set (10); end if;
+end CS_IO10;
+
+   Setup (SPI2, Clock_Hz => 8_000_000);
+   Configure_Pins (SPI2, Sclk => 12, Mosi => 11, Miso => 13);  --  no hardware Cs
+   Acquire (S, SPI2, Select_CB => CS_IO10'Access);   --  bring our own select
+   Select_Device (S, On => True);                    --  assert IO10
+   Transfer (S, Tx'Address, Rx'Address, 2);
+   Select_Device (S, On => False);                   --  deassert IO10
 \end{lstlisting}
 
 \section{I2C --- master}\index{I2C driver}

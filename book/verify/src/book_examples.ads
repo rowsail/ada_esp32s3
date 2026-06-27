@@ -7,6 +7,7 @@ package Book_Examples is
    procedure RNG_Word;         procedure RNG_Nonce;
    procedure Temp_Degrees;     procedure Temp_Centi;
    procedure SPI_Write_Dev;    procedure SPI_Loopback;
+   procedure SPI_App_CS;
    procedure I2C_Write_Reg;    procedure I2C_Read_Reg;
    procedure UART_Tx;          procedure UART_Echo;
    procedure UART_Reconfig;
@@ -33,4 +34,7 @@ package Book_Examples is
    procedure SDMMC_Read_Ex;
    procedure EXT4_Read;        procedure EXT4_List;
    procedure EXT4_Write;       procedure EXT4_Commit;
+   procedure EXT4_Append;
+   procedure W25Q_Probe;       procedure Flash_Stack;
+   procedure Flash_Mkfs;
 end Book_Examples;

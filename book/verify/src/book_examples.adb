@@ -1,6 +1,7 @@
 with Interfaces;                       use Interfaces;
 with Ada.Text_IO;                      use Ada.Text_IO;
 with Ada.Real_Time;                    use Ada.Real_Time;
+with System;
 with ESP32S3.GPIO;
 with ESP32S3.RNG;
 with ESP32S3.Temperature;
@@ -27,9 +28,13 @@ with ESP32S3.SD_SPI;
 with ESP32S3.SDMMC;
 with ESP32S3.Block_Dev;
 with ESP32S3.Block_Dev.SD_SPI_Source;
+with ESP32S3.Block_Dev.W25Q_Source;
+with ESP32S3.Block_Dev.WL;
+with ESP32S3.W25Q;
 with ESP32S3.Ext4;
 with ESP32S3.Ext4.FS;
 with ESP32S3.Ext4.Inode;
+with ESP32S3.Ext4.Mkfs;
 
 package body Book_Examples is
 
@@ -112,6 +117,31 @@ package body Book_Examples is
       Acquire (S, SPI2);
       Transfer (S, Tx'Address, Rx'Address, 32);
    end SPI_Loopback;
+
+   --  Library-level, closure-free chip-select callback: IO10 low = selected.
+   procedure CS_IO10 (Ctx : System.Address; Active : Boolean) is
+      pragma Unreferenced (Ctx);
+   begin
+      if Active then
+         ESP32S3.GPIO.Clear (10);
+      else
+         ESP32S3.GPIO.Set (10);
+      end if;
+   end CS_IO10;
+
+   procedure SPI_App_CS is
+      use ESP32S3.SPI;
+      S  : Session;
+      Tx : aliased array (0 .. 1) of Interfaces.Unsigned_8 := (16#9F#, 0);
+      Rx : aliased array (0 .. 1) of Interfaces.Unsigned_8;
+   begin
+      Setup (SPI2, Clock_Hz => 8_000_000);
+      Configure_Pins (SPI2, Sclk => 12, Mosi => 11, Miso => 13);
+      Acquire (S, SPI2, Select_CB => CS_IO10'Access);   --  bring our own select
+      Select_Device (S, On => True);
+      Transfer (S, Tx'Address, Rx'Address, 2);
+      Select_Device (S, On => False);
+   end SPI_App_CS;
 
    procedure I2C_Write_Reg is
       use ESP32S3.I2C;
@@ -655,5 +685,82 @@ package body Book_Examples is
          M.Commit;
       end;
    end EXT4_Commit;
+
+   procedure EXT4_Append is
+      M     : ESP32S3.Ext4.FS.Mount;
+      N     : ESP32S3.Ext4.Inode_Number;
+      Chunk : constant ESP32S3.Ext4.Byte_Array (0 .. 255) := (others => 0);
+   begin
+      N := M.Create_File ("/", "big.log");
+      for I in 1 .. 1000 loop          --  grow it a chunk at a time, no big buffer
+         M.Append (N, Chunk);
+      end loop;
+      M.Commit;
+   end EXT4_Append;
+
+   --  A library-level, active-low single-GPIO chip select for the flash (the
+   --  driver's GPIO_Select reads the pad from this aliased cell via Ctx).
+   procedure W25Q_Probe is
+      use ESP32S3.W25Q;
+      Select_Pad : aliased Pin_Cell := (Pin => 21);
+      Flash      : ESP32S3.W25Q.Flash :=
+        (Host => ESP32S3.SPI.SPI2,
+         CS   => GPIO_Select'Access,
+         Ctx  => Select_Pad'Address);
+      ID      : JEDEC_ID;
+      Mode_OK : Boolean;
+   begin
+      Read_Identification (Flash, ID);          --  EF 40 19 on a W25Q256FV
+      Initialize (Flash, Mode_OK);              --  enter 4-byte address mode
+      if ID.Manufacturer = 16#EF# and then Capacity_Bytes (ID) /= 0 then
+         null;                                  --  Capacity_Bytes (ID) = 32 MB
+      end if;
+   end W25Q_Probe;
+
+   procedure Flash_Stack is
+      use ESP32S3.W25Q;
+      package BDW renames ESP32S3.Block_Dev.W25Q_Source;
+      package WL  renames ESP32S3.Block_Dev.WL;
+      Select_Pad : aliased Pin_Cell := (Pin => 21);
+      Flash      : ESP32S3.W25Q.Flash :=
+        (Host => ESP32S3.SPI.SPI2, CS => GPIO_Select'Access,
+         Ctx => Select_Pad'Address);
+      Raw       : aliased BDW.Source;
+      Vol       : aliased WL.Volume;
+      Dev       : ESP32S3.Block_Dev.Device;
+      Formatted : Boolean;
+      pragma Unreferenced (Dev);
+   begin
+      BDW.Configure (Raw, Flash => Flash);      --  auto-size from the JEDEC id
+      WL.Attach (Vol, BDW.Make (Raw'Access));   --  wear-leveling volume over it
+      WL.Mount  (Vol, Formatted);               --  recover the saved wear state
+      Dev := WL.Make (Vol'Access);              --  a 512-byte Block_Dev for ext4
+   end Flash_Stack;
+
+   procedure Flash_Mkfs is
+      use ESP32S3.W25Q;
+      package BDW renames ESP32S3.Block_Dev.W25Q_Source;
+      package WL  renames ESP32S3.Block_Dev.WL;
+      Select_Pad : aliased Pin_Cell := (Pin => 21);
+      Flash      : ESP32S3.W25Q.Flash :=
+        (Host => ESP32S3.SPI.SPI2, CS => GPIO_Select'Access,
+         Ctx => Select_Pad'Address);
+      Raw : aliased BDW.Source;
+      Vol : aliased WL.Volume;
+      Dev : ESP32S3.Block_Dev.Device;
+      M   : ESP32S3.Ext4.FS.Mount;
+      N   : ESP32S3.Ext4.Inode_Number;
+   begin
+      BDW.Configure (Raw, Flash => Flash);
+      WL.Attach (Vol, BDW.Make (Raw'Access));
+      WL.Format (Vol);                          --  fresh wear-leveling volume
+      Dev := WL.Make (Vol'Access);
+
+      ESP32S3.Ext4.Mkfs.Format (Dev, Volume_Label => "FLASH", Journal => True);
+      M.Open (Dev, Read_Only => False);
+      N := M.Create_File ("/", "boot.txt");
+      M.Write_File (N, (Character'Pos ('h'), Character'Pos ('i'), 10));
+      M.Commit;
+   end Flash_Mkfs;
 
 end Book_Examples;

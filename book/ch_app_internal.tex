@@ -212,8 +212,12 @@ $\le$400\,kHz, then switches to several MHz). \texttt{Configure\_Pins} routes
 \texttt{Optional\_Pin}), and \texttt{Enable\_Loopback} ties MOSI to MISO through
 one pad for a self-test. The single transfer primitive is a blocking,
 full-duplex DMA \texttt{Transfer} of 1\,..\,4095 bytes between two SRAM buffers,
-addressed by \texttt{System.Address}. The controlled \texttt{Session}
-auto-releases on scope exit, so this driver targets \texttt{embedded}/\texttt{full}.
+addressed by \texttt{System.Address}. A device that brings its own chip-select ---
+to share the bus, or behind a 3:8 decoder or an I/O-expander --- registers a
+library-level \texttt{CS\_Select} callback at \texttt{Acquire} and brackets its
+transaction with \texttt{Select\_Device}; the driver then suppresses the hardware
+\texttt{CS0} for that session. The controlled \texttt{Session} auto-releases on
+scope exit, so this driver targets \texttt{embedded}/\texttt{full}.
 
 \begin{lstlisting}
 package ESP32S3.SPI is
@@ -225,11 +229,17 @@ package ESP32S3.SPI is
                           Clock_Hz : Positive := 1_000_000);
    procedure Set_Clock   (Host : SPI_Host; Hz : Positive);
    procedure Enable_Loopback (Host : SPI_Host; Pad : ESP32S3.GPIO.Pin_Id);
+   type CS_Select is access procedure            --  app chip select: library-
+     (Ctx : System.Address; Active : Boolean);   --  level, closure-free
+
    procedure Configure_Pins (Host : SPI_Host;
                              Sclk, Mosi, Miso : ESP32S3.GPIO.Optional_Pin;
                              Cs   : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
-   procedure Acquire  (S : in out Session; Host : SPI_Host);
+   procedure Acquire  (S : in out Session; Host : SPI_Host;
+                       Select_CB : CS_Select := null;
+                       Ctx : System.Address := System.Null_Address);
+   procedure Select_Device (S : in out Session; On : Boolean);
    procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural);
    procedure Release  (S : in out Session);
    Not_Initialized, Not_Owned : exception;
