@@ -87,6 +87,14 @@
   keywordstyle=\color{kw}, frame=single, backgroundcolor=\color{bg},
   breaklines=true, showstringspaces=false}
 
+%  Don't let a code listing start at the very bottom of a page and break after
+%  only a line or two: require at least this many lines of room, else push the
+%  whole block to the next page.  A listing longer than this still breaks (it has
+%  to), but never orphans a tiny fragment.  Tune the line count to taste.
+\usepackage{needspace}
+\usepackage{etoolbox}
+\BeforeBeginEnvironment{lstlisting}{\par\needspace{6\baselineskip}}
+
 %  raggedright so multi-line chapter titles don't get justified into ugly
 %  inter-word gaps (e.g. "Networking: GNAT.Sockets over the W5500").
 \titleformat{\chapter}[display]{\normalfont\huge\bfseries\raggedright}{\chaptertitlename\ \thechapter}{16pt}{\Huge}
