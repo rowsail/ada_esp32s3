@@ -126,6 +126,19 @@ package body ESP32S3.W25Q is
              Capacity     => Rsp (3));
    end Read_Identification;
 
+   function Capacity_Bytes (ID : JEDEC_ID) return Address is
+      Code : constant Natural := Natural (ID.Capacity);
+   begin
+      --  Standard SPI-NOR density encoding: size = 2 ** capacity-byte.  Accept
+      --  64 KB (0x10) .. 64 MB (0x1A); anything else (0x00 / 0xFF / a vendor's
+      --  non-standard code) is reported as unknown.
+      if Code in 16#10# .. 16#1A# then
+         return Shift_Left (Address (1), Code);
+      else
+         return 0;
+      end if;
+   end Capacity_Bytes;
+
    procedure Read (Dev : Flash; Addr : Address; Data : out Byte_Array) is
       S      : SPI.Session;
       Header : aliased Byte_Array (0 .. Header_Len - 1);

@@ -152,7 +152,7 @@ All 31 examples share the same FreeRTOS-free bare boot
 | `esp32s3_w25q` | W25Q256FV SPI NOR flash — JEDEC ID, 4-byte mode, erase + page-program + read-back (CS via the SPI callback on a shared bus) |
 | `esp32s3_wl` | Dynamic wear-leveling FTL (`Block_Dev.WL`) over the SPI NOR flash — format, write/verify across mapping moves, remount and re-verify |
 | `esp32s3_ext4_flash` | A real ext4 filesystem on the SPI NOR flash — install an embedded image through `Ext4 → Block_Dev.WL → W25Q_Source`, mount read-write, read + create/commit a file (no-journal direct flush) |
-| `esp32s3_ext4_mkfs` | **Format** a blank SPI NOR flash to ext4 **on-device** with `Ext4.Mkfs` (no host, no image), then mount read-write, create files + a subdirectory, remount and read back |
+| `esp32s3_ext4_mkfs` | **Format** a blank SPI NOR flash to ext4 **on-device** with `Ext4.Mkfs` (no host, no image; optional JBD2 journal), then mount read-write, create files + a subdirectory, remount and read back |
 | `esp32s3_ext4` | Mount a real ext4/3/2 SD card with the pure-Ada filesystem and read a file |
 
 **Tasking & runtime profiles**

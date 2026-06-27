@@ -52,12 +52,17 @@ procedure Mkfs_Host is
       Erase => null);
 
    Scenario : constant String := (if Argument_Count >= 2 then Argument (2) else "format");
+   --  Optional 3rd arg "journal" formats a journaled volume.
+   Want_Journal : constant Boolean :=
+     Argument_Count >= 3 and then Argument (3) = "journal";
    M        : ESP32S3.Ext4.FS.Mount;
 begin
    DIO.Open (F, DIO.Inout_File, Argument (1));
 
-   ESP32S3.Ext4.Mkfs.Format (Dev, Volume_Label => "ADAFLASH");
-   Put_Line ("mkfs_host: formatted " & DIO.Size (F)'Image & " sectors");
+   ESP32S3.Ext4.Mkfs.Format
+     (Dev, Volume_Label => "ADAFLASH", Journal => Want_Journal);
+   Put_Line ("mkfs_host: formatted " & DIO.Size (F)'Image & " sectors"
+             & (if Want_Journal then " (journaled)" else ""));
 
    if Scenario = "mount" then
       M.Open (Dev, Read_Only => True);

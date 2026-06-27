@@ -57,7 +57,6 @@ procedure Main is
    MISO_Pin : constant := 45;
    CS_Pin   : constant ESP32S3.GPIO.Pin_Id := 21;
    Clock_Hz : constant := 8_000_000;
-   Capacity : constant W25Q.Address := 32 * 1024 * 1024;     --  W25Q256FV = 32 MB
 
    --  Flash device + its single-GPIO chip select on IO21.
    CS_Cell : aliased W25Q.Pin_Cell := (Pin => CS_Pin);
@@ -66,6 +65,7 @@ procedure Main is
 
    ID       : W25Q.JEDEC_ID;
    Mode_OK  : Boolean;
+   Chip     : W25Q.Address;    --  flash size in bytes, detected from the JEDEC id
 
    --  Lower (raw) block device, then the wear-leveling volume over it.
    Raw      : aliased BDW.Source;
@@ -117,9 +117,13 @@ begin
    Log.Put_Hex (Unsigned_32 (ID.Capacity), 2);
    Log.Put_Line (", 4-byte mode: " & (if Mode_OK then "OK" else "FAILED"));
 
-   if ID.Manufacturer = 16#EF# and then Mode_OK then
-      --  Raw flash as a 512-byte block device, then the WL volume over it.
-      BDW.Configure (Raw, Flash => Flash, Capacity_Bytes => Capacity);
+   Chip := W25Q.Capacity_Bytes (ID);
+   if ID.Manufacturer = 16#EF# and then Mode_OK and then Chip /= 0 then
+      Log.Put ("[wl] detected ");
+      Log.Put_Unsigned (Unsigned_32 (Chip / (1024 * 1024)));
+      Log.Put_Line (" MB flash");
+      --  Raw flash as a 512-byte block device (auto-sized), then the WL volume.
+      BDW.Configure (Raw, Flash => Flash);
       Lower := BDW.Make (Raw'Access);
 
       WL.Attach (Vol, Lower, Update_Rate => Update_Rate);
@@ -155,7 +159,7 @@ begin
              else "[wl] remount (fresh volume + Mount) read-back: FAIL"));
       end;
    else
-      Log.Put_Line ("[wl] flash not ready -- check wiring / CS on IO21");
+      Log.Put_Line ("[wl] no supported flash detected (id/size) -- check wiring / CS on IO21");
    end if;
 
    Log.Put_Line ("[wl] done.");

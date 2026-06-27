@@ -144,10 +144,21 @@ package body ESP32S3.Block_Dev.W25Q_Source is
 
    procedure Configure (Src            : in out Source;
                         Flash          : ESP32S3.W25Q.Flash;
-                        Capacity_Bytes : ESP32S3.W25Q.Address) is
+                        Capacity_Bytes : ESP32S3.W25Q.Address := 0)
+   is
+      Cap : W25Q.Address := Capacity_Bytes;
+      ID  : W25Q.JEDEC_ID;
    begin
+      if Cap = 0 then                       --  auto-detect from the JEDEC id
+         W25Q.Read_Identification (Flash, ID);
+         Cap := W25Q.Capacity_Bytes (ID);
+         if Cap = 0 then
+            raise Unknown_Capacity
+              with "W25Q_Source: could not detect flash size from JEDEC id";
+         end if;
+      end if;
       Src.Flash := Flash;
-      Src.Count := Sector_Index (Capacity_Bytes / Sector_Bytes);
+      Src.Count := Sector_Index (Cap / Sector_Bytes);
       Src.Buf   := (others => 16#FF#);
    end Configure;
 

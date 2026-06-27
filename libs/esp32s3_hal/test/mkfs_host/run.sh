@@ -21,20 +21,27 @@ gprbuild -P mkfs_host.gpr -q
 IMG="$(mktemp /tmp/mkfs_host.XXXXXX.img)"
 trap 'rm -f "$IMG"' EXIT
 
-check() { # $1 = scenario, $2 = size
+check() { # $1 = scenario, $2 = size, $3 = "journal" (optional)
    rm -f "$IMG"; truncate -s "$2" "$IMG"
-   ./mkfs_host "$IMG" "$1" >/tmp/mkfs_host.out 2>&1 || {
-      printf '  %-8s %-6s HARNESS FAIL\n' "$1" "$2"; sed 's/^/      /' /tmp/mkfs_host.out; return; }
+   ./mkfs_host "$IMG" "$1" "$3" >/tmp/mkfs_host.out 2>&1 || {
+      printf '  %-8s %-6s %-7s HARNESS FAIL\n' "$1" "$2" "$3"; sed 's/^/      /' /tmp/mkfs_host.out; return; }
    if e2fsck -f -n "$IMG" >/tmp/mkfs_host.fsck 2>&1; then
-      printf '  %-8s %-6s e2fsck CLEAN\n' "$1" "$2"
+      printf '  %-8s %-6s %-7s e2fsck CLEAN\n' "$1" "$2" "$3"
    else
-      printf '  %-8s %-6s e2fsck ERRORS:\n' "$1" "$2"
-      grep -iE 'inode|block|bitmap|count|wrong|invalid|free|pass' /tmp/mkfs_host.fsck | sed 's/^/      /'
+      printf '  %-8s %-6s %-7s e2fsck ERRORS:\n' "$1" "$2" "$3"
+      grep -iE 'inode|block|bitmap|count|wrong|invalid|free|journal|recover|pass' /tmp/mkfs_host.fsck | sed 's/^/      /'
    fi
 }
 
+echo "no-journal:"
 for SZ in 1M 8M 64M; do check format "$SZ"; done
 check mount 8M
 cat /tmp/mkfs_host.out | sed 's/^/      /'
 check rw 8M
+
+echo "journaled:"
+for SZ in 8M 64M; do check format "$SZ" journal; done
+check mount 8M journal
+cat /tmp/mkfs_host.out | sed 's/^/      /'
+check rw 8M journal
 echo "done."

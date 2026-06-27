@@ -11,7 +11,7 @@ ESP32S3.Ext4.Mkfs  →  Block_Dev.WL  →  Block_Dev.W25Q_Source  →  ESP32S3.W
 [mkfs] format a blank SPI NOR flash to ext4 on-device (SPI2, CS=IO21)
 [mkfs] flash ef 40 19, 4-byte mode: OK
 [mkfs] wear-leveling volume: 65512 logical sectors
-[mkfs] formatted ext4 (Ext4.Mkfs); WL moves: 16
+[mkfs] formatted ext4 (journaled); WL moves: 17
 [mkfs] mounted read-write; block size 4096
 [mkfs] wrote /boot.txt + mkdir /logs + /logs/1.txt; committed
 [mkfs] remounted; reading back:
@@ -24,13 +24,17 @@ log entry one
 
 ## What it does
 
+0. **Auto-detects the chip size** from its JEDEC id (`W25Q.Capacity_Bytes`) and
+   prints it — so the whole stack (`W25Q_Source` → `WL` → the filesystem) sizes
+   itself to whatever W25Q part is fitted (8/16/32/64 MB), no constants to edit.
 1. Brings up the flash and **formats a fresh wear-leveling volume** over it.
 2. **`Ext4.Mkfs.Format`** writes a minimal but valid ext4 directly onto the WL
    volume — one block group, 4 KiB blocks, classic block-mapped inodes (the same
-   style the FS's `Writer` creates), no journal, no `metadata_csum`, with a root
-   directory and a `lost+found`.
+   style the FS's `Writer` creates), no `metadata_csum`, with a root directory and
+   a `lost+found`. The `Use_Journal` constant chooses a **JBD2 journal** (4 MiB,
+   crash-safe commits — the default here) or a lighter no-journal volume.
 3. **Mounts read-write**, creates `/boot.txt`, `mkdir /logs`, writes `/logs/1.txt`,
-   and commits (no-journal direct flush).
+   and commits (through the journal if there is one, else a direct flush).
 4. **Remounts** read-only and reads both files back — including the one in the
    subdirectory it just created.
 
@@ -43,9 +47,10 @@ on the device.
 `Ext4.Mkfs` is the inverse of the read path, so the obvious risk is a subtly
 wrong on-disk field. The formatter is validated against the host's **`e2fsck`**
 (the reference checker) in `libs/esp32s3_hal/test/mkfs_host` (`./run.sh`): it
-formats blank images of several sizes, e2fsck-checks each, mounts them with *our*
-FS to list the root, and re-checks after our FS writes to them — all clean. This
-example then runs the identical formatter on real flash.
+formats blank images of several sizes — **with and without a journal** —
+e2fsck-checks each, mounts them with *our* FS to list the root, and re-checks
+after our FS writes to them — all clean (`dumpe2fs` confirms a real 4 MB JBD2
+journal). This example then runs the identical formatter on real flash.
 
 ## Hardware
 

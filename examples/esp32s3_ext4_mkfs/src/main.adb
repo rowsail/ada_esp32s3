@@ -6,10 +6,11 @@
 --
 --    Unlike esp32s3_ext4_flash (which installs a host-built image), this example
 --    lays down a fresh ext4 filesystem ON THE BOARD with ESP32S3.Ext4.Mkfs -- a
---    minimal mkfs.ext4 (single block group, 4 KiB blocks, no journal) -- straight
---    onto the wear-leveling volume.  Then it mounts the new filesystem
---    read-write, creates a file and a subdirectory with a file in it, commits
---    (no-journal direct flush), remounts read-only, and reads the files back.
+--    minimal mkfs.ext4 (single block group, 4 KiB blocks, with or without a JBD2
+--    journal -- see Use_Journal) -- straight onto the wear-leveling volume.  Then
+--    it mounts the new filesystem read-write, creates a file and a subdirectory
+--    with a file in it, commits (through the journal if there is one, else a
+--    direct flush), remounts read-only, and reads the files back.
 --
 --    Nothing is pre-baked: the filesystem is created from a blank volume on the
 --    device.  The host's e2fsck validates the very same formatter in
@@ -25,7 +26,7 @@
 --    [mkfs] format a blank SPI NOR flash to ext4 on-device (SPI2, CS=IO21)
 --    [mkfs] flash ef 40 19, 4-byte mode: OK
 --    [mkfs] wear-leveling volume: 65512 logical sectors
---    [mkfs] formatted ext4 (Ext4.Mkfs); WL moves: <n>
+--    [mkfs] formatted ext4 (journaled); WL moves: <n>
 --    [mkfs] mounted read-write; block size 4096
 --    [mkfs] wrote /boot.txt + mkdir /logs + /logs/1.txt; committed
 --    [mkfs] remounted; reading back:
@@ -69,7 +70,12 @@ procedure Main is
    MISO_Pin : constant := 45;
    CS_Pin   : constant ESP32S3.GPIO.Pin_Id := 21;
    Clock_Hz : constant := 8_000_000;
-   Capacity : constant W25Q.Address := 32 * 1024 * 1024;
+
+   --  Create a JBD2 journal (crash-safe commits) vs a no-journal volume.  A
+   --  journal costs a fixed 4 MiB here, so for a small SPI flash the lighter
+   --  no-journal volume (set this False) is usually the better choice; True
+   --  exercises the on-device journaled formatter + the FS's JBD2 commit path.
+   Use_Journal : constant Boolean := True;
 
    CS_Cell : aliased W25Q.Pin_Cell := (Pin => CS_Pin);
    Flash   : W25Q.Flash :=
@@ -77,6 +83,7 @@ procedure Main is
 
    ID      : W25Q.JEDEC_ID;
    Mode_OK : Boolean;
+   Chip    : W25Q.Address;     --  flash size in bytes, detected from the JEDEC id
 
    Raw : aliased BDW.Source;
    Vol : aliased WL.Volume;
@@ -155,8 +162,12 @@ begin
    Log.Put_Hex (Unsigned_32 (ID.Capacity), 2);
    Log.Put_Line (", 4-byte mode: " & (if Mode_OK then "OK" else "FAILED"));
 
-   if ID.Manufacturer = 16#EF# and then Mode_OK then
-      BDW.Configure (Raw, Flash => Flash, Capacity_Bytes => Capacity);
+   Chip := W25Q.Capacity_Bytes (ID);
+   if ID.Manufacturer = 16#EF# and then Mode_OK and then Chip /= 0 then
+      Log.Put ("[mkfs] detected ");
+      Log.Put_Unsigned (Unsigned_32 (Chip / (1024 * 1024)));
+      Log.Put_Line (" MB flash");
+      BDW.Configure (Raw, Flash => Flash);    --  auto-size to whatever chip is fitted
       WL.Attach (Vol, BDW.Make (Raw'Access), Update_Rate => 64);
       WL.Format (Vol);
       Dev := WL.Make (Vol'Access);
@@ -165,8 +176,10 @@ begin
       Log.Put_Line (" logical sectors");
 
       --  Create a fresh ext4 ON-DEVICE -- no host, no embedded image.
-      Mkfs.Format (Dev, Volume_Label => "ESP32FLASH");
-      Log.Put ("[mkfs] formatted ext4 (Ext4.Mkfs); WL moves: ");
+      Mkfs.Format (Dev, Volume_Label => "ESP32FLASH", Journal => Use_Journal);
+      Log.Put ("[mkfs] formatted ext4 ");
+      Log.Put ((if Use_Journal then "(journaled)" else "(no journal)"));
+      Log.Put ("; WL moves: ");
       Log.Put_Unsigned (Unsigned_32 (WL.Move_Count (Vol)));
       Log.New_Line;
 
@@ -207,7 +220,7 @@ begin
             Log.Put_Line ("[mkfs] remount/read FAILED");
       end;
    else
-      Log.Put_Line ("[mkfs] flash not ready -- check wiring / CS on IO21");
+      Log.Put_Line ("[mkfs] no supported flash detected (id/size) -- check wiring / CS on IO21");
    end if;
 
    Log.Put_Line ("[mkfs] done.");

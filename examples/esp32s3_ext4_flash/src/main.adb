@@ -76,7 +76,6 @@ procedure Main is
    MISO_Pin : constant := 45;
    CS_Pin   : constant ESP32S3.GPIO.Pin_Id := 21;
    Clock_Hz : constant := 8_000_000;
-   Capacity : constant W25Q.Address := 32 * 1024 * 1024;
 
    CS_Cell : aliased W25Q.Pin_Cell := (Pin => CS_Pin);
    Flash   : W25Q.Flash :=
@@ -84,6 +83,7 @@ procedure Main is
 
    ID      : W25Q.JEDEC_ID;
    Mode_OK : Boolean;
+   Chip    : W25Q.Address;     --  flash size in bytes, detected from the JEDEC id
 
    Raw : aliased BDW.Source;
    Vol : aliased WL.Volume;
@@ -175,9 +175,13 @@ begin
    Log.Put_Hex (Unsigned_32 (ID.Capacity), 2);
    Log.Put_Line (", 4-byte mode: " & (if Mode_OK then "OK" else "FAILED"));
 
-   if ID.Manufacturer = 16#EF# and then Mode_OK then
-      --  Wear-leveling volume over the raw flash.
-      BDW.Configure (Raw, Flash => Flash, Capacity_Bytes => Capacity);
+   Chip := W25Q.Capacity_Bytes (ID);
+   if ID.Manufacturer = 16#EF# and then Mode_OK and then Chip /= 0 then
+      Log.Put ("[ext4f] detected ");
+      Log.Put_Unsigned (Unsigned_32 (Chip / (1024 * 1024)));
+      Log.Put_Line (" MB flash");
+      --  Wear-leveling volume over the raw flash (auto-sized to the fitted chip).
+      BDW.Configure (Raw, Flash => Flash);
       WL.Attach (Vol, BDW.Make (Raw'Access), Update_Rate => 64);
       WL.Format (Vol);
       Dev := WL.Make (Vol'Access);
@@ -254,7 +258,7 @@ begin
             Log.Put_Line ("[ext4f] remount/read FAILED");
       end;
    else
-      Log.Put_Line ("[ext4f] flash not ready -- check wiring / CS on IO21");
+      Log.Put_Line ("[ext4f] no supported flash detected (id/size) -- check wiring / CS on IO21");
    end if;
 
    Log.Put_Line ("[ext4f] done.");

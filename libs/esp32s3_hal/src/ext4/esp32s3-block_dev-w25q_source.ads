@@ -33,11 +33,19 @@ package ESP32S3.Block_Dev.W25Q_Source is
    type Source is limited private;
 
    --  Bind Src to Flash and set the usable size to Capacity_Bytes (rounded down
-   --  to a whole 512-byte sector).  Capacity_Bytes must not exceed the chip
-   --  (e.g. 32 MB for a W25Q256FV).
+   --  to a whole 512-byte sector).  Capacity_Bytes must not exceed the chip.
+   --
+   --  Capacity_Bytes => 0 (the default) AUTO-DETECTS the size from the chip's
+   --  JEDEC id (see ESP32S3.W25Q.Capacity_Bytes), so the whole stack -- this
+   --  source, Block_Dev.WL, the filesystem -- sizes itself to whatever part is
+   --  fitted.  Raises Unknown_Capacity if the chip's density code is not
+   --  recognised (absent / mis-wired / non-standard part).
    procedure Configure (Src            : in out Source;
                         Flash          : ESP32S3.W25Q.Flash;
-                        Capacity_Bytes : ESP32S3.W25Q.Address);
+                        Capacity_Bytes : ESP32S3.W25Q.Address := 0);
+
+   --  Auto-detect could not determine the chip size.
+   Unknown_Capacity : exception;
 
    --  A Device whose Ctx is Src; Src must outlive it.
    function Make (Src : not null access Source) return Device;

@@ -12,11 +12,18 @@ package body ESP32S3.Ext4.Mkfs is
 
    Magic        : constant U16 := 16#EF53#;
    Feat_Incompat : constant U32 := 16#0000_0002#;  --  INCOMPAT_FILETYPE only
+   Compat_Journal : constant U32 := 16#0000_0004#; --  COMPAT_HAS_JOURNAL
    FT_Dir       : constant U8  := 2;       --  ext4_dir_entry file type: directory
    First_Ino    : constant := 11;          --  first non-reserved inode
    Root_Ino     : constant := 2;
    LPF_Ino      : constant := 11;          --  lost+found
+   Journal_Ino  : constant := 8;           --  the JBD2 journal (a reserved inode)
    Used_Inodes  : constant := 11;          --  reserved 1..10 + lost+found (11)
+
+   Direct_Ptrs  : constant := 12;          --  i_block[0..11] are direct
+   J_Blocks     : constant U32 := 1024;    --  journal length incl its SB (4 MiB @ 4K)
+   J_Magic      : constant U32 := 16#C03B_3998#;  --  JBD2 superblock magic (BE on disk)
+   J_SB_V2      : constant U32 := 4;        --  JBD2_SUPERBLOCK_V2 block type
 
    subtype Block is Byte_Array (0 .. BS - 1);
 
@@ -80,8 +87,9 @@ package body ESP32S3.Ext4.Mkfs is
    ------------
 
    procedure Format (Dev          : ESP32S3.Block_Dev.Device;
-                     Total_Blocks : U32    := 0;
-                     Volume_Label : String := "")
+                     Total_Blocks : U32     := 0;
+                     Volume_Label : String  := "";
+                     Journal      : Boolean := False)
    is
       Dev_Blocks : constant U64 :=
         U64 (ESP32S3.Block_Dev.Sector_Count (Dev)) / SPB;
@@ -101,7 +109,16 @@ package body ESP32S3.Ext4.Mkfs is
       ITbl_Blk  : constant U32 := 4;
       Root_Blk  : constant U32 := ITbl_Blk + IT;     --  root directory data
       LPF_Blk   : constant U32 := Root_Blk + 1;      --  lost+found data
-      Used_Blks : constant U32 := LPF_Blk + 1;       --  blocks 0 .. LPF_Blk
+
+      --  Optional JBD2 journal: J_Blocks data blocks (J_First holds journal
+      --  block 0, the journal superblock) mapped classically -- 12 direct + one
+      --  single-indirect block (J_Ind), which addresses 1024 blocks.
+      J_First : constant U32 := LPF_Blk + 1;
+      J_Ind   : constant U32 := J_First + J_Blocks;  --  indirect block (journal only)
+      J_Total : constant U32 := (if Journal then J_Blocks + 1 else 0);  --  + indirect
+
+      Used_Blks : constant U32 :=
+        (if Journal then J_First + J_Total else LPF_Blk + 1);
 
       Free_Blocks : constant U32 := T - Used_Blks;
       Free_Inodes : constant U32 := I - Used_Inodes;
@@ -113,7 +130,9 @@ package body ESP32S3.Ext4.Mkfs is
       elsif T > BPG then
          raise Too_Large with "mkfs: > 1 block group not supported";
       elsif T <= Used_Blks then
-         raise Too_Small with "mkfs: device too small for the metadata";
+         raise Too_Small
+           with (if Journal then "mkfs: device too small for a journal"
+                 else "mkfs: device too small for the metadata");
       end if;
 
       ----------------------------------------------------------------------
@@ -143,9 +162,13 @@ package body ESP32S3.Ext4.Mkfs is
          Put_U32 (B, O + 16#54#, First_Ino);           --  s_first_ino
          Put_U16 (B, O + 16#58#, ISz);                 --  s_inode_size
          Put_U16 (B, O + 16#5A#, 0);                   --  s_block_group_nr
-         Put_U32 (B, O + 16#5C#, 0);                   --  s_feature_compat
+         Put_U32 (B, O + 16#5C#,                        --  s_feature_compat
+                  (if Journal then Compat_Journal else 0));
          Put_U32 (B, O + 16#60#, Feat_Incompat);       --  s_feature_incompat
          Put_U32 (B, O + 16#64#, 0);                   --  s_feature_ro_compat
+         if Journal then
+            Put_U32 (B, O + 16#E0#, Journal_Ino);      --  s_journal_inum
+         end if;
          --  s_uuid (0x68 .. 0x77): a fixed, nonzero id (value is not validated).
          for K in 0 .. 15 loop
             Put_U8 (B, O + 16#68# + K, U8 (16#A0# + K));
@@ -200,11 +223,61 @@ package body ESP32S3.Ext4.Mkfs is
       --  lost+found: dir, 0700, links = 2 (".", entry in root)
       Put_Inode (B, (LPF_Ino - 1) * ISz,
                  Mode => 16#41C0#, Links => 2, Size => BS, Blk0 => LPF_Blk);
+      --  journal (inode 8): a regular file mapping the J_Blocks log blocks
+      --  classically (12 direct + one indirect at J_Ind).
+      if Journal then
+         declare
+            O : constant Natural := (Journal_Ino - 1) * ISz;
+         begin
+            Put_U16 (B, O + 16#00#, 16#8180#);              --  S_IFREG | 0600
+            Put_U32 (B, O + 16#04#, J_Blocks * BS);         --  i_size_lo (log bytes)
+            Put_U16 (B, O + 16#1A#, 1);                     --  i_links_count
+            Put_U32 (B, O + 16#1C#, (J_Blocks + 1) * (BS / 512));  --  i_blocks (+indirect)
+            Put_U16 (B, O + 16#80#, 32);                    --  i_extra_isize
+            for K in 0 .. Direct_Ptrs - 1 loop              --  i_block[0..11]: direct
+               Put_U32 (B, O + 16#28# + K * 4, J_First + U32 (K));
+            end loop;
+            Put_U32 (B, O + 16#28# + Direct_Ptrs * 4, J_Ind);  --  i_block[12]: indirect
+         end;
+      end if;
       Write_Block (Dev, ITbl_Blk, B);
       B := [others => 0];
       for K in 1 .. IT - 1 loop
          Write_Block (Dev, ITbl_Blk + K, B);
       end loop;
+
+      ----------------------------------------------------------------------
+      --  Journal: the single-indirect block (pointers to log blocks 12..) and
+      --  the JBD2 journal superblock at journal block 0 (J_First).  The log
+      --  data blocks themselves are left untouched -- the journal is empty
+      --  (s_start = 0), so they are never read.
+      ----------------------------------------------------------------------
+      if Journal then
+         B := [others => 0];
+         for K in 0 .. Natural (J_Blocks) - Direct_Ptrs - 1 loop
+            Put_U32 (B, K * 4, J_First + Direct_Ptrs + U32 (K));
+         end loop;
+         Write_Block (Dev, J_Ind, B);
+
+         --  JBD2 journal superblock (all fields BIG-ENDIAN on disk).
+         B := [others => 0];
+         Put_U32_BE (B, 16#00#, J_Magic);          --  h_magic
+         Put_U32_BE (B, 16#04#, J_SB_V2);          --  h_blocktype
+         Put_U32_BE (B, 16#08#, 0);                --  h_sequence
+         Put_U32_BE (B, 16#0C#, BS);               --  s_blocksize
+         Put_U32_BE (B, 16#10#, J_Blocks);         --  s_maxlen (incl this SB)
+         Put_U32_BE (B, 16#14#, 1);                --  s_first (log starts after SB)
+         Put_U32_BE (B, 16#18#, 1);                --  s_sequence (first expected)
+         Put_U32_BE (B, 16#1C#, 0);                --  s_start = 0 -> empty/clean
+         Put_U32_BE (B, 16#40#, 1);                --  s_nr_users
+         for K in 0 .. 15 loop                     --  s_uuid = the fs uuid
+            Put_U8 (B, 16#30# + K, U8 (16#A0# + K));
+         end loop;
+         for K in 0 .. 15 loop                     --  s_users[0] = the fs uuid
+            Put_U8 (B, 16#100# + K, U8 (16#A0# + K));
+         end loop;
+         Write_Block (Dev, J_First, B);
+      end if;
 
       ----------------------------------------------------------------------
       --  Root directory block: ".", "..", "lost+found".

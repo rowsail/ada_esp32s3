@@ -96,6 +96,14 @@ package ESP32S3.W25Q is
    --  so it may be called before Initialize.
    procedure Read_Identification (Dev : Flash; ID : out JEDEC_ID);
 
+   --  Total chip size in bytes, decoded from the JEDEC capacity byte: the
+   --  SPI-NOR convention encodes density as a power of two (2 ** Capacity), so a
+   --  W25Q256 (0x19) is 32 MB, a W25Q128 (0x18) 16 MB, a W25Q64 (0x17) 8 MB, and
+   --  so on.  Returns 0 for a capacity byte outside the recognised 64 KB .. 64 MB
+   --  range -- an absent/mis-wired chip (0x00 or 0xFF) or a part using a
+   --  non-standard density code -- so callers can detect "unknown size".
+   function Capacity_Bytes (ID : JEDEC_ID) return Address;
+
    --  Read Data'Length bytes starting at Addr (opcode 0x13, continuous read).
    --  Any length is allowed: the read streams across as many SPI transfers as
    --  needed with the chip held selected throughout.
