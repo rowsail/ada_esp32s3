@@ -100,7 +100,7 @@ def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 0
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(("127.0.0.1", port))
+    s.bind(("0.0.0.0", port))   # all interfaces, so a board on the LAN can reach it
     s.listen(5)
     print("PORT %d" % s.getsockname()[1], flush=True)
     while True:

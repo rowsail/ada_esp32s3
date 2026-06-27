@@ -1,0 +1,12 @@
+name = "esp32s3_ftp_inet"
+description = "Bare-metal Ada ESP32-S3 application"
+version = "0.1.0-dev"
+licenses = "Apache-2.0"
+project-files = ["app.gpr"]
+
+[[depends-on]]
+esp32s3_rts = "*"
+
+[[pins]]
+esp32s3_rts = { path = "../../crates/esp32s3_rts" }
+xtensa_dynconfig = { path = "../../crates/xtensa-dynconfig" }
