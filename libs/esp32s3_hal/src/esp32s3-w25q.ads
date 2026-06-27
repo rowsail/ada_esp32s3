@@ -98,9 +98,11 @@ package ESP32S3.W25Q is
 
    --  Program Data (1 .. 256 bytes, must not cross a 256-byte page boundary) at
    --  Addr (opcode 0x12); blocks until not-busy.  Programming only clears 1->0
-   --  bits, so the target must have been erased first.  Data longer than a page,
-   --  or that would cross a page boundary, is rejected (Constraint_Error) rather
-   --  than silently wrapping.
-   procedure Program_Page (Dev : Flash; Addr : Address; Data : Byte_Array);
+   --  bits, so the target must have been erased first.  The precondition states
+   --  the page rule: Data must be 1 .. Page_Size bytes and must not straddle a
+   --  256-byte page boundary (rather than silently wrapping).
+   procedure Program_Page (Dev : Flash; Addr : Address; Data : Byte_Array)
+     with Pre => Data'Length in 1 .. Page_Size
+                 and then Natural (Addr mod Page_Size) + Data'Length <= Page_Size;
 
 end ESP32S3.W25Q;

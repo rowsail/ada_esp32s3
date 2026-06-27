@@ -146,10 +146,13 @@ package ESP32S3.SPI is
    --  holds a host.
    procedure Select_Device (S : in out Session; On : Boolean);
 
-   --  Full-duplex DMA transfer of Length bytes (1 .. 4095) on the held host:
-   --  shift Tx out on MOSI, capture MISO into Rx.  Blocking.  Buffers in
-   --  internal SRAM.  Raises Not_Owned unless S currently holds a host.
-   procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural);
+   --  Full-duplex DMA transfer of Length bytes on the held host: shift Tx out on
+   --  MOSI, capture MISO into Rx.  Blocking.  Buffers in internal SRAM.  Raises
+   --  Not_Owned unless S currently holds a host.  Length must be 1 .. 4095 (one
+   --  DMA descriptor) -- the precondition catches an out-of-range length, which
+   --  the engine would otherwise drop silently.
+   procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural)
+     with Pre => Length in 1 .. 4095;
 
    --  Relinquish ownership (lets a waiting task proceed).  Harmless if already
    --  released.  Always release a Session you Acquired.

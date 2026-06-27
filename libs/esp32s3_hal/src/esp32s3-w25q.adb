@@ -173,13 +173,7 @@ package body ESP32S3.W25Q is
       Buf : aliased Byte_Array (0 .. Header_Len + Page_Size - 1);
       Rsp : aliased Byte_Array (0 .. Header_Len + Page_Size - 1);
    begin
-      if Len = 0 or else Len > Page_Size then
-         raise Constraint_Error with "W25Q.Program_Page: 1 .. 256 bytes only";
-      end if;
-      if (Addr mod Page_Size) + Address (Len) > Page_Size then
-         raise Constraint_Error with "W25Q.Program_Page: crosses a page boundary";
-      end if;
-
+      --  Size + page-boundary rule is the precondition (see the spec).
       Buf (0) := Cmd_Page_Program;
       Put_Address (Buf, Addr);
       Buf (Header_Len .. Header_Len + Len - 1) := Data;
