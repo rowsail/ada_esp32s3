@@ -71,6 +71,12 @@ package GNAT.Sockets is
                             Socket  : out Socket_Type;
                             Address : out Sock_Addr_Type);
 
+   --  The local address bound to Socket: the interface's own IP (the chip's
+   --  configured source address, set at bring-up be it static or DHCP) and the
+   --  socket's local port.  PASV, for one, advertises this so a client knows where
+   --  to open the data connection.  Mirrors desktop GNAT.Sockets' Get_Socket_Name.
+   function Get_Socket_Name (Socket : Socket_Type) return Sock_Addr_Type;
+
    procedure Connect_Socket (Socket : in out Socket_Type; Server : Sock_Addr_Type);
 
    --  Send Item; Last is the index of the last element sent (Item'First - 1 if

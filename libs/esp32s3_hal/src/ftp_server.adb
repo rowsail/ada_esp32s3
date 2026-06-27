@@ -589,7 +589,7 @@ package body FTP_Server is
    ---------------------------------------------------------------------------
 
    procedure Run
-     (Local_IP    : String;
+     (Local_IP    : String := "";
       Server_Name : String := "Ada ESP32-S3";
       Port        : GNAT.Sockets.Port_Type := 21;
       Data_Port   : GNAT.Sockets.Port_Type := 50_000;
@@ -597,13 +597,20 @@ package body FTP_Server is
    is
       Listener : Socket_Type;
       Peer     : Sock_Addr_Type;
+      Derive   : constant Boolean := Local_IP'Length = 0;
+
+      --  Record the dotted-decimal address PASV will advertise.
+      procedure Set_Host (S : String) is
+      begin
+         Host_Len := Natural'Min (S'Length, 15);
+         Host_IP (1 .. Host_Len) := S (S'First .. S'First + Host_Len - 1);
+      end Set_Host;
    begin
       RO       := Read_Only;
       DPort    := Data_Port;
-      Host_Len := Natural'Min (Local_IP'Length, 15);
-      Host_IP (1 .. Host_Len) := Local_IP (Local_IP'First .. Local_IP'First + Host_Len - 1);
       Name_Len := Natural'Min (Server_Name'Length, 64);
       Name (1 .. Name_Len) := Server_Name (Server_Name'First .. Server_Name'First + Name_Len - 1);
+      if not Derive then Set_Host (Local_IP); end if;
 
       loop
          Create_Socket (Listener, Family_Inet, Socket_Stream);
@@ -611,6 +618,8 @@ package body FTP_Server is
                                    Addr => Any_Inet_Addr, Port => Port));
          Listen_Socket (Listener);
          Accept_Socket (Listener, Ctrl, Peer);     --  Ctrl becomes the connection
+         --  No IP given: PASV advertises the address the client reached us on.
+         if Derive then Set_Host (Image (Get_Socket_Name (Ctrl).Addr)); end if;
          begin
             Serve_Client;
          exception

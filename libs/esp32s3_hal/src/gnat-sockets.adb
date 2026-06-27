@@ -132,6 +132,15 @@ package body GNAT.Sockets is
            & Img (Value.B (2)) & "." & Img (Value.B (3));
    end Image;
 
+   --  The socket's local address: its interface's own IP plus the local port.
+   function Get_Socket_Name (Socket : Socket_Type) return Sock_Addr_Type is
+      Id : constant Interface_Id := If_Of (Socket);
+   begin
+      return (Family => Family_Inet,
+              Addr   => (B => Registry (Id).Local_IP),
+              Port   => Port_Type (Local_Ports (Id, Ix_Of (Socket))));
+   end Get_Socket_Name;
+
    ---------------------------------------------------------------------------
    --  Sockets
    ---------------------------------------------------------------------------

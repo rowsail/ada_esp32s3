@@ -27,15 +27,17 @@ with GNAT.Sockets;
 package FTP_Server is
 
    --  Serve the registered VFS mounts over anonymous FTP until the program ends.
-   --  Local_IP is the board's own dotted-decimal address (e.g. "192.168.1.50");
-   --  it is what PASV advertises for the data connection, so it must be the
-   --  address the client reaches the board on.  Any username/password is accepted
-   --  (anonymous).  With Read_Only set, the mutating commands (STOR/DELE/MKD/RMD)
-   --  are refused.  Server_Name is announced in the 220 greeting on connect (what
-   --  a client shows as the server's identity, e.g. "220 Ada ESP32-S3 FTP server
-   --  ready").
+   --  Local_IP is what PASV advertises for the data connection.  Leave it ""
+   --  (the default) and the server derives it from each accepted connection --
+   --  Get_Socket_Name on the control socket gives the interface's own address, so
+   --  PASV advertises exactly the IP the client reached the board on (whatever
+   --  DHCP or the static config currently has).  Pass a dotted-decimal string only
+   --  to override (e.g. a forwarded/public address behind NAT).  Any
+   --  username/password is accepted (anonymous).  With Read_Only set, the mutating
+   --  commands (STOR/DELE/MKD/RMD) are refused.  Server_Name is announced in the
+   --  220 greeting on connect (e.g. "220 Ada ESP32-S3 FTP server ready").
    procedure Run
-     (Local_IP    : String;
+     (Local_IP    : String := "";
       Server_Name : String := "Ada ESP32-S3";
       Port        : GNAT.Sockets.Port_Type := 21;
       Data_Port   : GNAT.Sockets.Port_Type := 50_000;

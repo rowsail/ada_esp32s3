@@ -124,6 +124,8 @@ begin
    Put_Line ("[ftpd] serving on " & W5500_Dev.Image (Lease.IP)
              & ":21  (anonymous, read-write)  ->  /flash");
 
-   --  5. Serve forever.
-   FTP_Server.Run (Local_IP => W5500_Dev.Image (Lease.IP));
+   --  5. Serve forever.  No Local_IP: the server reads its own address from each
+   --  accepted connection (Get_Socket_Name), so PASV always advertises the IP the
+   --  client reached us on -- whatever DHCP currently assigned.
+   FTP_Server.Run (Server_Name => "Ada ESP32-S3");
 end Main;
