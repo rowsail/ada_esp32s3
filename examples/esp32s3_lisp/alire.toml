@@ -1,0 +1,17 @@
+name = "esp32s3_ftp_server"
+description = "Bare-metal Ada: a real ext4 filesystem on wear-leveled SPI NOR flash (Ext4 over Block_Dev.WL over W25Q256FV) -- format a blank volume on-device (Ext4.Mkfs), mount read-write, create files, remount and read back"
+version = "0.1.0-dev"
+
+authors = ["D. Howells"]
+maintainers = ["D. Howells <dhowells@motium.us>"]
+licenses = "Apache-2.0 WITH LLVM-exception"
+tags = ["embedded", "esp32s3", "ext4", "filesystem", "flash", "wear-leveling", "example"]
+
+project-files = ["ext4_flash.gpr"]
+
+[[depends-on]]
+esp32s3_rts = "*"
+
+[[pins]]
+esp32s3_rts = { path = "../../crates/esp32s3_rts" }
+xtensa_dynconfig       = { path = "../../crates/xtensa-dynconfig" }

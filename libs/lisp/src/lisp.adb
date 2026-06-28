@@ -14,14 +14,26 @@ package body Lisp is
    --------------------------------------------------------------------------
    --  The cell arena: a uniform pool, bump-allocated.  No GC yet.
    --------------------------------------------------------------------------
-   Arena_Size : constant := 200_000;
-   Arena : array (1 .. Arena_Size) of aliased Object;
-   Next  : Natural := 0;
+   type Cell_Array is array (Positive range <>) of aliased Object;
+   type Cell_Array_Access is access Cell_Array;
+   Arena      : Cell_Array_Access := null;     --  heap-allocated (PSRAM on the board)
+   Arena_Size : Natural := 0;
+   Next       : Natural := 0;
 
    function Cells_Used return Natural is (Next);
 
+   procedure Init (Cells : Positive := 200_000) is
+   begin
+      Arena      := new Cell_Array (1 .. Cells);
+      Arena_Size := Cells;
+      Next       := 0;
+   end Init;
+
    function Alloc (Template : Object) return Ref is
    begin
+      if Arena = null then
+         Init;                                 --  lazy default (host convenience)
+      end if;
       if Next >= Arena_Size then
          raise Lisp_Error with "arena exhausted (no GC yet)";
       end if;
@@ -51,13 +63,13 @@ package body Lisp is
    --  Interned symbols -- stored in their own table (not the arena), so a Reset
    --  of the arena leaves symbol identity intact.
    --------------------------------------------------------------------------
-   Max_Name : constant := 64;
+   Max_Name : constant := 32;
    type Sym_Entry is record
       Name : String (1 .. Max_Name);
       Len  : Natural := 0;
       Obj  : aliased Object := (K => K_Symbol, Sym => 0);
    end record;
-   Symbols : array (1 .. 4096) of Sym_Entry;
+   Symbols : array (1 .. 1024) of Sym_Entry;   --  static (internal RAM); keep modest
    N_Sym   : Natural := 0;
 
    function Intern (Name : String) return Ref is

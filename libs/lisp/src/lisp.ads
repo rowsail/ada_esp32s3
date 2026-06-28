@@ -71,6 +71,12 @@ package Lisp is
    --------------------------------------------------------------------------
    function Print (O : Ref) return String;          --  object as text
 
+   --  Allocate the cell arena (Cells objects).  On the board call this once, after
+   --  PSRAM/heap are up, with a board-appropriate size; the arena is heap-allocated
+   --  so it lands in the PSRAM heap rather than internal SRAM.  Auto-runs with the
+   --  default size on first use if not called.
+   procedure Init (Cells : Positive := 200_000);
+
    procedure Reset;                                 --  empty the arena (tests)
    function  Cells_Used return Natural;
 

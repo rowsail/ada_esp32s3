@@ -1,0 +1,18 @@
+--  A small LISP interpreter in pure Ada, built for the ESP32-S3.  Needs the
+--  embedded or full profile (allocators for the arena + exceptions for errors);
+--  no HAL dependency in the core (the driver bridge is a later, separate layer).
+with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
+
+project Lisp is
+   type Profile_Kind is ("light-tasking", "embedded", "full");
+   Profile : Profile_Kind := external ("ESP32S3_RTS_PROFILE", "embedded");
+
+   for Target use "xtensa-esp32-elf";
+   for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;
+   for Source_Dirs use ("src");
+   for Object_Dir use "obj-" & Profile;
+
+   package Compiler is
+      for Default_Switches ("Ada") use ("-O2", "-g");
+   end Compiler;
+end Lisp;

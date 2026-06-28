@@ -40,6 +40,7 @@ procedure Lisp_Test is
       else Failed := Failed + 1; Put_Line ("  FAIL " & Label); end if;
    end Check;
 begin
+   Lisp.Eval.Init;   --  build the global environment
    Put_Line ("reader / printer round-trips:");
    RT ("42", "42");
    RT ("-5", "-5");

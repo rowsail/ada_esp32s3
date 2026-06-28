@@ -329,8 +329,9 @@ package body Lisp.Eval is
       Define (Intern (Name), Make_Prim (Name, Fn), Env);
    end Reg;
 
-begin
-   S_Quote  := Intern ("quote");   S_If     := Intern ("if");
+   procedure Init is
+   begin
+      S_Quote  := Intern ("quote");   S_If     := Intern ("if");
    S_Define := Intern ("define");  S_Lambda := Intern ("lambda");
    S_Let    := Intern ("let");     S_Cond   := Intern ("cond");
    S_Begin  := Intern ("begin");   S_Set    := Intern ("set!");
@@ -348,4 +349,6 @@ begin
    Reg (G_Env, "null?", Prim_Null'Access);Reg (G_Env, "pair?", Prim_Pair'Access);
    Reg (G_Env, "not", Prim_Not'Access);  Reg (G_Env, "eq?", Prim_Eq'Access);
    Reg (G_Env, "length", Prim_Length'Access);
+   end Init;
+
 end Lisp.Eval;
