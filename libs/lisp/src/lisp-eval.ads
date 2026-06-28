@@ -12,6 +12,11 @@ package Lisp.Eval is
    --  The global environment (built once, holds the primitives).
    function Global_Env return Ref;
 
+   --  Add a primitive to the global environment.  This is how an application
+   --  extends the language with native operations -- e.g. a HAL bridge registering
+   --  (gpio-out ...), (adc-read ...).  Fn must be library-level and closure-free.
+   procedure Register_Primitive (Name : String; Fn : Prim_Fn);
+
    --  Evaluate Expr in Env.
    function Eval (Expr : Ref; Env : Ref) return Ref;
 

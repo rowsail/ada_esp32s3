@@ -22,6 +22,7 @@ with ESP32S3_Registers.USB_DEVICE;
 with Lisp;           use Lisp;
 with Lisp.Reader;
 with Lisp.Eval;
+with Lisp_HAL;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -76,10 +77,12 @@ begin
    delay until Clock + Milliseconds (200);
    Lisp.Init (40_000);                            --  arena in PSRAM (~640 KB)
    Lisp.Eval.Init;                                --  build the global environment
+   Lisp_HAL.Register;                             --  add the hardware primitives
 
    New_Line;
    Put_Line ("Ada-LISP on the ESP32-S3 -- a pure-Ada interpreter.");
    Put_Line ("Type S-expressions.  e.g. (define (sq n) (* n n))  then  (sq 12)");
+   Put_Line ("Hardware: (gpio-out 2 #t) (gpio-toggle 2) (gpio-in 4) (adc-read 0)");
 
    loop
       Put ("lisp> ");

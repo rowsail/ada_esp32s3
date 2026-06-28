@@ -329,6 +329,11 @@ package body Lisp.Eval is
       Define (Intern (Name), Make_Prim (Name, Fn), Env);
    end Reg;
 
+   procedure Register_Primitive (Name : String; Fn : Prim_Fn) is
+   begin
+      Reg (G_Env, Name, Fn);
+   end Register_Primitive;
+
    procedure Init is
    begin
       S_Quote  := Intern ("quote");   S_If     := Intern ("if");
