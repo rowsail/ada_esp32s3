@@ -231,9 +231,14 @@ it. This is precisely the case the static pass cannot close on its own -- and
 exactly why the environment-task stack for this example is set to 32\,KiB, a
 deliberately generous margin over the $\sim$5\,KiB static floor precisely because
 that floor is not the whole story, and why you confirm it with the painted
-watermark rather than trusting the static sum. Run it under
-\texttt{./x stack tls\_weather -{}-run} and the measured \texttt{stack:} line tells
-you how much of that allotment a real fetch actually touched.
+watermark rather than trusting the static sum. The companion
+\texttt{esp32s3\_stack\_usage} example shows that watermark live on the board: its
+baseline \texttt{used=432} jumps to \texttt{used=6\,512} (of a 16\,KiB env stack)
+the moment a deliberately deep call runs, while the static pass -- defeated by that
+call's recursion -- could report only a 384-byte lower bound. Estimate 384,
+measured 6\,512: that gap is the entire reason both numbers exist, and why the same
+\texttt{Paint\_Env\_Stack}/\texttt{Report} pair belongs in an instrumented TLS fetch
+when you need the real figure rather than the floor.
 
 The footprint side, from \texttt{./x mem tls\_weather}:
 
