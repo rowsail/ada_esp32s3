@@ -51,6 +51,25 @@ time of writing.
   chapters (Cadence/Tensilica documentation).
 \end{itemize}
 
+\section{Cryptography and TLS}
+
+\begin{itemize}
+\item \textbf{SPARKNaCl} -- Roderick Chapman's SPARK\,2014 port of TweetNaCl,
+  formally proved free of run-time errors. It supplies the public-key, hashing and
+  HMAC/HKDF primitives the pure-Ada TLS client stands on (X25519, the SHA family,
+  Ed25519); the entire HTTPS chapter (Chapter~\ref{ch:tls}) rests on it. BSD-3-Clause
+  (\textcopyright~2021 Protean Code Limited), vendored under \texttt{crates/sparknacl}.
+  \url{https://github.com/rod-chapman/SPARKNaCl}. \emph{Our thanks to Rod Chapman and
+  the SPARKNaCl project.}
+\item \textbf{NaCl / TweetNaCl} -- the originals SPARKNaCl follows: Daniel~J.
+  Bernstein, Tanja Lange, Peter Schwabe and colleagues' compact, misuse-resistant
+  cryptography library. \url{https://nacl.cr.yp.to} and
+  \url{https://tweetnacl.cr.yp.to}.
+\item \textbf{RFC 8446} -- \emph{The Transport Layer Security (TLS) Protocol Version
+  1.3}, the specification the TLS chapter implements.
+  \url{https://www.rfc-editor.org/rfc/rfc8446}.
+\end{itemize}
+
 \section{Conformance and high-integrity Ada}
 
 \begin{itemize}

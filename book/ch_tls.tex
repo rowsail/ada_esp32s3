@@ -11,7 +11,13 @@ key schedule, certificate validation, the record layer -- has to run on our side
 The usual way to get TLS onto a microcontroller is to link a C library: mbedTLS,
 BearSSL, wolfSSL. This project does not. The whole point has been to see how far
 bare-metal Ada can go on its own, so the TLS client is written in Ada, standing on
-two things already in the box: \textbf{SPARKNaCl} (a vendored, SPARK-proven Ada
+two things already in the box: \textbf{SPARKNaCl}\footnote{SPARKNaCl is Roderick
+Chapman's SPARK\,2014 reimplementation of TweetNaCl --- itself a compact C edition
+of Bernstein, Lange and Schwabe's NaCl. It is proved free of run-time errors in
+SPARK, BSD-3-Clause licensed (\textcopyright~2021 Protean Code Limited), and
+vendored here under \texttt{crates/sparknacl}. Full credit to that project, without
+which this chapter would not exist; see \url{https://github.com/rod-chapman/SPARKNaCl}
+and Further Reading (Chapter~\ref{ch:references}).} (a vendored, SPARK-proven Ada
 cryptography library) for the public-key and hashing primitives that are
 delicate to get right, and the \textbf{ESP32-S3's hardware crypto accelerators}
 (AES, SHA, RSA/MPI, the RNG) for the heavy or timing-sensitive arithmetic. What is
