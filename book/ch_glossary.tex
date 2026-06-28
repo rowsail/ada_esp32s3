@@ -67,6 +67,20 @@ a chapter that treats it properly, the entry points there.
 \item[MSPI] The memory SPI controller that talks to flash and PSRAM; its timing
   is what makes PSRAM bring-up delicate (\S\ref{ch:bootloader}).
 
+\item[overloading] Several subprograms (or operators) sharing one name, told apart
+  by their parameter and result \emph{profile}; the compiler resolves each call to
+  the one whose profile matches. No keyword is involved -- distinct from
+  \emph{overriding}. (E.g.\ \texttt{Send} overloaded on the CAN frame type,
+  Chapter~\ref{ch:hal2}.)
+
+\item[overriding] Replacing a tagged type's inherited primitive operation with a
+  new body. The optional \texttt{overriding} keyword makes the compiler confirm the
+  declaration really does replace an inherited operation -- catching a typo that
+  would otherwise add a new one instead. The basis of dispatching, and the shape of
+  the book's pluggable backends (override the handlers you support; the framework
+  calls them by dispatch). Explained in Chapter~\ref{ch:ada-primer}; cf.\
+  \emph{overloading}.
+
 \item[PDM] Pulse-Density Modulation -- the 1-bit serial format some microphones
   and ADCs emit; the I2S driver converts it to/from PCM.
 
