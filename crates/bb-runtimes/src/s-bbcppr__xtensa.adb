@@ -301,11 +301,11 @@ package body System.BB.CPU_Primitives is
 
    procedure Initialize_CPU is
    begin
-      --  Enable coprocessor 0 (the single-precision FPU) on this core so the
-      --  eager FPU save/restore in __gnat_context_switch can run and tasks can
-      --  use hardware floating point.  Runs on each of the two ESP32-S3 cores
-      --  (core 0 via System.BB.Threads.Initialize, core 1 via Core1_Entry).
-      Asm ("movi  a3, 1"        & ASCII.LF & ASCII.HT &
+      --  Enable coprocessor 0 (FPU) and coprocessor 3 ("cop_ai", the LX7
+      --  PIE/SIMD unit): CPENABLE = 16#9# = XCHAL_CP_MASK.  CP0 is saved
+      --  per task by __gnat_context_switch; CP3's q0-q7 are not, so any
+      --  ESP32S3.SIMD use must stay within a single task.  Per core.
+      Asm ("movi  a3, 9"        & ASCII.LF & ASCII.HT &
            "wsr.cpenable a3"    & ASCII.LF & ASCII.HT &
            "rsync",
            Clobber  => "a3",

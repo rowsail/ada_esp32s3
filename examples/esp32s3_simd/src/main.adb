@@ -146,6 +146,47 @@ begin
    Ok := (for all I in Idx => Rf (I) = Reff (I));
    Report ("Add  f32 ", T1 - T0, Sc1 - Sc0, Ok);
 
+   ---------------------------------------------------------------------------
+   --  4. Copy, Integer_32 (bulk move)
+   ---------------------------------------------------------------------------
+   for I in Idx loop A32 (I) := Integer_32 (I) * 7 - 11; end loop;
+
+   T0 := Cycles;
+   for K in 1 .. Iters loop Copy (A32, R32); end loop;
+   T1 := Cycles;
+
+   Sc0 := Cycles;
+   for K in 1 .. Iters loop
+      for I in Idx loop Ref32 (I) := A32 (I); end loop;
+   end loop;
+   Sc1 := Cycles;
+
+   Ok := (for all I in Idx => R32 (I) = Ref32 (I));
+   Report ("Copy i32 ", T1 - T0, Sc1 - Sc0, Ok);
+
+   ---------------------------------------------------------------------------
+   --  5. Compare_GT, Integer_32 (mask: -1 where A > B, else 0)
+   ---------------------------------------------------------------------------
+   for I in Idx loop
+      A32 (I) := Integer_32 (I mod 7) - 3;
+      B32 (I) := Integer_32 (I mod 5) - 2;
+   end loop;
+
+   T0 := Cycles;
+   for K in 1 .. Iters loop Compare_GT (A32, B32, R32); end loop;
+   T1 := Cycles;
+
+   Sc0 := Cycles;
+   for K in 1 .. Iters loop
+      for I in Idx loop
+         Ref32 (I) := (if A32 (I) > B32 (I) then -1 else 0);
+      end loop;
+   end loop;
+   Sc1 := Cycles;
+
+   Ok := (for all I in Idx => R32 (I) = Ref32 (I));
+   Report ("Cmp> i32 ", T1 - T0, Sc1 - Sc0, Ok);
+
    Put_Line ("");
    Put_Line ("done.");
    loop null; end loop;

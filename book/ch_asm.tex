@@ -154,10 +154,17 @@ source stops at \texttt{Error: unknown opcode}.
 \textbf{The coprocessor has to be on.} The PIE unit is a \emph{coprocessor}, and on
 the S3 it is coprocessor~3 (named \texttt{cop\_ai}; the FPU is coprocessor~0).
 Coprocessors come out of reset disabled, so the first \texttt{ee.*} instruction
-would take a coprocessor-disabled exception. The bare runtime's \texttt{start.S}
-enables both by writing \texttt{CPENABLE = 16\#09\#} -- bit~0 for the FPU, bit~3 for
-PIE (Chapter~\ref{ch:bootloader}); the value is exactly the \texttt{XCHAL\_CP\_MASK}
-the S3 core configuration declares. One word at boot, and SIMD code runs.
+would take a coprocessor-disabled exception. The fix is one word, in two places
+that must agree: the boot \texttt{start.S} and the runtime's per-core CPU
+initialisation both write \texttt{CPENABLE = 16\#09\#} -- bit~0 for the FPU, bit~3
+for PIE, exactly the \texttt{XCHAL\_CP\_MASK} the S3 configuration declares. The
+runtime's value is the one that sticks: it re-establishes \texttt{CPENABLE} for each
+core as the scheduler starts, so enabling PIE \emph{only} in \texttt{start.S} is
+silently undone (a lesson learned the hard way -- the first board run hung on the
+very first vector instruction). One consequence is worth stating plainly: the FPU's
+state is saved and restored across context switches, but the PIE
+\texttt{q0}--\texttt{q7} registers are not, so \texttt{ESP32S3.SIMD} must be confined
+to a single task.
 
 A third, gentler requirement is \textbf{alignment}: the 128-bit loads and stores
 want 16-byte-aligned data. The library's vector types carry
@@ -183,35 +190,37 @@ begin
 \end{lstlisting}
 
 The example \texttt{examples/esp32s3\_simd} puts this on the board: it fills a pair of
-1024-element vectors, runs each SIMD op against a scalar Ada reference to confirm the
-results agree, then brackets both with \texttt{Cycles} (the \texttt{rsr.ccount} reader
-above) and prints the speed-up. It builds into a flashable image through the normal
-bare-metal path -- the SIMD library is a library like any other
-(\texttt{libs/esp32s3\_simd}), pulled in with one \texttt{with} line in the project
-file.
+1024-element vectors and runs five SIMD operations -- add, dot-product and a float
+add, plus a bulk copy and a greater-than compare -- each against a scalar Ada
+reference to confirm the results agree, bracketing both with \texttt{Cycles} (the
+\texttt{rsr.ccount} reader above) to report the speed-up. It is an ordinary
+bare-metal project: the SIMD library is pulled in with one \texttt{with} line
+(\texttt{libs/esp32s3\_simd}).
 
-The upstream project published a full benchmark run on real silicon (1024 elements,
-64 iterations, \texttt{-O3}); a representative slice gives the shape of the win:
+Run on a 240\,MHz ESP32-S3 over 1024 elements and 64 iterations, the board prints
+(cycle counts from \texttt{rsr.ccount}; every op verified bit-identical to its scalar
+reference):
 
 \begin{center}
 \begin{tabular}{l r r r}
 \toprule
-\textbf{Operation} & \textbf{SIMD (\textmu s)} & \textbf{Scalar (\textmu s)} & \textbf{Speed-up} \\ \midrule
-\texttt{Add} i8           &  171 & 6987 & 40.9$\times$ \\
-\texttt{Add} i16          &  278 & 6578 & 23.7$\times$ \\
-\texttt{Add} i32          &  476 & 2877 &  6.0$\times$ \\
-\texttt{Add} f32          & 1096 & 3704 &  3.4$\times$ \\
-\texttt{Dot\_Product} i8  &  131 & 3297 & 25.2$\times$ \\
-\texttt{Max} i8           &  166 & 3698 & 22.3$\times$ \\
+\textbf{Operation} & \textbf{SIMD (cyc)} & \textbf{Scalar (cyc)} & \textbf{Speed-up} \\ \midrule
+\texttt{Add} i32          &  83\,818 & 1\,370\,625 & 16.3$\times$ \\
+\texttt{Dot\_Product} i32 & 310\,531 & 1\,378\,144 &  4.4$\times$ \\
+\texttt{Add} f32          & 182\,082 &   591\,480  &  3.2$\times$ \\
+\texttt{Copy} i32         &  63\,903 &   263\,406  &  4.1$\times$ \\
+\texttt{Compare\_GT} i32  &  98\,733 &   525\,658  &  5.3$\times$ \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-The pattern is the one the width predicts: the narrower the element, the more lanes
-per 128-bit register, the larger the win -- byte operations, with sixteen lanes,
-run an order of magnitude faster, while \texttt{Integer\_32} and \texttt{Float\_32}
-at four lanes land in the low single digits. These are the upstream's numbers; the
-on-board example here is built to reproduce the measurement on your own board.
+\texttt{Add i32} is the outlier at 16.3$\times$: its kernel fuses the load of the
+next chunk into the add (the \texttt{ld.incp} form), so the four-lane arithmetic runs
+with almost no load overhead. The other four-lane \texttt{Integer\_32} kernels --
+copy, compare, dot-product -- land in the 4--5$\times$ range. The win grows with
+narrower elements, where more lanes pack into the 128-bit register: the upstream
+project's published sweep reports \texttt{Add} at 40.9$\times$ for \texttt{Integer\_8}
+(sixteen lanes) and 23.7$\times$ for \texttt{Integer\_16}.
 
 \section{Provenance and status}
 
@@ -224,9 +233,15 @@ subset of operations through the benchmark harness, not exhaustively across ever
 operation and interaction, so treat it as beta-quality and verify the operations you
 depend on.
 
+It is, however, verified on real silicon: the benchmark above is a live board run,
+each operation checked bit-identical to its scalar reference.
+
 What it demonstrates for this book is the broader point: dropping to assembly in Ada
 is neither a hack nor an escape from the language. The instructions live inside a
 normal subprogram, behind a typed, contracted interface, host-readable and
-version-controlled like everything else -- and the one genuinely hard part, on a
-chip whose toolchain does not target its own SIMD unit, was teaching the assembler
-the opcodes and turning the coprocessor on, both of which are now one line each.
+version-controlled like everything else. The genuinely chip-specific work -- on a
+part whose Ada toolchain does not target its own SIMD unit -- was small but exacting:
+teach the assembler the opcodes (the config overlay), enable the coprocessor where
+the runtime will not undo it (the per-core \texttt{CPENABLE}), and respect that its
+registers are not context-switched (keep SIMD in one task). None of it is much code;
+all of it is the kind of detail that only a board run will tell you is wrong.
