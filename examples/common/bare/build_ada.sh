@@ -25,6 +25,16 @@ if [ "${#GPRS[@]}" -ne 1 ]; then
     exit 1
 fi
 
-( cd "$EX" && gprbuild -p -P "$(basename "${GPRS[0]}")" )
+# STACK_ANALYSIS=1 -> emit GCC's per-frame stack-usage (obj/*.su) and call-graph
+# (obj/*.ci) files alongside the objects, for `x stack`.  Off by default so normal
+# builds are byte-identical.  Passed via -cargs so no .gpr needs editing; covers the
+# application's own units (the pinned runtime is prebuilt, so its frames don't appear
+# -- the runtime watermark catches those at run time).
+STACK_CARGS=()
+if [ -n "${STACK_ANALYSIS:-}" ]; then
+    STACK_CARGS=(-cargs:Ada -fstack-usage -fcallgraph-info=su,da)
+fi
+
+( cd "$EX" && gprbuild -p -P "$(basename "${GPRS[0]}")" "${STACK_CARGS[@]}" )
 cp "$EX/obj/ada_app.o" "$EX/obj/app_main.o"
 echo "[build_ada] done: $EX/obj/app_main.o"

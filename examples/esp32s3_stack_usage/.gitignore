@@ -1,0 +1,5 @@
+/obj/
+/.noidf/
+/app.bin
+/app.elf
+/app.map

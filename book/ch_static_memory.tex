@@ -124,15 +124,131 @@ checkable by the compiler. Each step up to \texttt{embedded} and \texttt{full} b
 expressiveness (exceptions you can catch, controlled types, dynamic data) at the
 cost of a quantity you now have to \emph{budget} rather than have proven zero.
 
-\section{Doing the accounting}
+\section{Doing the accounting}\index{stack!analysis}\index{tooling!x stack}
 
-One candid gap: this project does not (yet) wire up
-\texttt{-fstack-usage} or \texttt{GNATstack}, so worst-case stack depth is not
-computed automatically -- you size stacks by reasoning about recursion depth and
-call chains, then leave headroom and watch for the runtime's stack-overflow trap
-(Chapter~\ref{ch:debug}) during testing. That is the honest state of the art here:
-the \emph{static} quantities (task set, stack sizes, heap arena bounds, the
-restriction set) are all pinned down and visible, but turning them into a proven
-worst-case number is still a manual exercise. For a hard-real-time deployment it is
-exactly the exercise worth automating, and the GNAT toolchain has the tools to do
-it; they are simply not part of the build today.
+The static quantities above -- the task set, each stack size, the heap-arena
+bounds, the restriction set -- are all pinned at link time, so they can be
+\emph{measured} rather than guessed. The repository wires three tools onto the
+\texttt{x} command for exactly that.
+
+\subsection{Per-frame and worst-case: \texttt{x stack}}
+
+\texttt{AdaCore}'s \texttt{GNATstack} is a commercial tool and is not in the
+free Xtensa toolchain, but the underlying GCC switches are: \texttt{-fstack-usage}
+emits one \texttt{.su} file per unit giving every subprogram's frame size and
+whether it is \texttt{static}, \texttt{dynamic} or \texttt{bounded}, and
+\texttt{-fcallgraph-info} emits the call graph with those frame sizes attached.
+The build turns them on only when \texttt{STACK\_ANALYSIS=1} (a normal build stays
+byte-identical), and
+
+\begin{lstlisting}[language=bash]
+./x stack <example> [--top N]
+\end{lstlisting}
+
+\noindent
+forces an analysis rebuild and reports two things. First, the biggest single
+frames, with any \texttt{dynamic}/\texttt{bounded} ones (a variable-length array or
+\texttt{alloca} whose size is not a compile-time constant) called out -- those are
+the frames that defeat static bounding. Second, the deepest stack-summed call chain
+from each entry root: because Ravenscar/Jorvik forbids recursion the application's
+call graph is a DAG, so the longest path is a genuine bound on the code GCC
+compiled. The figure covers application units only -- the pinned runtime is built
+without the switches, so calls into it are marked \texttt{+ext} and excluded; the
+watermark below closes that gap. If the analyser \emph{does} find a cycle it says
+so loudly (\texttt{!!RECURSIVE}) and downgrades that chain's number to a lower
+bound, because a recursive depth cannot be bounded statically.
+
+\subsection{The measured peak: stack painting}\index{stack!high-water mark}\index{stack!painting}
+
+Static analysis cannot see the runtime, the C startup, the interrupt path or
+hand-written assembly. To account for those you measure the real peak by
+\emph{painting}: fill the unused stack with a sentinel word, run a representative
+workload, then scan for the lowest word the program actually overwrote. The gap
+from there to the top of the stack is the high-water mark. \texttt{ESP32S3.Stack\_Usage}
+does this for the environment task in a few lines --
+
+\begin{lstlisting}[language=ada]
+ESP32S3.Stack_Usage.Paint_Env_Stack;   --  once, as early in Main as possible
+--  ... run the workload ...
+ESP32S3.Stack_Usage.Report;            --  "stack: env used=5184 free=11200 total=16384 (31%)"
+\end{lstlisting}
+
+\noindent
+using the linker's \texttt{\_\_stack\_start}/\texttt{\_\_stack\_end} symbols as the
+region bounds; the same \texttt{Paint}/\texttt{High\_Water} primitives take explicit
+bounds so a library-level task can measure its own stack the same way. Because a
+sentinel-valued word the program legitimately wrote looks pristine, the scan stops
+at the first overwritten word from the bottom and so never \emph{under}-reports the
+peak -- read it as ``at least this much.'' The \texttt{esp32s3\_stack\_usage}
+example demonstrates the jump as a deep call runs, and \texttt{./x stack <example>
+-{}-run} flashes it and captures the \texttt{stack:} line over the serial console,
+so the static estimate and the measured peak sit side by side.
+
+\subsection{Where the rest of the memory went: \texttt{x mem}}\index{tooling!x mem}
+
+Stacks are one line item; \texttt{./x mem <example>} prints the rest -- the loaded
+section sizes from the linked ELF, split into flash (code + read-only data), the
+DRAM \texttt{.data}/\texttt{.bss}, the IRAM image and any reserved PSRAM, alongside
+the configured \texttt{board.ads} bounds. Between \texttt{x stack} and \texttt{x mem}
+the whole static budget -- every byte of flash and RAM, and the worst-case and
+measured depth of every stack -- is visible from two commands. Turning those numbers
+into a signed-off worst-case for a hard-real-time deployment is still your
+judgement call (headroom, the \texttt{+ext} runtime contribution, the margin on a
+\texttt{dynamic} frame), but the numbers themselves are now produced for you, not
+reasoned about on paper.
+
+\subsection{A worked example: the HTTPS client}
+
+The \texttt{esp32s3\_tls\_weather} example -- a pure-Ada TLS~1.3 client fetching a
+live forecast over the W5500 Ethernet stack -- is the most demanding example in the
+tree, so it is the one worth putting under the tools. \texttt{./x stack tls\_weather}
+reports:
+
+\begin{lstlisting}
+== Per-frame stack usage (application units) ==
+   13 frames; total of all frames = 5 344 B (NOT a depth)
+      bytes  qualifier        location / subprogram
+      4 832  dynamic          main.adb:55  Main
+        128  static           w5500_dev.adb:13  Bring_Up
+         48  static           b__main.adb:281  ada_main
+        ...
+   !! 1 DYNAMIC/BOUNDED frame(s) -- static depth is NOT guaranteed:
+      4 832  dynamic          main.adb:55  Main
+
+== Worst-case call-chain depth per entry root ==
+   5 008 B +ext   ada_main
+          ada_main -> ada_main_program -> Bring_Up
+\end{lstlisting}
+
+\noindent
+One number dominates everything: \texttt{Main} carries a \textbf{4\,832-byte,
+\texttt{dynamic} frame}. That is the TLS record machinery -- handshake transcript,
+record buffers, certificate-chain working storage -- laid out on the environment
+task's stack, and the \texttt{dynamic} tag is the tool telling you the truth: part
+of that frame is sized at run time, so the 5\,008-byte worst-case is a \emph{floor},
+not a ceiling, and the \texttt{+ext} tag adds the (uncounted) runtime frames beneath
+it. This is precisely the case the static pass cannot close on its own -- and
+exactly why the environment-task stack for this example is set to 32\,KiB, a
+deliberately generous margin over the $\sim$5\,KiB static floor precisely because
+that floor is not the whole story, and why you confirm it with the painted
+watermark rather than trusting the static sum. Run it under
+\texttt{./x stack tls\_weather -{}-run} and the measured \texttt{stack:} line tells
+you how much of that allotment a real fetch actually touched.
+
+The footprint side, from \texttt{./x mem tls\_weather}:
+
+\begin{lstlisting}
+   flash (code + rodata + IRAM image):    287 519 B
+   RAM   DRAM .data ............     23 468 B
+   RAM   DRAM .bss / stacks .....    125 960 B
+   RAM   total .................    153 268 B
+\end{lstlisting}
+
+\noindent
+About 287\,KiB of flash (the TLS, X.509 and W5500 code is substantial) and roughly
+153\,KiB of RAM, the bulk of it the $\sim$118\,KiB of \texttt{.bss} -- the static
+session buffers, the W5500 socket storage and the heap arena, all reserved at link
+time exactly as this chapter argued they should be. Nothing here grows on demand:
+the whole budget, code and data and stack alike, is a fixed number you can read off
+two commands and hold against the 512\,KiB of on-chip SRAM before the board ever
+runs.

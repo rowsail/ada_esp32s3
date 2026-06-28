@@ -17,6 +17,10 @@
 #    ./x run     <example> [-p PORT] [-P PROF]  build + flash + monitor
 #    ./x monitor [-p PORT]             open the serial console (115200)
 #    ./x clean   [<example>]           remove build artifacts (all if omitted)
+#    ./x stack   <example> [--top N] [--run]   static stack analysis (per-frame +
+#                                      worst-case call chains); --run adds the
+#                                      runtime high-water mark over serial
+#    ./x mem     <example>             memory footprint: section sizes + bounds
 #    ./x config <example> [show|--json]   show flash/PSRAM size (its board.ads)
 #    ./x config <example> flash-size <SIZE>  set flash size (e.g. 4MB, 0x800000)
 #    ./x config <example> psram-size <SIZE>  set PSRAM size (rebuilds its bootloader)
@@ -512,6 +516,86 @@ cmd_docs () {   # build + run the HAL reference generator -> docs/HAL_Reference.
     "$docs/gen_reference" "$hal"
 }
 
+# -- stack & memory analysis --------------------------------------------------
+#  Static stack analysis uses GCC's -fstack-usage / -fcallgraph-info, emitted only
+#  when STACK_ANALYSIS=1 (a normal build is byte-identical).  --run additionally
+#  flashes the example and captures its runtime high-water-mark report over serial
+#  (the example must call ESP32S3.Stack_Usage.Report).
+cmd_stack () {
+    local e top=12 run="" port="$PORT_DEFAULT"
+    e="$(resolve "${1:-}")"; shift || true
+    while [ $# -gt 0 ]; do case "$1" in
+        --top) top="$2"; shift 2;;
+        --run) run=1; shift;;
+        -p|--port) port="$2"; shift 2;;
+        *) shift;;
+    esac; done
+    echo "x: stack analysis build of $(short "$e") (STACK_ANALYSIS=1, forces rebuild)..." >&2
+    cmd_clean "$e" >/dev/null
+    ( cd "$EXROOT/$e" && env STACK_ANALYSIS=1 $(prof_env auto) bash build.sh ) \
+        >/dev/null 2>&1 || die "analysis build failed (try: STACK_ANALYSIS=1 ./x build $(short "$e"))"
+    python3 "$ROOT/tools/stack-report.py" "$EXROOT/$e/obj" --top "$top" \
+        || die "stack-report.py failed"
+    if [ -n "$run" ]; then
+        device_preflight "$port" || exit $?
+        echo
+        echo "x: flashing + capturing runtime high-water mark (look for 'stack:' lines)..." >&2
+        ( cd "$EXROOT/$e" && bash flash.sh "$port" ) >/dev/null 2>&1 || die "flash failed"
+        python3 - "$port" "$BAUD" <<'PY'
+import serial, sys, time
+port, baud = sys.argv[1], int(sys.argv[2])
+s = serial.Serial(port, baud, timeout=1)
+end = time.time() + 20
+seen = False
+while time.time() < end:
+    line = s.readline().decode(errors="replace").rstrip()
+    if "stack:" in line.lower():
+        print("   " + line); seen = True
+s.close()
+if not seen:
+    print("   (no 'stack:' report seen -- does this example call "
+          "ESP32S3.Stack_Usage.Report?)")
+PY
+    fi
+}
+
+#  Memory footprint: section sizes from the linked ELF + the heap-arena / PSRAM
+#  bounds from the example's board.ads.  A one-screen "where did the RAM/flash go".
+cmd_mem () {
+    local e elf; e="$(resolve "${1:-}")"; shift || true
+    elf="$EXROOT/$e/app.elf"
+    [ -f "$elf" ] || { echo "x: building $(short "$e") first..." >&2; cmd_build "$e" >/dev/null; }
+    . "$ROOT/tools/sdk-env.sh"; esp32s3_toolchain_on_path
+    echo "== Section sizes ($(short "$e")) -- loaded sections only =="
+    #  Skip ELF metadata (debug/comment/xtensa props) and the *dummy* sections the
+    #  ESP32-S3 linker inserts purely to align the flash-cache MMU mapping (they
+    #  reserve address space, not real storage).  Classify the rest by placement.
+    xtensa-esp32-elf-size -A "$elf" | awk '
+        $1 ~ /^\.(debug|comment|xtensa|xt\.|note|symtab|strtab|shstrtab)/ {next}
+        $1 ~ /dummy/ {next}
+        $2 ~ /^[0-9]+$/ && $2+0 > 0 && $1 ~ /^\./ {
+            name=$1; sz=$2;
+            if      (name ~ /^\.iram/)                 { iram+=sz;  cls="IRAM (RAM)" }
+            else if (name ~ /^\.ext_ram/)              { psram+=sz; cls="PSRAM" }
+            else if (name ~ /bss|noinit/)              { bss+=sz;   cls="DRAM .bss" }
+            else if (name ~ /^\.dram.*data/)           { dram+=sz;  cls="DRAM .data" }
+            else if (name ~ /rodata/)                  { rodata+=sz;cls="flash rodata" }
+            else                                       { code+=sz;  cls="flash code" }
+            printf "   %-22s %9d B   %s\n", name, sz, cls
+        }
+        END {
+            printf "\n   flash (code + rodata + IRAM image): %9d B\n", code+rodata+iram;
+            printf "   RAM   DRAM .data ............ %9d B  (copied from flash at boot)\n", dram;
+            printf "   RAM   DRAM .bss / stacks ..... %9d B  (zero-init, not in flash)\n", bss;
+            printf "   RAM   IRAM ................... %9d B  (instructions in RAM)\n", iram;
+            printf "   RAM   total .................. %9d B\n", dram+bss+iram;
+            if (psram>0) printf "   PSRAM reserved .............. %9d B\n", psram;
+        }'
+    echo
+    echo "== Configured bounds (board.ads) =="
+    ( cd "$ROOT" && ./x config "$(short "$e")" 2>/dev/null ) | sed 's/^/   /'
+}
+
 # -- dispatch -----------------------------------------------------------------
 # Skipped when this file is SOURCED (not executed) -- the standalone-project
 # launcher `tools/bin/esp32-ada` sources x to reuse its helpers (monitor_tool,
@@ -526,6 +610,8 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     run)             cmd_run "$@" ;;
     monitor|mon)     cmd_monitor "$@" ;;
     clean)           cmd_clean "$@" ;;
+    stack)           cmd_stack "$@" ;;
+    mem|memory)      cmd_mem "$@" ;;
     config|cfg)         cmd_config "$@" ;;
     get-debug-tools)    cmd_get_debug_tools "$@" ;;
     get-openocd)        cmd_get_openocd "$@" ;;
