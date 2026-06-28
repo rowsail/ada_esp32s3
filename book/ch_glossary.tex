@@ -26,6 +26,12 @@ a chapter that treats it properly, the entry points there.
   raised to the object's ceiling priority for the duration, bounding blocking and
   preventing priority inversion.
 
+\item[closure] A subprogram bundled with the enclosing-scope variables it uses but
+  does not declare -- the state it ``closes over.'' A nested subprogram that
+  captures a local needs a stack \emph{trampoline}, which faults on this chip, so
+  the HAL builds under \texttt{No\_Implicit\_Dynamic\_Code} and uses closure-free
+  callbacks or tagged dispatch instead (\S\ref{driver:plugin}).
+
 \item[context switch] Saving one task's CPU state and restoring another's. The
   Xtensa version (windows, the coprocessor, \texttt{THREADPTR}) is
   Chapter~\ref{ch:context-switch}.
@@ -99,6 +105,11 @@ a chapter that treats it properly, the entry points there.
 
 \item[\texttt{THREADPTR}] An Xtensa per-thread pointer register, saved/restored on
   context switch so per-task thread-local data works.
+
+\item[trampoline] A scrap of executable code the compiler writes onto the stack to
+  carry a closure's captured state. The stack is non-executable here, so a
+  trampoline faults; \texttt{No\_Implicit\_Dynamic\_Code} forbids generating one
+  (\S\ref{driver:plugin}, Chapter~\ref{ch:debug}).
 
 \item[VECBASE] The Xtensa register holding the base address of the exception/
   interrupt vector table; \texttt{start.S} points it at our vectors.

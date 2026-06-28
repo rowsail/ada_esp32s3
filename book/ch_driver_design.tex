@@ -348,10 +348,34 @@ the hazard is real; for everything else, the simplest safe thing is better.
 
 A driver often needs the \emph{application} to supply a piece of behaviour: assert
 a chip-select line, pin a fresh socket to one interface, decide what a Modbus
-register read returns. In most languages the reach-for tool is a closure -- a
-nested subprogram that captures the surrounding state. That is exactly what this
-platform forbids. A subprogram that captures its environment compiles to a
-\emph{trampoline} -- a scrap of executable code GCC writes onto the stack -- and on
+register read returns. In most languages the reach-for tool is a \emph{closure}.
+
+A closure is a subprogram bundled with the variables it uses but does not itself
+declare -- the surrounding state it ``closes over.'' A nested subprogram that reads
+a variable from its enclosing scope is the everyday case, and on a driver boundary
+it shows up like this:
+
+\begin{lstlisting}
+procedure Configure (Bus : in out E.Bus; CS : ESP32S3.GPIO.Pin_Id) is
+   procedure Select_It (Active : Boolean) is
+   begin
+      ESP32S3.GPIO.Write (CS, Active);     -- CS is captured from Configure
+   end Select_It;
+begin
+   Open (Bus, Chip_Select => Select_It'Access);   -- hand the nested proc out
+end Configure;
+\end{lstlisting}
+
+\texttt{Select\_It} declares only \texttt{Active} but uses \texttt{CS}, so to be
+callable later it has to remember \emph{which} \texttt{CS} -- the one from the
+\texttt{Configure} call that produced it. That pairing of code with captured state
+is the closure. A subprogram that captures \emph{nothing} -- using only its own
+parameters, globals and library-level state -- is not a closure but a plain
+function pointer, and that distinction is the whole of what follows.
+
+A closure is exactly what this platform forbids. A subprogram that captures its
+environment compiles to a \emph{trampoline} -- a scrap of executable code GCC
+writes onto the stack, which is where the captured \texttt{CS} gets bound -- and on
 the ESP32-S3 the stack lives in non-executable data memory, so calling such a
 trampoline faults outright. The HAL is built under
 \texttt{pragma Restrictions (No\_Implicit\_Dynamic\_Code)}, which turns that into a
