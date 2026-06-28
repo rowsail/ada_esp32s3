@@ -298,7 +298,8 @@ procedure Receive (C : RX_Channel; Into : out Symbol_Array; Count : out Natural)
 \item[\texttt{Symbols} / \texttt{Into}] a \texttt{Symbol\_Array} of
   \texttt{RMT\_Symbol}s, each holding two level+duration halves;
   \texttt{Duration0}/\allowbreak\texttt{Duration1} are \texttt{Tick\_Count}
-  (\texttt{0\,..\,32\_767}). One TX burst is at most 47 symbols.
+  (\texttt{0\,..\,32\_767}). One symbol-RAM block holds 48 symbols; a longer burst
+  is streamed by refilling the block in halves (wrap mode).
 \item[\texttt{Count}] (\texttt{Receive}) \texttt{out} count of symbols captured.
 \end{description}
 
@@ -609,8 +610,11 @@ end LCD_Frame;
 \begin{lstlisting}
 with ESP32S3.LCD; use ESP32S3.LCD;
 procedure LCD_Clk is
+   Lcd : Session;
 begin
-   Enable_Clock_Out (Pclk_Pad => 9);
+   Setup (Pclk_Hz => 1_000_000);
+   Acquire (Lcd);                          -- hold the LCD peripheral
+   Enable_Clock_Out (Lcd, Pclk_Pad => 9);  -- expose PCLK on IO9
 end LCD_Clk;
 \end{lstlisting}
 

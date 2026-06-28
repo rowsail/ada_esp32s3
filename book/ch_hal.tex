@@ -33,8 +33,9 @@ exercised on real silicon.
 \item[RAII.] Those \texttt{Session}/\texttt{Channel}/\texttt{Reader} handles are
   controlled types -- they release on scope exit, including during exception
   unwinding -- so they require the \texttt{embedded} or \texttt{full} profile.
-  The lock-free drivers (GPIO, RNG, Temperature, RTC, RTC\_IO, Touch, SHA, AES,
-  SDMMC) work under every profile.
+  The finalization-free drivers (GPIO, RNG, Temperature, RTC, RTC\_IO, Touch, SHA,
+  AES, SDMMC) use no controlled types -- a few serialise internally with a protected
+  object instead -- so they work under every profile.
 \item[Init-before-use guard.] For the drivers that configure a controller once
   at startup and only later hand out ownership (SPI, I2C, UART, I2S, TWAI, LCD,
   and MCPWM), \texttt{Acquire}/\texttt{Claim} raises \texttt{Not\_Initialized} if

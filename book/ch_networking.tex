@@ -711,8 +711,8 @@ with no live route raise \texttt{Socket\_Error} instead of leaking out some defa
 -- the primary by DHCP, a second on \texttt{CS=IO40} whose reset is shared on
 \texttt{IO11} (so it uses a software reset, \texttt{MR.RST}, leaving the primary
 alone) and which is left uncabled on purpose. The board reports \texttt{eth0} up and
-\texttt{eth1} down; routes \texttt{8.8.8.8} out \texttt{eth0}; falls a \texttt{10/8}
-destination back to the default when its specific route (\texttt{eth1}) is down;
+\texttt{eth1} down; routes \texttt{8.8.8.8} out \texttt{eth0}; falls a \texttt{10.0.0.x}
+destination back to the default when its specific route (\texttt{eth1}/24) is down;
 \emph{refuses} a connect pinned to the down \texttt{eth1}; and connects for real out
 the live \texttt{eth0} -- the routing table, liveness, and fail-closed pinning, all
 on hardware.

@@ -741,6 +741,60 @@ end loop;
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_gps}.
 
+\section{W25Q -- SPI NOR Flash}\index{W25Q driver}\index{SPI flash}
+\label{app:ext:w25q}
+
+The W25Q256FV is a 32\,MB (256\,Mbit) SPI NOR flash -- the on-board non-volatile
+store the local filesystem of Chapter~\ref{ch:storage} lives on. It sits on SPI2,
+sharing the bus with the W5500 (and, in the ADC example, the TLV2556) through the
+SPI driver's software chip-select. The driver is deliberately small: identify, read,
+erase by sector, program by page -- the primitives a wear-levelling layer and a
+filesystem build on.
+
+\begin{lstlisting}
+package ESP32S3.W25Q is
+   Page_Size   : constant := 256;        --  program granularity (one Page-Program)
+   Sector_Size : constant := 4096;       --  smallest erase unit
+
+   type JEDEC_ID is record
+      Manufacturer : Unsigned_8;         --  0xEF for Winbond
+      Memory_Type  : Unsigned_8;
+      Capacity     : Unsigned_8;         --  log2 of the size in bytes
+   end record;
+
+   type Flash is record                  --  describes itself on the bus
+      Host     : ESP32S3.SPI.SPI_Host;
+      Clock_Hz : Positive                  := 8_000_000;
+      CS_Pin   : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;  -- driver-driven CS
+      CS_CB    : ESP32S3.SPI.CS_Select     := null;   --  or a callback
+      Ctx      : System.Address            := System.Null_Address;
+   end record;
+
+   procedure Read_Identification (Dev : Flash; ID : out JEDEC_ID);
+   function  Capacity_Bytes      (ID : JEDEC_ID) return Address;
+   procedure Initialize          (Dev : Flash; OK : out Boolean);
+
+   procedure Read         (Dev : Flash; Addr : Address; Data : out Byte_Array);
+   procedure Erase_Sector (Dev : Flash; Addr : Address);
+   procedure Program_Page (Dev : Flash; Addr : Address; Data : Byte_Array)
+     with Pre => Data'Length in 1 .. Page_Size
+                 and then Natural (Addr mod Page_Size) + Data'Length <= Page_Size;
+end ESP32S3.W25Q;
+\end{lstlisting}
+
+The bring-up proof is the \emph{JEDEC-ID check}: \texttt{Read\_Identification}
+returns \texttt{EF 40 19} on a healthy W25Q256 (Winbond, 256\,Mbit) -- a
+wiring-independent confirmation that the SPI link and framing work before any read
+or write is trusted, the flash analogue of the TLV2556's self-test inputs
+(\S\ref{app:ext:tlv2556}). The page/sector asymmetry is the usual NOR contract: you
+may program any aligned 256-byte page but can only erase a whole 4\,KB sector, and
+the \texttt{Program\_Page} precondition enforces the page rule at the call site.
+Above this driver, \texttt{Block\_Dev.WL} adds wear levelling and \texttt{Ext4.FS} a
+filesystem (Chapter~\ref{ch:storage}); from the LISP REPL, \texttt{(spi-xfer ...)}
+reads the same JEDEC id by hand (Chapter~\ref{ch:lisp}).
+
+\noindent\textbf{Example:} \texttt{examples/esp32s3\_w25q}.
+
 \section{SD Card (SD\_SPI) -- Removable Storage}\index{SD card driver}
 \label{app:ext:sdspi}
 

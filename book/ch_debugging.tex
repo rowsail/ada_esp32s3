@@ -212,7 +212,7 @@ The runtime helps before you reach for a tool at all:
         (a debug exception) instead of silently corrupting a neighbour -- and on
         the \texttt{full} profile the runtime can turn it into a catchable
         \texttt{Storage\_Error}.
-  \item \textbf{A fault safe-state hook.} The \texttt{esp32s3\_safe\_state}
+  \item \textbf{A fault safe-state hook.} The \texttt{esp32s3\_exceptions}
         example wraps the panic handler to classify a fault -- stack overflow
         versus other -- against the running task's stack window, latch a safe
         state, and print an explicit \texttt{*** STACK OVERFLOW ***} verdict

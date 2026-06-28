@@ -52,15 +52,18 @@ silently split or merge the access.}
 
 Writing every register by hand is error-prone, so the whole ESP32-S3 register map
 is generated from the vendor SVD file into typed packages under
-\texttt{ESP32S3\_Registers.*} (one package per peripheral). Each register is a
-record with a representation clause, and each peripheral is one big record placed
-at its base address. A driver then writes fields by name:
+\texttt{ESP32S3\_Registers.*} (one package per peripheral). Most registers are
+records of named bit-fields with a representation clause; a few -- like the
+write-one-to-set ports -- are bare 32-bit words. Each peripheral is one big record
+placed at its base address, and a driver writes them by name:
 
 \begin{lstlisting}
 with ESP32S3_Registers.GPIO; use ESP32S3_Registers.GPIO;
 
 --  GPIO_Periph is the peripheral record, already placed at 16#6000_4000#.
-GPIO_Periph.OUT_W1TS.OUT_W1TS := 2 ** 2;   --  set GPIO2, by field name
+GPIO_Periph.OUT_W1TS := 2 ** 2;          --  set GPIO2 high (write-1-to-set)
+--  ... and a register that IS a field record is written field by field:
+GPIO_Periph.PIN (2).INT_ENA := 1;        --  GPIO2's interrupt enable, by name
 \end{lstlisting}
 
 The application almost never touches these directly -- it calls the hand-written

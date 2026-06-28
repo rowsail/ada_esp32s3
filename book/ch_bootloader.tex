@@ -73,21 +73,25 @@ loader.
 
 \section{PSRAM: octal bring-up}\index{PSRAM}
 
-External PSRAM is the one place the project still leans on opaque Espressif
-ROM/blob routines, and for a good reason: bringing up octal PSRAM reconfigures
-the very MSPI timing that flash execute-in-place depends on, so it has to run
-from RAM, carefully, at exactly the right moment. The 2nd-stage bootloader is
-that moment. The bring-up (a small C shim, \texttt{psram\_boot.c}) does:
+External PSRAM is the trickiest thing the bootloader does: bringing up octal PSRAM
+reconfigures the very MSPI timing that flash execute-in-place depends on, so it has
+to run from RAM, carefully, at exactly the right moment -- and the 2nd-stage
+bootloader is that moment. The bring-up (a small C shim, \texttt{psram\_boot.c}) is
+now almost entirely \emph{from source}; only the lowest-level OPI and cache pokes
+still call masked-ROM helpers (\texttt{esp\_rom\_opiflash\_*}, \texttt{Cache\_*}).
+Chapter~\ref{ch:psram} tells the de-blobbing story in full; in outline it does:
 
 \begin{enumerate}
 \item \textbf{Wire the octal pins.} \texttt{esp\_rom\_opiflash\_pin\_config} and
   the MSPI drive-strength setup connect the extra data lines and DQS that octal
   mode needs.
-\item \textbf{Enable and size the PSRAM} via the octal-PSRAM ROM implementation,
+\item \textbf{Enable and size the PSRAM} via the from-source octal driver
+  (\texttt{psram\_impl\_enable\_src} / \texttt{psram\_impl\_get\_physical\_size\_src}),
   reporting the detected size.
-\item \textbf{Force the cache read mode.} The tuning step leaves the SPI0 data-in
-  mode wrong for OPI-DDR cache reads; a single register poke
-  (\texttt{16\#6000\_30C0\#}) forces the correct mode.
+\item \textbf{Tune the data-in timing.} At 80\,MHz OPI-DDR the SPI0 data-in delay
+  must be calibrated; \texttt{psram\_tune\_din} sweeps the candidate modes, measures
+  which pass, and centres on the passing window (replacing an earlier hardcoded
+  poke -- see Chapter~\ref{ch:psram}).
 \item \textbf{Map it into the address space.} \texttt{Cache\_Dbus\_MMU\_Set} with
   the external-RAM flag maps the PSRAM at virtual base \texttt{16\#3D00\_0000\#}; the
   number of 64\,KB pages comes from the project's \texttt{board.ads}

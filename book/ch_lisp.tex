@@ -29,10 +29,11 @@ type Object (K : Kind := K_Nil) is record
    case K is
       when K_Cons    => Car, Cdr : Ref;    -- a pair
       when K_Int     => I : Long_Long_Integer;
+      when K_Bool    => B : Boolean;       -- #t / #f
       when K_Symbol  => Sym : Symbol_Id;   -- interned
       when K_Closure => Params, Code, Env : Ref;
       when K_Prim    => Fn : Prim_Fn; Fn_Name : Symbol_Id;
-      ...
+      when K_Nil     => null;              -- the empty list ()
    end case;
 end record;
 \end{lstlisting}
@@ -134,7 +135,36 @@ when K_Closure =>
    Cur_Expr := <last body form>;          -- a tail call: loop, no stack growth
 \end{lstlisting}
 
-A tail-recursive LISP loop then runs in constant Ada stack. On the board,
+A call is in \emph{tail} position when its result is the result of the enclosing
+function -- there is nothing left to do once it returns. Counting down is
+tail-recursive; the recursive call is the whole of the \texttt{if} branch:
+
+\begin{lstlisting}
+(define (count n)
+  (if (= n 0) 'done
+      (count (- n 1))))           ; tail: its value IS the branch's value
+\end{lstlisting}
+
+Factorial, written the obvious way, is \emph{not}: the recursive call has to return
+before the multiply can run, so every call must keep a frame and the depth becomes
+the stack.
+
+\begin{lstlisting}
+(define (fact n)
+  (if (< n 2) 1
+      (* n (fact (- n 1)))))      ; NOT tail: the * is waiting on fact
+\end{lstlisting}
+
+The standard way to make an accumulating loop tail-recursive is to carry the running
+result in an extra argument, so the recursive call is once more the last thing done:
+
+\begin{lstlisting}
+(define (sum n acc)
+  (if (= n 0) acc
+      (sum (- n 1) (+ acc n))))   ; tail: the + is in the argument, before the call
+\end{lstlisting}
+
+Such a loop runs in constant Ada stack. On the board,
 \texttt{(count 3000)} on a 3000-deep tail recursion returns \texttt{done} where
 without this it would overflow the 64\,KB task stack and crash. The remaining bound
 is the arena, not the stack -- \texttt{(count 5000)} reports a clean

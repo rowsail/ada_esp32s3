@@ -90,8 +90,8 @@ complete Ada tasking model.
 
 \section{Board configuration}\index{board.ads}
 
-Each project owns a \texttt{config/board.ads} (flash and PSRAM sizes) that sizes
-the image and the second-stage bootloader. Edit it directly, or:
+Each project owns a \texttt{board.ads} (flash and PSRAM sizes) that sizes the image
+and the second-stage bootloader. Edit it directly, or:
 
 \begin{lstlisting}[style=sh]
 ./x config esp32s3_gpio0_blink show
@@ -101,11 +101,12 @@ the image and the second-stage bootloader. Edit it directly, or:
 \section{Debugging}
 
 On-chip debugging needs the pinned OpenOCD + S3 GDB, fetched once; then
-\texttt{./x debug} (or \texttt{F5} in VS Code) halts at your \texttt{Main}:
+\texttt{./x debug} (or \texttt{F5} in VS Code) halts at the boot entry
+\texttt{app\_main} (the shared boot glue; these images have no C \texttt{main}):
 
 \begin{lstlisting}[style=sh]
 ./x get-debug-tools
-./x debug esp32s3_gpio0_blink              # build, flash, OpenOCD + GDB, rest at Main
+./x debug esp32s3_gpio0_blink              # build, flash, OpenOCD + GDB, break at app_main
 \end{lstlisting}
 
 The Debugging chapter (Chapter~\ref{ch:debug}) covers GDB, decoding a Guru
@@ -168,7 +169,6 @@ myblink/
   board.ads          # this project's flash / PSRAM sizes
   src/main.adb       # your code (procedure Main; boots both cores, then idles)
   build.sh flash.sh  # thin shims into the SDK's shared bare-boot
-  glue.c             # optional: C natives, only if your Ada imports any
   .vscode/           # ALS project + build/flash/run tasks driving esp32-ada
 \end{lstlisting}
 
@@ -194,7 +194,7 @@ shims that make them build:
 esp32-ada init ~/myblink && cd ~/myblink
 SDK=$ESP32S3_ADA_SDK
 cp "$SDK"/examples/esp32s3_gpio0_blink/src/*.ad? src/   # the Ada sources (incl. main.adb)
-esp32-ada build -P embedded                             # match the example's profile
+esp32-ada build                                         # gpio0_blink uses the default light-tasking
 esp32-ada run -p /dev/ttyACM0
 \end{lstlisting}
 

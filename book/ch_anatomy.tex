@@ -26,7 +26,7 @@ and where each feature comes from.
   windowed \emph{context switch}, \emph{interrupt entry/exit} vectors, the
   \emph{clock/alarm tick}, SMP scheduling and the inter-core interrupt. This is
   Ada plus a little assembly (\texttt{start.S}, \texttt{highint5.S},
-  \texttt{context.S}). This is the layer an off-the-shelf RTOS would otherwise
+  \texttt{context\_switch.S}). This is the layer an off-the-shelf RTOS would otherwise
   provide -- here it is ours.
 \item[The 2nd-stage bootloader.] Before any of the above runs, our own minimal
   loader (a ZFP-Ada \texttt{boot\_main} + an assembly prologue + a thin C PSRAM
