@@ -3,6 +3,7 @@
 **/.objs/
 **/.ada_build/
 **/obj/
+**/obj-*/
 *.o
 *.ali
 sdkconfig
