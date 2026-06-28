@@ -521,6 +521,16 @@ cmd_docs () {   # build + run the HAL reference generator -> docs/HAL_Reference.
 #  when STACK_ANALYSIS=1 (a normal build is byte-identical).  --run additionally
 #  flashes the example and captures its runtime high-water-mark report over serial
 #  (the example must call ESP32S3.Stack_Usage.Report).
+# The static analyser is a native Ada host tool (tools/stack_report), built on
+# demand exactly like the HAL doc generator -- no Python.  esp32s3_toolchain_on_path
+# puts gprbuild + the native GNAT on PATH; the build is incremental, so this is a
+# no-op once compiled.  Done in a subshell so x's own PATH is left untouched.
+build_stack_tool () {
+    ( . "$ROOT/tools/sdk-env.sh" && esp32s3_toolchain_on_path \
+      && gprbuild -q -P "$ROOT/tools/stack_report/stack_report.gpr" ) \
+      || die "could not build tools/stack_report (need the native GNAT toolchain)"
+}
+
 cmd_stack () {
     local e top=12 run="" port="$PORT_DEFAULT"
     e="$(resolve "${1:-}")"; shift || true
@@ -530,32 +540,30 @@ cmd_stack () {
         -p|--port) port="$2"; shift 2;;
         *) shift;;
     esac; done
+    build_stack_tool
     echo "x: stack analysis build of $(short "$e") (STACK_ANALYSIS=1, forces rebuild)..." >&2
     cmd_clean "$e" >/dev/null
     ( cd "$EXROOT/$e" && env STACK_ANALYSIS=1 $(prof_env auto) bash build.sh ) \
         >/dev/null 2>&1 || die "analysis build failed (try: STACK_ANALYSIS=1 ./x build $(short "$e"))"
-    python3 "$ROOT/tools/stack-report.py" "$EXROOT/$e/obj" --top "$top" \
-        || die "stack-report.py failed"
+    "$ROOT/tools/stack_report/stack_report" "$EXROOT/$e/obj" --top "$top" \
+        || die "stack_report failed"
     if [ -n "$run" ]; then
         device_preflight "$port" || exit $?
         echo
         echo "x: flashing + capturing runtime high-water mark (look for 'stack:' lines)..." >&2
         ( cd "$EXROOT/$e" && bash flash.sh "$port" ) >/dev/null 2>&1 || die "flash failed"
-        python3 - "$port" "$BAUD" <<'PY'
-import serial, sys, time
-port, baud = sys.argv[1], int(sys.argv[2])
-s = serial.Serial(port, baud, timeout=1)
-end = time.time() + 20
-seen = False
-while time.time() < end:
-    line = s.readline().decode(errors="replace").rstrip()
-    if "stack:" in line.lower():
-        print("   " + line); seen = True
-s.close()
-if not seen:
-    print("   (no 'stack:' report seen -- does this example call "
-          "ESP32S3.Stack_Usage.Report?)")
-PY
+        #  Pure-bash capture: let the USB-serial-JTAG re-enumerate after the reset,
+        #  read the console raw for ~20 s, then surface any "stack:" report lines.
+        local cap; cap="$(mktemp)"
+        sleep 2
+        stty -F "$port" "$BAUD" raw -echo 2>/dev/null || true
+        timeout 20 cat "$port" > "$cap" 2>/dev/null || true
+        if grep -qi "stack:" "$cap"; then
+            grep -i "stack:" "$cap" | sed 's/^/   /'
+        else
+            echo "   (no 'stack:' report seen -- does this example call ESP32S3.Stack_Usage.Report?)"
+        fi
+        rm -f "$cap"
     fi
 }
 
