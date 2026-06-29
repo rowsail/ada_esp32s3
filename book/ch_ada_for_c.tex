@@ -118,7 +118,9 @@ prefix and you can see at a glance where each name comes from.
 Packages nest. \texttt{ESP32S3.W5500.Sockets} is a \emph{child} of
 \texttt{ESP32S3.W5500}, itself a child of \texttt{ESP32S3}: the dotted name is a
 hierarchy, and that is how the HAL is laid out -- a chip namespace with one package
-per peripheral.
+per peripheral. This is enough to read the code; the next chapter
+(Chapter~\ref{ch:packages}) makes the case that the package is the load-bearing idea
+of the whole design -- reuse, privacy, naming and the build all in one construct.
 
 \section{Control flow}
 

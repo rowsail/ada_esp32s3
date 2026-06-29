@@ -1,0 +1,226 @@
+\chapter{Packages: Reuse, Privacy, and the Build}
+\label{ch:packages}\index{package}
+
+The previous chapter introduced the package in passing -- enough to read the code.
+This chapter argues that the package is the single most important structural idea in
+Ada, and the one that shapes this whole codebase: one peripheral per package, a tidy
+\texttt{ESP32S3.*} hierarchy, a private type guarding every hardware resource, and a
+build that recompiles exactly what changed. The payoff is worth stating up front,
+because it is unusual. In Ada \emph{three} things that are separate, manually-managed
+mechanisms in C collapse into one construct:
+
+\begin{itemize}
+\item the unit of \textbf{privacy} -- what is hidden from the rest of the program;
+\item the unit of \textbf{separate compilation} -- what recompiles together;
+\item the unit of \textbf{dependency} -- what depends on what.
+\end{itemize}
+
+\noindent
+In C those are headers, translation units, and link order: three things that can
+disagree. Folding them into the package, with a compiler-enforced split between
+interface and implementation, is what gives Ada strong encapsulation, fast and
+\emph{correct} incremental builds, and collision-free naming at scale, all at once.
+
+\section{A contract, split from its implementation}\index{package!specification}\index{package!body}
+
+A package comes in two files: a \emph{specification} (\texttt{.ads}) and a
+\emph{body} (\texttt{.adb}). The spec is the contract -- everything a client may
+rely on. The body is the implementation -- which nobody else can see.
+
+\begin{lstlisting}
+--  esp32s3-uart.ads  -- the SPEC: all a client is allowed to know
+package ESP32S3.UART is
+   type Session is limited private;             --  a handle; its insides are hidden
+   procedure Acquire (S : in out Session; Port : UART_Port);
+   procedure Write   (S : Session; Data : Byte_Array);
+private
+   type Session is limited record ... end record; --  visible to the compiler, not to clients
+end ESP32S3.UART;
+\end{lstlisting}
+
+\begin{lstlisting}
+--  esp32s3-uart.adb  -- the BODY: the implementation; sealed
+package body ESP32S3.UART is
+   procedure Write (S : Session; Data : Byte_Array) is ... end Write;
+end ESP32S3.UART;
+\end{lstlisting}
+
+A caller is compiled against the spec \emph{alone}. It cannot name, reach, or depend
+on anything in the body. This single rule is the root of almost everything that
+follows: because clients see only the spec, the body is free to change underneath
+them without breaking -- or even recompiling -- a single line of client code.
+
+\cnote{A C header is just text the preprocessor pastes in; nothing makes it agree
+with the \texttt{.c} that implements it, so the two can silently drift, and a
+\texttt{struct} declared in a header leaks its layout to everyone who includes it.
+An Ada spec \emph{is} the interface, checked by the compiler against its body, and a
+\texttt{private} type hands out a handle whose representation no client can see.}
+
+\section{Reuse and separate compilation}\index{separate compilation}
+
+The package is the unit of reuse. \texttt{ESP32S3.SPI} is written once and
+\texttt{with}-ed by every client that needs it -- the W5500 Ethernet driver, the
+W25Q flash, the LCD -- with no copy-paste and no textual inclusion. Each package is
+compiled independently to an object plus an \texttt{.ali} (Ada Library Information)
+file that records its interface; clients link against the result rather than
+recompiling it.
+
+Because the spec is the reuse boundary, you can replace a body wholesale and every
+client still works untouched. This project does exactly that: the heap body was
+swapped for a TLSF allocator (Chapter~\ref{ch:heap}) and every caller of
+\texttt{new} and \texttt{malloc} was none the wiser, because the \emph{spec} did not
+move.
+
+\emph{Generics} extend reuse to parameterised packages -- a package (or subprogram)
+templated over types and values, instantiated per use. The block-device and
+container code use them to write an algorithm once and specialise it many times
+without giving up type safety.
+
+\section{Namespaces: no collisions by construction}\index{naming collision}\index{package!hierarchy}
+
+Every declaration lives inside a package, so its full name is \texttt{Package.Name}.
+Two packages may both export \texttt{Read} or \texttt{Reset} with no conflict
+whatever: \texttt{ESP32S3.SPI.Read} and \texttt{ESP32S3.UART.Read} are simply
+different names. There is no global namespace to pollute.
+
+\cnote{This is the problem C solves with manual prefixes -- \texttt{uart\_read()},
+\texttt{spi\_read()} -- because every external symbol shares one flat namespace.
+Ada gives you the prefix for free, and it means something: it is the package.}
+
+The hierarchy carries structure. \texttt{ESP32S3.W5500.Sockets} is a \emph{child} of
+\texttt{ESP32S3.W5500}, itself a child of \texttt{ESP32S3}; the dotted name tells you
+at a glance exactly where a name comes from, and the tree groups a subsystem without
+one enormous file. Bringing names into scope is opt-in and granular:
+
+\begin{lstlisting}
+use ESP32S3.GPIO;                 --  drop the prefix for everything in GPIO
+use type ESP32S3.UART.Byte;       --  bring in JUST one type's operators
+package U renames ESP32S3.UART;   --  a short local alias for a long name
+\end{lstlisting}
+
+\noindent
+And collisions are \emph{caught}, not guessed: if two \texttt{use}d packages both
+export \texttt{Read}, an unqualified \texttt{Read} becomes illegal and the compiler
+makes you say which one you mean -- rather than silently picking, as a C macro or a
+flat symbol table would. Overloading (several subprograms of the same name, told
+apart by parameter and result profile) composes with all of this: it resolves
+\emph{within} a package, orthogonally to the qualification \emph{between} packages.
+
+\section{Information hiding}\index{encapsulation}
+
+This is where packages earn their keep on a system that has to be trusted. A private
+type hands clients a handle they can pass around but whose representation they cannot
+see or alter -- and the compiler enforces it; there is no \texttt{\&session->field}
+escape hatch. Better still, anything declared in the \emph{body} cannot even be
+\emph{named} from outside. This codebase's UART driver hides the raw register bus in
+a package nested inside the body, reachable only through one ownership-checked
+gateway:
+
+\begin{lstlisting}
+package body ESP32S3.UART is
+   package State is
+      function Owned (S : Session) return Bus;  --  raises unless S holds the port
+   end State;
+   --  the raw per-port Bus array lives in State's body -- nothing else can name it
+end ESP32S3.UART;
+\end{lstlisting}
+
+\noindent
+A transfer physically cannot reach the registers without proving ownership, because
+there is no other door. The guard is impossible to forget or bypass -- not by
+convention, but because the alternative does not exist in any scope a client can
+reach. Layer on \texttt{limited private} plus a \texttt{controlled} type whose
+\texttt{Finalize} releases the bus on scope exit, and the invariant ``the bus is
+always released'' belongs to the package, not to every caller remembering to clean
+up. The mechanics of private types, \texttt{controlled} finalisation and dispatching
+are the subject of Chapter~\ref{ch:encap}; the point here is that the \emph{package}
+is the boundary they all hang on.
+
+\section{Child packages: extend without modifying}\index{package!child}
+
+A \emph{public} child adds capability to a subsystem without touching or recompiling
+its parent. The W5500 driver ships a core (\texttt{ESP32S3.W5500}) and layers the
+socket engine, DNS and DHCP on top as children -- \texttt{ESP32S3.W5500.Sockets} and
+friends -- each a separate file, none of which forces the parent to change. A child's
+spec and body may see the parent's \emph{private} part, so a family of packages can
+share one hidden representation while still hiding it from the world. A \emph{private}
+child (\texttt{ESP32S3.Foo.Internal}) goes further: it is visible only \emph{within}
+its subsystem, an implementation helper the outside literally cannot \texttt{with} --
+finer-grained than C's file-static, because it scopes across several files of one
+subsystem at once.
+
+\section{How the build system uses packages}\index{gprbuild}\index{build system}
+
+The package model is not just for humans; it drives compilation directly.
+
+\textbf{Dependency is semantic, not textual.} \texttt{with ESP32S3.SPI;} records that
+this unit depends on the \emph{interface} of \texttt{ESP32S3.SPI}. GNAT tracks these
+relationships in the \texttt{.ali} files and builds a dependency graph from them.
+
+\textbf{Recompilation is minimal and exact.} Change a package \emph{body} and only
+that body recompiles -- its clients do not, because their view (the spec) has not
+moved. Change a \emph{spec} and everything that \texttt{with}s it recompiles, because
+the contract changed. This is automatic and precise: no hand-maintained Makefile
+dependency lists, and none of the C ritual where touching one header rebuilds half
+the tree.
+
+\cnote{There is no preprocessor and no textual inclusion, so there are no
+include-order bugs, no header guards, no macro-hygiene traps, and no
+one-definition-rule violations. A unit means the same thing everywhere it is used.}
+
+\textbf{The binder enforces whole-program consistency.} After compilation,
+\texttt{gnatbind} checks that every unit in the closure was compiled against
+consistent interfaces, then computes a legal \emph{elaboration order} -- the order in
+which package-level initialisation runs -- respecting dependencies and any
+\texttt{pragma Elaborate\_All}. You cannot accidentally use a package before it has
+been elaborated; the binder will not produce a program that does.
+
+\textbf{Projects are the outer layer.} A GNAT project file (\texttt{.gpr}) names the
+source directories, the object directory, the switches, and the dependencies on
+\emph{other} projects; \texttt{gprbuild} resolves the project graph and the unit
+graph together (Chapter~\ref{ch:runtime-build}). In this repository the HAL project
+simply globs its \texttt{src/} directory, and GNAT's default file-naming convention
+maps a file to a unit by lowercasing the name and turning dots into hyphens:
+
+\begin{lstlisting}[style=sh]
+ESP32S3.Stack_Usage   <->   esp32s3-stack_usage.ads / .adb
+ESP32S3.W5500.Sockets <->   esp32s3-w5500-sockets.ads / .adb
+\end{lstlisting}
+
+\noindent
+so dropping the two \texttt{ESP32S3.Stack\_Usage} files into \texttt{src/} made a new
+package appear with \emph{no} edit to any build file. An example then needs only
+
+\begin{lstlisting}[style=sh]
+with "../../libs/esp32s3_hal/esp32s3_hal.gpr";
+\end{lstlisting}
+
+\noindent
+and the whole HAL is available to it, every unit named, every dependency tracked.
+
+\section{Packages on bare metal}\index{pragma!Preelaborate}\index{pragma!Pure}
+
+The package is also where the guarantees a restricted runtime cares about attach.
+\texttt{pragma Pure} and \texttt{pragma Preelaborate} are package-level promises --
+``this unit holds no state'' / ``this unit runs no code at elaboration'' -- and the
+compiler \emph{checks} them. On a Zero-Footprint or light-tasking runtime that is not
+a nicety: it is what lets a package be used where there is no elaboration machinery
+at all. Because a client depends only on a spec, the dependency closure of a
+bare-metal application stays small and auditable -- you can enumerate exactly what
+gets linked, which feeds straight into the static-footprint accounting of
+Chapter~\ref{ch:static-mem} and the \texttt{x mem} tool. And because the spec is the
+complete, authoritative interface, the HAL reference (\texttt{./x docs}) is generated
+\emph{from the package specs} -- the contract doubles as the documentation.
+
+\section{The unifying idea}
+
+Come back to the three units that opened the chapter -- privacy, separate
+compilation, dependency. In C they are three mechanisms, separately maintained, free
+to disagree. In Ada they are one: the package, with a compiler-enforced wall between
+spec and body. That is why the same construct that hides a hardware register also
+bounds a recompilation and also names a dependency edge. This codebase is close to a
+pure demonstration of it -- roughly one package per peripheral, a clean
+\texttt{ESP32S3.*} tree, a private type guarding every resource, and a build that
+rebuilds precisely what changed and nothing else. Once you see the package doing all
+three jobs at once, the rest of the architecture in this book reads as the natural
+consequence.
