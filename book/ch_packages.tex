@@ -47,8 +47,8 @@ end ESP32S3.UART;
 
 A caller is compiled against the spec \emph{alone}. It cannot name, reach, or depend
 on anything in the body. This one rule is the root of almost everything that follows.
-Because clients see only the spec, the body can change completely, without breaking
-or even recompiling a single line of client code.
+The body can change completely, without breaking or even recompiling a single line of
+client code, because clients see only the spec.
 
 \cnote{A C header is just text the preprocessor pastes in; nothing makes it agree
 with the \texttt{.c} that implements it, so the two can silently drift, and a
