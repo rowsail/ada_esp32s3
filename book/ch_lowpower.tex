@@ -1,0 +1,103 @@
+\chapter{Low Power: Deep Sleep and Retained State}
+\label{ch:lowpower}\index{deep sleep}\index{low power}\index{RTC}
+
+A board that runs from a battery spends most of its life asleep. The ESP32-S3's
+deepest idle mode, \emph{deep sleep}, drops the whole chip to a handful of
+microamps by powering down the digital core, the radios, and most of the SRAM. The
+catch is what that costs: in deep sleep the core is not paused, it is \emph{off},
+and waking is a chip reset. Your \texttt{Main} does not resume where it left off; it
+starts again from the top. This chapter is about programming with that fact rather
+than against it, through the \texttt{ESP32S3.RTC} driver and the
+\texttt{esp32s3\_rtc\_sleep} example.
+
+\section{What survives, and what does not}\index{retained memory}\index{RTC domain}
+
+One island stays powered through deep sleep: the \emph{RTC domain}. It keeps the
+real-time clock counting, holds a small block of \emph{slow RTC memory}, and can
+hold a few pins in a fixed state. Everything else, the CPU registers, the main SRAM,
+your task stacks, is gone on wake. The consequence is a clean rule:
+
+\begin{quote}
+Any state that must outlive a sleep lives in retained RTC memory. Everything else is
+rebuilt from scratch on every wake.
+\end{quote}
+
+The driver exposes that memory as a small indexed array of 32-bit words:
+
+\begin{lstlisting}
+function  Read  (Index : Word_Index) return Interfaces.Unsigned_32;
+procedure Write (Index : Word_Index; Value : Interfaces.Unsigned_32);
+\end{lstlisting}
+
+A boot counter, a state-machine phase, the next alarm time: these are what go here.
+They survive the reset; a global variable does not.
+
+\section{Why the board woke}\index{wake cause}
+
+Because every wake re-runs \texttt{Main}, the first thing an application asks is
+\emph{why} it is running: a fresh power-on, or a return from sleep? The driver
+answers with the wake cause:
+
+\begin{lstlisting}
+type Wake_Cause is (Power_On, Deep_Sleep_Timer, Deep_Sleep_GPIO, Other_Reset);
+function Last_Wake return Wake_Cause;
+\end{lstlisting}
+
+On \texttt{Power\_On} the application initialises its retained state from nothing. On
+a \texttt{Deep\_Sleep\_*} wake it instead restores from retained memory and continues
+the cycle. That branch, taken once at the top of \texttt{Main}, is the whole shape of
+a low-power application.
+
+\section{Going to sleep}\index{wake source}
+
+Two wake sources cover most uses, a timer and a pin, and the driver gives one call
+for each:
+
+\begin{lstlisting}
+procedure Deep_Sleep_For   (Wake_After : Duration);
+procedure Deep_Sleep_Until (Pin : ESP32S3.GPIO.Pin_Id; High : Boolean := True);
+\end{lstlisting}
+
+\texttt{Deep\_Sleep\_For} arms the RTC timer and sleeps; the chip wakes after roughly
+the requested duration, counted on the always-on RTC clock. \texttt{Deep\_Sleep\_Until}
+arms an RTC GPIO and sleeps until that pin reaches the given level, which is how a
+button or a sensor's interrupt line brings the board back. Neither call returns: the
+next thing that runs is \texttt{Main}, from the top, after the wake reset.
+
+The \texttt{esp32s3\_rtc\_sleep} example is the pattern in miniature. A boot counter
+lives in retained memory. Each boot it reads the wake cause, bumps the counter, and
+for the first few cycles sleeps on a timer. The counter climbing across the resets,
+and the wake cause turning from \texttt{Power\_On} into \texttt{Deep\_Sleep\_Timer},
+is the proof that retained memory, deep sleep, and timer wake all work together.
+\texttt{esp32s3\_rtcio\_hold} shows the companion trick: holding an output pin at a
+fixed level \emph{through} the sleep, so a load stays driven while the core is off.
+
+\section{Holding pins, and the watchdog}\index{pin hold}\index{watchdog}
+
+By default a GPIO floats when the core powers down, which is wrong for any pin that
+must stay asserted, a chip-select held inactive, an enable line, a MOSFET gate. The
+RTC can latch such a pin so it keeps its level across the sleep, and the application
+releases the latch after the next wake once the driver has re-taken the pin.
+
+One system timer can spoil all of this: the RTC super-watchdog, which resets the chip
+if it is not fed. Deep sleep does not feed it, so the driver provides
+\texttt{Disable\_Super\_Watchdog} to disarm it around a sleep. Forgetting this is a
+classic cause of a board that resets a moment after it should have slept.
+
+\section{Practical notes}
+
+\cnote{ESP-IDF gives you \texttt{esp\_deep\_sleep\_start}, \texttt{esp\_sleep\_enable\_*}
+wake-source calls, and the \texttt{RTC\_DATA\_ATTR} attribute to place a variable in
+retained memory. The pieces here are the same pieces; they are just a small Ada
+driver you can read end to end instead of a framework.}
+
+Two things surprise people the first time. First, the \textbf{USB-Serial-JTAG console
+drops on every sleep}, because that peripheral powers down with the core, so a board
+that sleeps in a tight loop is hard to talk to; the \texttt{rtc\_sleep} example
+deliberately stops sleeping after a few cycles and then repeats its final state so
+the console can be captured. Second, a board left \textbf{cycling through sleep too
+fast} can be genuinely hard to reflash, because it is awake for only a sliver of each
+cycle; the recovery is to force the ROM download mode by hand (hold the BOOT button
+while replugging) and flash a benign image. Sleep is a sharp tool, and the wake-reset
+model (the same path the bootloader takes on any reset, Chapter~\ref{ch:bootloader})
+is what makes it both cheap and unforgiving.
