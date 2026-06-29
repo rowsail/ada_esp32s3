@@ -2,16 +2,16 @@
 \label{ch:lisp}\index{LISP}\index{interpreter}
 
 The earlier chapters built drivers, a filesystem, a network stack and a TLS
-implementation -- all in Ada. This one builds a \emph{language}: a small LISP
+implementation, all in Ada. This one builds a \emph{language}: a small LISP
 interpreter, in pure Ada, running an interactive read-eval-print loop on the
 ESP32-S3 and able to drive the peripherals from the prompt. It is a capstone that
-exercises almost everything underneath -- the heap (Chapter~\ref{ch:heap}), the
-octal PSRAM (Chapter~\ref{ch:psram}), exceptions, recursion -- and it turns the
+exercises almost everything underneath (the heap, Chapter~\ref{ch:heap}; the
+octal PSRAM, Chapter~\ref{ch:psram}; exceptions; recursion) and it turns the
 board into a live, scriptable instrument.
 
 LISP is the right choice for this. Its syntax is parentheses, so the reader is a
 page; its evaluator is the classic \texttt{eval}/\texttt{apply}, a few hundred
-lines; and -- crucially -- it fits the grain of this project. A LISP \emph{closure}
+lines; and, crucially, it fits the grain of this project. A LISP \emph{closure}
 is a data structure, not an Ada closure, so the \texttt{No\_Implicit\_Dynamic\_Code}
 restriction that governs every callback in this book never even applies to the
 interpreted language; and the bridge to the drivers is Ada calling Ada, with no
@@ -58,7 +58,7 @@ Arena := new Cell_Array (1 .. Cells);     -- lands in the PSRAM heap
 \end{lstlisting}
 
 That raised a second, subtler issue: building the global environment allocates
-cells, and if it runs during \emph{elaboration} -- before the heap is up -- it
+cells, and if it runs during \emph{elaboration} (before the heap is up) it
 fails. So the interpreter does no allocation at elaboration; \texttt{Lisp.Init} and
 \texttt{Lisp.Eval.Init} are explicit calls the application makes from \texttt{Main},
 once PSRAM and the heap are ready.
@@ -98,7 +98,7 @@ Without reclamation the arena only grows, so a long session eventually exhausts 
 The collector is a textbook mark-sweep, with one design decision that makes it both
 correct and simple: it runs \emph{only between top-level forms}. At the prompt,
 after a form has been evaluated and printed, the only live objects are those
-reachable from the global environment -- nothing is held half-computed in an Ada
+reachable from the global environment: nothing is held half-computed in an Ada
 local. So the global environment is the single root: mark everything reachable from
 it, free the rest.
 
@@ -107,25 +107,25 @@ function GC (Root : Ref) return Natural;   -- mark from Root, sweep, return recl
 \end{lstlisting}
 
 Definitions survive because they live in the global environment; a form's garbage
--- its parse tree, its environment frames, the intermediate values, the result just
-printed -- does not, and is reclaimed. The REPL calls \texttt{GC} after each form,
+(its parse tree, its environment frames, the intermediate values, the result just
+printed) does not, and is reclaimed. The REPL calls \texttt{GC} after each form,
 and \texttt{(room)} reports the cells in use: it stays flat across forms where it
 would otherwise climb without bound.
 
 \cnote{the cells are \texttt{aliased} (so \texttt{'Access} yields a \texttt{Ref}),
-and an aliased object is \emph{constrained by its discriminant} -- you cannot change
+and an aliased object is \emph{constrained by its discriminant}: you cannot change
 a cell's \texttt{Kind} through \texttt{Ref.all}. So the free list is a separate array
 of \emph{indices}, a cell is rewritten by direct array assignment (\texttt{Arena (I)
 := Template}, which does permit the kind to change), and the sweep only relinks
-indices -- it never rewrites a cell. A small rule with a real consequence for the
+indices: it never rewrites a cell. A small rule with a real consequence for the
 data structure.}
 
 \section{Tail calls}
 
 \texttt{eval} is naturally recursive, and a bare-metal task stack is small, so deep
 recursion is a hazard. The fix is tail-call optimisation: \texttt{eval} is written
-as a loop, and the \emph{tail} positions -- the taken branch of an \texttt{if}, the
-last form of a \texttt{begin}, and the last body form of a function call -- update
+as a loop, and the \emph{tail} positions (the taken branch of an \texttt{if}, the
+last form of a \texttt{begin}, and the last body form of a function call) update
 the current expression and environment and go round the loop instead of recursing.
 
 \begin{lstlisting}
@@ -136,7 +136,7 @@ when K_Closure =>
 \end{lstlisting}
 
 A call is in \emph{tail} position when its result is the result of the enclosing
-function -- there is nothing left to do once it returns. Counting down is
+function: there is nothing left to do once it returns. Counting down is
 tail-recursive; the recursive call is the whole of the \texttt{if} branch:
 
 \begin{lstlisting}
@@ -167,13 +167,13 @@ result in an extra argument, so the recursive call is once more the last thing d
 Such a loop runs in constant Ada stack. On the board,
 \texttt{(count 3000)} on a 3000-deep tail recursion returns \texttt{done} where
 without this it would overflow the 64\,KB task stack and crash. The remaining bound
-is the arena, not the stack -- \texttt{(count 5000)} reports a clean
+is the arena, not the stack: \texttt{(count 5000)} reports a clean
 \texttt{out of memory} (there is no mid-form GC yet) and the REPL carries on.
 
 \section{Reaching the drivers}
 
 Here is the payoff. Because the interpreter and the HAL are one Ada binary, exposing
-a driver is not foreign-function glue -- it is an Ada function, registered as a LISP
+a driver is not foreign-function glue. It is an Ada function, registered as a LISP
 primitive, that calls the HAL directly:
 
 \begin{lstlisting}
@@ -188,8 +188,8 @@ end Prim_Gpio_Out;
 Lisp.Eval.Register_Primitive ("gpio-out", Prim_Gpio_Out'Access);
 \end{lstlisting}
 
-Each primitive is library-level and closure-free -- the same rule the HAL callbacks
-obey -- so \texttt{'Access} of it is well-formed. The interpreter core
+Each primitive is library-level and closure-free (the same rule the HAL callbacks
+obey) so \texttt{'Access} of it is well-formed. The interpreter core
 (\texttt{libs/lisp}) stays free of any HAL dependency, so it remains host-testable;
 the bridge lives in the application. With GPIO and ADC bound, the board answers:
 
@@ -202,8 +202,8 @@ lisp> (blink 8)                           done    ; a LISP loop driving a pin
 
 \subsection{Stateful drivers: a handle registry}
 
-GPIO and ADC are addressed by number, but a session-based driver -- SPI, the W5500,
-an ext4 mount, a Modbus connection -- needs the interpreter to refer back to a
+GPIO and ADC are addressed by number, but a session-based driver (SPI, the W5500,
+an ext4 mount, a Modbus connection) needs the interpreter to refer back to a
 specific object. Storing a raw Ada access to that object inside a GC-managed LISP
 value would invite exactly the accessibility and lifetime traps of
 Chapter~\ref{ch:debug}. The clean answer is a \emph{handle registry}: keep the
@@ -226,12 +226,12 @@ lisp> (define s (spi-open))
 lisp> (spi-xfer s (list #x9f 0 0 0))      (255 239 64 25)
 \end{lstlisting}
 
-\texttt{EF 40 19} is the W25Q256 JEDEC identity -- Winbond, 256\,Mbit -- read over SPI
+\texttt{EF 40 19} is the W25Q256 JEDEC identity (Winbond, 256\,Mbit) read over SPI
 from a language that did not exist when the board powered on. The same pattern
 extends to every stateful driver in the HAL, which is the point: a REPL that reaches
 the whole stack is the embedded equivalent of a Python prompt on a workstation, but
 pure Ada, on bare metal, with a garbage collector you can read in an afternoon.
 
-\noindent\textbf{Example:} \texttt{examples/esp32s3\_lisp} -- the REPL, with the
+\noindent\textbf{Example:} \texttt{examples/esp32s3\_lisp}: the REPL, with the
 GPIO/ADC/SPI bridge. The interpreter is \texttt{libs/lisp} (host-tested 53/53:
 reader, evaluator, closures, recursion, GC, tail calls).

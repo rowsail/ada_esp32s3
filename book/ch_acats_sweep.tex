@@ -10,7 +10,7 @@ recovers hundreds of passes that a bundled sweep loses.
 \noindent\fbox{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\small
 \textbf{Note.} The ACATS test suite and its sweep harness
 (\texttt{acats\_build.py}, \texttt{acats\_run.py}, the \texttt{ACATS/} tree) are
-not shipped in this distribution -- they belong to the development repository.
+not shipped in this distribution; they belong to the development repository.
 This chapter is kept as a record of the conformance methodology and results; the
 commands below are shown to document \emph{how} the sweep was run, not as steps to
 reproduce from this repository.}}
@@ -23,21 +23,21 @@ share one flashed image and advance through it with a panic-resume cursor, so a
 crash or hang resets the board and the next boot continues past the offending test.
 That is fast and cheap on flash cycles, but it couples the tests. A neighbour's
 heap churn or secondary-stack residue can exhaust memory mid-batch and reset a later
-test \emph{before} it prints its grade -- the test is recorded as ungraded even
+test \emph{before} it prints its grade: the test is recorded as ungraded even
 though it passes in isolation. On the \texttt{full} profile the bundled run grades
 914 PASS, with a large ungraded tail dominated by these batch artifacts.
 
 The \emph{standalone} sweep removes the coupling completely: every test is compiled
 as its own single-test program, flashed alone, run alone, and graded alone. There is
-no shared cursor, no shared heap, no neighbour. The cost -- roughly 1{,}500 separate
-cross-compiles and flashes -- is absorbed by running the work across many boards and
+no shared cursor, no shared heap, no neighbour. The cost (roughly 1{,}500 separate
+cross-compiles and flashes) is absorbed by running the work across many boards and
 many build trees at once.
 
 \section{Getting the grade off the chip}\index{USB-Serial-JTAG}\index{esp\_rom\_printf}
 
 A subtlety decides whether the standalone approach is even possible. The bare runtime
-sends its console -- including the ACATS \texttt{Report} \texttt{PASSED}/\texttt{FAILED}
-lines -- out the ESP32-S3's \emph{built-in USB-Serial-JTAG}, not the UART pins. The
+sends its console (including the ACATS \texttt{Report} \texttt{PASSED}/\texttt{FAILED}
+lines) out the ESP32-S3's \emph{built-in USB-Serial-JTAG}, not the UART pins. The
 board pool here is wired with ordinary external USB-serial adapters (FTDI and CH343)
 on UART0, which never see that JTAG console.
 
@@ -82,20 +82,20 @@ and the crash heuristic keyed on ``two or more boot banners.'' Flashing with
 \texttt{-{}-no-reset} leaves the chip halted so the capture's own reset is the single
 deterministic boot; a second banner then genuinely means a crash-reboot.
 
-\section{Phase 1 -- parallel build}\index{parallel build}\index{mini-repo}
+\section{Phase 1: parallel build}\index{parallel build}\index{mini-repo}
 
 \texttt{acats\_build.py} compiles each test as a one-test image. The build is the
 bottleneck (a single board sits idle for tens of seconds per cross-compile), so it is
-parallelised. The complication is that the build performs several \emph{shared} writes
--- it regenerates the runtime (\texttt{gen\_runtime.sh}), rebuilds
-\texttt{common/bare/boot/obj}, and stages test sources under \texttt{ACATS/work/run}
--- so naive parallel builds in one tree corrupt each other.
+parallelised. The complication is that the build performs several \emph{shared} writes:
+it regenerates the runtime (\texttt{gen\_runtime.sh}), rebuilds
+\texttt{common/bare/boot/obj}, and stages test sources under \texttt{ACATS/work/run},
+so naive parallel builds in one tree corrupt each other.
 
 Each builder therefore gets its own isolated ``mini-repo'': a copy of
 \texttt{crates}, \texttt{libs}, \texttt{ACATS}, \texttt{ACATS42}, and the two needed
 \texttt{examples} subtrees, laid out at the same depth so the build scripts'
 \texttt{REPO=\$EX/../..} arithmetic still resolves. The copy carries the warm caches,
-so per-test builds stay incremental -- no cold runtime rebuild per worker.
+so per-test builds stay incremental: no cold runtime rebuild per worker.
 
 \begin{lstlisting}[style=sh]
 # OUT/<name>.bin       built OK (the flashable image)
@@ -107,10 +107,10 @@ so per-test builds stay incremental -- no cold runtime rebuild per worker.
 A test that drops to zero buildable units (it needs a library unit the bare runtime
 omits) produces \texttt{tests in image: 0} and becomes a \texttt{.nobuild}. The
 \texttt{.bin} is written atomically (a temp file renamed into place) so Phase 2 never
-sees a partial image, and the phase is resumable -- a test that already has a
+sees a partial image, and the phase is resumable: a test that already has a
 \texttt{.bin} or \texttt{.nobuild} is skipped.
 
-\section{Phase 2 -- parallel run and grade}\index{board pool}
+\section{Phase 2: parallel run and grade}\index{board pool}
 
 \texttt{acats\_run.py} starts one worker per board. Each worker claims the next
 un-run \texttt{.bin}, flashes its board with \texttt{-{}-no-reset}, pulses a reset,
@@ -124,7 +124,7 @@ writes a single marker file holding the raw log:
 
 The phases may overlap: Phase 2 drains \texttt{.bin} files as they appear and exits
 once \texttt{BUILD\_DONE} exists and no un-run image remains. The whole sweep is
-resumable at the file level -- delete a marker and re-run, and only that test is
+resumable at the file level: delete a marker and re-run, and only that test is
 re-flashed. A handful of tests that briefly produced no console (a capture race during
 parallel flashing) and several genuinely slow tasking tests were re-run with a 60-second
 window simply by removing their markers.
@@ -147,7 +147,7 @@ won't-build         & 218     & needs a library unit the bare runtime omits \\
 \end{longtable}
 
 That is \textbf{1{,}296 conformant} (PASS plus N/A), \textbf{zero failures}, and
-\textbf{zero crashes} -- and \textbf{+372 PASS} over the bundled \texttt{full} run
+\textbf{zero crashes}, and \textbf{+372 PASS} over the bundled \texttt{full} run
 (914), recovered purely by removing batch interaction. Building each test alone is what
 turns a co-bundled ``ungraded'' tail back into passes.
 
@@ -162,13 +162,13 @@ and takes its final verdict (\texttt{!!!! CZ1101A TENTATIVELY PASSED}).
 \textbf{Five apparent HUNG were under-resourced, now passing.} \texttt{CXD1008} and
 \texttt{CXD4007} are silent slow tests (\texttt{ImpDef.Switch\_To\_New\_Task} is 1.0\,s, so
 they need minutes, not the default 60\,s window); \texttt{C433A01/02} and \texttt{C953002}
-OOM'd at the 64\,KB secondary-stack default. The harness now honours two tuning lists --
+OOM'd at the 64\,KB secondary-stack default. The harness now honours two tuning lists:
 \texttt{long\_wdt\_tests.txt} (a 240\,s capture window) and \texttt{small\_sec\_stack\_tests.txt}
-(the 4\,KB default for many-task tests) -- and all five PASS.
+(the 4\,KB default for many-task tests), and all five PASS.
 
 \textbf{Two more were program-termination cases, now fixed.}
 \texttt{C761001}'s grade is emitted from a \emph{library-level} controlled object's
-\texttt{Finalize}, which runs only at program termination -- but
+\texttt{Finalize}, which runs only at program termination, but
 \texttt{Configurable\_Run\_Time} makes gnatbind omit the \texttt{finalize\_library} chain,
 so it never ran. Flipping that flag is not viable (it needs a full runtime rebuild and is
 entangled with the runtime's codegen; the \texttt{.ali} flags are identical native-vs-target,
@@ -176,7 +176,7 @@ so it is purely the binder mode). Since the per-unit finalizers
 (\texttt{<unit>\_\_finalize\_spec/body}) are still generated, the build synthesizes a
 finalizer-runner that calls the user units' finalizers in reverse elaboration order (parsed
 from the binder's \texttt{adainit}; weak + guarded), merges it into the image, and the bare
-env body calls it after \texttt{adafinal} -- reached only by a program-main image after its
+env body calls it after \texttt{adafinal}, reached only by a program-main image after its
 main returns, so the wrapped sweep images are unaffected. \texttt{C761001} now PASSES.
 
 \texttt{C94004} is a multi-file test whose real main is \texttt{C94004A}, a library task
@@ -197,7 +197,7 @@ post-mortem shows cpu0 spun past \texttt{ADA\_MAIN}, cpu1 idle) whose grade depe
 shutdown-path behavior the Configurable runtime does not provide.
 
 \textbf{The ten N/A are correct.} \texttt{CXD2001-2004} and \texttt{CXD6001-6003} test
-\emph{uniprocessor} dispatching -- a single ready queue with deterministic ordering --
+\emph{uniprocessor} dispatching (a single ready queue with deterministic ordering),
 which does not apply to a genuine two-core SMP target, so each prints
 \texttt{+ Multi-Processor Configuration} and grades NOT-APPLICABLE. \texttt{C45322},
 \texttt{C45523}, and \texttt{C4A012} rule themselves out for their own reasons.
@@ -205,9 +205,9 @@ which does not apply to a genuine two-core SMP target, so each prints
 \subsection{A wider net: the maximal list across seven boards}\index{Ada.Interrupts}\index{Ada.Calendar}
 
 A later run pushed the net wider on purpose. Rather than the curated
-\texttt{full\_applicable.txt}, it swept the \emph{maximal union} -- the applicable
+\texttt{full\_applicable.txt}, it swept the \emph{maximal union} (the applicable
 list plus everything previously parked in \texttt{jorvik\_skipped.txt} and
-\texttt{ungraded\_tests.txt}, 1{,}536 tests -- one image each, across \emph{seven}
+\texttt{ungraded\_tests.txt}, 1{,}536 tests): one image each, across \emph{seven}
 boards at once (the standalone harness is one worker per serial console, so seven
 consoles run seven tests in parallel). The point of including the already-skipped
 set is that capabilities added since the lists were drawn (the Calendar children,
@@ -215,7 +215,7 @@ and the interrupt work) might turn an old \texttt{nobuild} into a pass; running 
 superset catches that automatically.
 
 It did, and it also earned its keep by finding a real bug. The dynamic
-\texttt{Ada.Interrupts} tests \texttt{CXC3007}/\texttt{CXC3008} \emph{failed} --
+\texttt{Ada.Interrupts} tests \texttt{CXC3007}/\texttt{CXC3008} \emph{failed},
 which is how the restricted-\texttt{a-interr}-stub problem (every dynamic operation
 \texttt{raise Program\_Error}; see the Interrupts chapter) came to light. With the
 delegating \texttt{a-interr} body in place, \texttt{CXC3007} now \texttt{PASSES} and
@@ -226,17 +226,17 @@ too: \texttt{C954025}/\texttt{C954026} (a requeue-with-abort whose timeout is a
 because the kernel's timed-sleep collapsed the \texttt{Absolute\_Calendar} and
 \texttt{Absolute\_RT} delay modes and fed a Calendar-base deadline to the raw
 counter. Shifting a Calendar deadline back into the raw base (adding the BB-time
-\texttt{Epoch}) in \texttt{Timed\_Sleep} fixes both -- they now \texttt{PASS}
+\texttt{Epoch}) in \texttt{Timed\_Sleep} fixes both. They now \texttt{PASS}
 (they are slow and silent, so they join the wide-watchdog list). After these
 fixes the residue on the wider list is what you would expect: the documented
 frontiers (\texttt{CXD1006}, \texttt{CB1010}, \texttt{C480001}, \texttt{CXC7004})
 and the interactive interrupt and suspension tests that need a bench-generated
-interrupt -- no crashes, and no surprise failures in the conformant core.
+interrupt. No crashes, and no surprise failures in the conformant core.
 (\texttt{C96004}'s post-2099 Calendar range was later closed too, by coarsening the
 Julian-day base $5\times$ to reach 2399; see the Limitations chapter. A companion
-fix set \texttt{System.Tick} to the true \texttt{1/240\,MHz} clock period -- it had
+fix set \texttt{System.Tick} to the true \texttt{1/240\,MHz} clock period (it had
 shipped as \texttt{0.0}, telling clock-resolution tests the clock was infinitely
-precise -- which is what \texttt{C96001}/\texttt{C96004} read.)
+precise), which is what \texttt{C96001}/\texttt{C96004} read.)
 
 \section{The embedded profile}\index{embedded profile}\index{Jorvik}\index{No\_Task\_Hierarchy}
 
@@ -246,7 +246,7 @@ single-test image the generated driver adds a do-nothing task to force the envir
 task's secondary stack; that task was declared \emph{nested inside} the \texttt{Main}
 procedure, which is fine under \texttt{full} but violates the embedded / light-tasking
 Jorvik restriction \texttt{No\_Task\_Hierarchy} (a task nested in a subprogram is illegal).
-Every size-1 image therefore failed to build -- the standalone sweep produced
+Every size-1 image therefore failed to build: the standalone sweep produced
 all-no-build. The bundled \texttt{parallel\_sweep} never hit this because it pads
 isolated images with filler tests to keep the batch larger than one, so the helper task
 was never emitted. The fix is to emit the helper as a \emph{library-level} task instead,
@@ -265,10 +265,10 @@ won't-build         & 2   & partition-wide build constraints (see below) \\
 \bottomrule
 \end{longtable}
 
-\textbf{843 conformant, zero HUNG, zero CRASH, zero genuine FAIL} -- above the bundled
+\textbf{843 conformant, zero HUNG, zero CRASH, zero genuine FAIL}, above the bundled
 embedded baseline (836). The one FAIL, \texttt{CXC3004}, is the \emph{interactive} test:
 it waits for a manually-generated external interrupt, which nothing raises on the
-unattended rig -- a documented limitation, not a runtime bug.
+unattended rig: a documented limitation, not a runtime bug.
 
 The two won't-build are notable because neither is a missing Ada library unit --
 each is a \emph{partition-wide} build constraint. \texttt{CXH1001} (Annex H) uses the
@@ -289,17 +289,17 @@ provided on the \texttt{embedded} and \texttt{full} profiles, from a shared
 \texttt{calendar\_overlay/} applied by \texttt{gen\_runtime.sh}:
 
 \begin{itemize}
-  \item \texttt{Ada.Calendar.Arithmetic} -- day arithmetic on the parent's
+  \item \texttt{Ada.Calendar.Arithmetic}: day arithmetic on the parent's
         Modified-Julian-Day representation (exact; the bare runtime has no leap-second table,
         so \texttt{Leap\_Seconds} is always zero).
-  \item \texttt{Ada.Calendar.Formatting} -- \texttt{Image}/\texttt{Value}/\texttt{Split}/
+  \item \texttt{Ada.Calendar.Formatting}: \texttt{Image}/\texttt{Value}/\texttt{Split}/
         \texttt{Time\_Of}/\texttt{Day\_Of\_Week}, written against the parent's public API with
         hand-rolled decimal formatting (the runtime excludes the \texttt{'Image}/\texttt{'Value}
         helper units, so the displayed fraction is truncated and \texttt{Value} raises on
         out-of-range fields, both as the language requires).
-  \item \texttt{Ada.Calendar.Time\_Zones} -- bare metal has no time-zone database, so the
+  \item \texttt{Ada.Calendar.Time\_Zones}: bare metal has no time-zone database, so the
         Calendar keeps UTC and \texttt{Local\_Time\_Offset} returns zero.
-  \item \texttt{Ada.Calendar.Delays} -- \texttt{delay until} on a \texttt{Calendar.Time},
+  \item \texttt{Ada.Calendar.Delays}: \texttt{delay until} on a \texttt{Calendar.Time},
         delegated to the SMP-hardened \texttt{Ada.Real\_Time.Delays}.
   \item the obsolescent J.1 top-level \texttt{Calendar} rename, so Ada-83 \texttt{with Calendar;}
         tests build.
@@ -314,7 +314,7 @@ full time-base rewrite first assumed, the Julian-day base is coarsened $5\times$
 resolution for 5\,ns and buying the extra three centuries within signed 64 bits --
 see the Limitations chapter. \texttt{light-tasking} is deliberately
 \emph{excluded}: it is a \texttt{No\_Exception\_Propagation} profile, so every
-\texttt{Time\_Error}/\texttt{Constraint\_Error} becomes a board reset -- \texttt{Ada.Calendar}
+\texttt{Time\_Error}/\texttt{Constraint\_Error} becomes a board reset. \texttt{Ada.Calendar}
 is unusable and grades nothing there, which is exactly why bb-runtimes omits it from the Jorvik
 profile. By contrast \texttt{Ada.Numerics} needed no work at all: the parent, elementary
 functions, the random generators, complex types, real arrays and big integers already ship and
@@ -324,6 +324,6 @@ compile into both profiles (HW-verified via \texttt{CXG2003}, \texttt{CXG2009}, 
 
 The standalone sweep is slower per test, but it produces an unambiguous, file-per-test
 record: every outcome is one marker file containing the exact console transcript that
-justified it. Cross-checking the two methods is itself a result -- the bundled run's
+justified it. Cross-checking the two methods is itself a result: the bundled run's
 ungraded tail is explained, test by test, by the standalone run's passes, and the only
 remaining non-passes are a short, named list of artifacts and documented frontiers.

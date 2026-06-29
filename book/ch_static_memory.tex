@@ -3,7 +3,7 @@
 
 A workstation program runs in virtual memory: the stack grows until it hits a
 guard page, the heap until the OS says no. A bare-metal ESP32-S3 has neither
-luxury. There is a fixed amount of internal SRAM -- a few hundred kilobytes --
+luxury. There is a fixed amount of internal SRAM (a few hundred kilobytes)
 divided at link time into \texttt{.data}, \texttt{.bss}, the task stacks and
 whatever is left for a heap, with the external PSRAM as optional overflow. Nothing
 grows on demand; if a stack runs past its allotment it corrupts whatever is below
@@ -12,7 +12,7 @@ use, worst case, and does it fit?} This chapter is the accounting.
 
 The three runtime profiles (Chapter~\ref{ch:profiles}) make very different
 promises here, so the chapter keeps coming back to them: \texttt{light-tasking} is
-the austere one -- no heap, no secondary stack, no finalization -- while
+the austere one (no heap, no secondary stack, no finalization), while
 \texttt{embedded} and \texttt{full} trade that austerity for a real heap and full
 exceptions.
 
@@ -31,7 +31,7 @@ set 64\,KiB and 128\,KiB).
 export ENV_STACK_SIZE=131072    # 128 KiB env-task stack for this example
 \end{lstlisting}
 
-When even that is not enough -- the full-profile ACATS sweep elaborates very deep --
+When even that is not enough (the full-profile ACATS sweep elaborates very deep),
 the \texttt{ENV\_STACK\_PSRAM} option moves the whole env stack to the top of the
 8\,MB PSRAM, trading a little access latency for a great deal of room. The
 bootloader maps PSRAM \emph{before} \texttt{start.S} sets the stack pointer
@@ -41,7 +41,7 @@ bootloader maps PSRAM \emph{before} \texttt{start.S} sets the stack pointer
 
 Every other task gets its own fixed stack, sized by the \texttt{Storage\_Size}
 aspect on the task or, if you say nothing, the runtime default from
-\texttt{System.Parameters} -- 20\,KiB under \texttt{light-tasking}, 12\,KiB under
+\texttt{System.Parameters}: 20\,KiB under \texttt{light-tasking}, 12\,KiB under
 \texttt{full} (smaller there only so the ACATS sweep can hold more tasks at once).
 A task that knows it is shallow should say so and reclaim the rest:
 
@@ -51,12 +51,12 @@ task type Poller with Storage_Size => 4 * 1024;   -- 4 KiB is plenty
 
 Because the Jorvik/Ravenscar model (Chapter~\ref{ch:tasking}) forbids dynamic task
 creation, the \emph{set} of tasks is known at compile time, so the sum of all task
-stacks is a static quantity -- you can add it up. There is no pool of tasks coming
+stacks is a static quantity: you can add it up. There is no pool of tasks coming
 and going to reason about; what you declare is what you pay.
 
 \section{The secondary stack}\index{secondary stack}
 
-Ada returns unconstrained results -- a \texttt{String} of computed length, say --
+Ada returns unconstrained results (a \texttt{String} of computed length, say)
 on a \emph{secondary} stack, separate from the primary one. Its per-task size is set
 by the binder \texttt{-D} switch you will see in every project file
 (\texttt{-D8k}, \texttt{-D16k}); the default is a modest 4\,KiB.
@@ -67,7 +67,7 @@ for Switches ("Ada") use ("-D16k", "-Q2", "-Mada_main");
 
 The neighbouring \texttt{-Q} switch is subtler and worth knowing. Under
 \texttt{-Q2} (the bareboard default) each task's secondary stack is handed out from
-a \emph{monotonic pool} that is never reclaimed -- fine for the steady-state task
+a \emph{monotonic pool} that is never reclaimed, fine for the steady-state task
 set, but a program that created and destroyed tasks forever would exhaust it. The
 \texttt{full} profile carries a runtime patch that makes secondary stacks
 heap-managed instead (built \texttt{-Q0}), so they are freed with the task; it is
@@ -78,14 +78,14 @@ one of the concrete differences between the profiles, not just a flag.
 This is where the profiles split hardest. \texttt{light-tasking} has \emph{no heap}:
 it sets \texttt{No\_Allocators}, and its \texttt{s-memory} ``allocator'' is a bump
 pointer whose \texttt{Free} raises \texttt{Program\_Error}. Memory is whatever you
-declared statically; \texttt{new} is a compile-time error. That is a feature -- it
+declared statically; \texttt{new} is a compile-time error. That is a feature: it
 is the profile you reach for when you want a provably bounded memory footprint and
 no fragmentation, ever.
 
 \texttt{embedded} and \texttt{full} provide a real heap: a TLSF (Two-Level
 Segregated Fit) allocator with O(1) \texttt{malloc}/\texttt{free} and bounded
 fragmentation, described in full in Chapter~\ref{ch:heap}. Its arena is placed by
-the build -- by default the leftover internal DRAM after \texttt{.data},
+the build: by default the leftover internal DRAM after \texttt{.data},
 \texttt{.bss} and the stacks (a couple of hundred KiB), or, with
 \texttt{HEAP\_PSRAM=1}, the 8\,MB PSRAM for programs that need real room (the LISP
 arena and the ext4 block cache both live there).
@@ -96,7 +96,7 @@ export HEAP_SIZE=1 HEAP_PSRAM=1   # heap arena in PSRAM, not internal DRAM
 
 \section{What the profile forbids}
 
-Memory bounding is really enforced by \emph{restrictions} -- pragmas the profile's
+Memory bounding is really enforced by \emph{restrictions}: pragmas the profile's
 \texttt{system.ads} sets, which make the expensive constructs compile errors rather
 than runtime surprises. The contrast is the whole story:
 
@@ -118,16 +118,16 @@ library-level callbacks (Chapter~\ref{ch:driver-design}); \texttt{full} re-point
 nested-subprogram trampolines into executable memory at task creation instead
 (Chapter~\ref{ch:runtime-build}).
 
-Under \texttt{light-tasking} the combination means a program's entire memory use --
-every stack, no heap, no hidden secondary-stack growth -- is fixed at link time and
+Under \texttt{light-tasking} the combination means a program's entire memory use
+(every stack, no heap, no hidden secondary-stack growth) is fixed at link time and
 checkable by the compiler. Each step up to \texttt{embedded} and \texttt{full} buys
 expressiveness (exceptions you can catch, controlled types, dynamic data) at the
 cost of a quantity you now have to \emph{budget} rather than have proven zero.
 
 \section{Doing the accounting}\index{stack!analysis}\index{tooling!x stack}
 
-The static quantities above -- the task set, each stack size, the heap-arena
-bounds, the restriction set -- are all pinned at link time, so they can be
+The static quantities above (the task set, each stack size, the heap-arena
+bounds, the restriction set) are all pinned at link time, so they can be
 \emph{measured} rather than guessed. The repository wires three tools onto the
 \texttt{x} command for exactly that.
 
@@ -148,11 +148,11 @@ byte-identical), and
 \noindent
 forces an analysis rebuild and reports two things. First, the biggest single
 frames, with any \texttt{dynamic}/\texttt{bounded} ones (a variable-length array or
-\texttt{alloca} whose size is not a compile-time constant) called out -- those are
+\texttt{alloca} whose size is not a compile-time constant) called out. Those are
 the frames that defeat static bounding. Second, the deepest stack-summed call chain
 from each entry root: because Ravenscar/Jorvik forbids recursion the application's
 call graph is a DAG, so the longest path is a genuine bound on the code GCC
-compiled. The figure covers application units only -- the pinned runtime is built
+compiled. The figure covers application units only: the pinned runtime is built
 without the switches, so calls into it are marked \texttt{+ext} and excluded; the
 watermark below closes that gap. If the analyser \emph{does} find a cycle it says
 so loudly (\texttt{!!RECURSIVE}) and downgrades that chain's number to a lower
@@ -165,7 +165,7 @@ hand-written assembly. To account for those you measure the real peak by
 \emph{painting}: fill the unused stack with a sentinel word, run a representative
 workload, then scan for the lowest word the program actually overwrote. The gap
 from there to the top of the stack is the high-water mark. \texttt{ESP32S3.Stack\_Usage}
-does this for the environment task in a few lines --
+does this for the environment task in a few lines:
 
 \begin{lstlisting}[language=ada]
 ESP32S3.Stack_Usage.Paint_Env_Stack;   --  once, as early in Main as possible
@@ -179,19 +179,19 @@ region bounds; the same \texttt{Paint}/\texttt{High\_Water} primitives take expl
 bounds so a library-level task can measure its own stack the same way. Because a
 sentinel-valued word the program legitimately wrote looks pristine, the scan stops
 at the first overwritten word from the bottom and so never \emph{under}-reports the
-peak -- read it as ``at least this much.'' The \texttt{esp32s3\_stack\_usage}
+peak: read it as ``at least this much.'' The \texttt{esp32s3\_stack\_usage}
 example demonstrates the jump as a deep call runs, and \texttt{./x stack <example>
 -{}-run} flashes it and captures the \texttt{stack:} line over the serial console,
 so the static estimate and the measured peak sit side by side.
 
 \subsection{Where the rest of the memory went: \texttt{x mem}}\index{tooling!x mem}
 
-Stacks are one line item; \texttt{./x mem <example>} prints the rest -- the loaded
+Stacks are one line item; \texttt{./x mem <example>} prints the rest: the loaded
 section sizes from the linked ELF, split into flash (code + read-only data), the
 DRAM \texttt{.data}/\texttt{.bss}, the IRAM image and any reserved PSRAM, alongside
 the configured \texttt{board.ads} bounds. Between \texttt{x stack} and \texttt{x mem}
-the whole static budget -- every byte of flash and RAM, and the worst-case and
-measured depth of every stack -- is visible from two commands. Turning those numbers
+the whole static budget (every byte of flash and RAM, and the worst-case and
+measured depth of every stack) is visible from two commands. Turning those numbers
 into a signed-off worst-case for a hard-real-time deployment is still your
 judgement call (headroom, the \texttt{+ext} runtime contribution, the margin on a
 \texttt{dynamic} frame), but the numbers themselves are now produced for you, not
@@ -199,8 +199,8 @@ reasoned about on paper.
 
 \subsection{A worked example: the HTTPS client}
 
-The \texttt{esp32s3\_tls\_weather} example -- a pure-Ada TLS~1.3 client fetching a
-live forecast over the W5500 Ethernet stack -- is the most demanding example in the
+The \texttt{esp32s3\_tls\_weather} example (a pure-Ada TLS~1.3 client fetching a
+live forecast over the W5500 Ethernet stack) is the most demanding example in the
 tree, so it is the one worth putting under the tools. \texttt{./x stack tls\_weather}
 reports:
 
@@ -222,20 +222,20 @@ reports:
 
 \noindent
 One number dominates everything: \texttt{Main} carries a \textbf{4\,832-byte,
-\texttt{dynamic} frame}. That is the TLS record machinery -- handshake transcript,
-record buffers, certificate-chain working storage -- laid out on the environment
+\texttt{dynamic} frame}. That is the TLS record machinery (handshake transcript,
+record buffers, certificate-chain working storage) laid out on the environment
 task's stack, and the \texttt{dynamic} tag is the tool telling you the truth: part
 of that frame is sized at run time, so the 5\,008-byte worst-case is a \emph{floor},
 not a ceiling, and the \texttt{+ext} tag adds the (uncounted) runtime frames beneath
-it. This is precisely the case the static pass cannot close on its own -- and
+it. This is precisely the case the static pass cannot close on its own, and
 exactly why the environment-task stack for this example is set to 32\,KiB, a
 deliberately generous margin over the $\sim$5\,KiB static floor precisely because
 that floor is not the whole story, and why you confirm it with the painted
 watermark rather than trusting the static sum. The companion
 \texttt{esp32s3\_stack\_usage} example shows that watermark live on the board: its
 baseline \texttt{used=432} jumps to \texttt{used=6\,512} (of a 16\,KiB env stack)
-the moment a deliberately deep call runs, while the static pass -- defeated by that
-call's recursion -- could report only a 384-byte lower bound. Estimate 384,
+the moment a deliberately deep call runs, while the static pass, defeated by that
+call's recursion, could report only a 384-byte lower bound. Estimate 384,
 measured 6\,512: that gap is the entire reason both numbers exist, and why the same
 \texttt{Paint\_Env\_Stack}/\texttt{Report} pair belongs in an instrumented TLS fetch
 when you need the real figure rather than the floor.
@@ -251,7 +251,7 @@ The footprint side, from \texttt{./x mem tls\_weather}:
 
 \noindent
 About 287\,KiB of flash (the TLS, X.509 and W5500 code is substantial) and roughly
-153\,KiB of RAM, the bulk of it the $\sim$118\,KiB of \texttt{.bss} -- the static
+153\,KiB of RAM, the bulk of it the $\sim$118\,KiB of \texttt{.bss}: the static
 session buffers, the W5500 socket storage and the heap arena, all reserved at link
 time exactly as this chapter argued they should be. Nothing here grows on demand:
 the whole budget, code and data and stack alike, is a fixed number you can read off

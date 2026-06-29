@@ -20,14 +20,14 @@ Ada programs reach the heap by two doors. The first is the language itself: ever
 \texttt{new T} (and every access-type allocator, and the storage pool behind
 unconstrained returns when no other pool is named) ultimately calls the runtime's
 allocation primitive, which is wired to \texttt{\_\_gnat\_malloc} / the C
-\texttt{malloc} symbol. The second door is C code linked into the image -- a
+\texttt{malloc} symbol. The second door is C code linked into the image (a
 vendor blob, a bit of glue, anything that calls \texttt{malloc}, \texttt{calloc},
-\texttt{realloc} or \texttt{free}. Both doors open onto the single allocator
+\texttt{realloc} or \texttt{free}). Both doors open onto the single allocator
 described here.
 
-What does \emph{not} come here is the secondary stack. Ada's secondary stack --
+What does \emph{not} come here is the secondary stack. Ada's secondary stack,
 which carries function results whose size is not known to the caller, such as an
-unconstrained \texttt{String} return -- is a separate, contiguously-managed
+unconstrained \texttt{String} return, is a separate, contiguously-managed
 region with its own mark/release discipline; it never touches \texttt{malloc}.
 Keeping the two apart is what lets the leanest profile run with no heap at all.
 
@@ -35,7 +35,7 @@ That leanest profile is \texttt{light-tasking}: it is configured
 \texttt{No\_Secondary\_Stack} and heap-less, with only a bump allocator that can
 hand out memory but never reclaim it (see \S\ref{ch:profiles}). A program built
 \texttt{light-tasking} that calls \texttt{new} in a loop will eventually run the
-bump pointer off the end of the arena -- by design because that profile is for
+bump pointer off the end of the arena, by design because that profile is for
 code that is statically sized and never frees. The \texttt{embedded} and
 \texttt{full} profiles are the ones that link the real allocator, so on those
 \texttt{free} actually returns memory to the pool and a long-running program can
@@ -45,14 +45,14 @@ allocate and release indefinitely.
 
 The allocator TLSF replaced kept a single linked list of free blocks. To satisfy
 a request it walked that list from the head looking for the first block large
-enough -- O(n) in the number of free blocks. Worse, to keep fragmentation in
+enough: O(n) in the number of free blocks. Worse, to keep fragmentation in
 check it coalesced on every \texttt{free} by scanning the whole list to find the
-freed block's physical neighbours -- again O(n). For a small internal-RAM heap
+freed block's physical neighbours, again O(n). For a small internal-RAM heap
 with a handful of live blocks, nobody notices. The problem is the motivating case
 for this whole chapter: a \emph{large, slow} heap.
 
 The ESP32-S3 can map up to 8\,MiB of external PSRAM, and that PSRAM is an order of
-magnitude slower than on-chip SRAM -- it runs as DDR with a wait state, so every
+magnitude slower than on-chip SRAM: it runs as DDR with a wait state, so every
 header you touch is an off-chip burst. Put a heap there (the
 \texttt{HEAP\_PSRAM=1} mode of the on-target test does exactly this) and a list
 that may hold thousands of free blocks turns each allocate \emph{and} each free
@@ -109,7 +109,7 @@ A header-size subtlety worth flagging because it bit this code: \texttt{Hdr\_Sz}
 is a compile-time \emph{static} constant, not derived from
 \texttt{Hdr'Object\_Size}. An object-size-based constant would be \emph{elaborated}
 into \texttt{.bss}, and the ZFP boot has no \texttt{adainit} to run that
-elaboration -- so the constant would read as garbage and produce wild pointers.
+elaboration, so the constant would read as garbage and produce wild pointers.
 For the same reason all the mutable state (\texttt{Heads}, the bitmaps,
 \texttt{Pool\_Lo}, \texttt{Sentinel}) has zero initializers, which places it in
 \texttt{.bss} (zeroed by \texttt{start.S}) rather than \texttt{.data}.
@@ -132,8 +132,8 @@ Heads : array (0 .. FL_Count - 1, 0 .. SL_Count - 1) of System.Address;
 
 \texttt{Heads (FL, SL)} is the head of a doubly-linked list of free blocks whose
 sizes all fall in that one bucket. A free block stores its list links in the first
-two words of its \emph{payload} (it is free, so the payload is unused) --
-\texttt{Next\_Free} / \texttt{Prev\_Free} -- which is why the minimum payload is
+two words of its \emph{payload} (it is free, so the payload is unused),
+\texttt{Next\_Free} / \texttt{Prev\_Free}, which is why the minimum payload is
 two words wide.
 
 The \texttt{Mapping} function turns a size into its \texttt{(FL, SL)} indices.
@@ -153,7 +153,7 @@ request rounding to 1536 bytes is \texttt{0b110\_0000\_0000}, whose top bit
 below that bit: $(1536 \gg (10-5)) \mathbin{\mathrm{and}} 31 = 48
 \mathbin{\mathrm{and}} 31 = 16$, and $\mathrm{FL} = 10-9+1 = 2$. So 1536-byte
 blocks live in bucket \texttt{Heads (2, 16)}. A 2048-byte block
-(\texttt{0b1000\_0000\_0000}, top bit 11) lands in \texttt{Heads (3, 0)} -- a
+(\texttt{0b1000\_0000\_0000}, top bit 11) lands in \texttt{Heads (3, 0)}, a
 different first-level class, exactly as you want at a power-of-two boundary.
 
 \subsection{Bitmaps + find-first-set: O(1) bucket lookup}
@@ -171,7 +171,7 @@ To allocate, \texttt{Mapping\_Search} first rounds the request \emph{up} so that
 it ``good-fit'' rather than risking a too-small first block). Then
 \texttt{Find\_Suitable} masks off the buckets at or below the requested class and
 uses find-first-set (\texttt{FFS}) to jump straight to the smallest non-empty
-bucket that fits -- first within the same FL class, then, if that class is
+bucket that fits: first within the same FL class, then, if that class is
 exhausted, by consulting \texttt{FL\_Bitmap} for the next non-empty class up. Two
 masked bit-scans, no list walk. That is the O(1) \texttt{malloc}.
 
@@ -201,8 +201,8 @@ step depends on the number of free blocks.}
 \subsection{Allocate, free, split, coalesce}\index{coalescing}
 
 \texttt{Allocate} rounds the request to a 16-byte multiple (and up to the
-two-word minimum payload), finds a bucket, pops the head block off it, and --
-if the block is substantially larger than needed -- \texttt{Split}s it: the
+two-word minimum payload), finds a bucket, pops the head block off it, and,
+if the block is substantially larger than needed, \texttt{Split}s it: the
 front becomes the returned block and the tail is re-inserted as a smaller free
 block (updating both its and its successor's \texttt{Prev\_Phys}). The leftover
 is dropped back into whatever bucket its new size maps to.
@@ -211,8 +211,8 @@ is dropped back into whatever bucket its new size maps to.
 keep. It marks the block free, then coalesces \emph{forward} (if
 \texttt{Next\_Phys} is free, remove it from its bucket and absorb it) and
 \emph{backward} (if \texttt{Prev\_Phys} is free, absorb into it). The terminating
-\texttt{Sentinel} block -- a zero-size, permanently-\emph{used} block at the top
-of the arena -- is what makes the forward check safe without a bounds test: the
+\texttt{Sentinel} block (a zero-size, permanently-\emph{used} block at the top
+of the arena) is what makes the forward check safe without a bounds test: the
 real top block always has a non-free successor to stop at. After coalescing, the
 single resulting block is inserted into its bucket and the relevant bitmap bits
 are set. Every one of these steps touches a fixed, small number of blocks.
@@ -247,7 +247,7 @@ pragma Export (C, Task_Stack_Free, "__gnat_task_stack_free");
 
 \subsection{The critical section}\index{critical section}
 
-\texttt{tlsf\_core} is not internally locked -- by design, so the host harness
+\texttt{tlsf\_core} is not internally locked, by design, so the host harness
 can drive it single-threaded. On target, multiple agents reach the heap: the
 environment task, finalizers running RAII cleanup, and any task calling
 \texttt{new}. \texttt{bare\_heap} serialises them with a global critical section
@@ -267,8 +267,8 @@ end Enter_Crit;
 \end{lstlisting}
 
 This matches what the old C heap did. \texttt{Calloc} is careful to zero the
-returned block \emph{outside} the lock -- it only needs the lock to allocate, not
-to memset -- which keeps the critical section short.
+returned block \emph{outside} the lock. It only needs the lock to allocate, not
+to memset, which keeps the critical section short.
 
 \subsection{An arena chosen at link time}
 
@@ -283,8 +283,8 @@ Heap_End  : Storage_Element
 \end{lstlisting}
 
 \texttt{bare\_build.sh} supplies these via \texttt{-{}-defsym}, pointing them
-either at the leftover internal DRAM after \texttt{.bss}, or -- for the large
-heap -- at the PSRAM region. The Ada is identical either way; only the two
+either at the leftover internal DRAM after \texttt{.bss}, or (for the large
+heap) at the PSRAM region. The Ada is identical either way; only the two
 \texttt{-{}-defsym} values differ. The first \texttt{malloc} lazily calls
 \texttt{T.Init} over whatever region those symbols delimit (a \texttt{Started}
 flag, also \texttt{.bss}-resident, gates this).
@@ -294,7 +294,7 @@ flag, also \texttt{.bss}-resident, gates this).
 The full profile allocates each task's primary stack on the heap, which raises a
 nasty question: when a task terminates, who frees the stack it was \emph{running
 on}, and how do we avoid pulling it out from under a context that has not yet
-switched away -- possibly on the other core? \texttt{Task\_Stack\_Free}
+switched away, possibly on the other core? \texttt{Task\_Stack\_Free}
 (exported as \texttt{\_\_gnat\_task\_stack\_free}) handles this with a bounded
 spin against the runtime's per-core running-thread table:
 
@@ -316,7 +316,7 @@ end Task_Stack_Free;
 
 It frees only once the terminating thread is no longer the running thread on
 either core. If the thread somehow never clears (the spin bound expires), it
-chooses to \emph{leak} the stack rather than risk a use-after-free -- a deliberate
+chooses to \emph{leak} the stack rather than risk a use-after-free: a deliberate
 ``leak-on-timeout'' policy.
 
 \section{Validation}
@@ -329,7 +329,7 @@ and beats on them: an initial sanity pass (alloc/align/free, OOM returns null,
 realloc-grow preserves data), then 300\,000 randomised alloc/free steps over a
 64\,KiB arena, each allocation stamped with a unique byte pattern that is
 re-verified before every free so any overlap or stale pointer is caught. After a
-full drain it asserts the arena coalesced back to (nearly) one block -- proof the
+full drain it asserts the arena coalesced back to (nearly) one block: proof the
 free path actually merges. \texttt{allocator\_test.adb} instantiates that harness
 over \emph{both} the old first-fit core and \texttt{Tlsf\_Core}, so a behavioural
 divergence between them would show up.
@@ -338,7 +338,7 @@ The structural check throughout is \texttt{Invariants\_Hold}, run after every
 operation. It walks the physical chain from \texttt{Pool\_Lo} to the
 \texttt{Sentinel} and verifies: each block is 16-aligned, each
 \texttt{Prev\_Phys} points back to the actual previous block, sizes are at least
-the minimum and stay within the arena, and -- the key correctness property -- no
+the minimum and stay within the arena, and (the key correctness property) no
 two physically-adjacent blocks are both free (i.e.\ coalescing is complete). The
 sentinel must be zero-size, used, and correctly back-linked.
 
@@ -346,7 +346,7 @@ On hardware, \texttt{examples/esp32s3\_heaptest} drives the live
 \texttt{malloc}/\texttt{free} symbols directly over the real arena: 50\,000 random
 operations, 32 live blocks, the same pattern-stamping idea, reporting
 \texttt{PASS}/\texttt{FAIL} over \texttt{ESP32S3.Log}. Its \texttt{HEAP\_PSRAM=1}
-build relocates the arena into the 8\,MiB PSRAM at \texttt{0x3D000000} -- the
+build relocates the arena into the 8\,MiB PSRAM at \texttt{0x3D000000}: the
 large, slow heap that motivated TLSF in the first place. See \S\ref{ch:hal} for
 how PSRAM is brought up before the heap can use it.
 
@@ -355,8 +355,8 @@ how PSRAM is brought up before the heap can use it.
 \texttt{light-tasking} links neither \texttt{bare\_heap} nor \texttt{tlsf\_core};
 it is heap-less and bump-only (\S\ref{ch:profiles}). \texttt{embedded} and
 \texttt{full} link both, so \texttt{malloc}/\texttt{free}/\texttt{realloc}/%
-\texttt{calloc} -- and therefore Ada's \texttt{new} -- are backed by TLSF; the
+\texttt{calloc} (and therefore Ada's \texttt{new}) are backed by TLSF; the
 full profile additionally uses \texttt{Task\_Stack\_Free} for per-task primary-%
 stack reclamation. And because the same \texttt{tlsf\_core} compiles and runs
 host-native, the allocator the chip runs is the very allocator the host test
-exercises -- not a model of it.
+exercises, not a model of it.

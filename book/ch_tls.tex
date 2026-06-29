@@ -2,11 +2,11 @@
 \label{ch:tls}
 
 The previous chapter put a sockets API over the W5500 and fetched a weather
-forecast -- over \emph{plain} HTTP, on port 80. That is fine for a hobby query on
+forecast, over \emph{plain} HTTP, on port 80. That is fine for a hobby query on
 a trusted LAN, but the moment the data matters, or the path crosses the open
 internet, the answer is HTTPS: TLS over the TCP stream. The W5500 carries TCP/IP
-in silicon but knows nothing of TLS, so the entire protocol -- the handshake, the
-key schedule, certificate validation, the record layer -- has to run on our side.
+in silicon but knows nothing of TLS, so the entire protocol (the handshake, the
+key schedule, certificate validation, the record layer) has to run on our side.
 
 The usual way to get TLS onto a microcontroller is to link a C library: mbedTLS,
 BearSSL, wolfSSL. This project does not. The whole point has been to see how far
@@ -21,7 +21,7 @@ and Further Reading (Chapter~\ref{ch:references}).} (a vendored, SPARK-proven Ad
 cryptography library) for the public-key and hashing primitives that are
 delicate to get right, and the \textbf{ESP32-S3's hardware crypto accelerators}
 (AES, SHA, RSA/MPI, the RNG) for the heavy or timing-sensitive arithmetic. What is
-left -- the protocol itself, the X.509 parser, the P-256 curve -- is hand-written
+left (the protocol itself, the X.509 parser, the P-256 curve) is hand-written
 Ada, bounds-checked and profile-portable like everything else.
 
 \cnote{On ESP-IDF you would call \texttt{esp\_tls}, a thin wrapper over mbedTLS,
@@ -36,18 +36,18 @@ the wire is accounted for in code you can read.}
 
 TLS is a \emph{record layer} sitting on the TCP stream: after a handshake agrees
 on keys, every application byte travels inside an encrypted, authenticated record.
-So the TLS client is not a new transport -- it is a layer between the application
+So the TLS client is not a new transport: it is a layer between the application
 and \texttt{GNAT.Sockets}, using the same \texttt{Send\_Socket} /
 \texttt{Receive\_Socket} from Chapter~\ref{ch:networking} underneath.
 
 \begin{figure}[ht]
 \centering
 \begin{tikzpicture}[node distance=2mm]
-\node[layer, fill=blue!9] (app) {Your application -- an HTTPS GET, a JSON reply};
-\node[layer, below=of app] (tls) {\texttt{TLS\_Client} -- handshake, key schedule, record encrypt/decrypt};
-\node[layer, below=of tls] (cert) {\texttt{X509}, \texttt{Cert\_Verify}, \texttt{Chain\_Verify} -- certificate validation};
+\node[layer, fill=blue!9] (app) {Your application: an HTTPS GET, a JSON reply};
+\node[layer, below=of app] (tls) {\texttt{TLS\_Client}: handshake, key schedule, record encrypt/decrypt};
+\node[layer, below=of tls] (cert) {\texttt{X509}, \texttt{Cert\_Verify}, \texttt{Chain\_Verify}: certificate validation};
 \node[layer, below=of cert] (crypto) {\texttt{P256} (pure Ada) $\;\cdot\;$ SPARKNaCl (X25519, SHA, HKDF) $\;\cdot\;$ HW AES/SHA/RSA/RNG};
-\node[layer, below=of crypto] (sock) {\texttt{GNAT.Sockets} over the W5500 -- the raw TCP byte stream};
+\node[layer, below=of crypto] (sock) {\texttt{GNAT.Sockets} over the W5500: the raw TCP byte stream};
 \end{tikzpicture}
 \caption{The TLS stack. Everything above the socket line is new in this chapter;
 the socket line is the networking stack of Chapter~\ref{ch:networking}, unchanged.
@@ -74,7 +74,7 @@ AES-128-GCM        & record encryption        & HW AES + Ada GHASH \\
 SHA-256            & transcript, HKDF, HMAC   & SPARKNaCl (HW SHA available too) \\
 HKDF / HMAC        & the key schedule         & Ada over SPARKNaCl SHA-256 \\
 X25519             & ECDHE key exchange       & SPARKNaCl (constant-time) \\
-P-256              & ECDHE + ECDSA verify     & \texttt{P256} -- pure Ada \\
+P-256              & ECDHE + ECDSA verify     & \texttt{P256}: pure Ada \\
 RSA ($m^e \bmod n$) & RSA signature recovery  & HW RSA/MPI accelerator \\
 RNG                & ephemeral keys, nonces   & HW RNG (entropy source on) \\
 \bottomrule
@@ -96,7 +96,7 @@ Every TLS example does this as its first act.
 \label{ch:tls:handshake}
 
 A TLS~1.3 handshake is one round trip. The client opens with a
-\texttt{ClientHello}; the server answers with everything at once -- its
+\texttt{ClientHello}; the server answers with everything at once: its
 \texttt{ServerHello}, then (encrypted) its certificate, a signature proving it
 holds the certificate's key, and a \texttt{Finished} MAC over the transcript; the
 client checks all of that and sends its own \texttt{Finished}; the channel is then
@@ -112,7 +112,7 @@ procedure Hello (S    : in out Session;
 \subsection{ClientHello: offering what we can do}\index{ClientHello}
 
 The \texttt{ClientHello} advertises exactly the capabilities the client
-implements -- no more, so the server cannot pick something we cannot honour. We
+implements, no more, so the server cannot pick something we cannot honour. We
 offer one cipher suite (\texttt{TLS\_AES\_128\_GCM\_SHA256}), TLS~1.3 only, two
 key-exchange groups (\texttt{x25519} and \texttt{secp256r1}, with a key share for
 each so the server need not ask twice), and the signature schemes we can verify
@@ -120,7 +120,7 @@ each so the server need not ask twice), and the signature schemes we can verify
 
 One extension earned its place the hard way. A minimal \texttt{ClientHello} that
 omits \texttt{psk\_key\_exchange\_modes} is accepted by lenient servers (a local
-Python test server, Cloudflare) but \emph{silently dropped} by others -- a real
+Python test server, Cloudflare) but \emph{silently dropped} by others. A real
 public server closed the TCP connection right after our hello, with no alert to
 explain why. Real clients always send the extension even when offering no
 pre-shared key; adding it (\texttt{psk\_dhe\_ke}) was the single change that let
@@ -146,7 +146,7 @@ C_HS      := Derive_Secret (Handshake, "c hs traffic", Transcript_Hash);
 From \texttt{S\_HS} and \texttt{C\_HS} (the server and client handshake traffic
 secrets) come the AES keys and IVs that protect the rest of the handshake, and
 later the application keys. The schedule is exact and unforgiving: a single wrong
-byte anywhere -- a mis-ordered transcript, an off-by-one label -- yields keys that
+byte anywhere (a mis-ordered transcript, an off-by-one label) yields keys that
 do not match, and the server's \texttt{Finished} fails to verify. That property is
 also the test: when the board's derived \texttt{S\_HS} matched, byte for byte, the
 \texttt{SERVER\_HANDSHAKE\_TRAFFIC\_SECRET} that OpenSSL logged for the same
@@ -159,7 +159,7 @@ proven correct at once.
 The shared secret comes from ECDHE: each side sends an ephemeral public key, and
 each multiplies its own private scalar by the other's public point. Modern servers
 prefer \textbf{X25519}, which SPARKNaCl provides with a constant-time
-implementation -- so for that group the client simply calls
+implementation, so for that group the client simply calls
 \texttt{SPARKNaCl.Scalar.Mult}. But some hardened or FIPS-configured servers
 disable X25519 and require the NIST curve \textbf{P-256}, which SPARKNaCl does not
 implement. So the project carries its own P-256 in \texttt{libs/tls/p256.adb}:
@@ -176,11 +176,11 @@ end if;
 \end{lstlisting}
 
 The same \texttt{P256} package also verifies ECDSA signatures, which the next
-section needs -- one curve implementation, two jobs. Its arithmetic is validated
+section needs: one curve implementation, two jobs. Its arithmetic is validated
 against OpenSSL-generated test vectors by the \texttt{esp32s3\_p256\_kat} example.
 
 \cnote{ECDSA \emph{verification} touches only public values, so the \texttt{P256}
-verifier is ordinary variable-time code -- there is no secret to leak. ECDH key
+verifier is ordinary variable-time code: there is no secret to leak. ECDH key
 exchange does use a secret scalar; the implementation here is still variable-time,
 which is acceptable for a fresh ephemeral key used once per handshake but is the
 one place a constant-time ladder would be the proper hardening.}
@@ -197,11 +197,11 @@ now.
 
 \subsection{Parsing X.509}\index{X.509}
 
-A certificate is DER-encoded ASN.1 -- nested tag/length/value triples. The
+A certificate is DER-encoded ASN.1: nested tag/length/value triples. The
 \texttt{X509} parser is strict by design: it parses attacker-controlled bytes, so
 every read is bounds-checked and any malformation yields \texttt{Valid => False}
 rather than an out-of-range access. It extracts the signed region (to be hashed),
-the validity dates, the subject-alternative-name host list, and the public key --
+the validity dates, the subject-alternative-name host list, and the public key,
 classifying the key as RSA or P-256 EC, and the signature as one of
 \texttt{RSA-SHA256}, \texttt{ECDSA-SHA256}, or \texttt{ECDSA-SHA384}, so the
 verifier can dispatch without walking the DER again.
@@ -210,7 +210,7 @@ verifier can dispatch without walking the DER again.
 
 Two signature families cover essentially all of the public web. \textbf{RSA}
 certificates are verified by recovering $m = s^e \bmod n$ on the hardware MPI
-accelerator and comparing the recovered padding block -- PKCS\#1~v1.5 with
+accelerator and comparing the recovered padding block: PKCS\#1~v1.5 with
 SHA-256, SHA-384 or SHA-512 (an ECC root commonly signs its intermediates with
 SHA-384) for chain links, PSS for the TLS \texttt{CertificateVerify}.
 \textbf{ECDSA/P-256} and \textbf{Ed25519} certificates are verified in software
@@ -219,27 +219,27 @@ step, where the server signs the handshake transcript to prove key possession,
 accepts either \texttt{rsa\_pss\_rsae\_sha256} or \texttt{ecdsa\_secp256r1\_sha256};
 the chain verifier dispatches each link on how that certificate was signed. The
 result is a client that authenticates both an RSA server (Let's Encrypt issues
-these) and an ECDSA server (Cloudflare, Google, many CDNs) -- both confirmed
+these) and an ECDSA server (Cloudflare, Google, many CDNs), both confirmed
 against the real sites.
 
 The P-256 module also \emph{signs}: \texttt{P256.Sign} produces an ECDSA signature
 with a deterministic nonce (RFC~6979, HMAC-SHA-256), so it needs no per-signature
-randomness -- and the catastrophic nonce-reuse failure mode is gone -- while
+randomness (and the catastrophic nonce-reuse failure mode is gone) while
 reproducing the RFC's published vector bit-for-bit. That is the primitive a client
 certificate or a TLS \emph{server} side would build on.
 
-\subsection{Anchoring the chain -- and knowing the time}\index{certificate chain}\index{trust anchor}\index{key usage}\index{basic constraints}
+\subsection{Anchoring the chain, and knowing the time}\index{certificate chain}\index{trust anchor}\index{key usage}\index{basic constraints}
 
 \texttt{Chain\_Verify.Validate} ties it together: the server's leaf and
 intermediates must each be in date, each link's signature must verify under the
 next certificate's key, the top must be signed by a \emph{pinned} root the device
 trusts, and the leaf's SAN must cover the host. The roots are baked into the
-firmware (the HTTPS-weather example pins ISRG~Root~X1, the Let's Encrypt root) --
-there is no system trust store on a microcontroller.
+firmware (the HTTPS-weather example pins ISRG~Root~X1, the Let's Encrypt root).
+There is no system trust store on a microcontroller.
 
 Anchoring is not the whole of trust. \texttt{Validate} also enforces the
-X.509~v3 \emph{usage} extensions a browser checks: every issuing certificate --
-each intermediate, and the pinned root when it signs the top -- must be a CA
+X.509~v3 \emph{usage} extensions a browser checks: every issuing certificate
+(each intermediate, and the pinned root when it signs the top) must be a CA
 (\texttt{basicConstraints}~\texttt{cA=TRUE}, plus \texttt{keyCertSign} if it
 carries a \texttt{keyUsage}) or the chain is rejected as \texttt{Not\_A\_CA}; and
 the leaf, if it restricts \texttt{extKeyUsage}, must permit \texttt{serverAuth}
@@ -263,13 +263,13 @@ After the client's \texttt{Finished} is sent, the handshake is complete: fresh
 application keys are derived, and \texttt{TLS\_Client.Send} / \texttt{Recv} carry
 plaintext in and out, encrypting each record on the way down and decrypting and
 authenticating it on the way up. To the application it is just a reliable byte
-channel -- a GET goes in, a JSON reply comes out.
+channel: a GET goes in, a JSON reply comes out.
 
 A server's post-handshake \texttt{NewSessionTicket} is \emph{captured} rather than
 skipped, and its resumption key derived, so a later connection can \emph{resume}.
 \texttt{TLS\_Client.Resume} runs a second handshake whose ClientHello offers that
-ticket as a pre-shared key -- still with a fresh key share, so forward secrecy
-holds -- carrying the PSK binder over the truncated ClientHello. If the server
+ticket as a pre-shared key (still with a fresh key share, so forward secrecy
+holds), carrying the PSK binder over the truncated ClientHello. If the server
 accepts, the handshake is shorter and sends no certificate flight at all: there is
 nothing to re-validate, only a \texttt{Finished} to check. The
 \texttt{esp32s3\_tls\_resume} example shows the two connections back to back, and
@@ -296,7 +296,7 @@ Every layer of this chapter is in those lines: DNS and NTP over the UDP path, th
 TLS~1.3 handshake with its ECDHE and HKDF schedule, an RSA-PSS
 \texttt{CertificateVerify} against the site's real Let's Encrypt certificate, a
 chain validated to a pinned root at an NTP-supplied time, and finally an encrypted
-GET whose decrypted JSON is scraped for the temperature -- all in Ada, with no C
+GET whose decrypted JSON is scraped for the temperature, all in Ada, with no C
 TLS library linked, on a board whose Ethernet chip has never heard of TLS.
 
 \section{What is implemented, and what is not}
@@ -304,7 +304,7 @@ TLS library linked, on a board whose Ethernet chip has never heard of TLS.
 
 Honesty about scope matters in a security chapter. The client implements TLS~1.3
 with the \texttt{TLS\_AES\_128\_GCM\_SHA256} suite, X25519 and P-256 key exchange,
-and certificate authentication across the algorithms real chains use -- RSA
+and certificate authentication across the algorithms real chains use: RSA
 (PKCS\#1 and PSS) with SHA-256/384/512, ECDSA-P256 with SHA-256/384, and Ed25519.
 Chain validation is full: signatures, validity at an NTP-supplied time, the leaf
 hostname, the basic-constraints / key-usage / extended-key-usage policy checks,
@@ -318,7 +318,7 @@ It deliberately stops short of a few things a production stack would add: the
 needs SHA-384 wired through the key schedule, the second a ChaCha20-Poly1305 that
 SPARKNaCl does not provide); certificate revocation (OCSP/CRL); a TLS \emph{server}
 side; and client certificates (the ECDSA signing primitive is in place, but the
-handshake wiring is not). None of these are hard in principle -- each is a bounded
-slice on top of the same primitives -- but each is a place where ``it compiled''
+handshake wiring is not). None of these are hard in principle (each is a bounded
+slice on top of the same primitives), but each is a place where ``it compiled''
 is not the same as ``it is safe,'' which is exactly why they are called out here
 rather than quietly assumed.

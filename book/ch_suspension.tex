@@ -2,17 +2,17 @@
 \label{ch:suspension}\index{suspension object}
 
 A \emph{suspension object} is the lightest synchronisation primitive Ada offers: a
-single Boolean flag with one special power -- a task can \emph{block} on it until
+single Boolean flag with one special power: a task can \emph{block} on it until
 the flag is set, consuming the signal as it wakes. It is the idiomatic way to hand
 an event from an interrupt handler to a normal task (``the edge fired, go look''),
 and it costs almost nothing. The tasking chapter introduced it in passing while
 surveying ways to wait for an event (\S\ref{sec:waiting}); this chapter is the
-focused account -- the exact semantics, the rules that bite, and when to reach for
+focused account: the exact semantics, the rules that bite, and when to reach for
 one instead of a protected entry.
 
 Suspension objects live in \texttt{Ada.Synchronous\_Task\_Control} (ARM~D.10) and
-are available under \emph{every} profile -- \texttt{light-tasking},
-\texttt{embedded}, and \texttt{full} alike -- because they are a core Ravenscar
+are available under \emph{every} profile (\texttt{light-tasking},
+\texttt{embedded}, and \texttt{full} alike) because they are a core Ravenscar
 primitive.
 
 \section{The interface}\index{Suspend\_Until\_True}
@@ -32,7 +32,7 @@ end Ada.Synchronous_Task_Control;
 
 \texttt{Suspend\_Until\_True} is the one with teeth. If the flag is already
 \texttt{True} it returns at once, leaving it \texttt{False}; if it is \texttt{False}
-the calling task \emph{blocks} -- descheduled, burning no CPU -- until some other
+the calling task \emph{blocks} (descheduled, burning no CPU) until some other
 task (typically an interrupt handler) calls \texttt{Set\_True}, at which point it
 wakes and, in the same indivisible step, clears the flag back to \texttt{False}.
 
@@ -56,7 +56,7 @@ Seeing the implementation explains every rule that follows.
 \section{The signalling pattern}\index{interrupt-to-task hand-off}
 
 The canonical use is interrupt-to-task hand-off. A protected interrupt handler does
-the absolute minimum -- set the flag -- and a worker task does the real work after
+the absolute minimum (set the flag) and a worker task does the real work after
 \texttt{Suspend\_Until\_True} wakes it. The handler stays tiny (it runs at a high
 interrupt ceiling, \S\ref{ch:interrupts}); the work runs at ordinary task priority.
 
@@ -93,7 +93,7 @@ This is exactly how the HAL's own interrupt children (GPIO, and the
 The flag is \emph{sticky}. A \texttt{Set\_True} that happens \emph{before} the task
 reaches \texttt{Suspend\_Until\_True} is not lost: the task finds the flag already
 \texttt{True} and returns immediately, consuming it. That closes the classic
-lost-wake-up race -- the one a raw ``wake'' signal or a bare condition variable
+lost-wake-up race: the one a raw ``wake'' signal or a bare condition variable
 suffers when the signal arrives a moment before the wait. With a suspension object
 the order does not matter.
 
@@ -101,7 +101,7 @@ The flip side is that it is a \emph{binary flag, not a counter}. Several
 \texttt{Set\_True} calls before a single \texttt{Suspend\_Until\_True} collapse into
 \emph{one} wake-up. A suspension object therefore means ``at least one event has
 happened since you last looked,'' never ``exactly $N$ events.'' For a stream where
-every event must be accounted for, that coalescing is a bug waiting to happen -- see
+every event must be accounted for, that coalescing is a bug waiting to happen. See
 the protected-entry upgrade below.
 
 \section{One waiter, and only self-suspension}\index{task blocking}
@@ -125,7 +125,7 @@ and signal them in turn, or use a protected object whose barrier they all share.
 
 \section{Suspension object or protected entry?}\index{protected entry}\index{entry barrier}
 
-A suspension object carries \emph{no data} -- it only says ``something happened.''
+A suspension object carries \emph{no data}: it only says ``something happened.''
 When you need to pass a value across the hand-off, or to count events rather than
 coalesce them, the natural upgrade is a protected object with an entry: the same
 block-until-ready behaviour, but the barrier can be any condition and the entry can
@@ -157,7 +157,7 @@ further in the tasking chapter's waiting patterns (\S\ref{sec:waiting}).
 
 \section{No timeout of its own}\index{delay until}
 
-\texttt{Suspend\_Until\_True} blocks until the flag is set, full stop -- there is no
+\texttt{Suspend\_Until\_True} blocks until the flag is set, full stop. There is no
 ``wait, but give up after $T$'' form. When you need a bounded wait, the approach
 depends on the profile, and the tasking chapter works all three through in detail
 (\S\ref{sec:waiting}): under Jorvik a protected entry barriered on the event
@@ -172,7 +172,7 @@ lock-free helper that works under every profile.
 A suspension object is about the cheapest blocking primitive there is: one protected
 object, a one-line barrier, no payload to copy, no ceiling negotiation beyond the
 protected action itself. \texttt{Set\_True} from an interrupt handler is a couple of
-instructions, and the woken task was genuinely asleep -- no spinning, no polling,
-no wasted power -- until the hardware had something to say. For the overwhelmingly
+instructions, and the woken task was genuinely asleep (no spinning, no polling,
+no wasted power) until the hardware had something to say. For the overwhelmingly
 common embedded shape ``a short ISR notices an event; a normal task does the work,''
 it is the right tool, and the one the HAL reaches for first.

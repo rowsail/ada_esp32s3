@@ -13,21 +13,21 @@ and where each feature comes from.
   (\texttt{Main}). It \texttt{with}s the peripheral HAL (\texttt{ESP32S3.*}) and,
   if it uses tasks or protected objects, those language features directly.
 \item[The HAL (\texttt{libs/esp32s3\_hal}).] Hand-written driver packages over a
-  generated register layer (\texttt{ESP32S3\_Registers.*}). Optional -- a program
-  can poke registers itself -- but it is where all the device knowledge lives.
+  generated register layer (\texttt{ESP32S3\_Registers.*}). Optional (a program
+  can poke registers itself), but it is where all the device knowledge lives.
 \item[The GNAT binder output.] \texttt{gnatbind} generates a package
   (\texttt{b\_\_main}) that elaborates every unit in the right order and calls
   \texttt{Main}. Its \texttt{adainit}/\texttt{adafinal} bracket your program.
 \item[The Ada runtime (RTS).] The \texttt{System.*} and \texttt{Ada.*} bodies:
   secondary stack, exceptions (if enabled), \texttt{Ada.Text\_IO} over the
-  USB-serial console, and -- crucially -- the tasking kernel (GNARL/GNARLI):
+  USB-serial console, and (crucially) the tasking kernel (GNARL/GNARLI):
   tasks, protected objects, delays, scheduling.
 \item[Board support.] The silicon-specific bottom of the runtime: the Xtensa
   windowed \emph{context switch}, \emph{interrupt entry/exit} vectors, the
   \emph{clock/alarm tick}, SMP scheduling and the inter-core interrupt. This is
   Ada plus a little assembly (\texttt{start.S}, \texttt{highint5.S},
   \texttt{context\_switch.S}). This is the layer an off-the-shelf RTOS would otherwise
-  provide -- here it is ours.
+  provide. Here it is ours.
 \item[The 2nd-stage bootloader.] Before any of the above runs, our own minimal
   loader (a ZFP-Ada \texttt{boot\_main} + an assembly prologue + a thin C PSRAM
   shim) maps the flash cache/MMU and brings up the octal PSRAM, then jumps to the
@@ -39,13 +39,13 @@ and where each feature comes from.
 \begin{figure}[ht]
 \centering
 \begin{tikzpicture}[node distance=2mm]
-\node[layer, fill=blue!9] (app)  {Your application -- \texttt{Main} + packages};
+\node[layer, fill=blue!9] (app)  {Your application: \texttt{Main} + packages};
 \node[layer, below=of app]  (hal)  {Peripheral HAL: \texttt{ESP32S3.*} over generated \texttt{ESP32S3\_Registers.*}};
-\node[layer, below=of hal]  (bind) {GNAT binder -- \texttt{adainit} / \texttt{adafinal}, calls \texttt{Main}};
+\node[layer, below=of hal]  (bind) {GNAT binder: \texttt{adainit} / \texttt{adafinal}, calls \texttt{Main}};
 \node[layer, below=of bind] (rts)  {Ada runtime: \texttt{System.*}, \texttt{Ada.*}, tasking kernel (GNARL)};
 \node[layer, below=of rts]  (bsp)  {Board support: context switch, interrupt vectors, tick, SMP\, (\texttt{*.S})};
-\node[layer, below=of bsp]  (boot) {2nd-stage bootloader -- cache/MMU, octal PSRAM};
-\node[layer, below=of boot, fill=gray!12] (rom) {Mask ROM -- loads the bootloader at reset};
+\node[layer, below=of bsp]  (boot) {2nd-stage bootloader: cache/MMU, octal PSRAM};
+\node[layer, below=of boot, fill=gray!12] (rom) {Mask ROM: loads the bootloader at reset};
 \end{tikzpicture}
 \caption{The layers of an Ada application, from your code down to the chip's ROM.
 Everything above the ROM is Ada (with a little Xtensa assembly in board support).}
@@ -59,7 +59,7 @@ $\rightarrow$ \texttt{start.S} (selects the 240\,MHz PLL, sets up the stack and
 the interrupt vectors, and on the SMP examples releases the second core)
 $\rightarrow$ the runtime's startup, which calls \texttt{adainit} (elaboration)
 $\rightarrow$ your \texttt{Main}. There is no vendor startup shim and no
-third-party RTOS scheduler -- the Ada runtime is the only scheduler, and it is
+third-party RTOS scheduler: the Ada runtime is the only scheduler, and it is
 linked from source.
 
 \begin{figure}[ht]
@@ -102,27 +102,27 @@ the HAL; everything links against the runtime crate.
 \label{sec:bases}\index{numeric literals}\index{case insensitivity}\index{underscore}
 
 That nine-line program already leans on three lexical conventions that recur on
-every page from here on. They are worth pinning down now -- with the reason for
-each -- so that the register and bit-field code in later chapters reads as intended
+every page from here on. They are worth pinning down now (with the reason for
+each) so that the register and bit-field code in later chapters reads as intended
 rather than as noise.
 
-\textbf{Case is insignificant -- so pick a convention because the compiler will
+\textbf{Case is insignificant: pick a convention because the compiler will
 not.} Ada folds letter case for identifiers and reserved words alike: \texttt{Led},
 \texttt{led} and \texttt{LED} are one name, and \texttt{LOOP}, \texttt{Loop} and
 \texttt{loop} are one keyword. The compiler does not care which you write, and it
-will not impose a style on you -- so the consistency has to come from you. (The one
+will not impose a style on you, so the consistency has to come from you. (The one
 thing it does enforce is that two names may not differ \emph{only} in case: you
 cannot declare both \texttt{Value} and \texttt{value}, precisely so a reader never
 has to tell them apart by capitalisation.) Picking a house style and applying it is
 therefore what makes the case \emph{carry} meaning. This book uses the conventional
-Ada style -- \texttt{Mixed\_Case} for identifiers and types (\texttt{Pin\_Id},
+Ada style: \texttt{Mixed\_Case} for identifiers and types (\texttt{Pin\_Id},
 \texttt{Clock}), lower case for reserved words (\texttt{procedure}, \texttt{loop},
-\texttt{end}) -- so when you see that shape you are reading a choice, not something
+\texttt{end}). So when you see that shape you are reading a choice, not something
 the compiler required.
 
 \textbf{Numbers may be written in any base.} A plain literal is decimal (the
 \texttt{2} and \texttt{250} above), but an address or a bit mask is clearer in
-another base, written \texttt{base\#digits\#} -- the base in decimal, from 2 to 16,
+another base, written \texttt{base\#digits\#}: the base in decimal, from 2 to 16,
 the value between \texttt{\#}s. These are all the number 42:
 
 \begin{lstlisting}
@@ -132,15 +132,15 @@ the value between \texttt{\#}s. These are all the number 42:
    H : constant := 16#2A#;        -- hexadecimal
 \end{lstlisting}
 
-The base is purely \emph{lexical} -- resolved by the compiler, with no runtime cost
--- so you write each constant in whatever base makes its \emph{meaning} plain: a
+The base is purely \emph{lexical} (resolved by the compiler, with no runtime cost),
+so you write each constant in whatever base makes its \emph{meaning} plain: a
 bit mask in binary, a peripheral address in hex. (In a hex literal the digits
 \texttt{A}--\texttt{F} obey the case rule above: \texttt{16\#2a\#} and
 \texttt{16\#2A\#} are identical.)
 
 \textbf{Underscores group digits for the eye.} An underscore may appear
-\emph{between} digits -- never leading, trailing, doubled, or beside a \texttt{\#}
--- and the compiler ignores it entirely. It exists only so a human can read and
+\emph{between} digits (never leading, trailing, doubled, or beside a \texttt{\#})
+and the compiler ignores it entirely. It exists only so a human can read and
 \emph{proofread} a long literal, grouped to suit the base:
 
 \begin{lstlisting}
@@ -152,11 +152,11 @@ bit mask in binary, a peripheral address in hex. (In a hex literal the digits
 The grouping is what makes a transcription slip obvious: a dropped digit in
 \texttt{16\#6000\_4000\#} throws the nibble columns out of alignment, whereas
 \texttt{16\#6004000\#} hides it. The same underscore joins words in a name
-(\texttt{Clock\_Hz}, \texttt{Pin\_Id}), for the same reason -- readability. This is
+(\texttt{Clock\_Hz}, \texttt{Pin\_Id}), for the same reason: readability. This is
 why the register code throughout the book looks the way it does: addresses are
 underscore-grouped hexadecimal, and masks and field positions are binary or
-\texttt{2 ** n}. The deeper numeric \emph{types} those literals take on --
-subtypes, modular types, fixed-point -- come later, in Chapter~\ref{ch:embedded}.
+\texttt{2 ** n}. The deeper numeric \emph{types} those literals take on
+(subtypes, modular types, fixed-point) come later, in Chapter~\ref{ch:embedded}.
 
 \chapter{The Runtime Profiles}\index{runtime profile}
 \label{ch:profiles}
@@ -173,7 +173,7 @@ are restricted to the richer two.
 \endhead
 \texttt{light-tasking} &
   The Ravenscar/Jorvik subset (\texttt{pragma Profile (Jorvik)}). Tasks,
-  protected objects, \texttt{delay until}, priorities -- but with restrictions
+  protected objects, \texttt{delay until}, priorities, but with restrictions
   the compiler enforces: \texttt{No\_Finalization}, \texttt{No\_Exception\_%
   Propagation}, \texttt{No\_Secondary\_Stack}, and a heap-less bump allocator.
   Smallest and most analysable; a raised exception is fatal (resets the board).
@@ -199,7 +199,7 @@ are restricted to the richer two.
 \begin{itemize}
 \item Certifiable, deterministic, minimal-footprint firmware, or code that must
   never allocate: \texttt{light-tasking}.
-\item Most applications -- you want exceptions, RAII handles, the secondary
+\item Most applications, where you want exceptions, RAII handles, the secondary
   stack, a heap, and the full HAL including the filesystem: \texttt{embedded}.
 \item Code that genuinely needs dynamic tasks, rendezvous or \texttt{abort}:
   \texttt{full}.
@@ -261,18 +261,18 @@ debugs any example by name:
 \texttt{flash.sh} writes the 2nd-stage bootloader, the partition table and
 \texttt{app.bin} over USB-serial.
 
-The last two steps -- turning the linked \texttt{app.elf} into a flashable
-\texttt{app.bin}, and writing it to the chip -- are handled by two small
+The last two steps (turning the linked \texttt{app.elf} into a flashable
+\texttt{app.bin}, and writing it to the chip) are handled by two small
 \emph{host} tools written in native Ada (built with the Alire
 \texttt{gnat\_native} toolchain), so the whole build/flash path needs only the
 Alire toolchain and the committed vendored blobs.
 
 \section{Packaging and flashing: two Ada host tools}
 
-\subsection{\texttt{esp\_elf2image} -- ELF to flash image}\index{esp\_elf2image}
+\subsection{\texttt{esp\_elf2image}: ELF to flash image}\index{esp\_elf2image}
 
 \texttt{examples/common/bare/elf2image} converts \texttt{app.elf} into the
-ESP32-S3 flash image \texttt{app.bin} -- the exact on-flash format the chip's
+ESP32-S3 flash image \texttt{app.bin}: the exact on-flash format the chip's
 ROM and our second-stage bootloader expect (flash mode \texttt{dio}, freq
 \texttt{80m}, size \texttt{2MB}). The generated image boots unmodified on
 hardware across every example. The packaging is more than a flat copy:
@@ -280,13 +280,13 @@ hardware across every example. The packaging is more than a flat copy:
 \begin{itemize}
   \item \textbf{Segments} are the ELF's allocated \texttt{PROGBITS} sections,
         merged where contiguous and each padded to a multiple of four.
-  \item A \textbf{24-byte header} -- the 8-byte common part (\texttt{magic 16\#E9\#},
+  \item A \textbf{24-byte header}: the 8-byte common part (\texttt{magic 16\#E9\#},
         segment count, the \texttt{dio}/\texttt{2MB}/\texttt{80m} flash byte, the
         entry point) plus a 16-byte extended part (\texttt{chip\_id=9},
         \texttt{wp\_pin=16\#EE\#}, \texttt{hash\_appended=1}).
   \item \textbf{Flash (IROM/DROM) segments aligned to 64\,KB}, with the RAM
         segments written \emph{interleaved as the alignment padding} (then a zero
-        \texttt{PADDING} segment for the remainder) -- the exact scheme the
+        \texttt{PADDING} segment for the remainder): the exact scheme the
         bootloader's MMU mapping relies on.
   \item An \textbf{XOR checksum} (seed \texttt{16\#EF\#}) as the last byte of a
         16-aligned block, and finally a \textbf{SHA-256} of the whole image
@@ -296,20 +296,20 @@ hardware across every example. The packaging is more than a flat copy:
 The flash parameters (\texttt{dio}/\texttt{80m}/\texttt{2MB}, chip = ESP32-S3) are
 fixed to match the bare boot; they are constants at the top of the source.
 
-\subsection{\texttt{esp\_flash} -- writing it to the chip}\index{esp\_flash}
+\subsection{\texttt{esp\_flash}: writing it to the chip}\index{esp\_flash}
 
 \texttt{examples/common/bare/espflash} writes the image over the chip's
 \emph{ROM} serial bootloader.
 It is 100\,\% Ada: the OS serial interface (open, termios raw mode, the
 \texttt{TIOCM*} DTR/RTS modem lines, poll, read, write) is bound directly to libc
-through \texttt{Interfaces.C} -- there is no C source. (\texttt{GNAT.Serial\_-
+through \texttt{Interfaces.C}: there is no C source. (\texttt{GNAT.Serial\_-
 Communications} would cover the byte I/O but not the DTR/RTS control the reset
 needs, so the tool binds \texttt{ioctl(TIOCMBIS/TIOCMBIC)} itself.) The sequence
 is the standard ROM protocol, with no RAM stub and no compression:
 
 \begin{enumerate}
-  \item \textbf{Reset into download mode} -- the USB-JTAG DTR/RTS pulse.
-  \item \textbf{SYNC} -- the \texttt{16\#07\# 16\#07\# 16\#12\# 16\#20\#} + 32$\times$\texttt{16\#55\#}
+  \item \textbf{Reset into download mode}: the USB-JTAG DTR/RTS pulse.
+  \item \textbf{SYNC}: the \texttt{16\#07\# 16\#07\# 16\#12\# 16\#20\#} + 32$\times$\texttt{16\#55\#}
         handshake until the ROM answers.
   \item \textbf{SPI attach} and \textbf{set-params} (the flash geometry).
   \item Per file, \textbf{flash\_begin} (erase) then \textbf{flash\_data} in
@@ -332,13 +332,13 @@ esp_flash -p /dev/ttyACM0 --flash-size 2MB \
 \end{lstlisting}
 
 Note that \texttt{esp\_flash} writes \emph{flash} only; the external PSRAM is not
-flashed -- the 2nd-stage bootloader maps it at runtime. On hardware a $\sim$225\,KB
+flashed. The 2nd-stage bootloader maps it at runtime. On hardware a $\sim$225\,KB
 image flashes in about three seconds (ROM speed, no stub).
 
 \section{Starting your own project}\index{esp32-ada launcher}\index{board.ads}
 
 The \texttt{esp32-ada} launcher scaffolds a fresh application in any empty
-directory (no runtime sources are copied -- it pins the crate):
+directory (no runtime sources are copied: it pins the crate):
 
 \begin{lstlisting}[style=sh]
 . export.sh                 # put esp32-ada on PATH

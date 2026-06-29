@@ -2,17 +2,17 @@
 \label{ch:psram}
 
 Many ESP32-S3 modules package \emph{external} pseudo-static RAM (PSRAM) alongside
-the SoC -- but whether there is any, how much, and of what kind depends on the
+the SoC, but whether there is any, how much, and of what kind depends on the
 module. Espressif's S3 family ships in several variants: no PSRAM at all, 2\,MB of
 \emph{quad} (4-line) PSRAM, or up to 8\,MB of \emph{octal} (8-line) PSRAM, and from
-more than one memory vendor. This chapter is about the octal variant -- the
-high-bandwidth option -- which the boards used here happen to populate with an
+more than one memory vendor. This chapter is about the octal variant (the
+high-bandwidth option), which the boards used here happen to populate with an
 8\,MB AP~Memory die. The bring-up does not hard-code that, though: it reads the
 device's own mode registers and adapts to whichever octal part is fitted (vendor,
 density, voltage, latency), so the 8\,MB and the exact constants below are what
 \emph{these} parts reported, not universal facts.
 
-Why bother? Internal SRAM is about 292\,KB -- generous for a microcontroller, but
+Why bother? Internal SRAM is about 292\,KB, generous for a microcontroller, but
 nowhere near enough for the megabyte-scale buffers, heaps, and elaboration stacks
 that a full Ada program wants. PSRAM closes that gap, but only if you can turn it
 on, and turning it on is one of the most delicate sequences in the whole bring-up:
@@ -21,7 +21,7 @@ by register, and then \emph{timed}, before a single byte will round-trip.
 
 This chapter is the deep version of the PSRAM paragraph in the bootloader chapter
 (\S\ref{ch:bootloader}). There we noted that the second-stage loader brings PSRAM
-up before the application runs; here we tell the whole story -- the deterministic
+up before the application runs; here we tell the whole story: the deterministic
 register script, the empirical timing problem at 80\,MHz, and the de-blobbing
 effort that replaced the vendored ESP-IDF binaries with readable from-source code.
 It is a genuine war story, and the registers and values below are the real ones,
@@ -30,7 +30,7 @@ captured from working silicon.
 \section{What the octal PSRAM is, and why it is hard}\index{PSRAM}\index{octal SPI}\index{MSPI}
 
 The PSRAM is an external DRAM die that speaks an \emph{octal} (8-data-line) variant
-of the memory-SPI (MSPI) protocol, clocked DDR -- data on both clock edges. The
+of the memory-SPI (MSPI) protocol, clocked DDR: data on both clock edges. The
 S3's MSPI controller can map it transparently through the data cache, so once it is
 up the chip appears as ordinary memory at \texttt{0x3D000000} and Ada code reads and
 writes it with no special API at all (\S\ref{ch:psram-validate}). That transparency
@@ -46,8 +46,8 @@ through 37 are wired to the in-package flash and PSRAM, and driving them as gene
 I/O corrupts the very bus the program is executing from. The PSRAM bring-up is the
 code that legitimately owns those pins.
 
-The reason 8 octal DDR data lines at 80\,MHz is hard -- and the reason this chapter
-exists -- is timing. At that rate the round-trip from the controller's clock edge
+The reason 8 octal DDR data lines at 80\,MHz is hard (and the reason this chapter
+exists) is timing. At that rate the round-trip from the controller's clock edge
 out to the chip and back as data is a meaningful fraction of one bit period, so the
 controller cannot just sample data on a fixed edge; it has to \emph{learn} when the
 returning bits are valid. That learning step is the only part of the whole sequence
@@ -79,7 +79,7 @@ map). These are masked into the chip, not vendored blobs, so they cost nothing t
 keep and de-ROM-ing them buys little. The net result is the few-dozen-line bring-up
 the bootloader chapter advertised.
 
-\cnote{In ESP-IDF this is \texttt{esp\_psram\_impl\_octal} -- thousands of lines of
+\cnote{In ESP-IDF this is \texttt{esp\_psram\_impl\_octal}: thousands of lines of
 generated, config-gated code you never see. Here it is two short C files you can
 read top to bottom: the deterministic register script, and one honest timing sweep.}
 
@@ -124,7 +124,7 @@ var-dummy      & \texttt{0x600020E0} \verb#|=# 2           & SPI1 \texttt{SPI\_F
 write MR0      & \texttt{exec\_cmd} \texttt{0xC0C0}        & \texttt{lt}=1 (fixed), \texttt{read\_latency}=2, \texttt{drive\_str}=0 $\rightarrow$ \texttt{0x28} \\
 connect probe  & \texttt{exec\_cmd} \texttt{0x8080}/\texttt{0x0000} & write+read-back \texttt{0x5a6b7c8d} at addr 0 \\
 read MR0--8    & \texttt{exec\_cmd} \texttt{0x4040}        & decode vendor / density / Vcc / latency \\
-\textbf{tune din} & \texttt{psram\_tune\_din}              & \textbf{empirical 80\,MHz sweep -- the non-deterministic step} \\
+\textbf{tune din} & \texttt{psram\_tune\_din}              & \textbf{empirical 80\,MHz sweep: the non-deterministic step} \\
 high speed     & \texttt{enter\_high\_speed\_mode}         & core 160\,MHz, /2 = 80\,MHz, apply din \\
 cache phases   & 5 SPI0 regs (below)                       & program transparent OPI-DDR cache access \\
 \bottomrule
@@ -134,8 +134,8 @@ A few of these deserve a closer look. The MR0 write is a read-modify-write of th
 low six bits to \texttt{0x28}: \texttt{lt=1} selects \emph{fixed} read latency (so
 the controller knows exactly how many dummy cycles to insert), and
 \texttt{read\_latency=2} encodes a 10-cycle fixed latency. The connectivity probe is
-the only ``is it there?'' test in the octal path -- there is no JEDEC \texttt{0x9F}
-read-ID -- so it writes the witness word \texttt{0x5a6b7c8d} to address 0 and reads
+the only ``is it there?'' test in the octal path (there is no JEDEC \texttt{0x9F}
+read-ID), so it writes the witness word \texttt{0x5a6b7c8d} to address 0 and reads
 it back; identity comes entirely from the mode registers. On a genuine
 ESP32-S3-DevKitC the decode prints:
 
@@ -144,7 +144,7 @@ PSRAM: AP Memory octal DDR @80MHz, 64 Mbit (8 MB), dev gen 3, Vcc 3.0V
   latency: read 10-cyc (fixed), write 5-cyc;  MR0=28 MR1=0d MR2=93 MR3=60 MR4=40 MR8=05
 \end{lstlisting}
 
-All the mode-register traffic -- the MR write, the probe, the MR reads -- goes
+All the mode-register traffic (the MR write, the probe, the MR reads) goes
 through the ROM helper \texttt{esp\_rom\_opiflash\_exec\_cmd} in OPI-DTR mode
 (\texttt{mode 7}) with a 16-bit command, 32-bit address, and the PSRAM chip select
 \texttt{CS=BIT(1)}. Read command is \texttt{0x4040}, write \texttt{0xC0C0}, sync read
@@ -154,8 +154,8 @@ through the ROM helper \texttt{esp\_rom\_opiflash\_exec\_cmd} in OPI-DTR mode
 
 The last deterministic step configures the SPI0 (cache) controller so that a plain
 load from \texttt{0x3D000000} silently becomes an octal-DDR PSRAM read. These five
-register values were captured from the working blob over JTAG -- the ``golden''
-state -- and are written directly. They encode the same OPI-DDR geometry as the
+register values were captured from the working blob over JTAG (the ``golden''
+state) and are written directly. They encode the same OPI-DDR geometry as the
 manual transactions above, but for the transparent cache path:
 
 \begin{longtable}{p{2.6cm} p{2.4cm} p{6.8cm}}
@@ -184,16 +184,16 @@ The S3 exposes three per-data-line knobs for this, all in the SPI0 (cache) MSPI 
 at \texttt{0x6000\_30xx}:
 
 \begin{itemize}
-\item \texttt{din\_mode} -- \texttt{SMEM\_DIN[0..7]\_MODE} (the register at
+\item \texttt{din\_mode}: \texttt{SMEM\_DIN[0..7]\_MODE} (the register at
 \texttt{0x600030C0}): the sampling edge/phase, 3 bits per lane, 8 settings.
-\item \texttt{din\_num} -- \texttt{SMEM\_DIN[0..7]\_NUM} at \texttt{0x600030C4}: an
+\item \texttt{din\_num}: \texttt{SMEM\_DIN[0..7]\_NUM} at \texttt{0x600030C4}: an
 integer-cycle delay added to data-in.
-\item \texttt{extra\_dummy} -- \texttt{SMEM\_TIMING\_CALI} at \texttt{0x600030BC}:
+\item \texttt{extra\_dummy}: \texttt{SMEM\_TIMING\_CALI} at \texttt{0x600030BC}:
 extra dummy cycles before the data window opens.
 \end{itemize}
 
 Of these, \texttt{din\_mode} is the one that matters here, and the one whose correct
-value is not knowable from source -- it depends on the actual chip, controller, and
+value is not knowable from source: it depends on the actual chip, controller, and
 temperature. Picking it wrong does not fail gracefully: a load through the cache at a
 bad \texttt{din\_mode} stalls the bus with no exception, the PC pins, and no interrupt
 can preempt it. So this knob has to be chosen carefully, and chosen safely.
@@ -206,13 +206,13 @@ The natural assumption is that the vendor blob already calibrates \texttt{din\_m
 It does not. Single-stepping \texttt{mspi\_timing\_psram\_tuning} on live silicon
 showed why: the IDF sweep drops the MSPI to \emph{20\,MHz} before testing and only
 restores 80\,MHz afterwards. At 20\,MHz the data eye is enormous, so the sampling
-phase is irrelevant -- every one of the 14 candidate configurations reads the
+phase is irrelevant: every one of the 14 candidate configurations reads the
 reference pattern back byte-perfectly. The DTR selection heuristic sees an
 implausibly wide all-pass window (run length $\ge$ 6) and \emph{distrusts} it, falling
 back to \texttt{default\_config\_id = 5}, which is \texttt{din\_mode = 4}.
 
 \cnote{The captured ``calibration'' is really a vendor-default lookup. In the blob,
-\texttt{din\_mode = 4} is dead-centre of the \emph{failing} region at 80\,MHz -- it
+\texttt{din\_mode = 4} is dead-centre of the \emph{failing} region at 80\,MHz. It
 crashes the cache read. That is why the old shim carried a hand-coded ``FIX 2''
 forcing \texttt{din\_mode = 1}: the only way to make the blob's chosen default usable
 was to override it.}
@@ -229,7 +229,7 @@ hardware fights back at every turn:
 
 \begin{enumerate}
 \item \textbf{A wrong cache din hangs the CPU.} A synchronous PSRAM load with a bad
-din never completes -- the bus stalls, the PC pins, \texttt{exccause=0}, and no
+din never completes: the bus stalls, the PC pins, \texttt{exccause=0}, and no
 interrupt can preempt a stalled load. You cannot ``read it and check if it is
 garbage,'' because the read does not return.
 \item \textbf{Async preload dodges the hang but poisons the controller.} Driving the
@@ -237,10 +237,10 @@ sweep with \texttt{Cache\_Start\_DCache\_Preload} plus a polled timeout lets the
 survive (it only polls a flag), but a stalled preload leaves the MSPI/cache
 controller wedged: subsequent cache reads return the fault-fill pattern
 \texttt{0xbad00bad}, and \emph{even \texttt{Cache\_Disable\_DCache} hangs}. Nothing
-short of an MSPI peripheral reset clears it -- which also kills flash execute-in-place.
+short of an MSPI peripheral reset clears it, which also kills flash execute-in-place.
 \item \textbf{SPI1 has its own din registers.} SPI1 (the manual-transaction path) keeps
 separate din registers at \texttt{0x6000\_20xx}, distinct from the cache controller's
-\texttt{0x6000\_30xx}. A bounded SPI1 read calibrates the wrong register -- it tells
+\texttt{0x6000\_30xx}. A bounded SPI1 read calibrates the wrong register. It tells
 you nothing directly about the cache path.
 \end{enumerate}
 
@@ -253,7 +253,7 @@ unrecoverable wedge.
 \texttt{psram\_tune\_din()} threads the needle. It sweeps \texttt{din\_mode} at the
 real \emph{80\,MHz} operating clock, but it does the readback over a \emph{bounded SPI1
 manual transaction} (\texttt{esp\_rom\_opiflash\_exec\_cmd}), not through the cache. A
-wrong din over SPI1 returns garbage and the transaction \emph{still completes} -- so
+wrong din over SPI1 returns garbage and the transaction \emph{still completes}, so
 the sweep can measure all eight modes without ever stalling the bus. SPI0 and SPI1 share
 the same MSPI clock and pads, so the window measured over SPI1 is, to a known offset,
 the window the cache wants. The core of it:
@@ -268,7 +268,7 @@ for m in 0..7:
     if rd == ref: pass |= 1 << m
 \end{lstlisting}
 
-The measured window is \texttt{passmask = 0xC3} -- modes \{6, 7, 0, 1\} pass, modes
+The measured window is \texttt{passmask = 0xC3}: modes \{6, 7, 0, 1\} pass, modes
 \{2, 3, 4, 5\} fail. Crucially this is a \emph{circular} arc: \texttt{din\_mode} is a
 sampling phase, so mode 7 is adjacent to mode 0, and the passing run wraps the
 $7\rightarrow0$ seam. The selection logic walks the modes twice (two laps) to catch a
@@ -280,18 +280,18 @@ mode 0,1 PASS | mode 2,3 fail (0x..76) | mode 4,5 fail (0x..e2) | mode 6,7 PASS
 \end{lstlisting}
 
 Notice that IDF's default \texttt{din\_mode = 4} sits dead-centre in the \emph{failing}
-region -- the 80\,MHz sweep correctly rejects exactly what the 20\,MHz tune handed
+region. The 80\,MHz sweep correctly rejects exactly what the 20\,MHz tune handed
 back. The measured centre (mode 0) has more margin than FIX 2's mode 1, which was a
 valid but edge-of-eye point. If the sweep is degenerate (empty or all-pass) the code
 falls back to mode 1. (One subtlety, recorded in the source: the SPI1-measured centre
 can sit slightly off the cache path's true optimum, and that offset is invisible to a
 quick checksum but can corrupt a heap-heavy app under sustained access; so when mode 1
--- the validated-robust cache point for this chip -- lies inside the measured window,
+(the validated-robust cache point for this chip) lies inside the measured window,
 the code prefers it.)
 
 Because din timing affects \emph{reads} only and the bootloader itself runs from
 flash/IRAM rather than PSRAM, retuning the PSRAM din live, after the chip is mapped, is
-safe -- nothing the bootloader is executing depends on it.
+safe: nothing the bootloader is executing depends on it.
 
 \subsection{Cross-validation on two boards}
 
@@ -309,13 +309,13 @@ It is worth being explicit about why this complexity exists at all because there
 simpler road not taken. At 40\,MHz the MSPI does \emph{not} need tuning: below the
 40\,MHz threshold the data eye is wide enough that the sampling phase is irrelevant,
 din/num/dummy are all zero, and the entire bring-up collapses into a straight register
-script with no empirical step -- every value a compile-time constant. That is the
+script with no empirical step: every value a compile-time constant. That is the
 clean, fully-deterministic option.
 
 The cost is bandwidth: 40\,MHz DDR is half the throughput of 80\,MHz DDR. This build
 chose 80\,MHz, and therefore inherited the tuning problem because the PSRAM here is
 used for bandwidth-sensitive work, not just capacity. The 40\,MHz script remains a
-documented fallback -- the right choice if a future board needs PSRAM only as a large,
+documented fallback: the right choice if a future board needs PSRAM only as a large,
 slow backing store and would rather not carry a sweep at all.
 
 \section{On-target validation}\index{external RAM}
@@ -323,7 +323,7 @@ slow backing store and would rather not carry a sweep at all.
 
 None of this matters unless an Ada program can actually use the result, so the
 \texttt{esp32s3\_psram} example exists to prove it does. It places a 1\,MB static byte
-array in external RAM -- no heap, no \texttt{malloc} -- using a linker section that
+array in external RAM (no heap, no \texttt{malloc}) using a linker section that
 \texttt{psram.ld} maps onto the PSRAM region:
 
 \begin{lstlisting}
@@ -345,13 +345,13 @@ the 1\,MB round-trip through the cache would perturb it. On hardware:
 \end{lstlisting}
 
 The buffer's \texttt{0x3D000000} address confirms it really lives in the external-RAM
-range, and the deterministic checksum -- byte-identical across resets and across both
-test boards -- confirms the full megabyte round-trips correctly through a cache served
+range, and the deterministic checksum (byte-identical across resets and across both
+test boards) confirms the full megabyte round-trips correctly through a cache served
 by a din the bootloader measured for itself. There is no FreeRTOS, no ESP-IDF, and no
 remaining blob in the path: the entire octal-PSRAM bring-up is now readable source plus
 a few ROM calls, which is exactly what de-blobbing set out to achieve.
 
 One caveat the example notes for completeness: task stacks stay in internal SRAM. PSRAM
-is unreachable whenever the cache is disabled -- for instance during a flash write --
+is unreachable whenever the cache is disabled (for instance during a flash write),
 so it is the right home for large data buffers and heaps, but not for a stack that an
 interrupt might unwind while the cache is down (\S\ref{ch:bootloader}).
