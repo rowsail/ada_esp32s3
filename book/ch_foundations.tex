@@ -3,7 +3,7 @@
 Microcontroller firmware lives in a hostile place: a few hundred kilobytes of
 RAM, no operating system to catch mistakes, interrupts that fire between any two
 instructions, and hardware registers whose exact bit layout is law. A bug is not
-a stack trace on a screen -- it is a board that silently locks up in the field.
+a stack trace on a screen. It is a board that silently locks up in the field.
 Ada was designed for exactly this kind of software, and the language gives the
 firmware author tools that C simply does not have.
 
@@ -17,7 +17,7 @@ firmware author tools that C simply does not have.
   enforces them.
 \item[Representation control.] Ada lets you state, in the language, the precise
   bit and byte layout of a record and the exact address of an object. A hardware
-  register is just an Ada record at a fixed address -- no casts, no macros, no
+  register is just an Ada record at a fixed address: no casts, no macros, no
   guessing about padding (Sections~\ref{ch:registers} and~\ref{ch:bitfields} of
   the Talking to Hardware chapter).
 \item[Packages and strong interfaces.] Drivers are packages with a visible
@@ -25,7 +25,7 @@ firmware author tools that C simply does not have.
   a \emph{private child} that application code literally cannot name.
 \item[Tasking and real-time in the language.] Tasks, protected objects (data
   guarded by a monitor), \texttt{delay until}, and priorities are part of Ada
-  itself -- not a bolted-on RTOS API. On this port they are implemented by a
+  itself, not a bolted-on RTOS API. On this port they are implemented by a
   native Ada runtime that runs directly on the silicon.
 \item[Restriction profiles.] With one pragma you can forbid features that do not
   belong in certified or tiny firmware (no heap, no recursion in the runtime, no
@@ -35,9 +35,9 @@ firmware author tools that C simply does not have.
   state intent (``this key must be 128 or 256 bits'') and have it checked.
 \end{description}
 
-The result is firmware where a large class of mistakes -- wrong-width register
+The result is firmware where a large class of mistakes (wrong-width register
 writes, out-of-range pins, aliasing of a peripheral by two tasks, forgetting to
-release a DMA channel -- are caught by the compiler or by a cheap run-time
+release a DMA channel) are caught by the compiler or by a cheap run-time
 check, long before they reach silicon.
 
 \section{What this book covers}
@@ -53,18 +53,18 @@ with its own runtime, boot path and tooling:
 \item the anatomy of an Ada application, from \texttt{Main} down through the
   runtime to the boot ROM, and the three selectable runtime profiles
   (Chapters~\ref{ch:anatomy}--\ref{ch:build});
-\item the reusable peripheral HAL -- twenty-plus task-safe drivers -- with the
+\item the reusable peripheral HAL (twenty-plus task-safe drivers) with the
   API and worked examples for each (Chapters~\ref{ch:hal}--\ref{ch:hal3});
 \item mass storage: the SD-card block drivers and the pure-Ada ext2/3/4
   filesystem (Chapter~\ref{ch:storage}).
 \end{enumerate}
 
 New to Ada? Chapter~\ref{ch:ada-primer}, \emph{Ada for C Programmers}, is a
-one-sitting crash course in the slice of the language this book uses --
-declarations, subprograms and parameter modes, packages, control flow -- framed
+one-sitting crash course in the slice of the language this book uses
+(declarations, subprograms and parameter modes, packages, control flow), framed
 against the C you already know; the rest of the book assumes that much. Individual
-Ada terms that may still be unfamiliar to a reader coming from C --
-\emph{library-level}, \emph{elaboration}, \emph{aspect}, \emph{protected object}
-and the like -- are also collected in the Terminology section of the Ada Language
+Ada terms that may still be unfamiliar to a reader coming from C
+(\emph{library-level}, \emph{elaboration}, \emph{aspect}, \emph{protected object}
+and the like) are also collected in the Terminology section of the Ada Language
 Techniques chapter (\S\ref{sec:terms}).
 

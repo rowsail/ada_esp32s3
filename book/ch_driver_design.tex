@@ -2,7 +2,7 @@
 \label{ch:driver-design}\index{driver design}\index{task-safe driver}
 
 Chapters~\ref{ch:hal}--\ref{ch:hal3} \emph{used} the drivers. This chapter shows
-how to \emph{write} one, and -- just as important -- why it is built the way it
+how to \emph{write} one, and (just as important) why it is built the way it
 is. The shape described here is a project rule: every driver in the HAL for a
 peripheral that is \textbf{exclusive} (cannot be shared between tasks) and can be
 \textbf{reconfigured after setup} follows it exactly. By the end you should be
@@ -10,7 +10,7 @@ able to add a new one and get the same guarantees for free.
 
 \section{The problem}
 
-Consider a typical controller -- a SPI host, a UART, a CAN controller. Three
+Consider a typical controller: a SPI host, a UART, a CAN controller. Three
 facts make it dangerous to share:
 
 \begin{enumerate}
@@ -18,7 +18,7 @@ facts make it dangerous to share:
   the same configuration registers at once corrupt each other's transfers.
 \item \textbf{It is configured in stages.} You bring it up once (clocks, frame
   format), then later you may re-route pins, change the baud rate, flip a line's
-  polarity -- often interleaved with real traffic.
+  polarity, often interleaved with real traffic.
 \item \textbf{The registers are global.} On a bare-metal target the peripheral is
   a fixed memory-mapped block. Any code that can name it can poke it.
 \end{enumerate}
@@ -36,7 +36,7 @@ that touches the live controller require it.
 
 \begin{description}[style=nextline]
 \item[A \texttt{Session} is a capability.] \texttt{Acquire} hands a task a
-  \texttt{Session} -- a limited, controlled handle that represents exclusive
+  \texttt{Session}: a limited, controlled handle that represents exclusive
   ownership of the controller. ``Limited'' means it cannot be copied (two tasks
   can never share one), and ``controlled'' means it releases automatically when it
   leaves scope, even on an exception. While you hold it, no other task can
@@ -65,7 +65,7 @@ A compliant driver is three packages:
   controller.
 \item \textbf{The public package} (\texttt{ESP32S3.<Drv>}). It declares the
   \texttt{Session}, the exceptions, \texttt{Setup}, \texttt{Acquire}, and the
-  operations -- each of which is a one-liner that reaches the hardware only
+  operations, each of which is a one-liner that reaches the hardware only
   through \texttt{Owned}.
 \end{enumerate}
 
@@ -95,11 +95,11 @@ names them. Forgetting the check is structurally impossible.}
 \label{fig:driver-skeleton}
 \end{figure}
 
-\section{Layer 1 -- the Engine (the only code that sees the registers)}
+\section{Layer 1: the Engine (the only code that sees the registers)}
 
 The engine is a \emph{private child}: a unit named \texttt{ESP32S3.Widget.Engine}
 can be \texttt{with}-ed only from inside the \texttt{ESP32S3.Widget} subtree.
-Application code -- and even other drivers -- physically cannot reach it.
+Application code, and even other drivers, physically cannot reach it.
 
 \begin{lstlisting}
 private package ESP32S3.Widget.Engine is
@@ -117,14 +117,14 @@ end ESP32S3.Widget.Engine;
 \end{lstlisting}
 
 The engine \emph{body} is the one place that \texttt{with}s the SVD register
-package. It does the bit-twiddling -- the same code you would have written
-anyway -- but now it is sealed behind the \texttt{Bus} handle. \texttt{Open}
+package. It does the bit-twiddling (the same code you would have written
+anyway) but now it is sealed behind the \texttt{Bus} handle. \texttt{Open}
 brings the controller up and returns a \texttt{Bus}; every other operation takes a
 \texttt{Bus} and works through it. Crucially, \textbf{the parent package never
-\texttt{with}s the SVD registers at all} -- so once the engine exists, the global
+\texttt{with}s the SVD registers at all}. So once the engine exists, the global
 controller is unreachable from anywhere except through a \texttt{Bus} handle.
 
-\section{Layer 2 -- ownership: the Session and the Guard}\index{protected object}\index{limited type}\index{controlled type}
+\section{Layer 2: ownership, the Session and the Guard}\index{protected object}\index{limited type}\index{controlled type}
 
 The public package declares the handle and a per-controller lock. The
 \texttt{Session} is limited and controlled:
@@ -150,7 +150,7 @@ end ESP32S3.Widget;
 \end{lstlisting}
 
 In the body, a protected object arbitrates ownership. Its guarded section is
-tiny -- it only flips a flag -- so a task is never blocked inside it while a
+tiny (it only flips a flag) so a task is never blocked inside it while a
 slow transfer runs:
 
 \begin{lstlisting}
@@ -169,11 +169,11 @@ end Guard;
 
 \texttt{entry Acquire when not Held} is the whole mutual-exclusion story: a second
 task calling \texttt{Acquire} \emph{suspends} on the barrier until the first
-releases. (For a peripheral with several identical instances -- e.g. two SPI
-hosts -- this is an \texttt{array (Host) of Guard} and a matching array of
+releases. (For a peripheral with several identical instances, e.g. two SPI
+hosts, this is an \texttt{array (Host) of Guard} and a matching array of
 handles; the singleton case is shown here for clarity.)
 
-\section{Layer 3 -- the gateway that cannot be bypassed}\index{Owned gateway}
+\section{Layer 3: the gateway that cannot be bypassed}\index{Owned gateway}
 
 Here is the heart of the design. The configured \texttt{Bus} lives inside a
 package nested in the \emph{body}, so no other part of the driver can name it. The
@@ -254,12 +254,12 @@ Look at \texttt{Configure\_Pins} and \texttt{Transfer}: there is \emph{no}
 \texttt{if S.Active then} in either. They cannot reach the hardware without
 calling \texttt{State.Owned (S)}, and \texttt{Owned} is the one place that checks.
 A maintainer adding a new operation tomorrow has no choice but to go through the
-same door -- there is no \texttt{Bus} in scope to grab any other way.
+same door. There is no \texttt{Bus} in scope to grab any other way.
 
 \section{The limited-handle variant}
 
-If the engine's \texttt{Bus} is a \emph{limited} type -- typically because it
-holds something limited, like a finalization-controlled DMA channel -- it cannot
+If the engine's \texttt{Bus} is a \emph{limited} type (typically because it
+holds something limited, like a finalization-controlled DMA channel) it cannot
 be returned by value. Make the hidden instance \texttt{aliased} and have
 \texttt{Owned} return an access to it:
 
@@ -311,7 +311,7 @@ Each layer earns its place by removing a specific class of mistake:
 
 \begin{itemize}
 \item \textbf{Mistakes become unrepresentable.} ``Configure a port you don't
-  own,'' ``transmit from the wrong task,'' ``poke the registers directly'' --
+  own,'' ``transmit from the wrong task,'' ``poke the registers directly'':
   none of these can be written. The compiler and the visibility rules enforce
   the discipline, so code review does not have to.
 \item \textbf{One pattern, every peripheral.} Because all six \texttt{Session}
@@ -319,7 +319,7 @@ Each layer earns its place by removing a specific class of mistake:
   is a fill-in-the-blanks exercise rather than a fresh concurrency design.
 \item \textbf{The unsafe core is testable in isolation.} The engine is plain,
   lock-free register logic; the parent is plain ownership logic. Each can be
-  reasoned about -- and the engine bench-tested -- on its own.
+  reasoned about (and the engine bench-tested) on its own.
 \item \textbf{RAII hygiene for free.} Scope-based release means the common
   ``acquire, do work, release'' path needs no explicit \texttt{Release} and is
   exception-safe by construction.
@@ -351,7 +351,7 @@ a chip-select line, pin a fresh socket to one interface, decide what a Modbus
 register read returns. In most languages the reach-for tool is a \emph{closure}.
 
 A closure is a subprogram bundled with the variables it uses but does not itself
-declare -- the surrounding state it ``closes over.'' A nested subprogram that reads
+declare: the surrounding state it ``closes over.'' A nested subprogram that reads
 a variable from its enclosing scope is the everyday case, and on a driver boundary
 it shows up like this:
 
@@ -367,15 +367,15 @@ end Configure;
 \end{lstlisting}
 
 \texttt{Select\_It} declares only \texttt{Active} but uses \texttt{CS}, so to be
-callable later it has to remember \emph{which} \texttt{CS} -- the one from the
+callable later it has to remember \emph{which} \texttt{CS}: the one from the
 \texttt{Configure} call that produced it. That pairing of code with captured state
-is the closure. A subprogram that captures \emph{nothing} -- using only its own
-parameters, globals and library-level state -- is not a closure but a plain
+is the closure. A subprogram that captures \emph{nothing} (using only its own
+parameters, globals and library-level state) is not a closure but a plain
 function pointer, and that distinction is the whole of what follows.
 
 A closure is exactly what this platform forbids. A subprogram that captures its
-environment compiles to a \emph{trampoline} -- a scrap of executable code GCC
-writes onto the stack, which is where the captured \texttt{CS} gets bound -- and on
+environment compiles to a \emph{trampoline}: a scrap of executable code GCC
+writes onto the stack, which is where the captured \texttt{CS} gets bound, and on
 the ESP32-S3 the stack lives in non-executable data memory, so calling such a
 trampoline faults outright. The HAL is built under
 \texttt{pragma Restrictions (No\_Implicit\_Dynamic\_Code)}, which turns that into a
@@ -388,7 +388,7 @@ state the hook carries.
 
 \textbf{A closure-free callback with an explicit context.} The hook is a
 library-level access-to-subprogram, and any state it needs travels through an
-opaque context parameter the driver hands back to it -- not captured, passed. The
+opaque context parameter the driver hands back to it: not captured, passed. The
 SPI driver's application chip-select is this shape (Chapter~\ref{ch:hal}):
 
 \begin{lstlisting}
@@ -397,7 +397,7 @@ type CS_Select is access procedure (Ctx : System.Address; Active : Boolean);
 \end{lstlisting}
 
 It is light and runs under every profile. The cost is that \texttt{Ctx} is
-untyped -- the callback converts it back itself -- so it suits a hook that is
+untyped (the callback converts it back itself) so it suits a hook that is
 essentially stateless or one-shot: ``drive this pin,'' ``call \texttt{Set\_Interface}
 on this socket.''
 
@@ -413,7 +413,7 @@ overriding procedure On_Read_Holding_Registers (Self : in out Device; ...);
 \end{lstlisting}
 
 Here \texttt{Self} \emph{is} the context: no \texttt{Ctx} to thread, no conversion,
-and the call dispatches through a static vtable -- a table, not generated code, so
+and the call dispatches through a static vtable: a table, not generated code, so
 \texttt{No\_Implicit\_Dynamic\_Code} is satisfied. The set of primitives you
 override expresses exactly which operations the device implements; the ones you
 leave alone take the base type's default (for Modbus, an \texttt{Illegal\_Function}
@@ -423,5 +423,5 @@ of related operations with sensible defaults.
 The rule of thumb: a stateless or one-shot hook wants the closure-free callback
 (carry any scrap of context in an opaque pointer); a hook with rich per-instance
 state, or a group of related operations, wants a tagged type you derive and
-override. Both exist for one reason -- to recover the convenience of a capturing
+override. Both exist for one reason: to recover the convenience of a capturing
 closure without the trampoline this chip cannot run.

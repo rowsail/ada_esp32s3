@@ -3,7 +3,7 @@
 
 Storage gave the application a filesystem; this chapter gives it a network. The
 striking thing about the networking layer is the API the application sees: it is
-the \emph{standard} \texttt{GNAT.Sockets} -- \texttt{Create\_Socket},
+the \emph{standard} \texttt{GNAT.Sockets}: \texttt{Create\_Socket},
 \texttt{Connect\_Socket}, \texttt{Send\_Socket}, a \texttt{Stream} over a socket.
 Portable networking code compiles and runs here unchanged, within the subset this
 chapter describes. Underneath that familiar surface sits a small stack: a
@@ -13,13 +13,13 @@ first chip behind it.
 \begin{figure}[ht]
 \centering
 \begin{tikzpicture}[node distance=2mm]
-\node[layer, fill=blue!9] (app)  {Your application -- portable \texttt{GNAT.Sockets} code, \texttt{DNS\_Client}};
-\node[layer, below=of app]  (fac)  {\texttt{GNAT.Sockets} facade -- interface registry, address types, the \texttt{Stream}};
-\node[layer, below=of fac]  (intf) {\texttt{Net\_Devices.Device'Class} -- the chip-neutral contract (dispatched on)};
-\node[layer, below=of intf] (wrap) {\texttt{ESP32S3.W5500.Net\_Device} -- the W5500 as the first backend};
-\node[layer, below=of wrap] (eng)  {\texttt{ESP32S3.W5500.Sockets} -- the socket engine (\texttt{.Interrupts}, \texttt{.DHCP} alongside)};
-\node[layer, below=of eng]  (xport){\texttt{ESP32S3.W5500} -- VDM frame transport + bring-up};
-\node[layer, below=of xport] (spi) {\texttt{ESP32S3.SPI} -- task-safe SPI master $\rightarrow$ the chip};
+\node[layer, fill=blue!9] (app)  {Your application: portable \texttt{GNAT.Sockets} code, \texttt{DNS\_Client}};
+\node[layer, below=of app]  (fac)  {\texttt{GNAT.Sockets} facade: interface registry, address types, the \texttt{Stream}};
+\node[layer, below=of fac]  (intf) {\texttt{Net\_Devices.Device'Class}: the chip-neutral contract (dispatched on)};
+\node[layer, below=of intf] (wrap) {\texttt{ESP32S3.W5500.Net\_Device}: the W5500 as the first backend};
+\node[layer, below=of wrap] (eng)  {\texttt{ESP32S3.W5500.Sockets}: the socket engine (\texttt{.Interrupts}, \texttt{.DHCP} alongside)};
+\node[layer, below=of eng]  (xport){\texttt{ESP32S3.W5500}: VDM frame transport + bring-up};
+\node[layer, below=of xport] (spi) {\texttt{ESP32S3.SPI}: task-safe SPI master $\rightarrow$ the chip};
 \end{tikzpicture}
 \caption{The networking stack. Everything above \texttt{Net\_Devices.Device'Class}
 is chip-independent; everything below it is the W5500 driver. A second NIC slots in
@@ -28,8 +28,8 @@ as another backend without the layers above noticing.}
 \end{figure}
 
 \cnote{On an ESP-IDF system you reach for lwIP and the BSD socket API, with the
-Wi-Fi or Ethernet \texttt{netif} underneath. The shape here is the same -- a
-sockets API over a driver -- but the W5500 carries its \emph{own} TCP/IP stack in
+Wi-Fi or Ethernet \texttt{netif} underneath. The shape here is the same (a
+sockets API over a driver), but the W5500 carries its \emph{own} TCP/IP stack in
 silicon, so there is no lwIP to link: the ``stack'' is eight hardware sockets on
 the chip, and our job is only to drive them and present the sockets API.}
 
@@ -50,23 +50,23 @@ The driver is built in layers, each a child package, so the application can stop
 whichever level it needs:
 
 \begin{itemize}[nosep]
-\item \texttt{ESP32S3.W5500} -- the transport. The W5500's SPI ``variable data
+\item \texttt{ESP32S3.W5500}: the transport. The W5500's SPI ``variable data
 length'' frame is a 16-bit address, a control byte (block-select + read/write), and
 the data; this layer reads and writes registers and the socket buffers over the
 task-safe SPI master, and brings the chip up (reset, \texttt{VERSIONR} probe, MAC /
 IP / subnet / gateway, PHY link).
-\item \texttt{ESP32S3.W5500.Sockets} -- the \emph{socket engine}. A self-contained
+\item \texttt{ESP32S3.W5500.Sockets}: the \emph{socket engine}. A self-contained
 \texttt{Socket} handle with \texttt{Open\_TCP} / \texttt{Open\_UDP},
 \texttt{Listen}, \texttt{Connect}, \texttt{Send} / \texttt{Receive},
 \texttt{Send\_To} / \texttt{Receive\_From}, and a \texttt{Status} error model. This
 is the level the higher layers build on.
-\item \texttt{ESP32S3.W5500.Interrupts} -- optional. The single \texttt{INTn} line
+\item \texttt{ESP32S3.W5500.Interrupts}: optional. The single \texttt{INTn} line
 (falling edge on \texttt{IO3}) wakes tasks blocked in \texttt{Wait\_Data} /
 \texttt{Wait\_Connected} via per-socket suspension objects, so they sleep instead
-of poll. Leaving it out costs nothing -- the engine polls.
-\item \texttt{ESP32S3.W5500.DHCP} -- a DHCP client (see
+of poll. Leaving it out costs nothing: the engine polls.
+\item \texttt{ESP32S3.W5500.DHCP}: a DHCP client (see
 \S\ref{ch:net:dns-dhcp}).
-\item \texttt{ESP32S3.W5500.Net\_Device} -- the adapter that presents the chip as a
+\item \texttt{ESP32S3.W5500.Net\_Device}: the adapter that presents the chip as a
 \texttt{GNAT.Sockets} interface (\S\ref{ch:net:netdevice}).
 \end{itemize}
 
@@ -124,7 +124,7 @@ Set_Socket_Option (Sock, Socket_Level, (Receive_Timeout, Timeout => 3.0));
 \end{lstlisting}
 
 When the timeout elapses, \texttt{Receive\_Socket} raises \texttt{Socket\_Error},
-just as it does on a desktop -- so portable code that already guards against that
+just as it does on a desktop, so portable code that already guards against that
 works unchanged.
 
 A few necessary departures from desktop \texttt{GNAT.Sockets}:
@@ -133,7 +133,7 @@ A few necessary departures from desktop \texttt{GNAT.Sockets}:
 \item \textbf{IPv4 only} (\texttt{Family\_Inet}); the backend has no IPv6 yet.
 \item \textbf{One bare-metal init.} Desktop \texttt{Initialize} takes no argument;
 here you must say which chip backs the facade (\S\ref{ch:net:netdevice}).
-\item \textbf{A finite number of sockets} -- the sum the interfaces provide (eight
+\item \textbf{A finite number of sockets}: the sum the interfaces provide (eight
 per W5500). \texttt{Create\_Socket} past that raises \texttt{Socket\_Error}.
 \item \textbf{Accept.} The W5500's listening socket \emph{becomes} the connection,
 so \texttt{Accept\_Socket} returns the listener itself as the connected socket; to
@@ -145,7 +145,7 @@ accept another client, \texttt{Listen\_Socket} again.
 
 The facade does not talk to the W5500 directly. Between them sits one small
 package, \texttt{Net\_Devices}, defining the contract a network interface must
-satisfy -- the part the facade actually needs. It is an Ada \texttt{interface}
+satisfy: the part the facade actually needs. It is an Ada \texttt{interface}
 (dispatched on at run time), plus chip-neutral address and status types:
 
 \begin{lstlisting}
@@ -213,7 +213,7 @@ So a board's bring-up ends with \texttt{ESP32S3.W5500.Net\_Device.Register\_Defa
 (Dev'Access)}, and from there the code is ordinary \texttt{GNAT.Sockets}. Because
 the facade names only \texttt{Net\_Devices}, supporting a different chip means
 writing one new backend (another implementation of the interface) and registering
-it -- nothing above \texttt{Net\_Devices.Device'Class} changes, and a board may
+it. Nothing above \texttt{Net\_Devices.Device'Class} changes, and a board may
 register more than one. \emph{Per-destination routing across interfaces is not
 wired yet: today every socket uses the default interface; the registry and the
 per-socket interface id are the hooks a routing layer will use.}
@@ -232,7 +232,7 @@ the architecture.
 
 \textbf{DNS} is an ordinary UDP request/response that happens \emph{after} the
 interface is up, so it needs nothing chip-specific. It is written purely against
-\texttt{GNAT.Sockets} and lives in a standalone, portable package -- the same
+\texttt{GNAT.Sockets} and lives in a standalone, portable package: the same
 source would resolve names on a desktop:
 
 \begin{lstlisting}
@@ -244,14 +244,14 @@ function Resolve (Server : Inet_Addr_Type; Name : String;
 \end{lstlisting}
 
 \textbf{DHCP} is the opposite kind of protocol: its job is to \emph{bootstrap} the
-interface -- it must talk before an address exists and then program the obtained
+interface: it must talk before an address exists and then program the obtained
 IP, mask and gateway into the NIC. Both are operations outside the sockets API on
 every platform (raw sockets and \texttt{ioctl} on a desktop; the W5500's
 \texttt{Configure} registers here). So the DHCP client cannot be portable the way
 DNS is; it rightly lives at the chip layer, \texttt{ESP32S3.W5500.DHCP}, built
 straight on the socket engine. It runs the DORA exchange (Discover / Offer /
 Request / Ack) and, on success, configures the chip. \texttt{Maintain} starts a
-background task that acquires a lease and then keeps it -- renewing at $T1$,
+background task that acquires a lease and then keeps it: renewing at $T1$,
 rebinding at $T2$, re-acquiring on expiry:
 
 \begin{lstlisting}
@@ -267,12 +267,12 @@ shares a tiny \texttt{W5500\_Dev} bring-up package (SPI + reset + a static addre
 then \texttt{Register\_Default}); the DHCP example configures itself instead. (FTP,
 the most demanding client, gets its own section below.)
 
-\subsection{\texttt{esp32s3\_w5500} -- TCP echo server}\index{TCP}
+\subsection{\texttt{esp32s3\_w5500}: TCP echo server}\index{TCP}
 
 The full stack end to end: bring-up, the optional interrupts, and the facade. It
 listens on \texttt{192.168.1.50:5000} and echoes each line back. This is the TCP
-\emph{server} path -- \texttt{Listen\_Socket}, \texttt{Accept\_Socket} (which
-reports the peer), \texttt{Receive\_Socket}, \texttt{Send\_Socket} -- with tasks
+\emph{server} path (\texttt{Listen\_Socket}, \texttt{Accept\_Socket} (which
+reports the peer), \texttt{Receive\_Socket}, \texttt{Send\_Socket}), with tasks
 sleeping on \texttt{INTn} rather than polling.
 
 \begin{lstlisting}
@@ -290,14 +290,14 @@ loop
 end loop;
 \end{lstlisting}
 
-\subsection{\texttt{esp32s3\_w5500\_http} -- HTTP GET (TCP client)}
+\subsection{\texttt{esp32s3\_w5500\_http}: HTTP GET (TCP client)}
 
 The TCP \emph{client} path. It connects out to a web server, sends
-\texttt{GET / HTTP/1.0}, and prints the response until the server closes --
+\texttt{GET / HTTP/1.0}, and prints the response until the server closes:
 \texttt{Connect\_Socket} then a \texttt{Receive\_Socket} loop ending at
 end-of-stream (\texttt{Last < Item'First}).
 
-\subsection{\texttt{esp32s3\_w5500\_ntp} -- network time (UDP)}\index{NTP}\index{UDP}
+\subsection{\texttt{esp32s3\_w5500\_ntp}: network time (UDP)}\index{NTP}\index{UDP}
 
 A UDP datagram exchange: it sends a 48-byte NTP request to a time server with
 \texttt{Send\_Socket (\dots, To => Server'Access)}, reads the reply with
@@ -305,11 +305,11 @@ A UDP datagram exchange: it sends a 48-byte NTP request to a time server with
 converts the NTP seconds to a civil date/time. Demonstrates \texttt{Socket\_%
 Datagram} and the \texttt{To} / \texttt{From} addresses.
 
-\subsection{\texttt{esp32s3\_w5500\_dns} -- name resolution}
+\subsection{\texttt{esp32s3\_w5500\_dns}: name resolution}
 
 A thin demonstration of \texttt{DNS\_Client.Resolve}: it resolves a hostname through
-a resolver and prints the address. The protocol -- building the query, parsing the
-answer with name-compression -- lives in the reusable module, so the example is a
+a resolver and prints the address. The protocol (building the query, parsing the
+answer with name-compression) lives in the reusable module, so the example is a
 few lines:
 
 \begin{lstlisting}
@@ -318,7 +318,7 @@ if DNS_Client.Resolve (Inet_Addr ("8.8.8.8"), "example.com", Addr, Timeout => 3.
 end if;
 \end{lstlisting}
 
-\subsection{\texttt{esp32s3\_w5500\_dhcp} -- a self-configuring address}
+\subsection{\texttt{esp32s3\_w5500\_dhcp}: a self-configuring address}
 
 No static IP: the board leases one. It calls \texttt{DHCP.Maintain} with a
 library-level \texttt{On\_Bound} callback that prints each (re)bind, then the
@@ -331,7 +331,7 @@ first bind the chip is configured, so the socket engine and the facade are ready
 \texttt{esp32s3\_w5500\_weather} uses the whole stack to answer a real question:
 \emph{what is the weather at a latitude and longitude?} It fetches the current
 conditions from Open-Meteo (\texttt{open-meteo.com}). The flow touches every layer
-we have built -- UDP and TCP, name resolution, a receive timeout -- and is worth
+we have built (UDP and TCP, name resolution, a receive timeout), and is worth
 reading start to finish.
 
 Open-Meteo's forecast API answers over plain HTTP on port 80. That matters: the
@@ -379,8 +379,8 @@ where the request is
 
 \textbf{4. Read the answer.} The reply is JSON. A small self-contained scrape (no
 heap, no JSON library) pulls the fields out of the \texttt{current\_weather}
-object -- anchoring past the \texttt{current\_weather\_units} object first, whose
-same-named keys are unit \emph{strings} -- and a table turns the WMO weather code
+object (anchoring past the \texttt{current\_weather\_units} object first, whose
+same-named keys are unit \emph{strings}) and a table turns the WMO weather code
 into a word. The result, for Atlanta:
 
 \begin{lstlisting}[style=sh]
@@ -395,24 +395,24 @@ into a word. The result, for Atlanta:
 That single run exercises the entire chapter: a UDP exchange (DNS) and a TCP
 client conversation (HTTP), each dispatched through \texttt{Net\_Devices.%
 Device'Class} into the W5500 backend, down through the socket engine and the VDM
-transport to the SPI master -- with a receive timeout guarding the wait, and the
+transport to the SPI master, with a receive timeout guarding the wait, and the
 W5500's silicon doing the TCP/IP. The application code, though, is just sockets:
 the same program, pointed at a desktop \texttt{GNAT.Sockets}, would fetch the same
 forecast.
 
-\section{An FTP client -- and the two bugs only the board found}
+\section{An FTP client, and the two bugs only the board found}
 \label{ch:net:ftp}\index{FTP}\index{flow control}
 
 FTP (RFC 959) is the most demanding client in this chapter, and the most
-instructive. It is the first to hold \emph{two} TCP connections at once -- a
+instructive. It is the first to hold \emph{two} TCP connections at once (a
 persistent \emph{control} connection for commands and replies, and a fresh
-\emph{data} connection for each transfer -- and the first to move bulk data in
+\emph{data} connection for each transfer), and the first to move bulk data in
 both directions. \texttt{FTP\_Client} is written, like \texttt{DNS\_Client},
 entirely against \texttt{GNAT.Sockets}, so the same source runs on a desktop.
 
 \textbf{Passive mode, always.} An embedded client should only ever make
 \emph{outbound} connections, so every transfer uses \texttt{PASV}: the client asks
-the server to listen and connects out to it -- no listening socket, friendly to
+the server to listen and connects out to it: no listening socket, friendly to
 NAT and firewalls. Two of the W5500's eight sockets are busy during a transfer.
 
 \textbf{Streaming through callbacks.} A file is never buffered whole: downloads
@@ -438,14 +438,14 @@ it: \texttt{esp32s3\_ftp\_inet} downloads from the public \texttt{ftp.gnu.org}, 
 \texttt{esp32s3\_ftp} does an upload round-trip against a local server.
 
 \textbf{The host says it works.} The client is exercised on the build machine
-against two real servers -- \texttt{pyftpdlib} and the live \texttt{ftp.gnu.org}
--- doing login, \texttt{SIZE}, \texttt{RETR}, \texttt{STOR} and listings, all
+against two real servers (\texttt{pyftpdlib} and the live \texttt{ftp.gnu.org}),
+doing login, \texttt{SIZE}, \texttt{RETR}, \texttt{STOR} and listings, all
 byte-exact. Green across the board.
 
 \textbf{The board disagrees.} Flashed onto the ESP32-S3, the download path worked
-first try -- a real \texttt{RETR} from \texttt{ftp.gnu.org} over the W5500. But
-uploading a 1\,MiB file failed: the server received 64\,--\,104\,KB -- it varied
-between runs -- and then the transfer died. Two bugs were hiding in the W5500 send
+first try: a real \texttt{RETR} from \texttt{ftp.gnu.org} over the W5500. But
+uploading a 1\,MiB file failed: the server received 64\,--\,104\,KB (it varied
+between runs) and then the transfer died. Two bugs were hiding in the W5500 send
 path, and \emph{neither could be reproduced on the host}, for the same underlying
 reason: a desktop's kernel socket buffers are megabytes deep and its TCP close is
 graceful. The W5500's per-socket buffer is \textbf{2\,KB}, and you drive the close
@@ -453,10 +453,10 @@ yourself.
 
 \textbf{Bug one: send flow control.} The engine's \texttt{Send} read the free
 space in the 2\,KB transmit buffer and, finding it full, returned
-\texttt{No\_Space} -- whereupon the upper layer gave up. On a desktop the buffer
+\texttt{No\_Space}, whereupon the upper layer gave up. On a desktop the buffer
 never fills (the kernel swallows a megabyte); on the W5500 it fills within the
 first hundred kilobytes, the instant the application outruns the wire. The fix is
-what TCP flow control is meant to do -- \emph{wait} for the peer to drain the
+what TCP flow control is meant to do: \emph{wait} for the peer to drain the
 buffer, rather than abandon the transfer:
 
 \begin{lstlisting}
@@ -473,13 +473,13 @@ end loop;
 \end{lstlisting}
 
 \textbf{Bug two: the missing FIN.} With data now flowing the full megabyte
-arrived -- and the transfer \emph{still} hung at the end. After the last byte the
+arrived, and the transfer \emph{still} hung at the end. After the last byte the
 client closes the data connection to signal end-of-file; the server reads to EOF,
 then replies \texttt{226 Transfer complete}. But \texttt{Close} was issuing the
 W5500's abrupt \texttt{CLOSE} command, which discards the socket without sending a
 \texttt{FIN}. The server never saw end-of-stream, never sent its \texttt{226}, and
 the client timed out waiting. On a desktop the OS sends the \texttt{FIN} for you;
-here you must ask for it -- an active close (\texttt{DISCON}, which sends
+here you must ask for it: an active close (\texttt{DISCON}, which sends
 \texttt{FIN} and waits for the handshake) before the socket is freed.
 
 With both fixes the upload completes, and the example reads the file back and
@@ -491,9 +491,9 @@ checks it byte-for-byte:
 \end{lstlisting}
 
 \textbf{The lesson.} Both bugs lived in code that had passed every host test and a
-careful reading -- including an analysis that ``proved,'' from the source, that
+careful reading, including an analysis that ``proved,'' from the source, that
 the transfer would sustain. Neither was a logic error visible on the page: each was
-a property of \emph{real hardware under real load} -- a small buffer that actually
+a property of \emph{real hardware under real load}: a small buffer that actually
 fills, a close you actually have to drive. The portable layer let the protocol be
 written and tested in minutes on a laptop; the silicon is what proved it. On bare
 metal, the board is the test.
@@ -503,18 +503,18 @@ metal, the board is the test.
 
 The other half of FTP is the server, and it joins the two halves of this book: it
 serves the \emph{ext4-on-flash} filesystem of Chapter~\ref{ch:storage} over the
-network -- and, through a small mount table, any other ext4 volume alongside it in
+network, and, through a small mount table, any other ext4 volume alongside it in
 one tree.
 
 \subsection{One namespace for several volumes: the VFS}
 \label{ch:net:vfs}\index{VFS}\index{mount point}
 
-A board may have more than one place to keep files -- the on-board SPI flash and
+A board may have more than one place to keep files: the on-board SPI flash and
 an SD card, say. Both already reduce to the same abstraction: each is a
 \texttt{Block\_Dev.Device} (the flash through the wear-levelling FTL, the card
 through \texttt{Block\_Dev.SDMMC\_Source}), and each mounts as an
 \texttt{ESP32S3.Ext4.FS.Mount}. What is left is to \emph{name} them and route a path
-to the right one. That is all \texttt{ESP32S3.Ext4.VFS} does -- a tiny mount table:
+to the right one. That is all \texttt{ESP32S3.Ext4.VFS} does: a tiny mount table:
 
 \begin{lstlisting}
 ESP32S3.Ext4.VFS.Add ("flash", Flash_M'Access);   -- appears at /flash
@@ -524,12 +524,12 @@ ESP32S3.Ext4.VFS.Add ("sd",    SD_M'Access);       -- appears at /sd   (optional
 Each \texttt{Add} registers a mounted filesystem under a top-level name. A path is
 then resolved by its first component: \texttt{Resolve ("/flash/docs/a.txt")} returns
 the flash mount and the remainder \texttt{"/docs/a.txt"}; the bare root \texttt{"/"}
-is \emph{virtual} -- it belongs to no device and simply lists the registered names.
+is \emph{virtual}: it belongs to no device and simply lists the registered names.
 This is the Unix mount-point model in miniature, and the storage analogue of the
 chip-neutral NIC registry of \S\ref{ch:net:netdevice}: a neutral device interface
 (\texttt{Block\_Dev.Device}) plus a small table mapping a name to a backend. With
 one device registered the tree is just \texttt{/flash}; adding the SD card later is
-the single \texttt{Add} line above -- nothing in the server changes.
+the single \texttt{Add} line above. Nothing in the server changes.
 
 \texttt{FTP\_Server.Run} therefore carries no filesystem of its own; it serves
 whatever has been registered:
@@ -545,27 +545,27 @@ server reads its own address from each accepted control connection
 (\texttt{Get\_Socket\_Name} returns the interface's configured IP) and advertises
 exactly that in the \texttt{227} reply. So it always names the address the client
 actually reached the board on, even as DHCP reassigns it. \texttt{Run} does take an
-optional \texttt{Local\_IP} to override this -- needed only behind NAT, where the
-public address differs from the board's own -- but ordinary use leaves it out.
+optional \texttt{Local\_IP} to override this (needed only behind NAT, where the
+public address differs from the board's own), but ordinary use leaves it out.
 
-It runs the accept loop -- one client at a time, a control connection plus one
+It runs the accept loop: one client at a time, a control connection plus one
 passive data connection per transfer. The server side of the socket API is
 \texttt{Bind\_Socket} / \texttt{Listen\_Socket} / \texttt{Accept\_Socket} (the echo
 example, \S\ref{ch:net:examples}). Each command first resolves its path through the
-VFS, then maps onto an ext4 operation on the chosen mount -- \texttt{LIST} onto
+VFS, then maps onto an ext4 operation on the chosen mount (\texttt{LIST} onto
 \texttt{Iterate} (plus \texttt{Stat} for the \texttt{ls -l} columns), \texttt{RETR}
 onto the offset \texttt{Read\_File}, \texttt{STOR} onto \texttt{Create\_File} +
 \texttt{Append} + \texttt{Commit}, \texttt{DELE} / \texttt{MKD} / \texttt{RMD} onto
-\texttt{Unlink} / \texttt{Mkdir} / \texttt{Rmdir} -- while \texttt{LIST} of the
+\texttt{Unlink} / \texttt{Mkdir} / \texttt{Rmdir}), while \texttt{LIST} of the
 virtual root just enumerates the mount names. The filesystem's
 \texttt{Ada.IO\_Exceptions} are caught and turned into FTP \texttt{550} replies, so
 a bad request never takes the server down; \texttt{Read\_Only} refuses the mutating
-commands. A desktop client -- \texttt{ftp}, FileZilla, a browser, Python
-\texttt{ftplib} -- then sees \texttt{/flash} (and \texttt{/sd}, when present) as
+commands. A desktop client (\texttt{ftp}, FileZilla, a browser, Python
+\texttt{ftplib}) then sees \texttt{/flash} (and \texttt{/sd}, when present) as
 directories at the root, and can browse, download, upload and manage the board's
 storage beneath them.
 
-\textbf{The board faulted on the first run -- and that was the language working.}
+\textbf{The board faulted on the first run, and that was the language working.}
 Flashed and booted, the server printed its greeting and then died:
 
 \begin{lstlisting}[style=sh]
@@ -576,7 +576,7 @@ Message: ftp_server.adb:539 accessibility check failed
 
 Two things are worth drawing out. First, the \emph{diagnosis}: from the host the
 board still answered \texttt{ping}, yet port 21 refused connections. That
-combination is a tell -- the W5500 answers ARP and ICMP \emph{in silicon} once its
+combination is a tell: the W5500 answers ARP and ICMP \emph{in silicon} once its
 address is configured, so a board that pings but refuses every port has a
 \emph{halted CPU}, not a missing listener. The chip was up; the program was not.
 
@@ -588,12 +588,12 @@ Mnt := FS;   -- Mnt is library-level; FS points at the caller's Mount
 \end{lstlisting}
 
 The example had declared the \texttt{Mount} as a local variable of \texttt{Main}.
-Storing an access to it in a library-level variable -- one that outlives
-\texttt{Main}'s frame -- is exactly the use-after-scope that Ada's
+Storing an access to it in a library-level variable (one that outlives
+\texttt{Main}'s frame) is exactly the use-after-scope that Ada's
 \emph{accessibility rules} forbid, and the one case the compiler cannot prove
 statically it checks at run time. The check fired the instant the assignment ran,
 turning a latent dangling pointer into a located exception with a line number. The
-fix is to give the filesystem objects the lifetime the server assumes -- declare
+fix is to give the filesystem objects the lifetime the server assumes: declare
 them at library level:
 
 \begin{lstlisting}
@@ -608,7 +608,7 @@ end Flash_FS;
 The \texttt{Mnt := FS} store shown above belonged to the original single-mount
 server; the move to the VFS of \S\ref{ch:net:vfs} did not retire the rule, only
 relocated it. \texttt{VFS.Add} keeps each mount's access in its table, so a
-registered filesystem must outlive the server just the same -- which is exactly
+registered filesystem must outlive the server just the same, which is exactly
 why the example passes \texttt{Flash\_FS.M'Access}, a library-level object, and not
 a \texttt{Mount} local to \texttt{Main}. The accessibility check guards the new
 shape as faithfully as it guarded the old.
@@ -619,7 +619,7 @@ two FTP halves bracket the lesson nicely: the client's bugs were properties of t
 hardware that no amount of reading the source could reveal; the server's was a
 property of the \emph{program} that the language caught before it could do harm.
 
-\noindent\textbf{Example:} \texttt{examples/esp32s3\_ftp\_server} -- formats a
+\noindent\textbf{Example:} \texttt{examples/esp32s3\_ftp\_server}, which formats a
 fresh ext4 on the W25Q flash, registers it at \texttt{/flash}, then serves it;
 HW-verified against \texttt{ftplib} (\texttt{NLST "/"} returns \texttt{flash};
 \texttt{LIST}, \texttt{RETR}/\texttt{SIZE}, \texttt{STOR} with a byte-exact
@@ -630,22 +630,22 @@ the server.
 \section{Multiple interfaces: routing, metrics, and pinning}
 \label{ch:net:multinic}\index{routing}\index{interface!multiple}\index{failover}
 
-A board may carry more than one way onto a network -- two W5500s, or a wired NIC
+A board may carry more than one way onto a network: two W5500s, or a wired NIC
 plus a cellular modem. The registry of \S\ref{ch:net:netdevice} already allows it:
 \texttt{Add\_Interface} registers several \texttt{Net\_Devices.Device}s, and a
-\texttt{Socket\_Type} records which one it is on. What that section left open --
-its own comment said routing was \emph{``not wired yet''} -- is the policy: which
+\texttt{Socket\_Type} records which one it is on. What that section left open
+(its own comment said routing was \emph{``not wired yet''}) is the policy: which
 interface a given connection should use. This section is that policy.
 
 It rests on one new fact each interface reports, \texttt{Is\_Up}: is it usable right
-now -- physically up, with an address? (For the W5500, PHY link up and a non-zero
+now: physically up, with an address? (For the W5500, PHY link up and a non-zero
 IP.) Routing consults it so traffic only leaves a live interface; pinning uses it to
 fail closed.
 
 \subsection{The routing table}
 \index{Net\_Routes}\index{metric}
 
-\texttt{Net\_Routes} is a small table -- the network analogue of the VFS mount
+\texttt{Net\_Routes} is a small table: the network analogue of the VFS mount
 table of \S\ref{ch:net:vfs}, a neutral interface plus a table that maps a key (here
 a destination address) to a backend (here an interface):
 
@@ -657,23 +657,23 @@ Net_Routes.Add_Route ((10,0,0,0), (255,0,0,0), Eth, Metric => 10);  -- 10/8 is w
 
 A destination is resolved in a fixed order: among routes that \emph{match} and whose
 interface is \emph{up}, take the \textbf{longest prefix}, then the \textbf{lowest
-metric}. The two keys do different jobs. Prefix length is specificity -- a
+metric}. The two keys do different jobs. Prefix length is specificity: a
 \texttt{10.0.0.0/8} route beats a \texttt{0.0.0.0/0} default regardless of metric, so
 ``LAN traffic goes out the wired port'' is expressed by a more specific route, not a
-number. Metric breaks ties \emph{among equally-specific routes} -- two defaults, one
+number. Metric breaks ties \emph{among equally-specific routes}: two defaults, one
 per interface, are decided by metric, so the wired default (10) wins over the
-cellular default (100). ``Cellular is billed -- always last'' is a metric.
+cellular default (100). ``Cellular is billed, always last'' is a metric.
 
 The \texttt{Is\_Up} filter is what turns preference into \textbf{failover}. Give both
 interfaces a default route, wired cheaper; normally the wired default wins. Unplug the
 wired link and its routes drop out of consideration, so the cellular default takes
-over -- automatically, no application code. Plug it back in and it preempts again
+over, automatically, no application code. Plug it back in and it preempts again
 (lower metric, and now up). One subtlety worth stating: an existing connection stays
 on the interface it was opened on (the socket remembers it); failover re-routes only
 \emph{new} connections. You cannot migrate a live TCP socket between interfaces, and
 the design does not pretend to.
 
-The table is pure logic -- liveness is \emph{injected} (the facade hands it a query
+The table is pure logic: liveness is \emph{injected} (the facade hands it a query
 backed by the registry), so it is unit-tested natively with a mock up-state, no
 hardware: longest-prefix, metric tie-break, failover, preempt-back, and the no-route
 cases all checked on the host before any of it touches silicon.
@@ -681,8 +681,8 @@ cases all checked on the host before any of it touches silicon.
 \subsection{Pinning: this link and no other}
 \index{pinning}\index{interface!pinning}
 
-Routing is for ``reach this sensibly, survive a link loss.'' The opposite need --
-``this traffic is allowed on exactly one link and nowhere else'' -- is
+Routing is for ``reach this sensibly, survive a link loss.'' The opposite need
+(``this traffic is allowed on exactly one link and nowhere else'') is
 \textbf{pinning}:
 
 \begin{lstlisting}
@@ -690,11 +690,11 @@ GNAT.Sockets.Set_Interface (S, Eth);   -- S uses Eth only
 \end{lstlisting}
 
 A pinned socket bypasses the table entirely: \texttt{Connect} uses that interface and
-\textbf{fails closed} -- \texttt{Socket\_Error} if it is down -- rather than falling
+\textbf{fails closed} (\texttt{Socket\_Error} if it is down) rather than falling
 back. That difference is the whole point. ``Prefer wired'' (a metric) silently fails
 over; ``only wired'' (a pin) must not, or it is a security or billing bug. Binding a
 socket to a specific interface's own address pins it the same way, so a server can be
-made to listen on just one interface. Inbound is otherwise pinned for free -- a
+made to listen on just one interface. Inbound is otherwise pinned for free: a
 listener lives on the chip it was created on.
 
 \subsection{How a connect chooses}
@@ -703,18 +703,18 @@ For an \emph{unpinned} socket, \texttt{Connect\_Socket} resolves the destination
 through the table and then re-homes the socket onto the chosen interface before it
 opens the chip socket. The design stays invisible to single-interface boards by
 construction: with no routes configured the resolver returns the default interface
-and the re-home is a no-op, so every existing client -- the weather fetch, the FTP
-client, DNS -- behaves exactly as before. Only once routes exist does a destination
+and the re-home is a no-op, so every existing client (the weather fetch, the FTP
+client, DNS) behaves exactly as before. Only once routes exist does a destination
 with no live route raise \texttt{Socket\_Error} instead of leaking out some default.
 
-\noindent\textbf{Example:} \texttt{examples/esp32s3\_multinic} brings up two W5500s
--- the primary by DHCP, a second on \texttt{CS=IO40} whose reset is shared on
+\noindent\textbf{Example:} \texttt{examples/esp32s3\_multinic} brings up two W5500s:
+the primary by DHCP, a second on \texttt{CS=IO40} whose reset is shared on
 \texttt{IO11} (so it uses a software reset, \texttt{MR.RST}, leaving the primary
 alone) and which is left uncabled on purpose. The board reports \texttt{eth0} up and
 \texttt{eth1} down; routes \texttt{8.8.8.8} out \texttt{eth0}; falls a \texttt{10.0.0.x}
 destination back to the default when its specific route (\texttt{eth1}/24) is down;
 \emph{refuses} a connect pinned to the down \texttt{eth1}; and connects for real out
-the live \texttt{eth0} -- the routing table, liveness, and fail-closed pinning, all
+the live \texttt{eth0}: the routing table, liveness, and fail-closed pinning, all
 on hardware.
 
 \subsection{Beyond W5500: cellular and friends}
@@ -723,9 +723,9 @@ The reason a cellular modem slots in here is that \texttt{Net\_Devices.Device} i
 \emph{socket-level} contract (\texttt{Connect}/\texttt{Listen}/\texttt{Send} by
 address and port), not a packet-level one. A hardware-offload NIC like the W5500 and a
 firmware-stack modem driven by AT commands both implement it directly, with no on-chip
-TCP/IP stack -- the modem's \texttt{Connect} issues an AT command, the W5500's writes
-a socket register, and the facade above neither knows nor cares. A new interface --
-another W5500, or \texttt{Cell\_Modem.Net\_Device} -- is one more
+TCP/IP stack: the modem's \texttt{Connect} issues an AT command, the W5500's writes
+a socket register, and the facade above neither knows nor cares. A new interface
+(another W5500, or \texttt{Cell\_Modem.Net\_Device}) is one more
 \texttt{Add\_Interface} call and a route or two; nothing above the facade changes. (A
 raw Ethernet MAC or Wi-Fi part would \emph{not} fit so cleanly: those are packet-level
 and would need a software IP stack beneath this interface.)
@@ -733,7 +733,7 @@ and would need a software IP stack beneath this interface.)
 \section{Where the MAC addresses come from}
 \label{ch:net:mac}\index{MAC address}\index{eFuse}
 
-A W5500 needs a MAC address, and the examples up to here handed it one by hand --
+A W5500 needs a MAC address, and the examples up to here handed it one by hand:
 \texttt{00:08:DC:01:02:03} and the like. That works on a closed bench, but a
 hand-picked MAC is not yours to use: it may collide with a real device on the network,
 and it is not registered to anyone. The ESP32-S3 already carries a better answer. Every
@@ -746,7 +746,7 @@ $+\,2$ and $+\,3$. \texttt{ESP32S3.MAC} reads them:
 W5500.Configure (Dev, MAC => To_W5500 (ESP32S3.MAC.Ethernet), ...);  -- base + 3
 \end{lstlisting}
 
-The read is just that -- a read. The MAC lives in eFuse shadow registers
+The read is just that: a read. The MAC lives in eFuse shadow registers
 (\texttt{RD\_MAC\_SPI\_SYS\_0}/\texttt{\_1}) that the hardware latches at reset, so there
 is no controller to enable and no state to carry; the whole driver is a handful of
 register reads and some shifting, and it compiles in every runtime profile. Handing a
@@ -755,16 +755,16 @@ with no guessing.
 
 A board with \emph{two} W5500s (\S\ref{ch:net:multinic}) raises a wrinkle: the factory
 block has only four slots and the Ethernet one is spoken for. The second NIC therefore
-takes a \emph{locally-administered} address -- \texttt{Local (Derived (4))}, base
-$+\,4$ with the local bit set -- which is guaranteed not to clash with a real
+takes a \emph{locally-administered} address (\texttt{Local (Derived (4))}, base
+$+\,4$ with the local bit set), which is guaranteed not to clash with a real
 manufacturer's address. One small seam: \texttt{ESP32S3.MAC}'s address is an array of
 \texttt{Unsigned\_8} and the W5500's is its own byte array, so the hand-off is an
-element-wise conversion (a six-element aggregate, the \texttt{To\_W5500} above) -- kept
+element-wise conversion (a six-element aggregate, the \texttt{To\_W5500} above), kept
 in the application so the MAC reader stays free of any networking dependency.
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_mac} prints all five (base, the
 three derived interface MACs, and a local one); \texttt{esp32s3\_multinic} now seeds its
 two W5500s this way. The proof it reaches the silicon: switching the primary from the
-hand-picked MAC to the eFuse one made the DHCP server hand out a \emph{different} lease
--- the chip really is using the address from its eFuse.
+hand-picked MAC to the eFuse one made the DHCP server hand out a \emph{different} lease.
+The chip really is using the address from its eFuse.
 
