@@ -1,12 +1,12 @@
 \chapter{Interrupts}
 \label{ch:interrupts}
 
-The context switch in the previous chapter does not run by magic -- something
+The context switch in the previous chapter does not run by magic; something
 has to \emph{call} the scheduler. On this port that something is almost always an
 interrupt: the level-5 timer tick, or a device interrupt whose handler makes a
 higher-priority task ready. This chapter follows an interrupt from the silicon
 vector all the way to an Ada handler, and explains how \texttt{pragma
-Attach\_Handler} is supported across all three profiles -- including the
+Attach\_Handler} is supported across all three profiles, including the
 bare-board full \texttt{System.Interrupts} the \texttt{full} profile needs,
 which no stock bare-board runtime provides.
 
@@ -23,13 +23,13 @@ one, and two of those levels are special:
         interrupt is assigned here. \\
 2--3  & Device interrupts (\texttt{\_\_gnat\_level2\_vector} /
         \texttt{\_\_gnat\_level3\_vector}). \\
-4     & \emph{Unused} -- there is no level-4 vector; \texttt{EXCSAVE\_4} is
+4     & \emph{Unused}: there is no level-4 vector; \texttt{EXCSAVE\_4} is
         borrowed as a scratch register by the level-5 vector. \\
 5     & \textbf{Kernel-reserved}: the CCOMPARE2 timer tick (interrupt 16) and the
         cross-core IPI ``poke'' (interrupt 31). \\
-6     & \texttt{DEBUGLEVEL} -- debug exceptions: breakpoints and the
-        \texttt{DBREAK} data watchpoints (used for stack-overflow detection). \\
-7     & \texttt{NMILEVEL} -- non-maskable; not used. \\
+6     & \texttt{DEBUGLEVEL} (debug exceptions: breakpoints and the
+        \texttt{DBREAK} data watchpoints, used for stack-overflow detection). \\
+7     & \texttt{NMILEVEL} (non-maskable; not used). \\
 \bottomrule
 \end{longtable}
 
@@ -37,7 +37,7 @@ Two architectural constants shape everything below. \texttt{XCHAL\_EXCM\_LEVEL}
 is 3, so \texttt{PS.EXCM} masks only levels 1--3; levels 4--6 are ``high-level''
 interrupts with their own dedicated vectors and their own \texttt{EPC$n$/EPS$n$}
 save registers, and they keep firing even while a low-level exception is being
-taken. And the kernel owns level 5 exclusively -- no application interrupt
+taken. And the kernel owns level 5 exclusively: no application interrupt
 priority may mask it, or it would silence the scheduler's own tick (this is why
 the Ada interrupt-priority ceilings are capped one below it; see the context-switch
 and CXD1006 discussions).
@@ -52,7 +52,7 @@ ceiling becomes the \texttt{INTLEVEL} it raises while it holds a lock
 gives symbolic IDs for the slots that are free for application use:
 \texttt{Device\_L2\_0..2} (CPU interrupts 19/20/21), \texttt{Device\_L3\_0/1}
 (23/27), with ceilings \texttt{Device\_L2\_Priority} / \texttt{Device\_L3\_Priority}.
-The tick (16) and poke (31) are listed as kernel-reserved -- do not attach to
+The tick (16) and poke (31) are listed as kernel-reserved: do not attach to
 them.
 
 \section{From silicon to handler}\index{interrupt vector}\index{interrupt wrapper}
@@ -66,16 +66,16 @@ anything else runs, so every vector is ours. When a level-5 interrupt fires
         CPU jumps to the level-5 slot. The handler first checks one thing
         \emph{without touching the stack}: was the interruptee inside a window
         over/underflow handler (\texttt{EPC\_5} in the window-vector range)? If so
-        its \texttt{a1}/SP is transiently invalid, so the tick is \emph{deferred}
-        -- push CCOMPARE2 forward and \texttt{rfi} back, letting the window
+        its \texttt{a1}/SP is transiently invalid, so the tick is \emph{deferred}:
+        push CCOMPARE2 forward and \texttt{rfi} back, letting the window
         handler finish (the CXD8002 fix).
   \item \textbf{Save.} Otherwise it builds an \texttt{XT\_STK} frame on the
         interrupted task's stack and calls \texttt{\_xt\_context\_save} to spill
         the full register state into it. (Debug is masked across this frame build
-        so the spill cannot trip the per-task stack-overflow watchpoint -- see
+        so the spill cannot trip the per-task stack-overflow watchpoint; see
         the context-switch chapter.)
   \item \textbf{Service.} It drops to \texttt{INTLEVEL 5} and calls the Ada
-        dispatch routine -- \texttt{\_\_gnat\_timer\_interrupt} for level 5,
+        dispatch routine: \texttt{\_\_gnat\_timer\_interrupt} for level 5,
         \texttt{\_\_gnat\_level3\_dispatch} / \texttt{\_\_gnat\_level2\_dispatch}
         for the device vectors. Each reads the Xtensa \texttt{INTERRUPT} register,
         and for a pending source it owns it calls
@@ -86,12 +86,12 @@ anything else runs, so every vector is ours. When a level-5 interrupt fires
         lower interrupts stay masked), runs the \emph{registered handler}, then
         restores priority. The handler is an
         \texttt{access procedure (Id : Interrupt\_ID)}.
-  \item \textbf{Epilogue -- the deferred switch.} Back in the vector, if the
+  \item \textbf{Epilogue: the deferred switch.} Back in the vector, if the
         dispatch made a higher-priority task ready (\texttt{Context\_Switch\_-
         Needed}) the switch is performed \emph{here}, from the vector's clean
         single-window context, by tail-jumping \texttt{\_\_gnat\_preempt\_-
         dispatch}. The kernel never runs the cooperative spill from interrupt
-        context -- it sets a \texttt{Switch\_Pending} flag and lets the epilogue
+        context: it sets a \texttt{Switch\_Pending} flag and lets the epilogue
         do it (Option~A; the previous chapter).
   \item \textbf{Resume.} If no switch is due, \texttt{\_xt\_context\_restore} +
         \texttt{rfi 5} returns to the interruptee atomically (INTLEVEL stays high
@@ -105,12 +105,12 @@ level-5 tick.
 \section{Attaching a handler: two axes}\index{Attach\_Handler}\index{protected handler}
 
 It helps to keep two \emph{independent} distinctions apart. The first is
-\emph{which API layer} you attach through; the second -- which lives entirely
-inside the high-level layer -- is \emph{static versus dynamic} attachment.
+\emph{which API layer} you attach through; the second (which lives entirely
+inside the high-level layer) is \emph{static versus dynamic} attachment.
 
-\subsection{Axis 1 -- API layer (high level vs low level)}\index{Ada.Interrupts}
+\subsection{Axis 1: API layer (high level vs low level)}\index{Ada.Interrupts}
 
-\textbf{High level -- \texttt{Ada.Interrupts} / \texttt{pragma Attach\_Handler}.}
+\textbf{High level: \texttt{Ada.Interrupts} / \texttt{pragma Attach\_Handler}.}
 The portable Ada way: the handler is a protected procedure, the enclosing
 protected object's \texttt{Interrupt\_Priority} is its ceiling, and the compiler
 generates the registration and ceiling locking. This is what the GPIO HAL and the
@@ -142,16 +142,16 @@ end High;
 
 There is no \texttt{Install} call: \texttt{pragma Attach\_Handler} wires the
 handler up when \texttt{PO} elaborates. The handler is a protected procedure (no
-\texttt{Id} parameter -- it is bound to one interrupt), the count \texttt{N} is a
+\texttt{Id} parameter, since it is bound to one interrupt), the count \texttt{N} is a
 protected component rather than a bare \texttt{Volatile}, and the ceiling protocol
 serialises it against other accesses to \texttt{PO} for free. Contrast the
 hand-rolled low-level form:
 
-\textbf{Low level -- \texttt{System.BB.Interrupts.Attach\_Handler}.} The
+\textbf{Low level: \texttt{System.BB.Interrupts.Attach\_Handler}.} The
 bareboard kernel's own primitive: register a plain \texttt{access procedure (Id)}
 for an \texttt{Interrupt\_ID}, with an explicit priority. This is what
 \texttt{Interrupt\_Wrapper} ultimately calls, it is available on \emph{all}
-profiles, and it needs no protected object -- but also gives you no
+profiles, and it needs no protected object, but also gives you no
 compiler-enforced ceiling. It is the escape hatch when the portable layer is
 unavailable or unwanted:
 
@@ -177,12 +177,12 @@ package body Low is
 end Low;
 \end{lstlisting}
 
-\subsection{Axis 2 -- static vs dynamic (within the high-level layer)}\index{dynamic attachment}
+\subsection{Axis 2: static vs dynamic (within the high-level layer)}\index{dynamic attachment}
 
 Static versus dynamic is the dividing line of the \texttt{No\_Dynamic\_Attachment}
 restriction; it only concerns the high-level \texttt{Ada.Interrupts} layer.
 
-\textbf{Static -- \texttt{pragma Attach\_Handler}.} The handler is fixed at
+\textbf{Static: \texttt{pragma Attach\_Handler}.} The handler is fixed at
 compile time and installed once, automatically, when the protected object is
 elaborated. There is no run-time attach call; the compiler lowers it straight to
 \texttt{System.Interrupts.Install\_Handlers}, \emph{bypassing}
@@ -209,12 +209,12 @@ package body Blink is
 end Blink;
 \end{lstlisting}
 
-\textbf{Dynamic -- the \texttt{Ada.Interrupts} operations.} Here the handler is
+\textbf{Dynamic: the \texttt{Ada.Interrupts} operations.} Here the handler is
 attached, swapped, or detached \emph{at run time}. The protected procedure must
 first be made eligible with \texttt{pragma Interrupt\_Handler}; then
 \texttt{Attach\_Handler}, \texttt{Detach\_Handler}, \texttt{Exchange\_Handler} and
 \texttt{Current\_Handler} act on it during execution. These calls go \emph{through}
-the \texttt{Ada.Interrupts} body -- the path the bare runtime initially stubbed
+the \texttt{Ada.Interrupts} body: the path the bare runtime initially stubbed
 out (every operation raised \texttt{Program\_Error}) until a delegating
 \texttt{a-interr} body was supplied (see \emph{Why the profiles differ} below):
 
@@ -242,7 +242,7 @@ end Dyn;
 
 So the two axes compose: a high-level handler is either static (the \texttt{pragma},
 installed at elaboration) or dynamic (the run-time \texttt{Ada.Interrupts} calls),
-while the low-level \texttt{System.BB.Interrupts} primitive sits beneath both --
+while the low-level \texttt{System.BB.Interrupts} primitive sits beneath both,
 itself a run-time call, but \emph{not} the Ada \texttt{No\_Dynamic\_Attachment}
 notion of ``dynamic''.
 
@@ -255,11 +255,11 @@ that is the crux:
   \item \texttt{embedded} and \texttt{light-tasking} set \texttt{pragma Profile
         (Jorvik)}. Under a Ravenscar-family profile the compiler lowers
         \texttt{pragma Attach\_Handler} to the \emph{restricted} installation path,
-        \texttt{System.Interrupts.Install\_Restricted\_Handlers} -- which the
+        \texttt{System.Interrupts.Install\_Restricted\_Handlers}, which the
         bareboard \texttt{s-interr} provides. So it works.
   \item \texttt{full} sets \emph{no} profile pragma (its whole point is to lift
         the Jorvik restrictions). The compiler then lowers interrupt-handler
-        protected objects to the \emph{full dynamic} machinery --
+        protected objects to the \emph{full dynamic} machinery:
         \texttt{Register\_Interrupt\_Handler}, \texttt{Install\_Handlers}, and the
         \texttt{Static\_Interrupt\_Protection} / \texttt{Dynamic\_Interrupt\_-
         Protection} protected types.
@@ -269,7 +269,7 @@ that is the crux:
 which is \texttt{True} in both.) The catch is that AdaCore ships a full
 \texttt{System.Interrupts} only for hosted (POSIX) targets, where it is built on
 a signal-server task and is unportable to bare metal; \emph{no} bare-board
-runtime -- not even AdaCore's own \texttt{ravenscar-full} -- implements the
+runtime (not even AdaCore's own \texttt{ravenscar-full}) implements the
 full surface because Ravenscar forbids dynamic attachment in the first place.
 For a long time, then, a \texttt{full}-profile build of an \texttt{Ada.Interrupts}
 handler simply failed with \texttt{construct not allowed in this configuration}
@@ -279,10 +279,10 @@ and \texttt{System.Interrupts.Register\_Interrupt\_Handler not defined}.
 
 That gap is now closed. \texttt{full\_overlay/gnarl/s-interr}
 is a bare-board re-implementation of the full \texttt{System.Interrupts}
-surface -- \texttt{Register\_Interrupt\_Handler}, the \texttt{Static\_-} and
+surface (\texttt{Register\_Interrupt\_Handler}, the \texttt{Static\_-} and
 \texttt{Dynamic\_Interrupt\_Protection} protected bases, \texttt{Install\_-
 Handlers} and the dynamic \texttt{Attach\_}/\texttt{Detach\_}/\texttt{Exchange\_-
-Handler} operations -- but layered on the machinery that already exists rather
+Handler} operations) but layered on the machinery that already exists rather
 than on a signal server. It only had to add the GNARL-facing surface; the hard
 parts were already done and proven (the previous sections):
 
@@ -295,8 +295,8 @@ parts were already done and proven (the previous sections):
   \item The interrupt's run priority is fixed by its Xtensa level, so the
         controller-programming step ignores the priority argument
         (\texttt{Install\_Interrupt\_Handler} marks it \texttt{Unreferenced}).
-        That is what makes the dynamic \texttt{Attach\_Handler} path -- which
-        carries no priority -- safe.
+        That is what makes the dynamic \texttt{Attach\_Handler} path, which
+        carries no priority, safe.
   \item Interrupt \emph{entries} and the POSIX.5 signal services have no
         bare-board meaning and raise \texttt{Program\_Error}.
 \end{itemize}
@@ -312,19 +312,19 @@ There is one wrinkle, and it is subtler than it first looks. The full
 compiler lowers the handler to \texttt{Install\_Handlers}), but the \emph{dynamic}
 operations go through \texttt{Ada.Interrupts}, and the bare runtime inherited the
 \emph{restricted} (\texttt{No\_Dynamic\_Attachment}) \texttt{Ada.Interrupts} body
-from the Jorvik base -- in which every operation is simply \texttt{raise
+from the Jorvik base, in which every operation is simply \texttt{raise
 Program\_Error}. So for a while static attach worked while
 \texttt{Ada.Interrupts.Attach\_Handler}, \texttt{Detach\_Handler},
 \texttt{Exchange\_Handler}, \texttt{Current\_Handler}, \texttt{Is\_Attached} and
 \texttt{Reference} all raised \texttt{Program\_Error} (the full ACATS sweep caught
-this -- \texttt{CXC3007}). The overlay now also supplies the \emph{delegating}
+this: \texttt{CXC3007}). The overlay now also supplies the \emph{delegating}
 \texttt{a-interr.adb} that forwards each operation to \texttt{System.Interrupts},
 so the full dynamic API works (\texttt{CXC3007} HW-verified \texttt{PASSED}).
 
 The genuine residual limitation is narrow: because \texttt{Configurable\_Run\_Time}
 is \texttt{True}, the front end does not generate library-level finalization, so a
-\emph{library-level} interrupt protected object's \texttt{Finalize} -- which would
-restore the previously installed handlers at program shutdown -- does not run
+\emph{library-level} interrupt protected object's \texttt{Finalize} (which would
+restore the previously installed handlers at program shutdown) does not run
 automatically. Explicit \texttt{Detach\_Handler} works; only the implicit
 restore-on-finalization of a library-level handler PO is absent. That is harmless
 on an embedded target that never exits, and the low-level
@@ -340,7 +340,7 @@ fires the level-2 and level-3 device vectors with \emph{no external wiring} by
 routing the \texttt{FROM\_CPU} interrupt-matrix sources (the same mechanism as the
 cross-core poke) to \texttt{Device\_L2\_0} and \texttt{Device\_L3\_0} and asserting
 them from software, while a low-priority victim task holds floating-point
-accumulators and a \texttt{THREADPTR} sentinel live in registers -- continually
+accumulators and a \texttt{THREADPTR} sentinel live in registers, continually
 preempted by those two vectors \emph{and} the level-5 tick. If any vector failed
 to preserve the interrupted context, an accumulator or the sentinel comes back
 wrong. On hardware the handler counts climb and the corruption count stays zero,
@@ -351,10 +351,10 @@ port.)
 The companion \texttt{esp32s3\_full\_intr} example is the same test built under
 the \texttt{full} profile. Its job is narrower: to prove that the identical
 \texttt{pragma Attach\_Handler} protected objects now build, bind, link \emph{and
-run} against the bare-board full \texttt{System.Interrupts} described above --
+run} against the bare-board full \texttt{System.Interrupts} described above:
 the exact source that used to fail with \texttt{Register\_Interrupt\_Handler not
 defined} on \texttt{full}. On hardware it boots clean on both cores and the L2
 and L3 handler counts climb together with the clean-batch counter, with zero
-context-loss and zero faults -- so on \texttt{full}, too, the portable
+context-loss and zero faults. So on \texttt{full}, too, the portable
 \texttt{Ada.Interrupts} protected-handler form dispatches correctly and preserves
 the preempted context.

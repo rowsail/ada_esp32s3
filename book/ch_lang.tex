@@ -4,7 +4,7 @@
 A handful of Ada features come up again and again in embedded code: writing
 literals clearly, constraining values to only what is legal, validating data that
 arrives from outside, reinterpreting bits deliberately, attaching checkable
-contracts, and handling -- or forbidding -- exceptions. This chapter collects the
+contracts, and handling (or forbidding) exceptions. This chapter collects the
 language-level techniques; the next, \emph{Talking to Hardware}, applies them to
 registers and memory. Together they underpin the HAL and the filesystem, so a few
 terms are worth learning before the driver chapters that use them.
@@ -42,21 +42,21 @@ They are defined once here.
 \item[Entry / barrier.] A protected (or task) operation guarded by a Boolean
   condition, the \emph{barrier}; a caller blocks until the barrier is open. This is
   how condition synchronisation is expressed.
-\item[Generic.] A compile-time template -- a package or subprogram parameterised
-  by types or values -- instantiated to produce a concrete unit, much like a C++
+\item[Generic.] A compile-time template (a package or subprogram parameterised
+  by types or values) instantiated to produce a concrete unit, much like a C++
   template.
 \item[Library unit / library-level.] A unit (package or subprogram) declared at
   the outermost level, \emph{not} nested inside a subprogram or block. A
   library-level object or task exists for the whole run of the program. C has only
   file scope and block scope; Ada nests arbitrarily, so ``library-level'' names
-  the top, program-lifetime level -- and the Jorvik profiles require tasks (and
+  the top, program-lifetime level, and the Jorvik profiles require tasks (and
   some other entities) to live there.
 \item[Package (specification / body).] A named module. The \emph{specification}
   is the visible interface (roughly a C header) and the \emph{body} is the
-  implementation (roughly the \texttt{.c}) -- but they are one logical unit and
+  implementation (roughly the \texttt{.c}), but they are one logical unit and
   the body's internals are genuinely hidden by the compiler, not merely by
   convention.
-\item[Pragma.] A directive to the compiler -- \texttt{pragma Pack},
+\item[Pragma.] A directive to the compiler: \texttt{pragma Pack},
   \texttt{pragma Attach\_Handler}, \texttt{pragma Restrictions}. Like
   \texttt{\#pragma}, but part of the language with defined meanings.
 \item[Profile (Ravenscar / Jorvik).] A named bundle of \texttt{Restrictions}
@@ -64,29 +64,29 @@ They are defined once here.
   \emph{build} profiles, which choose \emph{which} such subset the runtime
   supports.
 \item[Protected object.] Data plus operations with \emph{automatic} mutual
-  exclusion -- a monitor. Access is race-free without a manual lock; the compiler
+  exclusion: a monitor. Access is race-free without a manual lock; the compiler
   generates the locking.
 \item[Rendezvous.] A synchronous call from one task to another task's
   \emph{entry}: the two meet, exchange parameters, the accept body runs, then both
   continue (the \texttt{full} profile).
-\item[Representation clause.] A clause that fixes a type's machine layout -- bit
-  positions, size, byte order: \texttt{for T use record \ldots\ end record}. It is
+\item[Representation clause.] A clause that fixes a type's machine layout (bit
+  positions, size, byte order): \texttt{for T use record \ldots\ end record}. It is
   how a record is mapped onto a hardware register.
 \item[Secondary stack.] A runtime area used to return a result whose size the
   caller does not know in advance (e.g.\ a function returning \texttt{String}). C
   has no equivalent; the leanest profile omits it.
 \item[Task.] A thread of control defined in the language. It \emph{activates}
-  (starts) automatically -- there is no explicit start call.
+  (starts) automatically. There is no explicit start call.
 \item[Type vs.\ subtype.] A \emph{type} is a distinct set of values and
   operations; two distinct types never mix without an explicit conversion. A
-  \emph{subtype} is the same type plus a constraint (a range or predicate) --
+  \emph{subtype} is the same type plus a constraint (a range or predicate),
   fully compatible with its base, just narrower.
 \item[Unconstrained type.] A type whose size is settled only when an object is
-  created -- \texttt{String}, \texttt{array (Positive range <>)}, a record with
+  created: \texttt{String}, \texttt{array (Positive range <>)}, a record with
   defaulted discriminants.
 \end{description}
 
-%  The lexical basics -- numeric bases, underscores, and case insignificance --
+%  The lexical basics (numeric bases, underscores, and case insignificance)
 %  are introduced early, with the first program, in \S\ref{sec:bases} (the Anatomy
 %  chapter), so the register code in the intervening chapters reads correctly.
 %  This chapter picks up where that leaves off: the TYPES those numbers take.
@@ -119,7 +119,7 @@ documented in the type rather than in a comment.
 When the legal values are not one contiguous range, a \emph{static predicate}
 states the exact set. The HAL's pin type is the real example: of the 0\,..\,48 pad
 numbers, some are absent on the package and some are bonded to the in-package SPI
-flash and octal PSRAM -- driving any of those hangs the chip:
+flash and octal PSRAM. Driving any of those hangs the chip:
 
 \begin{lstlisting}
    type Pad_Number is range -1 .. 48;            -- -1 is the "no pin" sentinel
@@ -140,7 +140,7 @@ constant into a \emph{compile} error and a bad computed value into a checked one
 
 \subsection{Modular types: wrap-around and bits}
 
-A modular type -- \texttt{mod 2**n} -- holds the values $0\,..\,2^n-1$, and its
+A modular type (\texttt{mod 2**n}) holds the values $0\,..\,2^n-1$, and its
 arithmetic \emph{wraps} instead of overflowing. That is exactly the behaviour you
 want for a register word, a free-running counter, or a checksum; modular types
 also support the logical operators \texttt{and}, \texttt{or}, \texttt{xor} and
@@ -157,11 +157,11 @@ also support the logical operators \texttt{and}, \texttt{or}, \texttt{xor} and
 \end{lstlisting}
 
 The predefined \texttt{Interfaces.Unsigned\_8/16/32/64} are the usual choice for
-register-sized words -- they are modular and add \texttt{Shift\_Left} /
+register-sized words: they are modular and add \texttt{Shift\_Left} /
 \texttt{Shift\_Right} / \texttt{Rotate\_*}. A plain signed integer would instead
 raise \texttt{Constraint\_Error} on overflow and offers no bit operators. So the
 rule of thumb is: registers, masks and counters are \emph{modular}, while
-quantities that must never silently wrap -- an index, a length -- stay
+quantities that must never silently wrap (an index, a length) stay
 \emph{range-constrained}.
 
 \subsection{And beyond}
@@ -169,20 +169,20 @@ quantities that must never silently wrap -- an index, a length -- stay
 Two more worth keeping in mind:
 \begin{itemize}
   \item \textbf{Fixed-point types} (\texttt{type Q8 is delta 1.0 / 256.0 range
-        0.0 .. 1.0}) give fractional values with exact, integer-backed arithmetic
-        -- a duty cycle or a scaled sensor reading without dragging in floating
-        point.
+        0.0 .. 1.0}) give fractional values with exact, integer-backed
+        arithmetic: a duty cycle or a scaled sensor reading without dragging in
+        floating point.
   \item \textbf{Derived types} make otherwise-identical numbers
         \emph{incompatible}: with \texttt{type Hz is new Natural;} and
         \texttt{type Millis is new Natural;}, a frequency can never be passed
-        where a delay was meant -- the mix-up is a compile error, not a bug.
+        where a delay was meant. The mix-up is a compile error, not a bug.
 \end{itemize}
 
 \section{Arrays and arbitrary index ranges}
 \label{sec:arrays}\index{arrays}\index{array index range}
 
 An Ada array type fixes not just its element type but its \emph{index range}, and
-that range is yours to choose -- any discrete range at all. The lower bound need
+that range is yours to choose: any discrete range at all. The lower bound need
 not be 0 or 1; it can be any value (even negative), and the index can be an
 enumeration type rather than an integer. The range is part of the type:
 
@@ -195,14 +195,14 @@ type Mix        is array (Channel)   of Unsigned_8;  -- indexed by an enum
 \end{lstlisting}
 
 The point is not novelty: it lets the index \emph{match the thing it models}, so
-the code reads like the datasheet or the protocol -- with no mental ``subtract
+the code reads like the datasheet or the protocol, with no mental ``subtract
 one'' and none of the off-by-one bugs that come with it.
 
 \textbf{Iterating without knowing the bounds.} Every array value carries its own
 bounds, available as attributes: \texttt{A'First}, \texttt{A'Last},
 \texttt{A'Length} and \texttt{A'Range} (which is \texttt{A'First\,..\,A'Last}). The
 idiomatic loop ranges over \texttt{'Range}, so it is correct whatever the bounds
-are -- and stays correct if you later change them:
+are, and stays correct if you later change them:
 
 \begin{lstlisting}
 Total : Natural := 0;
@@ -217,8 +217,8 @@ wrong. (When you do not need the index itself, \texttt{for E of Buf loop}
 iterates the elements directly.)
 
 \textbf{A worked example: J1939 CAN payloads, indexed from 1.} A Classic CAN
-frame carries up to eight data bytes. SAE J1939 -- the protocol on commercial
-vehicles -- numbers those bytes \emph{1 through 8} in its specifications
+frame carries up to eight data bytes. SAE J1939 (the protocol on commercial
+vehicles) numbers those bytes \emph{1 through 8} in its specifications
 (``byte 1,'' ``bytes 4--5,'' and so on). Declaring the payload with a
 \texttt{1\,..\,8} index makes the Ada line up with the document exactly:
 
@@ -237,7 +237,7 @@ begin
 end Engine_RPM;
 \end{lstlisting}
 
-\texttt{D (4)} \emph{is} ``byte 4'' -- the same number a J1939 reference uses --
+\texttt{D (4)} \emph{is} ``byte 4'' (the same number a J1939 reference uses),
 so the code can be checked against the standard line by line, and the loop idiom
 still applies: \texttt{for I in D'Range loop} walks bytes \texttt{1\,..\,8}.
 
@@ -249,14 +249,14 @@ translation step.}
 \section{The \texttt{others} choice: filling in ``everything else''}
 \label{sec:others}\index{others}
 
-\texttt{others} is a catch-all \emph{choice} -- it stands for ``every case not
+\texttt{others} is a catch-all \emph{choice}: it stands for ``every case not
 named so far,'' and it must always come \emph{last}. Ada uses it wherever you
 enumerate possibilities: array and record aggregates, \texttt{case} statements,
 and exception handlers. It is everywhere in embedded Ada (it fills the reserved
 fields of the register writes in Chapter~\ref{ch:hardware}), so it is worth a
 close look.
 
-\textbf{In array aggregates -- fill the rest.} An aggregate must give a value for
+\textbf{In array aggregates: fill the rest.} An aggregate must give a value for
 \emph{every} element; \texttt{others} supplies the ones you did not name.
 
 \begin{lstlisting}
@@ -264,9 +264,9 @@ Zeros  : Buffer := (others => 0);                            -- every element 0
 Header : Buffer := (0 => 16#AA#, 1 => 16#55#, others => 0);  -- first two, rest 0
 \end{lstlisting}
 
-\textbf{In record aggregates -- and the \texttt{<>} ``box''.} A record aggregate
+\textbf{In record aggregates, and the \texttt{<>} ``box''.} A record aggregate
 must also set every component. Writing \texttt{others => <>} means ``give each
-remaining component its \emph{default} value'' -- the default from the type's
+remaining component its \emph{default} value'': the default from the type's
 own declaration. This is the central idiom for writing a hardware register: set
 the one or two fields you mean, and let every reserved or don't-care field take
 its declared default.
@@ -281,7 +281,7 @@ remaining components are of \emph{different} types: each takes its own default, 
 the types need not agree. \texttt{others => 0} only works when everything it
 covers is the same type (e.g.\ an all-zero byte buffer).
 
-\textbf{In \texttt{case} -- cover the remaining values.} A \texttt{case} must be
+\textbf{In \texttt{case}: cover the remaining values.} A \texttt{case} must be
 exhaustive; \texttt{when others} handles whatever you did not list.
 
 \begin{lstlisting}
@@ -291,7 +291,7 @@ case Mode is
 end case;
 \end{lstlisting}
 
-\textbf{In exception handlers -- catch the rest.} \texttt{when others} catches
+\textbf{In exception handlers: catch the rest.} \texttt{when others} catches
 any exception not named earlier in the handler.
 
 \begin{lstlisting}
@@ -304,7 +304,7 @@ end;
 \end{lstlisting}
 
 Two properties tie these uses together: \texttt{others} is always the \emph{last}
-choice, and it covers \emph{exactly} the cases not already named -- so adding a
+choice, and it covers \emph{exactly} the cases not already named, so adding a
 component, value or exception elsewhere silently changes what ``everything else''
 means. For a register write that is precisely what you want (a newly-defined
 reserved bit still defaults). For a \texttt{case} over an enumeration it is often
@@ -314,8 +314,8 @@ to the type forces the compiler to make you handle it.
 \section{Fixed-point arithmetic}
 \label{sec:fixed}\index{fixed-point types}
 
-Microcontroller code is full of fractional quantities -- a duty cycle, a gain, a
-scaled sensor reading -- that do not justify (or cannot afford) floating point.
+Microcontroller code is full of fractional quantities (a duty cycle, a gain, a
+scaled sensor reading) that do not justify (or cannot afford) floating point.
 A \emph{fixed-point} type gives fractions with exact, integer-backed arithmetic:
 you state the resolution with \texttt{delta}, and the compiler represents values
 as integers scaled by that \texttt{'Small}.
@@ -327,20 +327,20 @@ as integers scaled by that \texttt{'Small}.
    type Volts is delta 0.001 range 0.0 .. 3.3;        -- millivolt resolution
 \end{lstlisting}
 
-Arithmetic on \texttt{Duty} is integer arithmetic underneath -- no FPU, no
-rounding surprises -- yet the source reads in real-world units. The PWM and ADC
+Arithmetic on \texttt{Duty} is integer arithmetic underneath (no FPU, no
+rounding surprises), yet the source reads in real-world units. The PWM and ADC
 drivers scale this way: a duty cycle or a voltage is a fixed-point value the
 driver converts to the register's raw counts.
 
 \section{Trusting external data: the \texttt{'Valid} attribute}
 \label{sec:valid}\index{Valid attribute}
 
-Anything that enters from outside the program -- a value read from a register, a
-field unpacked from an SD sector, a message off the wire -- might not be a legal
+Anything that enters from outside the program (a value read from a register, a
+field unpacked from an SD sector, a message off the wire) might not be a legal
 value of its type. Reading it into a constrained type and then using it is
 \emph{erroneous} if the bits are out of range. \texttt{X'Valid} asks ``is the
 object actually a valid value of its (sub)type?'' and answers with a plain
-Boolean -- no exception, safe to ask even of garbage:
+Boolean (no exception, safe to ask even of garbage):
 
 \begin{lstlisting}
    Raw : Parity with Address => Reg'Address, Volatile;  -- enum from hardware
@@ -354,12 +354,12 @@ begin
 
 This is the safe way to consume an enumeration with reserved codes, a range field
 that hardware might leave uninitialised, or a structure read from possibly-corrupt
-storage -- validate first, trust after.
+storage: validate first, trust after.
 
 \section{\texttt{Unchecked\_Conversion}: deliberate reinterpretation}
 \label{sec:uncheck}\index{Unchecked\_Conversion}
 
-Occasionally you must view the same bits as two different types -- serialise a
+Occasionally you must view the same bits as two different types: serialise a
 record to bytes, decode a fat pointer, read a float's bit pattern.
 \texttt{Ada.Unchecked\_Conversion} is the explicit, greppable way to do it; unlike
 a C cast it is a named instantiation, so every reinterpretation in the codebase is
@@ -378,7 +378,7 @@ genuine bit-reinterpretation cases, where its name documents the hazard.
 \section{Access types: where you need a pointer, and where you don't}
 \label{sec:access}\index{access types}
 
-Ada has pointers -- \emph{access types} -- but a great many of the places a C
+Ada has pointers (\emph{access types}), but a great many of the places a C
 programmer reaches for one do not need it. The embedded habit is to lead with the
 pointer-free option and use an access type only where the problem genuinely
 demands it.
@@ -386,8 +386,8 @@ demands it.
 \subsection{Where you can avoid them}
 
 \textbf{Parameters are already passed efficiently.} You do not pass
-\texttt{\&thing} and dereference. A parameter mode -- \texttt{in},
-\texttt{out}, \texttt{in out} -- says how it is used, and the compiler passes a
+\texttt{\&thing} and dereference. A parameter mode (\texttt{in},
+\texttt{out}, \texttt{in out}) says how it is used, and the compiler passes a
 large object by reference automatically:
 
 \begin{lstlisting}
@@ -422,18 +422,18 @@ remember to free.
 \subsection{Where you genuinely need one}
 
 \begin{itemize}
-  \item \textbf{Dynamic or linked data built at run time} -- a list, a tree, a
+  \item \textbf{Dynamic or linked data built at run time:} a list, a tree, a
         variable-length buffer pool: \texttt{type Node\_Ref is access Node;} and
         \texttt{new Node}.
-  \item \textbf{Callbacks and interrupt handlers} -- an access-to-subprogram
+  \item \textbf{Callbacks and interrupt handlers:} an access-to-subprogram
         value lets you register code to be called later. This is the
         \texttt{On\_Edge'Access} from the GPIO counter (\S\ref{sec:tasks}) and the
         handler registration in the Interrupts chapter.
-  \item \textbf{Hardware structures that reference a buffer} -- a DMA descriptor
+  \item \textbf{Hardware structures that reference a buffer:} a DMA descriptor
         holds the \emph{address} of the data to move, so the buffer is
         \texttt{aliased} and the descriptor stores its \texttt{'Access}
         (\S\ref{sec:placement}).
-  \item \textbf{Talking to C} -- C interfaces are expressed in pointers, so
+  \item \textbf{Talking to C:} C interfaces are expressed in pointers, so
         \texttt{System.Address} and access types cross that boundary
         (\S\ref{sec:interfacing}).
 \end{itemize}
@@ -443,10 +443,10 @@ remember to free.
 Even when you need one, an Ada access type is far less hazardous than a C pointer:
 
 \begin{itemize}
-  \item it is \textbf{named and typed} -- a \texttt{Node\_Ref} is not a
+  \item it is \textbf{named and typed:} a \texttt{Node\_Ref} is not a
         \texttt{Byte\_Ref} and neither is a \texttt{void *}; the compiler keeps
         them apart;
-  \item there is \textbf{no pointer arithmetic} -- you index an array, you do not
+  \item there is \textbf{no pointer arithmetic:} you index an array, you do not
         increment a pointer past its end;
   \item \textbf{accessibility rules} reject \texttt{Local'Access} returned from the
         subprogram that owns \texttt{Local}, so a dangling reference is a compile
@@ -454,14 +454,14 @@ Even when you need one, an Ada access type is far less hazardous than a C pointe
   \item \texttt{\textbf{not null}} access subtypes exclude the null case at the
         type level;
   \item and \texttt{\textbf{for T'Storage\_Size use 0;}} (\S\ref{sec:memory})
-        forbids \texttt{new} on an access type outright -- a compile-time promise
+        forbids \texttt{new} on an access type outright: a compile-time promise
         that this pointer type never touches a heap, which is how the
         \texttt{light-tasking} profile stays heap-less.
 \end{itemize}
 
 So the rule of thumb: prefer value semantics and address overlays; reach for an
 access type for the genuinely dynamic structure, the callback, or the
-hardware-referenced buffer -- and even then it is typed, arithmetic-free, and, if
+hardware-referenced buffer, and even then it is typed, arithmetic-free, and, if
 you wish, provably heap-free.
 
 \section{Contracts for hardware-safe APIs}
@@ -485,8 +485,8 @@ The cost is tunable: \texttt{pragma Assertion\_Policy} (and the \texttt{-gnata}
 switch) turns the run-time checks on for development and \emph{off} for a release
 build, where the contracts remain as machine-checked documentation. Combined with
 the range and predicate subtypes of \S\ref{sec:subtypes}, the effect is that a
-large class of driver-misuse bugs -- a bad pin, a wrong-width key, an
-out-of-range channel -- cannot reach the hardware.
+large class of driver-misuse bugs (a bad pin, a wrong-width key, an
+out-of-range channel) cannot reach the hardware.
 
 \section{Exceptions and error handling}
 \label{sec:exceptions}\index{exceptions}
@@ -506,14 +506,14 @@ a handler catches it. The mechanics are familiar:
 \end{lstlisting}
 
 A raise propagates up the call chain to the nearest matching handler, running
-finalizers (Chapter~\ref{ch:encap}) on the way -- which is why a controlled
+finalizers (Chapter~\ref{ch:encap}) on the way, which is why a controlled
 handle is released even when an exception unwinds past it. If no handler matches,
 it keeps propagating; if it escapes the whole program, the runtime's
 \emph{last-chance handler} runs (below).
 
 \textbf{Predefined and user-defined exceptions.} The language defines a handful
 the runtime raises for you: \texttt{Constraint\_Error} (a failed range, index,
-\texttt{null} or overflow check -- what a bad \texttt{Pin\_Id} or an out-of-range
+\texttt{null} or overflow check, what a bad \texttt{Pin\_Id} or an out-of-range
 index produces), \texttt{Program\_Error} (an illegal runtime situation),
 \texttt{Storage\_Error} (out of stack or heap), and \texttt{Tasking\_Error}. You
 declare your own just as easily, and raise it with a message:
@@ -526,9 +526,9 @@ declare your own just as easily, and raise it with a message:
    end if;
 \end{lstlisting}
 
-A handler can inspect the exception through \texttt{Ada.Exceptions} --
-\texttt{Exception\_Name}, \texttt{Exception\_Message},
-\texttt{Exception\_Information} -- and a bare \texttt{raise;} inside a handler
+A handler can inspect the exception through \texttt{Ada.Exceptions}
+(\texttt{Exception\_Name}, \texttt{Exception\_Message},
+\texttt{Exception\_Information}), and a bare \texttt{raise;} inside a handler
 \emph{re-raises} the current one, so you can clean up locally and still let an
 outer scope deal with it.
 
@@ -539,16 +539,16 @@ being held or set up; the AES driver's \texttt{Supported\_Key} precondition
 subtypes (\S\ref{sec:subtypes}) raise \texttt{Constraint\_Error} on a bad value
 under \texttt{-gnata}; and the ext4 filesystem reports I/O and corruption errors
 by raising. The lock-free drivers instead report failure through a \texttt{Status}
-enum or an \texttt{out Boolean} -- precisely so they work on \emph{every} profile,
+enum or an \texttt{out Boolean}, precisely so they work on \emph{every} profile,
 which is the next point.
 
-\textbf{The cost -- and even the availability -- depends on the profile.} This
+\textbf{The cost (and even the availability) depends on the profile.} This
 is the embedded-specific part, and it differs across all three:
 
 \begin{itemize}
   \item \texttt{light-tasking} is \texttt{No\_Exception\_Propagation}: there is no
         unwinder, so a \texttt{raise} not handled \emph{in the same subprogram}
-        cannot propagate -- in practice it reaches the last-chance handler and
+        cannot propagate. In practice it reaches the last-chance handler and
         resets the board. The range and predicate checks still \emph{detect}
         errors; you simply cannot catch and recover across calls. Design for
         ``detect, log, reset,'' and report an expected failure with a status
@@ -556,30 +556,30 @@ is the embedded-specific part, and it differs across all three:
   \item \texttt{embedded} adds \emph{zero-cost} exceptions (ZCX): full propagation,
         handlers, \texttt{Ada.Exceptions} names and messages, and finalization on
         the way out (so an RAII handle releases during an unwind). A handler that
-        is not entered costs nothing on the happy path -- the cost lives in static
+        is not entered costs nothing on the happy path: the cost lives in static
         tables, not in instructions. This is the minimum profile for the RAII
         drivers and the filesystem; here you catch and recover normally.
   \item \texttt{full} has the \emph{same} exception model as \texttt{embedded},
         plus the complete tasking runtime, so exceptions interoperate with dynamic
-        tasks, rendezvous and \texttt{abort} -- and a stack overflow caught by the
+        tasks, rendezvous and \texttt{abort}, and a stack overflow caught by the
         runtime's guard can be delivered as a catchable \texttt{Storage\_Error}
         instead of a reset (see the Debugging chapter).
 \end{itemize}
 
-When an exception escapes everything -- always on light-tasking, and as a final
-backstop elsewhere -- the runtime's \emph{last-chance handler} runs; on this port
+When an exception escapes everything (always on light-tasking, and as a final
+backstop elsewhere) the runtime's \emph{last-chance handler} runs; on this port
 it reports the fault and resets, and the \texttt{esp32s3\_safe\_state} example
 shows a fault being classified there (see the Debugging chapter).
 
 \textbf{Strategy on a microcontroller.} Prefer the cheap, local mechanisms to
-\emph{prevent} bad values -- range and predicate subtypes (\S\ref{sec:subtypes}),
+\emph{prevent} bad values: range and predicate subtypes (\S\ref{sec:subtypes}),
 \texttt{'Valid} (\S\ref{sec:valid}), contracts (\S\ref{sec:contracts}); use a
 status result for an expected, recoverable condition (a NACK, a CRC mismatch); and
 reserve exceptions for the genuinely exceptional, remembering that on the leanest
 profile ``handling'' one means a controlled reset, not a resumption.
 
 \textbf{A runnable demonstration.} The \texttt{esp32s3\_exceptions} example
-exercises all four outcomes on the chip -- local handling, propagation across a
+exercises all four outcomes on the chip: local handling, propagation across a
 call, a re-raise to an outer handler, and an unhandled exception reaching the
 last-chance handler (it installs a custom one, exported as
 \texttt{\_\_gnat\_last\_chance\_handler}, that prints the exception and halts).
@@ -598,7 +598,7 @@ firmware and have the compiler \emph{prove} you stayed within the subset:
 \end{lstlisting}
 
 A named bundle of these is a \emph{profile}: \texttt{pragma Profile (Ravenscar)}
--- and its superset \texttt{Jorvik} -- selects the analysable tasking subset
+(and its superset \texttt{Jorvik}) selects the analysable tasking subset
 (no dynamic task creation, no entry queues longer than one, a single delay form),
 which is what the \texttt{light-tasking} and \texttt{embedded} runtimes are built
 against. The Runtime Profiles chapter covers the runtime side; the point here is
@@ -611,20 +611,20 @@ unit, so a violation is a build error, not a surprise on silicon.
 Elaboration (\S\ref{sec:terms}) is the code that runs before \texttt{Main} to
 bring declarations to life. On a microcontroller you usually want \emph{less} of
 it: less start-up code, and data that can live in flash rather than be built in
-RAM at boot. Category pragmas let you state -- and have the compiler enforce --
+RAM at boot. Category pragmas let you state (and have the compiler enforce)
 how little a unit needs:
 
 \begin{itemize}
-  \item \texttt{pragma Pure} -- the unit has no state and no elaboration at all
+  \item \texttt{pragma Pure:} the unit has no state and no elaboration at all
         (only pure functions and constants); the strongest promise, and its data
         can sit in flash.
-  \item \texttt{pragma Preelaborate} -- the unit may be elaborated without
+  \item \texttt{pragma Preelaborate:} the unit may be elaborated without
         running any code: all its data has static initial values, so there is no
         boot-time cost and nothing is built at start-up.
-  \item \texttt{pragma Elaborate\_Body} -- forces the body to be elaborated
+  \item \texttt{pragma Elaborate\_Body:} forces the body to be elaborated
         immediately after the spec, a sequencing guarantee that keeps elaboration
         order predictable.
-  \item \texttt{pragma Restrictions (No\_Elaboration\_Code)} -- the compiler
+  \item \texttt{pragma Restrictions (No\_Elaboration\_Code):} the compiler
         \emph{rejects} any unit that would emit elaboration code: a hard guarantee
         that start-up is free.
 \end{itemize}

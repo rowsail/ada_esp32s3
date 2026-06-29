@@ -3,14 +3,14 @@
 
 This appendix is the companion to appendix~\ref{app:internal}: where that one
 covers the SoC's on-chip peripherals, this one covers the drivers for
-\emph{external} parts -- the I/O expanders, sensors, clocks, codec, display,
+\emph{external} parts: the I/O expanders, sensors, clocks, codec, display,
 GPS module, SD card, LED string and Ethernet controller that hang off the
 ESP32-S3's buses. Each driver layers on one (or two) of the on-chip drivers: the
 I2C devices ride \texttt{ESP32S3.I2C}, the display rides \texttt{ESP32S3.SPI}, the
 codec uses \texttt{ESP32S3.I2C} for control and \texttt{ESP32S3.I2S} for audio, the
 GPS service reads \texttt{ESP32S3.UART}, and the LED string is clocked out over
-\texttt{ESP32S3.RMT}. The W5500 Ethernet controller is the largest of these -- a
-whole networking stack -- so it has its own chapter
+\texttt{ESP32S3.RMT}. The W5500 Ethernet controller is the largest of these (a
+whole networking stack), so it has its own chapter
 (\ref{ch:networking}); this appendix gives only its bus and a pointer.
 
 The same ownership discipline recurs. Most of these drivers expose a
@@ -18,27 +18,27 @@ The same ownership discipline recurs. Most of these drivers expose a
 \texttt{Session} (or \texttt{Output}/\texttt{Strip}) handle taken with
 \texttt{Acquire} that holds the part exclusively across a sequence of operations
 and auto-releases on scope exit, while the underlying bus is locked only per
-transaction -- so other devices on the same bus stay reachable between your
+transaction, so other devices on the same bus stay reachable between your
 calls. Each entry gives the device's bus, its I2C address where relevant, a digest
 of the public API, and a worked example from the \texttt{examples/} tree. The
 controlled handles mean these drivers require the \texttt{embedded} or
 \texttt{full} profile, as noted per section.
 
-\section{CH422G -- I2C I/O Expander}\index{CH422G driver}
+\section{CH422G: I2C I/O Expander}\index{CH422G driver}
 \label{app:ext:ch422g}
 
 The WCH CH422G is an I2C I/O expander offering eight bidirectional pins
 (\texttt{IO0..IO7}) plus four output-only pins (\texttt{OC0..OC3}). Unlike a
 conventional register-pointer expander, it is driven entirely through \emph{fixed,
-function-specific} I2C command addresses -- \texttt{0x24} (write system config),
-\texttt{0x23} (write OC outputs), \texttt{0x38} (write IO outputs) and \texttt{0x26}
-(read IO inputs) -- so there are no address straps and \texttt{Setup} takes no
+function-specific} I2C command addresses (\texttt{0x24} writes system config,
+\texttt{0x23} writes OC outputs, \texttt{0x38} writes IO outputs and \texttt{0x26}
+reads IO inputs), so there are no address straps and \texttt{Setup} takes no
 address: one CH422G per bus.
 
 \texttt{ESP32S3.CH422G} sits on \texttt{ESP32S3.I2C} and follows the two-level
 locking shape of the other expander/RTC drivers: \texttt{Acquire} a
 \texttt{Session} to hold the chip across many operations, while the I2C host is
-locked only per transaction. Direction is \emph{global} -- one
+locked only per transaction. Direction is \emph{global}: one
 \texttt{IO\_Direction} bit makes all of \texttt{IO0..IO7} inputs or outputs;
 \texttt{OC0..OC3} are output-only with a global \texttt{Push\_Pull}/%
 \texttt{Open\_Drain} drive. The driver keeps a shadow initialised to the datasheet power-on defaults (IO =
@@ -96,7 +96,7 @@ begin
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_ch422g}.
 
-\section{TCA9555 -- I2C 16-bit I/O Expander}\index{TCA9555 driver}
+\section{TCA9555: I2C 16-bit I/O Expander}\index{TCA9555 driver}
 \label{app:ext:tca9555}
 
 The Texas Instruments TCA9555 is a 16-bit I2C GPIO expander: two 8-bit ports
@@ -109,7 +109,7 @@ active-low open-drain \texttt{INT} output. The 7-bit address is
 \texttt{ESP32S3.TCA9555} layers on \texttt{ESP32S3.I2C} and is the canonical
 two-level-locking driver: a \texttt{Session} is an exclusive RAII hold on one
 expander (so a per-pin read-modify-write is safe), while the I2C host is locked
-only inside each transaction -- leaving the bus free for other devices between
+only inside each transaction, leaving the bus free for other devices between
 your operations. The per-device locks are a fixed library-level array keyed by
 (host, strap). The optional \texttt{INT} pin is wired through \texttt{Setup}'s
 \texttt{Int\_Pin}, and the \texttt{ESP32S3.TCA9555.Interrupts} child arms it as a
@@ -170,7 +170,7 @@ begin
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_tca9555}.
 
-\section{PCF85063A -- I2C Real-Time Clock}\index{PCF85063A driver}
+\section{PCF85063A: I2C Real-Time Clock}\index{PCF85063A driver}
 \label{app:ext:pcf85063a}
 
 The NXP PCF85063A is a small fixed-address (\texttt{Bus\_Address} = \texttt{0x51})
@@ -181,7 +181,7 @@ survived a power loss, and an active-low open-drain \texttt{INT} line the alarm
 asserts. Up to 400 kHz I2C.
 
 \texttt{ESP32S3.PCF85063A} sits on \texttt{ESP32S3.I2C}. Unlike the expander
-drivers it exposes no \texttt{Session} type to the caller -- each operation opens
+drivers it exposes no \texttt{Session} type to the caller: each operation opens
 its own short-lived controlled I2C session for one complete transaction and
 auto-releases the host on scope exit, so concurrent callers serialise. Register
 reads use the chip's auto-incrementing pointer (a 1-byte write sets it, a following
@@ -256,22 +256,22 @@ begin
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_pcf85063a}.
 
-\section{SHT41 -- I2C Temperature / Humidity Sensor}\index{SHT41 driver}
+\section{SHT41: I2C Temperature / Humidity Sensor}\index{SHT41 driver}
 \label{app:ext:sht41}
 
 The Sensirion SHT41 (SHT4x family) is a command-based I2C temperature and humidity
 sensor with no registers: a measurement is ``write a 1-byte command, wait the
-conversion time, read 6 bytes'' -- two CRC-8-protected 16-bit words (temperature
+conversion time, read 6 bytes'': two CRC-8-protected 16-bit words (temperature
 then humidity). The SHT41-AD1B answers at \texttt{Default\_Address} (\texttt{0x44});
-other variants use \texttt{0x45}/\texttt{0x46}. There is no interrupt -- it is read
+other variants use \texttt{0x45}/\texttt{0x46}. There is no interrupt; it is read
 on request.
 
 \texttt{ESP32S3.SHT41} sits on \texttt{ESP32S3.I2C} and shares the PCF85063A shape:
 no caller-visible session, each operation opens a short-lived controlled I2C
 session and auto-releases the host. \texttt{Measure} blocks for the conversion (per
-\texttt{Precision}) while holding the bus and returns integer milli-units --
+\texttt{Precision}) while holding the bus and returns integer milli-units:
 \texttt{Temperature} in milli-degrees Celsius, \texttt{Humidity} in milli-percent
-RH -- so no float library is required; CRC failures surface as \texttt{CRC\_Error}.
+RH, so no float library is required; CRC failures surface as \texttt{CRC\_Error}.
 The controlled session restricts this driver to the embedded and full profiles.
 
 \begin{lstlisting}
@@ -320,12 +320,12 @@ begin
 \end{lstlisting}
 
 \cnote{No vendor SDK is linked. The SHT4x's CRC-8 and the milli-unit fixed-point
-conversion are done in Ada, so the whole sensor path is float-free -- unlike the
+conversion are done in Ada, so the whole sensor path is float-free, unlike the
 typical ESP-IDF driver that returns \texttt{float} degrees and pulls in soft-float.}
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_sht41}.
 
-\section{QMI8658C -- I2C 6-Axis IMU}\index{QMI8658C driver}
+\section{QMI8658C: I2C 6-Axis IMU}\index{QMI8658C driver}
 \label{app:ext:qmi8658c}
 
 The QST QMI8658C is a 6-axis IMU (3-axis accelerometer + 3-axis gyroscope) on I2C.
@@ -412,7 +412,7 @@ begin
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_qmi8658c}.
 
-\section{ES8311 -- Audio Codec}\index{ES8311 driver}
+\section{ES8311: Audio Codec}\index{ES8311 driver}
 \label{app:ext:es8311}
 
 The ES8311 is an Everest low-power \emph{mono} audio codec: a register-configured
@@ -424,7 +424,7 @@ DSDIN line. The codec runs as an I2S slave clocked from the ESP's MCLK $= 256
 \times$ sample-rate (4.096\,MHz at 16\,kHz); the register coefficients are
 rate-independent for that $256\times$/16-bit configuration.
 
-It sits on two on-chip drivers at once -- \texttt{ESP32S3.I2C} for control and
+It sits on two on-chip drivers at once: \texttt{ESP32S3.I2C} for control and
 \texttt{ESP32S3.I2S} for data. \texttt{Setup} is a one-time, single-threaded
 bring-up; pass an \texttt{Asdout} pin to also enable the ADC (microphone) capture
 path. After setup, audio is owned through a limited, controlled \texttt{Output}
@@ -466,7 +466,7 @@ end ESP32S3.ES8311;
 \end{lstlisting}
 
 The example plays a gapless 440\,Hz sine on the DAC and simultaneously captures the
-ADC to estimate the tone heard back -- a loopback test. Control is on I2C (SDA=IO8,
+ADC to estimate the tone heard back (a loopback test). Control is on I2C (SDA=IO8,
 SCL=IO7); audio on I2S (MCLK=IO1, SCLK=IO2, LRCK=IO4, DSDIN=IO5 out, ASDOUT=IO3 in).
 
 \begin{lstlisting}
@@ -495,12 +495,12 @@ end;
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_es8311}.
 
-\section{ST7789 -- SPI TFT Display Controller}\index{ST7789 driver}
+\section{ST7789: SPI TFT Display Controller}\index{ST7789 driver}
 \label{app:ext:st7789}
 
 The ST7789 (ST77xx family) drives a small colour TFT panel over 4-wire SPI. The
 link is \emph{write-only}: CLK + MOSI, no MISO, so the controller cannot be read
-back and there is no probe or status query. Three GPIOs are driven directly -- DC
+back and there is no probe or status query. Three GPIOs are driven directly: DC
 (data/command), CS (chip select), and an optional RST (software reset is used if it
 is \texttt{No\_Pin}). Pixels are 16-bit RGB565, MSB-first. \texttt{ESP32S3.ST7789}
 sits on \texttt{ESP32S3.SPI} (mode 0, full-duplex master, default 40\,MHz); CS is
@@ -575,25 +575,25 @@ end;                                            --  Session auto-released
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_st7789}.
 
-\section{TLV2556 -- SPI 12-bit ADC}\index{TLV2556 driver}\index{ADC driver}
+\section{TLV2556: SPI 12-bit ADC}\index{TLV2556 driver}\index{ADC driver}
 \label{app:ext:tlv2556}
 
 The TLV2556 is a Texas Instruments 12-bit, 11-channel, 200-kSPS
 successive-approximation ADC with an internal reference, on an SPI-compatible
 serial interface (mode 0). It is the off-chip complement to the SoC's own SAR ADC
-(in the HAL chapter): more channels, a stable internal reference, and -- because
-it lives on the SPI bus -- usable even when the internal ADC's pins are committed
+(in the HAL chapter): more channels, a stable internal reference, and, because
+it lives on the SPI bus, usable even when the internal ADC's pins are committed
 elsewhere.
 
 Two things make it a useful worked example. First, it \emph{shares the SPI2 bus
 with the W25Q flash}, through the SPI driver's built-in software chip-select: you
-name the select GPIO as \texttt{CS\_Pin} and the driver drives it -- active-low,
-held across the whole conversion -- and suppresses the hardware CS0 for the hold,
+name the select GPIO as \texttt{CS\_Pin} and the driver drives it (active-low,
+held across the whole conversion) and suppresses the hardware CS0 for the hold,
 so it cannot disturb the flash. (Contrast the ST7789 above, which toggles its CS
 as a plain GPIO by hand.) Second, the converter is \emph{pipelined}: each 16-clock
 frame shifts an 8-bit command in (channel select plus configuration) while the
 \emph{previous} conversion's result shifts out, MSB-first. \texttt{Read} hides
-that -- it primes the conversion, waits out the (max $\sim$5.5\,\textmu s)
+that: it primes the conversion, waits out the (max $\sim$5.5\,\textmu s)
 conversion time, then reads the result back.
 
 \begin{lstlisting}
@@ -621,7 +621,7 @@ end ESP32S3.TLV2556;
 The standout feature for bring-up is the \emph{self-test inputs}: three of the
 \texttt{Analog\_Input} values are not pins at all but internal voltages
 \emph{ratiometric to the reference rails}, so \texttt{Test\_Zero} reads 0,
-\texttt{Test\_Half} reads 2048, and \texttt{Test\_Full} reads 4095 -- regardless
+\texttt{Test\_Half} reads 2048, and \texttt{Test\_Full} reads 4095, regardless
 of the reference voltage or any analog wiring. They are the ADC analog of the
 W25Q's JEDEC-ID check: a reference- and wiring-independent proof that the SPI link,
 the framing, and the converter all work, before you trust a real reading.
@@ -654,7 +654,7 @@ On the hardware (the self-tests carry a couple of LSB of analog slack):
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_tlv2556}.
 
-\section{GPS -- NMEA-0183 Receiver}\index{GPS driver}
+\section{GPS: NMEA-0183 Receiver}\index{GPS driver}
 \label{app:ext:gps}
 
 The GPS driver targets a UART GNSS module (developed against the Quectel L76K) that
@@ -662,21 +662,21 @@ streams NMEA-0183 sentences. Unlike the passive I2C device drivers you poll thro
 a handle, \texttt{ESP32S3.GPS} is a singleton background \emph{service}: a
 library-level task owns one UART, continuously reads and decodes the sentence
 stream, and publishes results into a protected store. The application has no
-\texttt{Device} handle -- it just reads the store. It sits on \texttt{ESP32S3.UART};
+\texttt{Device} handle; it just reads the store. It sits on \texttt{ESP32S3.UART};
 only \texttt{Rx} is required (wired to the module's TXD), with optional \texttt{Tx}
 (for configuration) and \texttt{Pps} (a 1PPS GPIO interrupt for time alignment).
 
 Every published value is written and read under the store's lock, so a reader never
 sees a half-updated value; in particular \texttt{Latitude}/\texttt{Longitude} are
 one \texttt{Position} record updated atomically. Each reading carries the
-\texttt{Updated\_At} time at which a \emph{valid} sentence last refreshed it --
-compare \texttt{Age} against your tolerance to detect staleness. The driver decodes
+\texttt{Updated\_At} time at which a \emph{valid} sentence last refreshed it.
+Compare \texttt{Age} against your tolerance to detect staleness. The driver decodes
 GGA, RMC, GLL, VTG, GSV, GSA and ZDA into fix, position, time, date, velocity,
 signal and satellite-in-view readings. The task plus protected objects mean
 embedded/full profiles only.
 
 \cnote{Latitude and longitude follow the u-blox convention: signed integers in
-$10^{-7}$ degrees (\texttt{Integer\_32}), not floats -- exact, atomically paired,
+$10^{-7}$ degrees (\texttt{Integer\_32}), not floats: exact, atomically paired,
 and free of any soft-float dependency in the bare runtime.}
 
 A child \texttt{ESP32S3.GPS.L76K} adds the Quectel PCAS vendor commands
@@ -741,14 +741,14 @@ end loop;
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_gps}.
 
-\section{W25Q -- SPI NOR Flash}\index{W25Q driver}\index{SPI flash}
+\section{W25Q: SPI NOR Flash}\index{W25Q driver}\index{SPI flash}
 \label{app:ext:w25q}
 
-The W25Q256FV is a 32\,MB (256\,Mbit) SPI NOR flash -- the on-board non-volatile
+The W25Q256FV is a 32\,MB (256\,Mbit) SPI NOR flash, the on-board non-volatile
 store the local filesystem of Chapter~\ref{ch:storage} lives on. It sits on SPI2,
 sharing the bus with the W5500 (and, in the ADC example, the TLV2556) through the
 SPI driver's software chip-select. The driver is deliberately small: identify, read,
-erase by sector, program by page -- the primitives a wear-levelling layer and a
+erase by sector, program by page, the primitives a wear-levelling layer and a
 filesystem build on.
 
 \begin{lstlisting}
@@ -783,7 +783,7 @@ end ESP32S3.W25Q;
 \end{lstlisting}
 
 The bring-up proof is the \emph{JEDEC-ID check}: \texttt{Read\_Identification}
-returns \texttt{EF 40 19} on a healthy W25Q256 (Winbond, 256\,Mbit) -- a
+returns \texttt{EF 40 19} on a healthy W25Q256 (Winbond, 256\,Mbit): a
 wiring-independent confirmation that the SPI link and framing work before any read
 or write is trusted, the flash analogue of the TLV2556's self-test inputs
 (\S\ref{app:ext:tlv2556}). The page/sector asymmetry is the usual NOR contract: you
@@ -795,7 +795,7 @@ reads the same JEDEC id by hand (Chapter~\ref{ch:lisp}).
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_w25q}.
 
-\section{SD Card (SD\_SPI) -- Removable Storage}\index{SD card driver}
+\section{SD Card (SD\_SPI): Removable Storage}\index{SD card driver}
 \label{app:ext:sdspi}
 
 \texttt{ESP32S3.SD\_SPI} talks to an SD/SDHC card in SPI mode, layering the SD
@@ -850,7 +850,7 @@ end if;
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_sd\_spi}.
 
-\section{TX1812 -- Addressable RGB LED String}\index{TX1812 driver}
+\section{TX1812: Addressable RGB LED String}\index{TX1812 driver}
 \label{app:ext:tx1812}
 
 The TX1812 is a single-wire, daisy-chainable RGB LED in the WS2812 (``NeoPixel'')
@@ -912,7 +912,7 @@ end loop;
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_tx1812}.
 
-\section{W5500 -- SPI Ethernet Controller}\index{W5500 driver}
+\section{W5500: SPI Ethernet Controller}\index{W5500 driver}
 \label{app:ext:w5500}
 
 The WIZnet W5500 is an Ethernet controller with a hardwired TCP/IP stack (ARP,
@@ -927,7 +927,7 @@ driver: a transport layer (\texttt{ESP32S3.W5500}), a socket engine
 (\texttt{ESP32S3.W5500.Sockets}), optional interrupts, a DHCP client, and an adapter
 (\texttt{ESP32S3.W5500.Net\_Device}) that presents the chip as a standard
 \texttt{GNAT.Sockets} interface. Because that is far more than an API digest, it has
-its own chapter -- see chapter~\ref{ch:networking}, ``Networking: GNAT.Sockets over
+its own chapter. See chapter~\ref{ch:networking}, ``Networking: GNAT.Sockets over
 the W5500,'' for the driver layers, the chip-neutral \texttt{Net\_Devices}
 interface, the DNS and DHCP helpers, and the worked examples (echo server, HTTP,
 NTP, DNS, DHCP, and a weather client). Like the other controlled-handle drivers it

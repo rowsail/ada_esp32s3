@@ -1,8 +1,8 @@
 \chapter{Ada for C Programmers}
 \label{ch:ada-primer}
 
-The rest of this book assumes you can read Ada. If you are coming from C or C++ --
-as most embedded engineers are -- this chapter is the on-ramp: enough of the
+The rest of this book assumes you can read Ada. If you are coming from C or C++
+(as most embedded engineers are) this chapter is the on-ramp: enough of the
 language to follow every example that follows, framed against the C you already
 know. It is not a full Ada course (for that, see the references in
 Appendix~\ref{ch:references}); it is the slice this book leans on, in one sitting.
@@ -26,10 +26,10 @@ Three symbols a C programmer reads as ``equals'' are kept distinct in Ada, and t
 distinction is worth fixing now because all three turn up on the same page later:
 
 \begin{itemize}
-  \item \texttt{:=} is \textbf{assignment} -- ``becomes''. \texttt{Count := 5;}
-  \item \texttt{=} (and its negation \texttt{/=}) is \textbf{equality} -- a Boolean
+  \item \texttt{:=} is \textbf{assignment}: ``becomes''. \texttt{Count := 5;}
+  \item \texttt{=} (and its negation \texttt{/=}) is \textbf{equality}: a Boolean
         test, as in \texttt{if Count = 5}. It never assigns.
-  \item \texttt{=>} is \textbf{association} -- ``goes with''. It names which
+  \item \texttt{=>} is \textbf{association}: ``goes with''. It names which
         parameter, array element, or alternative a value belongs to, as in
         \texttt{Configure (Pin, Mode => Output)}.
 \end{itemize}
@@ -41,7 +41,7 @@ writing \texttt{if (x = 5)} when you meant \texttt{==} cannot even be expressed.
 \index{parameter modes}\index{subprogram}
 
 A \emph{procedure} performs an action; a \emph{function} returns a value. Both take
-parameters, and -- unlike C -- each parameter declares its \emph{direction}:
+parameters, and (unlike C) each parameter declares its \emph{direction}:
 
 \begin{lstlisting}
    procedure Read (Reg : in  Register_Id;   -- caller -> subprogram (the default)
@@ -54,10 +54,10 @@ parameters, and -- unlike C -- each parameter declares its \emph{direction}:
 
 \begin{itemize}
   \item \texttt{in} (the default) passes a value the subprogram may read but not
-        change -- a C value parameter.
+        change: a C value parameter.
   \item \texttt{out} is how a procedure \emph{returns} data: the caller passes a
         variable and the subprogram fills it. This is why so many operations in this
-        book end in \texttt{Result : out Status} or \texttt{Val : out Word} -- it is
+        book end in \texttt{Result : out Status} or \texttt{Val : out Word}. It is
         the idiomatic way to hand back several results at once without inventing a
         struct.
   \item \texttt{in out} both reads and updates the caller's variable.
@@ -65,7 +65,7 @@ parameters, and -- unlike C -- each parameter declares its \emph{direction}:
 
 In C you imitate \texttt{out} and \texttt{in out} with pointers (\texttt{int *val})
 and trust the caller to know which the function reads and which it writes. Ada makes
-the direction part of the declaration, so the compiler -- and the reader -- always
+the direction part of the declaration, so the compiler (and the reader) always
 know. Arguments may be given by position or by name, and naming is preferred where
 a bare value would be a riddle:
 
@@ -75,7 +75,7 @@ a bare value would be a riddle:
 \end{lstlisting}
 
 A parameter may have a default (\texttt{Port : Port\_Type := 502}), so a caller can
-omit it -- which is why \texttt{Connect (S, "10.0.0.7")} compiles even though
+omit it, which is why \texttt{Connect (S, "10.0.0.7")} compiles even though
 \texttt{Connect} has half a dozen parameters.
 
 \cnote{a function with several results returns a struct or scribbles through
@@ -89,14 +89,14 @@ into the declaration and checked.}
 A \emph{package} is Ada's module, and it comes in two parts, usually two files:
 
 \begin{itemize}
-  \item the \textbf{specification} (\texttt{.ads}) -- the visible interface, like a
+  \item the \textbf{specification} (\texttt{.ads}): the visible interface, like a
         C header: the types and subprograms a client may use;
-  \item the \textbf{body} (\texttt{.adb}) -- the implementation, like the \texttt{.c}.
+  \item the \textbf{body} (\texttt{.adb}): the implementation, like the \texttt{.c}.
 \end{itemize}
 
 The difference from C is that the split is \emph{enforced}, not conventional. A
 client sees only what the specification declares; anything in the body, or below a
-\texttt{private} line in the spec, is genuinely inaccessible -- the compiler refuses
+\texttt{private} line in the spec, is genuinely inaccessible: the compiler refuses
 it, rather than the linker merely happening not to find it.
 
 Two clauses bring a package into view:
@@ -110,17 +110,17 @@ Two clauses bring a package into view:
 \end{lstlisting}
 
 \texttt{with} is the dependency: it says ``this unit needs that one,'' and the
-compiler tracks it -- there is no include order to get wrong and no header guards.
+compiler tracks it: there is no include order to get wrong and no header guards.
 \texttt{use} is optional convenience that lets you drop the package prefix. This
 book \texttt{with}s widely and \texttt{use}s sparingly, so most calls keep their
 prefix and you can see at a glance where each name comes from.
 
 Packages nest. \texttt{ESP32S3.W5500.Sockets} is a \emph{child} of
 \texttt{ESP32S3.W5500}, itself a child of \texttt{ESP32S3}: the dotted name is a
-hierarchy, and that is how the HAL is laid out -- a chip namespace with one package
+hierarchy, and that is how the HAL is laid out: a chip namespace with one package
 per peripheral. This is enough to read the code; the next chapter
 (Chapter~\ref{ch:packages}) makes the case that the package is the load-bearing idea
-of the whole design -- reuse, privacy, naming and the build all in one construct.
+of the whole design: reuse, privacy, naming and the build all in one construct.
 
 \section{Control flow}
 
@@ -157,11 +157,11 @@ over a type or range, and cannot be assigned inside the body.
 \section{Types, attributes, and aggregates}
 
 Ada's typing is \emph{strong}: two distinct types never mix without an explicit
-conversion, even when both are integers -- a channel count and a clock divider
+conversion, even when both are integers: a channel count and a clock divider
 should not be interchangeable just because both are numbers. The everyday integer
 types are \texttt{Integer}, \texttt{Natural} ($\geq 0$) and \texttt{Positive}
-($\geq 1$); the embedded-specific ones -- range-constrained subtypes and modular
-(wrap-around) types for registers -- are the subject of Chapter~\ref{ch:embedded}.
+($\geq 1$); the embedded-specific ones, range-constrained subtypes and modular
+(wrap-around) types for registers, are the subject of Chapter~\ref{ch:embedded}.
 
 \textbf{Attributes} are built-in queries written with an apostrophe, the ``tick.''
 They have no C equivalent and appear on nearly every page:
@@ -179,7 +179,7 @@ They have no C equivalent and appear on nearly every page:
    Buf : Byte_Array (0 .. 63);                            -- this one is 0 .. 63
 \end{lstlisting}
 
-\textbf{Aggregates} build a whole composite value at once -- by position, by name,
+\textbf{Aggregates} build a whole composite value at once, by position, by name,
 or with \texttt{others} for the rest:
 
 \begin{lstlisting}
@@ -194,7 +194,7 @@ component it fills.
 \section{Objects: tagged types and dispatching}
 \index{tagged type}\index{dispatching}\index{interface}
 
-Ada's object orientation is built on the \emph{tagged} record -- a record you are
+Ada's object orientation is built on the \emph{tagged} record: a record you are
 allowed to extend. A C++ programmer can read the next few lines as classes and
 virtual methods; the words differ, the machinery does not.
 
@@ -211,13 +211,13 @@ virtual methods; the words differ, the machinery does not.
 \end{lstlisting}
 
 A subprogram that takes the type as its first parameter is a \emph{primitive
-operation} -- a method -- and a derived type inherits the primitives it does not
+operation} (a method), and a derived type inherits the primitives it does not
 \texttt{override}. The keyword \texttt{overriding} is optional but wise: written, it
 makes the compiler confirm you really are replacing an inherited operation and not
 quietly adding a new one through a typo.
 
 \emph{Dispatching} is virtual-call behaviour, and it turns on the class-wide type
-\texttt{T'Class} -- ``\texttt{Server} or anything derived from it.'' A call through a
+\texttt{T'Class}, ``\texttt{Server} or anything derived from it.'' A call through a
 \texttt{Server'Class} value runs the \emph{actual} object's version:
 
 \begin{lstlisting}
@@ -228,7 +228,7 @@ quietly adding a new one through a typo.
 \end{lstlisting}
 
 An \emph{interface} is the limiting case: a tagged type with operations but no data,
-all of them to be supplied by whoever implements it -- C++'s pure-abstract class.
+all of them to be supplied by whoever implements it: C++'s pure-abstract class.
 This is exactly the shape of the book's pluggable backends. \texttt{Net\_Devices.%
 Device} is an interface every network chip implements; \texttt{Modbus.Slave.Server}
 is a tagged base you derive from, overriding only the request handlers your device
@@ -266,6 +266,6 @@ header / \texttt{.c}          & spec (\texttt{.ads}) / body (\texttt{.adb}) \\
 \end{table}
 
 That is the whole of the language you need to start reading. The features that make
-Ada worth the trade -- subtypes that fence off illegal values, modular types for
-registers, contracts, controlled types, and the tasking model -- are introduced
+Ada worth the trade (subtypes that fence off illegal values, modular types for
+registers, contracts, controlled types, and the tasking model) are introduced
 where the book first relies on them, beginning with Chapter~\ref{ch:embedded}.

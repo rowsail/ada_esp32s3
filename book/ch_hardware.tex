@@ -3,8 +3,8 @@
 
 A peripheral register is a fixed memory location with side effects; a structure
 read off storage or the wire is a foreign byte layout. Ada lets the \emph{type}
-carry both -- the exact address, the bit positions, the volatility, the
-endianness -- so once a register or structure is described correctly it is safe at
+carry both (the exact address, the bit positions, the volatility, the
+endianness) so once a register or structure is described correctly it is safe at
 every use, with no pointer casts or shift-and-mask macros. This chapter is those
 techniques; they build directly on the language features of
 Chapter~\ref{ch:embedded}.
@@ -41,10 +41,10 @@ end Toggle_Raw;
 
 \texttt{System'To\_Address} turns a numeric literal into an address; the
 \texttt{Address} aspect binds the object there. The write is exactly one 32-bit store because the type is exactly
-\texttt{Unsigned\_32} -- the compiler
+\texttt{Unsigned\_32}: the compiler
 cannot ``optimise'' it into a byte write, which a peripheral might not accept.
 
-\cnote{this replaces \texttt{*(volatile uint32\_t *)0x60004008 = x;}\ -- but with
+\cnote{this replaces \texttt{*(volatile uint32\_t *)0x60004008 = x;}\ but with
 no cast, and with the access width fixed by the type, so the compiler cannot
 silently split or merge the access.}
 
@@ -53,8 +53,8 @@ silently split or merge the access.}
 Writing every register by hand is error-prone, so the whole ESP32-S3 register map
 is generated from the vendor SVD file into typed packages under
 \texttt{ESP32S3\_Registers.*} (one package per peripheral). Most registers are
-records of named bit-fields with a representation clause; a few -- like the
-write-one-to-set ports -- are bare 32-bit words. Each peripheral is one big record
+records of named bit-fields with a representation clause; a few (like the
+write-one-to-set ports) are bare 32-bit words. Each peripheral is one big record
 placed at its base address, and a driver writes them by name:
 
 \begin{lstlisting}
@@ -66,8 +66,8 @@ GPIO_Periph.OUT_W1TS := 2 ** 2;          --  set GPIO2 high (write-1-to-set)
 GPIO_Periph.PIN (2).INT_ENA := 1;        --  GPIO2's interrupt enable, by name
 \end{lstlisting}
 
-The application almost never touches these directly -- it calls the hand-written
-HAL (\texttt{ESP32S3.GPIO} and friends) -- but the same techniques underpin every
+The application almost never touches these directly (it calls the hand-written
+HAL, \texttt{ESP32S3.GPIO} and friends), but the same techniques underpin every
 driver.
 
 \subsection{Array overlays}
@@ -150,7 +150,7 @@ for Parity use (None => 0, Even => 2, Odd => 3);
 
 The same machinery decodes \emph{external} byte layouts, not just registers. A
 record can declare its \texttt{Scalar\_Storage\_Order}, and GNAT will read each
-field with the correct endianness automatically -- invaluable for filesystem
+field with the correct endianness automatically, invaluable for filesystem
 and protocol structures. The ext4 filesystem in Chapter~\ref{ch:storage} relies
 on exactly this idea (though it ultimately uses explicit little-/big-endian
 readers for clarity), and JBD2's big-endian journal records show why being able
@@ -161,20 +161,20 @@ to say ``this structure is big-endian'' in the type is so useful.
 
 Placing an object at a register's address is only half the story; you must also
 tell the compiler how that location behaves because the optimiser otherwise
-assumes ordinary memory -- caching reads, dropping ``dead'' writes, reordering.
+assumes ordinary memory: caching reads, dropping ``dead'' writes, reordering.
 A small family of aspects states the truth:
 
 \begin{itemize}
-  \item \texttt{Volatile} -- every read and write happens, in program order, and
+  \item \texttt{Volatile}: every read and write happens, in program order, and
         none is cached or elided. The baseline for any register.
-  \item \texttt{Atomic} -- additionally, each access is indivisible (a single
+  \item \texttt{Atomic}: additionally, each access is indivisible (a single
         load or store). Use it for a flag shared with an interrupt handler or the
         other core, where a torn half-update would be a bug.
-  \item \texttt{Volatile\_Full\_Access} -- the whole object is read or written in
+  \item \texttt{Volatile\_Full\_Access}: the whole object is read or written in
         \emph{one} access of its size. Essential for a register that latches on a
         full-word write or clears on read: updating one bit-field still emits a
         single 32-bit access, not a byte poke.
-  \item \texttt{Volatile\_Components} / \texttt{Atomic\_Components} -- the same,
+  \item \texttt{Volatile\_Components} / \texttt{Atomic\_Components}: the same,
         applied to each element of an array. The runtime's per-core
         \texttt{Switch\_Pending} and \texttt{In\_Native\_Int} flags are
         \texttt{Volatile\_Components} arrays for exactly this reason.
@@ -194,7 +194,7 @@ where indivisibility actually matters (it can be more expensive).
 \label{sec:pack}\index{packed arrays}
 
 The bit-field record nails \emph{named} fields to bits. When you instead have a
-homogeneous run of small components -- a bit vector, a table of 2-bit codes --
+homogeneous run of small components (a bit vector, a table of 2-bit codes),
 \texttt{pragma Pack} (or a \texttt{Component\_Size} clause) tells the compiler to
 store them at their natural bit width instead of rounding each up to a byte or
 word:
@@ -225,7 +225,7 @@ cover it:
         section the linker script positions (e.g.\ an IRAM or \texttt{.noinit}
         section).
   \item an \texttt{Address} overlay (\S\ref{ch:registers}) pins it at a fixed
-        location -- which is how the RTC-retained boot counter in the deep-sleep
+        location, which is how the RTC-retained boot counter in the deep-sleep
         example lives in RTC slow memory and survives a reset:
 \end{itemize}
 
@@ -238,25 +238,25 @@ cover it:
 
 Alignment matters too: \texttt{with Alignment => 64} forces DMA buffers onto a
 cache-line boundary, and the GDMA driver relies on aligned, internal-RAM (not
-PSRAM) descriptors -- placement and alignment together.
+PSRAM) descriptors: placement and alignment together.
 
 \begin{table}[ht]
 \centering
 \begin{tabular}{@{}l l l@{}}
 \toprule
 \textbf{Base} & \textbf{Top} & \textbf{Region} \\ \midrule
-\texttt{16\#3C00\_0000\#} & \texttt{16\#3D00\_0000\#} & Flash $\to$ DROM -- cached read-only data \\
-\texttt{16\#3D00\_0000\#} & \texttt{16\#3E00\_0000\#} & External PSRAM -- mapped by the bootloader \\
-\texttt{16\#3FC8\_8000\#} & \texttt{16\#3FD0\_0000\#} & Internal SRAM (DRAM view) -- data, stacks, heap \\
-\texttt{16\#4037\_0000\#} & \texttt{16\#403E\_0000\#} & Internal SRAM (IRAM view) -- code, vectors, DMA \\
-\texttt{16\#4200\_0000\#} & \texttt{16\#4400\_0000\#} & Flash $\to$ IROM -- cached code \\
-\texttt{16\#5000\_0000\#} & \texttt{16\#5000\_2000\#} & RTC slow RAM -- retained across deep sleep \\
+\texttt{16\#3C00\_0000\#} & \texttt{16\#3D00\_0000\#} & Flash $\to$ DROM: cached read-only data \\
+\texttt{16\#3D00\_0000\#} & \texttt{16\#3E00\_0000\#} & External PSRAM: mapped by the bootloader \\
+\texttt{16\#3FC8\_8000\#} & \texttt{16\#3FD0\_0000\#} & Internal SRAM (DRAM view): data, stacks, heap \\
+\texttt{16\#4037\_0000\#} & \texttt{16\#403E\_0000\#} & Internal SRAM (IRAM view): code, vectors, DMA \\
+\texttt{16\#4200\_0000\#} & \texttt{16\#4400\_0000\#} & Flash $\to$ IROM: cached code \\
+\texttt{16\#5000\_0000\#} & \texttt{16\#5000\_2000\#} & RTC slow RAM: retained across deep sleep \\
 \bottomrule
 \end{tabular}
 \caption{Principal address-space regions, by ascending base address. Flash
 (DROM) and external PSRAM are not separate windows: they are two sub-ranges of
 one 32\,MB external data-bus window (\texttt{16\#3C00\_0000\#}--\texttt{16\#3E00%
-\_0000\#}) that the cache MMU partitions -- this project maps flash from the
+\_0000\#}) that the cache MMU partitions. This project maps flash from the
 bottom and PSRAM at \texttt{16\#3D00\_0000\#}, the PSRAM's actual extent set by
 the fitted device. Placement pins objects where they belong: RTC memory for
 state that survives sleep, internal SRAM for DMA buffers (PSRAM cannot be a DMA
@@ -272,7 +272,7 @@ makes the size explicit rather than leaving it to a global heap:
 
 \begin{itemize}
   \item \texttt{for T'Storage\_Size use 0;} on an access type forbids
-        \texttt{new} of \texttt{T} -- a compile-time guarantee that pointer type
+        \texttt{new} of \texttt{T}: a compile-time guarantee that pointer type
         never heap-allocates.
   \item A task can cap its own stack: \texttt{task body Worker} with
         \texttt{pragma Storage\_Size} (or the \texttt{Storage\_Size} aspect) sizes
@@ -287,8 +287,8 @@ makes the size explicit rather than leaving it to a global heap:
    task Sampler with Storage_Size => 4 * 1024;           -- a 4 KB primary stack
 \end{lstlisting}
 
-Sizing memory in the source -- not discovering it when the heap is exhausted at
-3 a.m.\ in the field -- is the embedded mindset the language supports directly.
+Sizing memory in the source (not discovering it when the heap is exhausted at
+3 a.m.\ in the field) is the embedded mindset the language supports directly.
 
 \section{Interfacing with C, ROM, and assembly}
 \label{sec:interfacing}\index{interfacing!with C}
@@ -297,7 +297,7 @@ A bare-metal stack still meets non-Ada code: a ROM routine, a C glue function, a
 few instructions only assembly can express. Ada's interfacing pragmas make those
 boundaries explicit and typed.
 
-\textbf{Calling out} -- \texttt{pragma Import} (or the \texttt{Import} aspect)
+\textbf{Calling out:} \texttt{pragma Import} (or the \texttt{Import} aspect)
 with \texttt{Convention => C} binds an Ada declaration to an external symbol; no
 header, no wrapper:
 
@@ -306,13 +306,13 @@ header, no wrapper:
      with Import, Convention => C, External_Name => "esp_rom_printf";
 \end{lstlisting}
 
-\textbf{Being called} -- \texttt{pragma Export} publishes an Ada subprogram or
+\textbf{Being called:} \texttt{pragma Export} publishes an Ada subprogram or
 object under a C name so the boot assembly or glue can reach it (the runtime
 exports its interrupt-dispatch entries and the per-core flags this way).
 \texttt{Interfaces.C} (and \texttt{.Strings}, \texttt{.Pointers}) provides the
 C-compatible scalar and array types for the data that crosses.
 
-\textbf{Inline assembly} -- for the handful of operations with no Ada spelling
+\textbf{Inline assembly:} for the handful of operations with no Ada spelling
 (a special register read, a cache or barrier instruction),
 \texttt{System.Machine\_Code.Asm} embeds Xtensa instructions with typed operands;
 the GDMA driver uses it for a memory barrier around descriptor hand-off. It is a
@@ -320,8 +320,8 @@ scalpel, not a habit: everything that can be Ada, is.
 
 \section{The thread through it all}
 
-One idea runs through this chapter and the last: in Ada the \emph{type} -- with
-its layout, its range, its volatility, its contracts -- carries the intent, so the
+One idea runs through this chapter and the last: in Ada the \emph{type} (with
+its layout, its range, its volatility, its contracts) carries the intent, so the
 compiler (or a cheap, switch-off-able run-time check) catches the mistake. Describe
 a register, a value, or an interface correctly once, and every use of it afterwards
 is safe by construction.

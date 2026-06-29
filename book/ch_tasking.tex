@@ -4,7 +4,7 @@
 Concurrency in Ada is part of the language, not a bolted-on RTOS API: \emph{tasks}
 for independent threads of control, \emph{protected objects} for race-free sharing,
 interrupt handlers as protected procedures, and a monotonic clock for real-time
-work. This chapter shows the practical mechanics on the dual-core ESP32-S3 --
+work. This chapter shows the practical mechanics on the dual-core ESP32-S3:
 creating tasks and interrupt handlers, periodic scheduling, waiting with timeouts,
 the recurring concurrency patterns, watchdogs, and putting both cores to work. It
 draws on the encapsulation features of Chapter~\ref{ch:encap} and the drivers of
@@ -20,7 +20,7 @@ the full story on how attachment works underneath.
 
 \subsection{Creating and starting a task}
 
-You do not ``start'' an Ada task with a call -- you \emph{declare} it, and it
+You do not ``start'' an Ada task with a call. You \emph{declare} it, and it
 activates automatically. A single task is declared with its body; it begins
 running when its master (the enclosing scope) reaches the code after the
 declarations. For a \emph{library-level} task that master is the program itself,
@@ -28,7 +28,7 @@ so the binder activates it before \texttt{Main} even begins.
 
 \cnote{there is no \texttt{xTaskCreate}, \texttt{pthread\_create}, or
 \texttt{vTaskStartScheduler}: you declare the task and it activates itself, and
-the Ada runtime \emph{is} the scheduler -- already running when \texttt{Main}
+the Ada runtime \emph{is} the scheduler, already running when \texttt{Main}
 begins.}
 
 \begin{lstlisting}
@@ -54,14 +54,14 @@ For a \emph{family} of identical workers use a task \emph{type} and declare
 objects of it. One restriction matters here: under the \texttt{light-tasking} and
 \texttt{embedded} (Jorvik) profiles a task may not be nested inside a subprogram
 (\texttt{No\_Task\_Hierarchy}), so application tasks live at \emph{library level}
--- in a package -- not inside \texttt{Main}.
+(in a package), not inside \texttt{Main}.
 
 \subsection{Creating and attaching an interrupt handler}
 
 An interrupt handler is a \emph{protected procedure} bound to an interrupt. The
 protected object's \texttt{Interrupt\_Priority} is the hardware level it runs at
 (and the ceiling that serialises it), and \texttt{pragma Attach\_Handler} wires
-it up at elaboration -- no run-time call (\S\ref{ch:registers} and the Interrupts
+it up at elaboration, with no run-time call (\S\ref{ch:registers} and the Interrupts
 chapter):
 
 \begin{lstlisting}
@@ -80,7 +80,7 @@ pin to per-pin callbacks. You just register a callback with a trigger:
    Enable (Pin => 0, On => Falling_Edge, Action => On_Edge'Access);
 \end{lstlisting}
 
-A handler -- protected \texttt{ISR} or HAL callback -- runs in \emph{interrupt
+A handler (protected \texttt{ISR} or HAL callback) runs in \emph{interrupt
 context} at the slot's ceiling. Keep it tiny, and do not call a lower-ceiling
 protected object or block. The idiom is to record the event (bump an
 \texttt{Atomic}, or \texttt{Set} a \texttt{Suspension\_Object}) and let an
@@ -132,7 +132,7 @@ construct in the example:
 
 \begin{description}[style=nextline]
 \item[\texttt{with Ada.Real\_Time;}] names a unit this code \emph{depends on} and
-  makes its declarations available -- like an \texttt{\#include}, but semantic:
+  makes its declarations available, like an \texttt{\#include}, but semantic:
   the compiler records the dependency rather than pasting text. The four
   \texttt{with}s pull in timing (\texttt{Ada.Real\_Time}), console output
   (\texttt{Ada.Text\_IO}), the GPIO driver, and its interrupt child.
@@ -150,12 +150,12 @@ construct in the example:
   Atomic} is an aspect making each read or write a single indivisible access.
 \item[\texttt{-- \ldots}] a comment: \texttt{--} runs to the end of the line.
 \item[\texttt{procedure On\_Edge is \ldots\ begin \ldots\ end On\_Edge;}] defines a
-  \emph{procedure} -- a subprogram that returns no value -- taking no
+  \emph{procedure} (a subprogram that returns no value) taking no
   parameters. The statements between \texttt{begin} and \texttt{end} run when it
   is called. Repeating the name after \texttt{end} is optional but conventional.
 \item[\texttt{Edges := Edges + 1;}] an assignment statement: evaluate
   \texttt{Edges + 1} and store it back. Statements end with a semicolon.
-\item[\texttt{task Reporter;}] declares a \emph{task} -- an independent thread of
+\item[\texttt{task Reporter;}] declares a \emph{task}: an independent thread of
   control. This line creates it; it will start on its own (no ``start'' call).
 \item[\texttt{task body Reporter is \ldots\ loop \ldots\ end loop; \ldots}] the
   task's code. \texttt{loop \ldots\ end loop;} repeats indefinitely.
@@ -165,7 +165,7 @@ construct in the example:
   time; plain \texttt{delay X} would wait a duration.
 \item[\texttt{Put\_Line ("\ldots" \& Natural'Image (Edges));}] prints a line.
   \texttt{\&} concatenates strings, and \texttt{Natural'Image (Edges)} converts
-  the number to text. The apostrophe introduces an \emph{attribute} -- a built-in
+  the number to text. The apostrophe introduces an \emph{attribute}: a built-in
   query on a type or object; \texttt{'Image} is ``the textual image of this
   value.''
 \item[\texttt{begin \ldots\ end Edge\_Demo;}] a package body may end with an
@@ -176,8 +176,8 @@ construct in the example:
   and \texttt{Pull => Pull\_Up} are \emph{named} associations
   (\texttt{name => value}), so the call documents which parameter is which.
 \item[\texttt{Enable (\ldots, Action => On\_Edge'Access);}] registers the
-  interrupt. \texttt{On\_Edge'Access} is the \texttt{'Access} attribute -- a
-  reference to the \texttt{On\_Edge} procedure -- which the HAL stores and calls
+  interrupt. \texttt{On\_Edge'Access} is the \texttt{'Access} attribute (a
+  reference to the \texttt{On\_Edge} procedure) which the HAL stores and calls
   from the ISR on each falling edge.
 \end{description}
 
@@ -195,8 +195,8 @@ it, the same two setup lines would read:
 \end{lstlisting}
 
 The package path repeats on nearly every name and buries the intent. With
-\texttt{use} the code reads in the language of the problem -- ``configure pin 0
-as a pulled-up input; enable a falling-edge interrupt'' -- while the \texttt{with}
+\texttt{use} the code reads in the language of the problem (``configure pin 0
+as a pulled-up input; enable a falling-edge interrupt'') while the \texttt{with}
 clauses still record exactly where those names come from. The trade-off is that a
 name's origin is less explicit, and two \texttt{use}d packages could in principle
 declare the same name; in a small, focused unit like this the clarity gain wins,
@@ -206,14 +206,14 @@ The application's \texttt{Main} need only \texttt{with Edge\_Demo;} and stay
 alive; \texttt{Reporter} and the interrupt are running before \texttt{Main}'s
 first statement. Each time GPIO0 goes high$\rightarrow$low (release of a pull-up
 button, say) the ISR bumps \texttt{Edges}, and the reporter prints the running
-total -- a complete interrupt-driven counter in a couple of dozen lines, with no
+total: a complete interrupt-driven counter in a couple of dozen lines, with no
 RTOS, no manual ISR vectoring, and no explicit task start.
 
 \section{Real-time tasks: periodic and time-driven}
 \label{sec:realtime}\index{real-time tasks}
 
-For periodic work use \texttt{Ada.Real\_Time} -- a \emph{monotonic} clock that
-never jumps -- not \texttt{Ada.Calendar}. The canonical cyclic task computes its
+For periodic work use \texttt{Ada.Real\_Time}, a \emph{monotonic} clock that
+never jumps, not \texttt{Ada.Calendar}. The canonical cyclic task computes its
 \emph{next} release as an absolute instant and \texttt{delay until}s it, so timing
 error does not accumulate:
 
@@ -232,14 +232,14 @@ error does not accumulate:
 
 Because \texttt{Next} advances by exactly \texttt{Period} regardless of how long
 \texttt{Read\_And\_Process} ran, the task holds its average rate with no cumulative
-jitter -- the crucial difference from a naive \texttt{delay Period}, which slips
+jitter: the crucial difference from a naive \texttt{delay Period}, which slips
 by the body's run time every cycle. Two more tools are available on all profiles:
 
 \begin{itemize}
   \item \texttt{Time\_Span} arithmetic (\texttt{Milliseconds},
         \texttt{Microseconds}, \texttt{To\_Duration}) for expressing intervals
         exactly;
-  \item \texttt{Ada.Real\_Time.Timing\_Events} -- register a procedure to run at
+  \item \texttt{Ada.Real\_Time.Timing\_Events}: register a procedure to run at
         a future instant without dedicating a task, handy for a one-shot timeout.
 \end{itemize}
 
@@ -247,11 +247,11 @@ by the body's run time every cycle. Two more tools are available on all profiles
 unsuited as a scheduling base (see the Limitations chapter) and on the bare
 runtime it is anchored only to boot. Schedule with \texttt{Ada.Real\_Time}.
 
-\section{Waiting for an event -- and timing out}
+\section{Waiting for an event, and timing out}
 \label{sec:waiting}\index{waiting for an event}
 
 Two questions come up constantly in firmware: how do I \emph{wait} for something
-to happen -- a GPIO pin to change, a byte to arrive on the UART -- and how do I
+to happen (a GPIO pin to change, a byte to arrive on the UART) and how do I
 \emph{give up} after a while? There are two ways to wait (poll, or block until an
 interrupt wakes you), and the clean way to bound the wait with a timeout differs
 across the three profiles because the leaner two forbid the \texttt{select}
@@ -280,7 +280,7 @@ begin
 end Wait_For_Byte;
 \end{lstlisting}
 
-The same shape waits on a GPIO level -- replace \texttt{Available (S) = 0} with
+The same shape waits on a GPIO level: replace \texttt{Available (S) = 0} with
 \texttt{not ESP32S3.GPIO.Read (Pin)}. Polling works on \emph{every} profile and
 needs only \texttt{Ada.Real\_Time}; the cost is the CPU spent re-checking.
 
@@ -322,7 +322,7 @@ Suspend_Until_True (Edge_Seen);    -- the task sleeps here until the edge fires
 \end{lstlisting}
 
 This burns no CPU while waiting. But \texttt{Suspend\_Until\_True} has no timeout
-of its own -- and \emph{that} is where the profiles diverge.
+of its own, and \emph{that} is where the profiles diverge.
 
 \subsection{Timing out: three profiles, three approaches}
 
@@ -365,7 +365,7 @@ end;
 \end{lstlisting}
 
 \textbf{embedded.} The same Jorvik primitives (still no \texttt{select}), but
-exceptions now propagate -- so a timeout reads naturally as a \emph{catchable
+exceptions now propagate, so a timeout reads naturally as a \emph{catchable
 exception}, giving linear code, with any controlled handles released on the way
 out:
 
@@ -396,7 +396,7 @@ end;
 instead of polling, if you would rather sleep than spin.)
 
 \textbf{full.} Full Ada gives the timeout directly, as a \emph{timed entry call}:
-the task blocks on the entry and a \texttt{delay} races it -- no helper deadline,
+the task blocks on the entry and a \texttt{delay} races it: no helper deadline,
 no polling. The protected object only needs the event half:
 
 \begin{lstlisting}
@@ -422,11 +422,11 @@ or
 end select;
 \end{lstlisting}
 
-(Use \texttt{delay until} -- an \emph{absolute} time -- here: on this port a
+(Use \texttt{delay until}, an \emph{absolute} time, here: on this port a
 \emph{relative} \texttt{delay} as a \texttt{select} trigger has a known gap, see
 the Limitations chapter.) \texttt{full} also offers \texttt{select \dots\ then
 abort} to put a deadline around an \emph{arbitrary} computation, not just an entry
-call -- abandoning it if it overruns.
+call, abandoning it if it overruns.
 
 \textbf{Choosing.} Poll for a short, infrequent wait or the leanest code;
 interrupt-signalled blocking is better when the wait may be long or power matters.
@@ -436,16 +436,16 @@ the \texttt{select}\,/\,\texttt{delay} timed entry call on full.
 \section{Choosing how to wait: a spectrum, by timescale}
 \label{sec:wait-spectrum}\index{busy-wait}\index{polling!spectrum}\index{spin loop}
 
-The previous section drew the choice as binary -- poll, or block on an interrupt.
+The previous section drew the choice as binary: poll, or block on an interrupt.
 That is the right coarse split, but a driver author actually picks among
 \emph{four} points on a spectrum, and the deciding factor is almost always the
 same question: \emph{how long is the wait expected to be?} Match the strategy to
 the timescale and the rest follows.
 
-\subsection{A tight spin -- shorter than a context switch}
+\subsection{A tight spin: shorter than a context switch}
 
 When you are waiting on a hardware register bit that clears in a microsecond or
-two -- a command latching, a DMA-fed shift register draining -- the right thing
+two (a command latching, a DMA-fed shift register draining) the right thing
 is to spin with \emph{no} back-off at all:
 
 \begin{lstlisting}
@@ -454,8 +454,8 @@ while B.Regs.CMD.USR loop null;    -- ... and wait the few us for it to finish
 end loop;
 \end{lstlisting}
 
-This looks like the cardinal sin of embedded code -- a busy-loop burning the CPU
--- but here it is correct, and a \texttt{delay until} would be \emph{worse}. The
+This looks like the cardinal sin of embedded code, a busy-loop burning the CPU,
+but here it is correct, and a \texttt{delay until} would be \emph{worse}. The
 wait is a handful of microseconds; the kernel tick is a millisecond, and even a
 bare context switch costs more cycles than the bit takes to clear. Sleeping would
 turn a 2\,\textmu s wait into a 1\,ms one and add scheduler churn for nothing. The
@@ -464,10 +464,10 @@ SPI engine (\texttt{CMD.USR}, \texttt{CMD.UPDATE}), the I2S engine
 this, deliberately. The rule: \emph{if the wait is shorter than the cost of
 yielding, do not yield.}
 
-\subsection{A bounded spin -- a tight loop that cannot hang}
+\subsection{A bounded spin: a tight loop that cannot hang}
 
-The pure \texttt{loop null} spin has one flaw: if the bit \emph{never} clears -- a
-wedged peripheral, a chip that is not there -- it hangs the core forever. Where
+The pure \texttt{loop null} spin has one flaw: if the bit \emph{never} clears (a
+wedged peripheral, a chip that is not there) it hangs the core forever. Where
 that risk is real, the same spin gets a guard counter, so a fault becomes a
 bounded failure instead of a deadlock:
 
@@ -483,21 +483,21 @@ The cap is a crude worst-case-execution-time bound: still no \texttt{delay} (the
 expected wait is short), but liveness is guaranteed. GDMA's \texttt{Wait} and the
 W5500's command-accept (\texttt{Issue}, capped at 2000 tries) use this shape.
 
-\subsection{A paced poll -- when the wait is milliseconds}
+\subsection{A paced poll: when the wait is milliseconds}
 
-Once the expected wait reaches the millisecond range -- a reset settling, a slow
-status bit, a byte trickling in over a UART -- yielding pays off, and you back off
+Once the expected wait reaches the millisecond range (a reset settling, a slow
+status bit, a byte trickling in over a UART) yielding pays off, and you back off
 with \texttt{delay until} so other tasks run meanwhile. This is the polling loop
 from the previous section, and \texttt{ESP32S3.Wait.Until\_True} packages it.
 Datasheet-mandated settle delays (the ST7789's 120\,ms power-on, the W5500's reset
 hold) are the same idea with a \emph{fixed} delay rather than a re-checked
 condition.
 
-\subsection{Blocking on an interrupt -- long or unbounded}
+\subsection{Blocking on an interrupt: long or unbounded}
 
-When the wait could be long, is unpredictable, or power matters -- a network
-packet that may arrive in 1\,ms or 10\,s, a key-press, a sensor's data-ready line
--- polling wastes both CPU and energy. Sleep instead: an interrupt handler
+When the wait could be long, is unpredictable, or power matters (a network
+packet that may arrive in 1\,ms or 10\,s, a key-press, a sensor's data-ready line)
+polling wastes both CPU and energy. Sleep instead: an interrupt handler
 \texttt{Set\_True}s a \texttt{Suspension\_Object} and the task
 \texttt{Suspend\_Until\_True}s on it, burning nothing until the hardware wakes it
 (Chapter~\ref{ch:suspension}). This is the top of the spectrum: the most machinery
@@ -508,8 +508,8 @@ waiting.
 
 The W5500 networking stack is a useful specimen because it spans nearly all of
 these at once. Accepting a chip command spins, bounded (\texttt{Issue}); a short
-register read spins; and the blocking waits -- for an incoming connection, for
-received data, for room in the transmit buffer -- funnel through a single hook:
+register read spins; and the blocking waits (for an incoming connection, for
+received data, for room in the transmit buffer) funnel through a single hook:
 
 \begin{lstlisting}
 procedure Wait_Event (S : Socket) is
@@ -524,7 +524,7 @@ By default the stack \emph{polls} (the 1\,ms fallback); calling
 \texttt{Interrupts.Enable} registers a waiter and the very same waits become
 interrupt-blocking, with no change to the socket code. That default carries a
 throughput cost worth knowing: a bulk transfer paced at one decision per
-millisecond is far slower than one that wakes the instant the buffer drains -- the
+millisecond is far slower than one that wakes the instant the buffer drains: the
 difference the 1\,MiB FTP upload of Chapter~\ref{ch:networking} ran into. For
 sustained data, enable the interrupts.
 
@@ -543,7 +543,7 @@ long / unbounded / power       & block on an interrupt          & W5500 \texttt{
 \end{center}
 
 Two failure modes bracket the table. Yield on a sub-microsecond wait and you pay a
-thousandfold latency penalty for nothing; spin -- even bounded -- on a
+thousandfold latency penalty for nothing; spin, even bounded, on a
 multi-second wait and you burn a core and a battery. Picking the row that matches
 the timescale is most of getting it right.
 
@@ -557,7 +557,7 @@ one caller queued at a time) shape them but do not prevent them.
 \textbf{Producer/consumer over a bounded buffer.} The classic decoupling: one
 task (or an interrupt) produces items, another consumes them, with a protected
 ring buffer between. The consumer's \texttt{Get} is an \emph{entry} whose barrier
-holds it until something is available -- no polling.
+holds it until something is available, with no polling.
 
 \begin{lstlisting}
 protected Queue is
@@ -590,17 +590,17 @@ end Queue;
 
 The consumer task just loops \texttt{Queue.Get (X)}; it sleeps on the barrier when
 the queue is empty and wakes the instant \texttt{Put} adds an item. (Under Jorvik,
-exactly one consumer task may queue on \texttt{Get} at a time -- which is the
+exactly one consumer task may queue on \texttt{Get} at a time, which is the
 usual one-producer/one-consumer arrangement.)
 
 \textbf{A signal / mailbox.} The degenerate one-slot case is a handoff: an
 interrupt deposits a value and a task collects it. It is the
 ``protected entry'' half of the waiting pattern (\S\ref{sec:waiting}) carrying a
-payload -- a \texttt{procedure Post (V)} from the ISR and an
+payload: a \texttt{procedure Post (V)} from the ISR and an
 \texttt{entry Take (V : out \ldots)} barriered on ``something posted.''
 
-\textbf{DMA double-buffering (ping-pong).} For a continuous stream -- audio in
-over I2S, samples to a DAC -- you cannot stop to process between transfers. Use
+\textbf{DMA double-buffering (ping-pong).} For a continuous stream (audio in
+over I2S, samples to a DAC) you cannot stop to process between transfers. Use
 \emph{two} buffers: while the GDMA fills (or drains) buffer~A, the CPU processes
 buffer~B; when the transfer completes you swap, so the peripheral is never idle.
 The completion interrupt signals the processing task (a suspension object or a
@@ -631,14 +631,14 @@ stream never stalls.}
 \textbf{Why protected objects, not flags.} Each of these could be hacked with a
 shared \texttt{Volatile} flag, but the protected object gives you the barrier (no
 polling), mutual exclusion (no torn reads across cores), and a priority ceiling
-(bounded blocking) for free -- the points the Encapsulation chapter
+(bounded blocking) for free: the points the Encapsulation chapter
 (Chapter~\ref{ch:encap}) makes about \texttt{protected}.
 
 \section{Watchdogs and recovery}
 \label{sec:watchdogs}\index{watchdog}
 
 A watchdog is a hardware timer that resets the chip unless the software keeps
-``feeding'' it -- the last line of defence against a hang that no exception or
+``feeding'' it: the last line of defence against a hang that no exception or
 check can catch (a wild loop, a deadlock, a stuck peripheral). The ESP32-S3 has
 several: the two timer-group main watchdogs (TG0/TG1 MWDT), the RTC watchdog
 (RWDT), and the RTC \emph{super}-watchdog (a hardware backstop).
@@ -646,7 +646,7 @@ several: the two timer-group main watchdogs (TG0/TG1 MWDT), the RTC watchdog
 \textbf{The bare boot leaves them off.} The ROM and the second-stage bootloader
 arm watchdogs during boot, but this runtime's startup \emph{disables} them (so a
 long elaboration or a debugger pause is not cut short). So by default a bare-metal
-app runs with \emph{no} active watchdog -- a hang will sit forever rather than
+app runs with \emph{no} active watchdog: a hang will sit forever rather than
 recover. That is fine while developing (and is why a wedged example does not
 reset on its own), but a deployed device usually wants protection.
 
@@ -677,8 +677,8 @@ procedure Pet is begin Wprot := Key; Feed := 2**31; Wprot := 0; end Pet;
 \end{lstlisting}
 
 \textbf{Feed on progress, not on a timer.} The robust idiom is to pet the dog from
-points that only execute when work is actually advancing -- the main loop body, a
-completed transaction -- not from a periodic task that would keep petting even if
+points that only execute when work is actually advancing (the main loop body, a
+completed transaction) not from a periodic task that would keep petting even if
 the real work has stalled. The ACATS test harness in this project does exactly
 this: it arms the RWDT (\,$\approx$19\,s) and feeds it on every progress line, so a
 test that deadlocks stops feeding and is reset, while a slow-but-progressing test
@@ -705,7 +705,7 @@ the first core, \texttt{2} the second); omit it and the task may run on either:
    task Beat1 with Priority => Priority'Last - 1, CPU => 2;   -- the other core
 \end{lstlisting}
 
-\textbf{Share data with a protected object} -- it works \emph{across} cores, not
+\textbf{Share data with a protected object.} It works \emph{across} cores, not
 just between tasks on one core. A protected \emph{entry} can even hand a caller
 from one core to the other: in the \texttt{esp32s3\_smp} example a producer on
 core 1 blocks in \texttt{entry Get when Full}, and serving the entry wakes it
@@ -725,7 +725,7 @@ through the inter-core interrupt. The locking is the same priority-ceiling monit
 Two cautions specific to this target: time comes from a \emph{shared} hardware
 timer (the SYSTIMER), not each core's own cycle counter, so \texttt{Clock} agrees
 across cores; and the USB-serial-JTAG console is not robust for two tasks printing
-at once -- funnel diagnostics through one task. With those in mind, an SMP
+at once, so funnel diagnostics through one task. With those in mind, an SMP
 application is just ordinary tasks, pinned where you want them, sharing through
 protected objects.
 

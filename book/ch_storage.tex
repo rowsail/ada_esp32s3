@@ -3,10 +3,10 @@
 
 The final layer is mass storage: block drivers for SD cards and for a raw SPI NOR
 flash chip, and a complete pure-Ada ext2/3/4 filesystem (a reimplementation of
-lwext4) that sits on top of them -- mounting real \texttt{mkfs.ext4} cards,
+lwext4) that sits on top of them: mounting real \texttt{mkfs.ext4} cards,
 \emph{and} wear-leveling and formatting a bare flash chip entirely on-device.
 
-\section{SD\_SPI -- an SD card over the SPI master}\index{SD card}\index{SD\_SPI}\index{SPI SD mode}
+\section{SD\_SPI: an SD card over the SPI master}\index{SD card}\index{SD\_SPI}\index{SPI SD mode}
 
 \texttt{ESP32S3.SD\_SPI} talks to an SD/SDHC card in SPI mode, layered on the
 task-safe SPI driver. The chip-select is an ordinary GPIO so it can be held across
@@ -27,7 +27,7 @@ procedure Write_Block (C : in out Card; LBA : Block_Address;
                        Data : Block; Result : out Status);
 \end{lstlisting}
 
-\textbf{Example 1 -- bring up a card and read sector 0.}
+\textbf{Example 1: bring up a card and read sector 0.}
 \begin{lstlisting}
 with ESP32S3.SD_SPI; use ESP32S3.SD_SPI;
 with ESP32S3.SPI;
@@ -44,7 +44,7 @@ begin
 end SD_Init;
 \end{lstlisting}
 
-\textbf{Example 2 -- a non-destructive read / write-back / re-read round-trip.}
+\textbf{Example 2: a non-destructive read / write-back / re-read round-trip.}
 \begin{lstlisting}
 with ESP32S3.SD_SPI; use ESP32S3.SD_SPI;
 with ESP32S3.SPI;
@@ -61,10 +61,10 @@ begin
 end SD_Roundtrip;
 \end{lstlisting}
 
-\section{SDMMC -- the native SD/MMC host}\index{SDMMC}\index{SDHOST controller}
+\section{SDMMC: the native SD/MMC host}\index{SDMMC}\index{SDHOST controller}
 
 \texttt{ESP32S3.SDMMC} drives the dedicated SDHOST controller (clock + command +
-1- or 4-bit data) in PIO mode -- faster than SPI mode, and with no DMA or
+1- or 4-bit data) in PIO mode, which is faster than SPI mode, and with no DMA or
 finalization it works under every profile. The API mirrors \texttt{SD\_SPI}.
 
 \begin{lstlisting}
@@ -76,7 +76,7 @@ procedure Read_Block  (C : in out Card; LBA : Block_Address; Data : out Block;
                        Result : out Status);
 \end{lstlisting}
 
-\textbf{Example -- 4-bit bus, read a sector.}
+\textbf{Example: 4-bit bus, read a sector.}
 \begin{lstlisting}
 with ESP32S3.SDMMC; use ESP32S3.SDMMC;
 procedure SDMMC_Read is
@@ -106,7 +106,7 @@ profile.
 
 The filesystem talks to a small block-device abstraction (\texttt{ESP32S3.%
 Block\_Dev.Device}). An adapter turns an initialised SD card into one with a
-single call -- the \texttt{Make} below appears in each complete example that
+single call. The \texttt{Make} below appears in each complete example that
 follows:
 
 \begin{lstlisting}
@@ -206,8 +206,8 @@ The full POSIX-like set is available: \texttt{Create\_File}, \texttt{Write\_File
 
 \subsection{Streaming writes and file-size limits}\index{streaming write}\index{Append}\index{block map}\index{single-indirect block}\index{double-indirect block}
 
-\texttt{Write\_File} sets a file's whole contents from one in-memory buffer --
-fine for a small file, but you cannot hand an embedded part a gigabyte-sized
+\texttt{Write\_File} sets a file's whole contents from one in-memory buffer.
+That is fine for a small file, but you cannot hand an embedded part a gigabyte-sized
 array. \texttt{Append} grows a file at its end one chunk at a time, so a large
 file is built from small writes with no buffer to hold it all:
 
@@ -220,20 +220,20 @@ file is built from small writes with no buffer to hold it all:
 \end{lstlisting}
 
 What bounds a single file is the \emph{block map}. The writer allocates classic
-indirect blocks -- 12 direct, then single-indirect, then double-indirect -- so
+indirect blocks (12 direct, then single-indirect, then double-indirect), so
 on a 4\,KiB-block volume one file reaches about 4\,MiB through the single-indirect
 tier and about 4\,GiB through the double-indirect tier; the matching free and
 truncate paths walk the same tiers, so a file that can be written can always be
-deleted and shrunk. The \emph{read} path goes further -- it follows the full
-classic map (through triple-indirect) and ext4 extent trees -- so a
+deleted and shrunk. The \emph{read} path goes further: it follows the full
+classic map (through triple-indirect) and ext4 extent trees, so a
 multi-gigabyte file written by a host is readable on-device, bounded only by the
 volume's free space.
 
 \subsection{Crash-safe transactions}\index{crash-safe transactions}\index{journaling}\index{commit barrier}
 
 For atomicity, group an operation behind \texttt{Commit}: the dirty metadata and
-the superblock are written to the journal (durably), the RECOVER flag is set --
-the commit barrier -- then the metadata is checkpointed to its final locations
+the superblock are written to the journal (durably), the RECOVER flag is set
+(the commit barrier), then the metadata is checkpointed to its final locations
 and the flag cleared. A power loss after the barrier is recovered forward by the
 next \texttt{Open} (or by any other ext4 implementation, including the Linux
 kernel); a loss before it has no effect.
@@ -248,7 +248,7 @@ kernel); a loss before it has no effect.
 A volume formatted \emph{without} a journal (\texttt{mke2fs -O \textasciicircum
 has\_journal}) has no log to write through, so \texttt{Commit} instead flushes the
 dirty metadata and superblock straight to their final locations. The filesystem
-detects which kind it mounted and routes \texttt{Commit} automatically -- a
+detects which kind it mounted and routes \texttt{Commit} automatically. A
 no-journal volume trades the crash-safety barrier for smaller size and fewer
 writes, the right choice on a small flash chip.\index{no-journal volume}
 
@@ -261,7 +261,7 @@ its calls run to completion in sequence.
 
 That rule is stricter than it first looks because even reads have side effects.
 Underneath the mount sits a write-back LRU block cache, and \texttt{Read\_File}
-fetches-on-miss and reorders it -- so two tasks ``only reading'' the same mount
+fetches-on-miss and reorders it, so two tasks ``only reading'' the same mount
 still race on the cache. Writes are stronger still: \texttt{Create\_File},
 \texttt{Write\_File}, \texttt{Mkdir} and the rest accumulate a dirty-metadata
 write-set that \texttt{Commit} flushes as \emph{one} journaled transaction (the
@@ -275,7 +275,7 @@ If more than one task must reach the filesystem, give the mount a single owner a
 funnel every request through it: a dedicated task that owns the \texttt{Mount} and
 performs the I/O, with other tasks handing it work through a \texttt{protected}
 request queue (Ravenscar-compatible) or, on the \texttt{full} profile, a rendezvous
-entry. The I/O itself must stay in the owning task -- never inside a protected
+entry. The I/O itself must stay in the owning task, never inside a protected
 action because the SD drivers can suspend and a protected operation must not block.
 
 \begin{lstlisting}
@@ -317,14 +317,14 @@ end;
 
 A subtle class of corruption is the \emph{free-count drift}: the superblock and
 block-group descriptors cache how many blocks and inodes are free, and if a
-\texttt{Free} adjusts that cache for a bit that was \emph{already} clear -- a
-double-free, or a stale/incoherent bitmap read off a flaky SD card -- the cached
+\texttt{Free} adjusts that cache for a bit that was \emph{already} clear (a
+double-free, or a stale/incoherent bitmap read off a flaky SD card), the cached
 count creeps above what the bitmap actually says. \texttt{e2fsck} then reports a
 Pass-5 count mismatch on an otherwise-sound filesystem.
 
 The fix makes \texttt{Free} \emph{idempotent} by construction. \texttt{Clear\_Bit}
 now reports whether the bit was actually set, and the group/superblock counts are
-bumped \emph{only} when it was -- so a double or phantom free is a no-op rather
+bumped \emph{only} when it was, so a double or phantom free is a no-op rather
 than a drift, and the count cannot diverge from the bitmap.
 
 \begin{lstlisting}
@@ -336,7 +336,7 @@ else
 end if;
 \end{lstlisting}
 
-Crucially the already-clear path is \emph{not} silent -- that would mask a genuine
+Crucially the already-clear path is \emph{not} silent. That would mask a genuine
 double-free bug. A \texttt{Phantom\_Free\_Count} tripwire counts the events (a plain
 counter, not a \texttt{pragma Assert} because the target also builds with
 \texttt{-gnata} and an assert would abort the filesystem operation). The host test
@@ -354,7 +354,7 @@ Check ("no phantom frees (count consistent with bitmap)",
 The original drift was ultimately traced to a \emph{worn} SD card: a brand-new card
 runs the whole battery \texttt{e2fsck}-clean with zero phantom frees. The tripwire
 is what turned an intermittent, card-dependent count mismatch into a single
-yes/no signal -- surfacing the fault instead of hiding it.
+yes/no signal, surfacing the fault instead of hiding it.
 
 \subsection{How it is validated}
 
@@ -394,7 +394,7 @@ And the device record \emph{describes itself}: its host, its own bit clock, and 
 chip select. The select is its own GPIO, not the SPI host's single hardware
 \texttt{CS0}: the flash names its select pin and the SPI driver drives it
 active-low, held across the whole command (so a streamed read can keep \texttt{CS}
-asserted across many transfers) -- which is what lets the flash share the bus
+asserted across many transfers). This is what lets the flash share the bus
 with another device on \texttt{CS0}, each clocked its own way. Setting
 \texttt{Clock\_Hz} and \texttt{CS\_Pin} is all it takes; a select that is not one
 plain GPIO (a 3:8 decoder, an I/O-expander line) instead supplies a \texttt{CS\_CB}
@@ -422,16 +422,16 @@ re-programmed, so \texttt{W25Q\_Source} hides an erase-aware, write-through
 512-byte sector interface over the chip; an optional block-erase capability lets
 the layer above clear a whole 4\,KiB block in one operation.
 
-\texttt{Block\_Dev.WL} is the wear-leveling FTL. It keeps an $O(1)$ state -- a
-single move counter -- and maps a logical 4\,KiB block to a physical one by a
+\texttt{Block\_Dev.WL} is the wear-leveling FTL. It keeps an $O(1)$ state (a
+single move counter) and maps a logical 4\,KiB block to a physical one by a
 shifting offset, with one always-free ``hole''. Every few writes it advances the
 hole by copying one block, so over time every logical block visits every physical
 block and a hot block (an ext4 bitmap, say) never wears out one sector. The state
 is written to two configuration blocks \emph{ping-pong} (alternating, each with a
 higher sequence number and a CRC), so a power loss mid-update always leaves a
 consistent earlier state; \texttt{Mount} picks the highest valid sequence. The
-whole stack -- erase-aware writes, the wear-level remap, the auto-detected size
--- comes together in four calls:
+whole stack (erase-aware writes, the wear-level remap, the auto-detected size)
+comes together in four calls:
 
 \begin{lstlisting}
    BDW.Configure (Raw, Flash => Flash);      --  auto-size from the JEDEC id
@@ -443,7 +443,7 @@ whole stack -- erase-aware writes, the wear-level remap, the auto-detected size
 \subsection{Formatting on-device: \texttt{Ext4.Mkfs}}\index{mkfs}\index{Ext4.Mkfs}\index{on-device format}
 
 The external flash is not on the host flasher's path, and the filesystem reads and
-writes but does not format -- so to start from a blank chip the board makes the
+writes but does not format, so to start from a blank chip the board makes the
 filesystem itself. \texttt{ESP32S3.Ext4.Mkfs} is a minimal pure-Ada
 \texttt{mkfs.ext4}: it writes a single-block-group ext4 (4\,KiB blocks, classic
 block-mapped inodes, a root directory and \texttt{lost+found}), with an optional
@@ -465,7 +465,7 @@ written filesystem is then:
 
 \vfill
 \noindent\rule{\linewidth}{0.4pt}\\[4pt]
-\textit{The whole stack -- runtime, peripheral HAL, and filesystem -- is one
+\textit{The whole stack (runtime, peripheral HAL, and filesystem) is one
 coherent body of Ada: strong types from the register up, the same RAII and
 task-safety patterns in every driver, and a filesystem validated against the
 Linux kernel, all running on both cores of the ESP32-S3 on its own bare-metal

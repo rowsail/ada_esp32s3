@@ -1,8 +1,8 @@
 \chapter{Internal Peripheral Drivers}
 \label{app:internal}
 
-This appendix is a per-driver reference for the SoC's \emph{on-chip} peripherals
--- the blocks built into the ESP32-S3 itself (GPIO, the serial buses, the
+This appendix is a per-driver reference for the SoC's \emph{on-chip} peripherals:
+the blocks built into the ESP32-S3 itself (GPIO, the serial buses, the
 timers and PWM units, DMA, the analog and audio paths, the low-power domain, and
 the crypto accelerators). The companion appendix~\ref{app:external} covers the
 drivers for \emph{external} parts wired to these peripherals. The narrative HAL
@@ -22,7 +22,7 @@ RNG, RTC, RTC-IO, Touch, SHA, AES, SDMMC) work under every profile, and each
 section notes which case applies. See the driver-design chapter
 (\S\ref{ch:driver-design}) for why the ownership gateway is built this way.
 
-\section{GPIO -- General-Purpose I/O}\index{GPIO driver}
+\section{GPIO: General-Purpose I/O}\index{GPIO driver}
 \label{app:int:gpio}
 
 The ESP32-S3 routes every digital pad through a \emph{GPIO matrix}: a pad can be
@@ -81,8 +81,8 @@ procedure Enable  (Pin : Pin_Id; On : Trigger; Action : Callback);
 procedure Disable (Pin : Pin_Id);
 \end{lstlisting}
 
-The \texttt{gpio0\_blink} example drives GPIO0 from a library-level task --
-configure once as a push-pull output, then toggle on a fixed period:
+The \texttt{gpio0\_blink} example drives GPIO0 from a library-level task.
+Configure once as a push-pull output, then toggle on a fixed period:
 
 \begin{lstlisting}
 with ESP32S3.GPIO;
@@ -110,11 +110,11 @@ end Blinker;
 \cnote{ESP-IDF wraps the same matrix in \texttt{gpio\_config()} +
 \texttt{gpio\_set\_level()}, taking a raw \texttt{int} pin number checked only at
 run time. The Ada \texttt{Pin\_Id} predicate moves that check to compile time for
-the common static-pin case -- a flash/PSRAM pad never even links.}
+the common static-pin case. A flash/PSRAM pad never even links.}
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_gpio0\_blink}.
 
-\section{UART -- Asynchronous Serial}\index{UART driver}
+\section{UART: Asynchronous Serial}\index{UART driver}
 \label{app:int:uart}
 
 The chip has three general-purpose UART controllers; the bare runtime uses
@@ -125,14 +125,14 @@ cannot be \texttt{with}-ed from outside the subtree, so the unsynchronised
 primitives can never be reached by accident.
 
 Configuration is split in two. \texttt{Setup} runs once per port at startup
-(single-threaded) and fixes baud, frame format and pin routing -- all four
+(single-threaded) and fixes baud, frame format and pin routing. All four
 lines (\texttt{Tx}, \texttt{Rx}, \texttt{Rts}, \texttt{Cts}) are
 \texttt{Optional\_Pin}, so a link routes only what it uses. Everything after
 that goes through an acquired \texttt{Session}: \texttt{Acquire} hands out a
 limited, non-copyable token that owns the port exclusively (other tasks suspend
 until it is released), and every transfer \emph{and} every later
 reconfiguration (\texttt{Set\_Baud}, \texttt{Configure\_Pins},
-\texttt{Set\_Inversion}, \ldots) is a method on the held \texttt{Session} -- so
+\texttt{Set\_Inversion}, \ldots) is a method on the held \texttt{Session}, so
 a reconfigure can never race another task's transfer. The \texttt{Session} is a
 controlled type that auto-releases on scope exit (including during exception
 unwinding), so this driver, like the other task-safe HAL drivers, targets the
@@ -171,7 +171,7 @@ end ESP32S3.UART;
 \end{lstlisting}
 
 The \texttt{uart\_loopback} self-test brings up UART1, ties TX to RX internally,
-and round-trips a known buffer -- no wiring needed:
+and round-trips a known buffer (no wiring needed):
 
 \begin{lstlisting}
 with ESP32S3.UART; use ESP32S3.UART;
@@ -193,7 +193,7 @@ begin
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_uart\_loopback}.
 
-\section{SPI -- Serial Peripheral Interface}\index{SPI driver}
+\section{SPI: Serial Peripheral Interface}\index{SPI driver}
 \label{app:int:spi}
 
 \texttt{ESP32S3.SPI} is a task-safe, full-duplex \emph{master} over the two
@@ -210,14 +210,14 @@ set here because on a shared bus they are a per-\emph{device} property, applied 
 \texttt{Optional\_Pin}), and \texttt{Enable\_Loopback} ties MOSI to MISO through
 one pad for a self-test. \texttt{Acquire} takes the host and, under the exclusive
 hold, programs that device's \texttt{Mode} (CPOL/CPHA 0\,..\,3) and \texttt{Clock\_Hz}
-(roughly 80\,kHz\,..\,80\,MHz) -- so a flash at mode 0 / 8\,MHz and a display at
+(roughly 80\,kHz\,..\,80\,MHz), so a flash at mode 0 / 8\,MHz and a display at
 mode 3 / 40\,MHz can share one controller, and an SD card can negotiate at
 $\le$400\,kHz then switch to several MHz on its next \texttt{Acquire}.
 \texttt{Set\_Clock} re-tunes the rate within a single hold (no DMA re-claim), for a
 device that changes speed mid-transaction. The single transfer primitive is a
 blocking, full-duplex DMA \texttt{Transfer} of 1\,..\,4095 bytes between two SRAM
 buffers, addressed by \texttt{System.Address}. A device that brings its own
-chip-select -- to share the bus -- names its select pin as \texttt{CS\_Pin} at
+chip-select (to share the bus) names its select pin as \texttt{CS\_Pin} at
 \texttt{Acquire} (the driver owns the GPIO, active-low, held across the
 transaction) and brackets its transaction with \texttt{Select\_Device}; the driver
 then suppresses the hardware \texttt{CS0} for that session. A select that is not one
@@ -256,7 +256,7 @@ end ESP32S3.SPI;
 \end{lstlisting}
 
 A no-wiring round-trip: bring up SPI2, loop MOSI to MISO on a free pad, and DMA
-a buffer through it -- what comes back on \texttt{Rx} equals what went out:
+a buffer through it. What comes back on \texttt{Rx} equals what went out:
 
 \begin{lstlisting}
 with ESP32S3.SPI; use ESP32S3.SPI;
@@ -281,13 +281,13 @@ display driver.
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_sd\_spi} (and the ST7789
 display) exercise this driver against real hardware.
 
-\section{I2C -- Two-Wire Master}\index{I2C driver}
+\section{I2C: Two-Wire Master}\index{I2C driver}
 \label{app:int:i2c}
 
 \texttt{ESP32S3.I2C} is a polled, single-segment master over the two
 controllers \texttt{I2C0} and \texttt{I2C1}. Each \texttt{Write} or
 \texttt{Read} is one complete \texttt{START}\,\ldots\,\texttt{STOP} transaction
-of up to \texttt{Max\_Transfer} (32) bytes -- the controller's FIFO depth.
+of up to \texttt{Max\_Transfer} (32) bytes: the controller's FIFO depth.
 \texttt{Setup} fixes the SCL bit clock (100\,kHz standard / 400\,kHz fast are
 typical), and \texttt{Configure\_Pins} routes \texttt{Scl}/\texttt{Sda} as
 open-drain lines with the internal pull-ups on, enough for bring-up (add real
@@ -351,19 +351,19 @@ begin
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_i2c\_loopback}.
 
-\section{RNG -- Hardware Random Number Generator}\index{RNG driver}
+\section{RNG: Hardware Random Number Generator}\index{RNG driver}
 \label{app:int:rng}
 
 \texttt{ESP32S3.RNG} reads the on-chip random number generator: each load of its
 data register yields a fresh 32-bit word, drawn from analog and clock-jitter
-noise. The package is deliberately the simplest in the HAL -- \texttt{Read} is a
+noise. The package is deliberately the simplest in the HAL: \texttt{Read} is a
 single atomic register load and \texttt{Fill} writes only the caller's buffer,
 so there is no shared mutable state and \emph{no} protected object. It is marked
 \texttt{Preelaborate} and stays usable from a ZFP (no-runtime) context as well
 as the tasking profiles; concurrent readers simply get independent words.
 
 Two caveats carry over from the spec. First, this is the RNG \emph{peripheral}
-register, not ESP-IDF's \texttt{WDEV\_RND\_REG} -- that one only yields entropy
+register, not ESP-IDF's \texttt{WDEV\_RND\_REG}: that one only yields entropy
 with the RF clock domain up (Wi-Fi/BT), which the bare runtime never starts, so
 it would read a constant here. Second, without an active hardware entropy source
 (RF, or SAR-ADC bootloader entropy) the output is fine for dithering, non-secret
@@ -397,7 +397,7 @@ begin
 \noindent\textbf{Example:} no dedicated example; the driver is a one-call read
 (\texttt{ESP32S3.RNG.Read}) usable directly from any profile, ZFP included.
 
-\section{MAC -- Factory Ethernet Address}\index{MAC driver}\index{MAC address}\index{eFuse}
+\section{MAC: Factory Ethernet Address}\index{MAC driver}\index{MAC address}\index{eFuse}
 \label{app:int:mac}
 
 \texttt{ESP32S3.MAC} reads the MAC address Espressif programs into every part at
@@ -405,7 +405,7 @@ the factory. The chip is allocated a \emph{block of four} universally-administer
 addresses: the eFuse base is the Wi-Fi station MAC, and soft-AP, Bluetooth and
 Ethernet are base $+\,1$, $+\,2$ and $+\,3$. The values live in eFuse shadow
 registers (\texttt{RD\_MAC\_SPI\_SYS\_0}/\texttt{\_1}) that the hardware latches at
-reset, so every routine is a \emph{pure read} -- no clock to gate, no controller to
+reset, so every routine is a \emph{pure read}: no clock to gate, no controller to
 enable, no shared state and no protected object. Like \texttt{ESP32S3.RNG} it
 compiles in every runtime profile, ZFP included.
 
@@ -413,8 +413,8 @@ The intended use is handing a W5500 a real, manufacturer-assigned address instea
 of a hand-picked one that might collide on the network (Chapter~\ref{ch:networking},
 \S\ref{ch:net:mac}): pass \texttt{Ethernet} to the driver's \texttt{Configure}. A
 board with two W5500s has only the one Ethernet slot, so the second NIC takes a
-\emph{locally-administered} address -- \texttt{Local (Derived (4))}, base $+\,4$
-with the local bit set -- which is guaranteed not to clash with a registered one.
+\emph{locally-administered} address (\texttt{Local (Derived (4))}, base $+\,4$
+with the local bit set), which is guaranteed not to clash with a registered one.
 \texttt{MAC\_Address} is six bytes most-significant-first (\texttt{MAC (0)} is the
 OUI's first byte, the order the W5500 and DHCP expect).
 
@@ -452,7 +452,7 @@ begin
 three derived interface MACs, and a local one); \texttt{esp32s3\_multinic} seeds its
 two W5500s this way.
 
-\section{Temperature -- On-Chip Die Sensor}\index{Temperature driver}
+\section{Temperature: On-Chip Die Sensor}\index{Temperature driver}
 \label{app:int:temperature}
 
 \texttt{ESP32S3.Temperature} reads the SoC's internal temperature sensor. It
@@ -460,7 +460,7 @@ reports \emph{die} temperature, not ambient air: the chip self-heats under load,
 so an idle board reads a few degrees above room temperature, with roughly
 $\pm$1\,\textdegree C accuracy after the factory trim and best near the middle of
 the selected range. Bring-up follows ESP-IDF's \texttt{temperature\_sensor\_ll}
-sequence -- gate and pulse-reset the SAR clock, open the analog REGI2C bus,
+sequence: gate and pulse-reset the SAR clock, open the analog REGI2C bus,
 program the DAC range (a ROM call), then power the sensor up.
 
 \texttt{Initialize} is optional: the first \texttt{Read\_*} brings the sensor up
@@ -507,7 +507,7 @@ begin
 (\texttt{ESP32S3.Temperature.Read\_Celsius}) after the optional
 \texttt{Initialize}.
 
-\section{LEDC -- LED Controller (PWM)}\index{LEDC driver}
+\section{LEDC: LED Controller (PWM)}\index{LEDC driver}
 \label{app:int:ledc}
 
 The ESP32-S3's LEDC block is the simple ``dim an LED / generate a clean PWM''
@@ -562,15 +562,15 @@ end;   --  Ch0 finalizes: output stopped, channel freed
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_ledc\_pwm}.
 
-\section{MCPWM -- Motor-Control PWM}\index{MCPWM driver}
+\section{MCPWM: Motor-Control PWM}\index{MCPWM driver}
 \label{app:int:mcpwm}
 
 MCPWM is the heavyweight PWM block: two units (\texttt{MCPWM0}, \texttt{MCPWM1}),
 each with three generator channels and three capture channels. A generator
 produces edge-aligned PWM on output A (high at period start, low when the
 up-counter reaches the duty comparator). It can also drive a \emph{complementary}
-pair -- an inverted B output with programmable dead-time inserted on each edge so
-A and B are never high together (the half-bridge / H-bridge motor case) -- plus
+pair: an inverted B output with programmable dead-time inserted on each edge so
+A and B are never high together (the half-bridge / H-bridge motor case), plus
 carrier (chopper) modulation, fault/trip-zone shutdown, and edge capture.
 
 The Ada driver in \texttt{ESP32S3.MCPWM} models both a generator channel
@@ -638,7 +638,7 @@ Protect_Channel (Gen0, Fault0, One_Shot, Force_Low);
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_mcpwm\_pwm}.
 
-\section{Timer -- General-Purpose Timers}\index{Timer driver}
+\section{Timer: General-Purpose Timers}\index{Timer driver}
 \label{app:int:timer}
 
 The S3's two timer groups, \texttt{TIMG0} and \texttt{TIMG1}, each contain one
@@ -646,7 +646,7 @@ The S3's two timer groups, \texttt{TIMG0} and \texttt{TIMG1}, each contain one
 with a programmable alarm. (The per-group watchdogs are a separate block and are
 left untouched.) The Ada driver in \texttt{ESP32S3.Timer} exposes one
 general-purpose timer per group as a limited, controlled \texttt{Timer} handle,
-released -- and the counter stopped -- automatically on scope exit.
+released (and the counter stopped) automatically on scope exit.
 
 \texttt{Configure} sets the tick rate in ticks per second (default 1\,MHz =
 1\,\textmu{}s per tick; the range is roughly \texttt{80\_000\_000} down to
@@ -692,13 +692,13 @@ end;   --  T finalizes: stopped and released
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_timer\_count}.
 
-\section{PCNT -- Pulse Counter}\index{PCNT driver}
+\section{PCNT: Pulse Counter}\index{PCNT driver}
 \label{app:int:pcnt}
 
 PCNT counts edges on an input signal. The S3 has four counter units, each
 accumulating into a \emph{signed 16-bit} counter that wraps at $\pm 32768$; the
 classic uses are quadrature decoding, tachometers and flow-meters. The Ada driver
-in \texttt{ESP32S3.PCNT} exposes the common ``count edges on a pin'' case -- the
+in \texttt{ESP32S3.PCNT} exposes the common ``count edges on a pin'' case. The
 per-unit direction-control input and the threshold-event comparators are left at
 their pass-through defaults.
 
@@ -740,7 +740,7 @@ end;   --  U finalizes: paused and released
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_pcnt\_count}.
 
-\section{SDM -- Sigma-Delta Modulator}\index{SDM driver}
+\section{SDM: Sigma-Delta Modulator}\index{SDM driver}
 \label{app:int:sdm}
 
 The SDM block (part of the GPIO sigma-delta unit, \texttt{GPIO\_SD}) provides
@@ -789,19 +789,19 @@ end;   --  Ch finalizes: output low, channel released
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_sdm\_output}.
 
-\section{RMT -- Remote Control Transceiver}\index{RMT driver}
+\section{RMT: Remote Control Transceiver}\index{RMT driver}
 \label{app:int:rmt}
 
 RMT is the ``infinitely-flexible pulse generator'': it transmits and receives
 sequences of \{level, duration\} pulses, making it the workhorse for IR remotes,
 WS2812 (``NeoPixel'') LEDs, 1-Wire, and arbitrary bit-banged timing. The S3 has
-eight channels -- 0..3 transmit, 4..7 receive -- each backed by a 48-symbol RAM
+eight channels (0..3 transmit, 4..7 receive), each backed by a 48-symbol RAM
 block. One \texttt{RMT\_Symbol} packs two \{level, duration\} pulses into 32 bits
 (durations are 15-bit channel ticks, where the tick length is
 $1/\texttt{Resolution\_Hz}$).
 
 The Ada driver in \texttt{ESP32S3.RMT} uses \emph{distinct} limited, controlled
-handle types -- \texttt{TX\_Channel} and \texttt{RX\_Channel} -- so transmit and
+handle types (\texttt{TX\_Channel} and \texttt{RX\_Channel}), so transmit and
 receive channels can't be confused. \texttt{Transmit} blocks until the burst
 finishes; bursts larger than the channel's RAM are streamed by re-filling the
 symbol RAM in halves as it drains, so \texttt{Symbols} may be any length. The
@@ -858,20 +858,20 @@ end;   --  Tx, Rx finalize: released
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_rmt\_loopback}.
 
-\section{GDMA -- General DMA}\index{GDMA driver}
+\section{GDMA: General DMA}\index{GDMA driver}
 \label{app:int:gdma}
 
 The ESP32-S3 has a single AHB GDMA block with five channel pairs (\texttt{0..4}).
 Each pair carries an independent transmit (OUT) and receive (IN) path, and either
-can be wired to any peripheral through the GDMA crossbar -- a channel is a
+can be wired to any peripheral through the GDMA crossbar: a channel is a
 runtime-assigned resource, not fixed per peripheral. The Ada driver
 (\texttt{ESP32S3.GDMA}) models that directly: \texttt{Claim} hands out a free
 \texttt{Channel} bound to a \texttt{Peripheral} (\texttt{Mem2Mem}, \texttt{SPI2},
 \texttt{I2S0}, \texttt{LCD\_CAM}, \texttt{ADC\_DAC}, \ldots); peripheral drivers
 such as I2S and LCD claim a channel and drive their own descriptors over it.
 
-A \texttt{Channel} is \texttt{limited private} -- non-copyable, so two tasks
-cannot alias one channel -- and \emph{controlled}: claiming goes through a
+A \texttt{Channel} is \texttt{limited private} (non-copyable, so two tasks
+cannot alias one channel) and \emph{controlled}: claiming goes through a
 protected allocator, and the handle auto-releases on scope exit (including during
 exception unwinding) so a channel cannot leak or be reused through a stale copy.
 This driver targets the embedded/full profile (excluded from the light-tasking
@@ -924,11 +924,11 @@ leaks one.}
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_gdma\_copy}.
 
-\section{I2S -- Digital Audio Serial Bus}\index{I2S driver}
+\section{I2S: Digital Audio Serial Bus}\index{I2S driver}
 \label{app:int:i2s}
 
 The S3 has two I2S controllers (\texttt{I2S0}, \texttt{I2S1}), each moving PCM
-samples only through the GDMA crossbar -- the block has no CPU FIFO, so data
+samples only through the GDMA crossbar: the block has no CPU FIFO, so data
 flows exclusively via DMA. The Ada driver (\texttt{ESP32S3.I2S}) brings a port up
 as a stereo master that generates BCLK and WS and shifts a sample buffer out (TX)
 and/or captures one in (RX), in either \texttt{Standard} (verbatim I2S/TDM) or
@@ -941,8 +941,8 @@ level does not survive a PDM round trip).
 Mirroring \texttt{ESP32S3.SPI}, the raw register access lives in the private child
 \texttt{ESP32S3.I2S.Engine} (which claims the GDMA channel); the application sees
 only the parent. \texttt{Setup} configures a port once at startup; thereafter
-\texttt{Acquire} hands out a \texttt{Session} -- limited, non-copyable, and
-controlled -- that owns the port exclusively and auto-releases on scope exit, so a
+\texttt{Acquire} hands out a \texttt{Session} (limited, non-copyable, and
+controlled) that owns the port exclusively and auto-releases on scope exit, so a
 fault between \texttt{Acquire} and \texttt{Release} cannot leak the lock.
 Transfers (\texttt{Write}, \texttt{Read}, \texttt{Transfer}, plus the gapless
 \texttt{Start\_Continuous}/\texttt{Capture}/\texttt{Stop} streaming path) run
@@ -989,7 +989,7 @@ end;                                        --  S finalizes -> port released
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_i2s\_loopback} (Standard
 full-duplex) and \texttt{examples/esp32s3\_i2s\_pdm} (PDM microphone capture).
 
-\section{LCD -- i8080 Parallel Display}\index{LCD driver}
+\section{LCD: i8080 Parallel Display}\index{LCD driver}
 \label{app:int:lcd}
 
 The LCD half of the S3's LCD\_CAM controller drives an 8-bit Intel-8080
@@ -997,8 +997,8 @@ The LCD half of the S3's LCD\_CAM controller drives an 8-bit Intel-8080
 byte per pixel clock (PCLK), over the GDMA crossbar. The Ada driver
 (\texttt{ESP32S3.LCD}) covers exactly this 8-bit i80 transmit path (the
 camera-receive half and the RGB/16-bit modes are not modelled). \texttt{Setup}
-brings the controller up at (about) \texttt{Pclk\_Hz} -- quantised as
-\texttt{20\,MHz / round(20\,MHz / Pclk\_Hz)} -- and claims its GDMA channel.
+brings the controller up at (about) \texttt{Pclk\_Hz} (quantised as
+\texttt{20\,MHz / round(20\,MHz / Pclk\_Hz)}) and claims its GDMA channel.
 
 The single controller is guarded by a protected object; \texttt{Acquire} hands out
 a limited, controlled \texttt{Session} that owns it exclusively and releases on
@@ -1045,7 +1045,7 @@ end;
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_lcd\_i8080}.
 
-\section{ADC -- SAR Analog-to-Digital Converter}\index{ADC driver}
+\section{ADC: SAR Analog-to-Digital Converter}\index{ADC driver}
 \label{app:int:adc}
 
 The S3 has two SAR ADC units, each with up to ten 12-bit channels on fixed GPIOs:
@@ -1056,8 +1056,8 @@ through the RTC controller; each returns a raw \texttt{0..4095} code, with
 per-channel \texttt{Attenuation} (\texttt{Db\_0} $\approx$ 1.1\,V full-scale
 \ldots \texttt{Db\_12} $\approx$ 3.3\,V) setting the input range.
 
-A unit is a shared resource handed out as a \texttt{Reader} -- limited
-(non-copyable) and controlled (released automatically on scope exit) -- so
+A unit is a shared resource handed out as a \texttt{Reader}: limited
+(non-copyable) and controlled (released automatically on scope exit), so
 claiming a unit cannot leak. After \texttt{Claim}, check \texttt{Is\_Valid};
 \texttt{Read} samples a channel (blocking, a few microseconds), returning
 \texttt{0} on an invalid handle. \texttt{Channel\_Pin} reports the GPIO a channel
@@ -1102,7 +1102,7 @@ end;                                        --  R finalizes -> unit released
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_adc\_read}.
 
-\section{TWAI -- CAN Controller}\index{TWAI driver}
+\section{TWAI: CAN Controller}\index{TWAI driver}
 \label{app:int:twai}
 
 The S3's TWAI block (Two-Wire Automotive Interface) is a single
@@ -1110,7 +1110,7 @@ SJA1000-compatible CAN 2.0 controller. The Ada driver (\texttt{ESP32S3.TWAI})
 sends and receives both standard (11-bit \texttt{Standard\_Id}) and extended
 (29-bit \texttt{Extended\_Id}, CAN 2.0B) frames, data or remote-request (RTR).
 Each frame type carries its own identifier subtype, so the id is range-checked to
-its standard and \texttt{Send} is overloaded on the frame type -- a 29-bit id
+its standard and \texttt{Send} is overloaded on the frame type: a 29-bit id
 cannot end up in a standard frame. A real bus needs an external transceiver; for a
 wiring-free self-test, \texttt{Self\_Test} mode transmits and self-receives a
 frame (no second node to acknowledge), with TX looped back to RX through one pad
@@ -1172,12 +1172,12 @@ end;                                        --  S finalizes -> controller releas
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_twai\_loopback}.
 
-\section{RTC -- Real-Time Clock and Deep Sleep}\index{RTC driver}
+\section{RTC: Real-Time Clock and Deep Sleep}\index{RTC driver}
 \label{app:int:rtc}
 
 The ESP32-S3's RTC (low-power) domain stays alive while the digital core is
 powered down. In deep sleep, CPU and main RAM lose power; only the RTC domain
-survives, so on wake the chip \emph{resets} and re-runs from the start -- but
+survives, so on wake the chip \emph{resets} and re-runs from the start, but
 anything kept in the 8\,KB of RTC slow memory (at \texttt{0x5000\_0000}) persists
 across the reset. \texttt{ESP32S3.RTC} exposes that retained region, the cause of
 the current boot (power-on versus a deep-sleep wake), and deep-sleep entry with a
@@ -1239,11 +1239,11 @@ begin
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_rtc\_sleep}.
 
-\section{RTC-IO -- Low-Power GPIO and Pad Hold}\index{RTC\_IO driver}
+\section{RTC-IO: Low-Power GPIO and Pad Hold}\index{RTC\_IO driver}
 \label{app:int:rtcio}
 
 GPIO0 through GPIO21 are RTC-capable: they belong to the low-power IO domain. The
-headline feature is pad \emph{hold} -- latch a pad at its current output level so
+headline feature is pad \emph{hold}: latch a pad at its current output level so
 it keeps driving while the rest of the chip changes, and, crucially, while the
 chip is in deep sleep (the digital core powers down, but a held RTC pad stays put)
 and across the reset a deep-sleep wake causes. Use it to keep a load enabled or a
@@ -1287,7 +1287,7 @@ begin
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_rtcio\_hold}.
 
-\section{Touch -- Capacitive Touch Sensor}\index{Touch driver}
+\section{Touch: Capacitive Touch Sensor}\index{Touch driver}
 \label{app:int:touch}
 
 The S3's capacitive touch sensor (v2) provides 14 channels, channel $n$ wired to
@@ -1300,7 +1300,7 @@ count.
 \texttt{ESP32S3.Touch} keeps the model deliberately simple: bring the controller
 up once with \texttt{Setup}, \texttt{Enable} the channels you want, then
 \texttt{Read} their raw counts. \texttt{Touched} is a software comparison against a
-caller-captured \texttt{Reference} with a \texttt{Margin} -- deterministic, with
+caller-captured \texttt{Reference} with a \texttt{Margin}: deterministic, with
 no on-chip threshold registers in play. It lives in the RTC/SENS domain and is
 register pokes only, so it works under every runtime profile.
 
@@ -1344,7 +1344,7 @@ begin
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_touch\_read}.
 
-\section{SHA -- Hardware Hash Accelerator}\index{SHA driver}
+\section{SHA: Hardware Hash Accelerator}\index{SHA driver}
 \label{app:int:sha}
 
 The SHA accelerator computes SHA-1, SHA-224 and SHA-256 of a byte message in
@@ -1355,7 +1355,7 @@ internally) and return the fixed-size digest.
 
 The accelerator is a single shared resource, so a protected object serializes the
 message-load / start / read handshake, making concurrent \texttt{Hash} calls from
-different tasks safe. There is no finalization -- just register pokes -- so the
+different tasks safe. There is no finalization (just register pokes), so the
 driver works under every runtime profile. (The block hardware also does
 SHA-384/512 on a 1024-bit block; those are not exposed here.)
 
@@ -1390,12 +1390,12 @@ begin
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_crypto}.
 
-\section{AES -- Hardware AES Accelerator}\index{AES driver}
+\section{AES: Hardware AES Accelerator}\index{AES driver}
 \label{app:int:aes}
 
 The AES accelerator performs single-block (128-bit) AES in hardware.
-\texttt{ESP32S3.AES} exposes the ECB building block -- one-block encrypt and
-decrypt -- for 128- and 256-bit keys. As with SHA, the engine is a single shared
+\texttt{ESP32S3.AES} exposes the ECB building block (one-block encrypt and
+decrypt) for 128- and 256-bit keys. As with SHA, the engine is a single shared
 resource guarded by a protected object, so calls from different tasks are safe,
 and the register-poke implementation needs no finalization and works under every
 runtime profile.
@@ -1403,8 +1403,8 @@ runtime profile.
 \cnote{The ESP32-S3 AES hardware supports only 128- and 256-bit keys; there is no
 192-bit mode on this silicon (selecting ``AES-192'' silently falls back to AES-128
 on the first 16 key bytes). The \texttt{Supported\_Key} precondition turns an
-unsupported key length into a contract violation instead of a silent fallback --
-callers that pass the \texttt{Key\_128} / \texttt{Key\_256} subtypes satisfy it
+unsupported key length into a contract violation instead of a silent fallback.
+Callers that pass the \texttt{Key\_128} / \texttt{Key\_256} subtypes satisfy it
 statically, at no run-time cost.}
 
 \begin{lstlisting}
@@ -1446,11 +1446,11 @@ begin
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_crypto}.
 
-\section{SDMMC -- Native SD/MMC Host Controller}\index{SDMMC driver}
+\section{SDMMC: Native SD/MMC Host Controller}\index{SDMMC driver}
 \label{app:int:sdmmc}
 
-The dedicated SDHOST controller drives an SD card on the real SD bus -- a clock,
-a bidirectional command line, and 1 or 4 data lines -- with its own
+The dedicated SDHOST controller drives an SD card on the real SD bus (a clock,
+a bidirectional command line, and 1 or 4 data lines) with its own
 command/response state machine. Unlike the SPI-mode SD path, this is how you reach
 an SDHC/SDXC card at speed (up to 50\,MHz in High-Speed mode).
 \texttt{ESP32S3.SDMMC} moves data in PIO/FIFO mode (the CPU pushes/pops each
