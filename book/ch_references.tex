@@ -48,6 +48,13 @@ time of writing.
   \url{https://gcc.gnu.org} and \url{https://www.adacore.com}. The GNAT GPL / GNAT
   Pro documentation covers \texttt{pragma Restrictions}, the bare-board runtime
   structure, and \texttt{gprbuild}.
+\item \textbf{OpenOCD and GDB} -- the on-chip debugging tools \texttt{./x debug}
+  drives. \emph{OpenOCD}, the Open On-Chip Debugger (created by Dominic Rath and
+  maintained by its community; GPL-2.0-or-later), provides the JTAG bridge, here
+  via Espressif's Xtensa fork \url{https://github.com/espressif/openocd-esp32}.
+  \emph{GDB}, the GNU Debugger (GNU Project / FSF, GPL-3.0), drives it through
+  Espressif's Xtensa build \texttt{xtensa-esp-elf-gdb}. \url{https://openocd.org}
+  and \url{https://www.gnu.org/software/gdb}.
 \end{itemize}
 
 \section{The silicon}
