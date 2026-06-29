@@ -138,6 +138,16 @@ package body ESP32S3.Ext4.Dir is
          ESP32S3.Ext4.Block_Cache.Write_At (V.Cache, Phys, At_Pos, Ent);
       end Place;
    begin
+      --  Reject a name that already exists: ext directory entries must be unique,
+      --  and a blind append would create a DUPLICATE dirent (an e2fsck error, and
+      --  Lookup/Remove would then only ever see the first). Callers that mean to
+      --  replace remove the old entry first; this makes "create" fail cleanly
+      --  instead of silently corrupting the directory -- e.g. FTP MKD of an
+      --  existing dir. Use_Error matches the Link/Rename "already exists" checks.
+      if Lookup (V, Dir, Name) /= 0 then
+         raise Use_Error with "entry already exists: " & Name;
+      end if;
+
       for LB in 0 .. N_Blk - 1 loop
          declare
             Phys : constant Block_Number :=

@@ -40,6 +40,11 @@ package body ESP32S3.Ext4.Writer is
       if not Inode.Is_Dir (Dir_I) then
          raise Use_Error with "parent is not a directory";
       end if;
+      --  Reject a duplicate name BEFORE allocating the inode -- otherwise the
+      --  Add_Entry guard fires after Alloc_Inode and leaks an orphan inode.
+      if Dir.Lookup (V, Dir_I, Name) /= 0 then
+         raise Use_Error with "already exists: " & Name;
+      end if;
 
       Child := Bitmap.Alloc_Inode (V, As_Dir => False);
       CI := (Mode       => 16#8180#,        --  S_IFREG | 0644
@@ -324,6 +329,12 @@ package body ESP32S3.Ext4.Writer is
       if not Inode.Is_Dir (Parent_I) then
          Free (Buf);
          raise Use_Error with "parent is not a directory";
+      end if;
+      --  Reject a duplicate name BEFORE allocating the inode/block, so a failed
+      --  mkdir leaves nothing behind (no orphan inode for e2fsck to flag).
+      if Dir.Lookup (V, Parent_I, Name) /= 0 then
+         Free (Buf);
+         raise Use_Error with "already exists: " & Name;
       end if;
 
       New_N := Bitmap.Alloc_Inode (V, As_Dir => True);

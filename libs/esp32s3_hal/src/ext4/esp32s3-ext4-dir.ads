@@ -28,7 +28,9 @@ package ESP32S3.Ext4.Dir is
 
    --  Add Name -> Child (with File_Type) to directory Dir by splitting slack in
    --  one of its existing data blocks.  Raises No_Space if no block has room
-   --  (directory-block extension is a later step).
+   --  (directory-block extension is a later step).  Raises Use_Error if Name
+   --  already exists (entries must be unique -- a blind append would create a
+   --  duplicate dirent); callers that mean to replace remove the old entry first.
    procedure Add_Entry
      (V         : in out Volume.Context;
       Dir       : Inode.Info;

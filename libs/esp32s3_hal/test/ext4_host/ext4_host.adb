@@ -279,6 +279,46 @@ begin
       M.Close;
    end if;
 
+   if Scenario = "dup" then
+      --  Duplicate-name rejection: creating a name that already exists must raise
+      --  Use_Error, not silently append a second dirent. e2fsck then confirms the
+      --  directory stayed clean (a duplicate would be flagged).
+      Make_File ("/", "dup.txt");
+      M.Mkdir ("/", "dupdir");
+      M.Commit;
+      declare
+         procedure Reject (What : String) is
+         begin
+            Put_Line ("[host] dup: " & What & " did NOT raise (BUG)");
+            Set_Exit_Status (Failure);
+         end Reject;
+      begin
+         begin
+            declare
+               N : constant Inode_Number := M.Create_File ("/", "dup.txt");
+               pragma Unreferenced (N);
+            begin
+               Reject ("re-create existing file");
+            end;
+         exception when ESP32S3.Ext4.Use_Error => null;
+         end;
+
+         begin
+            M.Mkdir ("/", "dupdir");
+            Reject ("re-mkdir existing dir");
+         exception when ESP32S3.Ext4.Use_Error => null;
+         end;
+
+         begin
+            M.Mkdir ("/", "dup.txt");    --  collides with the existing file
+            Reject ("mkdir over existing file");
+         exception when ESP32S3.Ext4.Use_Error => null;
+         end;
+      end;
+      M.Commit;
+      M.Close;
+   end if;
+
    DIO.Close (F);
 
    --  TRIPWIRE: with the idempotent Free, a double-free no longer drifts the free
