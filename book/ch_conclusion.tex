@@ -1,0 +1,71 @@
+\chapter*{Conclusion}
+\addcontentsline{toc}{chapter}{Conclusion}
+\markboth{Conclusion}{Conclusion}\label{ch:conclusion}
+
+This book set out to ask one question: how far can bare-metal Ada go on its own? On
+the evidence of the preceding chapters, the answer is most of the way to a finished
+product. A 2nd-stage bootloader brings the chip up, a from-scratch runtime starts
+both cores, and roughly fifty hand-written drivers reach the peripherals. On top of
+those sit an ext4 filesystem checked against the Linux kernel's own tools, a TCP/IP
+stack over the W5500, and a pure-Ada TLS~1.3 client that fetches a live forecast over
+real HTTPS, all with no ESP-IDF and no C cryptography library underneath. The pieces
+a microcontroller project usually borrows from a vendor SDK were, here, written in
+Ada and read end to end.
+
+\section*{What the language bought}
+
+The reason to do that was never novelty. It was what the language gives back.
+Range-checked types reject a wrong-width register write or an out-of-range pin before
+the program runs. A private type guards every hardware resource, so a transfer cannot
+reach the registers without proving ownership (Chapter~\ref{ch:packages}). The Jorvik
+profile keeps the task set fixed and the whole program statically analysable, which
+is why the worst-case depth of every stack, and every byte of flash and RAM, can be
+read off before the board powers on (Chapter~\ref{ch:static-mem}). The hard logic,
+the allocator, the filesystem, the interpreter, runs on the host against a trusted
+oracle because it is written target-free (Chapter~\ref{ch:testing}). The recurring
+result was fewer surprises at run time, paid for once at compile time.
+
+\section*{What it cost}
+
+It would be dishonest to end on only the wins. The cost of owning the whole stack is
+owning the whole stack. Everything the SDK hands you for free, the boot sequence, the
+drivers, the cryptography, is yours to write and to debug, and some of that debugging
+was real. The PSRAM would not run at full speed until its data-in timing was measured
+on the board itself (Chapter~\ref{ch:psram}). The Xtensa register windows,
+mismanaged, corrupted the call chain in ways that surfaced chapters apart
+(Chapter~\ref{ch:context-switch}). A cellular modem that refused to answer turned out
+to be a level shifter on the board, not a fault in any line of Ada, and it took a
+single-pad loopback to prove it (Chapter~\ref{ch:debug}). Bare metal has sharp edges
+of its own, the elaboration order and the constraints of the leanest profile, that a
+hosted runtime hides. None of this argues against the approach. It argues for going
+in with eyes open.
+
+\section*{When to reach for this}
+
+So the honest recommendation is conditional. Reach for bare-metal Ada when the system
+has to be trusted: when it is safety-relevant, when it must run for years unattended,
+when a regulator or your own conscience will ask you to account for every path, when
+the cost of a field failure dwarfs the cost of building the foundation yourself. For
+a weekend prototype, or a product whose value is in shipping this month, the vendor
+SDK is the faster road and there is no shame in taking it. This book is for the other
+case, where bounded, auditable, and provable are worth more than fast.
+
+\section*{The open edges}
+
+The project is not finished, and a few edges are left deliberately visible. A
+cellular modem driver is built but held until improved hardware. The chip's internal
+flash as an ext4 volume is scoped but not written. The capstone that would wire a
+sensor, the filesystem, and the TLS client into one logger is sketched but not yet a
+running example. More cipher suites, a deeper treatment of the two-core scheduler,
+and a fuller low-power story all have room to grow. These are not apologies. They are
+the next chapters, and the repository is where they will appear.
+
+\section*{Where to go from here}
+
+Which is the last point. The book is a companion to a living code base, not a closed
+artifact. Every concept here is anchored in code you can clone, build, and run with
+one command, and the examples are the place to start changing things. Read Further
+Reading (the references that close the book) for the standards and projects this work
+stands on, pick the example nearest to what you want to build, and make it do
+something new. The proof that bare-metal Ada goes far enough is not in these pages. It
+is on the board.
