@@ -61,9 +61,11 @@ A measurable bar, the way a manual sets one:
 6. **Plain word over clever word.** If a flourish costs the reader a beat of
    comprehension, cut it. Vivid is good; cute-but-slow is not.
 
-7. **Prefer a full stop to a dash/semicolon chain.** Two ideas joined by `--` or `;`
-   are often two sentences. Chain at most two clauses; a third idea starts a new
-   sentence.
+7. **Minimise the em/en dash.** The spaced `--` is a tic in this book. Default to a
+   comma, a colon, parentheses, or a full stop. A definition-in-passing takes a colon
+   or parentheses (`a PDU: a function code and its data`), not a dash. An aside takes
+   parentheses. Two ideas joined by `--` or `;` are usually two sentences. Reserve the
+   dash for a genuinely sharp turn, and at most one in several paragraphs.
 
 8. **Read it aloud.** If you run out of breath, backtrack, or have to re-read to find
    the verb, the sentence fails — rewrite it.
@@ -88,8 +90,8 @@ A measurable bar, the way a manual sets one:
 ## Keep the voice (do not strip these)
 
 - The `\cnote{...}` **From C / ESP-IDF** asides.
-- The em-dash gloss that *defines in passing* — *"a PDU — a function code and its
-  data"* — used in moderation (rule 7 still applies).
+- The gloss that *defines in passing* — but now with a colon or parentheses, not a
+  dash (`a PDU: a function code and its data`). See rule 7.
 - A warm topic sentence, a concrete worked example, a dry aside. Personality lives at
   the paragraph level; clarity is enforced at the sentence level.
 
