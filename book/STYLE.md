@@ -75,14 +75,17 @@ A measurable bar, the way a manual sets one:
 - **Keep the causal `so`** (*"the spec is fixed, so clients don't recompile"*). It is
   the plainest way to show consequence and fits the warm register; `therefore` /
   `thus` are stiffer and colder. Do **not** hunt it down — the book uses it well.
-- **Starting with `Because` (or causal `So`) is fine**, as long as the sentence
-  *completes*: *"Because clients see only the spec, the body can change freely."* The
-  "never start with because" rule is a myth; it only guards against fragments
-  (*"Because it was raining."* — no main clause). `And` / `But` openers are allowed
-  too, and often crisper than "Additionally" / "However" — sparingly.
-- **Vary the causal forms.** *"X, so Y"*, *"Because X, Y"* and *"Y because X"* say the
-  same thing with different emphasis — front the cause when the cause is the point.
-  Don't open three sentences running the same way.
+- **Default to effect first, reason trailing.** Lead with the main point, then give
+  the reason. Prefer *"The body can change freely, because clients see only the spec"*
+  over *"Because clients see only the spec, the body can change freely."* This holds
+  throughout the book. A fronted `Because` / `Since` clause is grammatical (not a
+  fragment), but it is the exception: use it only when the reason genuinely has to set
+  up several sentences that follow. `And` / `But` openers are fine, sparingly, and
+  often crisper than "Additionally" / "However."
+- **No comma before a trailing `because`** when it gives the essential reason:
+  *"…still works untouched because the spec is the reuse boundary"*, not
+  *"…untouched, because the spec…"*. (Set off an intervening aside with parentheses,
+  so the `because` still reads clean.)
 - **Prune only the intensifier `so`** (*"so cleanly," "so important"*): name the
   specific thing or cut it. (*"so far"* = "up to now" is a fine idiom, not an
   intensifier.)

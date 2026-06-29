@@ -6,7 +6,7 @@ This chapter makes a bigger claim: the package is the most important structural 
 in Ada, and it shapes this whole codebase. You see it everywhere here: one peripheral
 per package, a tidy \texttt{ESP32S3.*} hierarchy, a private type guarding every
 hardware resource, a build that recompiles exactly what changed. The reason is worth
-stating up front, because it is unusual. Ada folds into one construct three things
+stating up front because it is unusual. Ada folds into one construct three things
 that C keeps separate:
 
 \begin{itemize}
@@ -47,8 +47,8 @@ end ESP32S3.UART;
 
 A caller is compiled against the spec \emph{alone}. It cannot name, reach, or depend
 on anything in the body. This one rule is the root of almost everything that follows.
-The body can change completely, without breaking or even recompiling a single line of
-client code, because clients see only the spec.
+The body can change completely (without breaking or even recompiling a single line of
+client code) because clients see only the spec.
 
 \cnote{A C header is just text the preprocessor pastes in; nothing makes it agree
 with the \texttt{.c} that implements it, so the two can silently drift, and a
@@ -64,10 +64,10 @@ flash, the LCD), with no copy-paste and no textual inclusion. Each package compi
 on its own to an object plus an \texttt{.ali} (Ada Library Information) file that
 records its interface. Clients link against the result; they do not recompile it.
 
-Because the spec is the reuse boundary, you can replace a body wholesale and every
-client still works untouched. This project does exactly that: the heap body was
+You can replace a body wholesale and every client still works untouched because the
+spec is the reuse boundary. This project does exactly that: the heap body was
 swapped for a TLSF allocator (Chapter~\ref{ch:heap}), and every caller of
-\texttt{new} and \texttt{malloc} was none the wiser, because the \emph{spec} did not
+\texttt{new} and \texttt{malloc} was none the wiser because the \emph{spec} did not
 move.
 
 \emph{Generics} extend reuse to parameterised packages: a package (or subprogram)
@@ -83,7 +83,7 @@ whatever: \texttt{ESP32S3.SPI.Read} and \texttt{ESP32S3.UART.Read} are simply
 different names. There is no global namespace to pollute.
 
 \cnote{This is the problem C solves with manual prefixes (\texttt{uart\_read()},
-\texttt{spi\_read()}), because every external symbol shares one flat namespace.
+\texttt{spi\_read()}) because every external symbol shares one flat namespace.
 Ada gives you the prefix for free, and it means something: it is the package.}
 
 The hierarchy carries structure. \texttt{ESP32S3.W5500.Sockets} is a \emph{child} of
@@ -125,7 +125,7 @@ end ESP32S3.UART;
 \end{lstlisting}
 
 \noindent
-A transfer cannot reach the registers without proving ownership, because there is no
+A transfer cannot reach the registers without proving ownership because there is no
 other door. The guard is impossible to forget or bypass, not by convention but
 because no other path exists in any scope a client can reach. Make the
 \texttt{Session} a \texttt{controlled} type, and its \texttt{Finalize} releases the
@@ -157,7 +157,7 @@ this unit depends on the \emph{interface} of \texttt{ESP32S3.SPI}. GNAT tracks t
 relationships in the \texttt{.ali} files and builds a dependency graph from them.
 
 \textbf{Recompilation is minimal and exact.} Change a package \emph{body}, and only
-that body recompiles; its clients do not, because their view (the spec) has not
+that body recompiles; its clients do not because their view (the spec) has not
 moved. Change a \emph{spec}, and everything that \texttt{with}s it recompiles,
 because the contract changed. This is automatic and precise. There are no
 hand-maintained Makefile dependency lists, and none of the C ritual where touching
@@ -205,12 +205,13 @@ state,'' ``this unit runs no code at startup''), and the compiler \emph{checks} 
 On a Zero-Footprint or light-tasking runtime, that is not a nicety. It is what lets a
 package be used where there is no elaboration machinery at all.
 
-A second benefit follows from the same rule. Because a client depends only on a spec,
-a bare-metal application's dependency closure stays small and auditable: you can list
-exactly what gets linked. That feeds straight into the static-footprint accounting of
-Chapter~\ref{ch:static-mem} and the \texttt{x mem} tool. And because the spec is the
-complete, authoritative interface, the HAL reference (\texttt{./x docs}) is generated
-\emph{from the package specs}. The contract doubles as the documentation.
+A second benefit follows from the same rule. A bare-metal application's dependency
+closure stays small and auditable because a client depends only on a spec. You can
+list exactly what gets linked, and that feeds straight into the static-footprint
+accounting of Chapter~\ref{ch:static-mem} and the \texttt{x mem} tool. The HAL
+reference (\texttt{./x docs}) is generated \emph{from the package specs} because the
+spec is the complete, authoritative interface. The contract doubles as the
+documentation.
 
 \section{The unifying idea}
 
