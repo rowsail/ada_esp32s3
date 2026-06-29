@@ -68,6 +68,23 @@ A measurable bar, the way a manual sets one:
 8. **Read it aloud.** If you run out of breath, backtrack, or have to re-read to find
    the verb, the sentence fails — rewrite it.
 
+## Connectives: so, because, and, but
+
+- **Keep the causal `so`** (*"the spec is fixed, so clients don't recompile"*). It is
+  the plainest way to show consequence and fits the warm register; `therefore` /
+  `thus` are stiffer and colder. Do **not** hunt it down — the book uses it well.
+- **Starting with `Because` (or causal `So`) is fine**, as long as the sentence
+  *completes*: *"Because clients see only the spec, the body can change freely."* The
+  "never start with because" rule is a myth; it only guards against fragments
+  (*"Because it was raining."* — no main clause). `And` / `But` openers are allowed
+  too, and often crisper than "Additionally" / "However" — sparingly.
+- **Vary the causal forms.** *"X, so Y"*, *"Because X, Y"* and *"Y because X"* say the
+  same thing with different emphasis — front the cause when the cause is the point.
+  Don't open three sentences running the same way.
+- **Prune only the intensifier `so`** (*"so cleanly," "so important"*): name the
+  specific thing or cut it. (*"so far"* = "up to now" is a fine idiom, not an
+  intensifier.)
+
 ## Keep the voice (do not strip these)
 
 - The `\cnote{...}` **From C / ESP-IDF** asides.
