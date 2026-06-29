@@ -102,7 +102,7 @@ psram_tune_din()                       # from-src: the 80 MHz din sweep (below)
 \end{lstlisting}
 
 The pad wiring is \emph{FIX 1}: the ROM flash setup leaves only four of the eight
-data lines connected, because flash is quad. Without \texttt{SPID4}--\texttt{SPID7}
+data lines connected because flash is quad. Without \texttt{SPID4}--\texttt{SPID7}
 and \texttt{DQS}, the chip's mode-register read comes back with half its bits
 floating, so the density field decodes to \texttt{0x5} (16\,MB) instead of the real
 \texttt{0x3} (8\,MB) and the chip is mis-configured from the start.
@@ -245,7 +245,7 @@ you nothing directly about the cache path.
 \end{enumerate}
 
 The conclusion is uncomfortable but precise: the din-sensitive path \emph{is} the
-cache path, and the cache path cannot be safely probed, because any bad value risks an
+cache path, and the cache path cannot be safely probed because any bad value risks an
 unrecoverable wedge.
 
 \subsection{The fix: a bounded SPI1 sweep at the real speed}
@@ -305,7 +305,7 @@ want from a calibration: reproducible, not lucky.
 
 \section{The 80\,MHz versus 40\,MHz trade}
 
-It is worth being explicit about why this complexity exists at all, because there is a
+It is worth being explicit about why this complexity exists at all because there is a
 simpler road not taken. At 40\,MHz the MSPI does \emph{not} need tuning: below the
 40\,MHz threshold the data eye is wide enough that the sampling phase is irrelevant,
 din/num/dummy are all zero, and the entire bring-up collapses into a straight register
@@ -313,7 +313,7 @@ script with no empirical step -- every value a compile-time constant. That is th
 clean, fully-deterministic option.
 
 The cost is bandwidth: 40\,MHz DDR is half the throughput of 80\,MHz DDR. This build
-chose 80\,MHz, and therefore inherited the tuning problem, because the PSRAM here is
+chose 80\,MHz, and therefore inherited the tuning problem because the PSRAM here is
 used for bandwidth-sensitive work, not just capacity. The 40\,MHz script remains a
 documented fallback -- the right choice if a future board needs PSRAM only as a large,
 slow backing store and would rather not carry a sweep at all.

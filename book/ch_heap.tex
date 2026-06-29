@@ -35,7 +35,7 @@ That leanest profile is \texttt{light-tasking}: it is configured
 \texttt{No\_Secondary\_Stack} and heap-less, with only a bump allocator that can
 hand out memory but never reclaim it (see \S\ref{ch:profiles}). A program built
 \texttt{light-tasking} that calls \texttt{new} in a loop will eventually run the
-bump pointer off the end of the arena -- by design, because that profile is for
+bump pointer off the end of the arena -- by design because that profile is for
 code that is statically sized and never frees. The \texttt{embedded} and
 \texttt{full} profiles are the ones that link the real allocator, so on those
 \texttt{free} actually returns memory to the pool and a long-running program can
@@ -105,7 +105,7 @@ it is what makes \texttt{free} O(1): on a free we look only at the block itself
 and its two immediate physical neighbours, coalescing with whichever of them is
 also free.
 
-A header-size subtlety worth flagging, because it bit this code: \texttt{Hdr\_Sz}
+A header-size subtlety worth flagging because it bit this code: \texttt{Hdr\_Sz}
 is a compile-time \emph{static} constant, not derived from
 \texttt{Hdr'Object\_Size}. An object-size-based constant would be \emph{elaborated}
 into \texttt{.bss}, and the ZFP boot has no \texttt{adainit} to run that
@@ -158,7 +158,7 @@ different first-level class, exactly as you want at a power-of-two boundary.
 
 \subsection{Bitmaps + find-first-set: O(1) bucket lookup}
 
-The grid would still need scanning if we had to search it. We do not, because a
+The grid would still need scanning if we had to search it. We do not because a
 pair of bitmaps records which buckets are non-empty:
 
 \begin{lstlisting}
@@ -322,7 +322,8 @@ chooses to \emph{leak} the stack rather than risk a use-after-free -- a delibera
 \section{Validation}
 \label{sec:heap-validation}\index{heap validation}
 
-Because \texttt{tlsf\_core} is target-free, it is tested off-chip as ordinary Ada.
+\texttt{tlsf\_core} is tested off-chip as ordinary Ada because it is
+target-free.
 \texttt{heap\_stress.adb} is a generic that takes an allocator's six operations
 and beats on them: an initial sanity pass (alloc/align/free, OOM returns null,
 realloc-grow preserves data), then 300\,000 randomised alloc/free steps over a

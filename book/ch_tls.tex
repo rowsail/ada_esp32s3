@@ -59,7 +59,7 @@ and the chip's accelerators.}
 The split in that crypto row is deliberate. Table~\ref{tab:tls-crypto} shows who
 does what. The rule of thumb: \emph{symmetric} bulk work and big-integer modular
 exponentiation go to silicon (fast, and the RSA accelerator is constant-time);
-the \emph{asymmetric} curve and protocol logic are Ada, because correctness and
+the \emph{asymmetric} curve and protocol logic are Ada because correctness and
 auditability matter more there than raw speed, and a one-shot handshake can spend
 a few tens of milliseconds on a scalar multiply without anyone noticing.
 

@@ -43,7 +43,7 @@ that touches the live controller require it.
   acquire the controller.
 \item[Three things become impossible.] You cannot acquire a controller that was
   never set up (\texttt{Not\_Initialized}); you cannot transfer or reconfigure
-  without holding it (\texttt{Not\_Owned}); and you cannot leak the lock, because
+  without holding it (\texttt{Not\_Owned}); and you cannot leak the lock because
   the handle's finalizer always releases.
 \end{description}
 
@@ -290,7 +290,7 @@ Each layer earns its place by removing a specific class of mistake:
   forgotten.] The earlier, weaker approach put an \texttt{if S.Active} check at the
   top of each operation. That works until someone adds an operation and forgets
   the check. Hiding the only \texttt{Bus} behind \texttt{Owned} makes the check
-  structural: forgetting it is not a bug you can write, because there is no other
+  structural: forgetting it is not a bug you can write because there is no other
   way to obtain a \texttt{Bus}.
 \item[Limited \texttt{Session} $\rightarrow$ ownership cannot be duplicated.] A
   non-copyable handle means two tasks can never hold the same controller, and a

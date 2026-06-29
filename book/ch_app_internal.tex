@@ -204,7 +204,7 @@ UART, the unsynchronised register driver is sealed in a private child,
 \texttt{Session}.
 
 \texttt{Setup} brings a host up and claims a GDMA channel; mode and clock are not
-set here, because on a shared bus they are a per-\emph{device} property, applied at
+set here because on a shared bus they are a per-\emph{device} property, applied at
 \texttt{Acquire}. \texttt{Configure\_Pins} routes the shared
 \texttt{Sclk}/\texttt{Mosi}/\texttt{Miso}/\texttt{Cs} to pads (each an
 \texttt{Optional\_Pin}), and \texttt{Enable\_Loopback} ties MOSI to MISO through
@@ -519,8 +519,7 @@ capture logic.
 The Ada driver in \texttt{ESP32S3.LEDC} hands a channel out as a \texttt{Channel}
 handle that is \emph{limited} (non-copyable, so two tasks cannot drive one
 channel) and \emph{controlled} (it stops the output and returns the channel to
-the free pool on scope exit, including on an exception). Because you exclusively
-own a claimed channel, \texttt{Set\_Duty} needs no lock. The finalization
+the free pool on scope exit, including on an exception). \texttt{Set\_Duty} needs no lock because you exclusively own a claimed channel. The finalization
 dependency targets the embedded/full profile, not the light-tasking build.
 
 One chip caveat surfaces in the API: a channel uses timer \texttt{(Index mod 4)},
@@ -809,8 +808,8 @@ symbol RAM in halves as it drains, so \texttt{Symbols} may be any length. The
 \texttt{Blocks} parameter (1..4) borrows the RAM of higher-numbered TX channels
 to raise the one-shot ceiling. On the receive side, \texttt{Start} arms the
 channel and \texttt{Receive} blocks until the line stays idle for
-\texttt{Idle\_Ticks}. Because \texttt{Transmit} busy-polls its re-fill, keep
-higher-priority interrupts short.
+\texttt{Idle\_Ticks}. Keep higher-priority interrupts short because \texttt{Transmit} busy-polls its
+re-fill.
 
 \begin{lstlisting}
 type TX_Index    is range 0 .. 3;   type RX_Index is range 0 .. 3;
@@ -875,8 +874,8 @@ A \texttt{Channel} is \texttt{limited private} -- non-copyable, so two tasks
 cannot alias one channel -- and \emph{controlled}: claiming goes through a
 protected allocator, and the handle auto-releases on scope exit (including during
 exception unwinding) so a channel cannot leak or be reused through a stale copy.
-Because finalization is involved, this driver targets the embedded/full profile
-(excluded from the light-tasking build). Transfers are bounded by
+This driver targets the embedded/full profile (excluded from the light-tasking
+build) because finalization is involved. Transfers are bounded by
 \texttt{Max\_Transfer = 4095} (the 12-bit buffer-size field); the implemented
 memory-to-memory \texttt{Copy} loops one channel's OUT path into its own IN path,
 and source, destination and descriptors must all live in internal SRAM. Beyond

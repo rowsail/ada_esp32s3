@@ -554,7 +554,7 @@ because it exercises every part of the \texttt{Session} pattern.
   would raise \texttt{Not\_Initialized}. It then blocks on UART1's protected
   guard until the port is free (here, immediately), marks \texttt{S} active, and
   records that it holds UART1. Until \texttt{S} is released no other task can
-  acquire UART1 -- and, because every reconfiguration call below takes the held
+  acquire UART1 -- and because every reconfiguration call below takes the held
   \texttt{Session}, no other task can change UART1's settings either.
 \item \texttt{Enable\_Loopback (S)} sets the controller's internal TX$\rightarrow$RX
   loopback bit \emph{on the held port}. Everything the transmitter shifts out is

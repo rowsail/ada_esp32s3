@@ -41,9 +41,9 @@ locking shape of the other expander/RTC drivers: \texttt{Acquire} a
 locked only per transaction. Direction is \emph{global} -- one
 \texttt{IO\_Direction} bit makes all of \texttt{IO0..IO7} inputs or outputs;
 \texttt{OC0..OC3} are output-only with a global \texttt{Push\_Pull}/%
-\texttt{Open\_Drain} drive. Because the config/OC/IO-output registers cannot be
-read back, the driver keeps a shadow initialised to the datasheet power-on
-defaults (IO = inputs, OC = high, push-pull). The chip has no interrupt output,
+\texttt{Open\_Drain} drive. The driver keeps a shadow initialised to the datasheet power-on defaults (IO =
+inputs, OC = high, push-pull) because the config/OC/IO-output registers cannot
+be read back. The chip has no interrupt output,
 hence no \texttt{.Interrupts} child. The controlled \texttt{Session} restricts this
 driver to the embedded and full profiles.
 

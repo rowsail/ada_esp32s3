@@ -259,7 +259,7 @@ operation takes it \texttt{in out} and mutates shared state, and the filesystem
 holds no internal lock or protected object: drive one mount from one task, and let
 its calls run to completion in sequence.
 
-That rule is stricter than it first looks, because even reads have side effects.
+That rule is stricter than it first looks because even reads have side effects.
 Underneath the mount sits a write-back LRU block cache, and \texttt{Read\_File}
 fetches-on-miss and reorders it -- so two tasks ``only reading'' the same mount
 still race on the cache. Writes are stronger still: \texttt{Create\_File},
@@ -276,7 +276,7 @@ funnel every request through it: a dedicated task that owns the \texttt{Mount} a
 performs the I/O, with other tasks handing it work through a \texttt{protected}
 request queue (Ravenscar-compatible) or, on the \texttt{full} profile, a rendezvous
 entry. The I/O itself must stay in the owning task -- never inside a protected
-action, because the SD drivers can suspend and a protected operation must not block.
+action because the SD drivers can suspend and a protected operation must not block.
 
 \begin{lstlisting}
 --  One task owns the Mount and is the only code that touches it; other tasks
@@ -338,7 +338,7 @@ end if;
 
 Crucially the already-clear path is \emph{not} silent -- that would mask a genuine
 double-free bug. A \texttt{Phantom\_Free\_Count} tripwire counts the events (a plain
-counter, not a \texttt{pragma Assert}, because the target also builds with
+counter, not a \texttt{pragma Assert} because the target also builds with
 \texttt{-gnata} and an assert would abort the filesystem operation). The host test
 harness asserts the count is zero after every scenario, and the on-target
 \texttt{esp32s3\_ext4\_write} example reports it as a battery check

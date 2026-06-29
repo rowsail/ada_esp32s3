@@ -46,8 +46,8 @@ kernel that must be cancellable can poll a \texttt{Volatile} flag.
 
 \section{\texttt{Configurable\_Run\_Time} finalization}\index{finalization}\index{Configurable\_Run\_Time}\index{Ada.Interrupts}
 
-Because \texttt{system.ads} sets \texttt{Configurable\_Run\_Time => True}, the
-front end does not generate \emph{library-level} finalization. Two consequences:
+The front end does not generate \emph{library-level} finalization because
+\texttt{system.ads} sets \texttt{Configurable\_Run\_Time => True}. Two consequences:
 
 \begin{itemize}
   \item A \emph{library-level} controlled object's \texttt{Finalize} runs only if

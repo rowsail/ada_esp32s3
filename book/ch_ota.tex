@@ -10,7 +10,7 @@ of this is implemented today. But it is grounded in what the project actually ha
 a readable Ada bootloader, a working HTTPS transport, and pure-Ada signing
 primitives -- so it is a buildable plan rather than a wish.
 
-The shape of the problem is worth stating up front, because it explains every
+The shape of the problem is worth stating up front because it explains every
 decision that follows. An update has to replace the running firmware \emph{with the
 running firmware doing the replacing}. You cannot overwrite the image you are
 executing, so there must be two slots and a way to choose between them at boot; and
@@ -80,7 +80,7 @@ ESP-IDF's flash driver uses:
   invalidated and re-enabled after;
 \item on this \textbf{dual-core} part, the \emph{other} core must be parked in an
   IRAM spin-loop first, or it will fetch from flash the instant the cache goes down;
-\item interrupts are masked, because an ISR resident in flash would do the same.
+\item interrupts are masked because an ISR resident in flash would do the same.
 \end{itemize}
 
 The actual erase and program are ROM services -- the mask ROM exposes sector-erase
@@ -157,7 +157,7 @@ middle is real work, in rough order of difficulty. The flash-self-write critical
 section is small but delicate and brick-risky, and is the right first spike --
 nothing else can be tested until a sector can be erased and re-read safely. The
 bootloader changes (slot selection, validation, the pending-verify state machine)
-are moderate and must be got exactly right, because a bug there is a bug in the one
+are moderate and must be got exactly right because a bug there is a bug in the one
 component with no fallback. The partition and \texttt{otadata} format is
 straightforward once the model above is fixed. And the application state machine is
 ordinary networking code over the new flash primitive. It is a multi-phase feature

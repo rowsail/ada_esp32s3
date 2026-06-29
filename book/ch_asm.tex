@@ -60,7 +60,7 @@ The constraint letters are a small language of their own. The three that carry t
 chapter's SIMD code are \texttt{"r"} (an input in a register), \texttt{"+r"} (a
 register that is read \emph{and} written -- both input and output), and
 \texttt{"=\&r"} (a write-only register the compiler must keep \emph{distinct} from
-every input, because the code writes it before it has finished reading the others --
+every input because the code writes it before it has finished reading the others --
 an ``early clobber''). Getting these right is how the compiler and your assembly
 agree on who owns which register; getting them wrong produces code that works until
 the optimiser reuses a register you quietly trampled.
@@ -105,7 +105,7 @@ Asm
 --  the next A chunk into q0, store q4.  A scalar loop then does the 0..3 tail.
 \end{lstlisting}
 
-Several ideas are worth drawing out, because they are why this is faster than a
+Several ideas are worth drawing out because they are why this is faster than a
 loop the compiler could write:
 
 \begin{itemize}

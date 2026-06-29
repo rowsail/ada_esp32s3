@@ -106,7 +106,7 @@ every page from here on. They are worth pinning down now -- with the reason for
 each -- so that the register and bit-field code in later chapters reads as intended
 rather than as noise.
 
-\textbf{Case is insignificant -- so pick a convention, because the compiler will
+\textbf{Case is insignificant -- so pick a convention because the compiler will
 not.} Ada folds letter case for identifiers and reserved words alike: \texttt{Led},
 \texttt{led} and \texttt{LED} are one name, and \texttt{LOOP}, \texttt{Loop} and
 \texttt{loop} are one keyword. The compiler does not care which you write, and it
@@ -211,8 +211,8 @@ The selection happens at build time. An example's \texttt{build.sh} sets it:
 export ESP32S3_RTS_PROFILE=embedded   # or light-tasking / full
 \end{lstlisting}
 
-Because the HAL keys its object directory by profile, the same shared driver tree
-is safely reused across profiles without stale objects.
+The same shared driver tree is safely reused across profiles without stale
+objects because the HAL keys its object directory by profile.
 
 \chapter{Building and Running on the ESP32-S3}
 \label{ch:build}

@@ -211,9 +211,9 @@ for I in Buf'Range loop          -- I takes each actual index value in turn
 end loop;
 \end{lstlisting}
 
-Because the loop names \texttt{Buf'Range}, the same code works for a
-\texttt{0\,..\,255} buffer and a \texttt{1\,..\,8} one; there is no literal bound
-to get wrong. (When you do not need the index itself, \texttt{for E of Buf loop}
+The same code works for a \texttt{0\,..\,255} buffer and a \texttt{1\,..\,8} one
+because the loop names \texttt{Buf'Range}; there is no literal bound to get
+wrong. (When you do not need the index itself, \texttt{for E of Buf loop}
 iterates the elements directly.)
 
 \textbf{A worked example: J1939 CAN payloads, indexed from 1.} A Classic CAN
@@ -308,7 +308,7 @@ choice, and it covers \emph{exactly} the cases not already named -- so adding a
 component, value or exception elsewhere silently changes what ``everything else''
 means. For a register write that is precisely what you want (a newly-defined
 reserved bit still defaults). For a \texttt{case} over an enumeration it is often
-the opposite: omitting \texttt{others} is safer, because then \emph{adding} a value
+the opposite: omitting \texttt{others} is safer because then \emph{adding} a value
 to the type forces the compiler to make you handle it.
 
 \section{Fixed-point arithmetic}

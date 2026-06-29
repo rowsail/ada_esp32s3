@@ -270,7 +270,7 @@ which is \texttt{True} in both.) The catch is that AdaCore ships a full
 \texttt{System.Interrupts} only for hosted (POSIX) targets, where it is built on
 a signal-server task and is unportable to bare metal; \emph{no} bare-board
 runtime -- not even AdaCore's own \texttt{ravenscar-full} -- implements the
-full surface, because Ravenscar forbids dynamic attachment in the first place.
+full surface because Ravenscar forbids dynamic attachment in the first place.
 For a long time, then, a \texttt{full}-profile build of an \texttt{Ada.Interrupts}
 handler simply failed with \texttt{construct not allowed in this configuration}
 and \texttt{System.Interrupts.Register\_Interrupt\_Handler not defined}.

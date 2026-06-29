@@ -205,7 +205,7 @@ rm crates/esp32s3_rts/<profile>-esp32s3/adalib/libgnat.a \
 \end{quote}
 
 (Editing a source under \texttt{bb-runtimes/} or \texttt{full\_overlay/} instead
-regenerates correctly, because the whole tree is rebuilt; the trap is specifically
+regenerates correctly because the whole tree is rebuilt; the trap is specifically
 editing the \emph{regenerated copy}.) The same caution applies to verifying any
 runtime fix: confirm the change is in the linked archive, not just on disk,
 before drawing a conclusion.

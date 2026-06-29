@@ -40,8 +40,8 @@ end Toggle_Raw;
 \end{lstlisting}
 
 \texttt{System'To\_Address} turns a numeric literal into an address; the
-\texttt{Address} aspect binds the object there. Because the type is exactly
-\texttt{Unsigned\_32}, the write is exactly one 32-bit store -- the compiler
+\texttt{Address} aspect binds the object there. The write is exactly one 32-bit store because the type is exactly
+\texttt{Unsigned\_32} -- the compiler
 cannot ``optimise'' it into a byte write, which a peripheral might not accept.
 
 \cnote{this replaces \texttt{*(volatile uint32\_t *)0x60004008 = x;}\ -- but with
@@ -160,7 +160,7 @@ to say ``this structure is big-endian'' in the type is so useful.
 \label{sec:volatile}\index{Volatile}
 
 Placing an object at a register's address is only half the story; you must also
-tell the compiler how that location behaves, because the optimiser otherwise
+tell the compiler how that location behaves because the optimiser otherwise
 assumes ordinary memory -- caching reads, dropping ``dead'' writes, reordering.
 A small family of aspects states the truth:
 

@@ -94,7 +94,7 @@ scalar one.
 The build is not uniform about \texttt{-O}, on purpose. The runtime, the HAL and the
 libraries compile at \texttt{-O2} -- the scheduler and interrupt paths want the speed,
 and so does anything you are benchmarking. The bare boot glue compiles at
-\texttt{-Os}, because bootloader size matters more than its speed and it runs once.
+\texttt{-Os} because bootloader size matters more than its speed and it runs once.
 The host verification builds use \texttt{-O0 -g} so the debugger sees everything.
 When you quote a number, quote the level with it: a \texttt{-O0} measurement of a
 hot loop is not telling you what the shipped \texttt{-O2} build will do, and the gap
@@ -102,7 +102,7 @@ is often large.
 
 \section{A placement story: the full-profile trampoline}
 
-One placement problem is subtle enough to be worth seeing in full, because it ties
+One placement problem is subtle enough to be worth seeing in full because it ties
 the map back to the language. GCC implements a nested subprogram that captures its
 enclosing scope with a \emph{trampoline} -- a few bytes of code it writes onto the
 stack. But the stack is in DRAM, a data-bus view with no execute permission, so

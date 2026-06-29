@@ -265,13 +265,13 @@ end record;
 \end{lstlisting}
 
 Note the deliberate ordering: the comment in the spec insists that
-\texttt{Context} sit at the very start of the record, because the assembly
+\texttt{Context} sit at the very start of the record because the assembly
 context switch assumes the saved-register buffer is at offset zero of the thread
 descriptor. The three-valued \texttt{State} type -- \texttt{Runnable},
 \texttt{Suspended}, \texttt{Delayed} -- is the entire scheduling vocabulary of
 the restricted profile: a thread is either eligible to run, blocked on an entry,
 or waiting out a delay. There is no ``zombie,'' no ``joining,'' no dynamic
-priority band, because the profile forbids the features that would need them.
+priority band because the profile forbids the features that would need them.
 
 \section{Three profiles, one boundary}\index{runtime profile}\index{Ravenscar}\index{protected object}
 

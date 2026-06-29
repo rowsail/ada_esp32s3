@@ -141,9 +141,8 @@ construct in the example:
   short names.
 \item[\texttt{package body Edge\_Demo is}] begins the implementation of a package
   called \texttt{Edge\_Demo}. A package groups related declarations; everything up
-  to \texttt{end Edge\_Demo;} belongs to it. Because it is a top-level
-  (\emph{library-level}) package, the task it declares is legal under the Jorvik
-  profile.
+  to \texttt{end Edge\_Demo;} belongs to it. The task it declares is legal under the Jorvik profile because it is a top-level
+(\emph{library-level}) package.
 \item[\texttt{Edges : Natural := 0 with Atomic;}] declares a variable. The colon
   separates the name from its type; \texttt{Natural} is the predefined type of
   integers $\geq 0$; \texttt{:= 0} sets its initial value (\texttt{:=} is
@@ -255,7 +254,7 @@ Two questions come up constantly in firmware: how do I \emph{wait} for something
 to happen -- a GPIO pin to change, a byte to arrive on the UART -- and how do I
 \emph{give up} after a while? There are two ways to wait (poll, or block until an
 interrupt wakes you), and the clean way to bound the wait with a timeout differs
-across the three profiles, because the leaner two forbid the \texttt{select}
+across the three profiles because the leaner two forbid the \texttt{select}
 statement.
 
 \subsection{Polling (any profile)}
