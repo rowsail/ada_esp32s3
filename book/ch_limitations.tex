@@ -1,13 +1,13 @@
 \chapter{Full-Profile Limitations (and Why They Rarely Bite)}
 
 The \texttt{full} profile is a complete GNARL tasking runtime rebuilt on bare
-metal -- no Ravenscar restrictions, with rendezvous, protected objects with
+metal: no Ravenscar restrictions, with rendezvous, protected objects with
 entries, dynamic and nested tasks, dynamic priorities, task attributes,
 exception propagation, \texttt{abort}, and \texttt{Ada.Interrupts} handlers all
 running on hardware. A handful of rough edges remain. This chapter lists them
 honestly and, for each, explains why it seldom matters for a real embedded
-program. The short version: the gaps cluster at the margins of the language --
-constructs a startup-time, fixed-task-set application almost never reaches -- and
+program. The short version: the gaps cluster at the margins of the language
+(constructs a startup-time, fixed-task-set application almost never reaches), and
 each has a clean workaround or is explicitly permitted by the Reference Manual.
 
 \section{Toolchain-bound: asynchronous \texttt{select} with a relative delay}\index{asynchronous transfer of control}\index{select statement}
@@ -29,13 +29,13 @@ written with a guard plus \texttt{Ada.Real\_Time} arithmetic, untouched by this.
 
 \section{RM-permitted: aborting a pure CPU loop}\index{abort statement}
 
-\texttt{abort} of a task blocked at any \emph{abort-completion point} --
-a \texttt{delay}, an entry call, a rendezvous -- works and is HW-verified
+\texttt{abort} of a task blocked at any \emph{abort-completion point}
+(a \texttt{delay}, an entry call, a rendezvous) works and is HW-verified
 (\texttt{'Terminated} flips, the task unwinds cleanly). The one case that does
 \emph{not} take effect is a task spinning in a tight computational loop with no
 completion point at all: it keeps running until it next reaches one.
 
-\textbf{Why it rarely bites.} This is explicitly allowed -- ARM 9.8 only
+\textbf{Why it rarely bites.} This is explicitly allowed: ARM 9.8 only
 requires abort to take effect at completion points, and a loop with no such point
 is permitted to run on. Delivering it anyway would mean injecting an exception
 into a preempted task from the timer ISR, which (as the context-switch and
@@ -55,9 +55,9 @@ The front end does not generate \emph{library-level} finalization because
   \item Consequently, the \emph{implicit} restore-on-finalization of a
         \emph{library-level} interrupt-handler protected object does not run
         automatically at shutdown. (Both the static \texttt{pragma Attach\_Handler}
-        path \emph{and} the full dynamic \texttt{Ada.Interrupts} operations --
-        \texttt{Attach\_Handler}, \texttt{Detach\_Handler}, \texttt{Exchange\_-
-        Handler}, \texttt{Current\_Handler} -- are now supported and
+        path \emph{and} the full dynamic \texttt{Ada.Interrupts} operations
+        (\texttt{Attach\_Handler}, \texttt{Detach\_Handler}, \texttt{Exchange\_-
+        Handler}, \texttt{Current\_Handler}) are now supported and
         HW-verified; see the Interrupts chapter. Only this one implicit-restore
         case is outstanding.)
 \end{itemize}
@@ -73,11 +73,11 @@ the missing implicit restore-at-shutdown never matters in practice; explicit
 \section{\texttt{Ada.Calendar} resolution: 5\,ns, with the full range to 2399}\index{Ada.Calendar}
 
 The bare \texttt{Ada.Calendar} originally declared \texttt{Year\_Number} as
-\texttt{1901\,..\,2099} (the Ada~95 bound), whereas Ada~2005 onward -- and the
-modern ACATS \texttt{C96004} -- require \texttt{2399}. The obstacle was the time
+\texttt{1901\,..\,2099} (the Ada~95 bound), whereas Ada~2005 onward (and the
+modern ACATS \texttt{C96004}) require \texttt{2399}. The obstacle was the time
 representation: the Calendar uses a \emph{Julian-day fixed-point} base sized so the
 span fits in signed 64 bits at sub-second precision, and stretching the range to
-2399 (roughly five centuries) overflows that base at 1\,ns granularity -- which is
+2399 (roughly five centuries) overflows that base at 1\,ns granularity, which is
 why mainline GNAT eventually abandoned the Julian-day Calendar for an
 integer-nanosecond one.
 
@@ -105,14 +105,14 @@ on a \texttt{Calendar.Time} remain HW-verified across the whole 1901--2399 span.
 \section{Per-task heap reclamation under task churn}\index{task churn}
 
 A terminated task's primary stack is returned to the heap, but a program that
-\emph{churns} tasks -- creating and destroying them in a tight loop -- can still
+\emph{churns} tasks (creating and destroying them in a tight loop) can still
 exhaust the heap: the reclamation of the per-task resources is not yet fully
 race-free against the terminating thread, and the bare allocator fragments. The
 underlying cause is that the kernel has no explicit ``retire this thread'' step;
 the design for fixing it is recorded in the project notes.
 
 \textbf{Why it rarely bites.} Idiomatic embedded Ada creates a \emph{fixed} set
-of tasks at startup and runs them for the life of the system -- the fixed-set
+of tasks at startup and runs them for the life of the system. The fixed-set
 case never churns and never leaks. Dynamic create/destroy in a hot loop is an
 unusual pattern on a microcontroller; where it is needed, a task pool (allocate
 once, reuse) sidesteps the issue entirely.
@@ -127,7 +127,7 @@ once, reuse) sidesteps the issue entirely.
         and priority \emph{ceilings} (the common dynamic case) go up, not down.
   \item \textbf{\texttt{Ada.Text\_IO} over the USB-Serial-JTAG console} is not
         robust for two tasks printing concurrently. \emph{Why it rarely bites:}
-        this is a console-transport detail, not the tasking kernel -- route
+        this is a console-transport detail, not the tasking kernel. Route
         diagnostic output through one task, or use a real UART (the UART driver
         is task-safe).
 \end{itemize}
@@ -140,8 +140,8 @@ Xtensa level-5 tick and cross-core IPI, deadlocking its activation (ACATS
 and shares it with the highest Ada interrupt priority.
 
 \textbf{Why it rarely bites.} Only the single \emph{topmost} interrupt priority
-collides. Any priority below it -- including every priority the peripheral HAL
-drivers use for their device interrupts -- is unaffected, and ordinary tasks use
+collides. Any priority below it (including every priority the peripheral HAL
+drivers use for their device interrupts) is unaffected, and ordinary tasks use
 \texttt{Priority}, not \texttt{Interrupt\_Priority}, at all. A handler simply
 should not claim the one ceiling reserved for the scheduler.
 
@@ -152,7 +152,7 @@ declare a fixed set of tasks and protected objects at startup; rendezvous and
 share data through protected entries; use absolute delays and timing events;
 attach interrupt handlers statically; finalize controlled objects at scope exit;
 abort at completion points. That path is implemented and hardware-verified. The
-limitations are real, but they live at the edges -- toolchain corners, an
-RM-permitted abort case, and patterns (library-level finalization, task churn,
-dynamic priority lowering) that idiomatic embedded code seldom uses -- and every
+limitations are real, but they live at the edges (toolchain corners, an
+RM-permitted abort case, and patterns that idiomatic embedded code seldom uses:
+library-level finalization, task churn, dynamic priority lowering), and every
 one has either a clean workaround or standing permission from the language.

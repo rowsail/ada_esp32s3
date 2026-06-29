@@ -1,11 +1,11 @@
 \chapter{Modbus TCP: Your Data, Your Handlers}
 \label{ch:modbus}\index{Modbus}
 
-The networking chapter built a socket facade -- \texttt{GNAT.Sockets} over the
+The networking chapter built a socket facade: \texttt{GNAT.Sockets} over the
 W5500 (Chapter~\ref{ch:networking}). This chapter puts an industrial protocol on
 top of it. Modbus is the lingua franca of industrial I/O,
 and Modbus TCP is the protocol over a socket: a seven-byte MBAP header (transaction id, a zero protocol id, a
-length, a unit id) followed by a PDU -- a function code and its data. The data
+length, a unit id) followed by a PDU (a function code and its data). The data
 model is four tables: coils and discrete inputs (one bit each, read-write and
 read-only), holding and input registers (sixteen bits each, read-write and
 read-only). A slave that cannot honour a request replies with the function code's
@@ -42,7 +42,7 @@ end On_Read_Holding_Registers;
 \end{lstlisting}
 
 This is \emph{dispatching}, not callbacks, and the choice is deliberate. With a tagged
-type your storage lives in \texttt{Self} -- the object \emph{is} the context, so there
+type your storage lives in \texttt{Self}: the object \emph{is} the context, so there
 is no \texttt{Ctx} pointer to thread and no closure to build, which matters under the
 \texttt{No\_Implicit\_Dynamic\_Code} restriction that forbids the trampolines a nested
 access-to-subprogram callback would need. Handlers you don't override default to
@@ -59,7 +59,7 @@ around it.
 
 \section{The master returns status, not exceptions}
 
-A master is synchronous -- send a request, wait for the reply -- so each call returns
+A master is synchronous (send a request, wait for the reply), so each call returns
 its data into a caller buffer plus a \texttt{Status}:
 
 \begin{lstlisting}
@@ -69,17 +69,17 @@ Read_Holding_Registers (S, Unit => 1, Addr => 0, Qty => 5,
 
 The error model follows this book's settled convention (\S\ref{ch:net:gnatsockets}):
 status for \emph{expected} outcomes, Ada exceptions only for \emph{programming} errors.
-A Modbus exception reply is an expected outcome -- \texttt{Result} is
+A Modbus exception reply is an expected outcome: \texttt{Result} is
 \texttt{Exception\_Response} and \texttt{Exc} carries the code; nothing is raised. A
 timeout or a dropped connection is likewise a status. The only Ada exceptions are the
-\texttt{Pre} contracts on quantity and buffer size -- a caller asking for 200 registers
+\texttt{Pre} contracts on quantity and buffer size: a caller asking for 200 registers
 (the protocol caps reads at 125) or passing too small a buffer is a bug in the calling
 code, caught at the call, not a runtime reply to interpret.
 
 \section{Pinning, and a note on host-testing}
 
 Both sides take an \emph{optional} pin. A multi-homed board (\S\ref{ch:net:multinic})
-may need a slave's traffic confined to one link -- the wired NIC, never cellular. The
+may need a slave's traffic confined to one link: the wired NIC, never cellular. The
 master accepts a closure-free \texttt{Configure} hook called on the fresh socket, and
 the application's hook does the pinning:
 
@@ -90,11 +90,11 @@ begin GNAT.Sockets.Set_Interface (Sock, 0); end;     -- in the app, library-leve
 Modbus.Master.Connect (S, "10.0.0.7", Configure => Pin_Eth0'Access, Result => R);
 \end{lstlisting}
 
-Keeping \texttt{Set\_Interface} -- a facade-only call -- in the \emph{application}
+Keeping \texttt{Set\_Interface} (a facade-only call) in the \emph{application}
 rather than baked into \texttt{Modbus.Master} is what lets the master compile against a
 desktop's real \texttt{GNAT.Sockets} and be host-tested end to end against a stdlib
 Python slave; the slave pins by binding its listener to a specific interface's address.
-The two halves were proven on a laptop -- every function code, the exception path,
-read-back of every write -- before either touched the board, where \texttt{esp32s3\_%
+The two halves were proven on a laptop (every function code, the exception path,
+read-back of every write) before either touched the board, where \texttt{esp32s3\_%
 modbus\_slave} (polled from a host) and \texttt{esp32s3\_modbus\_master} (pinned, polling
 a host) confirmed the same against real silicon.

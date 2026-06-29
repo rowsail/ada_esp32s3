@@ -4,7 +4,7 @@
 The earlier \emph{Building and Running} chapter (\S\ref{ch:build}) showed the
 runtime from the outside: pick a profile, run \texttt{./x}, get an image. This
 chapter opens the box. It explains how the three runtimes are actually
-\emph{constructed} -- where the Ada runtime sources come from, what makes one
+\emph{constructed}: where the Ada runtime sources come from, what makes one
 profile differ from another, how the experimental \texttt{full} profile is
 synthesised, and how the register packages are generated. If you ever need to
 change a runtime unit, add a peripheral, or port the whole stack to another
@@ -13,21 +13,21 @@ Xtensa chip, this is the map.
 \section{The idea: a board on top of \texttt{bb-runtimes}}\index{bb-runtimes}
 
 The runtime is not written from scratch. It is grown from AdaCore's
-\texttt{bb-runtimes} -- the same generator that produces the bareboard GNAT
+\texttt{bb-runtimes}, the same generator that produces the bareboard GNAT
 runtimes for Cortex-M, LEON, RISC-V and the rest. \texttt{bb-runtimes} knows how
 to assemble a runtime from a large pool of shared Ada units; what it needs from
 \emph{you} is a \emph{board definition}: the target triple, the clock, the
 interrupt model, and a handful of board-specific bodies (the console, the timer,
 machine reset).
 
-\texttt{bb-runtimes} lives in the repository as a git submodule -- a fork
+\texttt{bb-runtimes} lives in the repository as a git submodule: a fork
 (\texttt{rowsail/bb-runtimes}, branch \texttt{xtensa-esp32s3-port}) that carries
 the ESP32-S3 board on top of the upstream sources. Keeping it a submodule means
 the board port is version-pinned and the upstream history stays visible.
 
 \cnote{There is no equivalent step in an ESP-IDF project: the C toolchain ships a
 fixed newlib and FreeRTOS. Here the language runtime itself is a build product
-you can read, patch and regenerate -- the scheduler, the tick, the secondary
+you can read, patch and regenerate: the scheduler, the tick, the secondary
 stack and the exception machinery are all Ada source in the tree.}
 
 \section{\texttt{gen\_runtime.sh}: from board to archive}\index{gen\_runtime.sh}
@@ -52,12 +52,12 @@ The script does four things:
 python3 build_rts.py -f -o "$HERE" \
    --rts-src-descriptor=gnat_rts_sources/lib/gnat/rts-sources.json esp32s3
 \end{lstlisting}
-  The output lands in \texttt{crates/esp32s3\_rts/<profile>-esp32s3/} -- a
+  The output lands in \texttt{crates/esp32s3\_rts/<profile>-esp32s3/}: a
   complete runtime with \texttt{gnat/} (sequential units) and \texttt{gnarl/}
   (tasking units) subdirectories. These directories are \emph{git-ignored}: they
   are build products, regenerated on demand.
-\item \textbf{(\texttt{full} only) Apply the overlay and patches} -- the next
-  section.
+\item \textbf{(\texttt{full} only) Apply the overlay and patches} (the next
+  section).
 \item \textbf{Compile} the tree with \texttt{gprbuild} against a small
   \texttt{ravenscar\_build.gpr}.
 \item \textbf{Archive} the objects into \texttt{adalib/libgnat.a} (sequential)
@@ -69,7 +69,7 @@ python3 build_rts.py -f -o "$HERE" \
 
 Crucially the compile-and-archive step is guarded: it runs only when
 \texttt{adalib/libgnat.a} is \emph{absent}. A second invocation with the tree
-already built is therefore nearly instant -- but it is also the source of a trap
+already built is therefore nearly instant, but it is also the source of a trap
 (\S\ref{sec:stale-cache}).
 
 \section{Three profiles, three \texttt{system.ads}}\index{runtime profile}
@@ -89,13 +89,13 @@ class maps each profile name to a variant:
 \end{tabular}
 \end{center}
 
-The \texttt{light-tasking} variant carries the restrictive pragmas --
+The \texttt{light-tasking} variant carries the restrictive pragmas:
 \texttt{No\_Exception\_Propagation}, \texttt{No\_Finalization},
 \texttt{No\_Secondary\_Stack}, all under \texttt{pragma Profile (Jorvik)}. The
 \texttt{embedded} variant is the \emph{same Jorvik profile} with those three
 restrictions lifted: exceptions propagate (zero-cost, ZCX), controlled types
 finalize, and a secondary stack exists. Changing profile is, at heart, swapping
-this declaration -- everything downstream (which pool units \texttt{build\_rts}
+this declaration. Everything downstream (which pool units \texttt{build\_rts}
 selects, which code the compiler generates) follows from it.
 
 The board's own bodies are shared across profiles and named with the
@@ -121,7 +121,7 @@ of \texttt{embedded} rather than generated directly. \texttt{gen\_runtime.sh}
 generates the embedded tree, then layers two things on it:
 
 \begin{itemize}
-\item an \textbf{overlay} (\texttt{full\_overlay/}) -- a de-restricted
+\item an \textbf{overlay} (\texttt{full\_overlay/}): a de-restricted
   \texttt{system.ads} and a set of GNARL units (interrupt management, the OS
   primitives, the tasking primitives) that replace the Jorvik-limited versions
   with the full ones; and
@@ -142,7 +142,7 @@ each is documented at its head:
 \textbf{Patch} & \textbf{What it fixes} \\ \midrule
 secondary-stack reclaim & free a task's heap secondary stack when it terminates \\
 trampoline IRAM alias & point nested-subprogram trampolines at the executable
-  (IRAM) alias of SRAM, not the data view -- otherwise the first call faults \\
+  (IRAM) alias of SRAM, not the data view (otherwise the first call faults) \\
 \texttt{To\_Time\_Span} rounding & a nonzero \texttt{Duration} must round to
   $\geq 1$ tick (the 4.17\,ns tick is coarser than \texttt{Duration'Small}) \\
 dynamic-priority re-apply & re-apply a \texttt{Set\_Priority} after the lock is
@@ -154,7 +154,7 @@ FIFO-within-priority & implement RM~D.2.3 so a base-priority change moves a task
 \end{center}
 
 Keeping these as diffs rather than wholesale copied files means each change is
-small, reviewable, and obviously attributable to a specific runtime behaviour --
+small, reviewable, and obviously attributable to a specific runtime behaviour,
 and it keeps \texttt{gen\_runtime.sh} readable.
 
 \section{Register packages from the SVD}\index{svd2ada}\index{SVD}
@@ -168,8 +168,8 @@ by \texttt{svd2ada}. The generator script,
 \begin{enumerate}
 \item fetches a pinned \texttt{esp32s3.svd} (a specific \texttt{espressif/svd}
   commit, overridable with \texttt{ESP32S3\_SVD=...});
-\item builds \texttt{svd2ada} \emph{from AdaCore source} -- the Alire-indexed
-  build is too old and mishandles dimensioned register arrays;
+\item builds \texttt{svd2ada} \emph{from AdaCore source} (the Alire-indexed
+  build is too old and mishandles dimensioned register arrays);
 \item runs it into \texttt{libs/esp32s3\_hal/svd/}:
 \begin{lstlisting}[style=sh]
 svd2ada esp32s3.svd -o svd -p ESP32S3_Registers --boolean
@@ -180,7 +180,7 @@ The root package is named \texttt{ESP32S3\_Registers} on purpose: GNAT forbids
 user-defined children of \texttt{Interfaces}, so the natural
 \texttt{Interfaces.ESP32S3} is not allowed. One wrinkle needs a post-process:
 the SVD has a peripheral literally called \texttt{SYSTEM}, which becomes
-\texttt{ESP32S3\_Registers.SYSTEM} -- and because Ada is case-insensitive, a
+\texttt{ESP32S3\_Registers.SYSTEM}, and because Ada is case-insensitive, a
 bare \texttt{System.\dots} reference inside that unit resolves to the wrong
 package. A one-line \texttt{sed} rewrites those references to the fully qualified
 \texttt{Standard.System.\dots}. Add a peripheral and the recipe is the same: add
@@ -191,7 +191,7 @@ package. A one-line \texttt{sed} rewrites those references to the fully qualifie
 
 Because the heavy compile/archive step runs only when
 \texttt{adalib/libgnat.a} is missing, editing a runtime source \emph{in the
-generated tree} does not, on its own, rebuild anything -- the next build links
+generated tree} does not, on its own, rebuild anything: the next build links
 the old archive and your change silently does nothing. This has burned us more
 than once, so it is worth stating plainly:
 
@@ -218,6 +218,6 @@ triple, clock, interrupt range, SMP flag); supply the five \texttt{\_\_<board>}
 bodies (parameters, board support, console, reset, interrupt names); write the
 two \texttt{system-xi-xtensa-*.ads} variants (or reuse these if the restriction
 set is the same); regenerate the register packages from that chip's SVD; and
-point \texttt{gen\_runtime.sh} at the new board name. The boot path -- the
-2nd-stage loader, the clock and cache bring-up, PSRAM -- is the subject of the
+point \texttt{gen\_runtime.sh} at the new board name. The boot path (the
+2nd-stage loader, the clock and cache bring-up, PSRAM) is the subject of the
 next chapter.

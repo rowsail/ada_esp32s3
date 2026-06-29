@@ -5,11 +5,11 @@ When the chip comes out of reset, a great deal has to happen before the first
 line of Ada in your \texttt{Main} runs: the application has to be read out of
 flash and placed in RAM, the instruction and data caches have to be pointed at
 the right flash windows, the CPU has to be sped up from its sleepy reset clock,
-the register windows have to be made sane for Ada's calling convention, and --
-if the board has it -- the external PSRAM has to be brought up and mapped. This
+the register windows have to be made sane for Ada's calling convention, and
+(if the board has it) the external PSRAM has to be brought up and mapped. This
 chapter follows that path. It is the part of the system that is \emph{not}
 Espressif's: the project replaced the last vendored binary, the 2nd-stage
-bootloader, with its own -- written, like almost everything else here, in
+bootloader, with its own, written, like almost everything else here, in
 Ada.\footnote{The 2nd-stage bootloader and boot code are original Ada, but they
 stand on Espressif's groundwork: the memory map and linker scripts, the mask-ROM
 function addresses, and the boot/clock/watchdog sequence are transcribed or adapted
@@ -38,7 +38,7 @@ Chapter~\ref{ch:anatomy}, Fig.~\ref{fig:boot}, sketches the same sequence):
 
 \section{The 2nd-stage bootloader}\index{bootloader}
 
-The loader is ZFP-style Ada -- no runtime under it -- in
+The loader is ZFP-style Ada (no runtime under it) in
 \texttt{examples/common/bare/bootloader/} (the core is \texttt{boot\_main.adb}).
 It is deliberately small. Its job, in order:
 
@@ -49,7 +49,7 @@ It is deliberately small. Its job, in order:
 \item \textbf{Read and validate the app header.} At flash offset
   \texttt{16\#1\_0000\#} sits the image header: a \texttt{16\#E9\#} magic byte, a segment
   count, and the entry-point address. (This is exactly the format the
-  \texttt{esp\_elf2image} host tool emits -- \S\ref{ch:build}.)
+  \texttt{esp\_elf2image} host tool emits, \S\ref{ch:build}.)
 \item \textbf{Place each segment by where it wants to live.} For every segment
   the loader looks at its load address:
 \begin{center}
@@ -82,7 +82,7 @@ loader.
 
 External PSRAM is the trickiest thing the bootloader does: bringing up octal PSRAM
 reconfigures the very MSPI timing that flash execute-in-place depends on, so it has
-to run from RAM, carefully, at exactly the right moment -- and the 2nd-stage
+to run from RAM, carefully, at exactly the right moment. And the 2nd-stage
 bootloader is that moment. The bring-up (a small C shim, \texttt{psram\_boot.c}) is
 now almost entirely \emph{from source}; only the lowest-level OPI and cache pokes
 still call masked-ROM helpers (\texttt{esp\_rom\_opiflash\_*}, \texttt{Cache\_*}).
@@ -98,7 +98,7 @@ Chapter~\ref{ch:psram} tells the de-blobbing story in full; in outline it does:
 \item \textbf{Tune the data-in timing.} At 80\,MHz OPI-DDR the SPI0 data-in delay
   must be calibrated; \texttt{psram\_tune\_din} sweeps the candidate modes, measures
   which pass, and centres on the passing window (replacing an earlier hardcoded
-  poke -- see Chapter~\ref{ch:psram}).
+  poke, see Chapter~\ref{ch:psram}).
 \item \textbf{Map it into the address space.} \texttt{Cache\_Dbus\_MMU\_Set} with
   the external-RAM flag maps the PSRAM at virtual base \texttt{16\#3D00\_0000\#}; the
   number of 64\,KB pages comes from the project's \texttt{board.ads}
@@ -108,7 +108,7 @@ Chapter~\ref{ch:psram} tells the de-blobbing story in full; in outline it does:
 Because the bootloader maps PSRAM \emph{before} the application's \texttt{start.S}
 sets up its stack, the application can even place the environment task's primary
 stack in PSRAM (the \texttt{ENV\_STACK\_PSRAM} build option), trading a little
-latency for a great deal of headroom on deep elaboration or recursion -- which
+latency for a great deal of headroom on deep elaboration or recursion, which
 is exactly what the full-profile ACATS sweep needs.
 
 \cnote{In ESP-IDF, \texttt{CONFIG\_SPIRAM=y} hides all of this. Here it is a few
@@ -147,7 +147,7 @@ something Ada can run on:
 \end{itemize}
 
 It then jumps (not calls) into the C/Ada glue, which sets up the environment task
-via \texttt{\_\_gnat\_enter\_env} -- a small shim that makes the env-task body the
+via \texttt{\_\_gnat\_enter\_env}: a small shim that makes the env-task body the
 \emph{outermost} window frame, so the first context switch has nothing stale
 above it to corrupt. On the second core, a parallel cold-start entry
 (\texttt{core1\_start}) repeats the window/VECBASE/stack normalisation before the
@@ -158,8 +158,8 @@ SMP runtime releases it.
 All of this is pinned down by the linker scripts under
 \texttt{examples/common/bare/vendor/} (the same regions appear in the memory-map
 Table~\ref{tab:memmap}). The ESP32-S3's internal SRAM is visible at two
-addresses -- an instruction-bus (IRAM) view and a data-bus (DRAM) view of the
-\emph{same} bytes -- which is why code and data segments land in different
+addresses: an instruction-bus (IRAM) view and a data-bus (DRAM) view of the
+\emph{same} bytes, which is why code and data segments land in different
 windows of one physical memory:
 
 \begin{center}
@@ -181,6 +181,6 @@ First, executable code must live in (or be reached through) an instruction-bus
 window: that is why the full profile relocates GCC's nested-subprogram
 trampolines to the IRAM alias rather than leaving them on the data-view stack
 (\S\ref{ch:runtime-build}). Second, PSRAM is reachable only after the loader maps
-it, and it cannot be a DMA source -- which is why DMA-capable scratch buffers are
+it, and it cannot be a DMA source, which is why DMA-capable scratch buffers are
 carved from internal SRAM even when the task stack itself lives in PSRAM (the SD
 and filesystem drivers rely on this).

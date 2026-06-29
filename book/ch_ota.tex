@@ -3,19 +3,19 @@
 
 The production chapter (Chapter~\ref{ch:production}) listed over-the-air update as
 the largest of the four gaps and left it at that. This chapter is the design it
-deferred: a concrete sketch of how OTA would be built on \emph{this} boot path --
+deferred: a concrete sketch of how OTA would be built on \emph{this} boot path:
 the partition layout, the one genuinely hard mechanism, the boot-time slot
 selection, and the rollback state machine. It is a design, not a description: none
-of this is implemented today. But it is grounded in what the project actually has --
-a readable Ada bootloader, a working HTTPS transport, and pure-Ada signing
-primitives -- so it is a buildable plan rather than a wish.
+of this is implemented today. But it is grounded in what the project actually has
+(a readable Ada bootloader, a working HTTPS transport, and pure-Ada signing
+primitives), so it is a buildable plan rather than a wish.
 
 The shape of the problem is worth stating up front because it explains every
 decision that follows. An update has to replace the running firmware \emph{with the
 running firmware doing the replacing}. You cannot overwrite the image you are
 executing, so there must be two slots and a way to choose between them at boot; and
-because the thing doing the writing is fallible -- the power can drop mid-write, the
-download can be truncated, the new image can be subtly broken -- every step must be
+because the thing doing the writing is fallible (the power can drop mid-write, the
+download can be truncated, the new image can be subtly broken), every step must be
 recoverable. OTA is less a feature than a careful exercise in never being caught
 without a working image.
 
@@ -23,7 +23,7 @@ without a working image.
 
 The \emph{transport} is done. The W5500 network stack (Chapter~\ref{ch:networking})
 and the pure-Ada TLS client (Chapter~\ref{ch:tls}) can already fetch bytes over
-authenticated HTTPS -- the weather example does exactly this against a real server.
+authenticated HTTPS. The weather example does exactly this against a real server.
 An OTA client needs no new networking; it needs somewhere to put the bytes and a
 bootloader that will choose them.
 
@@ -57,7 +57,7 @@ next update is written into. The \texttt{otadata} region is the small but critic
 piece: it records \emph{which} slot to boot and \emph{what state} it is in. It is
 kept in two copies with a monotonically increasing sequence number and a checksum,
 so that a power loss while updating the selector itself leaves at least one valid
-copy -- the bootloader takes the highest-numbered copy that checksums, and never
+copy: the bootloader takes the highest-numbered copy that checksums, and never
 trusts a half-written one.
 
 \section{The hard part: writing the flash you boot from}\index{flash!self-write}
@@ -75,7 +75,7 @@ ESP-IDF's flash driver uses:
 
 \begin{itemize}
 \item the erase/program routine, and everything it calls, must run from
-  \textbf{IRAM} -- not flash -- so no fetch touches the busy MSPI;
+  \textbf{IRAM} (not flash) so no fetch touches the busy MSPI;
 \item the \textbf{instruction and data caches are disabled} for the duration, then
   invalidated and re-enabled after;
 \item on this \textbf{dual-core} part, the \emph{other} core must be parked in an
@@ -83,20 +83,20 @@ ESP-IDF's flash driver uses:
 \item interrupts are masked because an ISR resident in flash would do the same.
 \end{itemize}
 
-The actual erase and program are ROM services -- the mask ROM exposes sector-erase
+The actual erase and program are ROM services: the mask ROM exposes sector-erase
 and page-program entry points alongside the \texttt{esp\_rom\_spiflash\_read} the
-bootloader already uses -- so this is not a from-scratch SPI-NOR driver. It is a
+bootloader already uses, so this is not a from-scratch SPI-NOR driver. It is a
 \emph{critical-section wrapper} in Ada and a little assembly: park the sibling core,
 disable caches, call the ROM, restore. That wrapper is small, but it is the
-brick-risky heart of the feature -- a stray write to the bootloader region corrupts
-boot itself (recoverable only over USB) -- which is why it deserves to be built and
+brick-risky heart of the feature (a stray write to the bootloader region corrupts
+boot itself, recoverable only over USB), which is why it deserves to be built and
 tested in isolation, against a spare sector, before any of the rest is wired up.
 
 \section{Choosing a slot at boot}
 
 The bootloader gains a step it does not have today. Instead of loading a fixed
-address, \texttt{boot\_main} reads \texttt{otadata}, picks the selected slot, and --
-this is the part the current loader skips entirely -- \emph{validates the image
+address, \texttt{boot\_main} reads \texttt{otadata}, picks the selected slot, and
+(this is the part the current loader skips entirely) \emph{validates the image
 before jumping to it}: the magic byte as now, but also a hash over the image, and
 (if secure boot is in play) a signature (\S\ref{ota:trust}). Validation is what lets
 the loader \emph{fall back}: a slot that fails its hash is not booted; the loader
@@ -108,8 +108,8 @@ application flips the selector to a freshly written slot, it marks that slot
 pending-verify rather than confirmed. The bootloader will boot a pending-verify slot
 exactly once; if the new firmware comes up healthy it calls back to mark the slot
 \emph{confirmed}, and the pending flag clears. If instead the new image crashes or
-hangs before confirming -- and a watchdog (Chapter~\ref{ch:production}) is what
-guarantees ``hangs'' becomes ``resets'' -- the next boot sees a still-pending slot,
+hangs before confirming (and a watchdog (Chapter~\ref{ch:production}) is what
+guarantees ``hangs'' becomes ``resets''), the next boot sees a still-pending slot,
 concludes the update failed, and reverts to the previous good slot. The device can
 brick its \emph{application} and still recover on the next power cycle.
 
@@ -120,7 +120,7 @@ Put together, the application side is a small state machine over the pieces abov
 \begin{enumerate}
 \item \textbf{Fetch} the new image over HTTPS into the inactive slot, writing it
   through the IRAM flash-program critical section as it streams (no need to buffer
-  the whole image -- a sector at a time, with internal SRAM as the DMA staging
+  the whole image: a sector at a time, with internal SRAM as the DMA staging
   buffer, since PSRAM cannot be a DMA endpoint, Chapter~\ref{ch:perf}).
 \item \textbf{Verify} the written slot in place: re-hash it from flash and check the
   signature, so a truncated or tampered download is caught \emph{before} it can be
@@ -132,8 +132,8 @@ Put together, the application side is a small state machine over the pieces abov
   rolls back.
 \end{enumerate}
 
-An anti-rollback counter in eFuse closes the obvious attack on this loop -- pushing
-an \emph{older}, validly-signed image with a known flaw -- by letting the bootloader
+An anti-rollback counter in eFuse closes the obvious attack on this loop (pushing
+an \emph{older}, validly-signed image with a known flaw) by letting the bootloader
 refuse any image whose version is below a monotonic floor.
 
 \section{Trust, and why OTA cannot stand alone}\label{ota:trust}\index{secure boot}
@@ -141,7 +141,7 @@ refuse any image whose version is below a monotonic floor.
 The one thing OTA must never do is broaden the attack surface it runs over. A loader
 that downloads code and jumps to it is, without verification, a remote-code-execution
 mechanism wearing a helpful face. So image authentication is not an optional
-companion to OTA -- it is part of it. At a minimum every image carries a SHA-256 the
+companion to OTA: it is part of it. At a minimum every image carries a SHA-256 the
 bootloader checks; for anything connected, that hash is signed, the bootloader
 verifies the signature against a public key fused into the device, and the matching
 secure-boot eFuse makes the mask ROM enforce the same on the bootloader itself
@@ -154,13 +154,13 @@ serving both.
 
 The honest accounting: the transport and the cryptography are in hand, but the
 middle is real work, in rough order of difficulty. The flash-self-write critical
-section is small but delicate and brick-risky, and is the right first spike --
+section is small but delicate and brick-risky, and is the right first spike:
 nothing else can be tested until a sector can be erased and re-read safely. The
 bootloader changes (slot selection, validation, the pending-verify state machine)
 are moderate and must be got exactly right because a bug there is a bug in the one
 component with no fallback. The partition and \texttt{otadata} format is
 straightforward once the model above is fixed. And the application state machine is
 ordinary networking code over the new flash primitive. It is a multi-phase feature
-that wants secure boot built alongside it rather than after -- but every phase is
+that wants secure boot built alongside it rather than after, but every phase is
 buildable from parts this project already contains, which is the whole reason it is
 worth sketching rather than importing.

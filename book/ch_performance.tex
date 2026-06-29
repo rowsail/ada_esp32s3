@@ -27,7 +27,7 @@ PSRAM (external RAM)  & \texttt{16\#3D00\_0000\#} & cached, slower than SRAM, no
 \end{tabular}
 \end{center}
 
-The bulk of a program -- all its \texttt{.text} and read-only data -- lives in
+The bulk of a program (all its \texttt{.text} and read-only data) lives in
 flash and executes \emph{in place} (XIP): the CPU fetches through the instruction
 cache that \texttt{start.S} configures, and on a hit it runs at full speed. A cache
 \emph{miss} pays a SPI-flash read of the missing line. For straight-line and
@@ -46,7 +46,7 @@ code can join them with an aspect:
 procedure Hot_Path with Linker_Section => ".iram1";
 \end{lstlisting}
 
-IRAM is scarce -- 32\,KiB of it -- so this is a scalpel, not a default: reserve it
+IRAM is scarce (32\,KiB of it), so this is a scalpel, not a default: reserve it
 for an interrupt handler or an inner loop that profiling shows is cache-bound. One
 hard constraint bounds how much you can move: the 2nd-stage bootloader expects the
 image to present exactly two flash-mapped segments (IROM and DROM), so the bulk of
@@ -56,12 +56,12 @@ the code must stay in flash; IRAM is for the hot slivers, not the program.
 
 External PSRAM gives you megabytes where SRAM gives you kilobytes, but it comes with
 two performance caveats. It is reached through the cache and the octal SPI bus, so it
-is slower than internal SRAM -- fine for a big LISP arena or a filesystem block
+is slower than internal SRAM: fine for a big LISP arena or a filesystem block
 cache, not where you want a hot inner loop's working set. And, decisively, \emph{it
 cannot be a DMA endpoint}: the GDMA controller reaches only internal SRAM. So even
 when a task's stack lives in PSRAM (the \texttt{ENV\_STACK\_PSRAM} option of
-Chapter~\ref{ch:static-mem}), any buffer handed to DMA -- an SD-card transfer, an
-I2S sample block -- must be carved from internal SRAM. The SD and filesystem drivers
+Chapter~\ref{ch:static-mem}), any buffer handed to DMA (an SD-card transfer, an
+I2S sample block) must be carved from internal SRAM. The SD and filesystem drivers
 do exactly this: their scratch buffers are internal even when the rest of the data
 structure is not.
 
@@ -70,7 +70,7 @@ structure is not.
 The CPU runs at 240\,MHz (the PLL that \texttt{start.S} selects out of the 20\,MHz
 reset clock). At that rate, guessing about microseconds is hopeless; measure with the
 cycle counter. The Xtensa \texttt{CCOUNT} register is a free-running 32-bit counter
-at the core clock, readable in a single instruction -- the SIMD benchmark
+at the core clock, readable in a single instruction. The SIMD benchmark
 (Chapter~\ref{ch:asm}) uses exactly this to time its kernels:
 
 \begin{lstlisting}
@@ -85,7 +85,7 @@ end Cycles;
 
 Bracket a section between two reads, subtract (unsigned, so wrap takes care of
 itself), and divide by 240 for microseconds. This is how every performance claim in
-this book was obtained -- including the discovery that an unplaced hot loop was
+this book was obtained, including the discovery that an unplaced hot loop was
 cache-bound, or that a SIMD kernel really was an order of magnitude faster than the
 scalar one.
 
@@ -104,13 +104,13 @@ is often large.
 
 One placement problem is subtle enough to be worth seeing in full because it ties
 the map back to the language. GCC implements a nested subprogram that captures its
-enclosing scope with a \emph{trampoline} -- a few bytes of code it writes onto the
+enclosing scope with a \emph{trampoline}: a few bytes of code it writes onto the
 stack. But the stack is in DRAM, a data-bus view with no execute permission, so
 calling that trampoline faults. The \texttt{light-tasking} and \texttt{embedded}
 profiles forbid the construct outright (\texttt{No\_Implicit\_Dynamic\_Code}); the
 \texttt{full} profile instead, at task creation, detects a trampoline address in the
 DRAM stack range and re-points it to the \emph{instruction-bus alias} of the same
-physical SRAM -- the identical bytes seen through an executable window
-(Chapter~\ref{ch:runtime-build}). It is the memory map's defining feature -- SRAM
-visible at two addresses, one data and one instruction -- turned from a hazard into
+physical SRAM: the identical bytes seen through an executable window
+(Chapter~\ref{ch:runtime-build}). It is the memory map's defining feature (SRAM
+visible at two addresses, one data and one instruction) turned from a hazard into
 the fix.

@@ -20,12 +20,12 @@ of the debug tools; one command fetches them:
 One subtlety is worth knowing: the S3 needs the \emph{S3-specific}
 \texttt{xtensa-esp32s3-elf-gdb}; the Alire crate's esp32 (LX6) GDB silently fails
 on it. \texttt{./x debug} selects the right one. From there it is ordinary GDB on
-\texttt{app.elf} -- breakpoints, \texttt{step}, \texttt{print},
+\texttt{app.elf}: breakpoints, \texttt{step}, \texttt{print},
 \texttt{backtrace}. Two options matter on this target:
 
 \begin{itemize}
   \item \texttt{--smp} exposes \emph{both} LX7 cores as GDB threads
-        (\texttt{info threads}), so you can see what each core is doing --
+        (\texttt{info threads}), so you can see what each core is doing,
         essential for a cross-core hang.
   \item \texttt{--attach} halts the board \emph{in place} without resetting it, so
         you can examine a live hang or crash exactly where it stopped (a
@@ -48,8 +48,8 @@ tools fetched once:
 ./x get-debug-tools     # pinned, SHA-256-verified OpenOCD + xtensa-esp32s3-elf-gdb
 \end{lstlisting}
 
-And \emph{code intelligence} -- completion, go-to-definition, diagnostics, hover
--- comes from the \textbf{Ada Language Server}, which ships inside the AdaCore
+And \emph{code intelligence} (completion, go-to-definition, diagnostics, hover)
+comes from the \textbf{Ada Language Server}, which ships inside the AdaCore
 toolchain (nothing to install separately). It only needs to be pointed at the
 example's \texttt{.gpr} project file, shown for each editor below.
 
@@ -61,7 +61,7 @@ configuration in \texttt{.vscode/} (\texttt{tasks.json}, \texttt{launch.json},
 extensions:
 
 \begin{description}[style=nextline]
-\item[Ada \& SPARK (\texttt{AdaCore.ada}).] The Ada Language Server -- required,
+\item[Ada \& SPARK (\texttt{AdaCore.ada}).] The Ada Language Server: required,
   for all code intelligence.
 \item[Native Debug (\texttt{webfreak.debug}).] A GDB frontend, needed only for
   \texttt{F5} debugging. \texttt{cppdbg} cannot walk the Xtensa register-window
@@ -93,7 +93,7 @@ problem matcher.
 
 To \textbf{debug} (\texttt{F5}, ``Ada: debug (OpenOCD + GDB)''): build \emph{and
 flash} the example first, so the chip runs the same image whose \texttt{app.elf}
-you debug -- the launch only \emph{attaches}, so a stale or different-profile
+you debug. The launch only \emph{attaches}, so a stale or different-profile
 image leaves the breakpoint addresses mismatched. It starts OpenOCD and halts at
 \texttt{app\_main} (the shared boot-glue entry; these GNAT images have no C
 \texttt{main}); set breakpoints in the Ada source and continue/step.
@@ -115,7 +115,7 @@ OpenOCD + GDB launch described above.
 \subsection{Vim and Neovim}\index{Vim}\index{termdebug}
 
 The \texttt{ide/vim-ada-esp32} plugin gives the same actions as Vim commands. It
-is pure Vimscript -- nothing to compile -- and needs \textbf{Vim 8.1+ with
+is pure Vimscript (nothing to compile) and needs \textbf{Vim 8.1+ with
 \texttt{+terminal}} (which bundles the \texttt{termdebug} GDB frontend); Neovim
 works too. Install it with one command, which symlinks the plugin into Vim's and
 Neovim's native package directories; because it is a symlink \emph{into} the repo,
@@ -125,7 +125,7 @@ a \texttt{git pull} updates it in place:
 ./x install-vim
 \end{lstlisting}
 
-Or wire it up by hand -- it has the standard \texttt{plugin/} layout:
+Or wire it up by hand; it has the standard \texttt{plugin/} layout:
 
 \begin{lstlisting}[style=sh]
 " vim-plug
@@ -153,7 +153,7 @@ directory (\texttt{esp32s3\_gpio0\_blink}), with tab-completion; the chosen
 example, port and profile persist (in \texttt{g:ada\_esp32\_example} and friends)
 so later commands reuse them without re-prompting.
 
-\textbf{Debugging} uses Vim's built-in \texttt{termdebug} -- the Vim analog of
+\textbf{Debugging} uses Vim's built-in \texttt{termdebug}, the Vim analog of
 the Native Debug setup, relaying GDB's own frames so it handles Xtensa correctly.
 After a build:
 
@@ -170,7 +170,7 @@ From there \texttt{:Continue} runs to it, \texttt{:Break src/foo.adb:53} (or
 stopped automatically when you quit the session. One inherent caveat: a
 \texttt{:Over} across a \emph{blocking} statement (a \texttt{delay}, an entry
 call) can step into the hand-written Xtensa assembly (the interrupt vectors or
-context switch), which carries no debug bounds -- GDB then reports ``cannot find
+context switch), which carries no debug bounds. GDB then reports ``cannot find
 bounds of current function.'' Set a breakpoint past the statement and
 \texttt{:Continue} instead.
 
@@ -189,7 +189,7 @@ native LSP / vim-lsp and set the same \texttt{ada.projectFile} setting.
 
 An unhandled fault prints a register dump and a backtrace of program-counter
 values over the console (a ``Guru Meditation''). You do not need a live debugger
-to read it -- turn the addresses back into source with \texttt{addr2line} against
+to read it: turn the addresses back into source with \texttt{addr2line} against
 the ELF:
 
 \begin{lstlisting}[style=sh]
@@ -197,7 +197,7 @@ xtensa-esp32s3-elf-addr2line -fe build/app.elf 0x4200abcd 0x4200ef01
 \end{lstlisting}
 
 In the dump, \texttt{EXCVADDR} is the faulting data address and \texttt{EXCCAUSE}
-the reason -- a \texttt{LoadStoreError} (a bad data access), or an
+the reason: a \texttt{LoadStoreError} (a bad data access), or an
 \texttt{InstructionFetchError} (a wild jump, often a corrupted stack or a stray
 pointer). Flash, reproduce, decode: that loop localises most faults without ever
 attaching a debugger.
@@ -209,24 +209,24 @@ The runtime helps before you reach for a tool at all:
 \begin{itemize}
   \item \textbf{Precise stack-overflow detection.} Each task arms a hardware
         watchpoint near its stack limit, so an overflow faults \emph{precisely}
-        (a debug exception) instead of silently corrupting a neighbour -- and on
+        (a debug exception) instead of silently corrupting a neighbour, and on
         the \texttt{full} profile the runtime can turn it into a catchable
         \texttt{Storage\_Error}.
   \item \textbf{A fault safe-state hook.} The \texttt{esp32s3\_exceptions}
-        example wraps the panic handler to classify a fault -- stack overflow
-        versus other -- against the running task's stack window, latch a safe
+        example wraps the panic handler to classify a fault (stack overflow
+        versus other) against the running task's stack window, latch a safe
         state, and print an explicit \texttt{*** STACK OVERFLOW ***} verdict
         before the board resets.
   \item \textbf{The last-chance handler.} Any exception that escapes every handler
         ends up in the runtime's last-chance handler; on the leanest profile,
-        where exceptions cannot propagate across calls, that is your fault report
-        -- a message and a controlled reset.
+        where exceptions cannot propagate across calls, that is your fault report:
+        a message and a controlled reset.
 \end{itemize}
 
 \textbf{A note on console output while debugging.} \texttt{Ada.Text\_IO} reaches
 \texttt{/dev/ttyACM0}; for terse status from interrupt or early-boot context the
 examples call the ROM \texttt{esp\_rom\_printf}, which is always available. When
-two cores -- or an interrupt handler and a task -- might print at once, funnel
+two cores (or an interrupt handler and a task) might print at once, funnel
 output through one task: interleaved single-character writes have themselves been
 mistaken for bugs more than once.
 
@@ -239,13 +239,13 @@ one stops a build it can be baffling. Here are the ones you are most likely to m
 coming from C, what each really means, and the fix.
 
 \paragraph{\texttt{subprogram must not be deeper than access type}.}
-You took \texttt{'Access} of a \emph{nested} subprogram -- one declared inside
-another subprogram -- to use as a callback. On a hosted target the compiler would
+You took \texttt{'Access} of a \emph{nested} subprogram (one declared inside
+another subprogram) to use as a callback. On a hosted target the compiler would
 build a \emph{trampoline} (a scrap of code on the stack) to carry the enclosing
 frame; the \texttt{No\_Implicit\_Dynamic\_Code} restriction forbids writing code to
 the stack at all, and on this chip such a trampoline faults outright. \emph{Fix:}
 move the callback to library level (the top of a package) and pass any state it
-needs through a context parameter rather than capturing it -- closure-free. This is
+needs through a context parameter rather than capturing it: closure-free. This is
 why every callback in this book is a library-level, \texttt{Ctx}-carrying
 subprogram (\S\ref{ch:ada-primer} introduces subprograms; the HAL callbacks follow
 this rule throughout).
@@ -253,7 +253,7 @@ this rule throughout).
 \paragraph{\texttt{accessibility check failed} (a \texttt{Program\_Error} at run
 time), or \texttt{non-local pointer cannot point to local object} (at compile
 time).} You stored an \texttt{'Access} of an object into something that outlives it
--- a library-level variable, a registry, a longer-lived record. Once the object's
+into a library-level variable, a registry, a longer-lived record. Once the object's
 scope ends the stored pointer would dangle, so Ada rejects it: at compile time when
 it can prove the lifetimes, at run time otherwise. \emph{Fix:} give the object the
 lifetime the pointer assumes, which usually means declaring it at library level.
@@ -262,7 +262,7 @@ filesystem mount in a library-level handler, cured by moving the mount into a
 library-level package.)
 
 \paragraph{\texttt{violation of restriction No\_X}.}
-You used a feature the chosen runtime profile bans -- a heap allocator, a second
+You used a feature the chosen runtime profile bans: a heap allocator, a second
 task entry, an exception handler under a no-propagation profile, and so on. The
 profile is a contract, and the compiler holds you to it. \emph{Fix:} either avoid
 the feature, or build under a richer profile (light-tasking $\rightarrow$ embedded
@@ -270,15 +270,15 @@ $\rightarrow$ full) that permits it; Chapter~\ref{ch:profiles} maps features to
 profiles.
 
 \paragraph{\texttt{Constraint\_Error} (a range or validity check).}
-A value left the range its (sub)type allows -- an index past the end of an array,
+A value left the range its (sub)type allows: an index past the end of an array,
 an out-of-range assignment, a bad enumeration read from external data. Unlike the
 above, this is almost always a genuine bug in your data or arithmetic rather than a
 profile rule. \emph{Fix:} find the offending value; the type told you its range, so
-the check is doing its job. Build with checks on (\texttt{-gnata}) while developing
--- a release build may have them off, turning the same mistake into silent
+the check is doing its job. Build with checks on (\texttt{-gnata}) while developing;
+a release build may have them off, turning the same mistake into silent
 corruption.
 
 The throughline is that each message names a guarantee the bare-metal target makes
--- no stack-written code, no dangling pointers, no banned features, no out-of-range
-values -- and points at the one place you broke it. They read as obstacles at first
+(no stack-written code, no dangling pointers, no banned features, no out-of-range
+values) and points at the one place you broke it. They read as obstacles at first
 and as a safety net soon after.

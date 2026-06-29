@@ -9,7 +9,7 @@ language techniques; this one just gets you running.
 
 \begin{description}[style=nextline]
 \item[An ESP32-S3 board.] Any devkit with the built-in USB-Serial-JTAG port (most
-  of them). One USB cable is enough -- it carries the console \emph{and} the
+  of them). One USB cable is enough. It carries the console \emph{and} the
   debugger.
 \item[Alire (\texttt{alr}).] The Ada package manager fetches the toolchains the
   build needs: the \texttt{gnat\_xtensa\_esp32\_elf} cross-compiler, a native
@@ -38,7 +38,7 @@ git submodule update --init --recursive
 \section{The \texttt{./x} dispatcher}\index{x helper script}
 
 The repository ships with over sixty ready-to-run examples, and one script at
-its root -- \texttt{./x} -- drives all of them \emph{from inside the clone}. (For
+its root (\texttt{./x}) drives all of them \emph{from inside the clone}. (For
 your \emph{own} application, kept outside the repo, the counterpart command is
 \texttt{esp32-ada}, \S\ref{sec:esp32-ada}; the two share the same verbs.) List the
 examples, then build, flash and watch one:
@@ -53,7 +53,7 @@ host tool), writes it to the board (the Ada \texttt{esp\_flash} tool, over the
 chip's ROM bootloader), resets, and streams the console. The first build also
 generates the runtime for the chosen profile, so it takes a little longer; later
 ones are incremental. The blink example toggles an LED and prints over the
-console -- your first Ada running bare-metal on the S3.
+console: your first Ada running bare-metal on the S3.
 
 The pieces are also separate commands when you want them:
 
@@ -118,13 +118,13 @@ Meditation, and the editor integration in full.
 \texttt{./x} is for the examples that ship \emph{inside} the clone. For your own
 application you do not edit an example or copy the runtime into your tree: you
 treat this repository as an \emph{SDK} and scaffold a standalone project anywhere
-on disk. The launcher that does this -- the out-of-tree counterpart of
-\texttt{./x}, with the same verbs -- is \texttt{esp32-ada}.
+on disk. The launcher that does this (the out-of-tree counterpart of
+\texttt{./x}, with the same verbs) is \texttt{esp32-ada}.
 
 It becomes available when you \emph{source} the SDK's \texttt{export.sh} once per
 shell. That one step puts \texttt{esp32-ada} on your \texttt{PATH}, exports
 \texttt{ESP32S3\_ADA\_SDK} (so a project folder anywhere can find the SDK), and
-adds the runtime and HAL projects to \texttt{GPR\_PROJECT\_PATH} -- so both
+adds the runtime and HAL projects to \texttt{GPR\_PROJECT\_PATH}, so both
 \texttt{gprbuild} \emph{and} the Ada Language Server resolve
 \texttt{with "esp32s3\_rts.gpr"} with no path baked into your project:
 
@@ -172,7 +172,7 @@ myblink/
   .vscode/           # ALS project + build/flash/run tasks driving esp32-ada
 \end{lstlisting}
 
-Nothing from the SDK is copied in -- \texttt{app.gpr} references the runtime and
+Nothing from the SDK is copied in: \texttt{app.gpr} references the runtime and
 HAL \emph{by name} through \texttt{GPR\_PROJECT\_PATH}, and the build shims call the
 SDK's shared bare-boot through \texttt{\$ESP32S3\_ADA\_SDK}. Add another SDK library
 the same way: \texttt{with "<name>.gpr";} in \texttt{app.gpr} for anything under the
@@ -182,9 +182,9 @@ SDK's \texttt{libs/}. The default profile is \texttt{light-tasking}; pass
 
 \subsection{Taking an example out of tree to edit}\index{examples}
 
-The in-repo examples are wired to their location -- an Alire path-pin in
+The in-repo examples are wired to their location (an Alire path-pin in
 \texttt{alire.toml}, a \texttt{\textit{name}.gpr}, and build shims relative to
-\texttt{examples/common/bare/} -- so copying a whole example directory elsewhere
+\texttt{examples/common/bare/}), so copying a whole example directory elsewhere
 will not build. Instead, scaffold a fresh project and bring the \emph{sources}
 across; the scaffold already supplies the \texttt{app.gpr}, board config and build
 shims that make them build:
@@ -219,17 +219,17 @@ A few things make the copy build cleanly:
 
 \cnote{There is no fixed ``project location'' and no \texttt{idf.py}: the SDK is
 found through \texttt{\$ESP32S3\_ADA\_SDK} (set by \texttt{export.sh}), so your
-project folder can live anywhere and stays portable -- check it into its own git
+project folder can live anywhere and stays portable. Check it into its own git
 repo, with no SDK paths baked into any file.}
 
 \section{Where to go next}
 
 \begin{itemize}
-\item The anatomy of an application and the runtime profiles --
+\item The anatomy of an application and the runtime profiles:
   Chapters~\ref{ch:anatomy}--\ref{ch:build}.
-\item The peripheral HAL -- start at Chapter~\ref{ch:hal}; each driver has worked
+\item The peripheral HAL: start at Chapter~\ref{ch:hal}; each driver has worked
   examples you can run with \texttt{./x run}.
-\item The Ada techniques behind it all -- the Ada Language Techniques and
+\item The Ada techniques behind it all: the Ada Language Techniques and
   Talking to Hardware chapters (Chapters~\ref{ch:embedded}
   and~\ref{ch:hardware}), including a Terminology section (\S\ref{sec:terms})
   for unfamiliar terms.

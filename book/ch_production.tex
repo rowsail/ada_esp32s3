@@ -4,8 +4,8 @@
 Everything to this point has been about making the chip \emph{do} things in Ada. A
 product needs more: it has to boot only software you trust, survive a hung task,
 take a field update, and not hand its secrets to anyone with a USB cable. This
-project's boot path was built for development -- it is small, readable and entirely
-yours (Chapter~\ref{ch:bootloader}) -- and it deliberately leaves the production
+project's boot path was built for development (it is small, readable and entirely
+yours, Chapter~\ref{ch:bootloader}), and it deliberately leaves the production
 hardening out. This chapter is honest about that line: what is here, what is not,
 and what each missing piece would take. None of the gaps are accidents; the
 bootloader's own design notes list secure boot, flash encryption and OTA under an
@@ -38,7 +38,7 @@ When the 2nd-stage loader reads the application header it checks \emph{one} thin
 the \texttt{16\#E9\#} magic byte that marks a valid image. It then reads the segment
 count and entry point and runs it. It does not verify the image's checksum (the
 \texttt{esp\_elf2image} tool writes one), does not check the appended SHA-256, and
-does not -- because there is none -- check a signature. In development that is
+does not (because there is none) check a signature. In development that is
 exactly right: it makes flashing instant and the loader trivial to read. In the
 field it means the device runs whatever is at offset \texttt{16\#1\_0000\#}, full
 stop.
@@ -48,10 +48,10 @@ stop.
 \subsection{Secure boot}\index{secure boot}
 
 \emph{Today:} none. There is no image signing, no verification, and the eFuse
-secure-boot bits -- which exist in the register definitions -- are never read or
+secure-boot bits (which exist in the register definitions) are never read or
 burned.
 
-\emph{To close it:} sign the image at build time (RSA-PSS or ECDSA -- the pure-Ada
+\emph{To close it:} sign the image at build time (RSA-PSS or ECDSA: the pure-Ada
 primitives from the TLS work, Chapter~\ref{ch:tls}, already implement both), have
 the bootloader verify the signature against a public key before jumping, and burn
 the secure-boot eFuse so the mask ROM enforces the same on the 2nd-stage loader
@@ -60,7 +60,7 @@ in \texttt{boot\_main} and a one-time, irreversible eFuse burn.
 
 \subsection{Flash encryption}\index{flash encryption}
 
-\emph{Today:} none -- code and data sit on flash in the clear, readable by anyone
+\emph{Today:} none. Code and data sit on flash in the clear, readable by anyone
 who can dump the chip.
 
 \emph{To close it:} enable the hardware flash-encryption eFuse and key so reads are
@@ -72,36 +72,36 @@ start rather than bolted on.
 \subsection{Over-the-air update}\label{prod:ota}\index{OTA}
 
 \emph{Today:} none. The single factory partition has nowhere to stage a new image,
-and there is no download-and-flash logic -- updating means re-flashing over USB.
+and there is no download-and-flash logic: updating means re-flashing over USB.
 The \emph{transport} exists (the W5500 stack and pure-Ada TLS can fetch an image
 over HTTPS, Chapters~\ref{ch:networking} and~\ref{ch:tls}); the \emph{mechanism}
 does not.
 
 \emph{To close it:} move to an A/B partition layout (two app slots plus an
 \texttt{otadata} selector), write the downloaded image into the inactive slot,
-verify it (secure boot above), flip the selector, and reboot -- with a rollback if
+verify it (secure boot above), flip the selector, and reboot, with a rollback if
 the new image fails to confirm itself healthy. An anti-rollback counter in eFuse
 stops a downgrade attack. This is the largest of the four in new code, and it leans
 on the other three to be safe; Chapter~\ref{ch:ota} works the design out in full.
 
 \subsection{Locking the debug port}\index{JTAG}
 
-\emph{Today:} the USB-serial-JTAG is enabled -- which is how every example in this
+\emph{Today:} the USB-serial-JTAG is enabled, which is how every example in this
 book is flashed and debugged. In the field that same port reads RAM and flash.
 
 \emph{To close it:} burn the \texttt{DIS\_PAD\_JTAG} eFuse on a finished unit. It is
 one irreversible write, and the project provides no script for it precisely because
-it is irreversible -- you want to run it deliberately, on a unit you are done
+it is irreversible: you want to run it deliberately, on a unit you are done
 debugging, not as a build step.
 
 \section{Staying alive: watchdogs and resets}\index{watchdog}
 
 There is a second production concern that is not about secrecy but about
 \emph{liveness}. The bootloader and startup deliberately \emph{disable} the
-watchdogs -- the timer-group WDT, the RTC WDT, and the RTC super-watchdog (which is
-set to auto-feed) -- so that a paused debugger or a long elaboration never resets the
+watchdogs (the timer-group WDT, the RTC WDT, and the RTC super-watchdog, which is
+set to auto-feed) so that a paused debugger or a long elaboration never resets the
 chip mid-development. The consequence is that a hung task in the field will hang
-\emph{forever}: nothing resets it. A product wants the opposite -- a watchdog the
+\emph{forever}: nothing resets it. A product wants the opposite: a watchdog the
 healthy application feeds from its main loop, so that a hang becomes a reset and a
 recovery. Re-enabling one of the watchdogs and feeding it is a small, local change,
 but it is a change you must make deliberately; the default here is tuned for the
@@ -110,12 +110,12 @@ analogue for power: worth enabling where supply quality is uncertain.
 
 \section{Where the line sits}
 
-None of this makes the boot path ``insecure'' -- it makes it \emph{development
+None of this makes the boot path ``insecure''; it makes it \emph{development
 grade}, which is the right default for a project whose whole point is to be read,
 modified and flashed a hundred times a day. It is well suited to prototyping, to
 physically secured deployments, and to learning how the chip actually boots. It is
 not, as it stands, suited to a connected device in a hostile environment or to a
-fleet that must be updated in the field -- and the gap to that is the concrete,
+fleet that must be updated in the field, and the gap to that is the concrete,
 bounded list above, most of it buildable from primitives this project already
 contains. The honest summary is the most useful one: the foundation is yours and
 you can read every line of it, which is exactly what makes adding the production
