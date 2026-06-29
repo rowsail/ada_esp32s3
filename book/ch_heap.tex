@@ -4,7 +4,11 @@
 Two of the runtime profiles give you a real dynamic heap, and that heap is now
 written entirely in Ada. Both Ada's \texttt{new} and the C library's
 \texttt{malloc} land in the same allocator, which is a \emph{Two-Level
-Segregated Fit} (TLSF) implementation: O(1) allocate, O(1) free-and-coalesce,
+Segregated Fit} (TLSF)\footnote{TLSF is the algorithm of M.~Masmano, I.~Ripoll,
+A.~Crespo and J.~Real, ``TLSF: A New Dynamic Memory Allocator for Real-Time
+Systems,'' \emph{16th Euromicro Conference on Real-Time Systems (ECRTS)}, 2004
+(\url{http://www.gii.upv.es/tlsf/}). The implementation here is original Ada; the
+design is theirs.} implementation: O(1) allocate, O(1) free-and-coalesce,
 and bounded fragmentation. This chapter is the current truth about the heap. The
 ``first-fit'' descriptions in \S\ref{ch:profiles} and the appendix
 (\S\ref{ch:appendix}) describe the allocator that TLSF replaced; what follows

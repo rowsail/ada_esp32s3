@@ -27,7 +27,12 @@ time of writing.
   this project's runtime is ported from.
   \url{https://github.com/AdaCore/bb-runtimes}. The ESP32-S3 board lives in the
   fork \url{https://github.com/rowsail/bb-runtimes} (branch
-  \texttt{xtensa-esp32s3-port}).
+  \texttt{xtensa-esp32s3-port}). The GNARL bare-board port it grows from was
+  initially developed by the Real-Time Systems Group at the Technical University
+  of Madrid (the Open Ravenscar Kernel).
+\item \textbf{TLSF} -- M.~Masmano, I.~Ripoll, A.~Crespo and J.~Real, ``TLSF: A New
+  Dynamic Memory Allocator for Real-Time Systems'' (ECRTS~2004) -- the design the
+  Ada heap implements (Chapter~\ref{ch:heap}). \url{http://www.gii.upv.es/tlsf/}.
 \item \textbf{\texttt{svd2ada}} -- generates the typed register packages from an
   SVD. \url{https://github.com/AdaCore/svd2ada}.
 \item \textbf{Alire} -- the Ada package manager that supplies the toolchain.
@@ -49,6 +54,18 @@ time of writing.
 \item \textbf{Xtensa Instruction Set Architecture (LX7)} and the
   \emph{Windowed Register Option} -- background for the context-switch and boot
   chapters (Cadence/Tensilica documentation).
+\item \textbf{ESP-IDF} -- Espressif's IoT Development Framework. This project uses
+  no IDF at run time, but its memory map and linker scripts, the mask-ROM function
+  addresses, and the boot/clock/watchdog sequence are transcribed or adapted from
+  ESP-IDF~v5.4.4. Apache-2.0, \textcopyright~Espressif Systems.
+  \url{https://github.com/espressif/esp-idf}.
+\item \textbf{Tensilica/Cadence Xtensa headers} -- the vendored
+  \texttt{xtensa/config/*.h}, HAL, \texttt{xtruntime} and \texttt{coreasm} headers
+  the IDF-free build compiles against are Tensilica Inc.'s (MIT-style licence).
+\item \textbf{\texttt{esp\_simd} / \texttt{ada-esp32-s3-simd}} -- the Xtensa
+  PIE/SIMD kernels vendored as \texttt{ESP32S3.SIMD} (Chapter~\ref{ch:asm}):
+  Z.~Liu's \url{https://github.com/zliu43/esp_simd} and the Ada port
+  \url{https://github.com/rowsail/ada-esp32-s3-simd}.
 \end{itemize}
 
 \section{Cryptography and TLS}

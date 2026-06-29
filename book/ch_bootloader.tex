@@ -9,7 +9,14 @@ the register windows have to be made sane for Ada's calling convention, and --
 if the board has it -- the external PSRAM has to be brought up and mapped. This
 chapter follows that path. It is the part of the system that is \emph{not}
 Espressif's: the project replaced the last vendored binary, the 2nd-stage
-bootloader, with its own -- written, like almost everything else here, in Ada.
+bootloader, with its own -- written, like almost everything else here, in
+Ada.\footnote{The 2nd-stage bootloader and boot code are original Ada, but they
+stand on Espressif's groundwork: the memory map and linker scripts, the mask-ROM
+function addresses, and the boot/clock/watchdog sequence are transcribed or adapted
+from \textbf{ESP-IDF}~v5.4.4 (Apache-2.0, \textcopyright~Espressif Systems), and the
+vendored \texttt{xtensa/config} and HAL headers are \textbf{Tensilica Inc.}'s
+(MIT-style licence). Full credit to both; see Further Reading
+(Chapter~\ref{ch:references}).}
 
 \section{Three things run before \texttt{Main}}
 
