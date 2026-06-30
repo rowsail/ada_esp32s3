@@ -15,10 +15,12 @@ package body ESP32S3.Console is
    --  the Xtensa CCOUNT cycle counter so the bound is in real time regardless of
    --  per-iteration cost (a status-register read is a slow APB access).  50 ms is
    --  far above host USB poll latency (~1 ms), so output to a connected host is
-   --  never falsely dropped; when nothing drains we give up after 50 ms and drop
-   --  the rest, so a host-less board is delayed at most ~50 ms per Send.  CCOUNT
-   --  runs at the 240 MHz core clock and wraps every ~17.9 s; the 50 ms window is
-   --  well within one wrap, so modular subtraction is safe.
+   --  never falsely dropped.  This wait is only EVER reached once a host has been
+   --  confirmed (see Host_Seen in Send); a never-connected board never enters it,
+   --  so it pays no delay at all.  When a confirmed host stops draining we give up
+   --  after 50 ms once, drop, and revert to non-blocking.  CCOUNT runs at the
+   --  240 MHz core clock and wraps every ~17.9 s; the 50 ms window is well within
+   --  one wrap, so modular subtraction is safe.
    Cycles_Per_Ms  : constant := 240_000;            --  240 MHz core clock
    Timeout_Cycles : constant := 50 * Cycles_Per_Ms; --  ~50 ms
 
@@ -66,21 +68,73 @@ package body ESP32S3.Console is
    end Wait_Ready;
 
    ----------
-   -- Send --
+   -- Emit --
    ----------
 
-   --  Push raw bytes straight to the IN FIFO, 64 bytes per USB packet, flushing
-   --  each with WR_DONE.  Bails (dropping the remainder) if the host isn't
-   --  draining within the timeout, so a host-less board never hangs.
-   procedure Send (S : String) is
+   --  Connection state.  We NEVER block waiting on a host we have not confirmed:
+   --  Host_Seen starts False and is set only once we OBSERVE the FIFO drain (the
+   --  endpoint going free again after we filled it -- proof a host is reading).
+   --
+   --  While Host_Seen is False, Emit is fully non-blocking: it writes a packet
+   --  only if the FIFO is already free, otherwise it drops immediately.  So a
+   --  board with NO USB host ever attached pays ZERO delay -- the console never
+   --  affects running code (one register read, then write-if-free or return).
+   --
+   --  Once a host is confirmed, Emit applies the bounded ~50 ms backpressure so
+   --  bursts to a connected host are never truncated; if that wait ever times out
+   --  (the host went away / stopped reading) Host_Seen is cleared and we drop the
+   --  remainder and revert to non-blocking after that single timeout.
+   Host_Seen : Boolean := False;   --  observed the host drain a packet?
+   Pending   : Boolean := False;   --  a written packet is awaiting drain
+
+   --  Count of bytes that had to be dropped because no host was draining.
+   --  Saturating; readable via Dropped_Bytes, cleared by Clear_Dropped, and also
+   --  announced in-band by Flush (see below) so a reader sees gaps in the stream.
+   Dropped : Unsigned_32 := 0;
+
+   --  Optional drop-notification hook (see On_Drop).  In_Hook guards against a
+   --  handler that writes to the console: its own dropped bytes are still tallied
+   --  but must not re-enter the hook.
+   Drop_Cb : Drop_Handler := null;
+   In_Hook : Boolean      := False;
+
+   procedure Add_Dropped (Count : Natural) is
+   begin
+      if Count > 0 then
+         if Dropped <= Unsigned_32'Last - Unsigned_32 (Count) then
+            Dropped := Dropped + Unsigned_32 (Count);
+         else
+            Dropped := Unsigned_32'Last;   --  saturate
+         end if;
+         if Drop_Cb /= null and then not In_Hook then
+            In_Hook := True;
+            Drop_Cb (Count);              --  may re-enter the console; bounded
+            In_Hook := False;
+         end if;
+      end if;
+   end Add_Dropped;
+
+   --  Push raw bytes to the IN FIFO, 64 bytes per USB packet, each ended with
+   --  WR_DONE.  Returns the number of bytes it could NOT send (0 = all delivered)
+   --  -- non-zero when no host is draining, so the caller can account the loss.
+   function Emit (S : String) return Natural is
       I : Integer := S'First;
       N : Natural;
    begin
       while I <= S'Last loop
-         if not Wait_Ready then
-            return;   --  host not draining: drop the remainder rather than hang
+         if not Endpoint_Ready then
+            --  FIFO still holds the previous packet.
+            if not Host_Seen then
+               return S'Last - I + 1;   --  no host confirmed: drop, never wait
+            elsif not Wait_Ready then
+               Host_Seen := False;      --  confirmed host went away: stop blocking
+               return S'Last - I + 1;
+            end if;
+         elsif Pending then
+            Host_Seen := True;      --  drained since our last write => host present
          end if;
 
+         --  Endpoint is free: write up to one 64-byte packet and send it.
          N := 0;
          while I <= S'Last and then N < Fifo_Size loop
             USB_DEVICE_Periph.EP1 :=
@@ -90,18 +144,69 @@ package body ESP32S3.Console is
          end loop;
 
          USB_DEVICE_Periph.EP1_CONF := (WR_DONE => True, others => <>);
+         Pending := True;
       end loop;
-   end Send;
+      return 0;
+   end Emit;
+
+   --------------------
+   -- Announce_Drops --
+   --------------------
+
+   --  If output was dropped, prepend a notice the next time the host is draining,
+   --  so a gap in the console stream is visible and quantified.  The notice is
+   --  only counted as "delivered" (Dropped reset) if it itself got through; its
+   --  own bytes are never added to Dropped.
+   procedure Announce_Drops is
+      Note : String (1 .. 40);
+      L    : Natural := 0;
+
+      procedure Lit (T : String) is
+      begin
+         Note (L + 1 .. L + T'Length) := T;
+         L := L + T'Length;
+      end Lit;
+
+   begin
+      if Dropped = 0 then
+         return;
+      end if;
+      Lit ("[console: ");
+      declare                          --  decimal of Dropped
+         V : Unsigned_32 := Dropped;
+         D : String (1 .. 10);
+         F : Natural := D'Last + 1;
+      begin
+         loop
+            F := F - 1;
+            D (F) := Character'Val (Character'Pos ('0') + Integer (V mod 10));
+            V := V / 10;
+            exit when V = 0;
+         end loop;
+         Lit (D (F .. D'Last));
+      end;
+      Lit (" bytes dropped]" & ASCII.LF);
+
+      if Emit (Note (1 .. L)) = 0 then  --  announced only if it reached the host
+         Dropped := 0;
+      end if;
+   end Announce_Drops;
 
    -----------
    -- Flush --
    -----------
 
    procedure Flush is
+      N : Natural;
    begin
+      Announce_Drops;                  --  surface any prior loss first
       if Len > 0 then
-         Send (Buf (1 .. Len));
+         --  Clear the buffer BEFORE emitting, so the drop hook (which may write
+         --  to the console from inside Add_Dropped) re-enters a clean buffer
+         --  rather than re-sending this line.
+         N := Len;
          Len := 0;
+         Add_Dropped (Emit (Buf (1 .. N)));
       end if;
    end Flush;
 
@@ -131,5 +236,29 @@ package body ESP32S3.Console is
          Put (S (I));
       end loop;
    end Write;
+
+   -------------------
+   -- Dropped_Bytes --
+   -------------------
+
+   function Dropped_Bytes return Interfaces.Unsigned_32 is (Dropped);
+
+   -------------------
+   -- Clear_Dropped --
+   -------------------
+
+   procedure Clear_Dropped is
+   begin
+      Dropped := 0;
+   end Clear_Dropped;
+
+   -------------
+   -- On_Drop --
+   -------------
+
+   procedure On_Drop (Handler : Drop_Handler) is
+   begin
+      Drop_Cb := Handler;
+   end On_Drop;
 
 end ESP32S3.Console;
