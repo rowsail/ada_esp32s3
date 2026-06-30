@@ -425,3 +425,40 @@ The rule of thumb: a stateless or one-shot hook wants the closure-free callback
 state, or a group of related operations, wants a tagged type you derive and
 override. Both exist for one reason: to recover the convenience of a capturing
 closure without the trampoline this chip cannot run.
+
+\subsection{Worked example: a redirectable console}
+\label{driver:console-mux}\index{console multiplexer}\index{Set\_Output}
+
+The console driver puts the closure-free callback to work three times over.
+Console output once went straight to one device, the USB Serial/JTAG port. Now it
+goes through a one-record \emph{multiplexer}, \texttt{ESP32S3.Serial}, and that
+record is exactly the opaque-context callback from above:
+
+\begin{lstlisting}
+type Device is record
+   Write : access procedure (Ctx : System.Address; S : String);
+   Flush : access procedure (Ctx : System.Address);
+   Ctx   : System.Address;        -- the device's own state: passed, not captured
+end record;
+\end{lstlisting}
+
+The USB console fills it with library-level procedures and a null \texttt{Ctx} ---
+it is a singleton. A UART fills the same record with adapters whose \texttt{Ctx}
+is the address of a held \texttt{UART.Session}:
+
+\begin{lstlisting}
+Serial.Set_Output (ESP32S3.UART.Text.As_Device (My_Uart));   -- console -> UART
+\end{lstlisting}
+
+That one call swings every \texttt{Put\_Line} onto the new device.
+\texttt{ESP32S3.Log} writes through the mux, and the runtime's
+\texttt{System.Text\_IO} is bridged into it by a single installed hook, so
+\emph{both} the HAL logger and \texttt{Ada.Text\_IO} follow \texttt{Set\_Output}
+together. The pattern shows up a third time inside the console itself: its
+drop-notification hook, \texttt{On\_Drop}, is one more library-level
+\texttt{access procedure (Count : Natural)} the application supplies.
+
+Nothing here captures its environment. A device is a plain record of function
+pointers and an address; redirecting the console is one assignment to a variable.
+The trampoline the chip cannot run never appears --- and the console can speak out
+any port the board has.
