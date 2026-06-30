@@ -39,58 +39,52 @@ package ESP32S3.UART is
    type Session is limited private;
 
    ----------------------------------------------------------------------------
-   --  One-time port configuration -- call once per port at startup, before any
-   --  task contends for it (single-threaded).  This is the ONLY port-based
-   --  configuration call: everything that changes a port AFTER Setup is done
-   --  through a held Session (below), so a reconfiguration can never race
-   --  another task's transaction on the same port.
+   --  Concurrent, mutually-exclusive use.  A port is configured and used ONLY
+   --  through a held Session: Acquire takes the port, then every transfer AND
+   --  every configuration call runs through that Session -- so changing a
+   --  setting requires owning the port, and can never race another task.  There
+   --  is no port-based setup that precedes ownership: you cannot touch a UART
+   --  you do not hold.
    ----------------------------------------------------------------------------
 
-   --  Bring Port up at the given baud and frame format (default 115200 8-N-1)
-   --  AND route its lines to physical pads.  The four pins are all optional
-   --  (default No_Pin = unrouted), so a link routes only what it uses:
-   --     Setup (UART1, Tx => 17, Rx => 16);                --  full-duplex link
-   --     Setup (UART1, Rx => 18);                          --  RX only (e.g. GPS)
-   --     Setup (UART1, Tx => 17, Rx => 16,
-   --                   Rts => 19, Cts => 20);              --  + RTS/CTS flow ctl
-   --     Setup (UART1);                                    --  no pins (loopback)
-   --
-   --  Giving Rts enables RX flow control: the controller drives RTS to pause the
-   --  peer once our RX FIFO reaches Rx_Flow_Threshold bytes (of 128).  Giving Cts
-   --  enables TX flow control: the transmitter only sends while the peer asserts
-   --  CTS.  Inputs (RX, CTS) get an internal pull-up so an idle line reads high.
-   --  (Re-route pins, change baud/format, or flip polarity later through a held
-   --  Session -- see the concurrent section below.)
-   procedure Setup (Port   : UART_Port;
-                    Baud   : Baud_Rate   := 115_200;
-                    Bits   : Data_Bits   := 8;
-                    Parity : Parity_Mode := None;
-                    Stop   : Stop_Bits   := One;
-                    Tx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-                    Rx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-                    Rts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-                    Cts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-                    Rx_Flow_Threshold : Natural := 100);
-
-   ----------------------------------------------------------------------------
-   --  Concurrent, mutually-exclusive use.  Acquire a Session, then run every
-   --  transfer AND every post-Setup reconfiguration through it -- so changing a
-   --  parameter requires owning the port, and can never race another task.
-   ----------------------------------------------------------------------------
-
-   --  Raised by Acquire if Port was never Setup -- configuration must precede
-   --  ownership (see the one-time configuration section above).
-   Not_Initialized : exception;
-
-   --  Raised by ANY operation below (transfer or reconfiguration) if its
-   --  Session does not currently hold a port.  Every such call reaches the
-   --  hardware only through one ownership-checked gateway in the body, so
-   --  "use a port without holding it" fails loudly rather than silently.
+   --  Raised by ANY operation below (transfer or configuration) if its Session
+   --  does not currently hold a port.  Every such call reaches the hardware
+   --  only through one ownership-checked gateway in the body, so "use a port
+   --  without holding it" fails loudly rather than silently.
    Not_Owned : exception;
 
-   --  Take exclusive ownership of a Setup port (suspends until it is free).
-   --  Raises Not_Initialized if Port was never Setup.
+   --  Take exclusive ownership of Port, suspending until it is free.  The first
+   --  Acquire of a port brings it up at a safe default (115200 8-N-1, no pins
+   --  routed); shape it to the actual link with Configure (below) once held.
    procedure Acquire (S : in out Session; Port : UART_Port);
+
+   --  Set the held port's baud + frame format AND route its lines to physical
+   --  pads in one call -- the usual first step after Acquire.  Defaults are
+   --  115200 8-N-1; the four pins are all optional (No_Pin = unrouted), so a
+   --  link routes only what it uses:
+   --     Configure (S, Tx => 17, Rx => 16);            --  full-duplex link
+   --     Configure (S, Rx => 18);                      --  RX only (e.g. GPS)
+   --     Configure (S, Tx => 17, Rx => 16,
+   --                   Rts => 19, Cts => 20);          --  + RTS/CTS flow ctl
+   --     Configure (S, Baud => 9_600);                 --  format only, no pins
+   --
+   --  Giving Rts enables RX flow control: the controller drives RTS to pause
+   --  the peer once our RX FIFO reaches Rx_Flow_Threshold bytes (of 128).
+   --  Giving Cts enables TX flow control: the transmitter only sends while the
+   --  peer asserts CTS.  Inputs (RX, CTS) get an internal pull-up so an idle
+   --  line reads high.  Re-route pins or change one attribute later with the
+   --  finer calls below.  Raises Not_Owned unless S currently holds a port.
+   procedure Configure
+     (S      : Session;
+      Baud   : Baud_Rate   := 115_200;
+      Bits   : Data_Bits   := 8;
+      Parity : Parity_Mode := None;
+      Stop   : Stop_Bits   := One;
+      Tx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Cts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx_Flow_Threshold : Natural := 100);
 
    --  Push Data to the TX FIFO, waiting for room.  Returns once every byte is
    --  queued (not necessarily fully shifted out).  Raises Not_Owned unless S
@@ -106,7 +100,7 @@ package ESP32S3.UART is
    --  a port.
    function Available (S : Session) return Natural;
 
-   --  ----  Post-Setup reconfiguration -- all require the held port  ----------
+   --  ----  Finer configuration -- all require the held port  ----------------
    --  Each acts on the port S currently holds and raises Not_Owned unless S is
    --  active (the held Session is the proof that no other task can be mid-
    --  transfer).  Like the transfers above, they reach the hardware only through
@@ -120,9 +114,10 @@ package ESP32S3.UART is
    procedure Set_Parity    (S : Session; Parity : Parity_Mode);
    procedure Set_Stop_Bits (S : Session; Stop   : Stop_Bits);
 
-   --  Re-route the held port's lines to physical pads (same semantics as Setup's
-   --  pin parameters; sets the FULL flow-control + inversion state, so a
-   --  reconfigure without a line also turns that line/flow off).  ALL optional.
+   --  Re-route the held port's lines to physical pads (same semantics as
+   --  Configure's pin parameters; sets the FULL flow-control + inversion state,
+   --  so a reconfigure without a line also turns that line/flow off).  ALL
+   --  optional.
    --  The *_Invert flags set each line's polarity (see Set_Inversion); default
    --  False = active-high / standard idle-high UART.
    procedure Configure_Pins

@@ -61,8 +61,8 @@ ESP32S3.Serial.Set_Output (ESP32S3.Serial.Console_Device);
 --  2. A UART at 115_200 baud, 8-N-1, transmit on IO17.
 Port : aliased ESP32S3.UART.Session;        -- must outlive the redirect
 ...
-ESP32S3.UART.Setup   (ESP32S3.UART.UART1, Baud => 115_200, Tx => 17);
-ESP32S3.UART.Acquire (Port, ESP32S3.UART.UART1);
+ESP32S3.UART.Acquire   (Port, ESP32S3.UART.UART1);
+ESP32S3.UART.Configure (Port, Baud => 115_200, Tx => 17);
 ESP32S3.Serial.Set_Output (ESP32S3.UART.Text.As_Device (Port));
 
 --  3. A file on the ext4 volume.

@@ -284,9 +284,13 @@ package body ESP32S3.GPS is
       Len    : Natural := 0;
       Junk   : Boolean;
    begin
-      --  Idle until Setup has configured the port and pins.
+      --  Idle until Setup has recorded the port, pins and baud.
       Ada.Synchronous_Task_Control.Suspend_Until_True (Start_Signal);
+
+      --  Own the port, then shape it to the link -- configuration runs through
+      --  the held Session, so it cannot precede ownership.
       ESP32S3.UART.Acquire (S, Cfg.Port);
+      ESP32S3.UART.Configure (S, Baud => Cfg.Baud, Tx => Cfg.Tx, Rx => Cfg.Rx);
 
       loop
          --  Transmit anything queued by Send (we hold the UART Session).
@@ -343,8 +347,9 @@ package body ESP32S3.GPS is
       Pps  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Baud : ESP32S3.UART.Baud_Rate    := 9600) is
    begin
+      --  Record the link parameters; the Reader task applies them through its
+      --  held Session once it owns the port (UART config requires ownership).
       Cfg := (Port => Port, Rx => Rx, Tx => Tx, Pps => Pps, Baud => Baud);
-      ESP32S3.UART.Setup (Port, Baud => Baud, Tx => Tx, Rx => Rx);
 
       if Pps /= ESP32S3.GPIO.No_Pin then
          declare

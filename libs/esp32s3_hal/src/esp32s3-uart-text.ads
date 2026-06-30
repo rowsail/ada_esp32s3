@@ -6,8 +6,8 @@ with ESP32S3.Serial;
 --
 --     My_Uart : aliased ESP32S3.UART.Session;          --  must be library-level
 --     ...
---     ESP32S3.UART.Setup   (UART1, Tx => 17, Rx => 16);
---     ESP32S3.UART.Acquire (My_Uart, UART1);
+--     ESP32S3.UART.Acquire   (My_Uart, UART1);
+--     ESP32S3.UART.Configure (My_Uart, Tx => 17, Rx => 16);
 --     ESP32S3.Serial.Set_Output (ESP32S3.UART.Text.As_Device (My_Uart));
 --     Put_Line ("now on UART1");                        --  ESP32S3.Log -> UART1
 --

@@ -40,17 +40,9 @@ package body ESP32S3.UART is
    ----------------------------------------------------------------------------
 
    package State is
-      --  The Setup path: bring Port up and route its pads (records it Ready).
-      procedure Open (Port   : UART_Port;
-                      Baud   : Baud_Rate;
-                      Bits   : Data_Bits;
-                      Parity : Parity_Mode;
-                      Stop   : Stop_Bits;
-                      Tx, Rx, Rts, Cts  : ESP32S3.GPIO.Optional_Pin;
-                      Rx_Flow_Threshold : Natural);
-
-      --  Has Port been Setup?  (Acquire's init-before-use guard.)
-      function Ready (Port : UART_Port) return Boolean;
+      --  First-use bring-up: create Port's bus at safe defaults if it has not
+      --  been made yet.  Idempotent -- a later Acquire of the port reuses it.
+      procedure Ensure (Port : UART_Port);
 
       --  The held port's raw bus -- the one gateway to the registers.
       --  Raises Not_Owned unless S currently holds a port.
@@ -58,23 +50,18 @@ package body ESP32S3.UART is
    end State;
 
    package body State is
-      Buses     : array (UART_Port) of E.Bus;   --  raw bus per port, hidden here
-      Ready_Map : array (UART_Port) of Boolean := (others => False);
+      Buses : array (UART_Port) of E.Bus;       --  raw bus per port, hidden here
+      Made  : array (UART_Port) of Boolean := (others => False);
 
-      procedure Open (Port   : UART_Port;
-                      Baud   : Baud_Rate;
-                      Bits   : Data_Bits;
-                      Parity : Parity_Mode;
-                      Stop   : Stop_Bits;
-                      Tx, Rx, Rts, Cts  : ESP32S3.GPIO.Optional_Pin;
-                      Rx_Flow_Threshold : Natural) is
+      procedure Ensure (Port : UART_Port) is
       begin
-         Buses (Port) := E.Open (Port, Baud, Bits, Parity, Stop);
-         E.Configure_Pins (Buses (Port), Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
-         Ready_Map (Port) := True;
-      end Open;
-
-      function Ready (Port : UART_Port) return Boolean is (Ready_Map (Port));
+         if not Made (Port) then
+            --  Safe default: 115200 8-N-1, no pads routed yet.  Configure
+            --  shapes it to the real link once the caller holds the port.
+            Buses (Port) := E.Open (Port, 115_200, 8, None, One);
+            Made (Port) := True;
+         end if;
+      end Ensure;
 
       function Owned (S : Session) return E.Bus is
       begin
@@ -86,41 +73,45 @@ package body ESP32S3.UART is
       end Owned;
    end State;
 
-   -----------
-   -- Setup --
-   -----------
-
-   procedure Setup (Port   : UART_Port;
-                    Baud   : Baud_Rate   := 115_200;
-                    Bits   : Data_Bits   := 8;
-                    Parity : Parity_Mode := None;
-                    Stop   : Stop_Bits   := One;
-                    Tx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-                    Rx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-                    Rts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-                    Cts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-                    Rx_Flow_Threshold : Natural := 100) is
-   begin
-      State.Open (Port, Baud, Bits, Parity, Stop,
-                  Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
-   end Setup;
-
    -------------
    -- Acquire --
    -------------
 
    procedure Acquire (S : in out Session; Port : UART_Port) is
    begin
-      if not State.Ready (Port) then
-         raise Not_Initialized with "UART port acquired before Setup";
-      end if;
       Guards (Port).Acquire;          --  suspends here until the port is free
+      State.Ensure (Port);            --  first acquirer brings it up (defaults)
       S.Port   := Port;
       S.Active := True;
    end Acquire;
 
+   ---------------
+   -- Configure --
+   ---------------
+
+   procedure Configure
+     (S      : Session;
+      Baud   : Baud_Rate   := 115_200;
+      Bits   : Data_Bits   := 8;
+      Parity : Parity_Mode := None;
+      Stop   : Stop_Bits   := One;
+      Tx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Cts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx_Flow_Threshold : Natural := 100)
+   is
+      B : constant E.Bus := State.Owned (S);  --  raises unless we hold the port
+   begin
+      E.Set_Baud      (B, Baud);
+      E.Set_Data_Bits (B, Bits);
+      E.Set_Parity    (B, Parity);
+      E.Set_Stop_Bits (B, Stop);
+      E.Configure_Pins (B, Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
+   end Configure;
+
    ----------------------------------------------------------------------------
-   --  Post-Setup reconfiguration + transfers -- every one reaches the hardware
+   --  Finer configuration + transfers -- every one reaches the hardware
    --  ONLY through State.Owned (S), so each requires the held port and raises
    --  Not_Owned otherwise.  A change can never race another task's transfer,
    --  and a new operation cannot be written that skips the ownership check.
