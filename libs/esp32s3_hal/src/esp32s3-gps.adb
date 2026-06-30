@@ -287,10 +287,10 @@ package body ESP32S3.GPS is
       --  Idle until Setup has recorded the port, pins and baud.
       Ada.Synchronous_Task_Control.Suspend_Until_True (Start_Signal);
 
-      --  Own the port, then shape it to the link -- configuration runs through
-      --  the held Session, so it cannot precede ownership.
-      ESP32S3.UART.Acquire (S, Cfg.Port);
-      ESP32S3.UART.Configure (S, Baud => Cfg.Baud, Tx => Cfg.Tx, Rx => Cfg.Rx);
+      --  Own the port and shape it to the link in one call -- configuration is
+      --  part of Acquire, so it cannot precede ownership.
+      ESP32S3.UART.Acquire (S, Cfg.Port,
+                            Baud => Cfg.Baud, Tx => Cfg.Tx, Rx => Cfg.Rx);
 
       loop
          --  Transmit anything queued by Send (we hold the UART Session).

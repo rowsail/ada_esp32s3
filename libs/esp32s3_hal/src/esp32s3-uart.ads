@@ -40,11 +40,11 @@ package ESP32S3.UART is
 
    ----------------------------------------------------------------------------
    --  Concurrent, mutually-exclusive use.  A port is configured and used ONLY
-   --  through a held Session: Acquire takes the port, then every transfer AND
-   --  every configuration call runs through that Session -- so changing a
-   --  setting requires owning the port, and can never race another task.  There
-   --  is no port-based setup that precedes ownership: you cannot touch a UART
-   --  you do not hold.
+   --  through a held Session: Acquire takes the port AND configures it, and
+   --  every transfer plus every later configuration call runs through that
+   --  Session -- so changing a setting requires owning the port, and can never
+   --  race another task.  There is no port-based setup that precedes ownership:
+   --  you cannot touch a UART you do not hold.
    ----------------------------------------------------------------------------
 
    --  Raised by ANY operation below (transfer or configuration) if its Session
@@ -53,28 +53,45 @@ package ESP32S3.UART is
    --  without holding it" fails loudly rather than silently.
    Not_Owned : exception;
 
-   --  Take exclusive ownership of Port, suspending until it is free.  The first
-   --  Acquire of a port brings it up at a safe default (115200 8-N-1, no pins
-   --  routed); shape it to the actual link with Configure (below) once held.
-   procedure Acquire (S : in out Session; Port : UART_Port);
-
-   --  Set the held port's baud + frame format AND route its lines to physical
-   --  pads in one call -- the usual first step after Acquire.  Defaults are
-   --  115200 8-N-1; the four pins are all optional (No_Pin = unrouted), so a
-   --  link routes only what it uses:
-   --     Configure (S, Tx => 17, Rx => 16);            --  full-duplex link
-   --     Configure (S, Rx => 18);                      --  RX only (e.g. GPS)
-   --     Configure (S, Tx => 17, Rx => 16,
-   --                   Rts => 19, Cts => 20);          --  + RTS/CTS flow ctl
-   --     Configure (S, Baud => 9_600);                 --  format only, no pins
+   --  Take exclusive ownership of Port, suspending until it is free, AND shape
+   --  it to the link in the same call.  The first Acquire of a port creates the
+   --  controller; every Acquire then (re)applies the baud + frame format and
+   --  routes the four optional pins, so the port ends up in exactly the state
+   --  you ask for (it does NOT inherit a previous holder's settings).  Defaults
+   --  are 115200 8-N-1 with no pins routed; the pins are all optional (No_Pin =
+   --  unrouted), so a link routes only what it uses:
+   --     Acquire (S, UART1);                           --  bare: 115200 8-N-1
+   --     Acquire (S, UART1, Tx => 17, Rx => 16);       --  full-duplex link
+   --     Acquire (S, UART1, Rx => 18);                 --  RX only (e.g. GPS)
+   --     Acquire (S, UART1, Tx => 17, Rx => 16,
+   --                        Rts => 19, Cts => 20);     --  + RTS/CTS flow ctl
    --
    --  Giving Rts enables RX flow control: the controller drives RTS to pause
    --  the peer once our RX FIFO reaches Rx_Flow_Threshold bytes (of 128).
    --  Giving Cts enables TX flow control: the transmitter only sends while the
    --  peer asserts CTS.  Inputs (RX, CTS) get an internal pull-up so an idle
-   --  line reads high.  Re-route pins or change one attribute later with the
-   --  finer calls below.  Raises Not_Owned unless S currently holds a port.
-   procedure Configure
+   --  line reads high.  Re-route pins or change one attribute later with
+   --  Reconfigure or the finer calls below.
+   procedure Acquire
+     (S      : in out Session;
+      Port   : UART_Port;
+      Baud   : Baud_Rate   := 115_200;
+      Bits   : Data_Bits   := 8;
+      Parity : Parity_Mode := None;
+      Stop   : Stop_Bits   := One;
+      Tx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Cts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx_Flow_Threshold : Natural := 100);
+
+   --  Re-apply the whole baud + frame format + pin routing on the port S
+   --  already holds, without releasing it -- the same settings Acquire takes,
+   --  for a link that renegotiates mid-hold.  Like Acquire it sets the FULL
+   --  state, so an omitted pin is unrouted and an omitted attribute returns to
+   --  its default.  Raises Not_Owned unless S currently holds a port.  (To
+   --  change ONE attribute and leave the rest, use the finer setters below.)
+   procedure Reconfigure
      (S      : Session;
       Baud   : Baud_Rate   := 115_200;
       Bits   : Data_Bits   := 8;
