@@ -69,8 +69,9 @@ package body ESP32S3.LCD.Engine is
          LCD_DUMMY => False, LCD_ALWAYS_OUT_EN => False, others => <>);
       LCD_CAM_Periph.LCD_MISC.LCD_AFIFO_RESET := True;        --  self-clearing
 
-      GD.Claim (B.Chan, GD.LCD_CAM);
-      B.Valid := GD.Is_Valid (B.Chan);
+      --  No DMA channel is claimed here: Transmit claims one transiently, so an
+      --  idle open controller ties up none of the five-channel pool.
+      B.Valid := True;
    end Open;
 
    function Is_Valid (B : Bus) return Boolean is (B.Valid);
@@ -124,9 +125,14 @@ package body ESP32S3.LCD.Engine is
                        Ok : out Boolean)
    is
       Wait : Natural := 5_000_000;
+      Chan : GD.Channel;          --  claimed transiently; released on return
    begin
       Ok := False;
       if not B.Valid or else Length = 0 or else Length > 4095 then
+         return;
+      end if;
+      GD.Claim (Chan, GD.LCD_CAM);
+      if not GD.Is_Valid (Chan) then     --  pool momentarily exhausted
          return;
       end if;
 
@@ -137,7 +143,7 @@ package body ESP32S3.LCD.Engine is
         LCD_USER_LCD_DOUT_CYCLELEN_Field (Length - 1);
       LCD_CAM_Periph.LCD_MISC.LCD_AFIFO_RESET := True;
 
-      GD.Start (B.Chan, GD.Mem_To_Periph, Tx, Length);
+      GD.Start (Chan, GD.Mem_To_Periph, Tx, Length);
 
       LCD_CAM_Periph.LC_DMA_INT_CLR.LCD_TRANS_DONE_INT_CLR := True;
       LCD_CAM_Periph.LCD_USER.LCD_UPDATE := True;

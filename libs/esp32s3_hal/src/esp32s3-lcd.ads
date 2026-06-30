@@ -23,38 +23,39 @@ package ESP32S3.LCD is
    type Session is limited private;
 
    ----------------------------------------------------------------------------
-   --  One-time configuration (single-threaded at startup).  This is the only
-   --  port-based call; pin routing and clock-out are post-Setup and require the
-   --  held controller (see below).
+   --  Concurrent, mutually-exclusive use.  Acquire the controller AND configure
+   --  it in the same call; every transfer plus every later reconfiguration runs
+   --  through the held Session.  There is no startup call that precedes
+   --  ownership: you cannot touch the controller without holding it.  Bringing
+   --  it up does NOT tie up a GDMA channel -- Transmit claims one only for the
+   --  duration of the transfer.
    ----------------------------------------------------------------------------
-
-   --  Bring the LCD up in 8-bit mode at (about) Pclk_Hz pixel clock and Claim its
-   --  GDMA channel.  Pixel clock = 20 MHz / round(20 MHz / Pclk_Hz).
-   procedure Setup (Pclk_Hz : Positive := 1_000_000);
-
-   ----------------------------------------------------------------------------
-   --  Concurrent, mutually-exclusive use.  Acquire the controller, then run
-   --  every transfer AND every post-Setup reconfiguration through it -- so
-   --  changing a setting requires ownership and can never race another task.
-   --  All register access lives in the private Engine child; the handle is
-   --  hidden in the body and reached only through one ownership-checked gateway.
-   ----------------------------------------------------------------------------
-
-   --  Raised by Acquire if the controller was never Setup (or its GDMA channel
-   --  could not be claimed) -- configuration must precede ownership.
-   Not_Initialized : exception;
 
    --  Raised by any operation below if S does not hold the controller.  Each
    --  reaches the hardware only through the gateway, so "use it without holding
    --  it" fails loudly.
    Not_Owned : exception;
 
-   --  Take exclusive ownership of the Setup controller (suspends until free).
-   --  Raises Not_Initialized if Setup did not succeed.
-   procedure Acquire (S : in out Session);
+   --  Take exclusive ownership of the controller (suspends until free) and bring
+   --  it up in 8-bit mode at (about) Pclk_Hz pixel clock (= 20 MHz / round(20
+   --  MHz / Pclk_Hz)), routing the eight data lines and the pixel clock to pads.
+   --  Each pin is optional (No_Pin = unrouted).  Every Acquire re-applies the
+   --  clock and pin routing.
+   procedure Acquire (S       : in out Session;
+                      Pclk_Hz : Positive   := 1_000_000;
+                      Data    : Data_Pins  := (others => No_Pin);
+                      Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
-   --  Route the data bus and pixel clock to physical pads (for a real display),
-   --  on the held controller.  Raises Not_Owned unless S holds it.
+   --  Re-apply the pixel clock and pin routing on the held controller.  Raises
+   --  Not_Owned unless S holds it.
+   procedure Reconfigure (S       : Session;
+                          Pclk_Hz : Positive   := 1_000_000;
+                          Data    : Data_Pins  := (others => No_Pin);
+                          Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin);
+
+   --  Re-route the data bus and pixel clock to physical pads (a finer change
+   --  than Reconfigure, leaving the clock rate untouched).  Raises Not_Owned
+   --  unless S holds it.
    procedure Configure_Pins (S : Session; Data : Data_Pins;
                              Pclk : ESP32S3.GPIO.Optional_Pin);
 

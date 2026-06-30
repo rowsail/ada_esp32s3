@@ -12,12 +12,12 @@ with ESP32S3.GDMA;
 --  (Data_Pins is declared in the parent and used here by child visibility.)
 private package ESP32S3.LCD.Engine is
 
-   --  A configured controller: its claimed GDMA channel + a validity bit.
-   --  Limited because it holds a limited-controlled GDMA Channel.
+   --  A configured controller.  No GDMA channel is held while idle: Transmit
+   --  claims one transiently, for the duration of the transfer only.
    type Bus is limited private;
 
-   --  Bring the LCD up in 8-bit mode at (about) Pclk_Hz and Claim its GDMA
-   --  channel.  Is_Valid is False if the channel could not be claimed.
+   --  Bring the LCD up in 8-bit mode at (about) Pclk_Hz.  No DMA channel is
+   --  claimed here.  Is_Valid is True once the controller is configured.
    procedure Open (B : in out Bus; Pclk_Hz : Positive);
    function  Is_Valid (B : Bus) return Boolean;
 
@@ -36,7 +36,6 @@ private package ESP32S3.LCD.Engine is
 
 private
    type Bus is limited record
-      Chan  : ESP32S3.GDMA.Channel;    --  claimed by Open
-      Valid : Boolean := False;
+      Valid : Boolean := False;        --  controller configured by Open
    end record;
 end ESP32S3.LCD.Engine;
