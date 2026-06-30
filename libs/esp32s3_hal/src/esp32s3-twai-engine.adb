@@ -57,9 +57,14 @@ package body ESP32S3.TWAI.Engine is
 
    function Open (Mode : Bus_Mode; Bit_Rate : Positive) return Bus is
       use ESP32S3_Registers.SYSTEM;
-      --  bit = (1 + (TSEG1+1) + (TSEG2+1)) time-quanta; t_q = BRP / f_apb.
-      --  Use a fixed segment layout (Tq per bit = 16) and derive BRP.
-      Tq_Per_Bit : constant := 16;
+      --  bit = (1 + (TSEG1+1) + (TSEG2+1)) time-quanta; the hardware prescaler is
+      --  t_q = 2*(BAUD_PRESC+1) / f_apb, so the effective divisor BRP below is
+      --  2*(BAUD_PRESC+1) and must be even.  Use 20 Tq/bit (not 16): with f_apb =
+      --  80 MHz that makes BRP = 80e6/(rate*20) come out EVEN for every standard
+      --  rate -- 1M/500k/250k/125k -> BRP 4/8/16/32 -> exact.  (16 Tq/bit gave an
+      --  ODD BRP=5 for 1 Mbit, which the even-rounding turned into 1.25 Mbit/s, a
+      --  25% error that will not communicate on a real bus.)
+      Tq_Per_Bit : constant := 20;
       BRP : Integer :=
         Integer (Src_Hz / (Bit_Rate * Tq_Per_Bit));   --  ~ even prescaler
    begin
@@ -77,12 +82,13 @@ package body ESP32S3.TWAI.Engine is
       --  Enter reset mode to configure.
       TWAI0_Periph.MODE := (RESET_MODE => True, others => <>);
 
-      --  Bit timing: BRP/2-1, SJW=3, TSEG1=12, TSEG2=3 (1+12+3 = 16 Tq).
+      --  Bit timing: BAUD_PRESC=BRP/2-1, SJW=3, TSEG1=16, TSEG2=3 (1+16+3 = 20 Tq;
+      --  sample point 17/20 = 85%).  Register fields hold length-1.
       TWAI0_Periph.BUS_TIMING_0 :=
         (BAUD_PRESC => BUS_TIMING_0_BAUD_PRESC_Field (BRP / 2 - 1),
          SYNC_JUMP_WIDTH => 2, others => <>);
       TWAI0_Periph.BUS_TIMING_1 :=
-        (TIME_SEG1 => 11, TIME_SEG2 => 2, TIME_SAMP => False, others => <>);
+        (TIME_SEG1 => 15, TIME_SEG2 => 2, TIME_SAMP => False, others => <>);
       TWAI0_Periph.CLOCK_DIVIDER := (CD => 0, CLOCK_OFF => False, others => <>);
 
       --  Acceptance filter: accept everything (mask = all "don't care").  In
@@ -254,7 +260,10 @@ package body ESP32S3.TWAI.Engine is
       end if;                           --  overload, Got stays False
 
       Remote := (Info and 16#40#) /= 0;            --  RTR bit
-      Length := Data_Length (Natural (Info and 16#0F#));
+      --  A CAN DLC of 9 .. 15 is legal on the wire (all mean 8 data bytes); clamp
+      --  before the Data_Length (0 .. 8) conversion so a remote node sending a
+      --  high DLC does not raise Constraint_Error and kill the receive path.
+      Length := Data_Length (Natural'Min (8, Natural (Info and 16#0F#)));
       if Want_Extended then
          Id := Shift_Left (Unsigned_32 (Get (1)), 21)
                  or Shift_Left (Unsigned_32 (Get (2)), 13)

@@ -2,6 +2,7 @@ with System;
 with System.Storage_Elements;
 with Interfaces;
 with ESP32S3.GPIO;
+with ESP32S3.RTC_IO;
 
 --  ESP32-S3 RTC low-power domain: retained memory, deep sleep, and wake sources.
 --
@@ -80,9 +81,14 @@ package ESP32S3.RTC is
    --  uncalibrated RTC slow clock (~136 kHz), so the delay is approximate.
    procedure Deep_Sleep_For (Wake_After : Duration);
 
-   --  Sleep until an RTC-capable pin (GPIO 0 .. 21) reaches High/low (EXT1 wake).
-   --  Needs an external signal on the pad; configure the pad as an input first.
-   procedure Deep_Sleep_Until (Pin : ESP32S3.GPIO.Pin_Id; High : Boolean := True);
+   --  Sleep until an RTC-capable pin reaches High/low (EXT1 wake).  Only RTC pads
+   --  (GPIO 0 .. 21) can wake the chip, so the parameter is the RTC_Pin subtype:
+   --  a non-RTC pin is a caught constraint, not a silent never-wake (the EXT1
+   --  select mask is a 22-bit field, and 2**Pin for Pin > 21 wrapped to 0 -> no
+   --  pad selected -> the chip would sleep forever).  Needs an external signal on
+   --  the pad; configure the pad as an input first.
+   procedure Deep_Sleep_Until
+     (Pin : ESP32S3.RTC_IO.RTC_Pin; High : Boolean := True);
 
    --  Auto-feed (effectively disable) the RTC super-watchdog.  A deep-sleep wake
    --  can leave it armed, so call this if a woken app means to stay awake.
