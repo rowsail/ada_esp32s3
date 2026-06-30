@@ -375,9 +375,9 @@ function pointer, and that distinction is the whole of what follows.
 
 A closure is exactly what this platform forbids. A subprogram that captures its
 environment compiles to a \emph{trampoline}: a scrap of executable code GCC
-writes onto the stack, which is where the captured \texttt{CS} gets bound, and on
-the ESP32-S3 the stack lives in non-executable data memory, so calling such a
-trampoline faults outright. The HAL is built under
+writes onto the stack to bind the captured \texttt{CS}, and on the ESP32-S3 the
+stack lives in non-executable data memory, so calling such a trampoline faults
+outright. The HAL is built under
 \texttt{pragma Restrictions (No\_Implicit\_Dynamic\_Code)}, which turns that into a
 \emph{compile-time} refusal rather than a runtime crash (the same fault, seen from
 the debugger's side, is the war story in Chapter~\ref{ch:debug}).
@@ -442,23 +442,23 @@ type Device is record
 end record;
 \end{lstlisting}
 
-The USB console fills it with library-level procedures and a null \texttt{Ctx} ---
-it is a singleton. A UART fills the same record with adapters whose \texttt{Ctx}
-is the address of a held \texttt{UART.Session}:
+The USB console fills it with library-level procedures and a null \texttt{Ctx}
+(it is a singleton). A UART fills the same record with adapters whose
+\texttt{Ctx} is the address of a held \texttt{UART.Session}:
 
 \begin{lstlisting}
 Serial.Set_Output (ESP32S3.UART.Text.As_Device (My_Uart));   -- console -> UART
 \end{lstlisting}
 
 That one call swings every \texttt{Put\_Line} onto the new device.
-\texttt{ESP32S3.Log} writes through the mux, and the runtime's
-\texttt{System.Text\_IO} is bridged into it by a single installed hook, so
-\emph{both} the HAL logger and \texttt{Ada.Text\_IO} follow \texttt{Set\_Output}
-together. The pattern shows up a third time inside the console itself: its
-drop-notification hook, \texttt{On\_Drop}, is one more library-level
-\texttt{access procedure (Count : Natural)} the application supplies.
+\texttt{ESP32S3.Log} writes through the mux, and a single installed hook bridges
+the runtime's \texttt{System.Text\_IO} into it too, so \emph{both} the HAL logger
+and \texttt{Ada.Text\_IO} follow \texttt{Set\_Output} together. The pattern shows
+up a third time inside the console itself: its drop-notification hook,
+\texttt{On\_Drop}, is one more library-level
+\texttt{access procedure (Count : Natural)} that the application supplies.
 
 Nothing here captures its environment. A device is a plain record of function
-pointers and an address; redirecting the console is one assignment to a variable.
-The trampoline the chip cannot run never appears --- and the console can speak out
+pointers and an address. Redirecting the console is one assignment to a variable.
+The trampoline the chip cannot run never appears, and the console can speak out
 any port the board has.
