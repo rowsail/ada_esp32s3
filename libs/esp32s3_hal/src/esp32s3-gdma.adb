@@ -1,9 +1,12 @@
 with System;
 with System.Machine_Code;     use System.Machine_Code;
 with Ada.Unchecked_Conversion;
+with Ada.Interrupts.Names;
+with Ada.Synchronous_Task_Control;  use Ada.Synchronous_Task_Control;
 with ESP32S3_Registers;        use ESP32S3_Registers;
 with ESP32S3_Registers.DMA;    use ESP32S3_Registers.DMA;
 with ESP32S3_Registers.SYSTEM;
+with ESP32S3_Registers.INTERRUPT_CORE0;
 
 package body ESP32S3.GDMA is
 
@@ -40,11 +43,15 @@ package body ESP32S3.GDMA is
    type Channel_Regs is record
       IN_CONF0     : IN_CONF0_CH_Register;
       IN_INT_RAW   : IN_INT_RAW_CH_Register;
+      IN_INT_ST    : IN_INT_ST_CH_Register;
+      IN_INT_ENA   : IN_INT_ENA_CH_Register;
       IN_INT_CLR   : IN_INT_CLR_CH_Register;
       IN_LINK      : IN_LINK_CH_Register;
       IN_PERI_SEL  : IN_PERI_SEL_CH_Register;
       OUT_CONF0    : OUT_CONF0_CH_Register;
       OUT_INT_RAW  : OUT_INT_RAW_CH_Register;
+      OUT_INT_ST   : OUT_INT_ST_CH_Register;
+      OUT_INT_ENA  : OUT_INT_ENA_CH_Register;
       OUT_INT_CLR  : OUT_INT_CLR_CH_Register;
       OUT_LINK     : OUT_LINK_CH_Register;
       OUT_PERI_SEL : OUT_PERI_SEL_CH_Register;
@@ -54,11 +61,15 @@ package body ESP32S3.GDMA is
    for Channel_Regs use record
       IN_CONF0     at 16#00# range 0 .. 31;
       IN_INT_RAW   at 16#08# range 0 .. 31;
+      IN_INT_ST    at 16#0C# range 0 .. 31;
+      IN_INT_ENA   at 16#10# range 0 .. 31;
       IN_INT_CLR   at 16#14# range 0 .. 31;
       IN_LINK      at 16#20# range 0 .. 31;
       IN_PERI_SEL  at 16#48# range 0 .. 31;
       OUT_CONF0    at 16#60# range 0 .. 31;
       OUT_INT_RAW  at 16#68# range 0 .. 31;
+      OUT_INT_ST   at 16#6C# range 0 .. 31;
+      OUT_INT_ENA  at 16#70# range 0 .. 31;
       OUT_INT_CLR  at 16#74# range 0 .. 31;
       OUT_LINK     at 16#80# range 0 .. 31;
       OUT_PERI_SEL at 16#A8# range 0 .. 31;
@@ -127,6 +138,101 @@ package body ESP32S3.GDMA is
       D.Buffer := Buf;
       D.Next   := System.Null_Address;
    end Set_Desc;
+
+   --------------------------------------------------------------------------
+   --  Interrupt-driven completion.  A transfer arms its channel's EOF
+   --  interrupt; the waiting task suspends and the GDMA EOF interrupt (every
+   --  channel routed to CPU_INT 19 = Device_L2_0) wakes it -- so the core is
+   --  free for the whole transfer instead of busy-polling.  A short spin first
+   --  absorbs tiny transfers without paying the interrupt + context-switch cost.
+   --------------------------------------------------------------------------
+
+   GDMA_CPU_Int : constant := 19;   --  Device_L2_0
+
+   --  One completion signal per channel and direction.  A channel is owned by
+   --  one task at a time, so at most one task ever waits on each.
+   Done_Signal : array (Channel_Id, Direction) of Suspension_Object;
+
+   --  Poll Done this many times before suspending.  Each poll is a slow APB
+   --  register read, so this is a few microseconds -- enough to absorb a tiny
+   --  transfer that would finish before the interrupt + context switch pays
+   --  off, without wasting much before suspending on a long one.  Tunable; the
+   --  suspend path alone is correct at 0.
+   Spin_Limit : constant := 200;
+
+   protected Completion
+     with Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority
+   is
+      procedure Route;     --  one-time: map every DMA channel int to CPU_INT 19
+   private
+      procedure Handler with Attach_Handler => Ada.Interrupts.Names.Device_L2_0;
+      Routed : Boolean := False;
+   end Completion;
+
+   protected body Completion is
+
+      procedure Route is
+         use ESP32S3_Registers.INTERRUPT_CORE0;
+      begin
+         if Routed then
+            return;
+         end if;
+         INTERRUPT_CORE0_Periph.DMA_IN_CH0_INT_MAP.DMA_IN_CH0_INT_MAP   := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_IN_CH1_INT_MAP.DMA_IN_CH1_INT_MAP   := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_IN_CH2_INT_MAP.DMA_IN_CH2_INT_MAP   := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_IN_CH3_INT_MAP.DMA_IN_CH3_INT_MAP   := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_IN_CH4_INT_MAP.DMA_IN_CH4_INT_MAP   := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_OUT_CH0_INT_MAP.DMA_OUT_CH0_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_OUT_CH1_INT_MAP.DMA_OUT_CH1_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_OUT_CH2_INT_MAP.DMA_OUT_CH2_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_OUT_CH3_INT_MAP.DMA_OUT_CH3_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_OUT_CH4_INT_MAP.DMA_OUT_CH4_INT_MAP := GDMA_CPU_Int;
+         Routed := True;
+      end Route;
+
+      procedure Handler is
+      begin
+         --  For each channel/direction at EOF: DISABLE that EOF enable (this
+         --  deasserts the shared level-triggered CPU int while LEAVING the raw
+         --  status set, so Done still reads completion) and wake the waiter.
+         for C in Channel_Id loop
+            if Channels (C).IN_INT_ST.IN_SUC_EOF then
+               Channels (C).IN_INT_ENA.IN_SUC_EOF := False;
+               Set_True (Done_Signal (C, Periph_To_Mem));
+            end if;
+            if Channels (C).OUT_INT_ST.OUT_EOF then
+               Channels (C).OUT_INT_ENA.OUT_EOF := False;
+               Set_True (Done_Signal (C, Mem_To_Periph));
+            end if;
+         end loop;
+      end Handler;
+
+   end Completion;
+
+   --  Arm a channel's EOF completion interrupt just before its transfer is
+   --  kicked: reset the wait signal, clear the stale EOF status, enable the EOF
+   --  interrupt.  (RAW=0 + ENA=1 cannot assert until the transfer completes.)
+   procedure Arm (Id : Channel_Id; Dir : Direction) is
+   begin
+      Set_False (Done_Signal (Id, Dir));
+      case Dir is
+         when Mem_To_Periph =>
+            Channels (Id).OUT_INT_CLR.OUT_EOF := True;
+            Channels (Id).OUT_INT_ENA.OUT_EOF := True;
+         when Periph_To_Mem =>
+            Channels (Id).IN_INT_CLR.IN_SUC_EOF := True;
+            Channels (Id).IN_INT_ENA.IN_SUC_EOF := True;
+      end case;
+   end Arm;
+
+   --  Disable a channel's EOF completion interrupt (idempotent).
+   procedure Disarm (Id : Channel_Id; Dir : Direction) is
+   begin
+      case Dir is
+         when Mem_To_Periph => Channels (Id).OUT_INT_ENA.OUT_EOF   := False;
+         when Periph_To_Mem => Channels (Id).IN_INT_ENA.IN_SUC_EOF := False;
+      end case;
+   end Disarm;
 
    --------------------------------------------------------------------------
    --  Protected channel allocator.  Serialises Claim / Release and the
@@ -204,6 +310,7 @@ package body ESP32S3.GDMA is
       Id : Channel_Id;
       Ok : Boolean;
    begin
+      Completion.Route;               --  ensure DMA ints reach CPU_INT 19 (once)
       Release (C);                    --  free any channel C already held
       Pool.Claim (Peri, Id, Ok);
       if Ok then
@@ -250,10 +357,11 @@ package body ESP32S3.GDMA is
       Set_Desc (TX_Desc (C.Id), Src, Length);
       Set_Desc (RX_Desc (C.Id), Dst, Length);
 
-      --  Clear the sticky completion / error flags from any previous transfer.
+      --  Clear the sticky DONE / error flags from any previous transfer, then
+      --  arm the receive-side EOF completion interrupt (clears IN_SUC_EOF too).
       Channels (C.Id).IN_INT_CLR.IN_DONE     := True;
-      Channels (C.Id).IN_INT_CLR.IN_SUC_EOF  := True;
       Channels (C.Id).IN_INT_CLR.IN_DSCR_ERR := True;
+      Arm (C.Id, Periph_To_Mem);
 
       --  Barrier: the descriptors above are plain memory writes; make sure they
       --  have committed to SRAM before the DMA (a separate bus master) fetches
@@ -268,16 +376,8 @@ package body ESP32S3.GDMA is
       Channels (C.Id).IN_LINK.INLINK_START   := True;
       Channels (C.Id).OUT_LINK.OUTLINK_START := True;
 
-      --  Wait (bounded) for the receive side to report success-EOF.
-      declare
-         Guard : Natural := 0;
-      begin
-         while not Channels (C.Id).IN_INT_RAW.IN_SUC_EOF
-           and then Guard < 2_000_000
-         loop
-            Guard := Guard + 1;
-         end loop;
-      end;
+      --  Suspend (after a short spin) until the receive side signals EOF.
+      Wait (C, Periph_To_Mem);
    end Copy;
 
    -----------
@@ -295,8 +395,8 @@ package body ESP32S3.GDMA is
          when Mem_To_Periph =>                       --  OUT/TX path
             Set_Desc (TX_Desc (C.Id), Buffer, Length);
             Channels (C.Id).OUT_INT_CLR.OUT_DONE     := True;
-            Channels (C.Id).OUT_INT_CLR.OUT_EOF      := True;
             Channels (C.Id).OUT_INT_CLR.OUT_DSCR_ERR := True;
+            Arm (C.Id, Mem_To_Periph);              --  clears OUT_EOF + enables it
             Asm ("memw", Volatile => True, Clobber => "memory");
             Channels (C.Id).OUT_LINK.OUTLINK_ADDR  :=
               Link_Addr (TX_Desc (C.Id)'Address);
@@ -305,8 +405,8 @@ package body ESP32S3.GDMA is
          when Periph_To_Mem =>                       --  IN/RX path
             Set_Desc (RX_Desc (C.Id), Buffer, Length);
             Channels (C.Id).IN_INT_CLR.IN_DONE     := True;
-            Channels (C.Id).IN_INT_CLR.IN_SUC_EOF  := True;
             Channels (C.Id).IN_INT_CLR.IN_DSCR_ERR := True;
+            Arm (C.Id, Periph_To_Mem);              --  clears IN_SUC_EOF + enables
             Asm ("memw", Volatile => True, Clobber => "memory");
             Channels (C.Id).IN_LINK.INLINK_AUTO_RET := False;
             Channels (C.Id).IN_LINK.INLINK_ADDR     :=
@@ -368,11 +468,21 @@ package body ESP32S3.GDMA is
    ----------
 
    procedure Wait (C : Channel; Dir : Direction) is
-      Guard : Natural := 0;
+      Spin : Natural := 0;
    begin
-      while not Done (C, Dir) and then Guard < 2_000_000 loop
-         Guard := Guard + 1;
+      if not C.Valid then
+         return;
+      end if;
+      --  Short spin first: a tiny transfer finishes before the interrupt and
+      --  context switch would pay off.
+      while Spin < Spin_Limit and then not Done (C, Dir) loop
+         Spin := Spin + 1;
       end loop;
+      --  Still running: hand the core back until the EOF interrupt wakes us.
+      if not Done (C, Dir) then
+         Suspend_Until_True (Done_Signal (C.Id, Dir));
+      end if;
+      Disarm (C.Id, Dir);   --  drop the EOF enable (whether the spin or the IRQ won)
    end Wait;
 
 end ESP32S3.GDMA;

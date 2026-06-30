@@ -25,6 +25,11 @@ with Ada.Finalization;
 --  you hold a Channel, only you touch its registers and descriptors -- so the
 --  transfer operations need no further locking.  Using finalization, this driver
 --  targets the embedded/full profile (excluded from the light-tasking build).
+--
+--  Completion is interrupt-driven: a transfer's Wait suspends the calling task
+--  and the channel's end-of-transfer interrupt wakes it.  This driver OWNS the
+--  Device_L2_0 interrupt (CPU_INT 19) for that -- an application must not also
+--  attach a handler to it.
 package ESP32S3.GDMA is
    --  The five GDMA channel pairs.
    type Channel_Id is mod 5;
@@ -103,7 +108,11 @@ package ESP32S3.GDMA is
    --  invalid handle, so a Wait never hangs on one).
    function Done (C : Channel; Dir : Direction) return Boolean;
 
-   --  Block (bounded busy-wait) until Done (C, Dir).
+   --  Block until Done (C, Dir).  After a short spin (for transfers that finish
+   --  before an interrupt would pay off) the calling task SUSPENDS and the
+   --  channel's GDMA end-of-transfer interrupt wakes it -- so the core is free
+   --  for the whole transfer rather than busy-waiting.  Needs the tasking
+   --  runtime (embedded/full), like the rest of the Session drivers.
    procedure Wait (C : Channel; Dir : Direction);
 
 private
