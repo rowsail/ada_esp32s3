@@ -3,19 +3,19 @@
 
 The standard library's \texttt{Ada.Text\_IO} is how an Ada programmer reaches the
 outside world: \texttt{Put\_Line}, formatted numbers, files. On this bare runtime
-that package is \emph{stripped} --- it can print characters to the console and
-read one back, and nothing else (no files, no \texttt{Integer\_IO}, no layout).
-Chapter~\ref{ch:runtime-build} explains why: the full package is incompatible
-with a configurable run-time.
+that package is \emph{stripped}: it prints characters to the console and reads one
+back, nothing more. There are no files, no \texttt{Integer\_IO}, no layout.
+Chapter~\ref{ch:runtime-build} explains why. The full package will not fit a
+configurable run-time.
 
 \texttt{ESP32S3.Text\_IO} fills the gap. It is a near-complete, \emph{pure-Ada}
-re-implementation of \texttt{Ada.Text\_IO} that works over two things at once: the
+re-implementation of \texttt{Ada.Text\_IO}. It works over two things at once: the
 console (the USB-Serial-JTAG port, through the device mux of
 Section~\ref{driver:console-mux}) and \textbf{ext4 files} on a mounted volume
-(Chapter~\ref{ch:storage}). There is no C anywhere in it --- in particular no
-\texttt{Interfaces.C\_Streams}, the C \texttt{FILE*} layer the hosted GNAT
-\texttt{Ada.Text\_IO} is built on. Files are reached through the ext4 VFS; numbers
-are formatted by hand in Ada.
+(Chapter~\ref{ch:storage}). There is no C anywhere in it. In particular there is
+no \texttt{Interfaces.C\_Streams}, the C \texttt{FILE*} layer the hosted GNAT
+\texttt{Ada.Text\_IO} is built on. Files are reached through the ext4 VFS, and
+numbers are formatted by hand in Ada.
 
 This chapter shows how to use it, then explains the one thing it cannot do:
 \emph{be} \texttt{Ada.Text\_IO}.
@@ -32,24 +32,23 @@ Put_Line ("Lua on the ESP32-S3");
 Put ("count = ");  Put (Integer'Image (N));  New_Line;
 \end{lstlisting}
 
-\begin{quote}\small\itshape From C / ESP-IDF: this is the role
-\texttt{printf}/\texttt{ESP\_LOGI} play. For terse status logging the lighter
-\texttt{ESP32S3.Log} is often enough (Chapter~\ref{ch:hal}); reach for
-\texttt{ESP32S3.Text\_IO} when you want files, the numeric generics, or column
-layout.\end{quote}
+\cnote{this is the role \texttt{printf} and \texttt{ESP\_LOGI} play. For terse
+status logging the lighter \texttt{ESP32S3.Log} is often enough
+(Chapter~\ref{ch:hal}). Reach for \texttt{ESP32S3.Text\_IO} when you want files,
+the numeric generics, or column layout.}
 
 The console is a \texttt{File\_Type} like any other. \texttt{Standard\_Output},
-\texttt{Standard\_Error} and \texttt{Standard\_Input} name it, and \texttt{Set\_Output}
-redirects the file-less calls:
+\texttt{Standard\_Error} and \texttt{Standard\_Input} name it, and
+\texttt{Set\_Output} redirects the file-less calls:
 
 \begin{lstlisting}
 Put_Line (Standard_Output.all, "explicit form, same console");
 Set_Output (Some_File_Access);    -- now file-less Put_Line goes to that file
 \end{lstlisting}
 
-To move the \emph{whole} console onto a UART --- so every byte, including
-\texttt{ESP32S3.Log} and the runtime's own \texttt{Ada.Text\_IO} --- use the
-device mux instead (Section~\ref{driver:console-mux}):
+To move the \emph{whole} console onto a UART, so every byte goes there (including
+\texttt{ESP32S3.Log} and the runtime's own \texttt{Ada.Text\_IO}), use the device
+mux instead (Section~\ref{driver:console-mux}):
 
 \begin{lstlisting}
 ESP32S3.Serial.Set_Output (ESP32S3.UART.Text.As_Device (My_Uart));
@@ -57,9 +56,9 @@ ESP32S3.Serial.Set_Output (ESP32S3.UART.Text.As_Device (My_Uart));
 
 \section{Files on ext4}\index{ext4 files}\index{File\_Type}
 
-A file is named by a VFS path: the first component selects the mount
-(\texttt{/flash}, \texttt{/sd}), the rest is the path within it. Open or create,
-read or write lines, close:
+A file is named by a VFS path. The first component selects the mount
+(\texttt{/flash}, \texttt{/sd}), and the rest is the path within it. Open or
+create, read or write lines, then close:
 
 \begin{lstlisting}
 declare
@@ -78,17 +77,17 @@ begin
 end;
 \end{lstlisting}
 
-\texttt{File\_Type} is controlled: a file left open is closed (and committed) when
+\texttt{File\_Type} is controlled. A file left open is closed (and committed) when
 it goes out of scope, so a forgotten \texttt{Close} loses nothing. Append mode and
-the rest of the management surface --- \texttt{Reset} (reposition, or re-open with
-a new mode), \texttt{Mode}, \texttt{Name}, \texttt{Flush}, \texttt{Delete} --- all
-work as in the Reference Manual.
+the rest of the management surface work as in the Reference Manual: \texttt{Reset}
+(reposition, or re-open with a new mode), \texttt{Mode}, \texttt{Name},
+\texttt{Flush}, and \texttt{Delete}.
 
 \textbf{No store, no crash.} Errors are ordinary Ada exceptions, because the ext4
-layer's exceptions \emph{are} renames of \texttt{Ada.IO\_Exceptions}. If no volume
-is mounted, opening a path on it raises \texttt{Name\_Error}; a read past the end
-raises \texttt{End\_Error}; the wrong mode raises \texttt{Mode\_Error}. So a
-program that logs to flash degrades to a catchable exception, never a fault:
+layer's exceptions \emph{are} renames of \texttt{Ada.IO\_Exceptions}. With no
+volume mounted, opening a path on it raises \texttt{Name\_Error}. A read past the
+end raises \texttt{End\_Error}, and the wrong mode raises \texttt{Mode\_Error}. So
+a program that logs to flash degrades to a catchable exception, never a fault:
 
 \begin{lstlisting}
 begin
@@ -101,8 +100,8 @@ end;
 
 \textbf{Durability.} By default a file commits on \texttt{Close}. The
 implementation-defined \texttt{Form} string carries one ext4 option,
-\texttt{"sync=yes"}, which commits after \emph{every} write --- crash-durable, at
-the cost of a journal flush per line. An unrecognised form raises
+\texttt{"sync=yes"}, which commits after \emph{every} write. That is crash-durable,
+at the cost of a journal flush per line. An unrecognised form raises
 \texttt{Use\_Error}.
 
 \begin{lstlisting}
@@ -111,9 +110,9 @@ Create (F, "/flash/journal.txt", Form => "sync=yes");
 
 \section{Formatted output: the generics}\index{Integer\_IO}\index{Float\_IO}
 
-The full family of numeric and enumeration generics is present, each with
-\texttt{Put} \emph{and} \texttt{Get}, the \texttt{To}/\texttt{From} \texttt{String}
-variants, and defaults from the type's attributes:
+The full family of numeric and enumeration generics is present. Each has
+\texttt{Put} \emph{and} \texttt{Get}, the \texttt{To} and \texttt{From}
+\texttt{String} variants, and defaults from the type's attributes:
 
 \begin{lstlisting}
 package Int_IO is new Integer_IO (Integer);
@@ -130,16 +129,16 @@ end;
 \end{lstlisting}
 
 \texttt{Integer\_IO}, \texttt{Modular\_IO}, \texttt{Float\_IO}, \texttt{Fixed\_IO},
-\texttt{Decimal\_IO} and \texttt{Enumeration\_IO} are all there. Floating output
-formats fixed-point or scientific (when \texttt{Exp > 0}); the fixed-point
-generics format through a wide intermediate so a ranged \texttt{delta} type cannot
-overflow while being scaled. None of it uses a host \texttt{sprintf}; the digits
-are produced in Ada.
+\texttt{Decimal\_IO} and \texttt{Enumeration\_IO} are all there. Floating output is
+fixed-point, or scientific when \texttt{Exp > 0}. The fixed-point generics format
+through a wide intermediate, so a ranged \texttt{delta} type cannot overflow while
+it is being scaled. None of it uses a host \texttt{sprintf}. The digits are
+produced in Ada.
 
 \section{Column and line layout}\index{Set\_Col}\index{column layout}
 
-The same line/column/page model the Reference Manual defines is here, which is how
-you align columns without counting spaces:
+The same line, column and page model the Reference Manual defines is here, which
+is how you align columns without counting spaces:
 
 \begin{lstlisting}
 Put (F, "voltage"); Set_Col (F, 16); Put_Line (F, "3.30");
@@ -151,7 +150,7 @@ Put (F, "id");      Set_Col (F, 16); Put_Line (F, "42");
 \texttt{Col}, \texttt{Line}, \texttt{Page}, \texttt{Set\_Col}, \texttt{Set\_Line},
 \texttt{New\_Page} and \texttt{Skip\_Page} behave as in the RM. Setting a non-zero
 \texttt{Line\_Length} turns on automatic wrapping. Like the RM, the position only
-ever moves forward --- a stream cannot un-write a byte, so \texttt{Set\_Col} to an
+ever moves forward. A stream cannot un-write a byte, so \texttt{Set\_Col} to an
 earlier column starts a new line rather than seeking back.
 
 \section{Why this is not Ada.Text\_IO}\index{configurable run-time}
@@ -161,11 +160,11 @@ of simply \emph{being} \texttt{Ada.Text\_IO}, so that legacy \texttt{with
 Ada.Text\_IO} code would use it unchanged. We tried. The compiler will not allow
 it.
 
-\texttt{Ada.Text\_IO} is special to GNAT. Its nested numeric generics ---
-\texttt{Integer\_IO}, \texttt{Float\_IO} and the rest --- are not ordinary
-generics the compiler reads from your source. GNAT recognises the unit by name and
+\texttt{Ada.Text\_IO} is special to GNAT. Its nested numeric generics
+(\texttt{Integer\_IO}, \texttt{Float\_IO}, and the rest) are not ordinary generics
+that the compiler reads from your source. GNAT recognises the unit by name and
 binds those generics to its \emph{own} predefined implementation units
-(\texttt{a-tiinio}, \texttt{a-tiflio}, \dots). You cannot supply your own.
+(\texttt{a-tiinio}, \texttt{a-tiflio}, and so on). You cannot supply your own.
 
 Worse, those predefined units are exactly what a \textbf{configurable run-time}
 forbids. Build a full \texttt{Ada.Text\_IO} spec into this runtime and the compiler
@@ -177,15 +176,15 @@ a-textio.ads: error: file a-tiinio.ads not found  ("Integer_Io" not available)
 \end{lstlisting}
 
 That is the whole reason the bare runtime ships a \emph{stripped}
-\texttt{Ada.Text\_IO} in the first place: the standard one, with its formatted
-I/O, depends on machinery a configurable run-time excludes. The console hook of
-Section~\ref{driver:console-mux} does route the stripped package's \texttt{Put\_Line}
-through our device mux --- so console-only legacy code already benefits --- but the
-files and the generics cannot live under the \texttt{Ada.Text\_IO} name on this
-target.
+\texttt{Ada.Text\_IO} in the first place. The standard one, with its formatted
+I/O, depends on machinery that a configurable run-time excludes. The console hook
+of Section~\ref{driver:console-mux} does route the stripped package's
+\texttt{Put\_Line} through our device mux, so console-only legacy code already
+benefits. But the files and the generics cannot live under the
+\texttt{Ada.Text\_IO} name on this target.
 
 So \texttt{ESP32S3.Text\_IO} stands beside \texttt{Ada.Text\_IO}, not in place of
-it. The cost is a one-line change to legacy source (\texttt{with} and \texttt{use}
-the new name). The benefit is a Reference-Manual-shaped, pure-Ada text I/O ---
-console and ext4, formatted numbers and column layout --- on a runtime that the
+it. The cost is a one-line change to legacy source: \texttt{with} and \texttt{use}
+the new name. The benefit is a Reference-Manual-shaped, pure-Ada text I/O over the
+console and ext4, with formatted numbers and column layout, on a runtime the
 standard package was never going to fit.
