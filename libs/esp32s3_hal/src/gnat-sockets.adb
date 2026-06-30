@@ -31,7 +31,6 @@ package body GNAT.Sockets is
                     (others => (others => Socket_Stream));
    Opened       : array (Interface_Id, Sock_Index) of Boolean := (others => (others => False));
    Recv_Timeout : array (Interface_Id, Sock_Index) of Duration := (others => (others => 0.0));
-   Snd_Timeout  : array (Interface_Id, Sock_Index) of Duration := (others => (others => 0.0));
 
    ---------------------------------------------------------------------------
    --  Interface registry
@@ -146,7 +145,6 @@ package body GNAT.Sockets is
          Local_Ports  (Target, New_J) := Local_Ports  (Old_Id, Old_J);
          Modes        (Target, New_J) := Modes        (Old_Id, Old_J);
          Recv_Timeout (Target, New_J) := Recv_Timeout (Old_Id, Old_J);
-         Snd_Timeout  (Target, New_J) := Snd_Timeout  (Old_Id, Old_J);
          Opened       (Target, New_J) := False;
          In_Use (Old_Id, Old_J) := False;
          Opened (Old_Id, Old_J) := False;
@@ -236,7 +234,6 @@ package body GNAT.Sockets is
             Modes        (Id, J) := Mode;
             Opened       (Id, J) := False;
             Recv_Timeout (Id, J) := 0.0;
-            Snd_Timeout  (Id, J) := 0.0;
             Socket := (Iface => Integer (Id), Index => J, Pin => -1);
             return;
          end if;
@@ -334,7 +331,6 @@ package body GNAT.Sockets is
             Local_Ports (Id, J) := Net_Devices.Port_Number (50_000 + J);
          end if;
          Ensure_Open (Id, J);                     --  open TCP on the local port
-         Registry (Id).Set_Send_Timeout (J, Snd_Timeout (Id, J));   --  caps the connect wait
          Registry (Id).Connect (J, Server.Addr.B, Net_Devices.Port_Number (Server.Port), St);
          if St /= Net_Devices.OK then raise Socket_Error; end if;
       end;
@@ -350,8 +346,6 @@ package body GNAT.Sockets is
       Sent : Natural;
    begin
       Ensure_Open (Id, J);
-      --  Re-apply the option (Ensure_Open may have just opened the chip socket).
-      Registry (Id).Set_Send_Timeout (J, Snd_Timeout (Id, J));
       if To /= null then
          Registry (Id).Send_To (J, To.Addr.B, Net_Devices.Port_Number (To.Port), Item, St);
          if St /= Net_Devices.OK then raise Socket_Error; end if;
@@ -430,9 +424,6 @@ package body GNAT.Sockets is
          when Receive_Timeout =>
             Recv_Timeout (Id, J) := Option.Timeout;
             Registry (Id).Set_Receive_Timeout (J, Option.Timeout);
-         when Send_Timeout =>
-            Snd_Timeout (Id, J) := Option.Timeout;
-            Registry (Id).Set_Send_Timeout (J, Option.Timeout);
       end case;
    end Set_Socket_Option;
 

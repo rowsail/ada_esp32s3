@@ -108,16 +108,13 @@ package GNAT.Sockets is
    --  Socket options (a minimal subset).  Receive_Timeout caps how long a
    --  Receive_Socket blocks; when it elapses with no data, Receive_Socket raises
    --  Socket_Error (as on desktop GNAT.Sockets).  A timeout of 0.0 means block
-   --  indefinitely (the default).  Send_Timeout caps Send_Socket and Connect_Socket
-   --  the same way (raising Socket_Error on expiry); for it 0.0 means a 10 s safety
-   --  cap -- an unbounded send would hang the caller if a link dropped silently --
-   --  not "block forever".
+   --  indefinitely (the default).
    type Level_Type  is (Socket_Level);
-   type Option_Name is (Receive_Timeout, Send_Timeout);
+   type Option_Name is (Receive_Timeout);
    subtype Timeval_Duration is Duration range 0.0 .. Duration'Last;
    type Option_Type (Name : Option_Name := Receive_Timeout) is record
       case Name is
-         when Receive_Timeout | Send_Timeout =>
+         when Receive_Timeout =>
             Timeout : Timeval_Duration := 0.0;
       end case;
    end record;
