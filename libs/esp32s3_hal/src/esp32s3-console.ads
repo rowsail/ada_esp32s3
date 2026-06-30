@@ -25,11 +25,22 @@
 --  couple of full USB packets instead of one packet per write.  The cost is that
 --  output WITHOUT a trailing newline stays buffered -- call Flush before a long
 --  sleep, a risky operation, or in a fault handler to force the tail out.
+--
+--  No host, no cost: the driver never blocks on a host it has not confirmed is
+--  reading (it only backpressures after observing the FIFO actually drain).  So a
+--  board running with no USB host attached pays ZERO delay -- console output never
+--  slows the application; the bytes are simply dropped.
+--
+--  Dropped output is OBSERVABLE, not silent: every dropped byte is tallied in a
+--  saturating counter (Dropped_Bytes), and the next time the host is draining,
+--  Flush prepends an in-band notice -- "[console: <n> bytes dropped]" -- so a gap
+--  in the stream is both visible to a reader and queryable by the program.
+with Interfaces;
 package ESP32S3.Console is
 
    --  Append a string to the console buffer (flushed on newline / when full).
-   --  When a flush happens with no host draining, the data is dropped after a
-   --  bounded wait rather than blocking forever.
+   --  When a flush happens with no host draining, the data is dropped (counted in
+   --  Dropped_Bytes) rather than blocking.
    procedure Write (S : String);
 
    --  Append a single character (flushes if it is a newline / fills the buffer).
@@ -37,5 +48,23 @@ package ESP32S3.Console is
 
    --  Push any buffered bytes to the host now, as 64-byte USB packets.
    procedure Flush;
+
+   --  Total bytes dropped so far because no host was draining (saturating).  0
+   --  means every byte handed to the console was delivered.
+   function Dropped_Bytes return Interfaces.Unsigned_32;
+
+   --  Reset the dropped-byte counter (e.g. after reporting it).
+   procedure Clear_Dropped;
+
+   --  Optional active notification: register a handler called whenever bytes are
+   --  dropped, with Count = the number dropped in that event.  It runs
+   --  synchronously from the dropping Flush, so keep it short, non-blocking, and
+   --  do NOT raise.  It MAY call back into the console (e.g. to Write a note or
+   --  set a pin) -- re-entrant drops will not re-fire the handler.  Pass null to
+   --  disable.  Default is no handler, so the console stays side-effect-free and
+   --  ZFP-safe unless you opt in.  The handler must be a LIBRARY-LEVEL procedure
+   --  (No_Implicit_Dynamic_Code bars 'Access of a nested one -- no trampolines).
+   type Drop_Handler is access procedure (Count : Natural);
+   procedure On_Drop (Handler : Drop_Handler);
 
 end ESP32S3.Console;
