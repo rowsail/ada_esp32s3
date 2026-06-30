@@ -473,15 +473,17 @@ bounded failure instead of a deadlock:
 
 \begin{lstlisting}
 Guard : Natural := 0;
-while not Done (C, Dir) and then Guard < 2_000_000 loop   -- GDMA completion
+while not Done (C, Dir) and then Guard < 50_000_000 loop  -- poll GDMA's Done
    Guard := Guard + 1;
 end loop;
 --  fall through whether the DMA finished or the cap tripped; the caller checks Done
 \end{lstlisting}
 
 The cap is a crude worst-case-execution-time bound: still no \texttt{delay} (the
-expected wait is short), but liveness is guaranteed. GDMA's \texttt{Wait} and the
-W5500's command-accept (\texttt{Issue}, capped at 2000 tries) use this shape.
+expected wait is short), but liveness is guaranteed. The I2S driver's
+\texttt{Capture} (which polls GDMA's \texttt{Done} directly so it can sample while
+a continuous transmit drives the shared clock) and the W5500's command-accept
+(\texttt{Issue}, capped at 2000 tries) use this shape.
 
 \subsection{A paced poll: when the wait is milliseconds}
 
@@ -503,6 +505,13 @@ polling wastes both CPU and energy. Sleep instead: an interrupt handler
 (Chapter~\ref{ch:suspension}). This is the top of the spectrum: the most machinery
 (a handler, a wired interrupt), but the only choice that costs \emph{zero} while
 waiting.
+
+\texttt{ESP32S3.GDMA}'s \texttt{Wait} sits here: a transfer's end-of-transfer
+interrupt \texttt{Set\_True}s a per-channel \texttt{Suspension\_Object} and the
+waiting task sleeps on it, so a multi-millisecond DMA hands the core back instead
+of pinning it. It even folds in the bottom of the spectrum, a brief spin first,
+for transfers too short to be worth a context switch, so one \texttt{Wait} spans
+three of these four points by the length of the transfer.
 
 \subsection{One driver, the whole spectrum}
 
