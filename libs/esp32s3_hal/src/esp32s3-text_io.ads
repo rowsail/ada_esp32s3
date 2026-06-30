@@ -26,6 +26,10 @@ package ESP32S3.Text_IO is
    subtype Number_Base is Integer range 2 .. 16;
    type Type_Set is (Lower_Case, Upper_Case);
 
+   --  Raised by the Put (To : out String; ...) variants when the value does not
+   --  fit in the target string (the only Text_IO exception not in Ext4).
+   Layout_Error : exception;
+
    type Count is range 0 .. Integer'Last;
    subtype Positive_Count is Count range 1 .. Count'Last;
 
@@ -97,6 +101,12 @@ package ESP32S3.Text_IO is
    procedure Get (File : File_Type; Item : out Character);
    procedure Get (Item : out Character);
    procedure Look_Ahead (File : File_Type; Item : out Character; End_Of_Line : out Boolean);
+   --  Read the next character without skipping line terminators. The Available
+   --  form sets it False (Item undefined) when no character is ready.
+   procedure Get_Immediate (File : File_Type; Item : out Character);
+   procedure Get_Immediate (Item : out Character);
+   procedure Get_Immediate (File : File_Type; Item : out Character; Available : out Boolean);
+   procedure Get_Immediate (Item : out Character; Available : out Boolean);
 
    --  String / line I/O ---------------------------------------------------------
    procedure Put (File : File_Type; Item : String);
@@ -118,6 +128,8 @@ package ESP32S3.Text_IO is
                      Width : Field := Default_Width; Base : Number_Base := Default_Base);
       procedure Get (File : File_Type; Item : out Num);
       procedure Get (Item : out Num);
+      procedure Put (To : out String; Item : Num; Base : Number_Base := Default_Base);
+      procedure Get (From : String; Item : out Num; Last : out Positive);
    end Integer_IO;
 
    generic
@@ -131,6 +143,8 @@ package ESP32S3.Text_IO is
                      Width : Field := Default_Width; Base : Number_Base := Default_Base);
       procedure Get (File : File_Type; Item : out Num);
       procedure Get (Item : out Num);
+      procedure Put (To : out String; Item : Num; Base : Number_Base := Default_Base);
+      procedure Get (From : String; Item : out Num; Last : out Positive);
    end Modular_IO;
 
    generic
@@ -147,6 +161,9 @@ package ESP32S3.Text_IO is
                      Exp  : Field := Default_Exp);
       procedure Get (File : File_Type; Item : out Num);
       procedure Get (Item : out Num);
+      procedure Put (To : out String; Item : Num;
+                     Aft : Field := Default_Aft; Exp : Field := Default_Exp);
+      procedure Get (From : String; Item : out Num; Last : out Positive);
    end Float_IO;
 
    generic
