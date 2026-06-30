@@ -1,12 +1,12 @@
 with Interfaces;     use Interfaces;
-with ESP32S3.Console;
+with ESP32S3.Serial;
 
 package body ESP32S3.Log is
 
-   --  Output now goes through ESP32S3.Console (the backpressured USB Serial/JTAG
-   --  driver) instead of esp_rom_printf -- so bursts aren't dropped and partial
-   --  trailing packets are always flushed.  Console.Write takes a plain slice,
-   --  so nothing here needs NUL-termination any more.
+   --  Output goes through ESP32S3.Serial -- the device multiplexer -- so it lands
+   --  on whichever serial device is currently selected (the backpressured USB
+   --  Serial/JTAG console by default, or a UART after ESP32S3.Serial.Set_Output).
+   --  Serial.Write takes a plain slice, so nothing here needs NUL-termination.
 
    ---------
    -- Put --
@@ -14,12 +14,12 @@ package body ESP32S3.Log is
 
    procedure Put (S : String) is
    begin
-      Console.Write (S);
+      Serial.Write (S);
    end Put;
 
    procedure Put (C : Character) is
    begin
-      Console.Put (C);
+      Serial.Put (C);
    end Put;
 
    --------------
@@ -28,7 +28,7 @@ package body ESP32S3.Log is
 
    procedure New_Line is
    begin
-      Console.Put (ASCII.LF);
+      Serial.Put (ASCII.LF);
    end New_Line;
 
    --------------
@@ -80,7 +80,7 @@ package body ESP32S3.Log is
          end if;
          Out_Buf (P + 1 .. P + Digs'Length) := Digs;
          P := P + Digs'Length;
-         Console.Write (Out_Buf (1 .. P));
+         Serial.Write (Out_Buf (1 .. P));
       end;
    end Put;
 
@@ -100,7 +100,7 @@ package body ESP32S3.Log is
          V := V / 10;
          exit when V = 0;
       end loop;
-      Console.Write (Digits_Buf (D_First .. Digits_Buf'Last));
+      Serial.Write (Digits_Buf (D_First .. Digits_Buf'Last));
    end Put_Unsigned;
 
    -------------
@@ -130,7 +130,7 @@ package body ESP32S3.Log is
             Out_Buf (I) := '0';
          end loop;
          Out_Buf (Pad_Len + 1 .. Pad_Len + Digs'Length) := Digs;
-         Console.Write (Out_Buf);
+         Serial.Write (Out_Buf);
       end;
    end Put_Hex;
 
