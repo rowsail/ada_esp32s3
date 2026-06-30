@@ -26,6 +26,12 @@ package body ESP32S3.W25Q is
    --  Largest single transfer we build: opcode + 4 address bytes + a full page.
    Header_Len : constant := 5;
 
+   --  Dummy MOSI source for the read data phase.  GDMA can only reach internal
+   --  SRAM, so this lives in package .bss rather than as a stack/.rodata constant
+   --  (a constant aggregate may be placed in XIP flash, which DMA cannot read).
+   --  Reads are serialised by the per-host SPI lock, so one shared source is safe.
+   Zero_Src : Byte_Array (0 .. 255) := (others => 0);
+
    ----------------------------------------------------------------------------
    --  Low-level command helpers (all run while the host is already Acquired)
    ----------------------------------------------------------------------------
@@ -130,7 +136,6 @@ package body ESP32S3.W25Q is
       S      : SPI.Session;
       Header : aliased Byte_Array (0 .. Header_Len - 1);
       Junk   : aliased Byte_Array (0 .. Header_Len - 1);
-      Zeros  : constant Byte_Array (0 .. 255) := (others => 0);
       Pos    : Natural := Data'First;
       Chunk  : Natural;
    begin
@@ -144,8 +149,8 @@ package body ESP32S3.W25Q is
       --  reading sequential bytes.
       SPI.Transfer (S, Header'Address, Junk'Address, Header_Len);
       while Pos <= Data'Last loop
-         Chunk := Natural'Min (Zeros'Length, Data'Last - Pos + 1);
-         SPI.Transfer (S, Zeros'Address, Data (Pos)'Address, Chunk);
+         Chunk := Natural'Min (Zero_Src'Length, Data'Last - Pos + 1);
+         SPI.Transfer (S, Zero_Src'Address, Data (Pos)'Address, Chunk);
          Pos := Pos + Chunk;
       end loop;
       SPI.Select_Device (S, On => False);

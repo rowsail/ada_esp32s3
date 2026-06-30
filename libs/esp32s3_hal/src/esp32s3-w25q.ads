@@ -30,8 +30,10 @@ package ESP32S3.W25Q is
 
    --  Geometry of the Winbond family parts this driver speaks to.
    Page_Size   : constant := 256;     --  program granularity (one Page-Program)
-   Sector_Size : constant := 4096;    --  smallest erase unit (Sector-Erase 0x21)
-   Block_Size  : constant := 65536;   --  64 KB erase block (Block-Erase 0xDC)
+   Sector_Size : constant := 4096;    --  smallest erase unit (Sector-Erase 0x20)
+   Block_Size  : constant := 65536;   --  64 KB block geometry (this driver erases
+                                       --  only by 4 KB sector; the FV's 64K block
+                                       --  erase, 0xD8, is not used here)
 
    --  Flat byte address into the array (0 .. chip_size-1).  The W25Q256FV is
    --  32 MB, so a 32-bit address covers it with room to spare.
@@ -59,7 +61,10 @@ package ESP32S3.W25Q is
    --  always SPI mode 0.
    type Flash is record
       Host     : ESP32S3.SPI.SPI_Host;
-      Clock_Hz : Positive                  := 8_000_000;   --  W25Q256FV: <=133 MHz
+      Clock_Hz : Positive                  := 8_000_000;   --  Read uses 0x03, whose
+                                                           --  ceiling is ~50 MHz on
+                                                           --  the W25Q256FV (not the
+                                                           --  133 MHz fast-read max)
       CS_Pin   : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       CS_CB    : ESP32S3.SPI.CS_Select     := null;
       Ctx      : System.Address            := System.Null_Address;
@@ -86,18 +91,18 @@ package ESP32S3.W25Q is
    --  non-standard density code -- so callers can detect "unknown size".
    function Capacity_Bytes (ID : JEDEC_ID) return Address;
 
-   --  Read Data'Length bytes starting at Addr (opcode 0x13, continuous read).
+   --  Read Data'Length bytes starting at Addr (opcode 0x03, continuous read).
    --  Any length is allowed: the read streams across as many SPI transfers as
    --  needed with the chip held selected throughout.
    procedure Read (Dev : Flash; Addr : Address; Data : out Byte_Array);
 
-   --  Erase the 4 KB sector containing Addr (opcode 0x21); blocks until the chip
+   --  Erase the 4 KB sector containing Addr (opcode 0x20); blocks until the chip
    --  reports not-busy.  Erased bytes read back as 0xFF.  (Issues Write-Enable
    --  first and polls the status register's BUSY bit after.)
    procedure Erase_Sector (Dev : Flash; Addr : Address);
 
    --  Program Data (1 .. 256 bytes, must not cross a 256-byte page boundary) at
-   --  Addr (opcode 0x12); blocks until not-busy.  Programming only clears 1->0
+   --  Addr (opcode 0x02); blocks until not-busy.  Programming only clears 1->0
    --  bits, so the target must have been erased first.  The precondition states
    --  the page rule: Data must be 1 .. Page_Size bytes and must not straddle a
    --  256-byte page boundary (rather than silently wrapping).
