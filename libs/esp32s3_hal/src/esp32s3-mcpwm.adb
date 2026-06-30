@@ -66,19 +66,40 @@ package body ESP32S3.MCPWM is
    --  are atomic on this target, and the owner is exclusive, so no lock is needed.
    Periods : array (MCPWM_Unit, Channel_Index) of Natural := (others => (others => 1));
 
-   --  Whether each unit has been Setup (clock-gated + reset released).  Claim
-   --  refuses a unit that was never Setup -- configuration precedes ownership.
-   Unit_Ready : array (MCPWM_Unit) of Boolean := (others => False);
+   --  Bring a unit's clock up (PWM clock = 160 MHz): clock-gate, pulse reset,
+   --  and force the reg-file clock on.  Run lazily, once per unit, from inside
+   --  the Pool on the first Claim of any of the unit's channels -- so claiming a
+   --  second channel never resets a sibling that is already running.
+   procedure Bring_Up_Unit (Unit : MCPWM_Unit) is
+      use ESP32S3_Registers.SYSTEM;
+      R : constant Periph_Ref := Regs_Of (Unit);
+   begin
+      case Unit is
+         when MCPWM0 =>
+            SYSTEM_Periph.PERIP_CLK_EN0.PWM0_CLK_EN := True;
+            SYSTEM_Periph.PERIP_RST_EN0.PWM0_RST    := True;
+            SYSTEM_Periph.PERIP_RST_EN0.PWM0_RST    := False;
+         when MCPWM1 =>
+            SYSTEM_Periph.PERIP_CLK_EN0.PWM1_CLK_EN := True;
+            SYSTEM_Periph.PERIP_RST_EN0.PWM1_RST    := True;
+            SYSTEM_Periph.PERIP_RST_EN0.PWM1_RST    := False;
+      end case;
+
+      R.CLK     := (EN => True, others => <>);          --  force the reg-file clock on
+      R.CLK_CFG := (CLK_PRESCALE => 0, others => <>);   --  PWM_clk = 160 MHz
+   end Bring_Up_Unit;
 
    --------------------------------------------------------------------------
    --  Channel / capture ownership pool.  A generator channel and a capture
    --  channel are shared resources; the pool serialises Claim / Release so two
-   --  tasks can never be handed the same one.  Once claimed, only the holder
-   --  touches that channel's registers -- the operations need no further lock.
+   --  tasks can never be handed the same one, and brings a unit's clock up
+   --  lazily on the first Claim of any of its channels.  Once claimed, only the
+   --  holder touches that channel's registers -- the operations need no lock.
    --------------------------------------------------------------------------
 
    type Ch_Use_Map  is array (MCPWM_Unit, Channel_Index) of Boolean;
    type Cap_Use_Map is array (MCPWM_Unit, Cap_Index)     of Boolean;
+   type Unit_Map    is array (MCPWM_Unit)                of Boolean;
 
    protected Pool is
       procedure Claim_Channel
@@ -90,6 +111,7 @@ package body ESP32S3.MCPWM is
    private
       Ch_Use  : Ch_Use_Map  := (others => (others => False));
       Cap_Use : Cap_Use_Map := (others => (others => False));
+      Unit_Up : Unit_Map := (others => False);
    end Pool;
 
    protected body Pool is
@@ -99,6 +121,10 @@ package body ESP32S3.MCPWM is
       begin
          Ok := not Ch_Use (Unit, Index);
          if Ok then
+            if not Unit_Up (Unit) then       --  lazy, once per unit
+               Bring_Up_Unit (Unit);
+               Unit_Up (Unit) := True;
+            end if;
             Ch_Use (Unit, Index) := True;
          end if;
       end Claim_Channel;
@@ -113,6 +139,10 @@ package body ESP32S3.MCPWM is
       begin
          Ok := not Cap_Use (Unit, Index);
          if Ok then
+            if not Unit_Up (Unit) then       --  lazy, once per unit
+               Bring_Up_Unit (Unit);
+               Unit_Up (Unit) := True;
+            end if;
             Cap_Use (Unit, Index) := True;
          end if;
       end Claim_Capture;
@@ -136,43 +166,14 @@ package body ESP32S3.MCPWM is
    end Do_Stop;
 
    -----------
-   -- Setup --
-   -----------
-
-   procedure Setup (Unit : MCPWM_Unit) is
-      use ESP32S3_Registers.SYSTEM;
-      R : constant Periph_Ref := Regs_Of (Unit);
-   begin
-      --  Clock-gate + pulse reset (PWM0/PWM1 live in PERIP_CLK_EN0/RST_EN0).
-      case Unit is
-         when MCPWM0 =>
-            SYSTEM_Periph.PERIP_CLK_EN0.PWM0_CLK_EN := True;
-            SYSTEM_Periph.PERIP_RST_EN0.PWM0_RST    := True;
-            SYSTEM_Periph.PERIP_RST_EN0.PWM0_RST    := False;
-         when MCPWM1 =>
-            SYSTEM_Periph.PERIP_CLK_EN0.PWM1_CLK_EN := True;
-            SYSTEM_Periph.PERIP_RST_EN0.PWM1_RST    := True;
-            SYSTEM_Periph.PERIP_RST_EN0.PWM1_RST    := False;
-      end case;
-
-      R.CLK     := (EN => True, others => <>);          --  force the reg-file clock on
-      R.CLK_CFG := (CLK_PRESCALE => 0, others => <>);   --  PWM_clk = 160 MHz
-
-      Unit_Ready (Unit) := True;
-   end Setup;
-
-   -----------
    -- Claim --
    -----------
 
    procedure Claim (C : in out Channel; Unit : MCPWM_Unit; Index : Channel_Index) is
       Ok : Boolean;
    begin
-      if not Unit_Ready (Unit) then
-         raise Not_Initialized with "MCPWM unit claimed before Setup";
-      end if;
       Release (C);                     --  free any channel C already held
-      Pool.Claim_Channel (Unit, Index, Ok);
+      Pool.Claim_Channel (Unit, Index, Ok);   --  brings the unit up on first claim
       if Ok then
          C.U    := Unit;
          C.Idx  := Index;
@@ -554,9 +555,6 @@ package body ESP32S3.MCPWM is
    procedure Claim (Cap : in out Capture; Unit : MCPWM_Unit; Index : Cap_Index) is
       Ok : Boolean;
    begin
-      if not Unit_Ready (Unit) then
-         raise Not_Initialized with "MCPWM unit claimed before Setup";
-      end if;
       Release (Cap);
       Pool.Claim_Capture (Unit, Index, Ok);
       if Ok then

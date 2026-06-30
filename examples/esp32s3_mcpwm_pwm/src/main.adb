@@ -278,8 +278,7 @@ begin
    delay until Clock + Milliseconds (200);   --  let the USB console settle first
    Banner;
 
-   Setup (MCPWM0);
-   Claim (Generator0, MCPWM0, Ch0);
+   Claim (Generator0, MCPWM0, Ch0);   --  first Claim brings up the MCPWM0 clock
    Configure_Channel (Generator0, Freq => Frequency_Hz, Pin => Out_Pin);
    Start (Generator0);
 
