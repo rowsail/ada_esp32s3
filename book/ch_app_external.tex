@@ -654,6 +654,78 @@ On the hardware (the self-tests carry a couple of LSB of analog slack):
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_tlv2556}.
 
+\section{HC595: SPI Shift-Register Output String}\index{HC595 driver}\index{shift register}
+\label{app:ext:hc595}
+
+The 74HC595 is a serial-in / parallel-out shift register: clock eight bits in on
+one pin and they appear on eight output pins. Daisy-chained (each chip's overflow
+output feeds the next chip's serial input), any number of them form one long
+output string, so a few cents of logic buys as many outputs as you like. The
+driver treats the chain as exactly that: a \texttt{Controller} sized by a
+\texttt{Chips} discriminant, with \texttt{8 * Chips} outputs.
+
+It rides the SPI bus \emph{write-only}: \texttt{MOSI} drives the chip's serial
+data (SER) and \texttt{SCLK} the shift clock, so no \texttt{MISO} is needed. Two
+ordinary GPIOs complete it: \texttt{RCLK} (the storage-register latch, whose
+rising edge copies the shift register to the output pins) and active-low
+\texttt{/OE} (output enable). The shared SPI2 bus needs only \texttt{Setup} +
+\texttt{Configure\_Pins} first; the driver \texttt{Acquire}s it for each update.
+
+\begin{lstlisting}
+package ESP32S3.HC595 is
+   subtype Byte is Interfaces.Unsigned_8;
+   type Controller (Chips : Positive) is limited private;   --  a string of N chips
+
+   procedure Initialize (C : in out Controller;
+                         Host     : ESP32S3.SPI.SPI_Host;
+                         RCLK     : ESP32S3.GPIO.Pin_Id;      --  latch (rising edge)
+                         OE       : ESP32S3.GPIO.Pin_Id;      --  active-low /OE
+                         Clock_Hz : Positive := 10_000_000;
+                         Enable   : Boolean  := True);
+   function  Output_Count (C : Controller) return Natural;   --  8 * Chips
+
+   --  Stage into an in-RAM shadow, then Update to latch the whole string at once:
+   procedure Set_Output (C : in out Controller; Index : Natural; On : Boolean);
+   procedure Set_Byte   (C : in out Controller; Chip  : Natural; Value : Byte);
+   procedure Update     (C : in out Controller);          --  shift out + pulse RCLK
+   procedure Write_Output (C : in out Controller; Index : Natural; On : Boolean);
+   function  Get_Output (C : Controller; Index : Natural) return Boolean;
+   procedure Clear_All (C : in out Controller);  procedure Set_All (C : in out Controller);
+   procedure Enable_Outputs (C : in out Controller);
+   procedure Disable_Outputs (C : in out Controller);
+end ESP32S3.HC595;
+\end{lstlisting}
+
+The split between staging and latching is the point. \texttt{Set\_Output} and
+\texttt{Set\_Byte} only edit an in-RAM shadow of the string; nothing reaches the
+pins until \texttt{Update} shifts the whole shadow out and pulses \texttt{RCLK},
+so every output changes together on one clean latch edge with no intermediate
+glitch as the bits ripple through. \texttt{Write\_Output} is the one-shot
+convenience (set one bit, then \texttt{Update}); \texttt{Clear\_All} /
+\texttt{Set\_All} and the \texttt{/OE} \texttt{Enable\_Outputs} /
+\texttt{Disable\_Outputs} round it out.
+
+\begin{lstlisting}
+declare
+   SR : ESP32S3.HC595.Controller (Chips => 3);          --  three chips = 24 outputs
+begin
+   ESP32S3.SPI.Setup (ESP32S3.SPI.SPI2);                --  bus shared with the flash
+   ESP32S3.SPI.Configure_Pins (ESP32S3.SPI.SPI2, Sclk => 1, Mosi => 4,
+                               Miso => ESP32S3.GPIO.No_Pin);   --  write-only
+   ESP32S3.HC595.Initialize (SR, Host => ESP32S3.SPI.SPI2, RCLK => 5, OE => 6);
+
+   for I in 0 .. ESP32S3.HC595.Output_Count (SR) - 1 loop   --  walk one high output
+      ESP32S3.HC595.Clear_All (SR);
+      ESP32S3.HC595.Write_Output (SR, I, True);
+      delay 0.25;
+   end loop;
+end;
+\end{lstlisting}
+
+\noindent\textbf{Example:} \texttt{examples/esp32s3\_hc595} (a "chase" that walks
+one high output across the whole string, for confirming the wiring and chip count
+on LEDs or a scope).
+
 \section{GPS: NMEA-0183 Receiver}\index{GPS driver}
 \label{app:ext:gps}
 
