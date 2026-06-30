@@ -124,6 +124,9 @@ binds a \texttt{Fault\_Input} (\texttt{Fault0\,..\,2}) to a pad, and
 
 \begin{lstlisting}
 type I2S_Mode is (Standard, PDM);
+type PCM_8  is array (Natural range <>) of Interfaces.Integer_8;   -- the typed,
+type PCM_16 is array (Natural range <>) of Interfaces.Integer_16;  --  signed PCM
+type PCM_32 is array (Natural range <>) of Interfaces.Integer_32;  --  buffers
 --  Acquire claims a port AND brings it up (audio format + pin routing).  The
 --  first Acquire of a port opens it; a later Acquire reuses it (Reconfigure
 --  re-opens to change the format), so a codec's MCLK stays running.
@@ -132,9 +135,18 @@ procedure Acquire (S : in out Session; Port : I2S_Port;
                    Mode : I2S_Mode := Standard;
                    Bclk, Ws, Dout, Din, Mclk : Optional_Pin := No_Pin);
 procedure Reconfigure (S : Session; ...);  -- re-open the held port's format
-procedure Write (S : Session; Tx : System.Address; Length : Natural);
-procedure Read  (S : Session; Rx : System.Address; Length : Natural);
-procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural);
+function  Configured_Bits (S : Session) return Sample_Bits;
+--  Typed transfers (preferred): the element type fixes the on-wire width, so the
+--  byte count is derived and a precondition checks it against the port's Bits.
+procedure Write    (S : Session; Samples : PCM_16)
+   with Pre => Configured_Bits (S) = Bits_16;
+procedure Read     (S : Session; Samples : out PCM_16)
+   with Pre => Configured_Bits (S) = Bits_16;
+procedure Transfer (S : Session; Tx : PCM_16; Rx : out PCM_16)
+   with Pre => Configured_Bits (S) = Bits_16 and then Tx'Length = Rx'Length;
+--  PCM_8 / PCM_32 overloads likewise (also Start_Continuous / Capture).  The
+--  *_Raw forms take a 'Address + byte Length for bytes already framed elsewhere:
+procedure Write_Raw (S : Session; Tx : System.Address; Length : Natural);
 \end{lstlisting}
 
 \textbf{Parameters.}
@@ -149,36 +161,45 @@ procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural);
 \item[\texttt{Bclk}, \texttt{Ws}, \texttt{Dout}, \texttt{Din}] the bit-clock,
   word-select, data-out and data-in lines (\texttt{Optional\_Pin};
   \texttt{Dout}/\texttt{Din} default \texttt{No\_Pin}).
-\item[\texttt{Tx}, \texttt{Rx}, \texttt{Length}] buffer \texttt{'Address}es and a
-  byte count, \texttt{1\,..\,4095}.
+\item[\texttt{Samples}] a typed \texttt{PCM\_8\,/\,16\,/\,32} buffer; the driver
+  derives the byte count and a precondition checks the width against the port.
+  The \texttt{*\_Raw} forms instead take a \texttt{'Address} + byte
+  \texttt{Length} (\texttt{1\,..\,4095}) for bytes already framed elsewhere.
 \end{description}
+
+The element type of a \texttt{PCM\_*} buffer fixes the on-wire width, so a
+\texttt{Write\,(S,\,Samples)} needs no caller-side \texttt{'Address} or
+\texttt{*\,2}: the driver computes the byte count from \texttt{Samples'Length},
+and the precondition \texttt{Configured\_Bits\,(S)\,=\,Bits\_16} turns a
+buffer-vs.-port width mismatch from silent noise into a caught contract
+violation. Reach for \texttt{Write\_Raw}/\texttt{Transfer\_Raw} only for bytes
+that are \emph{already} framed (a DMA buffer built elsewhere, or an opaque
+bit-pattern self-test).
 
 \textbf{Example 1: play a buffer of samples.}
 \begin{lstlisting}
-with Interfaces;
 with ESP32S3.I2S; use ESP32S3.I2S;
 procedure I2S_Play is
    S    : Session;
-   Tone : aliased array (0 .. 255) of Interfaces.Integer_16 := (others => 0);
+   Tone : PCM_16 (0 .. 255) := (others => 0);
 begin
    Acquire (S, I2S0, Sample_Rate => 44_100, Bits => Bits_16,
-            Bclk => 4, Ws => 5, Dout => 6);    --  claim + configure
-   Write (S, Tone'Address, Tone'Length * 2);  --  2 bytes per 16-bit sample
+            Bclk => 4, Ws => 5, Dout => 6);   --  claim + configure
+   Write (S, Tone);                           --  256 samples x 2 bytes, derived
 end I2S_Play;
 \end{lstlisting}
 
 \textbf{Example 2: wiring-free full-duplex loopback self-test.}
 \begin{lstlisting}
-with Interfaces;
 with ESP32S3.I2S; use ESP32S3.I2S;
 procedure I2S_Loopback is
    S  : Session;
-   Tx : aliased array (0 .. 63) of Interfaces.Unsigned_8 := (others => 16#5A#);
-   Rx : aliased array (0 .. 63) of Interfaces.Unsigned_8 := (others => 0);
+   Tx : PCM_16 (0 .. 63) := (others => 0);    --  fill with a test pattern
+   Rx : PCM_16 (0 .. 63) := (others => 0);
 begin
    Acquire (S, I2S0);                          --  claim (defaults: 16k 16-bit)
    Enable_Loopback (S, Pad => 7);              --  TX folded to RX (held port)
-   Transfer (S, Tx'Address, Rx'Address, 64);  --  Rx = Tx
+   Transfer (S, Tx, Rx);                       --  Rx = Tx (same length checked)
 end I2S_Loopback;
 \end{lstlisting}
 
@@ -203,15 +224,14 @@ DMA still moves ordinary PCM, so only the on-wire format changes:
 \end{itemize}
 
 \begin{lstlisting}
-with Interfaces;
 with ESP32S3.I2S; use ESP32S3.I2S;
 procedure PDM_Mic is
    S  : Session;
-   Rx : aliased array (0 .. 511) of Interfaces.Integer_16 := (others => 0);
+   Rx : PCM_16 (0 .. 511) := (others => 0);
 begin
    Acquire (S, I2S0, Sample_Rate => 16_000, Bits => Bits_16, Mode => PDM,
             Ws => 5, Din => 6);               --  claim + configure (PDM mic)
-   Read (S, Rx'Address, Rx'Length * 2);       --  PDM mic -> PCM
+   Read (S, Rx);                              --  PDM mic -> signed PCM_16
 end PDM_Mic;
 \end{lstlisting}
 

@@ -43,9 +43,8 @@
 --    The demo captures several blocks and prints each block's peak-to-peak
 --    level, so with a mic wired you can watch the level rise when you speak or
 --    tap it.  With no mic the input floats -- expect a railed/quiet reading.
-with Interfaces;   use Interfaces;
+with Interfaces;   use Interfaces;  --  Integer_16'Range bounds below
 with Ada.Real_Time; use Ada.Real_Time;
-with Ada.Unchecked_Conversion;
 
 with ESP32S3.I2S;   use ESP32S3.I2S;
 with ESP32S3.GPIO;
@@ -65,10 +64,8 @@ procedure Main is
    --  Audio format: 16-bit stereo PCM at 16 kHz.
    Sample_Rate_Hz : constant Positive := 16_000;
 
-   --  Each stereo frame is two 16-bit samples (left + right); each sample is
-   --  one 16-bit word = 2 bytes.
+   --  Each stereo frame is two 16-bit samples (left + right).
    Samples_Per_Frame : constant := 2;
-   Bytes_Per_Sample  : constant := 2;
 
    --  16-bit stereo PCM.  256 frames = 512 words = 1024 bytes (< 4095 DMA cap).
    Frames : constant := 256;
@@ -88,11 +85,10 @@ procedure Main is
    Rail_Threshold : constant := 32_000;
 
    subtype Sample_Index is Natural range 0 .. Samples_Per_Frame * Frames - 1;
-   type Samples is array (Sample_Index) of Unsigned_16;
-   Rx : Samples := (others => 0);
-
-   function To_Signed is
-     new Ada.Unchecked_Conversion (Unsigned_16, Integer_16);
+   --  PCM_16 is the driver's typed signed-16-bit buffer.  Read fills it directly
+   --  (byte count + width derived from the array), so the recovered samples are
+   --  already signed PCM -- no Unchecked_Conversion to reinterpret raw words.
+   Rx : PCM_16 (Sample_Index) := (others => 0);
 begin
    delay until Clock + Milliseconds (200);
    Put_Line ("[i2s-pdm] bare-metal I2S PDM microphone capture demo "
@@ -119,12 +115,12 @@ begin
                   Sample_Rate => Sample_Rate_Hz, Bits => Bits_16, Mode => PDM,
                   Ws  => ESP32S3.GPIO.Optional_Pin (Clock_Pin),
                   Din => ESP32S3.GPIO.Optional_Pin (Data_Pin));
-         Read (Session_Port, Rx'Address, Samples'Length * Bytes_Per_Sample);
+         Read (Session_Port, Rx);   --  typed: PDM mic -> signed PCM_16
 
          --  Peak-to-peak of the recovered left channel (even index), skipping a
          --  few startup frames so the decimator settle isn't counted.
          for Frame in Settle_Frames .. Frames - 1 loop
-            Value   := Integer (To_Signed (Rx (Samples_Per_Frame * Frame)));
+            Value   := Integer (Rx (Samples_Per_Frame * Frame));
             Minimum := Integer'Min (Minimum, Value);
             Maximum := Integer'Max (Maximum, Value);
          end loop;

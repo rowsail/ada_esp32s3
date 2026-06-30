@@ -1,4 +1,5 @@
 with System;
+with Interfaces;
 with Ada.Finalization;
 with ESP32S3.GPIO;
 
@@ -26,6 +27,17 @@ package ESP32S3.I2S is
 
    --  Sample width in bits (the buffer element size the DMA moves).
    type Sample_Bits is (Bits_8, Bits_16, Bits_24, Bits_32);
+
+   --  Typed PCM sample buffers -- the idiomatic way to move audio.  The element
+   --  type fixes the on-wire width, so the driver derives the byte count itself
+   --  (no caller-side "* 2") and the typed Write/Read/Transfer below CHECK the
+   --  buffer's width against the port's configured Bits.  Signed two's-complement,
+   --  as PCM is.  A PCM_32 buffer carries 24- or 32-bit samples (both occupy a
+   --  32-bit slot).  For raw, already-framed bytes (a foreign/DMA buffer built
+   --  elsewhere, an opaque bit-pattern self-test) use the *_Raw primitives.
+   type PCM_8  is array (Natural range <>) of Interfaces.Integer_8;
+   type PCM_16 is array (Natural range <>) of Interfaces.Integer_16;
+   type PCM_32 is array (Natural range <>) of Interfaces.Integer_32;
 
    --  Data-path mode.
    --
@@ -116,35 +128,81 @@ package ESP32S3.I2S is
    --  Not_Owned unless S holds the port.
    procedure Enable_Loopback (S : Session; Pad : ESP32S3.GPIO.Pin_Id);
 
-   --  Shift Length bytes (1 .. 4095) from Tx out on the data-out line.  Blocking.
-   --  Buffer in internal SRAM.  Raises Not_Owned unless S holds a port.
-   procedure Write (S : Session; Tx : System.Address; Length : Natural);
+   --  The sample width the held port is currently configured for (the Bits of
+   --  its most recent Acquire/Reconfigure).  Raises Not_Owned unless S holds the
+   --  port.  The typed transfers below use it in their preconditions.
+   function Configured_Bits (S : Session) return Sample_Bits;
 
-   --  Capture Length bytes (1 .. 4095) from the data-in line into Rx.  Blocking.
-   --  Raises Not_Owned unless S holds a port.
-   procedure Read (S : Session; Rx : System.Address; Length : Natural);
+   ----------------------------------------------------------------------------
+   --  Transfers come in two layers.
+   --
+   --    * Typed (preferred): pass a PCM_8/16/32 buffer.  The driver derives the
+   --      byte count from the array, and a precondition checks the buffer's
+   --      element width matches the port's configured Bits -- a PCM_16 buffer on
+   --      a Bits_24 port is a contract violation, caught, not silent noise.
+   --
+   --    * *_Raw (escape hatch): a 'Address + byte Length, for bytes already
+   --      framed elsewhere -- a foreign/DMA buffer, an opaque bit-pattern test.
+   --
+   --  Buffers live in internal SRAM; the byte count is 1 .. 4095.  All raise
+   --  Not_Owned unless S holds the port.
+   ----------------------------------------------------------------------------
 
-   --  Full-duplex: shift Tx out and capture Rx in simultaneously (same Length).
-   --  Raises Not_Owned unless S holds a port.
-   procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural);
+   --  Shift a buffer out on the data-out line.  Blocking.
+   procedure Write (S : Session; Samples : PCM_8)
+     with Pre => Configured_Bits (S) = Bits_8;
+   procedure Write (S : Session; Samples : PCM_16)
+     with Pre => Configured_Bits (S) = Bits_16;
+   procedure Write (S : Session; Samples : PCM_32)
+     with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
+   procedure Write_Raw (S : Session; Tx : System.Address; Length : Natural);
 
-   --  Start streaming Tx (Length bytes, 1 .. 4095) on a self-looping DMA and
-   --  return immediately, leaving the TX clock running: the buffer is replayed
-   --  forever with NO inter-buffer gap -- gapless playback of a periodic
-   --  waveform with zero CPU cost after the call.  Tx must stay valid (in
-   --  internal SRAM) and should hold a whole number of wave periods so the
-   --  wrap is seamless.  Stop halts it.  Raises Not_Owned unless S holds a port.
-   procedure Start_Continuous (S : Session; Tx : System.Address; Length : Natural);
+   --  Capture from the data-in line into a buffer.  Blocking.
+   procedure Read (S : Session; Samples : out PCM_8)
+     with Pre => Configured_Bits (S) = Bits_8;
+   procedure Read (S : Session; Samples : out PCM_16)
+     with Pre => Configured_Bits (S) = Bits_16;
+   procedure Read (S : Session; Samples : out PCM_32)
+     with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
+   procedure Read_Raw (S : Session; Rx : System.Address; Length : Natural);
+
+   --  Full-duplex: shift Tx out and capture Rx in simultaneously (same length).
+   procedure Transfer (S : Session; Tx : PCM_8;  Rx : out PCM_8)
+     with Pre => Configured_Bits (S) = Bits_8 and then Tx'Length = Rx'Length;
+   procedure Transfer (S : Session; Tx : PCM_16; Rx : out PCM_16)
+     with Pre => Configured_Bits (S) = Bits_16 and then Tx'Length = Rx'Length;
+   procedure Transfer (S : Session; Tx : PCM_32; Rx : out PCM_32)
+     with Pre => Configured_Bits (S) in Bits_24 | Bits_32
+                 and then Tx'Length = Rx'Length;
+   procedure Transfer_Raw (S : Session; Tx, Rx : System.Address; Length : Natural);
+
+   --  Start a self-looping DMA that replays the buffer forever with NO
+   --  inter-buffer gap and return immediately, leaving the TX clock running --
+   --  gapless playback of a periodic waveform at zero CPU cost after the call.
+   --  The buffer must stay valid (internal SRAM) and should hold a whole number
+   --  of wave periods so the wrap is seamless.  Stop halts it.
+   procedure Start_Continuous (S : Session; Samples : PCM_8)
+     with Pre => Configured_Bits (S) = Bits_8;
+   procedure Start_Continuous (S : Session; Samples : PCM_16)
+     with Pre => Configured_Bits (S) = Bits_16;
+   procedure Start_Continuous (S : Session; Samples : PCM_32)
+     with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
+   procedure Start_Continuous_Raw (S : Session; Tx : System.Address; Length : Natural);
 
    --  Stop a continuous transmit started by Start_Continuous (TX clock off).
-   --  Raises Not_Owned unless S holds a port.
+   --  Raises Not_Owned unless S holds the port.
    procedure Stop (S : Session);
 
-   --  Capture Length bytes (1 .. 4095) from the data-in line into Rx WITHOUT
-   --  disturbing the TX path -- so it can run concurrently with a continuous
-   --  transmit (Start_Continuous), which supplies the shared master clock.
-   --  Blocking.  Raises Not_Owned unless S holds a port.
-   procedure Capture (S : Session; Rx : System.Address; Length : Natural);
+   --  Capture into a buffer WITHOUT disturbing the TX path -- so it can run
+   --  concurrently with a continuous transmit (Start_Continuous), which supplies
+   --  the shared master clock.  Blocking.
+   procedure Capture (S : Session; Samples : out PCM_8)
+     with Pre => Configured_Bits (S) = Bits_8;
+   procedure Capture (S : Session; Samples : out PCM_16)
+     with Pre => Configured_Bits (S) = Bits_16;
+   procedure Capture (S : Session; Samples : out PCM_32)
+     with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
+   procedure Capture_Raw (S : Session; Rx : System.Address; Length : Natural);
 
    --  Relinquish ownership (lets a waiting task proceed).  Idempotent.
    procedure Release (S : in out Session);
