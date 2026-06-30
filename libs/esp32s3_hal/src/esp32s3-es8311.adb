@@ -203,7 +203,7 @@ package body ESP32S3.ES8311 is
 
    procedure Play (O : Output; Samples : System.Address; Length : Natural) is
    begin
-      ESP32S3.I2S.Write (O.Audio, Samples, Length);
+      ESP32S3.I2S.Write_Raw (O.Audio, Samples, Length);
    end Play;
 
    ---------------------
@@ -213,7 +213,7 @@ package body ESP32S3.ES8311 is
    procedure Play_Continuous (O : Output; Samples : System.Address;
                               Length : Natural) is
    begin
-      ESP32S3.I2S.Start_Continuous (O.Audio, Samples, Length);
+      ESP32S3.I2S.Start_Continuous_Raw (O.Audio, Samples, Length);
    end Play_Continuous;
 
    ----------
@@ -231,7 +231,7 @@ package body ESP32S3.ES8311 is
 
    procedure Capture (O : Output; Samples : System.Address; Length : Natural) is
    begin
-      ESP32S3.I2S.Capture (O.Audio, Samples, Length);
+      ESP32S3.I2S.Capture_Raw (O.Audio, Samples, Length);
    end Capture;
 
    -------------
