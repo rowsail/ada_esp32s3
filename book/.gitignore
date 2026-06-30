@@ -5,6 +5,9 @@
 *.idx
 *.ind
 *.ilg
+*.loe
+*.lof
+*.lot
 *.pdf
 # main.pdf is a build output (rebuild with `make`) -- not version-controlled.
 # Ada.pdf is the committed cover asset (from Ada.svg), so the book builds
