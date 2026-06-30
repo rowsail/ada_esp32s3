@@ -115,7 +115,7 @@ of that peripheral's own \texttt{Configure\_Pins}, which programs the matrix
 directly. The ESP32-S3 GPIO matrix is a full crossbar, so almost any signal
 can reach almost any pad.
 
-\textbf{Example 1: blink an LED.}
+\lstcap{Example 1: blink an LED.}
 \begin{lstlisting}
 with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.GPIO;  use ESP32S3.GPIO;
@@ -130,7 +130,7 @@ begin
 end Blink;
 \end{lstlisting}
 
-\textbf{Example 2: a button drives an LED.}
+\lstcap{Example 2: a button drives an LED.}
 \begin{lstlisting}
 with ESP32S3.GPIO; use ESP32S3.GPIO;
 procedure Button is
@@ -157,7 +157,7 @@ procedure Fill (Buffer : out Byte_Array);  --  fill any length
 \texttt{out Byte\_Array} of \emph{any} length; the call fills every element with
 random bytes.
 
-\textbf{Example 1: a random word.}
+\lstcap{Example 1: a random word.}
 \begin{lstlisting}
 with Ada.Text_IO; use Ada.Text_IO;
 with ESP32S3.RNG;
@@ -168,7 +168,7 @@ begin
 end RNG_Word;
 \end{lstlisting}
 
-\textbf{Example 2: a random nonce.}
+\lstcap{Example 2: a random nonce.}
 \begin{lstlisting}
 with ESP32S3.RNG;
 procedure RNG_Nonce is
@@ -196,7 +196,7 @@ temperature. The five values are \texttt{Range\_Minus10\_80} (default, $-10\,..\
 \texttt{Read\_*} functions take no parameters; one returns whole degrees, the
 other hundredths.
 
-\textbf{Example 1: read degrees.}
+\lstcap{Example 1: read degrees.}
 \begin{lstlisting}
 with Ada.Text_IO;        use Ada.Text_IO;
 with ESP32S3.Temperature; use ESP32S3.Temperature;
@@ -207,7 +207,7 @@ begin
 end Temp_Degrees;
 \end{lstlisting}
 
-\textbf{Example 2: higher resolution and a different span.}
+\lstcap{Example 2: higher resolution and a different span.}
 \begin{lstlisting}
 with Ada.Text_IO;        use Ada.Text_IO;
 with ESP32S3.Temperature; use ESP32S3.Temperature;
@@ -281,7 +281,7 @@ precisely because on SPI those are per-\emph{device}, not per-host.
   for the wiring-free self-test.
 \end{description}
 
-\textbf{Example 1: write a command to a device.}
+\lstcap{Example 1: write a command to a device.}
 \begin{lstlisting}
 with Interfaces;
 with ESP32S3.SPI; use ESP32S3.SPI;
@@ -297,7 +297,7 @@ begin
 end SPI_Write;                                 --  S releases the host here
 \end{lstlisting}
 
-\textbf{Example 2: wiring-free self-test via internal loopback.}
+\lstcap{Example 2: wiring-free self-test via internal loopback.}
 \begin{lstlisting}
 with Interfaces;
 with ESP32S3.SPI; use ESP32S3.SPI;
@@ -405,7 +405,7 @@ procedure Read  (S : Session; Addr : Slave_Address; Data : out Byte_Array;
   \texttt{True}.
 \end{description}
 
-\textbf{Example 1: write a register on a sensor at address \texttt{16\#68\#}.}
+\lstcap{Example 1: write a register on a sensor at address \texttt{16\#68\#}.}
 \begin{lstlisting}
 with ESP32S3.I2C; use ESP32S3.I2C;
 procedure I2C_Write_Reg is
@@ -419,7 +419,7 @@ begin
 end I2C_Write_Reg;
 \end{lstlisting}
 
-\textbf{Example 2: register read (write the address, then read).}
+\lstcap{Example 2: register read (write the address, then read).}
 \begin{lstlisting}
 with ESP32S3.I2C; use ESP32S3.I2C;
 procedure I2C_Read_Reg is
@@ -503,7 +503,7 @@ added to the driver cannot reach the registers without passing a \texttt{Session
 through the same check. The guard is impossible to forget because there is no
 other door to the hardware.
 
-\textbf{Example 1: transmit a line.}
+\lstcap{Example 1: transmit a line.}
 \begin{lstlisting}
 with ESP32S3.UART; use ESP32S3.UART;
 procedure UART_Tx is
@@ -514,7 +514,7 @@ begin
 end UART_Tx;
 \end{lstlisting}
 
-\textbf{Example 2: echo received bytes (wiring-free, internal loopback).}
+\lstcap{Example 2: echo received bytes (wiring-free, internal loopback).}
 \begin{lstlisting}
 with ESP32S3.UART; use ESP32S3.UART;
 procedure UART_Echo is

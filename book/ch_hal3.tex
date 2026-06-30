@@ -34,7 +34,7 @@ procedure Deep_Sleep_Until (Pin : Pin_Id; High : Boolean := True);
   \texttt{Deep\_Sleep\_GPIO} or \texttt{Other\_Reset}.
 \end{description}
 
-\textbf{Example 1: a boot counter that survives deep sleep.}
+\lstcap{Example 1: a boot counter that survives deep sleep.}
 \begin{lstlisting}
 with Interfaces;     use Interfaces;
 with Ada.Text_IO;    use Ada.Text_IO;
@@ -53,7 +53,7 @@ begin
 end RTC_Boot;
 \end{lstlisting}
 
-\textbf{Example 2: wake on a button.}
+\lstcap{Example 2: wake on a button.}
 \begin{lstlisting}
 with ESP32S3.RTC; use ESP32S3.RTC;
 procedure RTC_Wake is
@@ -83,7 +83,7 @@ procedure Set_Pull (Pin : RTC_Pin; Mode : Pull_Mode);   --  No_Pull / Up / Down
   \texttt{Up} or \texttt{Down}.
 \end{description}
 
-\textbf{Example 1: hold a relay line high through sleep.}
+\lstcap{Example 1: hold a relay line high through sleep.}
 \begin{lstlisting}
 with ESP32S3.GPIO;
 with ESP32S3.RTC_IO; use ESP32S3.RTC_IO;
@@ -97,7 +97,7 @@ begin
 end RTCIO_Hold;
 \end{lstlisting}
 
-\textbf{Example 2: an RTC pull-up on a wake pin.}
+\lstcap{Example 2: an RTC pull-up on a wake pin.}
 \begin{lstlisting}
 with ESP32S3.RTC_IO; use ESP32S3.RTC_IO;
 procedure RTCIO_Pull is
@@ -128,7 +128,7 @@ function  Touched (Ch : Channel; Reference : Natural; Margin : Natural := 20_000
   to register a touch; default \texttt{20\_000}.
 \end{description}
 
-\textbf{Example 1: read two pads' baselines.}
+\lstcap{Example 1: read two pads' baselines.}
 \begin{lstlisting}
 with Ada.Text_IO;   use Ada.Text_IO;
 with ESP32S3.Touch; use ESP32S3.Touch;
@@ -140,7 +140,7 @@ begin
 end Touch_Read_Base;
 \end{lstlisting}
 
-\textbf{Example 2: detect a finger against a captured baseline.}
+\lstcap{Example 2: detect a finger against a captured baseline.}
 \begin{lstlisting}
 with Ada.Text_IO;   use Ada.Text_IO;
 with ESP32S3.Touch; use ESP32S3.Touch;
@@ -167,7 +167,7 @@ function Hash_256 (Data : Byte_Array) return SHA256_Digest;  --  32 bytes
 \emph{any} length and returns a fixed-size digest: \texttt{SHA1\_Digest}
 (20 bytes), \texttt{SHA224\_Digest} (28) or \texttt{SHA256\_Digest} (32).
 
-\textbf{Example 1: SHA-256 of a message.}
+\lstcap{Example 1: SHA-256 of a message.}
 \begin{lstlisting}
 with ESP32S3.SHA; use ESP32S3.SHA;
 procedure SHA_256_Ex is
@@ -178,7 +178,7 @@ begin
 end SHA_256_Ex;
 \end{lstlisting}
 
-\textbf{Example 2: SHA-1 (e.g. for a legacy checksum).}
+\lstcap{Example 2: SHA-1 (e.g. for a legacy checksum).}
 \begin{lstlisting}
 with ESP32S3.SHA; use ESP32S3.SHA;
 procedure SHA_1_Ex is
@@ -212,7 +212,7 @@ function Decrypt_ECB (Key : Key_Bytes; Cipher : Block) return Block
   result is a \texttt{Block}.
 \end{description}
 
-\textbf{Example 1: AES-128 encrypt then decrypt one block.}
+\lstcap{Example 1: AES-128 encrypt then decrypt one block.}
 \begin{lstlisting}
 with ESP32S3.AES; use ESP32S3.AES;
 procedure AES_128_Ex is
@@ -227,7 +227,7 @@ begin
 end AES_128_Ex;
 \end{lstlisting}
 
-\textbf{Example 2: AES-256 (a 32-byte key selects the cipher automatically).}
+\lstcap{Example 2: AES-256 (a 32-byte key selects the cipher automatically).}
 \begin{lstlisting}
 with ESP32S3.AES; use ESP32S3.AES;
 procedure AES_256_Ex is

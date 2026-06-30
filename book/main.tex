@@ -87,13 +87,36 @@
   keywordstyle=\color{kw}, frame=single, backgroundcolor=\color{bg},
   breaklines=true, showstringspaces=false}
 
+%  Keep a listing's lead-in line -- its caption or commentary (e.g. "fade an
+%  LED") -- on the same page as the listing it introduces: forbid a page break
+%  between that preceding line and the start of the listing.  lstlisting is built
+%  on a trivlist, which sets a NEGATIVE \@beginparpenalty that actively invites a
+%  break right before the listing; so we both raise that penalty and \nobreak the
+%  junction.  (An earlier \needspace hook reserved room for the listing but issued
+%  its forced break BETWEEN the lead-in and the listing -- widowing the very
+%  caption we want to keep with it.)  A listing longer than the page still breaks
+%  internally; only the lead-in -> first-line junction is protected.
 %  Don't let a code listing start at the very bottom of a page and break after
 %  only a line or two: require at least this many lines of room, else push the
 %  whole block to the next page.  A listing longer than this still breaks (it has
-%  to), but never orphans a tiny fragment.  Tune the line count to taste.
+%  to), but never orphans a tiny fragment.
 \usepackage{needspace}
 \usepackage{etoolbox}
 \BeforeBeginEnvironment{lstlisting}{\par\needspace{6\baselineskip}}
+
+%  A listing's lead-in caption / commentary (e.g. "fade an LED").  The key is that
+%  the \needspace runs BEFORE the caption is typeset: if the caption plus the
+%  first lines of the listing will not fit, the page breaks ABOVE the caption and
+%  the two move to the next page together -- so the caption is never widowed onto
+%  the page before its listing.  (A bare \needspace AFTER the caption, as the hook
+%  above does for un-captioned listings, would instead break between the caption
+%  and the code.)  \nopagebreak then glues the caption to the listing.
+%  The \penalty0 forces the page builder to run so \pagetotal is current before
+%  \needspace measures -- without it, a caption right after a list environment
+%  (\end{description}) mis-measures the remaining space and slips to the page
+%  bottom anyway.
+\newcommand{\lstcap}[1]{%
+  \par\penalty0\needspace{8\baselineskip}\noindent\textbf{#1}\nopagebreak}
 
 %  raggedright so multi-line chapter titles don't get justified into ugly
 %  inter-word gaps (e.g. "Networking: GNAT.Sockets over the W5500").
