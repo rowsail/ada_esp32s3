@@ -120,8 +120,10 @@ package body ESP32S3.RTC is
    -- Deep_Sleep_Until --
    ----------------------
 
-   procedure Deep_Sleep_Until (Pin : ESP32S3.GPIO.Pin_Id; High : Boolean := True) is
-      Sel : constant UInt22 := 2 ** Natural (Pin);
+   procedure Deep_Sleep_Until
+     (Pin : ESP32S3.RTC_IO.RTC_Pin; High : Boolean := True)
+   is
+      Sel : constant UInt22 := 2 ** Natural (Pin);   --  Pin <= 21, no wrap
    begin
       --  EXT1: wake when any selected RTC pad reaches the chosen level.
       RTC_CNTL_Periph.EXT_WAKEUP1 :=

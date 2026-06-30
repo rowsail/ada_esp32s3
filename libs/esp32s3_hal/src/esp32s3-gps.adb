@@ -322,7 +322,15 @@ package body ESP32S3.GPS is
             begin
                if C = ASCII.CR or else C = ASCII.LF then
                   if Len > 0 then
-                     Process (Line (1 .. Len), Junk);
+                     --  Defence in depth: a malformed sentence must only drop that
+                     --  line, never propagate out and terminate this reader task
+                     --  (which would silence GPS until reboot).  The parser is
+                     --  hardened against overflow, so this should never fire.
+                     begin
+                        Process (Line (1 .. Len), Junk);
+                     exception
+                        when others => null;
+                     end;
                      Len := 0;
                   end if;
                elsif Len < Max_Line then

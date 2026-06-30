@@ -24,6 +24,11 @@ package body ESP32S3.GPS.NMEA is
    begin
       for C of S loop
          exit when C not in '0' .. '9';
+         --  Saturate rather than overflow Natural on a garbled (over-long) field:
+         --  UART line noise can present many digits, and an unguarded Acc*10 would
+         --  raise Constraint_Error that kills the GPS reader task.  No real NMEA
+         --  numeric field needs anywhere near this many digits.
+         exit when Acc > (Natural'Last - 9) / 10;
          Acc := Acc * 10 + (Character'Pos (C) - Character'Pos ('0'));
       end loop;
       return Acc;
@@ -84,11 +89,22 @@ package body ESP32S3.GPS.NMEA is
             Dot := I;
          end if;
       end loop;
-      if Dot = 0 then
-         return To_Nat (S) * 10 ** Places;
-      end if;
-      return To_Nat (S (S'First .. Dot - 1)) * 10 ** Places
-        + Frac (S (Dot + 1 .. S'Last), Places);
+      declare
+         --  Compute in 64-bit and clamp to Integer: To_Nat is saturated but
+         --  To_Nat * 10**Places can still exceed Integer on garbage input.
+         Whole : constant LLI :=
+           (if Dot = 0
+            then LLI (To_Nat (S)) * 10 ** Places
+            else LLI (To_Nat (S (S'First .. Dot - 1))) * 10 ** Places
+                 + LLI (Frac (S (Dot + 1 .. S'Last), Places)));
+      begin
+         if Whole > LLI (Integer'Last) then
+            return Integer'Last;
+         elsif Whole < LLI (Integer'First) then
+            return Integer'First;
+         end if;
+         return Integer (Whole);
+      end;
    end Scaled;
 
    ---------------------------------------------------------------------------
@@ -116,6 +132,9 @@ package body ESP32S3.GPS.NMEA is
       end if;
 
       Degrees := To_Nat (S (S'First .. Dot - 3));
+      if Degrees > 180 then
+         return 0;          --  implausible (real |lat|<=90, |lon|<=180): reject,
+      end if;               --  and keeps Deg_E7 well within Integer_32 below
       Min_E5  := LLI (To_Nat (S (Dot - 2 .. Dot - 1))) * 100_000
                  + LLI (Frac (S (Dot + 1 .. S'Last), 5));
       --  1e-5 minute = (1e7 / 60) / 1e5 deg_e7 = 5/3 deg_e7.
