@@ -882,6 +882,10 @@ and source, destination and descriptors must all live in internal SRAM. Beyond
 \texttt{Copy}, the peripheral-bound \texttt{Start}/\texttt{Start\_Loop}/%
 \texttt{Done}/\texttt{Wait} API arms a single buffer (or a self-looping gapless
 one) in a \texttt{Direction} and lets the peripheral pace the move.
+\texttt{Wait} is interrupt-driven: after a brief spin it suspends the calling
+task and the channel's end-of-transfer interrupt wakes it, so a transfer frees
+the core rather than busy-waiting. The driver owns \texttt{Device\_L2\_0}
+(CPU\_INT 19) for this, so an application must not also attach a handler to it.
 
 \begin{lstlisting}
 type Channel_Id is mod 5;
