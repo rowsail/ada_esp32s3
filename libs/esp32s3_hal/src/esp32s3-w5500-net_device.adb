@@ -181,12 +181,6 @@ package body ESP32S3.W5500.Net_Device is
       WS.Set_Receive_Timeout (Self.Socks (Socket_Id (Index)), To);
    end Set_Receive_Timeout;
 
-   overriding procedure Set_Send_Timeout (Self : in out Instance; Index : Natural;
-                                          To : Duration) is
-   begin
-      WS.Set_Send_Timeout (Self.Socks (Socket_Id (Index)), To);
-   end Set_Send_Timeout;
-
    --  Single-NIC convenience: one built-in interface object, registered as default.
    Default_Eth : aliased Instance;
    Default_Ref : constant Net_Devices.Device_Access := Default_Eth'Access;

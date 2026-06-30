@@ -8,10 +8,6 @@ with GNAT.Sockets;
 --  Use it with one `with DNS_Client;`.  GNAT.Sockets must already be usable (on the
 --  W5500, call GNAT.Sockets.Initialize (Device) once during bring-up; on a desktop
 --  it always is).
---
---  Task-safe: several tasks may call Resolve concurrently.  Each call uses its own
---  socket, a distinct transaction ID, and (with the default Local_Port) a distinct
---  source port, so in-flight lookups never alias one another's replies.
 package DNS_Client is
 
    --  Resolve Name (e.g. "api.open-meteo.com") to its first IPv4 address by querying
@@ -21,14 +17,12 @@ package DNS_Client is
    --
    --  Timeout caps the wait for the reply (via the Receive_Timeout socket option);
    --  0.0, the default, blocks indefinitely.  Local_Port is the UDP source port to
-   --  bind; 0 (the default) auto-assigns a unique ephemeral port per call so
-   --  concurrent lookups from several tasks do not collide.  Pass a fixed non-zero
-   --  port only if you specifically need one (then concurrent callers must differ).
+   --  bind.
    function Resolve
      (Server     : GNAT.Sockets.Inet_Addr_Type;
       Name       : String;
       Addr       : out GNAT.Sockets.Inet_Addr_Type;
       Timeout    : Duration               := 0.0;
-      Local_Port : GNAT.Sockets.Port_Type := 0) return Boolean;
+      Local_Port : GNAT.Sockets.Port_Type := 13_001) return Boolean;
 
 end DNS_Client;
