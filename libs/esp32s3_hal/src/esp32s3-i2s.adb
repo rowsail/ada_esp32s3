@@ -49,16 +49,22 @@ package body ESP32S3.I2S is
       procedure Reopen (S : Session; Sample_Rate : Positive; Bits : Sample_Bits;
                         Mode : I2S_Mode);
       function  Owned (S : Session) return access E.Bus;
+      --  The sample width the held port was last opened at (requires ownership).
+      function  Width (S : Session) return Sample_Bits;
    end State;
 
    package body State is
       Buses     : array (I2S_Port) of aliased E.Bus;  --  raw port instance, hidden
       Ready_Map : array (I2S_Port) of Boolean := (others => False);
+      --  The Bits each port was last opened at -- the source of Configured_Bits,
+      --  which the typed transfers' preconditions check the buffer width against.
+      Width_Map : array (I2S_Port) of Sample_Bits := (others => Bits_16);
 
       procedure Open_Now (Port : I2S_Port; Sample_Rate : Positive;
                           Bits : Sample_Bits; Mode : I2S_Mode) is
       begin
          E.Open (Buses (Port), Port, Sample_Rate, Bits, Mode);
+         Width_Map (Port) := Bits;
          Ready_Map (Port) := True;
       end Open_Now;
 
@@ -96,6 +102,15 @@ package body ESP32S3.I2S is
          end if;
          return Buses (S.Port)'Access;
       end Owned;
+
+      function Width (S : Session) return Sample_Bits is
+      begin
+         if not S.Active then
+            raise Not_Owned
+              with "I2S port used without holding it -- Acquire first";
+         end if;
+         return Width_Map (S.Port);
+      end Width;
    end State;
 
    -------------
@@ -160,41 +175,116 @@ package body ESP32S3.I2S is
       E.Enable_Loopback (State.Owned (S).all, Pad);
    end Enable_Loopback;
 
+   ---------------------
+   -- Configured_Bits --
+   ---------------------
+
+   function Configured_Bits (S : Session) return Sample_Bits is
+   begin
+      return State.Width (S);
+   end Configured_Bits;
+
+   --  Bytes occupied by one sample of each PCM element type (the DMA slot size).
+   Bytes_8  : constant := 1;
+   Bytes_16 : constant := 2;
+   Bytes_32 : constant := 4;   --  24-bit samples ride in a 32-bit slot too
+
    -----------
    -- Write --
    -----------
 
-   procedure Write (S : Session; Tx : System.Address; Length : Natural) is
+   procedure Write_Raw (S : Session; Tx : System.Address; Length : Natural) is
    begin
       E.Write (State.Owned (S).all, Tx, Length);   --  Owned raises unless held
+   end Write_Raw;
+
+   procedure Write (S : Session; Samples : PCM_8) is
+   begin
+      Write_Raw (S, Samples'Address, Samples'Length * Bytes_8);
+   end Write;
+
+   procedure Write (S : Session; Samples : PCM_16) is
+   begin
+      Write_Raw (S, Samples'Address, Samples'Length * Bytes_16);
+   end Write;
+
+   procedure Write (S : Session; Samples : PCM_32) is
+   begin
+      Write_Raw (S, Samples'Address, Samples'Length * Bytes_32);
    end Write;
 
    ----------
    -- Read --
    ----------
 
-   procedure Read (S : Session; Rx : System.Address; Length : Natural) is
+   procedure Read_Raw (S : Session; Rx : System.Address; Length : Natural) is
    begin
       E.Read (State.Owned (S).all, Rx, Length);
+   end Read_Raw;
+
+   procedure Read (S : Session; Samples : out PCM_8) is
+   begin
+      Read_Raw (S, Samples'Address, Samples'Length * Bytes_8);
+   end Read;
+
+   procedure Read (S : Session; Samples : out PCM_16) is
+   begin
+      Read_Raw (S, Samples'Address, Samples'Length * Bytes_16);
+   end Read;
+
+   procedure Read (S : Session; Samples : out PCM_32) is
+   begin
+      Read_Raw (S, Samples'Address, Samples'Length * Bytes_32);
    end Read;
 
    --------------
    -- Transfer --
    --------------
 
-   procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural) is
+   procedure Transfer_Raw (S : Session; Tx, Rx : System.Address; Length : Natural)
+   is
    begin
       E.Transfer (State.Owned (S).all, Tx, Rx, Length);
+   end Transfer_Raw;
+
+   procedure Transfer (S : Session; Tx : PCM_8; Rx : out PCM_8) is
+   begin
+      Transfer_Raw (S, Tx'Address, Rx'Address, Tx'Length * Bytes_8);
+   end Transfer;
+
+   procedure Transfer (S : Session; Tx : PCM_16; Rx : out PCM_16) is
+   begin
+      Transfer_Raw (S, Tx'Address, Rx'Address, Tx'Length * Bytes_16);
+   end Transfer;
+
+   procedure Transfer (S : Session; Tx : PCM_32; Rx : out PCM_32) is
+   begin
+      Transfer_Raw (S, Tx'Address, Rx'Address, Tx'Length * Bytes_32);
    end Transfer;
 
    ----------------------
    -- Start_Continuous --
    ----------------------
 
-   procedure Start_Continuous (S : Session; Tx : System.Address; Length : Natural)
-   is
+   procedure Start_Continuous_Raw
+     (S : Session; Tx : System.Address; Length : Natural) is
    begin
       E.Start_Continuous (State.Owned (S).all, Tx, Length);
+   end Start_Continuous_Raw;
+
+   procedure Start_Continuous (S : Session; Samples : PCM_8) is
+   begin
+      Start_Continuous_Raw (S, Samples'Address, Samples'Length * Bytes_8);
+   end Start_Continuous;
+
+   procedure Start_Continuous (S : Session; Samples : PCM_16) is
+   begin
+      Start_Continuous_Raw (S, Samples'Address, Samples'Length * Bytes_16);
+   end Start_Continuous;
+
+   procedure Start_Continuous (S : Session; Samples : PCM_32) is
+   begin
+      Start_Continuous_Raw (S, Samples'Address, Samples'Length * Bytes_32);
    end Start_Continuous;
 
    ----------
@@ -210,9 +300,24 @@ package body ESP32S3.I2S is
    -- Capture --
    -------------
 
-   procedure Capture (S : Session; Rx : System.Address; Length : Natural) is
+   procedure Capture_Raw (S : Session; Rx : System.Address; Length : Natural) is
    begin
       E.Capture (State.Owned (S).all, Rx, Length);
+   end Capture_Raw;
+
+   procedure Capture (S : Session; Samples : out PCM_8) is
+   begin
+      Capture_Raw (S, Samples'Address, Samples'Length * Bytes_8);
+   end Capture;
+
+   procedure Capture (S : Session; Samples : out PCM_16) is
+   begin
+      Capture_Raw (S, Samples'Address, Samples'Length * Bytes_16);
+   end Capture;
+
+   procedure Capture (S : Session; Samples : out PCM_32) is
+   begin
+      Capture_Raw (S, Samples'Address, Samples'Length * Bytes_32);
    end Capture;
 
    -------------

@@ -48,30 +48,29 @@ procedure Main is
    --  Audio format: 16-bit stereo at 16 kHz.
    Sample_Rate_Hz : constant Positive := 16_000;
 
-   --  Each sample is one 16-bit word = 2 bytes; the DMA byte count is the word
-   --  count times this.
-   Bytes_Per_Sample : constant := 2;
-
    --  Test pattern.  Fill Tx with a cheap full-range pseudo-random ramp so a
    --  word swap or a stuck line shows up: sample I = (I * Step + Offset) mod
-   --  2**16.  The constants are arbitrary (a large odd stride + an odd offset);
-   --  they only need to make the 64 words distinct and span the 16-bit range.
+   --  2**16, spread across the signed range.  The constants are arbitrary (a
+   --  large odd stride + an odd offset); they only need to make the 64 samples
+   --  distinct and span the 16-bit range.
    Pattern_Step   : constant := 1031;
    Pattern_Offset : constant := 17;
-   Pattern_Modulus : constant := 65536;   --  2**16 -- wrap into Unsigned_16
+   Pattern_Modulus : constant := 65536;   --  2**16
 
-   --  64 words = 32 stereo frames = 128 bytes.
-   type Samples is array (0 .. 63) of Unsigned_16;
-   Tx : Samples;
-   Rx : Samples := (others => 0);
+   --  64 samples = 32 stereo frames = 128 bytes.  PCM_16 is the driver's typed
+   --  signed-16-bit buffer: the transfer derives its byte count and checks its
+   --  width against the port, so there is no "* 2" or 'Address at the call.
+   subtype Sample_Range is Natural range 0 .. 63;
+   Tx : PCM_16 (Sample_Range);
+   Rx : PCM_16 (Sample_Range) := (others => 0);
 begin
    delay until Clock + Milliseconds (200);
    Put_Line ("[i2s] bare-metal I2S full-duplex DMA loopback self-test "
              & "(no wiring)");
 
-   for I in Samples'Range loop
-      Tx (I) := Unsigned_16 ((I * Pattern_Step + Pattern_Offset) mod
-                             Pattern_Modulus);
+   for I in Tx'Range loop
+      Tx (I) := Integer_16 ((I * Pattern_Step + Pattern_Offset) mod
+                            Pattern_Modulus - 32768);
    end loop;
 
    declare
@@ -80,10 +79,10 @@ begin
    begin
       Acquire (S, I2S0, Sample_Rate => Sample_Rate_Hz, Bits => Bits_16);
       Enable_Loopback (S, Pad => Loopback_Data_Pad);   --  on the held port
-      Transfer (S, Tx'Address, Rx'Address, Samples'Length * Bytes_Per_Sample);
-      Ok := (for all I in Samples'Range => Rx (I) = Tx (I));
+      Transfer (S, Tx, Rx);   --  typed: byte count + width derived from PCM_16
+      Ok := (for all I in Tx'Range => Rx (I) = Tx (I));
       Put ("[i2s] full-duplex loopback (");
-      Put (Samples'Length);
+      Put (Tx'Length);
       Put (" samples): ");
       Put_Line (if Ok then "PASS" else "FAIL");
    end;                                   --  S finalizes -> port released

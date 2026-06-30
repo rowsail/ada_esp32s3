@@ -252,24 +252,22 @@ package body Book_Examples is
    procedure I2S_Play is
       use ESP32S3.I2S;
       S    : Session;
-      Tone : aliased array (0 .. 255) of Interfaces.Integer_16 := (others => 0);
+      Tone : PCM_16 (0 .. 255) := (others => 0);
    begin
-      Setup (I2S0, Sample_Rate => 44_100, Bits => Bits_16);
-      Configure_Pins (I2S0, Bclk => 4, Ws => 5, Dout => 6);
-      Acquire (S, I2S0);
-      Write (S, Tone'Address, Tone'Length * 2);
+      Acquire (S, I2S0, Sample_Rate => 44_100, Bits => Bits_16,
+               Bclk => 4, Ws => 5, Dout => 6);
+      Write (S, Tone);
    end I2S_Play;
 
    procedure I2S_Loopback is
       use ESP32S3.I2S;
       S  : Session;
-      Tx : aliased array (0 .. 63) of Interfaces.Unsigned_8 := (others => 16#5A#);
-      Rx : aliased array (0 .. 63) of Interfaces.Unsigned_8 := (others => 0);
+      Tx : PCM_16 (0 .. 63) := (others => 0);
+      Rx : PCM_16 (0 .. 63) := (others => 0);
    begin
-      Setup (I2S0);
-      Enable_Loopback (I2S0, Pad => 7);
       Acquire (S, I2S0);
-      Transfer (S, Tx'Address, Rx'Address, 64);
+      Enable_Loopback (S, Pad => 7);
+      Transfer (S, Tx, Rx);
    end I2S_Loopback;
 
    procedure LEDC_Simple is
