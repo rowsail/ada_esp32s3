@@ -146,7 +146,7 @@ are standing in:
 \textbf{Command} & \textbf{What it does} \\ \midrule
 \endhead
 \texttt{esp32-ada init [\textit{dir}]} & Scaffold a project in \textit{dir} (or the current folder). \\
-\texttt{esp32-ada build [-P \textit{prof}]} & Build to \texttt{app.bin}. \textit{prof} = \texttt{light-tasking} (default), \texttt{embedded}, or \texttt{full}. \\
+\texttt{esp32-ada build [-P \textit{prof}]} & Build to \texttt{app.bin}. \textit{prof} = \texttt{light-tasking}, \texttt{embedded}, or \texttt{full}; with no \texttt{-P} it follows the project's \texttt{build.sh} (a fresh \texttt{init} = \texttt{embedded}). \\
 \texttt{esp32-ada flash [-p \textit{port}]} & Build if needed, then flash over the USB ROM bootloader. \\
 \texttt{esp32-ada run [-p \textit{port}] [-P \textit{prof}]} & Build, flash, and open the serial monitor. \\
 \texttt{esp32-ada monitor [-p \textit{port}]} & Just the serial console (115200). \\
@@ -176,8 +176,9 @@ Nothing from the SDK is copied in: \texttt{app.gpr} references the runtime and
 HAL \emph{by name} through \texttt{GPR\_PROJECT\_PATH}, and the build shims call the
 SDK's shared bare-boot through \texttt{\$ESP32S3\_ADA\_SDK}. Add another SDK library
 the same way: \texttt{with "<name>.gpr";} in \texttt{app.gpr} for anything under the
-SDK's \texttt{libs/}. The default profile is \texttt{light-tasking}; pass
-\texttt{-P embedded} (or \texttt{full}) to build under another
+SDK's \texttt{libs/}. A fresh project defaults to the \texttt{embedded} profile: its
+\texttt{build.sh} exports \texttt{ESP32S3\_RTS\_PROFILE}, so change that line to
+\texttt{light-tasking} or \texttt{full} to build under another
 (Chapter~\ref{ch:profiles}).
 
 \subsection{Taking an example out of tree to edit}\index{examples}
@@ -194,7 +195,7 @@ shims that make them build:
 esp32-ada init ~/myblink && cd ~/myblink
 SDK=$ESP32S3_ADA_SDK
 cp "$SDK"/examples/esp32s3_gpio0_blink/src/*.ad? src/   # the Ada sources (incl. main.adb)
-esp32-ada build                                         # gpio0_blink uses the default light-tasking
+esp32-ada build                                         # the scaffold defaults to embedded
 esp32-ada run -p /dev/ttyACM0
 \end{lstlisting}
 
@@ -205,10 +206,11 @@ A few things make the copy build cleanly:
   \texttt{app.gpr} (\texttt{Source\_Dirs => "src"}, \texttt{Main => "main.adb"}),
   so the example's \texttt{src/main.adb} (a \texttt{procedure Main}) and its other
   units drop straight in. Overwrite the scaffold's \texttt{src/main.adb}.
-\item \textbf{Match the profile.} Most examples assume \texttt{embedded} (the HAL's
-  RAII handles need it); the scaffold defaults to \texttt{light-tasking}. The
-  example's profile is shown by \texttt{./x list} (and its \texttt{README}); pass
-  it with \texttt{-P}.
+\item \textbf{Match the profile.} The scaffold defaults to \texttt{embedded}, which
+  is what most examples assume (the HAL's RAII handles need it), so their sources
+  drop in and build. An example built for \texttt{light-tasking} (its profile is
+  shown by \texttt{./x list} and its \texttt{README}) needs the \texttt{build.sh}
+  line \texttt{ESP32S3\_RTS\_PROFILE} set to match.
 \item \textbf{Bring board config and C natives if customized.} If the example sets
   a non-default flash/PSRAM size, copy its \texttt{board.ads} (or run
   \texttt{esp32-ada config}); if it has C natives, copy its \texttt{glue.c}.
