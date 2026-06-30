@@ -132,10 +132,20 @@ package body ESP32S3.Ext4.Block_Cache is
                       Block_Off : Natural;
                       Into      : out Byte_Array)
    is
-      E : constant Natural := Acquire (C, B);
-      P : constant Natural := Lo (C, E) + Block_Off;
    begin
-      Into := C.Pool (P .. P + Into'Length - 1);
+      --  Enforce the contract here (overflow-safely, before computing the pool
+      --  index): the pool is one contiguous array, so an offset/length that
+      --  escapes this block would silently read the NEXT cached block.  A length
+      --  drawn from on-disk data must raise Corrupt, not cross blocks.
+      if Block_Off > C.BS or else Into'Length > C.BS - Block_Off then
+         raise Corrupt with "ext4 block_cache: read past block boundary";
+      end if;
+      declare
+         E : constant Natural := Acquire (C, B);
+         P : constant Natural := Lo (C, E) + Block_Off;
+      begin
+         Into := C.Pool (P .. P + Into'Length - 1);
+      end;
    end Read_At;
 
    --------------
@@ -147,11 +157,17 @@ package body ESP32S3.Ext4.Block_Cache is
                        Block_Off : Natural;
                        From      : Byte_Array)
    is
-      E : constant Natural := Acquire (C, B);
-      P : constant Natural := Lo (C, E) + Block_Off;
    begin
-      C.Pool (P .. P + From'Length - 1) := From;
-      C.Meta (E).Dirty := True;
+      if Block_Off > C.BS or else From'Length > C.BS - Block_Off then
+         raise Corrupt with "ext4 block_cache: write past block boundary";
+      end if;
+      declare
+         E : constant Natural := Acquire (C, B);
+         P : constant Natural := Lo (C, E) + Block_Off;
+      begin
+         C.Pool (P .. P + From'Length - 1) := From;
+         C.Meta (E).Dirty := True;
+      end;
    end Write_At;
 
    -----------

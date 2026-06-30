@@ -75,10 +75,10 @@ package body ESP32S3.Ext4.Inode is
       ISz : constant Natural := V.SB.Inode_Size;
       Blk : Block_Number;
       Off : Natural;
-      Raw : Byte_Array (0 .. 255);
-   begin
+      Raw : Byte_Array (0 .. ISz - 1);   --  size to the actual inode (128..1024),
+   begin                                 --  matching Write/Mark_Deleted
       Locate (V, N, Blk, Off);
-      ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Blk, Off, Raw (0 .. ISz - 1));
+      ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Blk, Off, Raw);
 
       I.Mode       := Get_U16 (Raw, 16#00#);
       I.Links      := Get_U16 (Raw, 16#1A#);
@@ -92,7 +92,7 @@ package body ESP32S3.Ext4.Inode is
       end if;
 
       if V.SB.Has_Csum then
-         Verify_Csum (V, N, Raw (0 .. ISz - 1), ISz);
+         Verify_Csum (V, N, Raw, ISz);
       end if;
    end Read;
 
