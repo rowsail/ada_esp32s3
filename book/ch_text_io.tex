@@ -46,13 +46,37 @@ Put_Line (Standard_Output.all, "explicit form, same console");
 Set_Output (Some_File_Access);    -- now file-less Put_Line goes to that file
 \end{lstlisting}
 
-To move the \emph{whole} console onto a UART, so every byte goes there (including
-\texttt{ESP32S3.Log} and the runtime's own \texttt{Ada.Text\_IO}), use the device
-mux instead (Section~\ref{driver:console-mux}):
+\subsection{Three destinations: USB, a UART, a file}\index{Set\_Output}
+
+Two knobs choose where text goes. \texttt{ESP32S3.Serial.Set\_Output} picks the
+physical console device, and everything console-bound follows it:
+\texttt{ESP32S3.Log}, the runtime's own \texttt{Ada.Text\_IO}, and this package's
+console writes. \texttt{ESP32S3.Text\_IO.Set\_Output} picks where this package's
+file-less calls land: the console, or a file.
 
 \begin{lstlisting}
-ESP32S3.Serial.Set_Output (ESP32S3.UART.Text.As_Device (My_Uart));
+--  1. The built-in USB Serial/JTAG console (the default).
+ESP32S3.Serial.Set_Output (ESP32S3.Serial.Console_Device);
+
+--  2. A UART at 115_200 baud, 8-N-1, transmit on IO17.
+Port : aliased ESP32S3.UART.Session;        -- must outlive the redirect
+...
+ESP32S3.UART.Setup   (ESP32S3.UART.UART1, Baud => 115_200, Tx => 17);
+ESP32S3.UART.Acquire (Port, ESP32S3.UART.UART1);
+ESP32S3.Serial.Set_Output (ESP32S3.UART.Text.As_Device (Port));
+
+--  3. A file on the ext4 volume.
+Log : ESP32S3.Text_IO.File_Type;
+...
+ESP32S3.Text_IO.Create     (Log, "/flash/console.log");
+ESP32S3.Text_IO.Set_Output (Log);
 \end{lstlisting}
+
+Cases 1 and 2 move the whole console at the device level
+(Section~\ref{driver:console-mux}). Case 3 sends only the file-less output of
+\texttt{ESP32S3.Text\_IO} to the file because a UART and the USB port have no
+file behind them: a file is reached through a \texttt{File\_Type}, not the device
+mux. Point output back at the console with \texttt{Set\_Output (Standard\_Output.all)}.
 
 \section{Files on ext4}\index{ext4 files}\index{File\_Type}
 
