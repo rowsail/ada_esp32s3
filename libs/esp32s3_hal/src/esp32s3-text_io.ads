@@ -42,9 +42,15 @@ package ESP32S3.Text_IO is
    function Standard_Error  return File_Access;
    function Standard_Input  return File_Access;
    function Current_Output  return File_Access;
+   function Current_Error   return File_Access;
    function Current_Input   return File_Access;
    procedure Set_Output (File : File_Access);
+   procedure Set_Error  (File : File_Access);
    procedure Set_Input  (File : File_Access);
+   --  RM-spelled variants taking a File_Type (the file must outlive the setting).
+   procedure Set_Output (File : File_Type);
+   procedure Set_Error  (File : File_Type);
+   procedure Set_Input  (File : File_Type);
 
    --  File management -----------------------------------------------------------
    --  Form is an implementation-defined options string. Recognised: "sync=yes"
@@ -56,7 +62,9 @@ package ESP32S3.Text_IO is
    procedure Open   (File : in out File_Type; Name : String;
                      Mode : File_Mode; Form : String := "");
    procedure Close  (File : in out File_Type);
+   procedure Delete (File : in out File_Type);    --  remove the ext4 file, then close
    procedure Reset  (File : in out File_Type);
+   procedure Reset  (File : in out File_Type; Mode : File_Mode);  --  re-open with Mode
    function Is_Open (File : File_Type) return Boolean;
    function Mode    (File : File_Type) return File_Mode;
    function Name    (File : File_Type) return String;
@@ -122,6 +130,9 @@ package ESP32S3.Text_IO is
    procedure Put_Line (Item : String);
    procedure Get_Line (File : File_Type; Item : out String; Last : out Natural);
    procedure Get_Line (Item : out String; Last : out Natural);
+   --  Function forms: read and return the whole line (heap-allocated; any length).
+   function Get_Line (File : File_Type) return String;
+   function Get_Line return String;
 
    --  Numeric / enumeration generics --------------------------------------------
    generic

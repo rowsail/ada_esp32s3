@@ -34,17 +34,27 @@ package body ESP32S3.Text_IO is
    Page_Mark : constant Character := ASCII.FF;
 
    Std_Out : aliased File_Type;
+   Std_Err : aliased File_Type;
    Std_In  : aliased File_Type;
    Cur_Out : File_Access;
+   Cur_Err : File_Access;
    Cur_In  : File_Access;
 
    function Standard_Output return File_Access is (Std_Out'Access);
-   function Standard_Error  return File_Access is (Std_Out'Access);
+   function Standard_Error  return File_Access is (Std_Err'Access);
    function Standard_Input  return File_Access is (Std_In'Access);
    function Current_Output  return File_Access is (Cur_Out);
+   function Current_Error   return File_Access is (Cur_Err);
    function Current_Input   return File_Access is (Cur_In);
    procedure Set_Output (File : File_Access) is begin Cur_Out := File; end Set_Output;
+   procedure Set_Error  (File : File_Access) is begin Cur_Err := File; end Set_Error;
    procedure Set_Input  (File : File_Access) is begin Cur_In  := File; end Set_Input;
+   procedure Set_Output (File : File_Type) is
+   begin Cur_Out := File'Unrestricted_Access; end Set_Output;
+   procedure Set_Error (File : File_Type) is
+   begin Cur_Err := File'Unrestricted_Access; end Set_Error;
+   procedure Set_Input (File : File_Type) is
+   begin Cur_In := File'Unrestricted_Access; end Set_Input;
 
    --  Reach the control block, raising Status_Error if the file is not open.
    function CB (File : File_Type) return CB_Access is
@@ -571,6 +581,27 @@ package body ESP32S3.Text_IO is
       if File.CB /= null then Close_CB (File.CB); end if;
    end Close;
 
+   procedure Delete (File : in out File_Type) is
+      B  : constant CB_Access := CB (File);
+      Nm : constant String := B.Name_Buf (1 .. B.Name_Len);
+      FS : ESP32S3.Ext4.VFS.Mount_Ref;
+      SF, SL : Natural;
+   begin
+      if B.Kind /= Disk then
+         raise ESP32S3.Ext4.Use_Error;     --  cannot delete the console
+      end if;
+      Close (File);                         --  close (commits any pending writes)
+      Locate (Nm, FS, SF, SL);
+      declare
+         Sub                  : constant String := Nm (SF .. SL);
+         Dir_Last, Name_First : Natural;
+      begin
+         Split (Sub, Dir_Last, Name_First);
+         FS.Unlink (Sub (Sub'First .. Dir_Last), Sub (Name_First .. Sub'Last));
+         FS.Commit;
+      end;
+   end Delete;
+
    procedure Reset (File : in out File_Type) is
       B : constant CB_Access := CB (File);
    begin
@@ -578,6 +609,24 @@ package body ESP32S3.Text_IO is
          B.FS.Stat (B.Node, B.Info);
          B.Offset := 0; B.Column := 1; B.Line_No := 1; B.Page_No := 1;
       end if;
+   end Reset;
+
+   --  Re-open the file with a new mode (e.g. an Out_File written then re-read as
+   --  In_File), preserving its name and form. Console files just reset position.
+   procedure Reset (File : in out File_Type; Mode : File_Mode) is
+      B  : constant CB_Access := CB (File);
+   begin
+      if B.Kind /= Disk then
+         B.Column := 1; B.Line_No := 1; B.Page_No := 1;
+         return;
+      end if;
+      declare
+         Nm : constant String := B.Name_Buf (1 .. B.Name_Len);
+         Fm : constant String := B.Form_Buf (1 .. B.Form_Len);
+      begin
+         Close (File);
+         Open (File, Nm, Mode, Fm);
+      end;
    end Reset;
 
    function Is_Open (File : File_Type) return Boolean is
@@ -777,6 +826,40 @@ package body ESP32S3.Text_IO is
    end Get_Line;
    procedure Get_Line (Item : out String; Last : out Natural) is
    begin Get_Line (Cur_In.all, Item, Last); end Get_Line;
+
+   function Get_Line (File : File_Type) return String is
+      type Str_Ptr is access String;
+      procedure Free is new Ada.Unchecked_Deallocation (String, Str_Ptr);
+      B   : constant CB_Access := CB (File);
+      Buf : Str_Ptr := new String (1 .. 64);
+      Len : Natural := 0;
+      C   : Character; Av : Boolean;
+   begin
+      Require_Read (B);
+      if B.Offset >= B.Info.Size then
+         Free (Buf); raise ESP32S3.Ext4.End_Error;
+      end if;
+      loop
+         Peek (B, C, Av);
+         exit when not Av;
+         Advance (B);
+         exit when C = ASCII.LF;
+         if Len = Buf'Length then            --  grow (double)
+            declare
+               Bigger : constant Str_Ptr := new String (1 .. Buf'Length * 2);
+            begin
+               Bigger (1 .. Len) := Buf (1 .. Len);
+               Free (Buf); Buf := Bigger;
+            end;
+         end if;
+         Len := Len + 1; Buf (Len) := C;
+      end loop;
+      return R : constant String := Buf (1 .. Len) do
+         Free (Buf);
+      end return;
+   end Get_Line;
+
+   function Get_Line return String is (Get_Line (Cur_In.all));
 
    procedure Skip_Line (File : File_Type; Spacing : Positive_Count := 1) is
       B : constant CB_Access := CB (File);
@@ -1271,7 +1354,9 @@ package body ESP32S3.Text_IO is
 
 begin
    Std_Out.CB := new Control_Block'(Kind => Console, Mode => Out_File, others => <>);
+   Std_Err.CB := new Control_Block'(Kind => Console, Mode => Out_File, others => <>);
    Std_In.CB  := new Control_Block'(Kind => Console, Mode => In_File,  others => <>);
    Cur_Out := Std_Out'Access;
+   Cur_Err := Std_Err'Access;
    Cur_In  := Std_In'Access;
 end ESP32S3.Text_IO;
