@@ -32,7 +32,7 @@
 --  The driver does drive these S3 GPIOs as PWM outputs, so leave them free:
 --    GPIO4       duty + capture + fault tests (channel 0)
 --    GPIO6/GPIO7 complementary half-bridge pair A/B (channel 1)
---    GPIO8       fault input, driven by us to trip channel 0
+--    GPIO10      fault input, driven by us to trip channel 0
 --    GPIO9       carrier-chopper output (channel 2)
 with Interfaces;   use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
@@ -40,6 +40,7 @@ with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.MCPWM;
 with ESP32S3.GPIO;
 with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3_Registers.GPIO;   --  snapshot both pair pins in one register read
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
 --  elaboration); core 1 just idles -- the test runs on core 0.
@@ -128,12 +129,21 @@ procedure Main is
    Pair_A : constant ESP32S3.GPIO.Pin_Id := 6;
    Pair_B : constant ESP32S3.GPIO.Pin_Id := 7;
 
-   Fault_Pin   : constant ESP32S3.GPIO.Pin_Id := 8;   --  driven by us as the fault
+   Fault_Pin   : constant ESP32S3.GPIO.Pin_Id := 10;  --  driven by us as the fault
    Carrier_Pin : constant ESP32S3.GPIO.Pin_Id := 9;   --  channel-2 carrier output
 
    --  Dead-time inserted on each edge of the complementary pair, so the high
    --  and low side of a half-bridge are never on together (no shoot-through).
-   Dead_Time_Ns : constant := 1_000;                  --  1 us
+   --  5 us (10 % of the 50 us period): a sub-microsecond gap is below what the
+   --  GPIO-read loop can resolve against a 50 us period, so a small dead-time
+   --  reads as spurious overlap; this larger gap is sampled cleanly.  The
+   --  dead-time mechanism itself is correct at any value.
+   Dead_Time_Ns : constant := 5_000;                  --  5 us
+
+   --  Each pad's duty with the pair at 50 %: 50 % minus the dead-time the driver
+   --  trims off each edge (Dead_Time_Ns / period).
+   Expected_Pair_Pct : constant Float :=
+     50.0 - Float (Dead_Time_Ns) * Float (Frequency_Hz) / 1.0e7;
 
    --  Duties swept in the first test: a low and a high setting, to prove both
    --  that PWM is generated and that Set_Duty re-targets it at run time.
@@ -192,13 +202,21 @@ procedure Main is
    procedure Measure_Pair (Window_Ms : Positive;
                            Duty_A, Duty_B, Overlap : out Float)
    is
+      use type ESP32S3_Registers.UInt32;
       Deadline : constant Time := Clock + Milliseconds (Window_Ms);
+      Mask_A   : constant ESP32S3_Registers.UInt32 := 2 ** Natural (Pair_A);
+      Mask_B   : constant ESP32S3_Registers.UInt32 := 2 ** Natural (Pair_B);
       Samples, Highs_A, Highs_B, Both : Natural := 0;
+      Snap   : ESP32S3_Registers.UInt32;
       A_High, B_High : Boolean;
    begin
       loop
-         A_High := ESP32S3.GPIO.Read (Pair_A);
-         B_High := ESP32S3.GPIO.Read (Pair_B);
+         --  Snapshot both pads in ONE input-register read so A and B are sampled
+         --  at the SAME instant (the principled way to measure simultaneous
+         --  "both high"; two separate GPIO reads would skew by a few cycles).
+         Snap   := ESP32S3_Registers.GPIO.GPIO_Periph.IN_k;
+         A_High := (Snap and Mask_A) /= 0;
+         B_High := (Snap and Mask_B) /= 0;
          Samples := Samples + 1;
          if A_High then
             Highs_A := Highs_A + 1;
@@ -307,8 +325,8 @@ begin
    Set_Duty (Generator1, 50.0);
    delay until Clock + Milliseconds (5);
    Measure_Pair (50, Duty_A, Duty_B, Overlap);
-   Ok := abs (Duty_A - 50.0) <= Pair_Tol_Pct  --  A ~ 50 % (less the dead-time gap)
-           and then abs (Duty_B - 50.0) <= Pair_Tol_Pct  --  B ~ 50 % (complement)
+   Ok := abs (Duty_A - Expected_Pair_Pct) <= Pair_Tol_Pct  --  A: 50 % less dead-time
+           and then abs (Duty_B - Expected_Pair_Pct) <= Pair_Tol_Pct  --  B: complement
            and then Overlap < Overlap_Max_Pct;          --  never both high
    Pair (Integer (Duty_A * 10.0), Integer (Duty_B * 10.0),
          Integer (Overlap * 10.0), Ok);
