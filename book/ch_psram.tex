@@ -6,8 +6,9 @@ the SoC, but whether there is any, how much, and of what kind depends on the
 module. Espressif's S3 family ships in several variants: no PSRAM at all, 2\,MB of
 \emph{quad} (4-line) PSRAM, or up to 8\,MB of \emph{octal} (8-line) PSRAM, and from
 more than one memory vendor. This chapter is about the octal variant (the
-high-bandwidth option), which the boards used here happen to populate with an
-8\,MB AP~Memory die. The bring-up does not hard-code that, though: it reads the
+high-bandwidth option), which the boards used here populate with 8\,MB octal PSRAM
+(an AP~Memory die in the DevKitC's module, a discrete part on the Meshnology
+board). The bring-up does not hard-code the vendor, though: it reads the
 device's own mode registers and adapts to whichever octal part is fitted (vendor,
 density, voltage, latency), so the 8\,MB and the exact constants below are what
 \emph{these} parts reported, not universal facts.
@@ -299,9 +300,12 @@ The strongest evidence that this measures a real property and not a per-board fl
 that two physically different boards land on the \emph{same} window. The whole effort
 was developed on a Meshnology LoRa AIOT board; the finished from-source bring-up was
 then run unchanged on a genuine Espressif ESP32-S3-DevKitC. Both independently measured
-\texttt{passmask = 0xC3} $\rightarrow$ mode 0, on the same AP Memory 8\,MB octal die.
-The din window tracks a stable chip-plus-controller property, which is exactly what you
-want from a calibration: reproducible, not lucky.
+\texttt{passmask = 0xC3} $\rightarrow$ mode 0, even though their 8\,MB octal PSRAM is
+realised differently on each board: in-package inside the module on the DevKitC, a
+discrete part on the Meshnology board (and not necessarily the same die at all). That
+two different physical realisations land on the same window is the stronger result. The
+din window tracks a stable property of the controller and its octal PSRAM, which is
+exactly what you want from a calibration: reproducible, not lucky.
 
 \section{The 80\,MHz versus 40\,MHz trade}
 
