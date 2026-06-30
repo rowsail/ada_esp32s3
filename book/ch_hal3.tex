@@ -34,7 +34,7 @@ procedure Deep_Sleep_Until (Pin : Pin_Id; High : Boolean := True);
   \texttt{Deep\_Sleep\_GPIO} or \texttt{Other\_Reset}.
 \end{description}
 
-\lstexample{a boot counter that survives deep sleep.}
+\lstexample{A boot counter that survives deep sleep.}
 \begin{lstlisting}
 with Interfaces;     use Interfaces;
 with Ada.Text_IO;    use Ada.Text_IO;
@@ -53,7 +53,7 @@ begin
 end RTC_Boot;
 \end{lstlisting}
 
-\lstexample{wake on a button.}
+\lstexample{Wake on a button.}
 \begin{lstlisting}
 with ESP32S3.RTC; use ESP32S3.RTC;
 procedure RTC_Wake is
@@ -83,7 +83,7 @@ procedure Set_Pull (Pin : RTC_Pin; Mode : Pull_Mode);   --  No_Pull / Up / Down
   \texttt{Up} or \texttt{Down}.
 \end{description}
 
-\lstexample{hold a relay line high through sleep.}
+\lstexample{Hold a relay line high through sleep.}
 \begin{lstlisting}
 with ESP32S3.GPIO;
 with ESP32S3.RTC_IO; use ESP32S3.RTC_IO;
@@ -97,7 +97,7 @@ begin
 end RTCIO_Hold;
 \end{lstlisting}
 
-\lstexample{an RTC pull-up on a wake pin.}
+\lstexample{An RTC pull-up on a wake pin.}
 \begin{lstlisting}
 with ESP32S3.RTC_IO; use ESP32S3.RTC_IO;
 procedure RTCIO_Pull is
@@ -128,7 +128,7 @@ function  Touched (Ch : Channel; Reference : Natural; Margin : Natural := 20_000
   to register a touch; default \texttt{20\_000}.
 \end{description}
 
-\lstexample{read two pads' baselines.}
+\lstexample{Read two pads' baselines.}
 \begin{lstlisting}
 with Ada.Text_IO;   use Ada.Text_IO;
 with ESP32S3.Touch; use ESP32S3.Touch;
@@ -140,7 +140,7 @@ begin
 end Touch_Read_Base;
 \end{lstlisting}
 
-\lstexample{detect a finger against a captured baseline.}
+\lstexample{Detect a finger against a captured baseline.}
 \begin{lstlisting}
 with Ada.Text_IO;   use Ada.Text_IO;
 with ESP32S3.Touch; use ESP32S3.Touch;

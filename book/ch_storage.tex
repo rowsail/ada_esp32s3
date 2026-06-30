@@ -27,7 +27,7 @@ procedure Write_Block (C : in out Card; LBA : Block_Address;
                        Data : Block; Result : out Status);
 \end{lstlisting}
 
-\lstexample{bring up a card and read sector 0.}
+\lstexample{Bring up a card and read sector 0.}
 \begin{lstlisting}
 with ESP32S3.SD_SPI; use ESP32S3.SD_SPI;
 with ESP32S3.SPI;
@@ -44,7 +44,7 @@ begin
 end SD_Init;
 \end{lstlisting}
 
-\lstexample{a non-destructive read / write-back / re-read round-trip.}
+\lstexample{A non-destructive read / write-back / re-read round-trip.}
 \begin{lstlisting}
 with ESP32S3.SD_SPI; use ESP32S3.SD_SPI;
 with ESP32S3.SPI;

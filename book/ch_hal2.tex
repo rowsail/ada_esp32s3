@@ -28,7 +28,7 @@ procedure Wait  (C : Channel; Dir : Direction);
   \texttt{'Address}es and a byte count, \texttt{1\,..\,4095}.
 \end{description}
 
-\lstexample{memory-to-memory copy.}
+\lstexample{Memory-to-memory copy.}
 \begin{lstlisting}
 with Interfaces;
 with ESP32S3.GDMA; use ESP32S3.GDMA;
@@ -99,7 +99,7 @@ begin
 end MCPWM_Simple;
 \end{lstlisting}
 
-\lstexample{a complementary pair with 500\,ns dead-time (half-bridge).}
+\lstexample{A complementary pair with 500\,ns dead-time (half-bridge).}
 \begin{lstlisting}
 with ESP32S3.MCPWM; use ESP32S3.MCPWM;
 procedure MCPWM_Pair is
@@ -176,7 +176,7 @@ violation. Reach for \texttt{Write\_Raw}/\texttt{Transfer\_Raw} only for bytes
 that are \emph{already} framed (a DMA buffer built elsewhere, or an opaque
 bit-pattern self-test).
 
-\lstexample{play a buffer of samples.}
+\lstexample{Play a buffer of samples.}
 \begin{lstlisting}
 with ESP32S3.I2S; use ESP32S3.I2S;
 procedure I2S_Play is
@@ -189,7 +189,7 @@ begin
 end I2S_Play;
 \end{lstlisting}
 
-\lstexample{wiring-free full-duplex loopback self-test.}
+\lstexample{Wiring-free full-duplex loopback self-test.}
 \begin{lstlisting}
 with ESP32S3.I2S; use ESP32S3.I2S;
 procedure I2S_Loopback is
@@ -280,7 +280,7 @@ begin
 end LEDC_Simple;
 \end{lstlisting}
 
-\lstexample{fade an LED.}
+\lstexample{Fade an LED.}
 \begin{lstlisting}
 with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.LEDC;   use ESP32S3.LEDC;
@@ -326,7 +326,7 @@ procedure Receive (C : RX_Channel; Into : out Symbol_Array; Count : out Natural)
 \item[\texttt{Count}] (\texttt{Receive}) \texttt{out} count of symbols captured.
 \end{description}
 
-\lstexample{transmit a pulse burst (1\,\textmu s resolution).}
+\lstexample{Transmit a pulse burst (1\,\textmu s resolution).}
 \begin{lstlisting}
 with ESP32S3.RMT; use ESP32S3.RMT;
 procedure RMT_Tx is
@@ -341,7 +341,7 @@ begin
 end RMT_Tx;
 \end{lstlisting}
 
-\lstexample{receive into a buffer (e.g. an IR remote).}
+\lstexample{Receive into a buffer (e.g. an IR remote).}
 \begin{lstlisting}
 with ESP32S3.RMT; use ESP32S3.RMT;
 procedure RMT_Rx is
@@ -372,7 +372,7 @@ function  Count (U : Unit) return Integer;   procedure Clear (U : Unit);
 \item[\texttt{Count}] returns the signed counter (16-bit, wraps at $\pm$32768).
 \end{description}
 
-\lstexample{count rising edges on a pin.}
+\lstexample{Count rising edges on a pin.}
 \begin{lstlisting}
 with Ada.Text_IO;  use Ada.Text_IO;
 with ESP32S3.PCNT; use ESP32S3.PCNT;
@@ -387,7 +387,7 @@ begin
 end PCNT_Count;
 \end{lstlisting}
 
-\lstexample{count both edges (double the resolution).}
+\lstexample{Count both edges (double the resolution).}
 \begin{lstlisting}
 with ESP32S3.PCNT; use ESP32S3.PCNT;
 procedure PCNT_Both is
@@ -419,7 +419,7 @@ procedure Set_Density (C : Channel; Percent : Density_Percent);
 \item[\texttt{Percent}] target density, \texttt{0.0\,..\,100.0}.
 \end{description}
 
-\lstexample{a 25\,\% density bitstream (analog-ish level via an RC filter).}
+\lstexample{A 25\,\% density bitstream (analog-ish level via an RC filter).}
 \begin{lstlisting}
 with ESP32S3.SDM; use ESP32S3.SDM;
 procedure SDM_Density is
@@ -431,7 +431,7 @@ begin
 end SDM_Density;
 \end{lstlisting}
 
-\lstexample{breathe an LED by sweeping density.}
+\lstexample{Breathe an LED by sweeping density.}
 \begin{lstlisting}
 with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.SDM;    use ESP32S3.SDM;
@@ -504,7 +504,7 @@ marks a \emph{remote-transmission request} (RTR): a frame that carries an id and
 length but no data, asking whichever node owns that id to reply with the data.
 Set it on either frame type; a received frame reports it.
 
-\lstexample{send a standard and an extended frame.}
+\lstexample{Send a standard and an extended frame.}
 \begin{lstlisting}
 with ESP32S3.TWAI; use ESP32S3.TWAI;
 procedure TWAI_Send is
@@ -521,7 +521,7 @@ begin
 end TWAI_Send;
 \end{lstlisting}
 
-\lstexample{self-test loopback (no transceiver, no wiring).}
+\lstexample{Self-test loopback (no transceiver, no wiring).}
 \begin{lstlisting}
 with ESP32S3.TWAI; use ESP32S3.TWAI;
 procedure TWAI_Selftest is
@@ -559,7 +559,7 @@ function  Alarm_Fired (T : Timer) return Boolean;  procedure Clear_Alarm (T : Ti
   \texttt{At\_Ticks}.
 \end{description}
 
-\lstexample{measure an elapsed interval in microseconds.}
+\lstexample{Measure an elapsed interval in microseconds.}
 \begin{lstlisting}
 with Ada.Text_IO;   use Ada.Text_IO;
 with ESP32S3.Timer; use ESP32S3.Timer;
@@ -576,7 +576,7 @@ begin
 end Timer_Measure;
 \end{lstlisting}
 
-\lstexample{a one-shot alarm 50\,ms out.}
+\lstexample{A one-shot alarm 50\,ms out.}
 \begin{lstlisting}
 with ESP32S3.Timer; use ESP32S3.Timer;
 procedure Timer_Alarm is
@@ -615,7 +615,7 @@ procedure Transmit (S : Session; Tx : System.Address; Length : Natural;
 \item[\texttt{Ok}] \texttt{out Boolean}: \texttt{True} on a completed transfer.
 \end{description}
 
-\lstexample{push a frame buffer to a parallel display.}
+\lstexample{Push a frame buffer to a parallel display.}
 \begin{lstlisting}
 with Interfaces;
 with ESP32S3.LCD; use ESP32S3.LCD;
@@ -630,7 +630,7 @@ begin
 end LCD_Frame;
 \end{lstlisting}
 
-\lstexample{expose the pixel clock on a pad (for a scope).}
+\lstexample{Expose the pixel clock on a pad (for a scope).}
 \begin{lstlisting}
 with ESP32S3.LCD; use ESP32S3.LCD;
 procedure LCD_Clk is
@@ -660,7 +660,7 @@ function Read (R : Reader; Ch : Channel_Index; Atten : Attenuation := Db_12)
 \item[returns] a \texttt{Raw\_Value}, \texttt{0\,..\,4095} (12-bit).
 \end{description}
 
-\lstexample{read a 12-bit sample.}
+\lstexample{Read a 12-bit sample.}
 \begin{lstlisting}
 with Ada.Text_IO; use Ada.Text_IO;
 with ESP32S3.ADC; use ESP32S3.ADC;
@@ -674,7 +674,7 @@ begin
 end ADC_Read_Sample;
 \end{lstlisting}
 
-\lstexample{a lower attenuation for a small signal.}
+\lstexample{A lower attenuation for a small signal.}
 \begin{lstlisting}
 with Ada.Text_IO; use Ada.Text_IO;
 with ESP32S3.ADC; use ESP32S3.ADC;
