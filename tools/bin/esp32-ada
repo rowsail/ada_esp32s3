@@ -8,7 +8,8 @@
 #  Usage (run from inside a project folder):
 #    esp32-ada init|new [DIR]        scaffold a new project (DIR or the cwd)
 #    esp32-ada build  [-P PROFILE]   build -> app.bin (PROFILE: light-tasking|
-#                                    embedded|full; default = light-tasking)
+#                                    embedded|full; default = the project's build.sh,
+#                                    which a fresh `init` sets to embedded)
 #    esp32-ada flash  [-p PORT]      build (if needed) + flash over USB ROM
 #    esp32-ada run    [-p PORT] [-P PROFILE]   build + flash + monitor
 #    esp32-ada monitor [-p PORT]     open the serial console (115200)
@@ -104,8 +105,9 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 --  <one line: what this example demonstrates>
 --
 --  Build & run:  esp32-ada run   -- build, flash, and open the serial monitor.
---                Default light-tasking profile; pass -P embedded / -P full, or
---                set ESP32S3_RTS_PROFILE in build.sh, if you need more.
+--                Default embedded profile (catchable contracts + RAII Session
+--                handles); change ESP32S3_RTS_PROFILE in build.sh for
+--                light-tasking / full.
 --  Output:       <what the console prints; what success looks like>.
 --  Hardware:     <none (self-contained), or the pins / external parts needed>.
 --
@@ -129,9 +131,14 @@ EOF
     cat > "$dir/build.sh" <<'EOF'
 #!/bin/bash
 # IDF-free build via the SDK's shared bare-boot (no idf.py).
+# Defaults to the embedded runtime profile (exception-capable: catchable
+# contracts + RAII Session handles + a heap).  For light-tasking (heap-less, no
+# finalization) or full, change ESP32S3_RTS_PROFILE below.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SDK="${ESP32S3_ADA_SDK:?source the SDK export.sh first}"
+export ESP32S3_RTS_PROFILE=embedded
+export HEAP_SIZE=65536 ENV_STACK_SIZE=65536
 exec bash "$SDK/examples/common/bare/bare_build.sh" "$HERE" "_ada_main"
 EOF
 
@@ -194,7 +201,7 @@ EOF
 
 # -- actions on the current project -------------------------------------------
 do_build () {
-    local prof="light-tasking"
+    local prof="auto"   # auto = honour the project's build.sh (a fresh init = embedded)
     while [ $# -gt 0 ]; do case "$1" in -P|--profile) prof="$2"; shift 2;; *) shift;; esac; done
     valid_profile "$prof"
     local p; p="$(proj_dir)"
@@ -209,7 +216,7 @@ do_flash () {
     [ -n "$s" ] && printf '%s\n' "$s" > "$SDK/tools/.jtag_serial"   # pin debug to this board
 }
 do_run () {
-    local port="${ESPPORT:-/dev/ttyACM0}" prof="light-tasking"
+    local port="${ESPPORT:-/dev/ttyACM0}" prof="auto"
     while [ $# -gt 0 ]; do case "$1" in
         -p|--port) port="$2"; shift 2;;
         -P|--profile) prof="$2"; shift 2;;

@@ -413,8 +413,9 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 --  <one line: what this example demonstrates>
 --
 --  Build & run:  ./x run <name>   (or, out of tree, esp32-ada run) -- build,
---                flash, and open the serial monitor.  Default light-tasking
---                profile; set ESP32S3_RTS_PROFILE in build.sh if you need more.
+--                flash, and open the serial monitor.  Default embedded profile
+--                (catchable contracts + RAII Session handles); change
+--                ESP32S3_RTS_PROFILE in build.sh for light-tasking / full.
 --  Output:       <what the console prints; what success looks like>.
 --  Hardware:     <none (self-contained), or the pins / external parts needed>.
 --
@@ -437,7 +438,12 @@ EOF
     cat > "$dir/build.sh" <<'EOF'
 #!/bin/bash
 # IDF-free build via the shared bare-boot (examples/common/bare).
+# Defaults to the embedded runtime profile (exception-capable: catchable
+# contracts + RAII Session handles + a heap).  For light-tasking (heap-less, no
+# finalization) or full, change ESP32S3_RTS_PROFILE below.
 HERE="$(cd "$(dirname "$0")" && pwd)"
+export ESP32S3_RTS_PROFILE=embedded
+export HEAP_SIZE=65536 ENV_STACK_SIZE=65536
 exec bash "$HERE/../common/bare/bare_build.sh" "$HERE" "_ada_main"
 EOF
 
