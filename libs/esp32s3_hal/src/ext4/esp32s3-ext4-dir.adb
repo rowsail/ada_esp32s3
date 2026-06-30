@@ -41,6 +41,7 @@ package body ESP32S3.Ext4.Dir is
                      Ftype   : constant U8      := Get_U8 (Hdr, 7);
                   begin
                      exit when Rec_Len < 8;            --  malformed: avoid a loop
+                     exit when Pos + Rec_Len > BS;     --  entry must stay in-block
                      if Ino /= 0 and then Name_Len > 0
                        and then Pos + 8 + Name_Len <= BS
                      then
@@ -165,6 +166,7 @@ package body ESP32S3.Ext4.Dir is
                                 (if Ino = 0 then 0 else 8 + R4 (NLen));
                   begin
                      exit when Rec < 8;
+                     exit when Pos + Rec > BS;          --  entry must stay in-block
                      if Rec - Actual >= Needed then
                         if Ino /= 0 then
                            Put_U16 (Hdr, 4, U16 (Actual));      --  shrink current
@@ -214,6 +216,7 @@ package body ESP32S3.Ext4.Dir is
                      Nm   : Byte_Array (0 .. (if NLen = 0 then 0 else NLen - 1));
                   begin
                      exit when Rec < 8;
+                     exit when Pos + Rec > BS;          --  entry must stay in-block
                      if Ino /= 0 and then NLen = Name'Length then
                         ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Phys, Pos + 8, Nm);
                         if To_String (Nm) = Name then
@@ -293,6 +296,7 @@ package body ESP32S3.Ext4.Dir is
                      Nm   : Byte_Array (0 .. (if NLen = 0 then 0 else NLen - 1));
                   begin
                      exit when Rec < 8;
+                     exit when Pos + Rec > BS;          --  entry must stay in-block
                      if Ino /= 0 and then NLen = Name'Length then
                         ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Phys, Pos + 8, Nm);
                         if To_String (Nm) = Name then

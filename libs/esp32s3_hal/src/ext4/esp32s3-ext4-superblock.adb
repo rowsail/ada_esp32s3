@@ -23,10 +23,17 @@ package body ESP32S3.Ext4.Superblock is
       end if;
 
       Log := Get_U32 (Buf, 16#18#);
+      if Log > 6 then           --  ext4 block size is 1 KiB .. 64 KiB (log 0..6);
+         raise Corrupt          --  a larger shift would wrap Block_Size to 0 (then
+           with "ext4 superblock: unsupported block size (s_log_block_size > 6)";
+      end if;                   --  divide-by-zero) or overflow the Natural below
       SB.Block_Size       := Natural (Shift_Left (U32 (1024), Natural (Log)));
       SB.First_Data_Block := Get_U32 (Buf, 16#14#);
       SB.Blocks_Per_Group := Get_U32 (Buf, 16#20#);
       SB.Inodes_Per_Group := Get_U32 (Buf, 16#28#);
+      if SB.Blocks_Per_Group = 0 or else SB.Inodes_Per_Group = 0 then
+         raise Corrupt with "ext4 superblock: zero blocks/inodes per group";
+      end if;
       SB.Inodes_Count     := Get_U32 (Buf, 16#00#);
       SB.Blocks_Count     := U64 (Get_U32 (Buf, 16#04#));
       SB.Free_Blocks      := U64 (Get_U32 (Buf, 16#0C#));
@@ -41,6 +48,13 @@ package body ESP32S3.Ext4.Superblock is
       else
          SB.Inode_Size := 128;
       end if;
+      --  Inode size: a power of two, 128 .. block size (Inode.Read sizes its
+      --  buffer from this and divides by Inodes_Per_Group with it).
+      if SB.Inode_Size < 128 or else SB.Inode_Size > SB.Block_Size
+        or else (U32 (SB.Inode_Size) and (U32 (SB.Inode_Size) - 1)) /= 0
+      then
+         raise Corrupt with "ext4 superblock: bad inode size";
+      end if;
 
       if Is_64Bit (SB) then
          SB.Blocks_Count := SB.Blocks_Count
@@ -52,11 +66,19 @@ package body ESP32S3.Ext4.Superblock is
       else
          SB.Desc_Size := 32;
       end if;
+      --  Group_Desc.Read decodes a 32- or 64-byte descriptor into a fixed buffer;
+      --  reject any other size rather than overrun / silently short-read it.
+      if SB.Desc_Size /= 32 and then SB.Desc_Size /= 64 then
+         raise Corrupt with "ext4 superblock: unsupported group-descriptor size";
+      end if;
 
       --  Number of block groups = ceil((blocks - first_data_block) / per_group).
+      if SB.Blocks_Count <= U64 (SB.First_Data_Block) then
+         raise Corrupt with "ext4 superblock: blocks_count <= first_data_block";
+      end if;
       declare
          Span : constant U64 := SB.Blocks_Count - U64 (SB.First_Data_Block);
-         Per  : constant U64 := U64 (SB.Blocks_Per_Group);
+         Per  : constant U64 := U64 (SB.Blocks_Per_Group);   --  /= 0 (checked above)
       begin
          SB.Groups_Count := U32 ((Span + Per - 1) / Per);
       end;

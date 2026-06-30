@@ -70,9 +70,11 @@ package body ESP32S3.Ext4.Block_Map is
          end if;
       end Node_Bytes;
 
+      BS   : constant Natural := V.SB.Block_Size;
       Node : Block_Number := 0;             --  0 => the inode's i_block root
       Hdr  : Byte_Array (0 .. 11);
       Ent  : Byte_Array (0 .. 11);
+      Prev_Depth : Integer := -1;           --  depth of the node we descended from
    begin
       loop
          Node_Bytes (Node, 0, Hdr);
@@ -82,7 +84,21 @@ package body ESP32S3.Ext4.Block_Map is
          declare
             Entries : constant Natural := Natural (Get_U16 (Hdr, 2));
             Depth   : constant Natural := Natural (Get_U16 (Hdr, 6));
+            --  Entry capacity: the root lives in the 60-byte i_block (4 entries
+            --  max); an interior/leaf node fills a whole block.  A larger count is
+            --  corrupt -- and on the root would overrun the 60-byte i_block slice.
+            Max_Ent : constant Natural :=
+                        (if Node = 0 then (60 - 12) / 12 else (BS - 12) / 12);
          begin
+            --  ext4 extent trees are at most 5 levels deep, and each descent must
+            --  strip exactly one level: this makes the loop provably terminate, so
+            --  a cyclic or over-deep tree raises Corrupt instead of hanging.
+            if Depth > 5 or else Entries > Max_Ent then
+               raise Corrupt with "extent node: bad depth/entry count";
+            end if;
+            if Prev_Depth >= 0 and then Depth /= Prev_Depth - 1 then
+               raise Corrupt with "extent tree: depth not strictly decreasing";
+            end if;
             if Depth = 0 then
                --  Leaf: find the extent covering L_Block.
                for E in 0 .. Entries - 1 loop
@@ -126,6 +142,7 @@ package body ESP32S3.Ext4.Block_Map is
                   if not Found then
                      return 0;
                   end if;
+                  Prev_Depth := Depth;       --  next node must be Depth-1
                   Node := Child;             --  loop down a level
                end;
             end if;
