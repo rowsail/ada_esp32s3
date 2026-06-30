@@ -44,7 +44,7 @@ procedure Main is
    --  The HAL UART controller under test.
    Port : constant UART_Port := UART1;
 
-   --  Line speed for every test; 8-N-1 frame format is the Setup default.
+   --  Line speed for every test; 8-N-1 frame format is the Configure default.
    Baud_Rate : constant := 115_200;
 
    --  A free GPIO that RTS drives and CTS reads back (matrix loopback of the
@@ -115,9 +115,8 @@ begin
    Put_Line ("[uart] bare-metal UART self-test "
              & "(internal TX->RX loopback, no wiring)");
 
-   Setup (Port, Baud => Baud_Rate);          --  8-N-1 defaults
-
    Acquire (S, Port);
+   Configure (S, Baud => Baud_Rate);         --  8-N-1 defaults, no pins routed
    Enable_Loopback (S);                      --  internal TX->RX (held port)
    Write (S, Tx);
    Read (S, Rx, Loopback_Got);

@@ -42,10 +42,12 @@ after configuration.
 
 ## Talking to a real device
 
-For an external link, skip `Enable_Loopback` and route the pads in `Setup`:
+For an external link, skip `Enable_Loopback`, `Acquire` the port, and route the
+pads with `Configure`:
 
 ```ada
-ESP32S3.UART.Setup (ESP32S3.UART.UART1, Baud => 115_200, Tx => 17, Rx => 18);
+Acquire   (S, ESP32S3.UART.UART1);
+Configure (S, Baud => 115_200, Tx => 17, Rx => 18);
 ```
 
 `Tx`/`Rx` are validated `ESP32S3.GPIO` pins (a reserved/absent pad is a
@@ -53,7 +55,7 @@ compile-time error). All four are optional (default `No_Pin`), so a one-way link
 routes only the line it uses — e.g. a GPS or other receive-only module:
 
 ```ada
-ESP32S3.UART.Setup (ESP32S3.UART.UART1, Rx => 18);   --  RX only, no TX
+Configure (S, Rx => 18);   --  RX only, no TX
 ```
 
 With hardware flow control, add the `Rts`/`Cts` pins (and optionally a custom
@@ -61,12 +63,12 @@ RX threshold); giving `Rts` enables RX flow control, giving `Cts` enables TX
 flow control:
 
 ```ada
-ESP32S3.UART.Setup (ESP32S3.UART.UART1,
-                    Tx => 17, Rx => 18, Rts => 19, Cts => 20);
+Configure (S, Tx => 17, Rx => 18, Rts => 19, Cts => 20);
 ```
 
-To re-route pins (or change baud/format) **after** `Setup`, `Acquire` the port
-first and use the `Session`-based `Configure_Pins` / `Set_Baud` / … — changing a
+All configuration runs through the held `Session`: there is no port-based setup
+that precedes ownership. To re-route pins or change one attribute later, use the
+finer `Configure_Pins` / `Set_Baud` / … on the same held `Session` — changing a
 live port's settings requires owning it, so it can never race another task.
 
 ## Build & flash
