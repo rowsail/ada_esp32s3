@@ -77,19 +77,34 @@ package body ESP32S3.UART is
    -- Acquire --
    -------------
 
-   procedure Acquire (S : in out Session; Port : UART_Port) is
+   procedure Acquire
+     (S      : in out Session;
+      Port   : UART_Port;
+      Baud   : Baud_Rate   := 115_200;
+      Bits   : Data_Bits   := 8;
+      Parity : Parity_Mode := None;
+      Stop   : Stop_Bits   := One;
+      Tx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Cts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx_Flow_Threshold : Natural := 100) is
    begin
       Guards (Port).Acquire;          --  suspends here until the port is free
-      State.Ensure (Port);            --  first acquirer brings it up (defaults)
+      State.Ensure (Port);            --  first acquirer creates the controller
       S.Port   := Port;
       S.Active := True;
+      --  Now that S holds the port, apply the requested settings through the
+      --  same ownership-checked path every other configuration call uses.
+      Reconfigure (S, Baud, Bits, Parity, Stop,
+                   Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
    end Acquire;
 
-   ---------------
-   -- Configure --
-   ---------------
+   -----------------
+   -- Reconfigure --
+   -----------------
 
-   procedure Configure
+   procedure Reconfigure
      (S      : Session;
       Baud   : Baud_Rate   := 115_200;
       Bits   : Data_Bits   := 8;
@@ -108,7 +123,7 @@ package body ESP32S3.UART is
       E.Set_Parity    (B, Parity);
       E.Set_Stop_Bits (B, Stop);
       E.Configure_Pins (B, Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
-   end Configure;
+   end Reconfigure;
 
    ----------------------------------------------------------------------------
    --  Finer configuration + transfers -- every one reaches the hardware

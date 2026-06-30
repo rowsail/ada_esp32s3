@@ -44,7 +44,7 @@ procedure Main is
    --  The HAL UART controller under test.
    Port : constant UART_Port := UART1;
 
-   --  Line speed for every test; 8-N-1 frame format is the Configure default.
+   --  Line speed for every test; 8-N-1 frame format is the Acquire default.
    Baud_Rate : constant := 115_200;
 
    --  A free GPIO that RTS drives and CTS reads back (matrix loopback of the
@@ -115,8 +115,7 @@ begin
    Put_Line ("[uart] bare-metal UART self-test "
              & "(internal TX->RX loopback, no wiring)");
 
-   Acquire (S, Port);
-   Configure (S, Baud => Baud_Rate);         --  8-N-1 defaults, no pins routed
+   Acquire (S, Port, Baud => Baud_Rate);     --  claim + 8-N-1, no pins routed
    Enable_Loopback (S);                      --  internal TX->RX (held port)
    Write (S, Tx);
    Read (S, Rx, Loopback_Got);
@@ -197,8 +196,10 @@ begin
       end if;
    end loop;
 
-   --  TX and RX both inverted -> ends agree again -> clean round-trip.
-   Acquire (S, Port);
+   --  TX and RX both inverted -> ends agree again -> clean round-trip.  Acquire
+   --  re-routes the single-pad loopback (it resets pins, so we pass them again);
+   --  loopback stays off and the TX inversion from above persists until reset.
+   Acquire (S, Port, Tx => Inversion_Pad, Rx => Inversion_Pad);
    Set_Inversion (S, Tx => True, Rx => True);
    Write (S, Inversion_Tx);
    Read  (S, Inversion_Rx, Both_Got);

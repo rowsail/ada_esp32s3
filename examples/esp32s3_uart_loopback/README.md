@@ -42,12 +42,11 @@ after configuration.
 
 ## Talking to a real device
 
-For an external link, skip `Enable_Loopback`, `Acquire` the port, and route the
-pads with `Configure`:
+For an external link, skip `Enable_Loopback` and pass the pads straight to
+`Acquire`, which claims the port and applies the settings in one call:
 
 ```ada
-Acquire   (S, ESP32S3.UART.UART1);
-Configure (S, Baud => 115_200, Tx => 17, Rx => 18);
+Acquire (S, ESP32S3.UART.UART1, Baud => 115_200, Tx => 17, Rx => 18);
 ```
 
 `Tx`/`Rx` are validated `ESP32S3.GPIO` pins (a reserved/absent pad is a
@@ -55,7 +54,7 @@ compile-time error). All four are optional (default `No_Pin`), so a one-way link
 routes only the line it uses — e.g. a GPS or other receive-only module:
 
 ```ada
-Configure (S, Rx => 18);   --  RX only, no TX
+Acquire (S, ESP32S3.UART.UART1, Rx => 18);   --  RX only, no TX
 ```
 
 With hardware flow control, add the `Rts`/`Cts` pins (and optionally a custom
@@ -63,13 +62,14 @@ RX threshold); giving `Rts` enables RX flow control, giving `Cts` enables TX
 flow control:
 
 ```ada
-Configure (S, Tx => 17, Rx => 18, Rts => 19, Cts => 20);
+Acquire (S, ESP32S3.UART.UART1, Tx => 17, Rx => 18, Rts => 19, Cts => 20);
 ```
 
 All configuration runs through the held `Session`: there is no port-based setup
-that precedes ownership. To re-route pins or change one attribute later, use the
-finer `Configure_Pins` / `Set_Baud` / … on the same held `Session` — changing a
-live port's settings requires owning it, so it can never race another task.
+that precedes ownership. To change settings on a port you already hold, use
+`Reconfigure` (the same bundle) or the finer `Configure_Pins` / `Set_Baud` / …
+on the same held `Session` — changing a live port's settings requires owning it,
+so it can never race another task.
 
 ## Build & flash
 

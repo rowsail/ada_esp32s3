@@ -436,13 +436,14 @@ end I2C_Read_Reg;
 \section{UART: asynchronous serial}\index{UART driver}
 
 \begin{lstlisting}
-procedure Acquire (S : in out Session; Port : UART_Port);  --  claims a bare port
---  All configuration takes the HELD Session, not a Port:
-procedure Configure (S : Session; Baud : Baud_Rate := 115_200;
-                     Bits : Data_Bits := 8; Parity : Parity_Mode := None;
-                     Stop : Stop_Bits := One;
-                     Tx, Rx, Rts, Cts : Optional_Pin := No_Pin;  --  routes pads too
-                     Rx_Flow_Threshold : Natural := 100);
+--  Acquire claims the port AND configures it in one call:
+procedure Acquire (S : in out Session; Port : UART_Port;
+                   Baud : Baud_Rate := 115_200;
+                   Bits : Data_Bits := 8; Parity : Parity_Mode := None;
+                   Stop : Stop_Bits := One;
+                   Tx, Rx, Rts, Cts : Optional_Pin := No_Pin;  --  routes pads too
+                   Rx_Flow_Threshold : Natural := 100);
+procedure Reconfigure (S : Session; ...);  --  re-apply the whole bundle, held port
 procedure Write (S : Session; Data : Byte_Array);
 procedure Read  (S : Session; Data : out Byte_Array; Count : out Natural);
 function  Available (S : Session) return Natural;
@@ -472,22 +473,23 @@ procedure Enable_Loopback (S : Session; On : Boolean := True);
 \item[\texttt{On}] (\texttt{Enable\_Loopback}) \texttt{True} (default) folds TX back
   to RX internally.
 \item[the \texttt{Set\_*} setters] each take the held \texttt{Session} and one new
-  value of the matching \texttt{Configure} type (e.g. \texttt{Set\_Parity} takes a
+  value of the matching \texttt{Acquire} type (e.g. \texttt{Set\_Parity} takes a
   \texttt{Parity\_Mode}); \texttt{Configure\_Pins} additionally accepts per-line
   \texttt{*\_Invert} booleans (default \texttt{False}).
 \end{description}
 
-\texttt{Acquire} claims a port and hands back a \texttt{Session}; the first
-acquirer brings the port up at a safe default (115200 8-N-1, no pins).
-\texttt{Configure} then sets the frame format \emph{and} routes the four pins
-(all optional: pass only what the link uses, or none for an internal loopback
-self-test) on the port you hold. \emph{Every} configuration call, whether the
-bundled \texttt{Configure} or the finer \texttt{Set\_Baud} /
-\texttt{Configure\_Pins} / loopback setters, takes a \texttt{Session} instead of
-a \texttt{Port}, so you must \texttt{Acquire} the port before you can change any
-setting. Changing a parameter therefore requires owning the port and can never
-race another task's transfer. Each frame setter is an independent
-read-modify-write that leaves the other attributes and the pin routing untouched.
+\texttt{Acquire} claims a port \emph{and} shapes it in one call: it hands back a
+\texttt{Session}, sets the frame format, and routes the four pins (all optional:
+pass only what the link uses, or none for an internal loopback self-test). Every
+\texttt{Acquire} applies the full bundle, so a port comes up in exactly the state
+you ask for rather than inheriting a previous holder's settings; with all defaults
+that is 115200 8-N-1 with no pins. \emph{Every} later change, whether the bundled
+\texttt{Reconfigure} or the finer \texttt{Set\_Baud} / \texttt{Configure\_Pins} /
+loopback setters, also takes a \texttt{Session} instead of a \texttt{Port}, so you
+can change a setting only while you hold the port. Changing a parameter therefore
+requires owning the port and can never race another task's transfer. Each frame
+setter is an independent read-modify-write that leaves the other attributes and
+the pin routing untouched.
 
 This rule is enforced \emph{structurally}, not by convention. Inside the body,
 the per-port register handle lives in a nested package whose body hides it; the
@@ -505,8 +507,7 @@ with ESP32S3.UART; use ESP32S3.UART;
 procedure UART_Tx is
    S : Session;
 begin
-   Acquire (S, UART1);                                   --  claim the port
-   Configure (S, Baud => 115_200, Tx => 17, Rx => 16);   --  format + pins in one
+   Acquire (S, UART1, Baud => 115_200, Tx => 17, Rx => 16);  --  claim + config
    Write (S, (Character'Pos ('h'), Character'Pos ('i'), 10));
 end UART_Tx;
 \end{lstlisting}
@@ -547,14 +548,15 @@ because it exercises every part of the \texttt{Session} pattern.
 
 \emph{The statements, in execution order.}
 \begin{enumerate}
-\item \texttt{Acquire (S, UART1)} takes exclusive ownership of UART1. The first
-  acquirer brings the port up at the default frame format (115200 baud, 8 data
-  bits, no parity, one stop bit) with no pins routed, all this wiring-free
-  self-test needs. \texttt{Acquire} blocks on UART1's protected guard until the
-  port is free (here, immediately), marks \texttt{S} active, and records that it
-  holds UART1. Until \texttt{S} is released no other task can acquire UART1, and
-  because every configuration call below takes the held \texttt{Session}, no
-  other task can change UART1's settings either.
+\item \texttt{Acquire (S, UART1)} takes exclusive ownership of UART1 and brings it
+  up at the default frame format (115200 baud, 8 data bits, no parity, one stop
+  bit) with no pins routed, all this wiring-free self-test needs. (\texttt{Acquire}
+  applies its configuration bundle on every call; passing no settings here means
+  the defaults.) It blocks on UART1's protected guard until the port is free
+  (here, immediately), marks \texttt{S} active, and records that it holds UART1.
+  Until \texttt{S} is released no other task can acquire UART1, and because every
+  configuration call below takes the held \texttt{Session}, no other task can
+  change UART1's settings either.
 \item \texttt{Enable\_Loopback (S)} sets the controller's internal TX$\rightarrow$RX
   loopback bit \emph{on the held port}. Everything the transmitter shifts out is
   fed straight back into the receiver \emph{inside the chip}. Because UART is
@@ -588,26 +590,25 @@ because it exercises every part of the \texttt{Session} pattern.
 \end{enumerate}
 
 Ownership comes first. \texttt{Acquire} (step 1) is the per-transaction gate that
-hands you a \texttt{Session} and, on first use, brings the port up at safe
-defaults. Everything after it (\texttt{Configure}, the finer setters,
-\texttt{Enable\_Loopback} here, and the transfers) acts through that
-\texttt{Session}, so configuring a port is only possible while you hold it. There
-is no setup call that precedes ownership: you cannot touch a UART you do not hold.
+hands you a \texttt{Session} and shapes the port in the same call. Everything
+after it (\texttt{Reconfigure}, the finer setters, \texttt{Enable\_Loopback} here,
+and the transfers) acts through that \texttt{Session}, so configuring a port is
+only possible while you hold it. There is no setup call that precedes ownership:
+you cannot touch a UART you do not hold.
 
 \textbf{Example 3: change baud and frame format independently.} Each frame
 attribute has its own setter, so a protocol that renegotiates the link (or a
 bootloader that bumps the speed after handshaking) can change just one without
-re-running \texttt{Configure} or touching the pin routing. The setters take the
-held \texttt{Session}, so you \texttt{Acquire} the port first: the reconfiguration
-runs under the same ownership as the transfers:
+re-running the whole \texttt{Acquire} bundle or touching the pin routing. The
+setters take the held \texttt{Session}, so you configure the pins at
+\texttt{Acquire} and tweak from there:
 \begin{lstlisting}
 with ESP32S3.UART; use ESP32S3.UART;
 procedure UART_Reconfig is
    S : Session;
 begin
-   Acquire (S, UART1);                  --  own the port (comes up 115200 8-N-1)
-   Configure (S, Tx => 17, Rx => 16);   --  route the pins
-   Set_Baud      (S, 9_600);            --  then change each attribute alone
+   Acquire (S, UART1, Tx => 17, Rx => 16);  --  claim + 115200 8-N-1, pins routed
+   Set_Baud      (S, 9_600);                --  then change each attribute alone
    Set_Data_Bits (S, 7);
    Set_Parity    (S, Even);
    Set_Stop_Bits (S, Two);              --  now 9600 7-E-2
