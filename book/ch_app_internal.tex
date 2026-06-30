@@ -124,16 +124,16 @@ register driver lives in a private child, \texttt{ESP32S3.UART.Engine}, that
 cannot be \texttt{with}-ed from outside the subtree, so the unsynchronised
 primitives can never be reached by accident.
 
-Configuration is split in two. \texttt{Setup} runs once per port at startup
-(single-threaded) and fixes baud, frame format and pin routing. All four
-lines (\texttt{Tx}, \texttt{Rx}, \texttt{Rts}, \texttt{Cts}) are
-\texttt{Optional\_Pin}, so a link routes only what it uses. Everything after
-that goes through an acquired \texttt{Session}: \texttt{Acquire} hands out a
-limited, non-copyable token that owns the port exclusively (other tasks suspend
-until it is released), and every transfer \emph{and} every later
+Configuration runs entirely through an acquired \texttt{Session}.
+\texttt{Acquire} hands out a limited, non-copyable token that owns the port
+exclusively (other tasks suspend until it is released) and, on first use, brings
+the port up at safe defaults (115200 8-N-1, no pins). \texttt{Configure} then
+fixes baud, frame format and pin routing on the held port; all four lines
+(\texttt{Tx}, \texttt{Rx}, \texttt{Rts}, \texttt{Cts}) are \texttt{Optional\_Pin},
+so a link routes only what it uses. Every transfer \emph{and} every later
 reconfiguration (\texttt{Set\_Baud}, \texttt{Configure\_Pins},
-\texttt{Set\_Inversion}, \ldots) is a method on the held \texttt{Session}, so
-a reconfigure can never race another task's transfer. The \texttt{Session} is a
+\texttt{Set\_Inversion}, \ldots) is likewise a method on the held
+\texttt{Session}, so a reconfigure can never race another task's transfer. The \texttt{Session} is a
 controlled type that auto-releases on scope exit (including during exception
 unwinding), so this driver, like the other task-safe HAL drivers, targets the
 \texttt{embedded}/\texttt{full} profile (full exceptions and finalization).
@@ -151,22 +151,23 @@ package ESP32S3.UART is
    type Byte_Array  is array (Natural range <>) of Byte;
    type Session     is limited private;            --  auto-releasing
 
-   procedure Setup (Port : UART_Port;
-                    Baud : Baud_Rate   := 115_200;
-                    Bits : Data_Bits   := 8;
-                    Parity : Parity_Mode := None;
-                    Stop   : Stop_Bits   := One;
-                    Tx, Rx, Rts, Cts : ESP32S3.GPIO.Optional_Pin
-                                       := ESP32S3.GPIO.No_Pin;
-                    Rx_Flow_Threshold : Natural := 100);
-
    procedure Acquire (S : in out Session; Port : UART_Port);
+
+   procedure Configure (S : Session;
+                        Baud : Baud_Rate   := 115_200;
+                        Bits : Data_Bits   := 8;
+                        Parity : Parity_Mode := None;
+                        Stop   : Stop_Bits   := One;
+                        Tx, Rx, Rts, Cts : ESP32S3.GPIO.Optional_Pin
+                                          := ESP32S3.GPIO.No_Pin;
+                        Rx_Flow_Threshold : Natural := 100);
+
    procedure Write   (S : Session; Data : Byte_Array);
    procedure Read    (S : Session; Data : out Byte_Array; Count : out Natural);
    function  Available (S : Session) return Natural;
    procedure Enable_Loopback (S : Session; On : Boolean := True);
    procedure Release (S : in out Session);
-   Not_Initialized, Not_Owned : exception;
+   Not_Owned : exception;
 end ESP32S3.UART;
 \end{lstlisting}
 
@@ -182,8 +183,8 @@ S    : Session;
 Rx   : Byte_Array (Tx'Range);
 Got  : Natural;
 begin
-   Setup (Port, Baud => 115_200);     --  8-N-1 defaults
-   Acquire (S, Port);
+   Acquire (S, Port);                 --  claim the port (8-N-1 defaults)
+   Configure (S, Baud => 115_200);    --  set the line speed under ownership
    Enable_Loopback (S);               --  internal TX->RX
    Write (S, Tx);
    Read  (S, Rx, Got);
