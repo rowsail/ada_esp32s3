@@ -111,12 +111,16 @@
 %  the page before its listing.  (A bare \needspace AFTER the caption, as the hook
 %  above does for un-captioned listings, would instead break between the caption
 %  and the code.)  \nopagebreak then glues the caption to the listing.
-%  The \penalty0 forces the page builder to run so \pagetotal is current before
-%  \needspace measures -- without it, a caption right after a list environment
-%  (\end{description}) mis-measures the remaining space and slips to the page
-%  bottom anyway.
+%  The invisible \hrule contributes a box to the main vertical list, which forces
+%  the page builder to run so \pagetotal includes the just-ended paragraph / list
+%  BEFORE \needspace measures the room left.  (A bare \penalty does not reliably
+%  flush it, so a caption right after \end{description} mis-measured and slipped
+%  to the page bottom anyway.)  \needspace then pushes the caption + first listing
+%  lines to the next page together if they will not fit; \nopagebreak glues the
+%  caption to the listing.
 \newcommand{\lstcap}[1]{%
-  \par\penalty0\needspace{8\baselineskip}\noindent\textbf{#1}\nopagebreak}
+  \par\hrule height 0pt\relax
+  \needspace{8\baselineskip}\noindent\textbf{#1}\nopagebreak}
 
 %  raggedright so multi-line chapter titles don't get justified into ugly
 %  inter-word gaps (e.g. "Networking: GNAT.Sockets over the W5500").
