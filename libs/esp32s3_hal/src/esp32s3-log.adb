@@ -1,35 +1,25 @@
-with System;
-with Interfaces;        use Interfaces;
-with Interfaces.C;
+with Interfaces;     use Interfaces;
+with ESP32S3.Console;
 
 package body ESP32S3.Log is
 
-   --  Fixed-signature ROM-printf wrappers (examples/common/bare/bare_log.c).
-   procedure C_Cstr (S : System.Address);
-   pragma Import (C, C_Cstr, "hal_log_cstr");
-
-   procedure C_Uint (N : Interfaces.C.unsigned);
-   pragma Import (C, C_Uint, "hal_log_uint");
+   --  Output now goes through ESP32S3.Console (the backpressured USB Serial/JTAG
+   --  driver) instead of esp_rom_printf -- so bursts aren't dropped and partial
+   --  trailing packets are always flushed.  Console.Write takes a plain slice,
+   --  so nothing here needs NUL-termination any more.
 
    ---------
    -- Put --
    ---------
 
    procedure Put (S : String) is
-      --  Copy into a stack buffer and NUL-terminate for C ("%s").
-      Buf : String (1 .. S'Length + 1);
    begin
-      if S'Length > 0 then
-         Buf (1 .. S'Length) := S;
-      end if;
-      Buf (Buf'Last) := ASCII.NUL;
-      C_Cstr (Buf'Address);
+      Console.Write (S);
    end Put;
 
    procedure Put (C : Character) is
-      Buf : aliased constant String := (1 => C, 2 => ASCII.NUL);
    begin
-      C_Cstr (Buf'Address);
+      Console.Put (C);
    end Put;
 
    --------------
@@ -37,9 +27,8 @@ package body ESP32S3.Log is
    --------------
 
    procedure New_Line is
-      NL : aliased constant String := (ASCII.LF, ASCII.NUL);
    begin
-      C_Cstr (NL'Address);
+      Console.Put (ASCII.LF);
    end New_Line;
 
    --------------
@@ -79,7 +68,7 @@ package body ESP32S3.Log is
          Body_Len : constant Natural := Sign_Len + Digs'Length;
          Pad_Len  : constant Natural :=
            (if Width > Body_Len then Width - Body_Len else 0);
-         Out_Buf  : String (1 .. Body_Len + Pad_Len + 1);
+         Out_Buf  : String (1 .. Body_Len + Pad_Len);
          P        : Natural := 0;
       begin
          if Pad = '0' then
@@ -91,8 +80,7 @@ package body ESP32S3.Log is
          end if;
          Out_Buf (P + 1 .. P + Digs'Length) := Digs;
          P := P + Digs'Length;
-         Out_Buf (P + 1) := ASCII.NUL;
-         C_Cstr (Out_Buf'Address);
+         Console.Write (Out_Buf (1 .. P));
       end;
    end Put;
 
@@ -101,8 +89,18 @@ package body ESP32S3.Log is
    ------------------
 
    procedure Put_Unsigned (N : Interfaces.Unsigned_32) is
+      Digits_Buf : String (1 .. 10);            --  up to 10 digits (2^32-1)
+      D_First    : Natural := Digits_Buf'Last + 1;
+      V          : Unsigned_32 := N;
    begin
-      C_Uint (Interfaces.C.unsigned (N));
+      loop
+         D_First := D_First - 1;
+         Digits_Buf (D_First) :=
+           Character'Val (Character'Pos ('0') + Integer (V mod 10));
+         V := V / 10;
+         exit when V = 0;
+      end loop;
+      Console.Write (Digits_Buf (D_First .. Digits_Buf'Last));
    end Put_Unsigned;
 
    -------------
@@ -126,14 +124,13 @@ package body ESP32S3.Log is
          Digs    : constant String  := Digits_Buf (D_First .. Digits_Buf'Last);
          Pad_Len : constant Natural :=
            (if Width > Digs'Length then Width - Digs'Length else 0);
-         Out_Buf : String (1 .. Digs'Length + Pad_Len + 1);
+         Out_Buf : String (1 .. Digs'Length + Pad_Len);
       begin
          for I in 1 .. Pad_Len loop
             Out_Buf (I) := '0';
          end loop;
          Out_Buf (Pad_Len + 1 .. Pad_Len + Digs'Length) := Digs;
-         Out_Buf (Out_Buf'Last) := ASCII.NUL;
-         C_Cstr (Out_Buf'Address);
+         Console.Write (Out_Buf);
       end;
    end Put_Hex;
 
