@@ -131,6 +131,38 @@ at the cost of a journal flush per line. An unrecognised form raises
 Create (F, "/flash/journal.txt", Form => "sync=yes");
 \end{lstlisting}
 
+\subsection{Separating error output}\index{Standard\_Error}\index{Set\_Error}
+
+The package keeps the three standard files of the Reference Manual:
+\texttt{Standard\_Output}, \texttt{Standard\_Error} and \texttt{Standard\_Input},
+all naming the console at startup. \texttt{Set\_Output}, \texttt{Set\_Error} and
+\texttt{Set\_Input} each redirect the \emph{current} file of that stream
+independently, while the \texttt{Standard\_*} files stay fixed on the console. So
+you can keep status messages on the screen and divert errors to a file on flash:
+
+\begin{lstlisting}
+Err : File_Type;                         -- must outlive the redirect below
+...
+Create (Err, "/flash/errors.log");       -- Out_File by default
+Set_Error (Err);                         -- current error file -> the log
+
+Put_Line ("boot ok");                                -- console (current output)
+Put_Line (Current_Error.all, "sensor 3 timed out");  -- -> /flash/errors.log
+Put_Line (Standard_Error.all, "still on screen");    -- Standard_Error is fixed
+
+Close (Err);                             -- commits errors.log to flash
+\end{lstlisting}
+
+After \texttt{Set\_Error}, \texttt{Current\_Error} is the file and
+\texttt{Standard\_Error} is still the console, so the console stays your escape
+hatch for anything that must always be visible. The error file must outlive the
+redirect: declare it at library level if the diversion outlives a scope, or point
+the stream back with \texttt{Set\_Error (Standard\_Error.all)} before the file is
+finalized. As with any ext4 file \texttt{Close} commits it (or open it with
+\texttt{Form => "sync=yes"} for a per-line flush), and wrapping the
+\texttt{Create} in a handler for \texttt{Name\_Error} lets a board with no flash
+fall back to errors on the console.
+
 \section{Formatted output: the generics}\index{Integer\_IO}\index{Float\_IO}
 
 The full family of numeric and enumeration generics is present. Each has
