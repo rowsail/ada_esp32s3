@@ -257,6 +257,47 @@ package body ESP32S3.Text_IO is
       end if;
    end Put_Number;
 
+   --  Right-justify S into the whole of To (RM Put-to-String); Layout_Error if
+   --  S does not fit.
+   procedure Right_Justify (To : out String; S : String) is
+   begin
+      if S'Length > To'Length then raise Layout_Error; end if;
+      To := Spaces (To'Length - S'Length) & S;
+   end Right_Justify;
+
+   --  Parse a signed integer (decimal, or Base#digits#) out of a String. Last is
+   --  the index of the last character used; Data_Error if no number is present.
+   procedure Scan_Integer (From : String; V : out Long_Long_Integer; Last : out Natural)
+   is
+      I       : Natural := From'First;
+      Neg     : Boolean := False;
+      Base    : Long_Long_Integer := 10;
+      Started : Boolean := False;
+   begin
+      V := 0; Last := From'First - 1;
+      while I <= From'Last and then (From (I) = ' ' or else From (I) = ASCII.HT) loop
+         I := I + 1;
+      end loop;
+      if I <= From'Last and then (From (I) = '-' or else From (I) = '+') then
+         Neg := From (I) = '-'; I := I + 1;
+      end if;
+      while I <= From'Last and then Digit_Val (From (I)) in 0 .. 9 loop
+         V := V * 10 + Long_Long_Integer (Digit_Val (From (I)));
+         Last := I; I := I + 1; Started := True;
+      end loop;
+      if I <= From'Last and then From (I) = '#' then
+         Base := V; V := 0; Last := I; I := I + 1;
+         while I <= From'Last and then From (I) /= '#' loop
+            V := V * Base + Long_Long_Integer (Digit_Val (From (I)));
+            Last := I; I := I + 1;
+         end loop;
+         if I <= From'Last and then From (I) = '#' then Last := I; end if;
+         Started := True;
+      end if;
+      if not Started then raise ESP32S3.Ext4.Data_Error; end if;
+      if Neg then V := -V; end if;
+   end Scan_Integer;
+
    function To_Lower (S : String) return String is
       R : String := S;
    begin
@@ -541,6 +582,32 @@ package body ESP32S3.Text_IO is
       end if;
    end Look_Ahead;
 
+   procedure Get_Immediate (File : File_Type; Item : out Character) is
+      B : constant CB_Access := CB (File); C : Character; Av : Boolean;
+   begin
+      Require_Read (B);
+      Peek (B, C, Av);
+      if not Av then raise ESP32S3.Ext4.End_Error; end if;
+      Advance (B); Item := C;
+   end Get_Immediate;
+   procedure Get_Immediate (Item : out Character) is
+   begin Get_Immediate (Cur_In.all, Item); end Get_Immediate;
+
+   procedure Get_Immediate (File : File_Type; Item : out Character; Available : out Boolean)
+   is
+      B : constant CB_Access := CB (File); C : Character; Av : Boolean;
+   begin
+      Require_Read (B);
+      Peek (B, C, Av);
+      if Av then
+         Advance (B); Item := C; Available := True;
+      else
+         Item := ASCII.NUL; Available := False;
+      end if;
+   end Get_Immediate;
+   procedure Get_Immediate (Item : out Character; Available : out Boolean) is
+   begin Get_Immediate (Cur_In.all, Item, Available); end Get_Immediate;
+
    procedure Get_Line (File : File_Type; Item : out String; Last : out Natural) is
       B : constant CB_Access := CB (File);
       C : Character; Av : Boolean;
@@ -637,6 +704,11 @@ package body ESP32S3.Text_IO is
       procedure Get (File : File_Type; Item : out Num) is
       begin Item := Num (Get_Integer (CB (File))); end Get;
       procedure Get (Item : out Num) is begin Get (Cur_In.all, Item); end Get;
+      procedure Put (To : out String; Item : Num; Base : Number_Base := Default_Base) is
+      begin Right_Justify (To, Based_Image (Long_Long_Integer (Item), Base)); end Put;
+      procedure Get (From : String; Item : out Num; Last : out Positive) is
+         V : Long_Long_Integer; L : Natural;
+      begin Scan_Integer (From, V, L); Item := Num (V); Last := L; end Get;
    end Integer_IO;
 
    package body Modular_IO is
@@ -649,44 +721,105 @@ package body ESP32S3.Text_IO is
       procedure Get (File : File_Type; Item : out Num) is
       begin Item := Num (Get_Integer (CB (File))); end Get;
       procedure Get (Item : out Num) is begin Get (Cur_In.all, Item); end Get;
+      procedure Put (To : out String; Item : Num; Base : Number_Base := Default_Base) is
+      begin Right_Justify (To, Based_Image (Long_Long_Integer (Item), Base)); end Put;
+      procedure Get (From : String; Item : out Num; Last : out Positive) is
+         V : Long_Long_Integer; L : Natural;
+      begin Scan_Integer (From, V, L); Item := Num (V); Last := L; end Get;
    end Modular_IO;
 
    package body Float_IO is
+
+      --  Format Item with Aft fractional digits, rounded. Exp = 0 -> fixed point
+      --  (sign + integer part + '.' + Aft digits). Exp > 0 -> scientific: a
+      --  mantissa normalised to [1,10) + 'E' + signed exponent of >= Exp digits.
+      function Float_Image (Item : Num; Aft : Field; Exp : Field) return String is
+         A    : constant Field   := Field'Min (Aft, 18);
+         Neg  : constant Boolean := Item < 0.0;
+         Sign : constant String  := (if Neg then "-" else "");
+         M    : Num := abs Item;
+
+         function Frac_Digits (Frac : Num; Carry : out Boolean) return String is
+            Scale : Long_Long_Integer := 1;
+         begin
+            for I in 1 .. A loop Scale := Scale * 10; end loop;
+            declare
+               Sd : Long_Long_Integer := Long_Long_Integer (Num'Rounding (Frac * Num (Scale)));
+               R  : String (1 .. A) := (others => '0');
+               T  : Long_Long_Integer;
+            begin
+               if Sd >= Scale then Carry := True; Sd := Sd - Scale; else Carry := False; end if;
+               T := Sd;
+               for K in reverse R'Range loop
+                  R (K) := Character'Val (Character'Pos ('0') + Integer (T mod 10));
+                  T := T / 10;
+               end loop;
+               return R;
+            end;
+         end Frac_Digits;
+
+      begin
+         if Exp = 0 then
+            declare
+               IP : Long_Long_Integer := Long_Long_Integer (Num'Truncation (M));
+               Cy : Boolean;
+               FS : constant String := Frac_Digits (M - Num (IP), Cy);
+            begin
+               if Cy then IP := IP + 1; end if;
+               return Sign & Based_Image (IP, 10) & (if A > 0 then "." & FS else "");
+            end;
+         else
+            declare
+               E : Integer := 0;
+            begin
+               if M /= 0.0 then
+                  while M >= 10.0 loop M := M / 10.0; E := E + 1; end loop;
+                  while M < 1.0  loop M := M * 10.0; E := E - 1; end loop;
+               end if;
+               declare
+                  Lead : Long_Long_Integer := Long_Long_Integer (Num'Truncation (M));
+                  Cy   : Boolean;
+                  FS   : constant String := Frac_Digits (M - Num (Lead), Cy);
+               begin
+                  if Cy then
+                     Lead := Lead + 1;
+                     if Lead >= 10 then Lead := 1; E := E + 1; end if;
+                  end if;
+                  declare
+                     Mant  : constant String :=
+                       Based_Image (Lead, 10) & (if A > 0 then "." & FS else "");
+                     ESign : constant String := (if E < 0 then "-" else "+");
+                     EDig  : constant String := Based_Image (Long_Long_Integer (abs E), 10);
+                     EW    : constant Field  := Field'Max (Exp, 1);
+                     EPad  : constant String :=
+                       (if EDig'Length < EW then (1 .. EW - EDig'Length => '0') else "") & EDig;
+                  begin
+                     return Sign & Mant & "E" & ESign & EPad;
+                  end;
+               end;
+            end;
+         end if;
+      end Float_Image;
+
       procedure Put (File : File_Type; Item : Num;
                      Fore : Field := Default_Fore; Aft : Field := Default_Aft;
                      Exp  : Field := Default_Exp)
       is
-         pragma Unreferenced (Exp);
-         B     : constant CB_Access := CB (File);
-         A     : constant Field   := Field'Min (Aft, 18);
-         Neg   : constant Boolean := Item < 0.0;
-         M     : constant Num     := abs Item;
-         IP    : Long_Long_Integer := Long_Long_Integer (Num'Truncation (M));
-         Scale : Long_Long_Integer := 1;
+         B   : constant CB_Access := CB (File);
+         S   : constant String    := Float_Image (Item, Aft, Exp);
+         Dot : Natural := S'Last + 1;
       begin
-         for I in 1 .. A loop Scale := Scale * 10; end loop;
+         for I in S'Range loop
+            if S (I) = '.' then Dot := I; exit; end if;
+         end loop;
          declare
-            Frac : constant Num := M - Num (IP);
-            Sd   : Long_Long_Integer := Long_Long_Integer (Num'Rounding (Frac * Num (Scale)));
+            Int_Len : constant Natural := Dot - S'First;     --  chars before the point
          begin
-            if Sd >= Scale then IP := IP + 1; Sd := Sd - Scale; end if;
-            declare
-               Int_Str  : constant String := (if Neg then "-" else "") & Based_Image (IP, 10);
-               Frac_Str : String (1 .. A) := (others => '0');
-               T        : Long_Long_Integer := Sd;
-               Lead     : constant String :=
-                 (if Fore > Int_Str'Length then Spaces (Fore - Int_Str'Length) else "");
-            begin
-               for K in reverse Frac_Str'Range loop
-                  Frac_Str (K) := Character'Val (Character'Pos ('0') + Integer (T mod 10));
-                  T := T / 10;
-               end loop;
-               if A > 0 then
-                  Write_Tracked (B, Lead & Int_Str & "." & Frac_Str);
-               else
-                  Write_Tracked (B, Lead & Int_Str);
-               end if;
-            end;
+            if Fore > Int_Len then
+               Write_Tracked (B, Spaces (Fore - Int_Len) & S);
+            else
+               Write_Tracked (B, S);
+            end if;
          end;
       end Put;
 
@@ -694,6 +827,10 @@ package body ESP32S3.Text_IO is
                      Fore : Field := Default_Fore; Aft : Field := Default_Aft;
                      Exp  : Field := Default_Exp) is
       begin Put (Cur_Out.all, Item, Fore, Aft, Exp); end Put;
+
+      procedure Put (To : out String; Item : Num;
+                     Aft : Field := Default_Aft; Exp : Field := Default_Exp) is
+      begin Right_Justify (To, Float_Image (Item, Aft, Exp)); end Put;
 
       procedure Get (File : File_Type; Item : out Num) is
          B   : constant CB_Access := CB (File);
@@ -740,6 +877,50 @@ package body ESP32S3.Text_IO is
          Item := (if Neg then -V else V);
       end Get;
       procedure Get (Item : out Num) is begin Get (Cur_In.all, Item); end Get;
+
+      procedure Get (From : String; Item : out Num; Last : out Positive) is
+         I       : Natural := From'First;
+         Neg     : Boolean := False;
+         V       : Num     := 0.0;
+         Started : Boolean := False;
+         LN      : Natural := From'First - 1;
+      begin
+         while I <= From'Last and then (From (I) = ' ' or else From (I) = ASCII.HT) loop
+            I := I + 1;
+         end loop;
+         if I <= From'Last and then (From (I) = '-' or else From (I) = '+') then
+            Neg := From (I) = '-'; I := I + 1;
+         end if;
+         while I <= From'Last and then Digit_Val (From (I)) in 0 .. 9 loop
+            V := V * 10.0 + Num (Digit_Val (From (I))); LN := I; I := I + 1; Started := True;
+         end loop;
+         if I <= From'Last and then From (I) = '.' then
+            LN := I; I := I + 1;
+            declare Scale : Num := 0.1; begin
+               while I <= From'Last and then Digit_Val (From (I)) in 0 .. 9 loop
+                  V := V + Num (Digit_Val (From (I))) * Scale; Scale := Scale / 10.0;
+                  LN := I; I := I + 1; Started := True;
+               end loop;
+            end;
+         end if;
+         if I <= From'Last and then (From (I) = 'e' or else From (I) = 'E') then
+            I := I + 1;
+            declare ENeg : Boolean := False; E : Natural := 0; begin
+               if I <= From'Last and then (From (I) = '-' or else From (I) = '+') then
+                  ENeg := From (I) = '-'; I := I + 1;
+               end if;
+               while I <= From'Last and then Digit_Val (From (I)) in 0 .. 9 loop
+                  E := E * 10 + Digit_Val (From (I)); LN := I; I := I + 1;
+               end loop;
+               for K in 1 .. E loop
+                  if ENeg then V := V / 10.0; else V := V * 10.0; end if;
+               end loop;
+            end;
+         end if;
+         if not Started then raise ESP32S3.Ext4.Data_Error; end if;
+         Item := (if Neg then -V else V);
+         Last := LN;
+      end Get;
    end Float_IO;
 
    package body Enumeration_IO is
