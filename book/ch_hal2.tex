@@ -56,6 +56,11 @@ end GDMA_RAII;                                       --  all five reclaimed here
 (The SPI and I2S drivers use the peripheral \texttt{Start}/\texttt{Wait} path
 internally, so most applications use GDMA only for memory copies.)
 
+\texttt{Wait} (and \texttt{Copy}) is interrupt-driven: after a brief spin it
+suspends the calling task, and the channel's end-of-transfer interrupt wakes it,
+so a transfer hands the core back rather than busy-waiting. The driver owns the
+\texttt{Device\_L2\_0} interrupt (CPU\_INT 19) for this.
+
 \section{MCPWM: motor-control PWM}\index{MCPWM driver}
 
 \begin{lstlisting}
