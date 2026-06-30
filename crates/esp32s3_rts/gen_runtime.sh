@@ -24,9 +24,23 @@ AR=xtensa-esp32-elf-ar
 # pack if the runtime dir is missing.  It is compiled below on the first build
 # (then cached), so it is toolchain-version-independent.  bb-runtimes is only
 # needed to *regenerate* the source pack (rare; after a runtime-source change).
-if [ ! -d "$RTS" ] && [ -f "$PACK" ]; then
-    echo "[esp32s3_rts] unpacking $PROFILE runtime source (compiles on first build)"
+#
+# Re-unpack when the materialized runtime came from a DIFFERENT pack than the one
+# committed now: after a runtime-source change the pack is regenerated, but an
+# existing checkout's cached runtime dir is never refreshed (the old check only
+# unpacked when the dir was MISSING) -- so it keeps a stale runtime and link-
+# fails on a newly-added symbol (e.g. __esp32s3_install_console_hook) even though
+# the committed pack already has it.  A pack-checksum stamp makes an UNCHANGED
+# pack a no-op, so only a real pack change pays the re-unpack + recompile.
+PACK_ID=""
+[ -f "$PACK" ] && PACK_ID=$(sha256sum "$PACK" 2>/dev/null | cut -c1-16)
+STAMP="$RTS/.pack-id"
+if [ -f "$PACK" ] \
+   && { [ ! -d "$RTS" ] || [ "$(cat "$STAMP" 2>/dev/null)" != "$PACK_ID" ]; }; then
+    echo "[esp32s3_rts] (re)unpacking $PROFILE runtime source (compiles on first build)"
+    rm -rf "$RTS"
     mkdir -p "$RTS" && tar --zstd -xf "$PACK" -C "$RTS"
+    echo "$PACK_ID" > "$STAMP"
 fi
 if [ ! -d "$RTS" ] && [ ! -f "$BBRT/build_rts.py" ]; then
     echo "[esp32s3_rts] ERROR: no source pack ($PACK) and bb-runtimes is absent." >&2
