@@ -53,36 +53,35 @@ package ESP32S3.TWAI is
    type Session is limited private;
 
    ----------------------------------------------------------------------------
-   --  One-time configuration (single-threaded at startup).  This is the only
-   --  parameterless-startup call; pin routing and loopback are post-Setup and
-   --  require the held controller (see below).
+   --  Concurrent, mutually-exclusive use.  Acquire the controller AND configure
+   --  it in the same call; every transfer plus every later reconfiguration runs
+   --  through the held Session -- so changing a setting requires ownership and
+   --  can never race another task.  All register access lives in the private
+   --  Engine child; the handle is hidden in the body and reached only through
+   --  one ownership-checked gateway.  There is no startup call that precedes
+   --  ownership: you cannot touch the controller without holding it.
    ----------------------------------------------------------------------------
-
-   --  Bring the controller up at (about) Bit_Rate bits/s in the given mode,
-   --  accepting all identifiers.  Call once.
-   procedure Setup (Mode     : Bus_Mode := Normal;
-                    Bit_Rate : Positive  := 125_000);
-
-   ----------------------------------------------------------------------------
-   --  Concurrent, mutually-exclusive use.  Acquire the controller, then run
-   --  every transfer AND every post-Setup reconfiguration through it -- so
-   --  changing a setting requires ownership and can never race another task.
-   --  All register access lives in the private Engine child; the handle is
-   --  hidden in the body and reached only through one ownership-checked gateway.
-   ----------------------------------------------------------------------------
-
-   --  Raised by Acquire if the controller was never Setup -- configuration must
-   --  precede ownership (see the one-time configuration section above).
-   Not_Initialized : exception;
 
    --  Raised by any operation below if S does not hold the controller.  Each
    --  reaches the hardware only through the gateway, so "use the bus without
    --  holding it" fails loudly.
    Not_Owned : exception;
 
-   --  Take exclusive ownership of the Setup controller (suspends until free).
-   --  Raises Not_Initialized if Setup was never called.
-   procedure Acquire (S : in out Session);
+   --  Take exclusive ownership of the controller (suspends until free) and bring
+   --  it up at (about) Bit_Rate bits/s in the given mode, accepting all
+   --  identifiers.  Every Acquire (re)applies the mode and bit rate, so the
+   --  controller comes up in exactly the requested state.  Route TX/RX to a
+   --  transceiver with Configure_Pins, or loop back for a self-test with
+   --  Enable_Loopback, once held.
+   procedure Acquire (S        : in out Session;
+                      Mode     : Bus_Mode := Normal;
+                      Bit_Rate : Positive  := 125_000);
+
+   --  Re-apply the mode and bit rate on the controller S already holds, without
+   --  releasing it.  Raises Not_Owned unless S holds the controller.
+   procedure Reconfigure (S        : Session;
+                          Mode     : Bus_Mode := Normal;
+                          Bit_Rate : Positive  := 125_000);
 
    --  Route TWAI TX/RX to physical pads (for a real transceiver), on the held
    --  controller.  Raises Not_Owned unless S holds it.

@@ -97,23 +97,27 @@ package body ESP32S3.ES8311 is
       --  1. I2S master first, so MCLK (= 256 x Sample_Rate, 16-bit stereo) is
       --     running on the codec's MCLK pin before the codec's clock state
       --     machine comes up.  TX-only: route MCLK/SCLK(BCLK)/LRCK(WS)/DSDIN
-      --     (Dout); the codec's ASDOUT (our Din) is unused for output.
-      ESP32S3.I2S.Setup (Port, Sample_Rate => Sample_Rate,
-                         Bits => ESP32S3.I2S.Bits_16,
-                         Mode => ESP32S3.I2S.Standard);
-      ESP32S3.I2S.Configure_Pins
-        (Port,
-         Bclk => Optional_Pin (Sclk),
-         Ws   => Optional_Pin (Lrck),
-         Dout => Optional_Pin (Dsdin),
-         Din  => (if Capture_In then Asdout else ESP32S3.GPIO.No_Pin),
-         Mclk => Optional_Pin (Mclk));
-
-      --  2. I2C control: run the codec register-init sequence.
+      --     (Dout); the codec's ASDOUT (our Din) is unused for output.  Hold the
+      --     I2S port across the codec init so MCLK is present: the first Acquire
+      --     brings the port up, and the later playback Acquire reuses it (MCLK
+      --     keeps running), so releasing here does not stop the clock.
       Ok := True;
       declare
-         S : ESP32S3.I2C.Session;
+         I2S_Hold : ESP32S3.I2S.Session;
+         S        : ESP32S3.I2C.Session;
       begin
+         ESP32S3.I2S.Acquire
+           (I2S_Hold, Port,
+            Sample_Rate => Sample_Rate,
+            Bits => ESP32S3.I2S.Bits_16,
+            Mode => ESP32S3.I2S.Standard,
+            Bclk => Optional_Pin (Sclk),
+            Ws   => Optional_Pin (Lrck),
+            Dout => Optional_Pin (Dsdin),
+            Din  => (if Capture_In then Asdout else ESP32S3.GPIO.No_Pin),
+            Mclk => Optional_Pin (Mclk));
+
+         --  2. I2C control: run the codec register-init sequence.
          ESP32S3.I2C.Acquire (S, I2C_Bus);
 
          --  Reset, then power on the chip state machine (slave mode).

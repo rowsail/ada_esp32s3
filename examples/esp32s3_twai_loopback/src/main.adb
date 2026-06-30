@@ -107,8 +107,6 @@ begin
    delay until Clock + Milliseconds (200);
    Put_Line ("[twai] bare-metal TWAI (CAN) self-test loopback (no wiring)");
 
-   Setup (Mode => Self_Test, Bit_Rate => Bus_Bit_Rate);
-
    declare
       Bus         : Session;            --  controlled handle: owns the controller
       Rx_Standard : Standard_Frame;     --  received 11-bit frame
@@ -116,7 +114,7 @@ begin
       Got         : Boolean;            --  a frame was received
       Data_Ok     : Boolean;            --  the echo matched what was sent
    begin
-      Acquire (Bus);
+      Acquire (Bus, Mode => Self_Test, Bit_Rate => Bus_Bit_Rate);
       Enable_Loopback (Bus, Loopback_Pad);    --  loopback on the held controller
 
       --  Standard (11-bit) round-trip: Send picks the overload from the type.

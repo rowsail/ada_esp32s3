@@ -437,8 +437,10 @@ type Extended_Frame is record   -- 29-bit id (CAN 2.0B)
    Id : Extended_Id := 0; Remote : Boolean := False;
    Length : Data_Length := 0; Data : Data_Bytes := (others => 0);
 end record;
-procedure Setup (Mode : Bus_Mode := Normal; Bit_Rate : Positive := 125_000);
-procedure Acquire (S : in out Session);
+procedure Acquire (S : in out Session;    -- claim AND configure the controller
+                   Mode : Bus_Mode := Normal; Bit_Rate : Positive := 125_000);
+procedure Reconfigure (S : Session;       -- re-apply mode + bit rate, held
+                       Mode : Bus_Mode := Normal; Bit_Rate : Positive := 125_000);
 procedure Send (S : Session; F : Standard_Frame);   -- overloaded on the frame type
 procedure Send (S : Session; F : Extended_Frame);
 function  Available   (S : Session) return Boolean; -- a frame is waiting
@@ -485,9 +487,8 @@ with ESP32S3.TWAI; use ESP32S3.TWAI;
 procedure TWAI_Send is
    S : Session;
 begin
-   Setup (Mode => Normal, Bit_Rate => 500_000);
-   Acquire (S);                          --  own the controller, then route pins
-   Configure_Pins (S, Tx => 4, Rx => 5);
+   Acquire (S, Mode => Normal, Bit_Rate => 500_000);   --  own + configure
+   Configure_Pins (S, Tx => 4, Rx => 5);               --  then route the pins
    Send (S, Standard_Frame'(Id => 16#123#, Remote => False, Length => 2,
                             Data => (16#DE#, 16#AD#, others => 0)));
    Send (S, Extended_Frame'(Id => 16#14AB_CDE#, Remote => False, Length => 1,
@@ -505,8 +506,7 @@ procedure TWAI_Selftest is
    RE  : Extended_Frame;
    Got : Boolean := False;
 begin
-   Setup (Mode => Self_Test);
-   Acquire (S);
+   Acquire (S, Mode => Self_Test);
    Enable_Loopback (S, Pad => 4);
    Send (S, Extended_Frame'(Id => 16#14AB_CDE#, Remote => False, Length => 1,
                             Data => (0 => 16#42#, others => 0)));

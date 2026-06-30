@@ -8,8 +8,10 @@ with ESP32S3_Registers.I2S;
 --  parent (ESP32S3.I2S) for the design rationale.
 private package ESP32S3.I2S.Engine is
 
-   --  A configured port plus its Claimed GDMA channel.  Limited because it holds
-   --  a (limited, controlled) GDMA Channel; built in place by Open.
+   --  A configured port.  No GDMA channel is held while idle: a one-shot
+   --  transfer claims one transiently (released as soon as it returns), and a
+   --  continuous transmit holds one in Chan only until Stop.  Limited because
+   --  Chan is a (limited, controlled) GDMA Channel.
    type Bus is limited private;
 
    procedure Open (B           : in out Bus;
@@ -37,10 +39,11 @@ private package ESP32S3.I2S.Engine is
    --  leave it running: the buffer is replayed forever with no inter-buffer
    --  gap (gapless).  Returns immediately; Stop halts it.  Tx in internal SRAM,
    --  Length 1 .. 4095, and Tx should hold a whole number of wave periods.
-   procedure Start_Continuous (B : Bus; Tx : System.Address; Length : Natural);
+   procedure Start_Continuous (B : in out Bus; Tx : System.Address;
+                               Length : Natural);
 
-   --  Stop a continuous transmit (TX clock off).
-   procedure Stop (B : Bus);
+   --  Stop a continuous transmit (TX clock off) and release its held channel.
+   procedure Stop (B : in out Bus);
 
    --  Blocking RX-only capture of Length bytes into Rx that does NOT touch the
    --  TX path -- so it can run while a continuous transmit (Start_Continuous)
@@ -55,9 +58,10 @@ private
    type Periph_Ref is access all ESP32S3_Registers.I2S.I2S0_Peripheral;
 
    type Bus is record
-      Regs  : Periph_Ref := null;
-      Chan  : ESP32S3.GDMA.Channel;
-      Port  : I2S_Port   := I2S0;
-      Valid : Boolean    := False;
+      Regs      : Periph_Ref := null;
+      Chan      : ESP32S3.GDMA.Channel;   --  held only while Streaming
+      Port      : I2S_Port   := I2S0;
+      Valid     : Boolean    := False;     --  port configured by Open
+      Streaming : Boolean    := False;     --  a continuous transmit holds Chan
    end record;
 end ESP32S3.I2S.Engine;

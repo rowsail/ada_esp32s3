@@ -40,16 +40,14 @@ package body ESP32S3.I2S is
    ----------------------------------------------------------------------------
 
    package State is
-      procedure Open (Port : I2S_Port; Sample_Rate : Positive; Bits : Sample_Bits;
-                      Mode : I2S_Mode);
-      procedure Enable_Loopback (Port : I2S_Port; Pad : ESP32S3.GPIO.Pin_Id);
-      procedure Configure_Pins (Port : I2S_Port;
-                                Bclk : ESP32S3.GPIO.Optional_Pin;
-                                Ws   : ESP32S3.GPIO.Optional_Pin;
-                                Dout : ESP32S3.GPIO.Optional_Pin;
-                                Din  : ESP32S3.GPIO.Optional_Pin;
-                                Mclk : ESP32S3.GPIO.Optional_Pin);
-      function  Ready (Port : I2S_Port) return Boolean;
+      --  First-use bring-up: open the port (and route its pins) once if it has
+      --  not been opened yet; requires the caller to hold it.
+      procedure Ensure (S : Session; Sample_Rate : Positive; Bits : Sample_Bits;
+                        Mode : I2S_Mode;
+                        Bclk, Ws, Dout, Din, Mclk : ESP32S3.GPIO.Optional_Pin);
+      --  Force a re-open of the held port's audio format (Reconfigure).
+      procedure Reopen (S : Session; Sample_Rate : Positive; Bits : Sample_Bits;
+                        Mode : I2S_Mode);
       function  Owned (S : Session) return access E.Bus;
    end State;
 
@@ -57,30 +55,38 @@ package body ESP32S3.I2S is
       Buses     : array (I2S_Port) of aliased E.Bus;  --  raw port instance, hidden
       Ready_Map : array (I2S_Port) of Boolean := (others => False);
 
-      procedure Open (Port : I2S_Port; Sample_Rate : Positive; Bits : Sample_Bits;
-                      Mode : I2S_Mode)
-      is
+      procedure Open_Now (Port : I2S_Port; Sample_Rate : Positive;
+                          Bits : Sample_Bits; Mode : I2S_Mode) is
       begin
          E.Open (Buses (Port), Port, Sample_Rate, Bits, Mode);
          Ready_Map (Port) := True;
-      end Open;
+      end Open_Now;
 
-      procedure Enable_Loopback (Port : I2S_Port; Pad : ESP32S3.GPIO.Pin_Id) is
+      procedure Ensure (S : Session; Sample_Rate : Positive; Bits : Sample_Bits;
+                        Mode : I2S_Mode;
+                        Bclk, Ws, Dout, Din, Mclk : ESP32S3.GPIO.Optional_Pin) is
       begin
-         E.Enable_Loopback (Buses (Port), Pad);
-      end Enable_Loopback;
+         if not S.Active then
+            raise Not_Owned
+              with "I2S port used without holding it -- Acquire first";
+         end if;
+         --  Open + route pins ONCE per port: a later Acquire reuses the open
+         --  port as-is (and so must NOT re-route to defaults).
+         if not Ready_Map (S.Port) then
+            Open_Now (S.Port, Sample_Rate, Bits, Mode);
+            E.Configure_Pins (Buses (S.Port), Bclk, Ws, Dout, Din, Mclk);
+         end if;
+      end Ensure;
 
-      procedure Configure_Pins (Port : I2S_Port;
-                                Bclk : ESP32S3.GPIO.Optional_Pin;
-                                Ws   : ESP32S3.GPIO.Optional_Pin;
-                                Dout : ESP32S3.GPIO.Optional_Pin;
-                                Din  : ESP32S3.GPIO.Optional_Pin;
-                                Mclk : ESP32S3.GPIO.Optional_Pin) is
+      procedure Reopen (S : Session; Sample_Rate : Positive; Bits : Sample_Bits;
+                        Mode : I2S_Mode) is
       begin
-         E.Configure_Pins (Buses (Port), Bclk, Ws, Dout, Din, Mclk);
-      end Configure_Pins;
-
-      function Ready (Port : I2S_Port) return Boolean is (Ready_Map (Port));
+         if not S.Active then
+            raise Not_Owned
+              with "I2S port used without holding it -- Acquire first";
+         end if;
+         Open_Now (S.Port, Sample_Rate, Bits, Mode);
+      end Reopen;
 
       function Owned (S : Session) return access E.Bus is
       begin
@@ -92,46 +98,67 @@ package body ESP32S3.I2S is
       end Owned;
    end State;
 
-   -----------
-   -- Setup --
-   -----------
+   -------------
+   -- Acquire --
+   -------------
 
-   procedure Setup (Port        : I2S_Port;
-                    Sample_Rate : Positive    := 16_000;
-                    Bits        : Sample_Bits := Bits_16;
-                    Mode        : I2S_Mode    := Standard) is
+   procedure Acquire (S           : in out Session;
+                      Port        : I2S_Port;
+                      Sample_Rate : Positive    := 16_000;
+                      Bits        : Sample_Bits := Bits_16;
+                      Mode        : I2S_Mode    := Standard;
+                      Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                      Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                      Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                      Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin) is
    begin
-      State.Open (Port, Sample_Rate, Bits, Mode);
-   end Setup;
+      Guards (Port).Acquire;          --  suspends here until the port is free
+      S.Port   := Port;
+      S.Active := True;
+      State.Ensure (S, Sample_Rate, Bits, Mode, Bclk, Ws, Dout, Din, Mclk);
+   end Acquire;
 
-   procedure Enable_Loopback (Port : I2S_Port; Pad : ESP32S3.GPIO.Pin_Id) is
+   -----------------
+   -- Reconfigure --
+   -----------------
+
+   procedure Reconfigure (S           : Session;
+                          Sample_Rate : Positive    := 16_000;
+                          Bits        : Sample_Bits := Bits_16;
+                          Mode        : I2S_Mode    := Standard;
+                          Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                          Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                          Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                          Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                          Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin) is
    begin
-      State.Enable_Loopback (Port, Pad);
-   end Enable_Loopback;
+      State.Reopen (S, Sample_Rate, Bits, Mode);
+      E.Configure_Pins (State.Owned (S).all, Bclk, Ws, Dout, Din, Mclk);
+   end Reconfigure;
 
-   procedure Configure_Pins (Port : I2S_Port;
+   --------------------
+   -- Configure_Pins --
+   --------------------
+
+   procedure Configure_Pins (S    : Session;
                              Bclk : ESP32S3.GPIO.Optional_Pin := No_Pin;
                              Ws   : ESP32S3.GPIO.Optional_Pin := No_Pin;
                              Dout : ESP32S3.GPIO.Optional_Pin := No_Pin;
                              Din  : ESP32S3.GPIO.Optional_Pin := No_Pin;
                              Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin) is
    begin
-      State.Configure_Pins (Port, Bclk, Ws, Dout, Din, Mclk);
+      E.Configure_Pins (State.Owned (S).all, Bclk, Ws, Dout, Din, Mclk);
    end Configure_Pins;
 
-   -------------
-   -- Acquire --
-   -------------
+   ---------------------
+   -- Enable_Loopback --
+   ---------------------
 
-   procedure Acquire (S : in out Session; Port : I2S_Port) is
+   procedure Enable_Loopback (S : Session; Pad : ESP32S3.GPIO.Pin_Id) is
    begin
-      if not State.Ready (Port) then
-         raise Not_Initialized with "I2S port acquired before Setup";
-      end if;
-      Guards (Port).Acquire;          --  suspends here until the port is free
-      S.Port   := Port;
-      S.Active := True;
-   end Acquire;
+      E.Enable_Loopback (State.Owned (S).all, Pad);
+   end Enable_Loopback;
 
    -----------
    -- Write --

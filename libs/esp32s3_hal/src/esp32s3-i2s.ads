@@ -51,52 +51,70 @@ package ESP32S3.I2S is
    type Session is limited private;
 
    ----------------------------------------------------------------------------
-   --  One-time port configuration -- call once per port at startup, before any
-   --  task contends for it (single-threaded).
+   --  Concurrent, mutually-exclusive use.  Acquire a port AND configure it in
+   --  the same call; every transfer plus every later reconfiguration runs
+   --  through the held Session.  There is no port-based setup that precedes
+   --  ownership: you cannot touch a port without holding it.
+   --
+   --  Because bringing a port up claims a GDMA channel (a heavyweight, once-per-
+   --  port resource), the FIRST Acquire of a port opens it at the given config
+   --  and later Acquires reuse it as-is (they do not re-open or inherit a new
+   --  config); call Reconfigure on the held port to change the audio format.
    ----------------------------------------------------------------------------
 
-   --  Bring Port up as a stereo master at (about) Sample_Rate_Hz with the given
-   --  sample width and data-path mode, and Claim its GDMA channel.  In Standard
-   --  mode BCLK = Sample_Rate * Bits * 2; in PDM mode the serial clock runs at
-   --  Sample_Rate * 128 (the sigma-delta oversample).
-   procedure Setup (Port        : I2S_Port;
-                    Sample_Rate : Positive    := 16_000;
-                    Bits        : Sample_Bits := Bits_16;
-                    Mode        : I2S_Mode    := Standard);
+   --  Raised by any operation below if the Session does not currently hold a
+   --  port.  All reach the hardware only through one ownership-checked gateway
+   --  in the body, so "transfer without holding the port" fails loudly.
+   Not_Owned : exception;
 
-   --  Internal data-line loopback through one GPIO pad (self-test; no wiring):
-   --  TX and RX share WS+BCK internally (the hardware SIG_LOOPBACK bit) and the
-   --  data-out signal is fed back into data-in on Pad.
-   procedure Enable_Loopback (Port : I2S_Port; Pad : ESP32S3.GPIO.Pin_Id);
+   --  Take exclusive ownership of Port (suspends until it is free) and, on the
+   --  first Acquire of the port, bring it up as a stereo master at (about)
+   --  Sample_Rate with the given sample width and data-path mode, claim its GDMA
+   --  channel, and route the signals to pads.  In Standard mode BCLK =
+   --  Sample_Rate * Bits * 2; in PDM mode the serial clock runs at Sample_Rate
+   --  * 128 (the sigma-delta oversample).  Each pin is optional (No_Pin =
+   --  unrouted), so a link routes only what it uses (e.g. Din for a TX-only DAC,
+   --  Dout for an RX-only mic).  Mclk routes the master clock out (a codec's
+   --  MCLK input); only on I2S0.  Leave No_Pin for codecs that clock from BCLK.
+   procedure Acquire (S           : in out Session;
+                      Port        : I2S_Port;
+                      Sample_Rate : Positive    := 16_000;
+                      Bits        : Sample_Bits := Bits_16;
+                      Mode        : I2S_Mode    := Standard;
+                      Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                      Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                      Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                      Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
-   --  Route the port's signals to physical pads for an external codec.  Each
-   --  line is a validated GPIO pin; pass No_Pin to leave a line unrouted (e.g.
-   --  Din for a TX-only DAC, or Dout for an RX-only microphone).
-   --  Mclk routes the master clock out (e.g. to a codec's MCLK input); only
-   --  supported on I2S0.  Leave No_Pin for codecs that clock from BCLK.
-   procedure Configure_Pins (Port : I2S_Port;
+   --  Re-open the held port at a new audio format and pin routing (re-claims the
+   --  GDMA channel).  Use this to change sample rate / width / mode on a port
+   --  you already hold.  Raises Not_Owned unless S holds the port.
+   procedure Reconfigure (S           : Session;
+                          Sample_Rate : Positive    := 16_000;
+                          Bits        : Sample_Bits := Bits_16;
+                          Mode        : I2S_Mode    := Standard;
+                          Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                          Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                          Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                          Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
+                          Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin);
+
+   --  Re-route the held port's signals to physical pads (a finer change than
+   --  Reconfigure, leaving the audio format untouched).  Raises Not_Owned unless
+   --  S holds the port.
+   procedure Configure_Pins (S    : Session;
                              Bclk : ESP32S3.GPIO.Optional_Pin := No_Pin;
                              Ws   : ESP32S3.GPIO.Optional_Pin := No_Pin;
                              Dout : ESP32S3.GPIO.Optional_Pin := No_Pin;
                              Din  : ESP32S3.GPIO.Optional_Pin := No_Pin;
                              Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
-   ----------------------------------------------------------------------------
-   --  Concurrent, mutually-exclusive use.
-   ----------------------------------------------------------------------------
-
-   --  Raised by Acquire if Port was never Setup -- configuration must precede
-   --  ownership (see the one-time configuration section above).
-   Not_Initialized : exception;
-
-   --  Raised by Write/Read/Transfer if the Session does not currently hold a
-   --  port.  All reach the hardware only through one ownership-checked gateway
-   --  in the body, so "transfer without holding the port" fails loudly.
-   Not_Owned : exception;
-
-   --  Take exclusive ownership of a Setup port (suspends until it is free).
-   --  Raises Not_Initialized if Port was never Setup.
-   procedure Acquire (S : in out Session; Port : I2S_Port);
+   --  Internal data-line loopback through one GPIO pad (self-test; no wiring):
+   --  TX and RX share WS+BCK internally (the hardware SIG_LOOPBACK bit) and the
+   --  data-out signal is fed back into data-in on Pad, on the held port.  Raises
+   --  Not_Owned unless S holds the port.
+   procedure Enable_Loopback (S : Session; Pad : ESP32S3.GPIO.Pin_Id);
 
    --  Shift Length bytes (1 .. 4095) from Tx out on the data-out line.  Blocking.
    --  Buffer in internal SRAM.  Raises Not_Owned unless S holds a port.
