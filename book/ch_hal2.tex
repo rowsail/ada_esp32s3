@@ -59,7 +59,7 @@ internally, so most applications use GDMA only for memory copies.)
 \section{MCPWM: motor-control PWM}\index{MCPWM driver}
 
 \begin{lstlisting}
-procedure Setup (Unit : MCPWM_Unit);
+--  The unit's clock comes up on the first Claim of any of its channels.
 procedure Claim (C : in out Channel; Unit : MCPWM_Unit; Index : Channel_Index);
 procedure Configure_Channel (C : Channel; Freq : Positive; Pin : Pin_Id;
                              Complement_Pin : Optional_Pin := No_Pin;
@@ -87,8 +87,7 @@ with ESP32S3.MCPWM; use ESP32S3.MCPWM;
 procedure MCPWM_Simple is
    C : Channel;
 begin
-   Setup (MCPWM0);
-   Claim (C, MCPWM0, Ch0);
+   Claim (C, MCPWM0, Ch0);   --  first Claim brings up the MCPWM0 clock
    Configure_Channel (C, Freq => 20_000, Pin => 4);
    Set_Duty (C, 25.0);
    Start (C);
@@ -101,8 +100,7 @@ with ESP32S3.MCPWM; use ESP32S3.MCPWM;
 procedure MCPWM_Pair is
    C : Channel;
 begin
-   Setup (MCPWM0);
-   Claim (C, MCPWM0, Ch0);
+   Claim (C, MCPWM0, Ch0);   --  first Claim brings up the MCPWM0 clock
    Configure_Channel (C, Freq => 20_000, Pin => 4,
                       Complement_Pin => 5, Dead_Time_Ns => 500);
    Set_Duty (C, 60.0);
@@ -121,11 +119,14 @@ binds a \texttt{Fault\_Input} (\texttt{Fault0\,..\,2}) to a pad, and
 
 \begin{lstlisting}
 type I2S_Mode is (Standard, PDM);
-procedure Setup (Port : I2S_Port; Sample_Rate : Positive := 16_000;
-                 Bits : Sample_Bits := Bits_16; Mode : I2S_Mode := Standard);
-procedure Configure_Pins (Port : I2S_Port;
-                          Bclk, Ws, Dout, Din : Optional_Pin := No_Pin);
-procedure Acquire (S : in out Session; Port : I2S_Port);
+--  Acquire claims a port AND brings it up (audio format + pin routing).  The
+--  first Acquire of a port opens it; a later Acquire reuses it (Reconfigure
+--  re-opens to change the format), so a codec's MCLK stays running.
+procedure Acquire (S : in out Session; Port : I2S_Port;
+                   Sample_Rate : Positive := 16_000; Bits : Sample_Bits := Bits_16;
+                   Mode : I2S_Mode := Standard;
+                   Bclk, Ws, Dout, Din, Mclk : Optional_Pin := No_Pin);
+procedure Reconfigure (S : Session; ...);  -- re-open the held port's format
 procedure Write (S : Session; Tx : System.Address; Length : Natural);
 procedure Read  (S : Session; Rx : System.Address; Length : Natural);
 procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural);
@@ -155,9 +156,8 @@ procedure I2S_Play is
    S    : Session;
    Tone : aliased array (0 .. 255) of Interfaces.Integer_16 := (others => 0);
 begin
-   Setup (I2S0, Sample_Rate => 44_100, Bits => Bits_16);
-   Configure_Pins (I2S0, Bclk => 4, Ws => 5, Dout => 6);
-   Acquire (S, I2S0);
+   Acquire (S, I2S0, Sample_Rate => 44_100, Bits => Bits_16,
+            Bclk => 4, Ws => 5, Dout => 6);    --  claim + configure
    Write (S, Tone'Address, Tone'Length * 2);  --  2 bytes per 16-bit sample
 end I2S_Play;
 \end{lstlisting}
@@ -171,9 +171,8 @@ procedure I2S_Loopback is
    Tx : aliased array (0 .. 63) of Interfaces.Unsigned_8 := (others => 16#5A#);
    Rx : aliased array (0 .. 63) of Interfaces.Unsigned_8 := (others => 0);
 begin
-   Setup (I2S0);
-   Enable_Loopback (I2S0, Pad => 7);          --  TX folded to RX on one pad
-   Acquire (S, I2S0);
+   Acquire (S, I2S0);                          --  claim (defaults: 16k 16-bit)
+   Enable_Loopback (S, Pad => 7);              --  TX folded to RX (held port)
    Transfer (S, Tx'Address, Rx'Address, 64);  --  Rx = Tx
 end I2S_Loopback;
 \end{lstlisting}
@@ -205,9 +204,8 @@ procedure PDM_Mic is
    S  : Session;
    Rx : aliased array (0 .. 511) of Interfaces.Integer_16 := (others => 0);
 begin
-   Setup (I2S0, Sample_Rate => 16_000, Bits => Bits_16, Mode => PDM);
-   Configure_Pins (I2S0, Bclk => No_Pin, Ws => 5, Dout => No_Pin, Din => 6);
-   Acquire (S, I2S0);
+   Acquire (S, I2S0, Sample_Rate => 16_000, Bits => Bits_16, Mode => PDM,
+            Ws => 5, Din => 6);               --  claim + configure (PDM mic)
    Read (S, Rx'Address, Rx'Length * 2);       --  PDM mic -> PCM
 end PDM_Mic;
 \end{lstlisting}
@@ -571,9 +569,11 @@ end Timer_Alarm;
 \section{LCD: 8-bit i80 parallel master}\index{LCD driver}
 
 \begin{lstlisting}
-procedure Setup (Pclk_Hz : Positive := 1_000_000);
-procedure Configure_Pins (Data : Data_Pins; Pclk : Optional_Pin);
-procedure Acquire (S : in out Session);
+--  Acquire claims the controller AND brings it up (pixel clock + pin routing):
+procedure Acquire (S : in out Session; Pclk_Hz : Positive := 1_000_000;
+                   Data : Data_Pins := (others => No_Pin);
+                   Pclk : Optional_Pin := No_Pin);
+procedure Reconfigure (S : Session; ...);  -- re-apply clock + pins, held
 procedure Transmit (S : Session; Tx : System.Address; Length : Natural;
                     Ok : out Boolean);
 \end{lstlisting}
@@ -599,9 +599,8 @@ procedure LCD_Frame is
    Ok : Boolean;
    FB : aliased array (0 .. 3999) of Interfaces.Unsigned_8 := (others => 16#FF#);
 begin
-   Setup (Pclk_Hz => 200_000);
-   Configure_Pins (Data => (1, 2, 3, 4, 5, 6, 7, 8), Pclk => 9);
-   Acquire (S);
+   Acquire (S, Pclk_Hz => 200_000,
+            Data => (1, 2, 3, 4, 5, 6, 7, 8), Pclk => 9);  --  claim + configure
    Transmit (S, FB'Address, FB'Length, Ok);
 end LCD_Frame;
 \end{lstlisting}
@@ -612,8 +611,7 @@ with ESP32S3.LCD; use ESP32S3.LCD;
 procedure LCD_Clk is
    Lcd : Session;
 begin
-   Setup (Pclk_Hz => 1_000_000);
-   Acquire (Lcd);                          -- hold the LCD peripheral
+   Acquire (Lcd, Pclk_Hz => 1_000_000);    -- claim + bring up the clock
    Enable_Clock_Out (Lcd, Pclk_Pad => 9);  -- expose PCLK on IO9
 end LCD_Clk;
 \end{lstlisting}

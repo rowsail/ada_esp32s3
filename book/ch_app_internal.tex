@@ -593,9 +593,8 @@ rather than by convention.}
 type MCPWM_Unit    is (MCPWM0, MCPWM1);
 type Channel_Index is (Ch0, Ch1, Ch2);
 type Channel is limited private;     type Capture is limited private;
-Not_Initialized : exception;
 
-procedure Setup   (Unit : MCPWM_Unit);                       --  once per unit
+--  The unit's clock comes up on the first Claim of any of its channels.
 procedure Claim   (C : in out Channel; Unit : MCPWM_Unit; Index : Channel_Index);
 procedure Configure_Channel
   (C : Channel; Freq : Positive; Pin : ESP32S3.GPIO.Pin_Id;
@@ -620,8 +619,7 @@ procedure Read_Capture (Cap : Capture; Value : out Interfaces.Unsigned_32;
 \end{lstlisting}
 
 \begin{lstlisting}
-Setup (MCPWM0);
-Claim (Gen0, MCPWM0, Ch0);
+Claim (Gen0, MCPWM0, Ch0);                               --  first Claim brings up MCPWM0
 Configure_Channel (Gen0, Freq => 20_000, Pin => 4);      --  20 kHz, edge-aligned
 Start (Gen0);
 Set_Duty (Gen0, 75.0);
@@ -949,23 +947,25 @@ fault between \texttt{Acquire} and \texttt{Release} cannot leak the lock.
 Transfers (\texttt{Write}, \texttt{Read}, \texttt{Transfer}, plus the gapless
 \texttt{Start\_Continuous}/\texttt{Capture}/\texttt{Stop} streaming path) run
 outside the lock and raise \texttt{Not\_Owned} if the session does not hold a
-port, or \texttt{Not\_Initialized} if a port was never \texttt{Setup}. The driver
-needs a tasking runtime (Jorvik or richer) and, via finalization, targets the
-embedded/full profile.
+port. \texttt{Acquire} both claims the port and brings it up, so there is no
+separate setup step. The driver needs a tasking runtime (Jorvik or richer) and,
+via finalization, targets the embedded/full profile.
 
 \begin{lstlisting}
 type I2S_Port    is (I2S0, I2S1);
 type Sample_Bits is (Bits_8, Bits_16, Bits_24, Bits_32);
 type I2S_Mode    is (Standard, PDM);
 type Session     is limited private;        --  non-copyable, auto-released
-Not_Initialized, Not_Owned : exception;
+Not_Owned : exception;
 
-procedure Setup (Port : I2S_Port; Sample_Rate : Positive := 16_000;
-                 Bits : Sample_Bits := Bits_16; Mode : I2S_Mode := Standard);
-procedure Enable_Loopback (Port : I2S_Port; Pad : ESP32S3.GPIO.Pin_Id);
-procedure Configure_Pins  (Port : I2S_Port;
+procedure Acquire  (S : in out Session; Port : I2S_Port;
+                    Sample_Rate : Positive := 16_000; Bits : Sample_Bits := Bits_16;
+                    Mode : I2S_Mode := Standard;
+                    Bclk, Ws, Dout, Din, Mclk : Optional_Pin := No_Pin);
+procedure Reconfigure (S : Session; ...);              --  re-open the held port
+procedure Configure_Pins  (S : Session;                --  finer: re-route pins
                            Bclk, Ws, Dout, Din, Mclk : Optional_Pin := No_Pin);
-procedure Acquire  (S : in out Session; Port : I2S_Port);
+procedure Enable_Loopback (S : Session; Pad : ESP32S3.GPIO.Pin_Id);
 procedure Write    (S : Session; Tx : System.Address; Length : Natural);
 procedure Read     (S : Session; Rx : System.Address; Length : Natural);
 procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural);
@@ -976,13 +976,12 @@ procedure Release  (S : in out Session);
 \end{lstlisting}
 
 \begin{lstlisting}
-Setup (I2S0, Sample_Rate => 16_000, Bits => Bits_16);
-Enable_Loopback (I2S0, Pad => Data_Pin);    --  out->in on one pad, no wiring
 declare
    S  : Session;                            --  limited: cannot be copied/shared
    Ok : Boolean := False;
 begin
-   Acquire (S, I2S0);                       --  suspends until the port is free
+   Acquire (S, I2S0, Sample_Rate => 16_000, Bits => Bits_16);  --  claim + config
+   Enable_Loopback (S, Pad => Data_Pin);    --  out->in on one pad (held port)
    Transfer (S, Tx'Address, Rx'Address, Samples'Length * 2);
    Ok := (for all I in Samples'Range => Rx (I) = Tx (I));
 end;                                        --  S finalizes -> port released
@@ -1019,11 +1018,13 @@ embedded/full profile.
 No_Pin : constant ESP32S3.GPIO.Pad_Number := ESP32S3.GPIO.No_Pin;
 type Data_Pins is array (0 .. 7) of ESP32S3.GPIO.Optional_Pin;  -- D0..D7
 type Session   is limited private;          --  non-copyable, auto-released
-Not_Initialized, Not_Owned : exception;
+Not_Owned : exception;
 
-procedure Setup (Pclk_Hz : Positive := 1_000_000);
-procedure Acquire (S : in out Session);
-procedure Configure_Pins   (S : Session; Data : Data_Pins;
+procedure Acquire (S : in out Session; Pclk_Hz : Positive := 1_000_000;
+                   Data : Data_Pins := (others => No_Pin);
+                   Pclk : ESP32S3.GPIO.Optional_Pin := No_Pin);
+procedure Reconfigure (S : Session; ...);   --  re-apply clock + pins, held
+procedure Configure_Pins   (S : Session; Data : Data_Pins;   --  finer: re-route
                             Pclk : ESP32S3.GPIO.Optional_Pin);
 procedure Enable_Clock_Out (S : Session; Pclk_Pad : ESP32S3.GPIO.Pin_Id);
 procedure Transmit (S : Session; Tx : System.Address; Length : Natural;
@@ -1032,13 +1033,12 @@ procedure Release  (S : in out Session);
 \end{lstlisting}
 
 \begin{lstlisting}
-Setup (Pclk_Hz => 200 * 1000);              --  200 kHz pixel clock
 declare
    S  : Session;
    Ok : Boolean;
 begin
-   Acquire (S);
-   Configure_Pins (S, D_Pins, Pclk => Pclk_Pin);  --  route pads on held ctrl
+   Acquire (S, Pclk_Hz => 200 * 1000,             --  200 kHz; claim + configure
+            Data => D_Pins, Pclk => Pclk_Pin);
    Transmit (S, Buf'Address, Buffer'Length, Ok);  --  blocks until done
    Release (S);
    Put_Line (if Ok then "PASS" else "FAIL");

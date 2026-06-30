@@ -36,13 +36,15 @@ exercised on real silicon.
   The finalization-free drivers (GPIO, RNG, Temperature, RTC, RTC\_IO, Touch, SHA,
   AES, SDMMC) use no controlled types (a few serialise internally with a protected
   object instead), so they work under every profile.
-\item[Init-before-use guard.] For the drivers that configure a controller once
-  at startup and only later hand out ownership (SPI, I2C, I2S, TWAI, LCD, and
-  MCPWM), \texttt{Acquire}/\texttt{Claim} raises \texttt{Not\_Initialized} if the
-  port/host/unit was never \texttt{Setup}. Configuration must precede ownership;
-  the contract is enforced, not merely documented. (\texttt{UART} goes further:
-  it has no separate setup at all, so \texttt{Acquire} claims a bare port and
-  \emph{all} configuration runs through the held \texttt{Session}.)
+\item[Init-before-use guard.] The two shared-bus drivers (SPI, I2C) still
+  configure a host once at startup and only later hand out ownership, so
+  \texttt{Acquire} raises \texttt{Not\_Initialized} if the host was never
+  \texttt{Setup} -- a shared bus's pins and clock are a per-bus concern, not a
+  per-acquisition one. The single-peripheral drivers (UART, TWAI, I2S, LCD,
+  MCPWM) fold that step away: \texttt{Acquire}/\texttt{Claim} carries the
+  configuration itself (or brings the peripheral up lazily on first use), so
+  nothing precedes ownership and there is no \texttt{Not\_Initialized}. Either
+  way, configuration cannot precede ownership; the contract is enforced.
 \item[Ownership gateway.] Across all six \texttt{Session} drivers (SPI, I2C,
   UART, I2S, TWAI, LCD), all register access lives in a private \texttt{Engine}
   child, and the configured handle it returns is hidden in a nested package body.
