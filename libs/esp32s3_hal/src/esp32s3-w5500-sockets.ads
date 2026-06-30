@@ -79,12 +79,14 @@ package ESP32S3.W5500.Sockets is
    procedure Listen (S : in out Socket; Result : out Status);
 
    --  Client: connect to Host:Port.  Blocks (polls) until established or it fails
-   --  (Timed_Out / Refused), up to Timeout.
+   --  (Timed_Out / Refused), up to Timeout.  Timeout = 0.0 (the default) uses the
+   --  socket's send timeout (see Set_Send_Timeout), or a 10 s cap if that is unset;
+   --  a positive Timeout overrides both for this one call.
    procedure Connect (S       : in out Socket;
                       Host    : IPv4_Address;
                       Port    : Port_Number;
                       Result  : out Status;
-                      Timeout : Duration := 10.0);
+                      Timeout : Duration := 0.0);
 
    function State         (S : Socket) return Socket_State;
    function Is_Established (S : Socket) return Boolean;
@@ -113,6 +115,13 @@ package ESP32S3.W5500.Sockets is
    --  default) means block indefinitely.  Backs the GNAT.Sockets facade's
    --  Receive_Timeout socket option.
    procedure Set_Receive_Timeout (S : in out Socket; To : Duration);
+
+   --  Cap how long Send / Send_To / Connect block before returning Timed_Out.
+   --  Zero (the default) applies a 10 s safety cap; a positive value overrides it.
+   --  (Unlike receive, there is no "block forever" -- an unbounded TX wait would
+   --  hang the caller if a link dropped without the chip raising TIMEOUT.)  Backs
+   --  the GNAT.Sockets facade's Send_Timeout socket option.
+   procedure Set_Send_Timeout (S : in out Socket; To : Duration);
 
    --  Send up to Data'Length bytes; Sent = how many were transmitted (may be less
    --  than Data'Length if the TX buffer was partly full).
@@ -156,5 +165,6 @@ private
       Proto : Protocol      := None;
       Is_Open : Boolean     := False;
       Recv_Timeout : Duration := 0.0;   --  0 => Wait_Data blocks forever
+      Send_Timeout : Duration := 0.0;   --  0 => Send/Connect use the 10 s cap
    end record;
 end ESP32S3.W5500.Sockets;

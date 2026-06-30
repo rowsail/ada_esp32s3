@@ -228,6 +228,9 @@ package body FTP_Client is
          if Line (I) in '0' .. '9' then
             Nums (Slot) := Nums (Slot) * 10
                            + (Character'Pos (Line (I)) - Character'Pos ('0'));
+            if Nums (Slot) > 255 then       --  malformed reply: field out of range
+               St := Protocol_Error; return;
+            end if;
          elsif Line (I) = ',' then
             Slot := Slot + 1;
          end if;
@@ -244,6 +247,8 @@ package body FTP_Client is
          if S.Timeout > 0.0 then
             Set_Socket_Option
               (Data, Socket_Level, (Name => Receive_Timeout, Timeout => S.Timeout));
+            Set_Socket_Option
+              (Data, Socket_Level, (Name => Send_Timeout, Timeout => S.Timeout));
          end if;
          Connect_Socket (Data, Addr);
          St := OK;
@@ -278,6 +283,8 @@ package body FTP_Client is
          if Timeout > 0.0 then
             Set_Socket_Option
               (S.Control, Socket_Level, (Name => Receive_Timeout, Timeout => Timeout));
+            Set_Socket_Option
+              (S.Control, Socket_Level, (Name => Send_Timeout, Timeout => Timeout));
          end if;
          Connect_Socket (S.Control, (Family_Inet, Host, Port));
       exception
@@ -407,11 +414,7 @@ package body FTP_Client is
       Close_Socket (Data);
 
       Read_Reply (S, Code, St);                 --  expect 226 / 250
-      Finish (S, (if St /= OK then St
-                  elsif Code in 200 .. 299 then OK
-                  elsif Code in 400 .. 599 then Server_Error
-                  else Protocol_Error),
-              Result);
+      Finish (S, Simple_Result (Code, St), Result);
    end Stream_In;
 
    procedure Retrieve (S      : in out Session;
@@ -481,11 +484,7 @@ package body FTP_Client is
       Close_Socket (Data);                      --  EOF to the server
 
       Read_Reply (S, Code, St);
-      Finish (S, (if St /= OK then St
-                  elsif Code in 200 .. 299 then OK
-                  elsif Code in 400 .. 599 then Server_Error
-                  else Protocol_Error),
-              Result);
+      Finish (S, Simple_Result (Code, St), Result);
    end Store;
 
    ---------------------------------------------------------------------------
@@ -536,11 +535,20 @@ package body FTP_Client is
       Command_Line (S, "SIZE " & Path, Code, Line, Last, St);
       if St /= OK then Finish (S, St, Result); return; end if;
       if Code = 213 then
-         for I in Line'First + 4 .. Line'First + Last - 1 loop
-            if Line (I) in '0' .. '9' then
+         declare
+            I : Natural := Line'First + 4;        --  past "213 "
+         begin
+            while I <= Line'First + Last - 1 and then Line (I) = ' ' loop
+               I := I + 1;                         --  skip any extra spaces
+            end loop;
+            while I <= Line'First + Last - 1 and then Line (I) in '0' .. '9' loop
+               if Size > (Natural'Last - 9) / 10 then   --  too big for Natural
+                  Finish (S, Protocol_Error, Result); return;
+               end if;
                Size := Size * 10 + (Character'Pos (Line (I)) - Character'Pos ('0'));
-            end if;
-         end loop;
+               I := I + 1;                         --  stop at the first non-digit
+            end loop;
+         end;
          Finish (S, OK, Result);
       elsif Code in 400 .. 599 then
          Finish (S, Server_Error, Result);

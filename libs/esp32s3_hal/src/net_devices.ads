@@ -92,4 +92,9 @@ package Net_Devices is
    procedure Set_Receive_Timeout (Self : in out Device; Index : Natural;
                                  To : Duration) is abstract;
 
+   --  Cap how long Send / Send_To / Connect on this socket block before reporting
+   --  Timed_Out.  Backs the GNAT.Sockets facade's Send_Timeout socket option.
+   procedure Set_Send_Timeout (Self : in out Device; Index : Natural;
+                              To : Duration) is abstract;
+
 end Net_Devices;

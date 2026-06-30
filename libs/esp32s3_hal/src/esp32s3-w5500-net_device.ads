@@ -71,4 +71,6 @@ private
                                       Result : out Net_Devices.Status);
    overriding procedure Set_Receive_Timeout (Self : in out Instance; Index : Natural;
                                              To : Duration);
+   overriding procedure Set_Send_Timeout (Self : in out Instance; Index : Natural;
+                                          To : Duration);
 end ESP32S3.W5500.Net_Device;
