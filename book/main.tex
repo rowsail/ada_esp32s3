@@ -130,7 +130,22 @@
 \newcounter{example}
 \counterwithin{example}{section}
 \newcommand{\lstexample}[1]{%
-  \refstepcounter{example}\lstcapcore{Example \theexample: #1}}
+  \refstepcounter{example}%
+  \addcontentsline{loe}{example}{\protect\numberline{\theexample}#1}%
+  \lstcapcore{Example \theexample: #1}}
+
+%  List of Examples -- typeset by \listofexamples (placed just before the index).
+%  Each \lstexample writes a \numberline{<num>}<description> line to the .loe
+%  file; \l@example formats it like a List-of-Figures entry (dotted leader + page
+%  number), with the number column wide enough for "<chapter>.<section>.<n>".
+\makeatletter
+\newcommand{\l@example}{\@dottedtocline{1}{1.5em}{4em}}
+\newcommand{\listofexamples}{%
+  \chapter*{List of Examples}%
+  \addcontentsline{toc}{chapter}{List of Examples}%
+  \@mkboth{\MakeUppercase{List of Examples}}{\MakeUppercase{List of Examples}}%
+  \@starttoc{loe}}
+\makeatother
 
 %  raggedright so multi-line chapter titles don't get justified into ugly
 %  inter-word gaps (e.g. "Networking: GNAT.Sockets over the W5500").
@@ -237,6 +252,8 @@
 \input{ch_app_external}
 \input{ch_glossary}
 \input{ch_references}
+
+\listofexamples
 
 \printindex
 

@@ -1,0 +1,46 @@
+\contentsline {example}{\numberline {14.2.1}blink an LED.}{73}{example.14.2.1}%
+\contentsline {example}{\numberline {14.2.2}a button drives an LED.}{73}{example.14.2.2}%
+\contentsline {example}{\numberline {14.3.1}a random word.}{73}{example.14.3.1}%
+\contentsline {example}{\numberline {14.3.2}a random nonce.}{74}{example.14.3.2}%
+\contentsline {example}{\numberline {14.4.1}read degrees.}{74}{example.14.4.1}%
+\contentsline {example}{\numberline {14.4.2}higher resolution and a different span.}{74}{example.14.4.2}%
+\contentsline {example}{\numberline {14.5.1}write a command to a device.}{76}{example.14.5.1}%
+\contentsline {example}{\numberline {14.5.2}wiring-free self-test via internal loopback.}{76}{example.14.5.2}%
+\contentsline {example}{\numberline {14.6.1}write a register on a sensor at address \texttt {16\#68\#}.}{78}{example.14.6.1}%
+\contentsline {example}{\numberline {14.6.2}register read (write the address, then read).}{78}{example.14.6.2}%
+\contentsline {example}{\numberline {14.7.1}transmit a line.}{79}{example.14.7.1}%
+\contentsline {example}{\numberline {14.7.2}echo received bytes (wiring-free, internal loopback).}{79}{example.14.7.2}%
+\contentsline {example}{\numberline {15.1.1}memory-to-memory copy.}{83}{example.15.1.1}%
+\contentsline {example}{\numberline {15.2.1}20\,kHz at 25\,\% on one pin.}{84}{example.15.2.1}%
+\contentsline {example}{\numberline {15.2.2}a complementary pair with 500\,ns dead-time (half-bridge).}{85}{example.15.2.2}%
+\contentsline {example}{\numberline {15.3.1}play a buffer of samples.}{86}{example.15.3.1}%
+\contentsline {example}{\numberline {15.3.2}wiring-free full-duplex loopback self-test.}{86}{example.15.3.2}%
+\contentsline {example}{\numberline {15.4.1}5\,kHz at 50\,\%.}{87}{example.15.4.1}%
+\contentsline {example}{\numberline {15.4.2}fade an LED.}{87}{example.15.4.2}%
+\contentsline {example}{\numberline {15.5.1}transmit a pulse burst (1\,\textmu s resolution).}{88}{example.15.5.1}%
+\contentsline {example}{\numberline {15.5.2}receive into a buffer (e.g. an IR remote).}{89}{example.15.5.2}%
+\contentsline {example}{\numberline {15.6.1}count rising edges on a pin.}{89}{example.15.6.1}%
+\contentsline {example}{\numberline {15.6.2}count both edges (double the resolution).}{89}{example.15.6.2}%
+\contentsline {example}{\numberline {15.7.1}a 25\,\% density bitstream (analog-ish level via an RC filter).}{90}{example.15.7.1}%
+\contentsline {example}{\numberline {15.7.2}breathe an LED by sweeping density.}{90}{example.15.7.2}%
+\contentsline {example}{\numberline {15.8.1}send a standard and an extended frame.}{91}{example.15.8.1}%
+\contentsline {example}{\numberline {15.8.2}self-test loopback (no transceiver, no wiring).}{92}{example.15.8.2}%
+\contentsline {example}{\numberline {15.9.1}measure an elapsed interval in microseconds.}{92}{example.15.9.1}%
+\contentsline {example}{\numberline {15.9.2}a one-shot alarm 50\,ms out.}{93}{example.15.9.2}%
+\contentsline {example}{\numberline {15.10.1}push a frame buffer to a parallel display.}{93}{example.15.10.1}%
+\contentsline {example}{\numberline {15.10.2}expose the pixel clock on a pad (for a scope).}{94}{example.15.10.2}%
+\contentsline {example}{\numberline {15.11.1}read a 12-bit sample.}{94}{example.15.11.1}%
+\contentsline {example}{\numberline {15.11.2}a lower attenuation for a small signal.}{94}{example.15.11.2}%
+\contentsline {example}{\numberline {16.1.1}a boot counter that survives deep sleep.}{97}{example.16.1.1}%
+\contentsline {example}{\numberline {16.1.2}wake on a button.}{98}{example.16.1.2}%
+\contentsline {example}{\numberline {16.2.1}hold a relay line high through sleep.}{98}{example.16.2.1}%
+\contentsline {example}{\numberline {16.2.2}an RTC pull-up on a wake pin.}{98}{example.16.2.2}%
+\contentsline {example}{\numberline {16.3.1}read two pads' baselines.}{99}{example.16.3.1}%
+\contentsline {example}{\numberline {16.3.2}detect a finger against a captured baseline.}{99}{example.16.3.2}%
+\contentsline {example}{\numberline {16.4.1}SHA-256 of a message.}{100}{example.16.4.1}%
+\contentsline {example}{\numberline {16.4.2}SHA-1 (e.g. for a legacy checksum).}{100}{example.16.4.2}%
+\contentsline {example}{\numberline {16.5.1}AES-128 encrypt then decrypt one block.}{100}{example.16.5.1}%
+\contentsline {example}{\numberline {16.5.2}AES-256 (a 32-byte key selects the cipher automatically).}{101}{example.16.5.2}%
+\contentsline {example}{\numberline {21.1.1}bring up a card and read sector 0.}{131}{example.21.1.1}%
+\contentsline {example}{\numberline {21.1.2}a non-destructive read / write-back / re-read round-trip.}{131}{example.21.1.2}%
+\contentsline {example}{\numberline {21.2.1}4-bit bus, read a sector.}{132}{example.21.2.1}%
