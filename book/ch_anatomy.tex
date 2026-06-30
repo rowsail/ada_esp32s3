@@ -360,7 +360,14 @@ end Board;
 
 \section{Console output}\index{console output}
 
-The runtime wires \texttt{Ada.Text\_IO} to the built-in USB-serial-JTAG console,
-so \texttt{Put\_Line} reaches \texttt{/dev/ttyACM0}. The examples additionally use
-a tiny C glue layer calling the ROM \texttt{esp\_rom\_printf} for formatted status
-lines. Either way, \texttt{./x run} opens a monitor so you see the output live.
+Console output goes through \texttt{ESP32S3.Console}, a small driver for the
+built-in USB Serial/JTAG port, so \texttt{Put\_Line} reaches \texttt{/dev/ttyACM0}.
+It is a real driver, not a raw \texttt{printf}. It applies USB back-pressure so a
+fast burst is not truncated, line-buffers to coalesce small writes, and --- when
+no host is attached --- drops output rather than stall the application.
+
+Both front ends ride it. \texttt{ESP32S3.Log} writes to it directly; the runtime's
+\texttt{Ada.Text\_IO} is bridged onto it by one installed hook. So a program can
+use either and reach the same console, and a single \texttt{Set\_Output} call can
+redirect that console to a UART (Section~\ref{driver:console-mux}). Either way,
+\texttt{./x run} opens a monitor so you see the output live.

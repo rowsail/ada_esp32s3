@@ -107,7 +107,7 @@ The board's own bodies are shared across profiles and named with the
 \textbf{File} & \textbf{Role} \\ \midrule
 \texttt{s-bbpara\_\_esp32s3.ads} & board parameters: 240\,MHz clock, interrupt range, stacks \\
 \texttt{s-bbbosu\_\_esp32s3.adb} & board support: the tick (\texttt{CCOMPARE}), interrupt dispatch \\
-\texttt{s-textio\_\_esp32s3.adb} & console \texttt{Put} via the ROM \texttt{esp\_rom\_printf} \\
+\texttt{s-textio\_\_esp32s3.adb} & console \texttt{Put}: a settable hook (the HAL routes it to \texttt{ESP32S3.Serial}), else the ROM \texttt{esp\_rom\_printf} \\
 \texttt{s-macres\_\_esp32s3.adb} & machine reset \\
 \texttt{a-intnam\_\_esp32s3.ads}  & \texttt{Ada.Interrupts.Names} for the CPU's interrupts \\
 \bottomrule
