@@ -233,6 +233,36 @@ begin
          Mnt.Write_File
            (Note, To_Bytes ("written on-device, no-journal commit to flash!"
                             & ASCII.LF));
+
+         --  Regression test for the shrink-Truncate stale-tail fix: write a file
+         --  full of 0xAA, shrink it to a non-block-aligned 100 bytes, then grow it
+         --  back to 2000, and confirm the re-exposed gap [100 .. 2000) reads as
+         --  zeros (POSIX) rather than the stale 0xAA the old code left behind.
+         declare
+            TN    : ESP32S3.Ext4.Inode_Number;
+            TI    : ESP32S3.Ext4.Inode.Info;
+            Big   : constant Byte_Array (0 .. 4999) := (others => 16#AA#);
+            Back  : Byte_Array (0 .. 1999);
+            BLast : Natural;
+            Pass  : Boolean := True;
+         begin
+            TN := Mnt.Create_File ("/", "trunc.bin");
+            Mnt.Write_File (TN, Big);
+            Mnt.Truncate (TN, 100);      --  shrink into block 0 (non-aligned)
+            Mnt.Truncate (TN, 2000);     --  re-extend, still within block 0
+            Mnt.Stat (TN, TI);
+            Mnt.Read_File (TI, 0, Back, BLast);
+            if BLast < 2000 then
+               Pass := False;            --  file did not grow back
+            else
+               for I in 100 .. 1999 loop
+                  if Back (I) /= 0 then Pass := False; end if;
+               end loop;
+            end if;
+            Log.Put_Line ("[ext4f] truncate stale-tail test: "
+                          & (if Pass then "PASS" else "FAIL"));
+         end;
+
          Mnt.Commit;
          Mnt.Close;
          Log.Put ("[ext4f] created + committed /written.txt; WL moves now: ");

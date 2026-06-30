@@ -5,6 +5,7 @@ with ESP32S3.Ext4.Inode;
 with ESP32S3.Ext4.Dir;
 with ESP32S3.Ext4.Path;
 with ESP32S3.Ext4.Block_Cache;
+with ESP32S3.Ext4.Block_Map;
 
 package body ESP32S3.Ext4.Writer is
 
@@ -766,6 +767,32 @@ package body ESP32S3.Ext4.Writer is
                   Meta := Meta + 1 + (New_NB - 12 - PPB + PPB - 1) / PPB;
                end if;
                I.Blocks_512 := U64 (New_NB + Meta) * U64 (BS / 512);
+            end;
+         end if;
+
+         --  Zero the unused tail of the last RETAINED block.  When shrinking to a
+         --  non-block-aligned size, [New_Size mod BS .. BS) of the final block
+         --  still holds the old bytes; POSIX requires a later re-extension (or a
+         --  sparse read) of that range to see zeros, so clear it now.  (Block
+         --  freeing above only drops whole blocks at index >= New_NB.)
+         if New_Size < I.Size then
+            declare
+               Tail_Off : constant Natural := Natural (New_Size mod U64 (BS));
+            begin
+               if Tail_Off /= 0 then
+                  declare
+                     Phys : constant Block_Number :=
+                              Block_Map.Logical_To_Physical
+                                (V, I, U64 (New_NB - 1));
+                     Tail : constant Byte_Array (Tail_Off .. BS - 1) :=
+                              (others => 0);
+                  begin
+                     if Phys /= 0 then
+                        ESP32S3.Ext4.Block_Cache.Write_At
+                          (V.Cache, Phys, Tail_Off, Tail);
+                     end if;
+                  end;
+               end if;
             end;
          end if;
       end;
