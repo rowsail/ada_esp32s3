@@ -22,8 +22,11 @@ package body ESP32S3.Text_IO is
       Page_No  : Positive                   := 1;
       Line_Len : Natural                    := 0;   --  0 = unbounded (no wrap)
       Page_Len : Natural                    := 0;
+      Sync     : Boolean                    := False;  --  commit after every write?
       Name_Len : Natural                    := 0;
       Name_Buf : String (1 .. Name_Max)     := (others => ' ');
+      Form_Len : Natural                    := 0;
+      Form_Buf : String (1 .. 64)           := (others => ' ');
    end record;
 
    procedure Free is new Ada.Unchecked_Deallocation (Control_Block, CB_Access);
@@ -94,6 +97,7 @@ package body ESP32S3.Text_IO is
                end loop;
                if N > 0 then B.FS.Append (B.Node, Chunk (0 .. N - 1)); end if;
             end;
+            if B.Sync then B.FS.Commit; end if;   --  "sync=yes": durable per write
          when Closed =>
             raise ESP32S3.Ext4.Status_Error;
       end case;
@@ -410,6 +414,46 @@ package body ESP32S3.Text_IO is
       B.Name_Buf (1 .. N) := Nm (Nm'First .. Nm'First + N - 1);
    end Set_Name;
 
+   procedure Set_Form (B : CB_Access; F : String) is
+      N : constant Natural := Natural'Min (F'Length, B.Form_Buf'Length);
+   begin
+      B.Form_Len := N;
+      B.Form_Buf (1 .. N) := F (F'First .. F'First + N - 1);
+   end Set_Form;
+
+   --  Validate an implementation-defined Form string and extract its options.
+   --  Comma-separated tokens; "sync=yes" / "sync=no" recognised; "" allowed;
+   --  anything else raises Use_Error.
+   procedure Parse_Form (F : String; Sync : out Boolean) is
+      I : Natural := F'First;
+   begin
+      Sync := False;
+      while I <= F'Last loop
+         declare
+            J : Natural := I;
+         begin
+            while J <= F'Last and then F (J) /= ',' loop J := J + 1; end loop;
+            declare
+               A : Natural := I;
+               Z : Natural := J - 1;
+            begin
+               while A <= Z and then F (A) = ' ' loop A := A + 1; end loop;
+               while Z >= A and then F (Z) = ' ' loop Z := Z - 1; end loop;
+               declare
+                  Tok : constant String := F (A .. Z);
+               begin
+                  if    Tok = ""         then null;
+                  elsif Tok = "sync=yes" then Sync := True;
+                  elsif Tok = "sync=no"  then Sync := False;
+                  else  raise ESP32S3.Ext4.Use_Error;
+                  end if;
+               end;
+            end;
+            I := J + 1;
+         end;
+      end loop;
+   end Parse_Form;
+
    procedure Locate (Nm        : String;
                      FS        : out ESP32S3.Ext4.VFS.Mount_Ref;
                      Sub_First : out Natural;
@@ -473,18 +517,27 @@ package body ESP32S3.Text_IO is
    --  File management
    ----------------------------------------------------------------------------
 
-   procedure Create (File : in out File_Type; Name : String; Mode : File_Mode := Out_File)
+   procedure Create (File : in out File_Type; Name : String;
+                     Mode : File_Mode := Out_File; Form : String := "")
    is
+      Sync : Boolean;
    begin
+      Parse_Form (Form, Sync);                     --  validate before creating
       New_CB (File);
       Open_For_Write (File.CB, Name,
                       (if Mode = In_File then Out_File else Mode), Truncate => True);
+      File.CB.Sync := Sync;
+      Set_Form (File.CB, Form);
    end Create;
 
-   procedure Open (File : in out File_Type; Name : String; Mode : File_Mode) is
+   procedure Open (File : in out File_Type; Name : String; Mode : File_Mode;
+                   Form : String := "")
+   is
       FS     : ESP32S3.Ext4.VFS.Mount_Ref;
       SF, SL : Natural;
+      Sync   : Boolean;
    begin
+      Parse_Form (Form, Sync);                     --  validate before opening
       New_CB (File);
       case Mode is
          when In_File =>
@@ -501,6 +554,8 @@ package body ESP32S3.Text_IO is
          when Append_File =>
             Open_For_Write (File.CB, Name, Append_File, Truncate => False);
       end case;
+      File.CB.Sync := Sync;
+      Set_Form (File.CB, Form);
    end Open;
 
    procedure Close_CB (B : CB_Access) is
@@ -530,6 +585,8 @@ package body ESP32S3.Text_IO is
    function Mode (File : File_Type) return File_Mode is (CB (File).Mode);
    function Name (File : File_Type) return String is
      (CB (File).Name_Buf (1 .. CB (File).Name_Len));
+   function Form (File : File_Type) return String is
+     (CB (File).Form_Buf (1 .. CB (File).Form_Len));
 
    procedure Flush (File : File_Type) is
       B : constant CB_Access := CB (File);

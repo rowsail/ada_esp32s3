@@ -47,13 +47,20 @@ package ESP32S3.Text_IO is
    procedure Set_Input  (File : File_Access);
 
    --  File management -----------------------------------------------------------
-   procedure Create (File : in out File_Type; Name : String; Mode : File_Mode := Out_File);
-   procedure Open   (File : in out File_Type; Name : String; Mode : File_Mode);
+   --  Form is an implementation-defined options string. Recognised: "sync=yes"
+   --  (commit the ext4 file after every write -- crash-durable, slower) and
+   --  "sync=no" (the default: commit on Close). "" means default; any other form
+   --  raises Use_Error. Form (File) returns the form the file was opened with.
+   procedure Create (File : in out File_Type; Name : String;
+                     Mode : File_Mode := Out_File; Form : String := "");
+   procedure Open   (File : in out File_Type; Name : String;
+                     Mode : File_Mode; Form : String := "");
    procedure Close  (File : in out File_Type);
    procedure Reset  (File : in out File_Type);
    function Is_Open (File : File_Type) return Boolean;
    function Mode    (File : File_Type) return File_Mode;
    function Name    (File : File_Type) return String;
+   function Form    (File : File_Type) return String;
    procedure Flush  (File : File_Type);
    procedure Flush;
 
