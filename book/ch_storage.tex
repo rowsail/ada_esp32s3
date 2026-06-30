@@ -27,7 +27,7 @@ procedure Write_Block (C : in out Card; LBA : Block_Address;
                        Data : Block; Result : out Status);
 \end{lstlisting}
 
-\lstcap{Example 1: bring up a card and read sector 0.}
+\lstexample{bring up a card and read sector 0.}
 \begin{lstlisting}
 with ESP32S3.SD_SPI; use ESP32S3.SD_SPI;
 with ESP32S3.SPI;
@@ -44,7 +44,7 @@ begin
 end SD_Init;
 \end{lstlisting}
 
-\lstcap{Example 2: a non-destructive read / write-back / re-read round-trip.}
+\lstexample{a non-destructive read / write-back / re-read round-trip.}
 \begin{lstlisting}
 with ESP32S3.SD_SPI; use ESP32S3.SD_SPI;
 with ESP32S3.SPI;
@@ -76,7 +76,7 @@ procedure Read_Block  (C : in out Card; LBA : Block_Address; Data : out Block;
                        Result : out Status);
 \end{lstlisting}
 
-\lstcap{Example: 4-bit bus, read a sector.}
+\lstexample{4-bit bus, read a sector.}
 \begin{lstlisting}
 with ESP32S3.SDMMC; use ESP32S3.SDMMC;
 procedure SDMMC_Read is

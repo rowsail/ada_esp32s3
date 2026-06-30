@@ -118,9 +118,19 @@
 %  to the page bottom anyway.)  \needspace then pushes the caption + first listing
 %  lines to the next page together if they will not fit; \nopagebreak glues the
 %  caption to the listing.
-\newcommand{\lstcap}[1]{%
+\newcommand{\lstcapcore}[1]{%
   \par\hrule height 0pt\relax
   \needspace{8\baselineskip}\noindent\textbf{#1}\nopagebreak}
+%  \lstcap: a plain caption (used for the rare non-example commentary line).
+\newcommand{\lstcap}[1]{\lstcapcore{#1}}
+%  \lstexample: an auto-numbered worked example.  The number is the section
+%  number followed by a per-section example index (e.g. "Example 16.5.1"), so it
+%  reads as <chapter>.<section>.<example> and restarts in each section.  Use it as
+%  \lstexample{<description>} -- the "Example N:" label is generated, not typed.
+\newcounter{example}
+\counterwithin{example}{section}
+\newcommand{\lstexample}[1]{%
+  \refstepcounter{example}\lstcapcore{Example \theexample: #1}}
 
 %  raggedright so multi-line chapter titles don't get justified into ugly
 %  inter-word gaps (e.g. "Networking: GNAT.Sockets over the W5500").
