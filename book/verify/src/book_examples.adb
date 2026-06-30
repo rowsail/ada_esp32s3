@@ -172,8 +172,7 @@ package body Book_Examples is
       use ESP32S3.UART;
       S : Session;
    begin
-      Setup (UART1, Baud => 115_200, Tx => 17, Rx => 16);
-      Acquire (S, UART1);
+      Acquire (S, UART1, Baud => 115_200, Tx => 17, Rx => 16);
       Write (S, (Character'Pos ('h'), Character'Pos ('i'), 10));
    end UART_Tx;
 
@@ -181,8 +180,7 @@ package body Book_Examples is
       use ESP32S3.UART;
       S : Session;
    begin
-      Setup (UART1, Tx => 17, Rx => 16);   --  115200 8-N-1 to start
-      Acquire (S, UART1);                  --  own the port before reconfiguring
+      Acquire (S, UART1, Tx => 17, Rx => 16);   --  own the port (115200 8-N-1)
       Set_Baud      (S, 9_600);            --  then change each attribute alone
       Set_Data_Bits (S, 7);
       Set_Parity    (S, Even);
@@ -196,7 +194,6 @@ package body Book_Examples is
       Buf : Byte_Array (0 .. 63);
       N   : Natural;
    begin
-      Setup (UART1);
       Acquire (S, UART1);
       Enable_Loopback (S);
       Write (S, (1 => 16#42#));
@@ -230,8 +227,7 @@ package body Book_Examples is
       use ESP32S3.MCPWM;
       C : Channel;
    begin
-      Setup (MCPWM0);
-      Claim (C, MCPWM0, Ch0);
+      Claim (C, MCPWM0, Ch0);   --  first Claim brings up the MCPWM0 clock
       Configure_Channel (C, Freq => 20_000, Pin => 4);
       Set_Duty (C, 25.0);
       Start (C);
@@ -241,8 +237,7 @@ package body Book_Examples is
       use ESP32S3.MCPWM;
       C : Channel;
    begin
-      Setup (MCPWM0);
-      Claim (C, MCPWM0, Ch0);
+      Claim (C, MCPWM0, Ch0);   --  first Claim brings up the MCPWM0 clock
       Configure_Channel (C, Freq => 20_000, Pin => 4,
                          Complement_Pin => 5, Dead_Time_Ns => 500);
       Set_Duty (C, 60.0);
@@ -358,9 +353,8 @@ package body Book_Examples is
       use ESP32S3.TWAI;
       S : Session;
    begin
-      Setup (Mode => Normal, Bit_Rate => 500_000);
-      Acquire (S);                          --  own the controller, then route pins
-      Configure_Pins (S, Tx => 4, Rx => 5);
+      Acquire (S, Mode => Normal, Bit_Rate => 500_000);   --  own the controller
+      Configure_Pins (S, Tx => 4, Rx => 5);               --  then route pins
       Send (S, Standard_Frame'(Id => 16#123#, Remote => False, Length => 2,
                                Data => (16#DE#, 16#AD#, others => 0)));
       Send (S, Extended_Frame'(Id => 16#14AB_CDE#, Remote => False, Length => 1,
@@ -375,8 +369,7 @@ package body Book_Examples is
       RE  : Extended_Frame;
       Got : Boolean := False;
    begin
-      Setup (Mode => Self_Test);
-      Acquire (S);
+      Acquire (S, Mode => Self_Test);
       Enable_Loopback (S, Pad => 4);
       Send (S, Extended_Frame'(Id => 16#14AB_CDE#, Remote => False, Length => 1,
                                Data => (0 => 16#42#, others => 0)));
@@ -415,8 +408,7 @@ package body Book_Examples is
       Ok : Boolean;
       FB : aliased array (0 .. 3999) of Interfaces.Unsigned_8 := (others => 16#FF#);
    begin
-      Setup (Pclk_Hz => 200_000);
-      Acquire (S);
+      Acquire (S, Pclk_Hz => 200_000);
       Configure_Pins (S, Data => (1, 2, 3, 4, 5, 6, 7, 8), Pclk => 9);
       Transmit (S, FB'Address, FB'Length, Ok);
    end LCD_Frame;
@@ -425,7 +417,6 @@ package body Book_Examples is
       use ESP32S3.LCD;
       S : Session;
    begin
-      Setup;
       Acquire (S);
       Enable_Clock_Out (S, Pclk_Pad => 9);
    end LCD_Clk;
