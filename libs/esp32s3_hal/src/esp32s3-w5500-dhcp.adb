@@ -74,27 +74,44 @@ package body ESP32S3.W5500.DHCP is
       Server_Id := Zero_IP;  Yiaddr := Zero_IP;
       loop
          WS.Receive_From (S, FA, FP, RX, Count, Rst);
-         if Count >= 240 then
+         Count := Natural'Min (Count, RX'Length);   --  never index past RX(299)
+         --  Only trust a datagram that is a BOOTREPLY (op=2) for OUR exchange
+         --  (matching xid) carrying the DHCP magic cookie; otherwise it is a
+         --  stray/rogue packet on UDP/68 and is ignored.
+         if Count >= 240
+           and then RX (0) = 2
+           and then RX (4) = 16#39# and then RX (5) = 16#03#
+           and then RX (6) = 16#F3# and then RX (7) = 16#26#
+           and then RX (236) = 16#63# and then RX (237) = 16#82#
+           and then RX (238) = 16#53# and then RX (239) = 16#63#
+         then
             Msg := 0;  P := 240;
+            --  Walk the option block, never reading past the received bytes: a
+            --  truncated header or a length that runs off the end ends the walk,
+            --  and each fixed-width option is taken only when its Len delivers it.
             while P <= Count - 1 loop
                Code := Natural (RX (P));
-               exit when Code = 255;
-               if Code = 0 then
+               exit when Code = 255;                 --  end option
+               if Code = 0 then                      --  pad
                   P := P + 1;
                else
+                  exit when P + 1 > Count - 1;        --  length byte must exist
                   Len := Natural (RX (P + 1));
+                  exit when P + 1 + Len > Count - 1;  --  whole option body must exist
                   case Code is
-                     when 53 => Msg := RX (P + 2);
-                     when 54 => for I in 0 .. 3 loop Server_Id (I) := RX (P + 2 + I); end loop;
-                     when 1  => for I in 0 .. 3 loop Lease.Subnet  (I) := RX (P + 2 + I); end loop;
-                     when 3  => for I in 0 .. 3 loop Lease.Gateway (I) := RX (P + 2 + I); end loop;
-                     when 6  => for I in 0 .. 3 loop Lease.DNS     (I) := RX (P + 2 + I); end loop;
+                     when 53 => if Len >= 1 then Msg := RX (P + 2); end if;
+                     when 54 => if Len >= 4 then for I in 0 .. 3 loop Server_Id (I) := RX (P + 2 + I); end loop; end if;
+                     when 1  => if Len >= 4 then for I in 0 .. 3 loop Lease.Subnet  (I) := RX (P + 2 + I); end loop; end if;
+                     when 3  => if Len >= 4 then for I in 0 .. 3 loop Lease.Gateway (I) := RX (P + 2 + I); end loop; end if;
+                     when 6  => if Len >= 4 then for I in 0 .. 3 loop Lease.DNS     (I) := RX (P + 2 + I); end loop; end if;
                      when 51 =>
-                        Lease.Lease_Seconds :=
-                          Shift_Left (Unsigned_32 (RX (P + 2)), 24) or
-                          Shift_Left (Unsigned_32 (RX (P + 3)), 16) or
-                          Shift_Left (Unsigned_32 (RX (P + 4)), 8)  or
-                                      Unsigned_32 (RX (P + 5));
+                        if Len >= 4 then
+                           Lease.Lease_Seconds :=
+                             Shift_Left (Unsigned_32 (RX (P + 2)), 24) or
+                             Shift_Left (Unsigned_32 (RX (P + 3)), 16) or
+                             Shift_Left (Unsigned_32 (RX (P + 4)), 8)  or
+                                         Unsigned_32 (RX (P + 5));
+                        end if;
                      when others => null;
                   end case;
                   P := P + 2 + Len;

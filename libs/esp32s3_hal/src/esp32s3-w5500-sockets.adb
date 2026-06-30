@@ -88,6 +88,15 @@ package body ESP32S3.W5500.Sockets is
       end loop;
    end Issue;
 
+   --  Safety cap applied to Send / Send_To / Connect when no send timeout is set,
+   --  so a dropped link never spins the TX wait forever.
+   Default_Send_Cap : constant Duration := 10.0;
+
+   --  The send/connect deadline for S: its send timeout, else the default cap.
+   function Send_Deadline (S : Socket) return Time is
+     (Clock + To_Time_Span
+        (if S.Send_Timeout > 0.0 then S.Send_Timeout else Default_Send_Cap));
+
    --  Optional INTn waiter (registered via Set_Event_Waiter); null => poll.
    Waiter : Event_Waiter := null;
 
@@ -183,8 +192,12 @@ package body ESP32S3.W5500.Sockets is
                       Host    : IPv4_Address;
                       Port    : Port_Number;
                       Result  : out Status;
-                      Timeout : Duration := 10.0) is
-      Deadline : constant Time := Clock + To_Time_Span (Timeout);
+                      Timeout : Duration := 0.0) is
+      --  An explicit positive Timeout wins; otherwise fall back to the socket's
+      --  send timeout (or the default cap), as Set_Send_Timeout documents.
+      Deadline : constant Time :=
+        (if Timeout > 0.0 then Clock + To_Time_Span (Timeout)
+         else Send_Deadline (S));
    begin
       if not S.Is_Open then
          Result := Not_Open;  return;
@@ -252,6 +265,11 @@ package body ESP32S3.W5500.Sockets is
       S.Recv_Timeout := (if To < 0.0 then 0.0 else To);
    end Set_Receive_Timeout;
 
+   procedure Set_Send_Timeout (S : in out Socket; To : Duration) is
+   begin
+      S.Send_Timeout := (if To < 0.0 then 0.0 else To);
+   end Set_Send_Timeout;
+
    procedure Wait_Data (S : in out Socket; Result : out Status) is
       Timed    : constant Boolean := S.Recv_Timeout > 0.0;
       Deadline : Time;
@@ -298,8 +316,10 @@ package body ESP32S3.W5500.Sockets is
    function Available (S : Socket) return Natural is
      (Natural (R16_Stable (S, Sn_RX_RSR)));
 
-   --  Issue SEND and wait for SEND_OK (or TIMEOUT).  Returns False on timeout.
-   function Flush_Send (S : Socket) return Boolean is
+   --  Issue SEND and wait for SEND_OK (or TIMEOUT), but no longer than Deadline.
+   --  Returns False on a chip TIMEOUT or once Deadline passes (so a link that
+   --  drops without raising TIMEOUT can no longer spin this loop forever).
+   function Flush_Send (S : Socket; Deadline : Time) return Boolean is
    begin
       W8 (S, Sn_IR, IR_SEND_OK);                            --  clear stale SEND_OK
       Issue (S, Cmd_Send);
@@ -313,8 +333,10 @@ package body ESP32S3.W5500.Sockets is
                W8 (S, Sn_IR, IR_TIMEOUT);  return False;
             end if;
          end;
+         exit when Clock >= Deadline;
          Wait_Event (S);
       end loop;
+      return False;                                         --  send timeout elapsed
    end Flush_Send;
 
    procedure Send (S      : in out Socket;
@@ -324,7 +346,7 @@ package body ESP32S3.W5500.Sockets is
       Free     : Unsigned_16;
       WR       : Unsigned_16;
       N        : Natural;
-      Deadline : constant Time := Clock + Milliseconds (10_000);
+      Deadline : constant Time := Send_Deadline (S);
    begin
       if not S.Is_Open then
          Sent := 0;  Result := Not_Open;  return;
@@ -352,10 +374,13 @@ package body ESP32S3.W5500.Sockets is
       Write (S.Dev.all, Socket_TX (S.Index), WR,
              Data (Data'First .. Data'First + N - 1));
       W16 (S, Sn_TX_WR, WR + Unsigned_16 (N));
-      if Flush_Send (S) then
+      if Flush_Send (S, Deadline) then
          Sent := N;  Result := OK;
       else
-         Sent := 0;  Result := Timed_Out;
+         --  SEND was issued and Sn_TX_WR already advanced, so the N bytes are
+         --  committed to the chip (in flight) even though completion did not
+         --  confirm in time -- report them consumed so a retry can't double-send.
+         Sent := N;  Result := Timed_Out;
       end if;
    end Send;
 
@@ -410,7 +435,7 @@ package body ESP32S3.W5500.Sockets is
       WR := R16 (S, Sn_TX_WR);
       Write (S.Dev.all, Socket_TX (S.Index), WR, Data);
       W16 (S, Sn_TX_WR, WR + Unsigned_16 (Data'Length));
-      Result := (if Flush_Send (S) then OK else Timed_Out);
+      Result := (if Flush_Send (S, Send_Deadline (S)) then OK else Timed_Out);
    end Send_To;
 
    procedure Receive_From (S         : in out Socket;
