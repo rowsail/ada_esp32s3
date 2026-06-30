@@ -179,6 +179,46 @@ package ESP32S3.Text_IO is
       procedure Get (Item : out Enum);
    end Enumeration_IO;
 
+   generic
+      type Num is delta <>;
+   package Fixed_IO is
+      Default_Fore : Field := Num'Fore;
+      Default_Aft  : Field := Num'Aft;
+      Default_Exp  : Field := 0;
+      --  Fixed-point output (sign + integer part + '.' + Aft digits, exact via a
+      --  scaled integer -- no float). Exp accepted but ignored.
+      procedure Put (File : File_Type; Item : Num;
+                     Fore : Field := Default_Fore; Aft : Field := Default_Aft;
+                     Exp  : Field := Default_Exp);
+      procedure Put (Item : Num;
+                     Fore : Field := Default_Fore; Aft : Field := Default_Aft;
+                     Exp  : Field := Default_Exp);
+      procedure Get (File : File_Type; Item : out Num);
+      procedure Get (Item : out Num);
+      procedure Put (To : out String; Item : Num;
+                     Aft : Field := Default_Aft; Exp : Field := Default_Exp);
+      procedure Get (From : String; Item : out Num; Last : out Positive);
+   end Fixed_IO;
+
+   generic
+      type Num is delta <> digits <>;
+   package Decimal_IO is
+      Default_Fore : Field := Num'Fore;
+      Default_Aft  : Field := Num'Aft;
+      Default_Exp  : Field := 0;
+      procedure Put (File : File_Type; Item : Num;
+                     Fore : Field := Default_Fore; Aft : Field := Default_Aft;
+                     Exp  : Field := Default_Exp);
+      procedure Put (Item : Num;
+                     Fore : Field := Default_Fore; Aft : Field := Default_Aft;
+                     Exp  : Field := Default_Exp);
+      procedure Get (File : File_Type; Item : out Num);
+      procedure Get (Item : out Num);
+      procedure Put (To : out String; Item : Num;
+                     Aft : Field := Default_Aft; Exp : Field := Default_Exp);
+      procedure Get (From : String; Item : out Num; Last : out Positive);
+   end Decimal_IO;
+
 private
 
    type File_Kind is (Closed, Console, Disk);

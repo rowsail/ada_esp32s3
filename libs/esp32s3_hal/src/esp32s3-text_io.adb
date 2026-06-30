@@ -298,6 +298,100 @@ package body ESP32S3.Text_IO is
       if Neg then V := -V; end if;
    end Scan_Integer;
 
+   --  Build "[-]whole.frac" from a value pre-split into a non-negative integer
+   --  part and an A-digit fractional part. Used by Fixed_IO / Decimal_IO.
+   function Scaled_Image (Neg : Boolean; Whole, Frac : Long_Long_Integer; A : Field)
+      return String
+   is
+      FS : String (1 .. A) := (others => '0');
+      T  : Long_Long_Integer := Frac;
+   begin
+      for K in reverse FS'Range loop
+         FS (K) := Character'Val (Character'Pos ('0') + Integer (T mod 10));
+         T := T / 10;
+      end loop;
+      if A > 0 then
+         return (if Neg then "-" else "") & Based_Image (Whole, 10) & "." & FS;
+      else
+         return (if Neg then "-" else "") & Based_Image (Whole, 10);
+      end if;
+   end Scaled_Image;
+
+   --  Parse a real literal out of a String as mantissa M and power P (the value
+   --  is +/- M * 10**P); Last is the index of the last character used.
+   procedure Scan_Real_Str (From : String; M : out Long_Long_Integer; P : out Integer;
+                            Neg : out Boolean; Last : out Natural)
+   is
+      I       : Natural := From'First;
+      D       : Natural := 0;
+      E       : Integer := 0;
+      ENeg    : Boolean := False;
+      Started : Boolean := False;
+   begin
+      M := 0; P := 0; Neg := False; Last := From'First - 1;
+      while I <= From'Last and then (From (I) = ' ' or else From (I) = ASCII.HT) loop
+         I := I + 1;
+      end loop;
+      if I <= From'Last and then (From (I) = '-' or else From (I) = '+') then
+         Neg := From (I) = '-'; I := I + 1;
+      end if;
+      while I <= From'Last and then Digit_Val (From (I)) in 0 .. 9 loop
+         M := M * 10 + Long_Long_Integer (Digit_Val (From (I)));
+         Last := I; I := I + 1; Started := True;
+      end loop;
+      if I <= From'Last and then From (I) = '.' then
+         Last := I; I := I + 1;
+         while I <= From'Last and then Digit_Val (From (I)) in 0 .. 9 loop
+            M := M * 10 + Long_Long_Integer (Digit_Val (From (I)));
+            D := D + 1; Last := I; I := I + 1; Started := True;
+         end loop;
+      end if;
+      if I <= From'Last and then (From (I) = 'e' or else From (I) = 'E') then
+         I := I + 1;
+         if I <= From'Last and then (From (I) = '-' or else From (I) = '+') then
+            ENeg := From (I) = '-'; I := I + 1;
+         end if;
+         while I <= From'Last and then Digit_Val (From (I)) in 0 .. 9 loop
+            E := E * 10 + Digit_Val (From (I)); Last := I; I := I + 1;
+         end loop;
+         if ENeg then E := -E; end if;
+      end if;
+      if not Started then raise ESP32S3.Ext4.Data_Error; end if;
+      P := E - D;
+   end Scan_Real_Str;
+
+   --  Collect a numeric token from a file into Buf (sign, digits, '.', exponent).
+   procedure Read_Number_Token (B : CB_Access; Buf : out String; Len : out Natural) is
+      C  : Character; Av : Boolean;
+      procedure Take is
+      begin
+         if Len < Buf'Length then Len := Len + 1; Buf (Buf'First + Len - 1) := C; end if;
+         Advance (B);
+      end Take;
+   begin
+      Require_Read (B);
+      Skip_Blanks (B);
+      Len := 0;
+      Peek (B, C, Av);
+      if Av and then (C = '-' or else C = '+') then Take; end if;
+      loop
+         Peek (B, C, Av);
+         exit when not Av or else (Digit_Val (C) not in 0 .. 9 and then C /= '.');
+         Take;
+      end loop;
+      Peek (B, C, Av);
+      if Av and then (C = 'e' or else C = 'E') then
+         Take;
+         Peek (B, C, Av);
+         if Av and then (C = '-' or else C = '+') then Take; end if;
+         loop
+            Peek (B, C, Av);
+            exit when not Av or else Digit_Val (C) not in 0 .. 9;
+            Take;
+         end loop;
+      end if;
+   end Read_Number_Token;
+
    function To_Lower (S : String) return String is
       R : String := S;
    begin
@@ -963,6 +1057,144 @@ package body ESP32S3.Text_IO is
       end Get;
       procedure Get (Item : out Enum) is begin Get (Cur_In.all, Item); end Get;
    end Enumeration_IO;
+
+   package body Fixed_IO is
+      function Image (Item : Num; Aft : Field) return String is
+         A      : constant Field      := Field'Min (Aft, 15);
+         Neg    : constant Boolean    := Item < 0.0;
+         X      : constant Long_Float := abs (Long_Float (Item));  --  range-safe
+         FScale : Long_Float          := 1.0;
+         IScale : Long_Long_Integer   := 1;
+      begin
+         for I in 1 .. A loop FScale := FScale * 10.0; IScale := IScale * 10; end loop;
+         declare
+            Scaled : constant Long_Long_Integer :=
+              Long_Long_Integer (Long_Float'Rounding (X * FScale));
+         begin
+            return Scaled_Image (Neg, Scaled / IScale, Scaled mod IScale, A);
+         end;
+      end Image;
+
+      procedure Set_Value (Item : out Num; M : Long_Long_Integer; P : Integer; Neg : Boolean) is
+         X : Long_Float := Long_Float (M);
+      begin
+         if P >= 0 then
+            for I in 1 .. P loop X := X * 10.0; end loop;
+         else
+            for I in 1 .. (-P) loop X := X / 10.0; end loop;
+         end if;
+         Item := Num (if Neg then -X else X);   --  range-checked at the end
+      end Set_Value;
+
+      procedure Put (File : File_Type; Item : Num;
+                     Fore : Field := Default_Fore; Aft : Field := Default_Aft;
+                     Exp  : Field := Default_Exp)
+      is
+         pragma Unreferenced (Exp);
+         B   : constant CB_Access := CB (File);
+         S   : constant String    := Image (Item, Aft);
+         Dot : Natural := S'Last + 1;
+      begin
+         for I in S'Range loop if S (I) = '.' then Dot := I; exit; end if; end loop;
+         declare Int_Len : constant Natural := Dot - S'First; begin
+            if Fore > Int_Len then Write_Tracked (B, Spaces (Fore - Int_Len) & S);
+            else Write_Tracked (B, S); end if;
+         end;
+      end Put;
+      procedure Put (Item : Num; Fore : Field := Default_Fore; Aft : Field := Default_Aft;
+                     Exp : Field := Default_Exp) is
+      begin Put (Cur_Out.all, Item, Fore, Aft, Exp); end Put;
+      procedure Put (To : out String; Item : Num; Aft : Field := Default_Aft;
+                     Exp : Field := Default_Exp) is
+         pragma Unreferenced (Exp);
+      begin Right_Justify (To, Image (Item, Aft)); end Put;
+
+      procedure Get (File : File_Type; Item : out Num) is
+         B   : constant CB_Access := CB (File);
+         Buf : String (1 .. 40); Len : Natural;
+         M   : Long_Long_Integer; P : Integer; Neg : Boolean; L : Natural;
+      begin
+         Read_Number_Token (B, Buf, Len);
+         Scan_Real_Str (Buf (1 .. Len), M, P, Neg, L);
+         Set_Value (Item, M, P, Neg);
+      end Get;
+      procedure Get (Item : out Num) is begin Get (Cur_In.all, Item); end Get;
+      procedure Get (From : String; Item : out Num; Last : out Positive) is
+         M : Long_Long_Integer; P : Integer; Neg : Boolean; L : Natural;
+      begin
+         Scan_Real_Str (From, M, P, Neg, L);
+         Set_Value (Item, M, P, Neg); Last := L;
+      end Get;
+   end Fixed_IO;
+
+   package body Decimal_IO is
+      function Image (Item : Num; Aft : Field) return String is
+         A      : constant Field      := Field'Min (Aft, 15);
+         Neg    : constant Boolean    := Item < 0.0;
+         X      : constant Long_Float := abs (Long_Float (Item));  --  range-safe
+         FScale : Long_Float          := 1.0;
+         IScale : Long_Long_Integer   := 1;
+      begin
+         for I in 1 .. A loop FScale := FScale * 10.0; IScale := IScale * 10; end loop;
+         declare
+            Scaled : constant Long_Long_Integer :=
+              Long_Long_Integer (Long_Float'Rounding (X * FScale));
+         begin
+            return Scaled_Image (Neg, Scaled / IScale, Scaled mod IScale, A);
+         end;
+      end Image;
+
+      procedure Set_Value (Item : out Num; M : Long_Long_Integer; P : Integer; Neg : Boolean) is
+         X : Long_Float := Long_Float (M);
+      begin
+         if P >= 0 then
+            for I in 1 .. P loop X := X * 10.0; end loop;
+         else
+            for I in 1 .. (-P) loop X := X / 10.0; end loop;
+         end if;
+         Item := Num (if Neg then -X else X);   --  range-checked at the end
+      end Set_Value;
+
+      procedure Put (File : File_Type; Item : Num;
+                     Fore : Field := Default_Fore; Aft : Field := Default_Aft;
+                     Exp  : Field := Default_Exp)
+      is
+         pragma Unreferenced (Exp);
+         B   : constant CB_Access := CB (File);
+         S   : constant String    := Image (Item, Aft);
+         Dot : Natural := S'Last + 1;
+      begin
+         for I in S'Range loop if S (I) = '.' then Dot := I; exit; end if; end loop;
+         declare Int_Len : constant Natural := Dot - S'First; begin
+            if Fore > Int_Len then Write_Tracked (B, Spaces (Fore - Int_Len) & S);
+            else Write_Tracked (B, S); end if;
+         end;
+      end Put;
+      procedure Put (Item : Num; Fore : Field := Default_Fore; Aft : Field := Default_Aft;
+                     Exp : Field := Default_Exp) is
+      begin Put (Cur_Out.all, Item, Fore, Aft, Exp); end Put;
+      procedure Put (To : out String; Item : Num; Aft : Field := Default_Aft;
+                     Exp : Field := Default_Exp) is
+         pragma Unreferenced (Exp);
+      begin Right_Justify (To, Image (Item, Aft)); end Put;
+
+      procedure Get (File : File_Type; Item : out Num) is
+         B   : constant CB_Access := CB (File);
+         Buf : String (1 .. 40); Len : Natural;
+         M   : Long_Long_Integer; P : Integer; Neg : Boolean; L : Natural;
+      begin
+         Read_Number_Token (B, Buf, Len);
+         Scan_Real_Str (Buf (1 .. Len), M, P, Neg, L);
+         Set_Value (Item, M, P, Neg);
+      end Get;
+      procedure Get (Item : out Num) is begin Get (Cur_In.all, Item); end Get;
+      procedure Get (From : String; Item : out Num; Last : out Positive) is
+         M : Long_Long_Integer; P : Integer; Neg : Boolean; L : Natural;
+      begin
+         Scan_Real_Str (From, M, P, Neg, L);
+         Set_Value (Item, M, P, Neg); Last := L;
+      end Get;
+   end Decimal_IO;
 
    ----------------------------------------------------------------------------
    --  Finalization
