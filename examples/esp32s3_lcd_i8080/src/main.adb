@@ -40,7 +40,9 @@ procedure Main is
    --  i80 bus pads.  Pixel clock (PCLK) on GPIO 13; the eight data lines
    --  D0..D7 on GPIO 4..11 (in that order).
    Pclk_Pin : constant ESP32S3.GPIO.Pin_Id := 13;
-   Data_Bus_Pins : constant Data_Pins := (4, 5, 6, 7, 8, 9, 10, 11);
+   D_Pins   : constant Data_Pins := (4, 5, 6, 7, 8, 9, 10, 11);
+
+   Hz_Per_Khz : constant := 1_000;
 
    --  2 MHz: a realistic display clock, and crucially ABOVE ~625 kHz, where the
    --  pixel division has to be carried by the prescale (CLKCNT_N).  Below that
@@ -56,6 +58,14 @@ procedure Main is
    type Buffer is array (0 .. 3_999) of Unsigned_8;
    Buf  : Buffer;
    Reps : constant := 25;
+
+   --  A 0 .. 255 byte ramp written across the buffer (the transfer payload).
+   Ramp_Step    : constant := 1;
+   Ramp_Start   : constant := 0;
+   Byte_Modulus : constant := 256;
+
+   Console_Settle : constant Time_Span := Milliseconds (200);
+   Idle_Interval  : constant Time_Span := Seconds (3600);
 begin
    delay until Clock + Console_Settle;
    Put_Line ("[lcd] bare-metal LCD i80 8-bit parallel DMA-TX self-test "
@@ -65,17 +75,15 @@ begin
       Buf (I) := Unsigned_8 ((I * Ramp_Step + Ramp_Start) mod Byte_Modulus);
    end loop;
 
-   Setup (Pclk_Hz => Set_Khz * Hz_Per_Khz);
-
    declare
-      S             : Session;
-      Ok            : Boolean;
-      Start         : Time;
-      Elapsed_Secs  : Float;
-      Measured_Khz  : Integer;
+      S    : Session;
+      Ok   : Boolean;
+      T0   : Time;
+      Secs : Float;
+      Meas : Integer;
    begin
-      Acquire (S);
-      Configure_Pins (S, D_Pins, Pclk => Pclk_Pin);   --  route pads on held ctrl
+      Acquire (S, Pclk_Hz => Set_Khz * Hz_Per_Khz,
+               Data => D_Pins, Pclk => Pclk_Pin);     --  own + configure
       Ok := True;
       T0 := Clock;
       for R in 1 .. Reps loop
@@ -99,7 +107,7 @@ begin
       Put ("[lcd] pclk: set=");
       Put (Set_Khz);
       Put (" kHz measured=");
-      Put (Measured_Khz);
+      Put (Meas);
       Put (" kHz  ");
       --  +/-5 %: the wall-clock timing has some jitter at MHz rates.
       Put_Line (if Ok and then abs (Meas - Set_Khz) <= Set_Khz / 20 then "PASS"

@@ -40,22 +40,20 @@ package body ESP32S3.LCD is
    ----------------------------------------------------------------------------
 
    package State is
-      procedure Open (Pclk_Hz : Positive);
-      function  Ready return Boolean;
+      procedure Bring_Up (S : Session; Pclk_Hz : Positive);
       function  Owned (S : Session) return access E.Bus;
    end State;
 
    package body State is
       The_Bus : aliased E.Bus;         --  configured handle, hidden here
-      Is_Set  : Boolean := False;      --  Setup succeeded (channel claimed)?
 
-      procedure Open (Pclk_Hz : Positive) is
+      procedure Bring_Up (S : Session; Pclk_Hz : Positive) is
       begin
+         if not S.Active then
+            raise Not_Owned with "LCD used without holding it -- Acquire first";
+         end if;
          E.Open (The_Bus, Pclk_Hz);
-         Is_Set := E.Is_Valid (The_Bus);
-      end Open;
-
-      function Ready return Boolean is (Is_Set);
+      end Bring_Up;
 
       function Owned (S : Session) return access E.Bus is
       begin
@@ -66,27 +64,32 @@ package body ESP32S3.LCD is
       end Owned;
    end State;
 
-   -----------
-   -- Setup --
-   -----------
-
-   procedure Setup (Pclk_Hz : Positive := 1_000_000) is
-   begin
-      State.Open (Pclk_Hz);
-   end Setup;
-
    -------------
    -- Acquire --
    -------------
 
-   procedure Acquire (S : in out Session) is
+   procedure Acquire (S       : in out Session;
+                      Pclk_Hz : Positive   := 1_000_000;
+                      Data    : Data_Pins  := (others => No_Pin);
+                      Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin) is
    begin
-      if not State.Ready then
-         raise Not_Initialized with "LCD controller acquired before Setup";
-      end if;
       Guard.Acquire;
       S.Active := True;
+      Reconfigure (S, Pclk_Hz, Data, Pclk);
    end Acquire;
+
+   -----------------
+   -- Reconfigure --
+   -----------------
+
+   procedure Reconfigure (S       : Session;
+                          Pclk_Hz : Positive   := 1_000_000;
+                          Data    : Data_Pins  := (others => No_Pin);
+                          Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin) is
+   begin
+      State.Bring_Up (S, Pclk_Hz);
+      E.Configure_Pins (State.Owned (S).all, Data, Pclk);
+   end Reconfigure;
 
    --------------------
    -- Configure_Pins --

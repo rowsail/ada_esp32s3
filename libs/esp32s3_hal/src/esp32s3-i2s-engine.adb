@@ -171,10 +171,10 @@ package body ESP32S3.I2S.Engine is
                        RX_MONO => False, RX_PCM_BYPASS => True, others => <>);
       end if;
 
-      --  Claim the DMA channel bound to this port (OUT=TX, IN=RX).
-      GD.Claim (B.Chan, GDMA_Periph (Port));
-
-      --  Reset both data paths, then latch the config.
+      --  Reset both data paths, then latch the config.  No DMA channel is
+      --  claimed here: transfers claim one transiently (a continuous transmit
+      --  holds one only until Stop), so an idle open port ties up none of the
+      --  five-channel pool.
       R.TX_CONF.TX_RESET := True;  R.TX_CONF.TX_RESET := False;
       R.TX_CONF.TX_FIFO_RESET := True;  R.TX_CONF.TX_FIFO_RESET := False;
       R.RX_CONF.RX_RESET := True;  R.RX_CONF.RX_RESET := False;
@@ -182,9 +182,10 @@ package body ESP32S3.I2S.Engine is
       R.TX_CONF.TX_UPDATE := True;  while R.TX_CONF.TX_UPDATE loop null; end loop;
       R.RX_CONF.RX_UPDATE := True;  while R.RX_CONF.RX_UPDATE loop null; end loop;
 
-      B.Regs  := R;
-      B.Port  := Port;
-      B.Valid := GD.Is_Valid (B.Chan);
+      B.Regs      := R;
+      B.Port      := Port;
+      B.Streaming := False;
+      B.Valid     := True;
    end Open;
 
    function Is_Open (B : Bus) return Boolean is (B.Valid);
@@ -248,20 +249,25 @@ package body ESP32S3.I2S.Engine is
    procedure Run (B : Bus; Tx, Rx : System.Address; Length : Natural;
                   Do_Tx, Do_Rx : Boolean)
    is
-      R : constant Periph_Ref := B.Regs;
+      R    : constant Periph_Ref := B.Regs;
+      Chan : GD.Channel;          --  claimed transiently; released on return
    begin
       if not B.Valid or else Length = 0 or else Length > 4095 then
+         return;
+      end if;
+      GD.Claim (Chan, GDMA_Periph (B.Port));
+      if not GD.Is_Valid (Chan) then     --  pool momentarily exhausted
          return;
       end if;
 
       if Do_Tx then
          R.TX_CONF.TX_FIFO_RESET := True;  R.TX_CONF.TX_FIFO_RESET := False;
-         GD.Start (B.Chan, GD.Mem_To_Periph, Tx, Length);
+         GD.Start (Chan, GD.Mem_To_Periph, Tx, Length);
       end if;
       if Do_Rx then
          R.RX_CONF.RX_FIFO_RESET := True;  R.RX_CONF.RX_FIFO_RESET := False;
          R.RXEOF_NUM.RX_EOF_NUM := RXEOF_NUM_RX_EOF_NUM_Field (Length);
-         GD.Start (B.Chan, GD.Periph_To_Mem, Rx, Length);
+         GD.Start (Chan, GD.Periph_To_Mem, Rx, Length);
       end if;
 
       R.TX_CONF.TX_UPDATE := True;  while R.TX_CONF.TX_UPDATE loop null; end loop;
@@ -275,14 +281,14 @@ package body ESP32S3.I2S.Engine is
       end if;
 
       if Do_Rx then
-         GD.Wait (B.Chan, GD.Periph_To_Mem);
+         GD.Wait (Chan, GD.Periph_To_Mem);
       else
-         GD.Wait (B.Chan, GD.Mem_To_Periph);
+         GD.Wait (Chan, GD.Mem_To_Periph);
       end if;
 
       R.TX_CONF.TX_START := False;
       R.RX_CONF.RX_START := False;
-   end Run;
+   end Run;   --  Chan finalizes here -> GD.Release returns it to the pool
 
    procedure Write (B : Bus; Tx : System.Address; Length : Natural) is
    begin
@@ -303,12 +309,25 @@ package body ESP32S3.I2S.Engine is
    -- Start_Continuous --
    ----------------------
 
-   procedure Start_Continuous (B : Bus; Tx : System.Address; Length : Natural) is
+   procedure Start_Continuous (B : in out Bus; Tx : System.Address;
+                               Length : Natural)
+   is
       R : constant Periph_Ref := B.Regs;
    begin
-      if not B.Valid or else Length = 0 or else Length > 4095 then
+      if not B.Valid or else B.Streaming
+        or else Length = 0 or else Length > 4095
+      then
          return;
       end if;
+
+      --  A continuous transmit holds its channel until Stop (it is genuinely
+      --  transferring the whole time), so claim it into the Bus rather than a
+      --  local.
+      GD.Claim (B.Chan, GDMA_Periph (B.Port));
+      if not GD.Is_Valid (B.Chan) then
+         return;
+      end if;
+      B.Streaming := True;
 
       --  Clear TX_STOP_EN so a momentary FIFO underrun can never latch TX off;
       --  with the self-looping DMA the FIFO stays fed, so the clock runs
@@ -324,10 +343,14 @@ package body ESP32S3.I2S.Engine is
    -- Stop --
    ----------
 
-   procedure Stop (B : Bus) is
+   procedure Stop (B : in out Bus) is
    begin
       if B.Valid then
          B.Regs.TX_CONF.TX_START := False;
+         if B.Streaming then
+            GD.Release (B.Chan);          --  return the held channel to the pool
+            B.Streaming := False;
+         end if;
       end if;
    end Stop;
 
@@ -339,15 +362,21 @@ package body ESP32S3.I2S.Engine is
    --  TX_UPDATE / TX_START), so a continuous transmit driving the shared master
    --  clock keeps running while we sample the data-in line.
    procedure Capture (B : Bus; Rx : System.Address; Length : Natural) is
-      R : constant Periph_Ref := B.Regs;
+      R    : constant Periph_Ref := B.Regs;
+      Chan : GD.Channel;          --  own transient RX channel (a continuous TX
+                                  --  transmit, if any, holds a separate one)
    begin
       if not B.Valid or else Length = 0 or else Length > 4095 then
+         return;
+      end if;
+      GD.Claim (Chan, GDMA_Periph (B.Port));
+      if not GD.Is_Valid (Chan) then
          return;
       end if;
 
       R.RX_CONF.RX_FIFO_RESET := True;  R.RX_CONF.RX_FIFO_RESET := False;
       R.RXEOF_NUM.RX_EOF_NUM := RXEOF_NUM_RX_EOF_NUM_Field (Length);
-      GD.Start (B.Chan, GD.Periph_To_Mem, Rx, Length);
+      GD.Start (Chan, GD.Periph_To_Mem, Rx, Length);
       --  Latch RX config.  Bounded: while a continuous TX is driving the shared
       --  clock, RX_UPDATE does not always self-clear, so never spin on it.
       R.RX_CONF.RX_UPDATE := True;
@@ -366,14 +395,14 @@ package body ESP32S3.I2S.Engine is
       declare
          Guard : Natural := 0;
       begin
-         while not GD.Done (B.Chan, GD.Periph_To_Mem)
+         while not GD.Done (Chan, GD.Periph_To_Mem)
            and then Guard < 50_000_000
          loop
             Guard := Guard + 1;
          end loop;
       end;
       R.RX_CONF.RX_START := False;
-   end Capture;
+   end Capture;   --  Chan finalizes -> released
 
    -----------
    -- Close --
@@ -384,7 +413,10 @@ package body ESP32S3.I2S.Engine is
       if B.Valid then
          B.Regs.TX_CONF.TX_START := False;
          B.Regs.RX_CONF.RX_START := False;
-         GD.Release (B.Chan);
+         if B.Streaming then
+            GD.Release (B.Chan);
+            B.Streaming := False;
+         end if;
          B.Valid := False;
       end if;
    end Close;

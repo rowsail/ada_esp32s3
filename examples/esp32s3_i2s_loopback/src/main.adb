@@ -74,14 +74,12 @@ begin
                              Pattern_Modulus);
    end loop;
 
-   Setup (I2S0, Sample_Rate => Sample_Rate_Hz, Bits => Bits_16);
-   Enable_Loopback (I2S0, Pad => Loopback_Data_Pad);
-
    declare
       S  : Session;                       --  limited: cannot be copied/shared
       Ok : Boolean := False;
    begin
-      Acquire (S, I2S0);                  --  suspends until the port is free
+      Acquire (S, I2S0, Sample_Rate => Sample_Rate_Hz, Bits => Bits_16);
+      Enable_Loopback (S, Pad => Loopback_Data_Pad);   --  on the held port
       Transfer (S, Tx'Address, Rx'Address, Samples'Length * Bytes_Per_Sample);
       Ok := (for all I in Samples'Range => Rx (I) = Tx (I));
       Put ("[i2s] full-duplex loopback (");

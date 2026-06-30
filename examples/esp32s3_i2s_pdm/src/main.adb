@@ -105,15 +105,6 @@ begin
    Put_Line ("[i2s-pdm] with no mic the data line floats -- expect "
              & "railed/quiet; speak/tap to see the level rise");
 
-   Setup (I2S0, Sample_Rate => Sample_Rate_Hz, Bits => Bits_16, Mode => PDM);
-   --  PDM mic: clock OUT on Ws, data IN on Din (no BCK, no Dout for RX-only).
-   Configure_Pins
-     (I2S0,
-      Bclk => No_Pin,
-      Ws   => ESP32S3.GPIO.Optional_Pin (Clock_Pin),
-      Dout => No_Pin,
-      Din  => ESP32S3.GPIO.Optional_Pin (Data_Pin));
-
    for Block in 1 .. Blocks loop
       declare
          Session_Port : Session;          --  limited: cannot be copied/shared
@@ -121,7 +112,13 @@ begin
          Maximum      : Integer := Integer (Integer_16'First);
          Value        : Integer;
       begin
-         Acquire (Session_Port, I2S0);    --  suspends until the port is free
+         --  PDM mic: clock OUT on Ws, data IN on Din (no BCK, no Dout for
+         --  RX-only).  The first Acquire brings the port up at this config and
+         --  routes the pins; later iterations reuse it.
+         Acquire (Session_Port, I2S0,
+                  Sample_Rate => Sample_Rate_Hz, Bits => Bits_16, Mode => PDM,
+                  Ws  => ESP32S3.GPIO.Optional_Pin (Clock_Pin),
+                  Din => ESP32S3.GPIO.Optional_Pin (Data_Pin));
          Read (Session_Port, Rx'Address, Samples'Length * Bytes_Per_Sample);
 
          --  Peak-to-peak of the recovered left channel (even index), skipping a

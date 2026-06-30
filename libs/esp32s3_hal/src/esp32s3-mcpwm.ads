@@ -37,23 +37,18 @@ package ESP32S3.MCPWM is
    type Channel is limited private;
 
    ----------------------------------------------------------------------------
-   --  Unit bring-up + channel ownership (single-threaded at startup for Setup;
-   --  Claim/Release may run from any task -- a protected pool serialises them).
+   --  Channel ownership.  Claim/Release may run from any task -- a protected
+   --  pool serialises them.  The unit's clock (PWM clock = 160 MHz) is brought
+   --  up lazily on the first Claim of any of its channels, once per unit, so
+   --  claiming a second channel never resets a sibling already running.  There
+   --  is no separate unit-setup call to run beforehand.
    ----------------------------------------------------------------------------
-
-   --  Raised by either Claim if Unit was never Setup -- the unit's clock must
-   --  be brought up before any of its channels can be owned.
-   Not_Initialized : exception;
-
-   --  Bring the unit's clock up (PWM clock = 160 MHz).  Call once per unit,
-   --  before claiming any of its channels or configuring its faults.
-   procedure Setup (Unit : MCPWM_Unit);
 
    --  Claim generator channel Index of Unit into C.  If it is already claimed,
    --  C is left invalid (Is_Valid False).  (If C already holds a channel it is
-   --  released first.)  C releases its channel automatically on scope exit --
-   --  call Release only to hand it back early.  Raises Not_Initialized if Unit
-   --  was never Setup.
+   --  released first.)  The unit's clock comes up on the first Claim.  C releases
+   --  its channel automatically on scope exit -- call Release only to hand it
+   --  back early.
    procedure Claim (C : in out Channel; Unit : MCPWM_Unit; Index : Channel_Index);
 
    --  True when Claim succeeded (a real channel is held).
@@ -151,7 +146,7 @@ package ESP32S3.MCPWM is
    type Capture is limited private;
 
    --  Claim capture channel Index of Unit into Cap (see Claim for a Channel).
-   --  Raises Not_Initialized if Unit was never Setup.
+   --  The unit's clock comes up on the first Claim of any of its channels.
    procedure Claim (Cap : in out Capture; Unit : MCPWM_Unit; Index : Cap_Index);
    function Is_Valid (Cap : Capture) return Boolean;
    procedure Release (Cap : in out Capture);

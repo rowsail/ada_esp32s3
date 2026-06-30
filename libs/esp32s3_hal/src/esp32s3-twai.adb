@@ -31,29 +31,27 @@ package body ESP32S3.TWAI is
    --
    --  The configured Bus handle (from the private Engine child, the only unit
    --  that names the TWAI registers) lives in this package's BODY.  Owned (S)
-   --  is the only export that returns it, and it raises Not_Owned unless S holds
-   --  the controller -- so a transfer or a reconfiguration physically cannot
-   --  reach the hardware without proving ownership, and a new op cannot be
-   --  written that skips the check.
+   --  returns it and Bring_Up (S, ...) re-creates it; both refuse with Not_Owned
+   --  unless S holds the controller -- so a transfer or a reconfiguration
+   --  physically cannot reach the hardware without proving ownership, and a new
+   --  op cannot be written that skips the check.
    ----------------------------------------------------------------------------
 
    package State is
-      procedure Open (Mode : Bus_Mode; Bit_Rate : Positive);
-      function  Ready return Boolean;
+      procedure Bring_Up (S : Session; Mode : Bus_Mode; Bit_Rate : Positive);
       function  Owned (S : Session) return E.Bus;
    end State;
 
    package body State is
       The_Bus : E.Bus;                 --  configured handle, hidden here
-      Is_Set  : Boolean := False;      --  Setup done?
 
-      procedure Open (Mode : Bus_Mode; Bit_Rate : Positive) is
+      procedure Bring_Up (S : Session; Mode : Bus_Mode; Bit_Rate : Positive) is
       begin
+         if not S.Active then
+            raise Not_Owned with "TWAI used without holding it -- Acquire first";
+         end if;
          The_Bus := E.Open (Mode, Bit_Rate);
-         Is_Set  := True;
-      end Open;
-
-      function Ready return Boolean is (Is_Set);
+      end Bring_Up;
 
       function Owned (S : Session) return E.Bus is
       begin
@@ -64,28 +62,29 @@ package body ESP32S3.TWAI is
       end Owned;
    end State;
 
-   -----------
-   -- Setup --
-   -----------
-
-   procedure Setup (Mode     : Bus_Mode := Normal;
-                    Bit_Rate : Positive  := 125_000) is
-   begin
-      State.Open (Mode, Bit_Rate);
-   end Setup;
-
    -------------
    -- Acquire --
    -------------
 
-   procedure Acquire (S : in out Session) is
+   procedure Acquire (S        : in out Session;
+                      Mode     : Bus_Mode := Normal;
+                      Bit_Rate : Positive  := 125_000) is
    begin
-      if not State.Ready then
-         raise Not_Initialized with "TWAI controller acquired before Setup";
-      end if;
       Guard.Acquire;
       S.Active := True;
+      Reconfigure (S, Mode, Bit_Rate);   --  bring it up through the held Session
    end Acquire;
+
+   -----------------
+   -- Reconfigure --
+   -----------------
+
+   procedure Reconfigure (S        : Session;
+                          Mode     : Bus_Mode := Normal;
+                          Bit_Rate : Positive  := 125_000) is
+   begin
+      State.Bring_Up (S, Mode, Bit_Rate);
+   end Reconfigure;
 
    --------------------
    -- Configure_Pins --
