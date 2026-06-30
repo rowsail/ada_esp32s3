@@ -41,6 +41,27 @@ package body System.Text_IO is
 
    Char_Fmt : constant String := "%c" & ASCII.NUL;
 
+   --  Optional console redirection.  When a hook is installed -- the HAL's
+   --  ESP32S3.Serial does so at elaboration -- console characters route there
+   --  instead of the ROM printf, so Ada.Text_IO follows the same serial-device
+   --  multiplexer as ESP32S3.Log (and can be sent to a UART).  Null by
+   --  default, so a program that does not pull in the HAL console keeps the
+   --  proven ROM path -- and so does the early-boot / last-chance path, which
+   --  runs before (or without) the hook.
+   type Console_Hook is access procedure (C : Character);
+   pragma Convention (C, Console_Hook);
+
+   Hook : Console_Hook := null;
+
+   procedure Install_Console_Hook (H : Console_Hook)
+     with Export, Convention => C,
+          External_Name => "__esp32s3_install_console_hook";
+
+   procedure Install_Console_Hook (H : Console_Hook) is
+   begin
+      Hook := H;
+   end Install_Console_Hook;
+
    ---------
    -- Get --
    ---------
@@ -84,6 +105,10 @@ package body System.Text_IO is
 
    procedure Put (C : Character) is
    begin
+      if Hook /= null then
+         Hook (C);
+         return;
+      end if;
       Rom_Printf (Char_Fmt'Address, Character'Pos (C));
    end Put;
 
