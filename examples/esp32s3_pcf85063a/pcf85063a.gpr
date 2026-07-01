@@ -24,7 +24,8 @@ project Pcf85063A is
    end Binder;
 
    package Compiler is
-      for Switches ("Ada") use ("-O2", "-g", "-gnata");   --  -g: DWARF for source-level debug
+      --  -gnat2022: console via ESP32S3.Text_IO, whose body pulls in ext4 (Ada 2022).
+      for Switches ("Ada") use ("-O2", "-g", "-gnata", "-gnat2022");   --  -g: DWARF for source-level debug
    end Compiler;
 
    package Linker is
