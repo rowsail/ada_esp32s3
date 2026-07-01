@@ -6,6 +6,7 @@ with ESP32S3.SIMD.I32;
 with ESP32S3.SIMD.I8;
 with Interfaces;
 use Interfaces;
+with System.Machine_Code; use System.Machine_Code;
 
 package body ESP32S3.SIMD is
 
@@ -13,6 +14,24 @@ package body ESP32S3.SIMD is
    use type Integer_16;
    use type Integer_32;
    use type IEEE_Float_32;
+
+   --------------
+   -- Enable --
+   --------------
+
+   procedure Enable is
+      V : Unsigned_32;
+   begin
+      --  Read the caller-task CPENABLE, OR in CP3 (the PIE/SIMD unit) while
+      --  preserving CP0 (FPU), write it back, and rsync so the change takes
+      --  effect before the next instruction.  See the spec for why per-task
+      --  CPENABLE means this must run in every SIMD-using task.
+      Asm ("rsr.cpenable %0",
+           Outputs => Unsigned_32'Asm_Output ("=r", V), Volatile => True);
+      V := V or 16#08#;
+      Asm ("wsr.cpenable %0" & ASCII.LF & "rsync",
+           Inputs => Unsigned_32'Asm_Input ("r", V), Volatile => True);
+   end Enable;
 
    procedure Add (A, B : SIMD_I8_Vector; Result : in out SIMD_I8_Vector)
 
