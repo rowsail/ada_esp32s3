@@ -295,7 +295,11 @@ package body ESP32S3.I2C.Engine is
       Len  : constant Natural := Data'Length;
    begin
       Success := False;
-      if not B.Valid or else Len > Max_Transfer then
+      --  A write shares the TX FIFO between the address byte and the payload, so
+      --  the payload tops out at Max_Transfer-1 (= 31); accepting Max_Transfer
+      --  would push 1+32 = 33 bytes into the 32-deep FIFO and silently drop the
+      --  last data byte (FIFO_PRT_EN) while still reporting Success.
+      if not B.Valid or else Len > Max_Transfer - 1 then
          return;
       end if;
 
