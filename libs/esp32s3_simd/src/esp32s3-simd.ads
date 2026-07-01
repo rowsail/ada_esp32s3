@@ -29,6 +29,20 @@ package ESP32S3.SIMD is
    subtype Shift_I16 is Natural range 0 .. 15;
    subtype Shift_I32 is Natural range 0 .. 31;
 
+   --  Enable the PIE/SIMD coprocessor (Xtensa CP3) for the CALLING task, then
+   --  return.  This MUST be called once, from each task that uses the kernels
+   --  below, before the first operation -- otherwise the first `ee.*` instruction
+   --  takes a coprocessor-disabled exception (which hangs on the bare target).
+   --
+   --  Why it is needed: PIE use is gated by the CPENABLE register, which is
+   --  per-task.  The boot thread's start.S enables CP3, but the GNAT run-time
+   --  gives every task its own coprocessor context and starts it with only CP0
+   --  (the FPU) enabled, so a task that calls into this package inherits CP3
+   --  DISABLED.  Enable ORs CP3 into CPENABLE (preserving CP0) and rsyncs.
+   --  Idempotent and cheap; safe to call again after a context that may have
+   --  cleared it.
+   procedure Enable;
+
    --  Saturated element-wise addition.
    --  Integer variants saturate at the type boundary; float uses IEEE add.
 
