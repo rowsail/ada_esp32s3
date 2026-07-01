@@ -294,6 +294,16 @@ package body ESP32S3.I2S.Engine is
          GD.Wait (Chan, GD.Mem_To_Periph);
       end if;
 
+      --  For a transmit, the DMA completing only means the samples reached the TX
+      --  FIFO -- the serializer has NOT yet clocked the last of them out onto the
+      --  bus.  Stopping TX now (below) truncates whatever is still in the FIFO, so
+      --  the tail of the sound is cut off.  Wait for STATE.TX_IDLE (FIFO drained,
+      --  serializer done) first.  Same unbounded-poll style as TX_UPDATE above;
+      --  it is bounded in practice because TX is running and the FIFO must empty.
+      if Do_Tx then
+         while not R.STATE.TX_IDLE loop null; end loop;
+      end if;
+
       R.TX_CONF.TX_START := False;
       R.RX_CONF.RX_START := False;
    end Run;   --  Chan finalizes here -> GD.Release returns it to the pool
