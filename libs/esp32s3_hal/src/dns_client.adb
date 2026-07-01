@@ -60,6 +60,8 @@ package body DNS_Client is
          Len : Integer;
       begin
          loop
+            exit when Pos > RLast;   --  truncated / malformed: stop here rather
+                                     --  than read stale bytes or walk off Resp
             Len := Integer (Resp (Pos));
             if Len = 0 then
                Pos := Pos + 1;  exit;

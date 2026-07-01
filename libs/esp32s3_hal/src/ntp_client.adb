@@ -37,7 +37,15 @@ package body NTP_Client is
       end;
       Close_Socket (Sock);
 
-      if Last < 43 then                       --  transmit timestamp is bytes 40..43
+      --  Only trust a genuine server reply for THIS query, not a stray or spoofed
+      --  datagram that happened to arrive on Local_Port within the timeout: it
+      --  must come from the queried server, be Mode 4 (server), and carry a sane
+      --  stratum (1 .. 15; 0 = kiss-o'-death / unsynchronised, > 15 = reserved).
+      if Last < 43                                     --  txstamp is bytes 40..43
+        or else From.Addr /= Server
+        or else (Resp (0) and 2#0000_0111#) /= 4       --  Mode = server
+        or else Resp (1) = 0 or else Resp (1) > 15     --  Stratum
+      then
          return False;
       end if;
       Secs := Shift_Left (Unsigned_32 (Resp (40)), 24)

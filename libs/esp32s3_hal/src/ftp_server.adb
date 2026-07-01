@@ -366,6 +366,14 @@ package body FTP_Server is
       end loop;
       Close_Data (Conn);
       Reply ("226", "directory send OK");
+   exception
+      when others =>
+         --  A Stat/Iterate/Send failure after Accept_Data opened the data socket
+         --  must not escape and leak that socket (repeated, this exhausts the
+         --  W5500's 8-socket pool) -- mirror Do_Retr/Do_Stor.  Close_Data is safe
+         --  on an unopened Conn (it swallows the Close_Socket error).
+         Close_Data (Conn);
+         Reply ("550", "list error");
    end Do_List;
 
    ---------------------------------------------------------------------------
