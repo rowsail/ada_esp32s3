@@ -123,6 +123,15 @@ package body ESP32S3.PCF85063A is
    is
       S : Session;                 --  released by finalization on return
       R : Byte_Array (0 .. 6);     --  Seconds (0x04) .. Years (0x0A)
+
+      --  Decode into UNCONSTRAINED locals first.  A chip that lost power (dead
+      --  VBAT) or was never set can hold out-of-range BCD (e.g. an hour byte of
+      --  0x30 -> 30) or a 7 in the 3-bit weekday field; assigning those straight
+      --  into the constrained Time subtypes would raise Constraint_Error out of
+      --  the very routine whose job is to REPORT untrustworthy time, not crash on
+      --  it -- and that fires exactly when the time is not valid (power lost).
+      Se, Mi, Ho, Da, Mo, Yr : Natural;
+      Wd                     : Natural;
    begin
       Valid := False;
       Acquire (S, Dev.Host);
@@ -131,14 +140,33 @@ package body ESP32S3.PCF85063A is
          return;   --  T keeps its default value
       end if;
 
-      Valid         := (R (0) and OS_Flag) = 0;
-      T.Second      := From_BCD (R (0) and 16#7F#);
-      T.Minute      := From_BCD (R (1) and 16#7F#);
-      T.Hour        := From_BCD (R (2) and 16#3F#);   --  24-hour mode
-      T.Day         := From_BCD (R (3) and 16#3F#);
-      T.Day_Of_Week := Weekday'Val (Natural (R (4) and 16#07#));
-      T.Month       := From_BCD (R (5) and 16#1F#);
-      T.Year        := 2000 + From_BCD (R (6));
+      Se := From_BCD (R (0) and 16#7F#);
+      Mi := From_BCD (R (1) and 16#7F#);
+      Ho := From_BCD (R (2) and 16#3F#);   --  24-hour mode
+      Da := From_BCD (R (3) and 16#3F#);
+      Wd := Natural (R (4) and 16#07#);
+      Mo := From_BCD (R (5) and 16#1F#);
+      Yr := 2000 + From_BCD (R (6));
+
+      --  Only publish the reading if every field is in range (so the subtype
+      --  assignment is safe); otherwise leave T at its defaults.  A bus read
+      --  that returns garbage is never trustworthy, so Valid stays False --
+      --  Result stays OK because the transaction itself succeeded.
+      if Se in Second_Number and then Mi in Minute_Number
+        and then Ho in Hour_Number and then Da in Day_Number
+        and then Wd <= Weekday'Pos (Weekday'Last)
+        and then Mo in Month_Number and then Yr in Year_Number
+      then
+         T := (Year        => Yr,
+               Month       => Mo,
+               Day         => Da,
+               Day_Of_Week => Weekday'Val (Wd),
+               Hour        => Ho,
+               Minute      => Mi,
+               Second      => Se);
+         --  Trust it only if the oscillator never stopped since the last set.
+         Valid := (R (0) and OS_Flag) = 0;
+      end if;
    end Get_Time;
 
    --------------
