@@ -82,16 +82,28 @@ begin
       end if;
    end;
 
-   --  Write holding[0] = 4242, read it back.
+   --  Write holding[0] = 4242, then read it back.
    MM.Write_Single_Register (S, 1, 0, 4242, R, Exc);
-   declare
-      W : Word_Array (0 .. 0);
-   begin
-      MM.Read_Holding_Registers (S, 1, 0, 1, W, R, Exc);
-      if R = MM.OK then
-         Put_Line ("[modbus] wrote 4242 -> read back " & Img (Integer (W (0))));
-      end if;
-   end;
+   if R /= MM.OK then
+      --  Check the WRITE status HERE, before the read-back below overwrites R.
+      --  Previously the read reused R and only its result was tested, so a failed
+      --  write was masked by a successful read-back (the old value) and silently
+      --  reported as success.
+      Put_Line ("[modbus] write holding[0]=4242 failed (status="
+                & MM.Status'Image (R) & ")");
+   else
+      declare
+         W : Word_Array (0 .. 0);
+      begin
+         MM.Read_Holding_Registers (S, 1, 0, 1, W, R, Exc);
+         if R = MM.OK then
+            Put_Line ("[modbus] wrote 4242 -> read back " & Img (Integer (W (0))));
+         else
+            Put_Line ("[modbus] read-back failed (status="
+                      & MM.Status'Image (R) & ")");
+         end if;
+      end;
+   end if;
 
    MM.Close (S);
    Put_Line ("[modbus] done.");
