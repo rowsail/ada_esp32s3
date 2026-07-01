@@ -47,6 +47,26 @@ procedure Main is
       return V;
    end Cycles;
 
+   --  Enable the PIE/SIMD coprocessor (CP3) for THIS task.
+   --
+   --  start.S enables CPENABLE = 0x9 (CP0 FPU | CP3 PIE) on the boot thread, but
+   --  the GNAT run-time gives each task its own coprocessor context and starts it
+   --  with only CP0 enabled -- the environment task that runs Main is observed
+   --  with CPENABLE = 0x1.  The first `ee.*` PIE instruction executed with CP3
+   --  disabled takes a coprocessor-disabled exception, which on this bare target
+   --  hangs.  So OR in CP3 here (preserving CP0) before any SIMD op; rsync makes
+   --  the CPENABLE write take effect before the next instruction.  The kernels
+   --  below run back-to-back in this task, so a one-time enable holds.
+   procedure Enable_PIE is
+      V : Unsigned_32;
+   begin
+      Asm ("rsr.cpenable %0",
+           Outputs => Unsigned_32'Asm_Output ("=r", V), Volatile => True);
+      V := V or 16#08#;
+      Asm ("wsr.cpenable %0" & ASCII.LF & "rsync",
+           Inputs => Unsigned_32'Asm_Input ("r", V), Volatile => True);
+   end Enable_PIE;
+
    --  Saturating scalar reference for Integer_32 add (the SIMD Add saturates).
    function Sat_Add (X, Y : Integer_32) return Integer_32 is
       S : constant Integer_64 := Integer_64 (X) + Integer_64 (Y);
@@ -74,6 +94,8 @@ procedure Main is
    Ok : Boolean;
 
 begin
+   Enable_PIE;   --  MUST precede any SIMD op: this task starts with CP3 disabled.
+
    Put_Line ("");
    Put_Line ("=== ESP32-S3 PIE SIMD on bare-metal Ada ===");
    Put (CPU_MHz, 0); Put_Line (" MHz, vectors of 1024 elements, 64 iterations");
@@ -86,6 +108,12 @@ begin
       A32 (I) := Integer_32 (I) - 500;
       B32 (I) := Integer_32 (I) * 3;
    end loop;
+   --  Force two lanes to OVERFLOW so the test actually exercises SATURATION:
+   --  without these every sum stays small and Sat_Add degenerates to a plain
+   --  add, so a non-saturating (wrapping) SIMD Add would still PASS.  Both the
+   --  SIMD Add and the scalar Sat_Add must clamp to the same Integer_32 bound.
+   A32 (Idx'First) := Integer_32'Last - 10;   B32 (Idx'First) := 1000;   --  -> 'Last
+   A32 (Idx'Last)  := Integer_32'First + 10;  B32 (Idx'Last)  := -1000;  --  -> 'First
 
    T0 := Cycles;
    for K in 1 .. Iters loop Add (A32, B32, R32); end loop;
