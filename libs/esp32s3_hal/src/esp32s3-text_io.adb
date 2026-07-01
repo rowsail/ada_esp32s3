@@ -1,4 +1,7 @@
 with Ada.Unchecked_Deallocation;
+with ESP32S3.Ext4;         --  moved here from the spec: the ext4 backing is a
+with ESP32S3.Ext4.Inode;   --  body-only concern, so console-only clients of the
+with ESP32S3.Ext4.VFS;     --  spec do not drag the filesystem into their closure.
 with ESP32S3.Ext4.FS;
 with ESP32S3.Serial;
 
