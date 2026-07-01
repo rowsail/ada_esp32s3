@@ -148,8 +148,10 @@ package body ESP32S3.CH422G is
       if OC_Mode = Open_Drain then
          Cfg := Cfg or Bit_OD_EN;
       end if;
-      Shadows (S.Host).Cfg := Cfg;
       Cmd (S, Addr_Set, Cfg, Result);
+      if Result = OK then
+         Shadows (S.Host).Cfg := Cfg;   --  commit the shadow only on ACK
+      end if;
    end Configure;
 
    -----------
@@ -165,8 +167,10 @@ package body ESP32S3.CH422G is
       else
          Cfg := Shadows (S.Host).Cfg and (not Bit_SLEEP);
       end if;
-      Shadows (S.Host).Cfg := Cfg;
       Cmd (S, Addr_Set, Cfg, Result);
+      if Result = OK then
+         Shadows (S.Host).Cfg := Cfg;
+      end if;
    end Sleep;
 
    --------------
@@ -176,8 +180,10 @@ package body ESP32S3.CH422G is
    procedure Write_IO (S : Session; Value : IO_Value; Result : out Status) is
    begin
       Check_Owned (S);
-      Shadows (S.Host).IO_Out := ESP32S3.I2C.Byte (Value);
       Cmd (S, Addr_IO, ESP32S3.I2C.Byte (Value), Result);
+      if Result = OK then
+         Shadows (S.Host).IO_Out := ESP32S3.I2C.Byte (Value);
+      end if;
    end Write_IO;
 
    procedure Write_IO_Pin
@@ -193,8 +199,10 @@ package body ESP32S3.CH422G is
       else
          B := B and (not M);
       end if;
-      Shadows (S.Host).IO_Out := B;
       Cmd (S, Addr_IO, B, Result);
+      if Result = OK then
+         Shadows (S.Host).IO_Out := B;
+      end if;
    end Write_IO_Pin;
 
    -------------
@@ -234,8 +242,10 @@ package body ESP32S3.CH422G is
    procedure Write_OC (S : Session; Value : OC_Value; Result : out Status) is
    begin
       Check_Owned (S);
-      Shadows (S.Host).OC_Out := ESP32S3.I2C.Byte (Value);
       Cmd (S, Addr_OC, ESP32S3.I2C.Byte (Value), Result);
+      if Result = OK then
+         Shadows (S.Host).OC_Out := ESP32S3.I2C.Byte (Value);
+      end if;
    end Write_OC;
 
    procedure Write_OC_Pin
@@ -252,8 +262,10 @@ package body ESP32S3.CH422G is
          B := B and (not M);
       end if;
       B := B and 16#0F#;          --  only OC0..OC3
-      Shadows (S.Host).OC_Out := B;
       Cmd (S, Addr_OC, B, Result);
+      if Result = OK then
+         Shadows (S.Host).OC_Out := B;
+      end if;
    end Write_OC_Pin;
 
 end ESP32S3.CH422G;
