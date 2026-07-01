@@ -61,6 +61,19 @@ suspends the calling task, and the channel's end-of-transfer interrupt wakes it,
 so a transfer hands the core back rather than busy-waiting. The driver owns the
 \texttt{Device\_L2\_0} interrupt (CPU\_INT 19) for this.
 
+That suspend is \emph{bounded by a deadline}. A stuck or misconfigured transfer
+whose end-of-transfer interrupt never arrives would otherwise block the waiting task
+forever, so before it suspends, \texttt{Wait} arms a per-channel
+\texttt{Ada.Real\_Time.Timing\_Events} timer a few seconds out; whichever fires
+first --- the real EOF interrupt or the timer --- releases the \emph{same}
+suspension object, and \texttt{Wait} cancels the other on wake. \texttt{Set\_True}
+is idempotent, so the two racing near the deadline is harmless. The normal path
+keeps its exact, zero-latency interrupt wake (the timer is cancelled before it ever
+runs); only a genuine fault trips the deadline, and then \texttt{Wait} returns
+rather than deadlocking the system. A timed entry call would read more directly, but
+the Ravenscar/Jorvik runtime forbids \texttt{select}, so a timing-event wake is the
+profile-legal way to put a ceiling on a \texttt{Suspend\_Until\_True}.
+
 \section{MCPWM: motor-control PWM}\index{MCPWM driver}
 
 \begin{lstlisting}
@@ -175,6 +188,15 @@ buffer-vs.-port width mismatch from silent noise into a caught contract
 violation. Reach for \texttt{Write\_Raw}/\texttt{Transfer\_Raw} only for bytes
 that are \emph{already} framed (a DMA buffer built elsewhere, or an opaque
 bit-pattern self-test).
+
+A one-shot \texttt{Write} also has to know when it is truly \emph{finished}. The
+GDMA completing means only that the samples have reached the I2S TX FIFO --- not
+that the serializer has clocked them out onto the wire. Clearing \texttt{TX\_START}
+the instant the DMA is done would discard whatever is still in the FIFO, truncating
+the tail of every buffer (the end of the sound simply cut off). So after the DMA
+wait the driver spins on the \texttt{STATE.TX\_IDLE} status --- FIFO drained,
+serializer idle --- before it stops the channel, so the last samples actually leave
+the pin.
 
 \lstexample{Play a buffer of samples.}
 \begin{lstlisting}
@@ -687,3 +709,14 @@ begin
    Put_Line (Raw_Value'Image (V));
 end ADC_Atten;
 \end{lstlisting}
+
+\textbf{Per-attenuation calibration.} The SAR ADC needs a self-calibration
+``init code'' --- found once at start-up by grounding the input and binary-searching
+the code that reads zero --- and that code is \emph{attenuation-dependent}: each
+\texttt{Atten} setting switches a different analog gain in front of the converter.
+So the driver calibrates every unit at \emph{every} attenuation once, stores the
+resulting code per \texttt{(unit, attenuation)}, and programs the matching one into
+the SAR immediately before each \texttt{Read}. Calibrating at a single attenuation
+and reusing that one code at the others --- the easy trap --- skews every reading
+not taken at the calibrated setting; keying the code to the attenuation the caller
+actually asked for keeps all four accurate.

@@ -249,6 +249,24 @@ pose as an intermediate and sign for any name -- a classic validation hole. The
 rogue chain (a \texttt{CA:FALSE} certificate that nonetheless signs a leaf), and
 the same test exercises the Ed25519 and RSA-SHA-384/512 chains as well.
 
+A parallel rule governs the extensions the parser does \emph{not} recognise.
+RFC~5280 requires a certificate be rejected outright if it carries a critical
+extension the verifier cannot process --- ``critical'' being the issuer's
+declaration that the extension is safety-relevant and \emph{must} be understood, so
+silently ignoring one is a validation hole. The X.509 parser therefore records, for
+each extension, both whether its \texttt{critical} flag is set (the optional
+\texttt{BOOLEAN} between the OID and the value) and whether the parser actually
+handled it --- only \texttt{subjectAltName}, \texttt{basicConstraints},
+\texttt{keyUsage} and \texttt{extKeyUsage} are recognised. Any extension that is
+critical \emph{and} unrecognised sets an \texttt{Unhandled\_Critical} flag on the
+certificate record, and that flag is \texttt{and}ed into \texttt{Valid} at the end
+of \texttt{Parse}, so an otherwise well-formed certificate carrying a critical
+extension the stack does not understand comes back \texttt{Valid = False} and the
+chain fails. An unknown \emph{non}-critical extension is still accepted, exactly as
+the RFC permits. The \texttt{esp32s3\_x509\_kat} self-test proves the pair with two
+otherwise-identical certificates that differ only in that one flag: the critical one
+is rejected, the non-critical one accepted.
+
 Validity dates raise a subtlety: ``is this certificate in date?'' needs to know
 \emph{today}, and a bare-metal board has no real-time clock. The answer is NTP.
 The reusable \texttt{NTP\_Client} (a sibling of \texttt{DNS\_Client}, also pure
