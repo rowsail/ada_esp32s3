@@ -36,7 +36,12 @@ package body ESP32S3.ADC is
    I2C_SAR_ADC      : constant Unsigned_8 := 16#69#;   --  REGI2C block (SAR ADC)
    I2C_SAR_ADC_HOST : constant Unsigned_8 := 1;
 
-   Cal_Codes : array (ADC_Unit) of Natural := (others => 0);   --  diagnostics
+   --  The SAR self-calibration init code is attenuation-DEPENDENT (each atten has
+   --  its own analog gain), so keep one per (unit, attenuation) and program the
+   --  matching one before each conversion -- calibrating at a single atten and
+   --  reusing that code at the others skews every non-calibrated-atten reading.
+   Cal_Codes : array (ADC_Unit, Attenuation) of Natural :=
+     (others => (others => 0));
    Done_Flag : Boolean := False;
 
    procedure I2C (Reg, Msb, Lsb, Data : Unsigned_8) is
@@ -146,7 +151,7 @@ package body ESP32S3.ADC is
       end loop;
       Set_Encal_Gnd (Unit, False);
       Set_Init_Code (Unit, Chk);          --  leave the calibrated code in place
-      Cal_Codes (Unit) := Chk;
+      Cal_Codes (Unit, Atten) := Chk;
    end Calibrate;
 
    --------------------------------------------------------------------------
@@ -194,8 +199,12 @@ package body ESP32S3.ADC is
             ANA_Config  := ANA_Config or 16#3FF00#;
             ANA_Config  := ANA_Config and not (UInt32'(2) ** 18);
             ANA_Config2 := ANA_Config2 or (UInt32'(2) ** 16);
-            Calibrate (ADC1, Db_12);
-            Calibrate (ADC2, Db_12);
+            --  Calibrate BOTH units at EVERY attenuation (one-time), so a Read at
+            --  any atten programs a code that was actually measured for it.
+            for A in Attenuation loop
+               Calibrate (ADC1, A);
+               Calibrate (ADC2, A);
+            end loop;
             Inited := True;
          end if;
          Ok := not In_Use (Unit);
@@ -243,7 +252,7 @@ package body ESP32S3.ADC is
    -- Read --
    ----------
 
-   function Cal_Code (Unit : ADC_Unit) return Natural is (Cal_Codes (Unit));
+   function Cal_Code (Unit : ADC_Unit) return Natural is (Cal_Codes (Unit, Db_12));
    function Last_Done return Boolean is (Done_Flag);
 
    function Read (R : Reader; Ch : Channel_Index;
@@ -252,6 +261,8 @@ package body ESP32S3.ADC is
       if not R.Held then
          return 0;
       end if;
+      --  Program the init code calibrated FOR THIS attenuation before converting.
+      Set_Init_Code (R.Unit, Cal_Codes (R.Unit, Atten));
       return Raw_Value (Convert (R.Unit, Ch, Atten));
    end Read;
 
