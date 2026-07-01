@@ -43,13 +43,12 @@
 --        SDMMC CLK / CMD / D0 = IO12 / IO11 / IO13   (1-bit)
 --        SD DAT3 / CD         = CH422G IO4           (held high)
 --        CH422G I2C           = SDA=IO8  SCL=IO9     (I2C0)
-with System;
 with Interfaces;   use Interfaces;
-with Interfaces.C; use Interfaces.C;
 with Ada.Real_Time; use Ada.Real_Time;
 with Ada.Exceptions; use Ada.Exceptions;
 with Ada.Unchecked_Deallocation;
 
+with ESP32S3.Text_IO;  use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
 with ESP32S3.CH422G;
 with ESP32S3.SDMMC;
 with ESP32S3.Block_Dev;
@@ -68,15 +67,37 @@ procedure Main is
    use type CH422G.Status;
    use type SDMMC.Status;
 
-   procedure Banner;  pragma Import (C, Banner, "native_w_banner");
-   procedure Card_R (Ok : int);   pragma Import (C, Card_R, "native_w_card");
-   procedure Mount_R (Ok : int);  pragma Import (C, Mount_R, "native_w_mount");
-   procedure Write_R (Ok : int; Msg : System.Address);
-                      pragma Import (C, Write_R, "native_w_write");
-   procedure Step_C (S : System.Address);  pragma Import (C, Step_C, "native_w_step");
-   procedure Check_C (L : System.Address; Ok : int);
-                      pragma Import (C, Check_C, "native_w_check");
-   procedure Done;  pragma Import (C, Done, "native_w_done");
+   --  Console reporters, formerly esp_rom_printf natives in glue.c, now pure Ada
+   --  over the buffered ESP32S3.Text_IO console.  (Step / Check / Report_Error,
+   --  which take Ada strings, are defined below once Clean is in scope.)
+
+   procedure Banner is
+   begin
+      Put_Line ("[ext4w] ext4 WRITE battery over SDMMC "
+                & "(mkdir / big file / hardlink / symlink / rename / delete)");
+   end Banner;
+
+   procedure Card_R (Ok : Boolean) is
+   begin
+      Put_Line ("[ext4w] SD init: " & (if Ok then "OK" else "FAILED"));
+   end Card_R;
+
+   procedure Mount_R (Ok : Boolean) is
+   begin
+      Put_Line ("[ext4w] mount (read-write): " & (if Ok then "OK" else "FAILED"));
+   end Mount_R;
+
+   --  All operations committed and journaled -- the success summary.
+   procedure Commit_OK is
+   begin
+      Put_Line ("[ext4w] all operations committed (journaled): OK");
+   end Commit_OK;
+
+   procedure Done is
+   begin
+      Put_Line ("[ext4w] done.  On a host: 'e2fsck -f /dev/sdX' should be clean; "
+                & "verify the tree + readlink + big-file pattern.");
+   end Done;
 
    Expander         : CH422G.Device;    --  CH422G that drives the card's DAT3/CD
    Expander_Session : CH422G.Session;
@@ -111,12 +132,12 @@ procedure Main is
    First_Printable : constant := 32;
    Last_Printable  : constant := 126;
 
-   --  Make a NUL-terminated copy of Str for the C "%s" console glue, with
-   --  non-printables replaced by '.'.
-   function C_String (Str : String) return String is
-      Result : String (1 .. Str'Length + 1);   --  + 1 for the trailing NUL
+   --  Sanitise Str for the console: non-printables replaced by '.', so a stray
+   --  control byte from a filename can't corrupt the console line.
+   function Clean (Str : String) return String is
+      Result : String (1 .. Str'Length);
    begin
-      for I in 1 .. Str'Length loop
+      for I in Result'Range loop
          declare
             Source_Char : constant Character := Str (Str'First + I - 1);
          begin
@@ -125,26 +146,23 @@ procedure Main is
                then Source_Char else '.');
          end;
       end loop;
-      Result (Result'Last) := Character'Val (0);
       return Result;
-   end C_String;
+   end Clean;
 
    procedure Step (S : String) is
-      Msg : aliased constant String := C_String (S);
    begin
-      Step_C (Msg'Address);
+      Put_Line ("[ext4w]   .. " & Clean (S));
    end Step;
 
    procedure Check (Label : String; Ok : Boolean) is
-      Msg : aliased constant String := C_String (Label);
    begin
-      Check_C (Msg'Address, Boolean'Pos (Ok));
+      Put_Line ("[ext4w]   [" & (if Ok then "PASS" else "FAIL") & "] "
+                & Clean (Label));
    end Check;
 
    procedure Report_Error (Msg_Text : String) is
-      Msg : aliased constant String := C_String (Msg_Text);
    begin
-      Write_R (0, Msg'Address);
+      Put_Line ("[ext4w] write FAILED: " & Clean (Msg_Text));
    end Report_Error;
 
    --  Fill Data with text Str (caller sizes Data to Str'Length).
@@ -175,7 +193,7 @@ begin
                 Width => SDMMC.Width_1, Data_Clock_Hz => SD_High_Speed_Clock_Hz,
                 High_Speed => True);
    SDMMC.Initialize (Card, Card_Status);
-   Card_R (Boolean'Pos (Card_Status = SDMMC.OK));
+   Card_R (Card_Status = SDMMC.OK);
    if Card_Status /= SDMMC.OK then
       Done;
       --  No card / init failed: nothing more to do -- park forever.
@@ -231,7 +249,7 @@ begin
    begin
       M.Open (Block_Device, Read_Only => False,
               Cache_Blocks => Cache_Depth_Blocks);
-      Mount_R (1);
+      Mount_R (True);
       Bitmap.Reset_Phantom_Free_Count;   --  arm the stale-read / double-free tripwire
 
       --  0. Remove any leftovers from a previous run.
@@ -384,7 +402,7 @@ begin
       --  healthy card; >0 means stale cleanup reads (suspect the SD card).
       Check ("no phantom frees (count consistent with bitmap)",
              Bitmap.Phantom_Free_Count = 0);
-      Write_R (1, System.Null_Address);
+      Commit_OK;
 
    exception
       when ESP32S3.Ext4.Read_Only =>
