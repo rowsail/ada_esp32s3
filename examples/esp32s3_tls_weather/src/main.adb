@@ -241,8 +241,25 @@ begin
       Verdict := Validate (Chain_Buffers.Chain, Anchors, Host, Now);
       Put_Line ("[wx] chain validation to ISRG Root X1:" & Natural'Image
                 (TLS_Client.Server_Cert_Count (Session)) & " certs -> " & Result'Image (Verdict));
-      if Verdict /= Valid then
-         Put_Line ("[wx] WARNING: chain not trusted -- aborting before sending data");
+
+      --  Authenticate the peer before sending ANY application data.  Three
+      --  independent conditions must ALL hold:
+      --    * the chain validates to the pinned root (Verdict = Valid) -- the cert
+      --      is a trusted, in-date cert for this host;
+      --    * CertificateVerify passed (Server_Cert_Verify_OK) -- the server proved
+      --      possession of that cert's PRIVATE key.  This is essential: the channel
+      --      opens on Finished alone, so a MITM replaying the real (public) cert
+      --      chain without the key reaches this point with Verdict = Valid but
+      --      CertificateVerify FAILED -- sending on the chain check alone would
+      --      hand the request to the impersonator;
+      --    * the server Finished verified (Server_Finished_OK) -- transcript
+      --      integrity.
+      if Verdict /= Valid
+        or else not TLS_Client.Server_Cert_Verify_OK (Session)
+        or else not TLS_Client.Server_Finished_OK (Session)
+      then
+         Put_Line ("[wx] WARNING: peer NOT authenticated"
+                   & " (chain/CertificateVerify/Finished) -- aborting before sending data");
          Close_Socket (Sock);
          loop
             delay until Clock + Park_Forever;
