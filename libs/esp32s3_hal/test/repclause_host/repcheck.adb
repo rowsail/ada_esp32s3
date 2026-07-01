@@ -185,9 +185,63 @@ procedure Repcheck is
                 & (if F = 0 then "PASS (65536 cases)" else "FAIL"));
    end Check_PCNT;
 
+   ------------------------------------------------------------------
+   --  ESP32S3.SDMMC  --  RINTSTS read overlay (named-field view of the
+   --  DesignWare raw-interrupt-status register) vs the old bit masks.
+   ------------------------------------------------------------------
+   type RINTSTS_Bits is record
+      Resp_Err, Cmd_Done, Data_Over, RCRC, DCRC,
+      RTO, DRTO, HTO, FRUN, EBE : Boolean;
+   end record;
+   for RINTSTS_Bits use record
+      Resp_Err  at 0 range  1 ..  1;
+      Cmd_Done  at 0 range  2 ..  2;
+      Data_Over at 0 range  3 ..  3;
+      RCRC      at 0 range  6 ..  6;
+      DCRC      at 0 range  7 ..  7;
+      RTO       at 0 range  8 ..  8;
+      DRTO      at 0 range  9 ..  9;
+      HTO       at 0 range 10 .. 10;
+      FRUN      at 0 range 11 .. 11;
+      EBE       at 0 range 15 .. 15;
+   end record;
+   for RINTSTS_Bits'Size use 32;
+   function To_RINT is new Ada.Unchecked_Conversion (Unsigned_32, RINTSTS_Bits);
+
+   procedure Check_RINTSTS is
+      F : Natural := 0;
+      function Bit (W : Natural; M : Unsigned_32) return Boolean is
+        ((Unsigned_32 (W) and M) /= 0);
+   begin
+      --  Every RINTSTS bit lives in the low 16, so all patterns are exhausted.
+      for W in 0 .. 65535 loop
+         declare
+            B : constant RINTSTS_Bits := To_RINT (Unsigned_32 (W));
+         begin
+            if B.Resp_Err  /= Bit (W, 16#0002#) or else
+               B.Cmd_Done  /= Bit (W, 16#0004#) or else
+               B.Data_Over /= Bit (W, 16#0008#) or else
+               B.RCRC      /= Bit (W, 16#0040#) or else
+               B.DCRC      /= Bit (W, 16#0080#) or else
+               B.RTO       /= Bit (W, 16#0100#) or else
+               B.DRTO      /= Bit (W, 16#0200#) or else
+               B.HTO       /= Bit (W, 16#0400#) or else
+               B.FRUN      /= Bit (W, 16#0800#) or else
+               B.EBE       /= Bit (W, 16#8000#)
+            then
+               F := F + 1;
+            end if;
+         end;
+      end loop;
+      Fails := Fails + F;
+      Put_Line ("  sdmmc RINTSTS overlay . "
+                & (if F = 0 then "PASS (65536 cases)" else "FAIL"));
+   end Check_RINTSTS;
+
 begin
    Put_Line ("Register bit-field rep-clause equivalence check:");
    Check_I2C;
+   Check_RINTSTS;
    Check_TWAI;
    Check_W5500;
    Check_PCNT;

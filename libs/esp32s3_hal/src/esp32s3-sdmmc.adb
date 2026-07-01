@@ -45,7 +45,8 @@ package body ESP32S3.SDMMC is
    FIFO : UInt32
      with Volatile, Import, Address => SDHOST_Periph.BUFFIFO'Address;
 
-   --  RINTSTS bit masks (DesignWare mobile-storage host).
+   --  RINTSTS bit masks, used to build the write-1-to-clear acknowledgements
+   --  written through RINT above (a mask is the natural way to say "clear these").
    Int_Cmd_Done : constant UInt32 := 16#0004#;   --  command done
    Int_Data_Over: constant UInt32 := 16#0008#;   --  data transfer over (DTO)
    Int_RCRC     : constant UInt32 := 16#0040#;   --  response CRC error
@@ -58,6 +59,40 @@ package body ESP32S3.SDMMC is
    Int_Resp_Err : constant UInt32 := 16#0002#;   --  response error
    Data_Err     : constant UInt32 := Int_DCRC or Int_DRTO or Int_HTO or
                                      Int_FRUN or Int_EBE;
+
+   --  A named-field view of the SAME register for readable status TESTS.  Writes
+   --  still go through RINT (write-1-to-clear), so this overlay is read-only in
+   --  practice; only the bits this driver inspects are named.  These bits are
+   --  sticky (hardware sets, software clears), so reading several in one
+   --  expression is safe.  The layout is checked against the masks above in
+   --  test/repclause_host.
+   type RINTSTS_Bits is record
+      Resp_Err, Cmd_Done, Data_Over, RCRC, DCRC,
+      RTO, DRTO, HTO, FRUN, EBE : Boolean;
+   end record;
+   for RINTSTS_Bits use record
+      Resp_Err  at 0 range  1 ..  1;
+      Cmd_Done  at 0 range  2 ..  2;
+      Data_Over at 0 range  3 ..  3;
+      RCRC      at 0 range  6 ..  6;
+      DCRC      at 0 range  7 ..  7;
+      RTO       at 0 range  8 ..  8;
+      DRTO      at 0 range  9 ..  9;
+      HTO       at 0 range 10 .. 10;
+      FRUN      at 0 range 11 .. 11;
+      EBE       at 0 range 15 .. 15;
+   end record;
+   for RINTSTS_Bits'Size use 32;
+   RINT_Bits : RINTSTS_Bits
+     with Import, Volatile_Full_Access, Address => SDHOST_Periph.RINTSTS'Address;
+
+   --  True if any of the five sticky data-error bits is set (mirrors Data_Err).
+   --  Snapshots the register once, so it is a single full-width read.
+   function Any_Data_Err return Boolean is
+      R : constant RINTSTS_Bits := RINT_Bits;
+   begin
+      return R.DCRC or R.DRTO or R.HTO or R.FRUN or R.EBE;
+   end Any_Data_Err;
 
    --  Per-operation response words, filled by Issue (guarded by Lock).
    R0, R1w, R2w, R3w : UInt32 := 0;
@@ -217,21 +252,21 @@ package body ESP32S3.SDMMC is
       declare
          D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Cmd_Span;
       begin
-         while (RINT and (Int_Cmd_Done or Int_RTO)) = 0 loop
+         while not (RINT_Bits.Cmd_Done or RINT_Bits.RTO) loop
             exit when Past (D);
          end loop;
       end;
 
-      if (RINT and Int_RTO) /= 0 then
+      if RINT_Bits.RTO then
          RINT := Int_RTO or Int_Cmd_Done;
          return Cmd_Timeout;
       end if;
-      if (RINT and Int_Cmd_Done) = 0 then
+      if not RINT_Bits.Cmd_Done then
          --  Poll ran out with no response and no RTO (e.g. an unclocked CIU):
          --  treat as a timeout rather than reading a stale response register.
          return Cmd_Timeout;
       end if;
-      if Resp in Short_Resp | Long_Resp and then (RINT and Int_RCRC) /= 0 then
+      if Resp in Short_Resp | Long_Resp and then RINT_Bits.RCRC then
          RINT := Int_RCRC or Int_Cmd_Done or Int_Resp_Err;
          return Cmd_CRC;
       end if;
@@ -289,7 +324,7 @@ package body ESP32S3.SDMMC is
             D     : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
          begin
             loop
-               if (RINT and Data_Err) /= 0 then
+               if Any_Data_Err then
                   RINT := Data_Err;
                   return Read_Error;
                end if;
@@ -310,11 +345,11 @@ package body ESP32S3.SDMMC is
       declare
          D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
       begin
-         while (RINT and (Int_Data_Over or Data_Err)) = 0 loop
+         while not (RINT_Bits.Data_Over or Any_Data_Err) loop
             exit when Past (D);
          end loop;
       end;
-      if (RINT and Data_Err) /= 0 then
+      if Any_Data_Err then
          RINT := Data_Err or Int_Data_Over;
          return Read_Error;
       end if;
@@ -332,7 +367,7 @@ package body ESP32S3.SDMMC is
             D     : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
          begin
             loop
-               if (RINT and Data_Err) /= 0 then
+               if Any_Data_Err then
                   RINT := Data_Err;
                   Data := (others => 0);
                   return Read_Error;
@@ -357,11 +392,11 @@ package body ESP32S3.SDMMC is
       declare
          D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
       begin
-         while (RINT and (Int_Data_Over or Data_Err)) = 0 loop
+         while not (RINT_Bits.Data_Over or Any_Data_Err) loop
             exit when Past (D);
          end loop;
       end;
-      if (RINT and Data_Err) /= 0 then
+      if Any_Data_Err then
          RINT := Data_Err or Int_Data_Over;
          return Read_Error;
       end if;
@@ -379,7 +414,7 @@ package body ESP32S3.SDMMC is
             D     : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
          begin
             loop
-               if (RINT and Data_Err) /= 0 then
+               if Any_Data_Err then
                   RINT := Data_Err;
                   return Write_Error;
                end if;
@@ -401,15 +436,15 @@ package body ESP32S3.SDMMC is
       declare
          D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
       begin
-         while (RINT and (Int_Data_Over or Data_Err)) = 0 loop
+         while not (RINT_Bits.Data_Over or Any_Data_Err) loop
             exit when Past (D);
          end loop;
       end;
-      if (RINT and Data_Err) /= 0 then
+      if Any_Data_Err then
          RINT := Data_Err or Int_Data_Over;
          return Write_Error;
       end if;
-      if (RINT and Int_Data_Over) = 0 then      --  deadline hit, no data-over
+      if not RINT_Bits.Data_Over then      --  deadline hit, no data-over
          return Write_Error;
       end if;
       RINT := Int_Data_Over;
