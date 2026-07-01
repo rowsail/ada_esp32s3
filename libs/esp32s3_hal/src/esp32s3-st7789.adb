@@ -353,34 +353,52 @@ package body ESP32S3.ST7789 is
    procedure Draw_Bitmap
      (S : Session; X, Y, W, H : Natural; Pixels : Color_Array)
    is
-      Bus       : ESP32S3.SPI.Session;
-      PPC       : constant Natural := Chunk / 2;
-      Idx       : Natural := Pixels'First;
-      Remaining : Natural := W * H;
+      Bus : ESP32S3.SPI.Session;
+      PPC : constant Natural := Chunk / 2;
+      --  Clip to the panel and draw ONLY the visible sub-rectangle.  The source
+      --  is row-major (W px per row), so a horizontally-clipped bitmap must skip
+      --  the off-panel tail of every row: streaming Pixels linearly into an
+      --  oversized window (X+W-1 past the right edge) would wrap the controller's
+      --  RAMWR auto-increment and corrupt GRAM (the panel is only S.W columns).
+      VW : constant Natural := (if X >= S.W then 0 else Natural'Min (W, S.W - X));
+      VH : constant Natural := (if Y >= S.H then 0 else Natural'Min (H, S.H - Y));
    begin
       Check_Owned (S);
-      if W = 0 or else H = 0 or else X >= S.W or else Y >= S.H then
+      if W = 0 or else H = 0 or else VW = 0 or else VH = 0 then
          return;
       end if;
 
       ESP32S3.SPI.Acquire (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
       ESP32S3.GPIO.Clear (S.CS);
-      Window (Bus, S, X, Y, X + W - 1, Y + H - 1);
+      Window (Bus, S, X, Y, X + VW - 1, Y + VH - 1);   --  visible rect only
       Cmd1 (Bus, S, Cmd_RAMWR);
       ESP32S3.GPIO.Set (S.DC);
 
-      while Remaining > 0 and then Idx <= Pixels'Last loop
+      --  Emit VW pixels from each of the first VH source rows; advancing the row
+      --  base by the FULL W automatically drops each row's clipped-off tail.
+      for Row in 0 .. VH - 1 loop
          declare
-            N : constant Natural :=
-              Natural'Min (Natural'Min (Remaining, PPC), Pixels'Last - Idx + 1);
+            Row_Start : constant Natural := Pixels'First + Row * W;
+            Col       : Natural := 0;
          begin
-            for K in 0 .. N - 1 loop
-               Tx_Buf (S.Host) (2 * K)     := Byte (Pixels (Idx + K) / 256);
-               Tx_Buf (S.Host) (2 * K + 1) := Byte (Pixels (Idx + K) mod 256);
+            exit when Row_Start > Pixels'Last;        --  short array: stop cleanly
+            while Col < VW loop
+               declare
+                  N : constant Natural :=
+                    Natural'Min (Natural'Min (VW - Col, PPC),
+                                 Pixels'Last - (Row_Start + Col) + 1);
+               begin
+                  exit when N = 0;
+                  for K in 0 .. N - 1 loop
+                     Tx_Buf (S.Host) (2 * K) :=
+                       Byte (Pixels (Row_Start + Col + K) / 256);
+                     Tx_Buf (S.Host) (2 * K + 1) :=
+                       Byte (Pixels (Row_Start + Col + K) mod 256);
+                  end loop;
+                  Send (Bus, S.Host, N * 2);
+                  Col := Col + N;
+               end;
             end loop;
-            Send (Bus, S.Host, N * 2);
-            Idx := Idx + N;
-            Remaining := Remaining - N;
          end;
       end loop;
 

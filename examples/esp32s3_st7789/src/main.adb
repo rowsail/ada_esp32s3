@@ -182,8 +182,40 @@ begin
    Step ("text");
    Hold;
 
+   --  Clipping self-test (the last, persistent screen): a 60x60 bordered bitmap
+   --  (2 px white frame on red) drawn so it OVERHANGS the panel edges.  Correct
+   --  clipping draws only the visible sub-rectangle -- so the reference copy at
+   --  top-left is a full bordered box, and the two overhanging copies show clean
+   --  partial boxes with straight edges.  Before the clipping fix, an oversized
+   --  address window wrapped the controller's RAMWR and the overhanging copies
+   --  came out skewed / garbled.
+   declare
+      BW       : constant := 60;
+      Clip_Bmp : Display_Driver.Color_Array (0 .. BW * BW - 1);
+      Red      : constant Display_Driver.Color := Display_Driver.RGB (255, 0, 0);
+      Wht      : constant Display_Driver.Color := Display_Driver.White;
+   begin
+      for Row in 0 .. BW - 1 loop
+         for Col in 0 .. BW - 1 loop
+            Clip_Bmp (Row * BW + Col) :=
+              (if Row < 2 or else Row >= BW - 2
+                 or else Col < 2 or else Col >= BW - 2
+               then Wht else Red);
+         end loop;
+      end loop;
+      Display_Driver.Fill (Display_Session, Display_Driver.RGB (0, 0, 32));
+      Display_Driver.Draw_Bitmap (Display_Session, 10, 10, BW, BW, Clip_Bmp);
+      --  reference (fully on panel)
+      Display_Driver.Draw_Bitmap (Display_Session, 200, 200, BW, BW, Clip_Bmp);
+      --  overhang right + bottom -> visible 40x40 top-left corner
+      Display_Driver.Draw_Bitmap (Display_Session, 210, 90, BW, BW, Clip_Bmp);
+      --  overhang right only -> visible 30 wide x 60 tall left strip
+   end;
+   Step ("clip test -- overhanging boxes must have straight, clean edges");
+   Hold;
+
    Display_Driver.Release (Display_Session);
-   Put_Line ("[lcd] done -- check the panel.");
+   Put_Line ("[lcd] done -- check the panel (clip test is the final screen).");
 
    loop
       delay until Clock + Seconds (3600);
