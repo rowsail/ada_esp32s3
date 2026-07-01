@@ -1,4 +1,5 @@
 with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
+with "../../libs/esp32s3_hal/esp32s3_hal.gpr";   --  ESP32S3.Log (buffered console)
 
 --  Proves an external project can build Ada against the pinned Jorvik runtime:
 --  it sets the runtime via Esp32s3_Rts.Runtime_Path and compiles a

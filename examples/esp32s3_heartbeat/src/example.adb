@@ -1,8 +1,7 @@
-pragma Warnings (Off);
-with Interfaces.C;
 with Ada.Real_Time; use Ada.Real_Time;
 with Blink;
 pragma Unreferenced (Blink);
+with ESP32S3.Log;   --  buffered console (was the ada_log esp_rom_printf glue)
 
 --  What it demonstrates: the minimal periodic heartbeat.  Built against the
 --  pinned esp32s3_rts crate, the environment task logs a 1 Hz heartbeat counter
@@ -20,20 +19,18 @@ pragma Unreferenced (Blink);
 --  Hardware / wiring: none (self-contained); output is over the
 --  USB-Serial-JTAG console.
 procedure Example is
-   procedure Log (Marker : Interfaces.C.int);
-   pragma Import (C, Log, "ada_log");
-   use type Interfaces.C.int;
-
    --  How often the environment task emits a heartbeat (1 Hz).
    Heartbeat_Period : constant Time_Span := Seconds (1);
 
-   Count : Interfaces.C.int := 0;
+   Count : Natural := 0;
    Next  : Time := Clock + Heartbeat_Period;
 begin
    loop
       delay until Next;
       Count := Count + 1;
-      Log (Count);
+      ESP32S3.Log.Put ("[example] heartbeat ");
+      ESP32S3.Log.Put (Count);
+      ESP32S3.Log.New_Line;
       Next := Next + Heartbeat_Period;
    end loop;
 end Example;
