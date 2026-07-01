@@ -92,6 +92,14 @@ package body ESP32S3.I2S.Engine is
       N     : constant Natural :=                             --  CLKM divider
         Natural'Max (2, Natural'Min (255, (Src_Hz + (Bclk * M) / 2) / (Bclk * M)));
    begin
+      --  Re-opening a port that is mid-continuous-transmit (Reconfigure while
+      --  streaming) must first halt TX and release its held GDMA channel -- the
+      --  reset below would otherwise clear B.Streaming with the channel (and its
+      --  running OUT-DMA) still held, leaking both (Stop then gates out).
+      if B.Valid and then B.Streaming then
+         Stop (B);
+      end if;
+
       --  Module clock-gate + reset pulse.
       case Port is
          when I2S0 =>
