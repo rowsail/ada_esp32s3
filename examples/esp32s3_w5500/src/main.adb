@@ -145,6 +145,13 @@ begin
              & "  (try:  nc 192.168.1.50 5000)");
 
    loop
+      --  One listening socket per accepted connection: this W5500 GNAT.Sockets
+      --  stack does not support re-Accept on an already-used listener (the second
+      --  Accept faults), so the socket is created, bound and listened afresh each
+      --  round.  The BUG this fixes was the missing Close_Socket (Server) at the
+      --  end: the old listener was never released, so on the W5500's eight
+      --  hardware sockets each connection leaked one and the chip was exhausted
+      --  within a few clients.  Closing BOTH sockets each round keeps it bounded.
       Create_Socket (Server, Family_Inet, Socket_Stream);
       Bind_Socket   (Server, (Family => Family_Inet,
                               Addr   => Any_Inet_Addr, Port => Echo_Port));
@@ -161,6 +168,7 @@ begin
       end loop;
 
       Put_Line ("[w5500] client disconnected");
-      Close_Socket (Client);
+      Close_Socket (Client);                   --  release the client socket ...
+      Close_Socket (Server);                   --  ... AND the listener (no leak)
    end loop;
 end Main;
