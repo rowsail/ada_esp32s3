@@ -23,7 +23,13 @@ procedure Main is
    --  so the optimiser cannot collapse it: the stack descends by ~(buffer+frame)
    --  per level, giving a predictable peak we can watch the watermark catch.
    function Burn (Depth : Natural) return Natural is
+      --  Volatile so the optimiser cannot prove the loads and fold the array
+      --  away: a plain uniform-fill `(others => Depth)` array is trivially
+      --  eliminable at -O2 (both reads provably equal Depth), which would drop
+      --  the 256 B and defeat the whole point -- the frame must actually cost
+      --  ~(buffer+frame) for the watermark to catch it.
       Buf : array (1 .. 64) of Integer := (others => Depth);   --  256 B on-stack
+      pragma Volatile (Buf);
    begin
       if Depth = 0 then
          return Buf (1);
