@@ -198,7 +198,13 @@ package body ESP32S3.SPI.Engine is
       if B.Regs /= null then
          B.Regs.MISC.CS0_DIS := not Enabled;   --  CS0_DIS = 1 suppresses CS0
          B.Regs.CMD.UPDATE := True;            --  latch into the shifter
-         while B.Regs.CMD.UPDATE loop null; end loop;
+         declare
+            Guard : Natural := 100_000;        --  config latch: completes in cycles
+         begin
+            while B.Regs.CMD.UPDATE and then Guard > 0 loop
+               Guard := Guard - 1;
+            end loop;
+         end;
       end if;
    end Set_Hardware_CS;
 
@@ -219,10 +225,29 @@ package body ESP32S3.SPI.Engine is
       B.Regs.MS_DLEN.MS_DATA_BITLEN :=
         MS_DLEN_MS_DATA_BITLEN_Field (Length * 8 - 1);
       B.Regs.CMD.UPDATE := True;
-      while B.Regs.CMD.UPDATE loop null; end loop;
+      declare
+         Guard : Natural := 100_000;          --  config latch: completes in cycles
+      begin
+         while B.Regs.CMD.UPDATE and then Guard > 0 loop
+            Guard := Guard - 1;
+         end loop;
+      end;
       B.Regs.CMD.USR := True;
 
-      while B.Regs.CMD.USR loop null; end loop;
+      --  Bound the transfer-complete spin so a misconfigured controller (no SCLK,
+      --  stuck FSM) cannot wedge the caller forever, mirroring I2C Run_Sequence.
+      --  On a stall, bail before GD.Wait -- whose EOF interrupt would also never
+      --  arrive -- rather than block.
+      declare
+         Guard : Natural := 2_000_000;
+      begin
+         while B.Regs.CMD.USR and then Guard > 0 loop
+            Guard := Guard - 1;
+         end loop;
+         if Guard = 0 then
+            return;
+         end if;
+      end;
       GD.Wait (B.Chan, GD.Periph_To_Mem);
    end Transfer;
 

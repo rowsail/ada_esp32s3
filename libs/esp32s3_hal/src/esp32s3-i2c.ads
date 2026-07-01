@@ -16,8 +16,9 @@ with ESP32S3.GPIO;
 --  across the bus busy-wait.
 --
 --  This first cut is a polled, single-segment master: each Write / Read is one
---  complete START..STOP transaction, up to 32 data bytes (the hardware FIFO
---  depth).  Requires a tasking runtime (Jorvik light-tasking or richer).
+--  complete START..STOP transaction.  Read takes up to 32 data bytes (the RX
+--  FIFO depth); Write takes up to 31, because the address byte shares the 32-deep
+--  TX FIFO with the payload.  Requires a tasking runtime (Jorvik or richer).
 package ESP32S3.I2C is
 
    --  The two general-purpose I2C controllers.

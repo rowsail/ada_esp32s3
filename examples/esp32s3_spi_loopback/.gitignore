@@ -1,0 +1,12 @@
+/obj/
+/alire/
+/config/
+/build/
+sdkconfig
+sdkconfig.old
+
+# IDF-free (no-idf) build outputs
+/app.bin
+/app.elf
+/app.map
+/.noidf/
