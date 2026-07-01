@@ -17,7 +17,8 @@ project Sdmmc is
       for Switches ("Ada") use ("-D8k", "-Q2", "-Mada_main");
    end Binder;
    package Compiler is
-      for Switches ("Ada") use ("-O2", "-g", "-gnata");
+      --  -gnat2022: console via ESP32S3.Text_IO, whose body pulls in ext4 (Ada 2022).
+      for Switches ("Ada") use ("-O2", "-g", "-gnata", "-gnat2022");
    end Compiler;
    package Linker is
       for Default_Switches ("Ada") use ("-Wl,-r", "-nostdlib");
