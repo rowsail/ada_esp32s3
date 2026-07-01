@@ -20,6 +20,7 @@
 with Ada.Real_Time; use Ada.Real_Time;
 with Interfaces;
 with X509;          use X509;
+with X509.DER;
 with ESP32S3.RNG;
 with ESP32S3.Log;    use ESP32S3.Log;
 
@@ -189,6 +190,21 @@ begin
       Check ("RSA modulus",   Slice_Eq (C.RSA_Modulus,  Exp_Modulus));
       Check ("RSA exponent",  Slice_Eq (C.RSA_Exponent, Exp_Exponent));
    end if;
+
+   --  Adversarial: a 4-byte long-form DER length (84 FF FF FF FF) encodes
+   --  2**32-1, which used to overflow the 31-bit Natural accumulator and raise
+   --  Constraint_Error -- a DoS on any parsed certificate.  The reader must now
+   --  reject it cleanly (Valid => False) rather than fault; reaching this verdict
+   --  at all (instead of a reset) is the proof.
+   declare
+      Evil : constant Byte_Array (0 .. 5) :=
+        (16#04#, 16#84#, 16#FF#, 16#FF#, 16#FF#, 16#FF#);  --  OCTET STRING, len 2^32-1
+      E    : X509.DER.TLV;
+   begin
+      X509.DER.Read (Evil, Evil'First, Evil'Last, E);
+      Check ("reject 4-byte length overflow", not E.Valid);
+   end;
+
    Put_Line ("[x509] done");
 
    --  Test done; park forever rather than return (there is no OS to return to).

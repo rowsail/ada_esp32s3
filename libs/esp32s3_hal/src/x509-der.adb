@@ -1,6 +1,7 @@
 package body X509.DER is
 
    use type Interfaces.Unsigned_8;
+   use type Interfaces.Unsigned_64;
 
    procedure Read (Buf : Byte_Array; Pos, Limit : Natural; E : out TLV) is
       P      : Natural := Pos;
@@ -36,9 +37,22 @@ package body X509.DER is
          if NBytes > 4 or else NBytes > Limit - P then
             return;
          end if;
-         for K in 1 .. NBytes loop
-            Len := Len * 256 + Natural (Buf (P + K));
-         end loop;
+         --  Accumulate in 64-bit: a 4-byte length (e.g. 84 FF FF FF FF) reaches
+         --  2**32-1, which overflows the 31-bit Natural on the last * 256 and
+         --  raises Constraint_Error BEFORE the window check below could reject it
+         --  (an attacker-controlled DoS on any parsed cert).  Reject a length that
+         --  cannot fit a Natural here, then narrow.
+         declare
+            Len64 : Interfaces.Unsigned_64 := 0;
+         begin
+            for K in 1 .. NBytes loop
+               Len64 := Len64 * 256 + Interfaces.Unsigned_64 (Buf (P + K));
+            end loop;
+            if Len64 > Interfaces.Unsigned_64 (Natural'Last) then
+               return;
+            end if;
+            Len := Natural (Len64);
+         end;
          P := P + NBytes;
       end if;
 
