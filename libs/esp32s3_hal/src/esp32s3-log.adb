@@ -138,6 +138,23 @@ package body ESP32S3.Log is
    -- Put_Fixed --
    ---------------
 
+   --  Emit a NON-NEGATIVE Long_Long_Integer's digits.  Put_Fixed handles the sign
+   --  itself, but its whole part can exceed Integer'Last -- Numer = Integer'First
+   --  with Denom = 1 gives Whole = 2**31 -- so Integer (Whole) would overflow.
+   procedure Put_Nonneg (N : Long_Long_Integer) is
+      Buf   : String (1 .. 20);         --  Long_Long_Integer is <= 19 digits
+      First : Natural := Buf'Last + 1;
+      U     : Long_Long_Integer := N;
+   begin
+      loop
+         First := First - 1;
+         Buf (First) := Character'Val (Character'Pos ('0') + Integer (U mod 10));
+         U := U / 10;
+         exit when U = 0;
+      end loop;
+      Put (Buf (First .. Buf'Last));
+   end Put_Nonneg;
+
    procedure Put_Fixed (Numer : Integer; Denom : Positive; Decimals : Natural := 2)
    is
       Neg   : constant Boolean           := Numer < 0;
@@ -153,7 +170,7 @@ package body ESP32S3.Log is
       if Neg then
          Put ("-");
       end if;
-      Put (Integer (Whole));
+      Put_Nonneg (Whole);              --  LLI: avoids the Integer (Whole) overflow
       if Decimals > 0 then
          Put (".");
          Put (Integer ((Rem_M * Scale) / D), Width => Decimals, Pad => '0');
