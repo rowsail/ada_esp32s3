@@ -27,14 +27,14 @@
 --    the hardware interrupt instead -- the falling-edge ISR then latches
 --    Alarm_IRQ.Fired.
 --
---  Report goes through the ROM printf glue (the reliable console path here); the
---  Ada driver does all the I2C/register work.
-with Interfaces.C; use Interfaces.C;
+--  Report goes through the buffered ESP32S3.Text_IO console; the Ada driver does
+--  all the I2C/register work.
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.GPIO;
 with ESP32S3.PCF85063A;
 with ESP32S3.PCF85063A.Interrupts;
+with ESP32S3.Text_IO;  use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
 with Alarm_IRQ;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
@@ -54,16 +54,60 @@ procedure Main is
    Rtc_Scl : constant ESP32S3.GPIO.Pin_Id       := 7;   --  I2C clock -> IO7
    Rtc_Int : constant ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
 
-   procedure Banner;            pragma Import (C, Banner,    "native_rtc_banner");
-   procedure Step (Code, Ok : int);
-                                pragma Import (C, Step,      "native_rtc_step");
-   procedure No_Device;         pragma Import (C, No_Device, "native_rtc_no_device");
-   procedure Show (Year, Month, Day, Day_Of_Week,
-                   Hours, Minutes, Seconds, Valid : int);
-                                pragma Import (C, Show,      "native_rtc_time");
-   procedure Alarm (By_Int : int);
-                                pragma Import (C, Alarm,     "native_rtc_alarm");
-   procedure Done;              pragma Import (C, Done,      "native_rtc_done");
+   --  Console reporters, formerly esp_rom_printf natives in glue.c, now pure Ada
+   --  over the buffered ESP32S3.Text_IO console.
+
+   --  Zero-padded decimal, at least Width digits (like C "%0Nd").
+   procedure Put_Dec0 (V : Natural; Width : Positive) is
+      S : String (1 .. 12);
+      P : Natural := S'Last;
+      X : Natural := V;
+   begin
+      loop
+         S (P) := Character'Val (Character'Pos ('0') + X mod 10);
+         X := X / 10;
+         exit when X = 0;
+         P := P - 1;
+      end loop;
+      while S'Last - P + 1 < Width loop
+         P := P - 1;
+         S (P) := '0';
+      end loop;
+      Put (S (P .. S'Last));
+   end Put_Dec0;
+
+   Dow : constant array (0 .. 6) of String (1 .. 3) :=
+     ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat");
+
+   procedure Banner is
+   begin
+      Put_Line ("[rtc] PCF85063A RTC driver demo (SDA=IO8  SCL=IO7  INT=none)");
+   end Banner;
+
+   --  One bus step: a left-justified 9-char name (like C "%-9s") + OK/FAIL.
+   procedure Step (Name : String; Ok : Boolean) is
+   begin
+      Put ("[rtc] ");
+      Put (Name);
+      for J in 1 .. 9 - Name'Length loop Put (' '); end loop;
+      Put_Line (" : " & (if Ok then "OK" else "FAIL"));
+   end Step;
+
+   procedure No_Device is
+   begin
+      Put_Line ("[rtc] no PCF85063A ACK at 0x51 -- check wiring/power.");
+   end No_Device;
+
+   procedure Alarm (By_Int : Boolean) is
+   begin
+      Put_Line ("[rtc] *** ALARM fired ***  (detected via "
+                & (if By_Int then "INT interrupt" else "I2C poll") & ")");
+   end Alarm;
+
+   procedure Done is
+   begin
+      Put_Line ("[rtc] done.");
+   end Done;
 
    Clock_Dev    : RTC.Device;        --  the RTC chip + its recorded wiring
    Reading      : RTC.Time;          --  the calendar read back from the chip
@@ -76,16 +120,18 @@ procedure Main is
      (Year   => 2026, Month  => 6, Day    => 22, Day_Of_Week => RTC.Monday,
       Hour   => 14,   Minute => 30, Second => 0);
 
+   --  One calendar reading:  "[rtc] Mon 2026-06-22 14:30:00  (integrity OK)".
    procedure Print (When_T : RTC.Time; Integrity : Boolean) is
    begin
-      Show (Year        => int (When_T.Year),
-            Month       => int (When_T.Month),
-            Day         => int (When_T.Day),
-            Day_Of_Week => int (RTC.Weekday'Pos (When_T.Day_Of_Week)),
-            Hours       => int (When_T.Hour),
-            Minutes     => int (When_T.Minute),
-            Seconds     => int (When_T.Second),
-            Valid       => Boolean'Pos (Integrity));
+      Put ("[rtc] ");
+      Put (Dow (RTC.Weekday'Pos (When_T.Day_Of_Week)));  Put (" ");
+      Put_Dec0 (Natural (When_T.Year),   4);  Put ("-");
+      Put_Dec0 (Natural (When_T.Month),  2);  Put ("-");
+      Put_Dec0 (Natural (When_T.Day),    2);  Put (" ");
+      Put_Dec0 (Natural (When_T.Hour),   2);  Put (":");
+      Put_Dec0 (Natural (When_T.Minute), 2);  Put (":");
+      Put_Dec0 (Natural (When_T.Second), 2);
+      Put_Line ("  (integrity " & (if Integrity then "OK" else "LOST") & ")");
    end Print;
 
 begin
@@ -99,7 +145,7 @@ begin
 
    --  probe: does the chip ACK its address?
    RTC.Get_Time (Clock_Dev, Reading, Integrity_Ok, Result);
-   Step (0, Boolean'Pos (Result = RTC.OK));
+   Step ("probe", Result = RTC.OK);
    if Result /= RTC.OK then
       No_Device;
       loop
@@ -109,10 +155,10 @@ begin
 
    --  reset -> set-time -> read back.
    RTC.Reset (Clock_Dev, Result);
-   Step (1, Boolean'Pos (Result = RTC.OK));
+   Step ("reset", Result = RTC.OK);
 
    RTC.Set_Time (Clock_Dev, Initial, Result);
-   Step (2, Boolean'Pos (Result = RTC.OK));
+   Step ("set-time", Result = RTC.OK);
 
    RTC.Get_Time (Clock_Dev, Reading, Integrity_Ok, Result);
    if Result = RTC.OK then
@@ -122,7 +168,7 @@ begin
    --  arm a seconds-match alarm 5 s out (the time was just set to :00).
    RTC.Set_Alarm
      (Clock_Dev, (Use_Second => True, Second => 5, others => <>), Result);
-   Step (3, Boolean'Pos (Result = RTC.OK));
+   Step ("set-alarm", Result = RTC.OK);
 
    --  watch the clock tick; stop when the alarm flag latches.
    for Tick in 1 .. 10 loop
@@ -140,7 +186,7 @@ begin
          if Result = RTC.OK and then Fired then
             --  Report how it was detected: the INT ISR latched the flag (a pin
             --  was wired and fired) or the I2C poll above found it.
-            Alarm (Boolean'Pos (Alarm_IRQ.Fired));
+            Alarm (Alarm_IRQ.Fired);
             RTC.Acknowledge_Alarm (Clock_Dev, Result);       --  release INT
             exit;
          end if;
