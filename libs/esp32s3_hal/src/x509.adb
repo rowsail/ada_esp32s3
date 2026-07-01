@@ -187,25 +187,43 @@ package body X509 is
          EP := Ext.Content.First;
          DER.Read (Cert, EP, Ext.Content.Last, OID);
          if OID.Valid and then OID.Tag = 16#06# then
-            --  Skip the optional critical BOOLEAN, then take extnValue OCTET STRING.
-            EP := OID.Elem_Last + 1;
-            DER.Read (Cert, EP, Ext.Content.Last, Val);
-            if Val.Valid and then Val.Tag = 16#01# then    --  optional critical BOOLEAN
-               EP := Val.Elem_Last + 1;
+            declare
+               Critical   : Boolean := False;
+               Recognized : Boolean := False;
+            begin
+               --  Optional critical BOOLEAN (DER omits it when FALSE); record it,
+               --  then take the extnValue OCTET STRING.
+               EP := OID.Elem_Last + 1;
                DER.Read (Cert, EP, Ext.Content.Last, Val);
-            end if;
-            if Val.Valid and then Val.Tag = 16#04# then    --  extnValue OCTET STRING
-               if Is_Ext_OID (Cert, OID.Content, 16#11#) then        --  subjectAltName
-                  Parse_SAN (Cert, Val.Content.First, Val.Content.Last, Result);
-               elsif Is_Ext_OID (Cert, OID.Content, 16#13#) then     --  basicConstraints
-                  Parse_Basic_Constraints
-                    (Cert, Val.Content.First, Val.Content.Last, Result);
-               elsif Is_Ext_OID (Cert, OID.Content, 16#0F#) then     --  keyUsage
-                  Parse_Key_Usage (Cert, Val.Content.First, Val.Content.Last, Result);
-               elsif Is_Ext_OID (Cert, OID.Content, 16#25#) then     --  extKeyUsage
-                  Parse_EKU (Cert, Val.Content.First, Val.Content.Last, Result);
+               if Val.Valid and then Val.Tag = 16#01# then    --  critical BOOLEAN
+                  Critical := Length (Val.Content) >= 1
+                              and then Cert (Val.Content.First) /= 0;
+                  EP := Val.Elem_Last + 1;
+                  DER.Read (Cert, EP, Ext.Content.Last, Val);
                end if;
-            end if;
+               if Val.Valid and then Val.Tag = 16#04# then    --  extnValue OCTET STRING
+                  if Is_Ext_OID (Cert, OID.Content, 16#11#) then     --  subjectAltName
+                     Parse_SAN (Cert, Val.Content.First, Val.Content.Last, Result);
+                     Recognized := True;
+                  elsif Is_Ext_OID (Cert, OID.Content, 16#13#) then  --  basicConstraints
+                     Parse_Basic_Constraints
+                       (Cert, Val.Content.First, Val.Content.Last, Result);
+                     Recognized := True;
+                  elsif Is_Ext_OID (Cert, OID.Content, 16#0F#) then  --  keyUsage
+                     Parse_Key_Usage (Cert, Val.Content.First, Val.Content.Last, Result);
+                     Recognized := True;
+                  elsif Is_Ext_OID (Cert, OID.Content, 16#25#) then  --  extKeyUsage
+                     Parse_EKU (Cert, Val.Content.First, Val.Content.Last, Result);
+                     Recognized := True;
+                  end if;
+               end if;
+
+               --  RFC 5280 4.2: reject the certificate if it carries a critical
+               --  extension we do not recognize / process.
+               if Critical and then not Recognized then
+                  Result.Unhandled_Critical := True;
+               end if;
+            end;
          end if;
          P := Ext.Elem_Last + 1;
       end loop;
@@ -394,7 +412,9 @@ package body X509 is
          Ok := False;
       end if;
 
-      Result.Valid := Ok;
+      --  RFC 5280 4.2: a cert with an unrecognized critical extension is invalid,
+      --  even if it is otherwise structurally sound.
+      Result.Valid := Ok and then not Result.Unhandled_Critical;
    end Parse;
 
    ---------------------------------------------------------------------------

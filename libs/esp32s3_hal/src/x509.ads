@@ -72,6 +72,12 @@ package X509 is
       EKU_Present    : Boolean := False;  --  extendedKeyUsage present
       EKU_Server     : Boolean := False;  --  id-kp-serverAuth (or anyExtendedKeyUsage)
       EKU_Client     : Boolean := False;  --  id-kp-clientAuth (or anyExtendedKeyUsage)
+
+      --  RFC 5280 4.2: an unrecognized extension marked CRITICAL must make the
+      --  whole certificate be rejected.  Set while parsing extensions and folded
+      --  into Valid, so a cert carrying a critical extension this parser does not
+      --  process cannot be treated as valid.
+      Unhandled_Critical : Boolean := False;
    end record;
 
    --  Parse a DER-encoded certificate.  On success Result.Valid is True and the
