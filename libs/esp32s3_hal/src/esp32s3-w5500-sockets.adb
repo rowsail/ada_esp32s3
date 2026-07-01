@@ -210,7 +210,14 @@ package body ESP32S3.W5500.Sockets is
             end if;
          end;
          exit when Clock >= Deadline;
-         Wait_Event (S);
+         --  Poll the status with a bounded delay rather than Wait_Event.  When
+         --  interrupts are armed Wait_Event blocks on INTn until the chip raises
+         --  one; a connection that just hangs (SYN dropped, no response) never
+         --  does, so the Deadline check above was unreachable and Connect blocked
+         --  forever despite the Timeout.  A short poll makes the timeout real
+         --  (connect is one-shot, so the ~5 ms tick cost is irrelevant), and a
+         --  refused connection still returns immediately via the SR_CLOSED branch.
+         delay until Clock + Milliseconds (5);
       end loop;
       Result := Timed_Out;
    end Connect;
