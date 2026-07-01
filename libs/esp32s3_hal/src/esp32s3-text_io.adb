@@ -30,6 +30,11 @@ package body ESP32S3.Text_IO is
       Name_Buf : String (1 .. Name_Max)     := (others => ' ');
       Form_Len : Natural                    := 0;
       Form_Buf : String (1 .. 64)           := (others => ' ');
+      --  One-character pushback for CONSOLE input.  The console RX read is
+      --  consuming (reading the FIFO pops a byte), but Peek must not consume, so
+      --  a peeked console byte is stashed here until Advance consumes it.
+      Have_LA  : Boolean                    := False;
+      LA_Char  : Character                  := ASCII.NUL;
    end record;
 
    procedure Free is new Ada.Unchecked_Deallocation (Control_Block, CB_Access);
@@ -83,7 +88,11 @@ package body ESP32S3.Text_IO is
 
    procedure Require_Read (B : CB_Access) is
    begin
-      if B.Kind /= Disk or else B.Mode /= In_File then
+      --  Reading is allowed from a disk file OR the console, but only when the
+      --  file was opened for input (Standard_Input is a Console/In_File file).
+      if B.Mode /= In_File
+        or else (B.Kind /= Disk and then B.Kind /= Console)
+      then
          raise ESP32S3.Ext4.Mode_Error;
       end if;
    end Require_Read;
@@ -157,11 +166,24 @@ package body ESP32S3.Text_IO is
       end if;
    end Write_Tracked;
 
-   --  Peek the next input byte without consuming it.
+   --  Peek the next input byte without consuming it.  Non-blocking for BOTH
+   --  backings: on the console it returns the pushback byte if one is stashed,
+   --  otherwise it takes at most one byte off the RX FIFO and stashes it (so a
+   --  later Advance consumes exactly that byte); Avail is False when the FIFO is
+   --  momentarily empty.  Blocking input is layered on top (see Await).
    procedure Peek (B : CB_Access; C : out Character; Avail : out Boolean) is
       One : Byte_Array (0 .. 0);
       Cnt : Natural;
    begin
+      if B.Kind = Console then
+         if B.Have_LA then
+            C := B.LA_Char; Avail := True;
+         else
+            ESP32S3.Serial.Get (C, Avail);
+            if Avail then B.Have_LA := True; B.LA_Char := C; end if;
+         end if;
+         return;
+      end if;
       if B.Offset >= B.Info.Size then
          C := ASCII.NUL; Avail := False; return;
       end if;
@@ -173,22 +195,51 @@ package body ESP32S3.Text_IO is
       end if;
    end Peek;
 
+   --  Bump the column / line / page counters for one consumed character.
+   procedure Bump_Pos (B : CB_Access; C : Character) is
+   begin
+      if C = ASCII.LF then
+         B.Column := 1; B.Line_No := B.Line_No + 1;
+      elsif C = Page_Mark then
+         B.Column := 1; B.Line_No := 1; B.Page_No := B.Page_No + 1;
+      else
+         B.Column := B.Column + 1;
+      end if;
+   end Bump_Pos;
+
    --  Consume the next input byte, tracking column / line / page.
    procedure Advance (B : CB_Access) is
       C : Character; Av : Boolean;
    begin
-      Peek (B, C, Av);
-      if Av then
-         if C = ASCII.LF then
-            B.Column := 1; B.Line_No := B.Line_No + 1;
-         elsif C = Page_Mark then
-            B.Column := 1; B.Line_No := 1; B.Page_No := B.Page_No + 1;
-         else
-            B.Column := B.Column + 1;
+      if B.Kind = Console then
+         --  Callers Peek (filling the pushback) before Advance; consume it.
+         if not B.Have_LA then
+            Peek (B, C, Av);
+            if not Av then return;   --  nothing to consume
+            end if;
          end if;
+         Bump_Pos (B, B.LA_Char);
+         B.Have_LA := False;
+         return;
       end if;
+      Peek (B, C, Av);
+      if Av then Bump_Pos (B, C); end if;
       B.Offset := B.Offset + 1;
    end Advance;
+
+   --  Blocking single-character console read: spin until a byte arrives, then
+   --  consume it.  This is where console input BLOCKS (Peek itself never does),
+   --  so an interactive Get / Get_Line waits for the user the way a terminal
+   --  read would.  Used only for Console files; disk input has real EOF instead.
+   procedure Await (B : CB_Access; C : out Character) is
+      Av : Boolean;
+   begin
+      loop
+         Peek (B, C, Av);
+         exit when Av;
+      end loop;
+      Advance (B);
+   end Await;
 
    procedure Skip_Blanks (B : CB_Access) is
       C : Character; Av : Boolean;
@@ -699,8 +750,8 @@ package body ESP32S3.Text_IO is
       B : constant CB_Access := CB (File);
       T : constant Positive := Positive (To);
    begin
-      if B.Kind = Disk and then B.Mode = In_File then     --  input: skip forward
-         while B.Column < T loop
+      if B.Mode = In_File and then (B.Kind = Disk or else B.Kind = Console) then
+         while B.Column < T loop                          --  input: skip forward
             declare C : Character; Av : Boolean; begin
                Peek (B, C, Av);
                exit when not Av or else C = ASCII.LF;
@@ -722,12 +773,15 @@ package body ESP32S3.Text_IO is
       B : constant CB_Access := CB (File);
       T : constant Positive := Positive (To);
    begin
-      if B.Kind = Disk and then B.Mode = In_File then
+      if B.Mode = In_File and then (B.Kind = Disk or else B.Kind = Console) then
          --  Input: skip lines FORWARD until the line number reaches T (a stream
          --  has no backward seek; a target at/behind the current line is a no-op).
-         while B.Line_No < T and then B.Offset < B.Info.Size loop
-            Skip_Line (File);
-         end loop;
+         --  A live console has no seekable line index, so it is a plain no-op.
+         if B.Kind = Disk then
+            while B.Line_No < T and then B.Offset < B.Info.Size loop
+               Skip_Line (File);
+            end loop;
+         end if;
       elsif T > B.Line_No then
          New_Line (File, Positive_Count (T - B.Line_No));      --  forward
       elsif T < B.Line_No then
@@ -765,6 +819,7 @@ package body ESP32S3.Text_IO is
       C : Character; Av : Boolean;
    begin
       Require_Read (B);
+      if B.Kind = Console then Await (B, Item); return; end if;
       Peek (B, C, Av);
       if not Av then raise ESP32S3.Ext4.End_Error; end if;
       Advance (B);
@@ -790,6 +845,7 @@ package body ESP32S3.Text_IO is
       B : constant CB_Access := CB (File); C : Character; Av : Boolean;
    begin
       Require_Read (B);
+      if B.Kind = Console then Await (B, Item); return; end if;
       Peek (B, C, Av);
       if not Av then raise ESP32S3.Ext4.End_Error; end if;
       Advance (B); Item := C;
@@ -812,11 +868,34 @@ package body ESP32S3.Text_IO is
    procedure Get_Immediate (Item : out Character; Available : out Boolean) is
    begin Get_Immediate (Cur_In.all, Item, Available); end Get_Immediate;
 
+   --  Consume a trailing LF that pairs with a just-read CR (CR-LF line ends), so
+   --  the next read does not see a stray empty line.  Console only; non-blocking.
+   procedure Swallow_LF_After_CR (B : CB_Access) is
+      C : Character; Av : Boolean;
+   begin
+      Peek (B, C, Av);
+      if Av and then C = ASCII.LF then Advance (B); end if;
+   end Swallow_LF_After_CR;
+
    procedure Get_Line (File : File_Type; Item : out String; Last : out Natural) is
       B : constant CB_Access := CB (File);
       C : Character; Av : Boolean;
    begin
       Require_Read (B);
+      if B.Kind = Console then
+         --  Interactive line read: block for characters until an end-of-line.
+         --  Terminals over USB-serial/UART send CR (or CR-LF) for Enter, so treat
+         --  CR and LF alike and absorb the LF of a CR-LF pair.
+         Last := Item'First - 1;
+         while Last < Item'Last loop
+            Await (B, C);
+            if C = ASCII.CR then Swallow_LF_After_CR (B); exit; end if;
+            exit when C = ASCII.LF;
+            Last := Last + 1;
+            Item (Last) := C;
+         end loop;
+         return;
+      end if;
       if B.Offset >= B.Info.Size then raise ESP32S3.Ext4.End_Error; end if;
       Last := Item'First - 1;
       while Last < Item'Last loop
@@ -838,16 +917,23 @@ package body ESP32S3.Text_IO is
       Buf : Str_Ptr := new String (1 .. 64);
       Len : Natural := 0;
       C   : Character; Av : Boolean;
+      Is_Con : constant Boolean := B.Kind = Console;
    begin
       Require_Read (B);
-      if B.Offset >= B.Info.Size then
+      if not Is_Con and then B.Offset >= B.Info.Size then
          Free (Buf); raise ESP32S3.Ext4.End_Error;
       end if;
       loop
-         Peek (B, C, Av);
-         exit when not Av;
-         Advance (B);
-         exit when C = ASCII.LF;
+         if Is_Con then
+            Await (B, C);                    --  block for the next char
+            if C = ASCII.CR then Swallow_LF_After_CR (B); exit; end if;
+            exit when C = ASCII.LF;
+         else
+            Peek (B, C, Av);
+            exit when not Av;
+            Advance (B);
+            exit when C = ASCII.LF;
+         end if;
          if Len = Buf'Length then            --  grow (double)
             declare
                Bigger : constant Str_Ptr := new String (1 .. Buf'Length * 2);
@@ -870,6 +956,16 @@ package body ESP32S3.Text_IO is
       C : Character; Av : Boolean;
    begin
       Require_Read (B);
+      if B.Kind = Console then
+         for S in 1 .. Spacing loop
+            loop
+               Await (B, C);
+               if C = ASCII.CR then Swallow_LF_After_CR (B); exit; end if;
+               exit when C = ASCII.LF;
+            end loop;
+         end loop;
+         return;
+      end if;
       for S in 1 .. Spacing loop
          if B.Offset >= B.Info.Size then raise ESP32S3.Ext4.End_Error; end if;
          loop
@@ -902,6 +998,8 @@ package body ESP32S3.Text_IO is
    begin
       if B.Kind = Disk and then B.Mode = In_File then
          return B.Offset >= B.Info.Size;
+      elsif B.Kind = Console and then B.Mode = In_File then
+         return False;   --  the console is an endless stream: never at end-of-file
       else
          raise ESP32S3.Ext4.Mode_Error;
       end if;

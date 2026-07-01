@@ -49,6 +49,14 @@ package ESP32S3.Console is
    --  Push any buffered bytes to the host now, as 64-byte USB packets.
    procedure Flush;
 
+   --  Non-blocking single-character INPUT from the USB Serial/JTAG OUT (host->
+   --  device) FIFO.  Available is True and C holds the byte when one was waiting
+   --  (reading pops exactly one byte from the RX FIFO); Available is False and C
+   --  is NUL when nothing is ready.  Never blocks and never waits on a host, so a
+   --  board with no host attached simply reports "nothing ready".  Callers that
+   --  want blocking input spin on this (that is what ESP32S3.Text_IO does).
+   procedure Read (C : out Character; Available : out Boolean);
+
    --  Total bytes dropped so far because no host was draining (saturating).  0
    --  means every byte handed to the console was delivered.
    function Dropped_Bytes return Interfaces.Unsigned_32;

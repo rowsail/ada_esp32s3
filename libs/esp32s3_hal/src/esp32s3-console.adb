@@ -261,4 +261,25 @@ package body ESP32S3.Console is
       Drop_Cb := Handler;
    end On_Drop;
 
+   ----------
+   -- Read --
+   ----------
+
+   --  SERIAL_OUT_EP_DATA_AVAIL reads 1 while the OUT (host->device) FIFO holds
+   --  unread bytes; each read of EP1 pops one byte and, when the FIFO empties,
+   --  clears the flag.  EP1 is Volatile_Full_Access, so the single read below is
+   --  one 32-bit bus op that both returns and consumes the byte -- we must not
+   --  touch EP1 unless a byte is actually available, or we would pop nothing / a
+   --  stale value.
+   procedure Read (C : out Character; Available : out Boolean) is
+   begin
+      if USB_DEVICE_Periph.EP1_CONF.SERIAL_OUT_EP_DATA_AVAIL then
+         C         := Character'Val (Natural (USB_DEVICE_Periph.EP1.RDWR_BYTE));
+         Available := True;
+      else
+         C         := ASCII.NUL;
+         Available := False;
+      end if;
+   end Read;
+
 end ESP32S3.Console;

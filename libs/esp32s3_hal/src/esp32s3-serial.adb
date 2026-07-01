@@ -51,6 +51,37 @@ package body ESP32S3.Serial is
       end if;
    end Flush;
 
+   --  Input side of the mux.  Symmetric with the output side above: a default
+   --  device bound to the USB Serial/JTAG console, redirectable with Set_Input.
+   procedure Console_Read (Ctx : System.Address; C : out Character;
+                           Available : out Boolean) is
+      pragma Unreferenced (Ctx);
+   begin
+      ESP32S3.Console.Read (C, Available);
+   end Console_Read;
+
+   The_Console_In : constant In_Device :=
+     (Read => Console_Read'Access, Ctx => System.Null_Address);
+
+   Current_In : In_Device := The_Console_In;
+
+   function Console_In_Device return In_Device is (The_Console_In);
+   function Input             return In_Device is (Current_In);
+
+   procedure Set_Input (D : In_Device) is
+   begin
+      Current_In := D;
+   end Set_Input;
+
+   procedure Get (C : out Character; Available : out Boolean) is
+   begin
+      if Current_In.Read /= null then
+         Current_In.Read (Current_In.Ctx, C, Available);
+      else
+         C := ASCII.NUL; Available := False;
+      end if;
+   end Get;
+
    --  Bridge the runtime console (Ada.Text_IO -> System.Text_IO) into this mux,
    --  so Put_Line and friends land on the same device as ESP32S3.Log and follow
    --  Set_Output.  We install a per-character sink the runtime calls; until then

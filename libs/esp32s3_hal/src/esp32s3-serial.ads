@@ -23,6 +23,19 @@ package ESP32S3.Serial is
       Ctx   : System.Address := System.Null_Address;
    end record;
 
+   --  Symmetric INPUT side of the mux.  A Read_Proc fetches at most one character
+   --  WITHOUT blocking: Available is True and C holds the byte when one was ready,
+   --  False (C = NUL) when none is.  The vtable procedure must be LIBRARY-LEVEL
+   --  (No_Implicit_Dynamic_Code bars 'Access of a nested one).
+   type Read_Proc is access procedure
+     (Ctx : System.Address; C : out Character; Available : out Boolean);
+
+   --  A character-input device.  Ctx is handed back to Read.
+   type In_Device is record
+      Read : Read_Proc      := null;
+      Ctx  : System.Address := System.Null_Address;
+   end record;
+
    --  Redirect all output to D.  Flushes the previous device first so nothing is
    --  stranded in its buffer.  Default at startup is the USB Serial/JTAG console.
    procedure Set_Output (D : Device);
@@ -37,5 +50,18 @@ package ESP32S3.Serial is
    procedure Write (S : String);
    procedure Put (C : Character);
    procedure Flush;
+
+   --  Redirect all console INPUT to D.  Default at startup is the USB Serial/JTAG
+   --  console; switch to, e.g., a UART with ESP32S3.UART.Text.As_Input_Device.
+   procedure Set_Input (D : In_Device);
+
+   --  The currently selected input device, and the default console input device
+   --  (for save/restore, symmetric with Output / Console_Device).
+   function Input return In_Device;
+   function Console_In_Device return In_Device;
+
+   --  Input primitive -- dispatch to the active input device.  Non-blocking:
+   --  Available is False (C = NUL) when no character is ready.
+   procedure Get (C : out Character; Available : out Boolean);
 
 end ESP32S3.Serial;
