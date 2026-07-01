@@ -75,8 +75,20 @@ package body ESP32S3.GPIO is
       end Configure;
 
       procedure Toggle (Pin : Pin_Id) is
+         Currently_High : Boolean;
       begin
-         Write (Pin, not Read (Pin));          --  read-then-write, serialised
+         --  Flip based on the OUTPUT LATCH (OUT_k / OUT1.DATA_ORIG), not the input
+         --  pad level: Read samples IN_k, which on a loaded, slow-RC or contended
+         --  output pin can differ from the last driven value, so a Read-based
+         --  toggle could flip to the wrong state or fail to alternate.  (Serialised
+         --  by this protected object.)
+         if Pin <= 31 then
+            Currently_High := (Reg.GPIO_Periph.OUT_k and Lo_Bit (Pin)) /= 0;
+         else
+            Currently_High :=
+              (Reg.GPIO_Periph.OUT1.DATA_ORIG and Hi_Bit (Pin)) /= 0;
+         end if;
+         Write (Pin, not Currently_High);
       end Toggle;
 
    end Lock;
