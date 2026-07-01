@@ -3,6 +3,8 @@ with System.Machine_Code;     use System.Machine_Code;
 with Ada.Unchecked_Conversion;
 with Ada.Interrupts.Names;
 with Ada.Synchronous_Task_Control;  use Ada.Synchronous_Task_Control;
+with Ada.Real_Time;                 use Ada.Real_Time;
+with Ada.Real_Time.Timing_Events;   use Ada.Real_Time.Timing_Events;
 with ESP32S3_Registers;        use ESP32S3_Registers;
 with ESP32S3_Registers.DMA;    use ESP32S3_Registers.DMA;
 with ESP32S3_Registers.SYSTEM;
@@ -153,6 +155,14 @@ package body ESP32S3.GDMA is
    --  one task at a time, so at most one task ever waits on each.
    Done_Signal : array (Channel_Id, Direction) of Suspension_Object;
 
+   --  Deadline timer per channel/direction: if the EOF interrupt never arrives
+   --  (a stuck or misconfigured DMA), this fires and force-wakes the completion
+   --  signal so Wait cannot block forever.  Generous -- a single GDMA transfer
+   --  is <= 4095 bytes, whose EOF (bytes reached the FIFO) lands well inside this
+   --  even when the FIFO drain is rate-gated -- so it only ever trips on a fault.
+   Timeout_Ev   : array (Channel_Id, Direction) of Timing_Event;
+   Wait_Timeout : constant Time_Span := Seconds (5);
+
    --  Poll Done this many times before suspending.  Each poll is a slow APB
    --  register read, so this is a few microseconds -- enough to absorb a tiny
    --  transfer that would finish before the interrupt + context switch pays
@@ -208,6 +218,32 @@ package body ESP32S3.GDMA is
       end Handler;
 
    end Completion;
+
+   --  Timing-event handler: runs at Interrupt_Priority'Last (a separate PO from
+   --  Completion, whose ceiling is only Device_L2_Priority).  On the deadline it
+   --  force-wakes the matching completion signal; Wait re-checks Done afterwards
+   --  to distinguish a real EOF from a timeout.  Set_True is idempotent, so a
+   --  timeout racing the EOF interrupt is harmless.
+   protected Timeout_Waker
+     with Interrupt_Priority => System.Interrupt_Priority'Last
+   is
+      procedure On_Deadline (Event : in out Timing_Event);
+   end Timeout_Waker;
+
+   protected body Timeout_Waker is
+      procedure On_Deadline (Event : in out Timing_Event) is
+         use type System.Address;
+      begin
+         for C in Channel_Id loop
+            for D in Direction loop
+               if Timeout_Ev (C, D)'Address = Event'Address then
+                  Set_True (Done_Signal (C, D));
+                  return;
+               end if;
+            end loop;
+         end loop;
+      end On_Deadline;
+   end Timeout_Waker;
 
    --  Arm a channel's EOF completion interrupt just before its transfer is
    --  kicked: reset the wait signal, clear the stale EOF status, enable the EOF
@@ -479,8 +515,20 @@ package body ESP32S3.GDMA is
          Spin := Spin + 1;
       end loop;
       --  Still running: hand the core back until the EOF interrupt wakes us.
+      --  Arm a deadline timer first so a stuck DMA (EOF that never arrives)
+      --  cannot block this task forever: whichever fires first -- the EOF
+      --  interrupt (real completion) or the timer -- sets Done_Signal, and we
+      --  then cancel the other.  On a timeout Done (C, Dir) stays False, but Wait
+      --  returns (unblocks) instead of deadlocking the system.
       if not Done (C, Dir) then
-         Suspend_Until_True (Done_Signal (C.Id, Dir));
+         declare
+            Cancelled : Boolean;
+         begin
+            Set_Handler (Timeout_Ev (C.Id, Dir), Clock + Wait_Timeout,
+                         Timeout_Waker.On_Deadline'Access);
+            Suspend_Until_True (Done_Signal (C.Id, Dir));
+            Cancel_Handler (Timeout_Ev (C.Id, Dir), Cancelled);
+         end;
       end if;
       Disarm (C.Id, Dir);   --  drop the EOF enable (whether the spin or the IRQ won)
    end Wait;
