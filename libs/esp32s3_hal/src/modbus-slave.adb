@@ -93,53 +93,68 @@ package body Modbus.Slave is
          when FC_Read_Coils | FC_Read_Discrete_Inputs =>
             declare
                A   : constant Address := Address (Get_U16 (Buf, 8));
-               Qty : constant Natural := Natural (Get_U16 (Buf, 10));
-               Bc  : constant Natural := (Qty + 7) / 8;
-               B   : Bit_Array (0 .. Natural'Max (Qty, 1) - 1) := (others => False);
+               --  Read Qty ONLY once the fields are present, and VALIDATE its range
+               --  before it is used to size any array -- an attacker-supplied (or
+               --  stale, on a short frame) Qty up to 65535 would otherwise allocate
+               --  a 65535-element array on the stack and overflow it (a remote DoS
+               --  that killed the whole server).
+               Qty : constant Natural :=
+                 (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
             begin
-               if Qty not in 1 .. Max_Read_Bits then
-                  Exc := Illegal_Data_Value;
+               if Req_Len < 12 or else Qty not in 1 .. Max_Read_Bits then
+                  Exc := Illegal_Data_Value;                --  short frame or bad Qty
                else
-                  if FC = FC_Read_Coils then
-                     On_Read_Coils (Self, Unit, A, Qty, B, Exc);
-                  else
-                     On_Read_Discrete_Inputs (Self, Unit, A, Qty, B, Exc);
-                  end if;
-                  if Exc = None then
-                     Buf (MBAP_Size) := Byte (FC);
-                     Buf (8) := Byte (Bc);
-                     for I in 9 .. 9 + Bc - 1 loop Buf (I) := 0; end loop;
-                     for I in 0 .. Qty - 1 loop
-                        if B (I) then
-                           Buf (9 + I / 8) :=
-                             Buf (9 + I / 8) or Byte (2 ** (I mod 8));
-                        end if;
-                     end loop;
-                     PDU_Len := 2 + Bc;
-                  end if;
+                  declare
+                     Bc : constant Natural := (Qty + 7) / 8;      --  Qty bounded now
+                     B  : Bit_Array (0 .. Qty - 1) := (others => False);
+                  begin
+                     if FC = FC_Read_Coils then
+                        On_Read_Coils (Self, Unit, A, Qty, B, Exc);
+                     else
+                        On_Read_Discrete_Inputs (Self, Unit, A, Qty, B, Exc);
+                     end if;
+                     if Exc = None then
+                        Buf (MBAP_Size) := Byte (FC);
+                        Buf (8) := Byte (Bc);
+                        for I in 9 .. 9 + Bc - 1 loop Buf (I) := 0; end loop;
+                        for I in 0 .. Qty - 1 loop
+                           if B (I) then
+                              Buf (9 + I / 8) :=
+                                Buf (9 + I / 8) or Byte (2 ** (I mod 8));
+                           end if;
+                        end loop;
+                        PDU_Len := 2 + Bc;
+                     end if;
+                  end;
                end if;
             end;
 
          when FC_Read_Holding_Registers | FC_Read_Input_Registers =>
             declare
                A   : constant Address := Address (Get_U16 (Buf, 8));
-               Qty : constant Natural := Natural (Get_U16 (Buf, 10));
-               W   : Word_Array (0 .. Natural'Max (Qty, 1) - 1) := (others => 0);
+               Qty : constant Natural :=              --  validate before sizing (see above)
+                 (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
             begin
-               if Qty not in 1 .. Max_Read_Registers then
-                  Exc := Illegal_Data_Value;
+               if Req_Len < 12 or else Qty not in 1 .. Max_Read_Registers then
+                  Exc := Illegal_Data_Value;                --  short frame or bad Qty
                else
-                  if FC = FC_Read_Holding_Registers then
-                     On_Read_Holding_Registers (Self, Unit, A, Qty, W, Exc);
-                  else
-                     On_Read_Input_Registers (Self, Unit, A, Qty, W, Exc);
-                  end if;
-                  if Exc = None then
-                     Buf (MBAP_Size) := Byte (FC);
-                     Buf (8) := Byte (2 * Qty);
-                     for I in 0 .. Qty - 1 loop Put_U16 (Buf, 9 + 2 * I, W (I)); end loop;
-                     PDU_Len := 2 + 2 * Qty;
-                  end if;
+                  declare
+                     W : Word_Array (0 .. Qty - 1) := (others => 0);   --  Qty bounded
+                  begin
+                     if FC = FC_Read_Holding_Registers then
+                        On_Read_Holding_Registers (Self, Unit, A, Qty, W, Exc);
+                     else
+                        On_Read_Input_Registers (Self, Unit, A, Qty, W, Exc);
+                     end if;
+                     if Exc = None then
+                        Buf (MBAP_Size) := Byte (FC);
+                        Buf (8) := Byte (2 * Qty);
+                        for I in 0 .. Qty - 1 loop
+                           Put_U16 (Buf, 9 + 2 * I, W (I));
+                        end loop;
+                        PDU_Len := 2 + 2 * Qty;
+                     end if;
+                  end;
                end if;
             end;
 
@@ -148,8 +163,10 @@ package body Modbus.Slave is
                A : constant Address := Address (Get_U16 (Buf, 8));
                V : constant Word    := Get_U16 (Buf, 10);
             begin
-               if V /= 16#FF00# and then V /= 16#0000# then
-                  Exc := Illegal_Data_Value;
+               if Req_Len < 12
+                 or else (V /= 16#FF00# and then V /= 16#0000#)
+               then
+                  Exc := Illegal_Data_Value;                --  short frame or bad V
                else
                   On_Write_Single_Coil (Self, Unit, A, V = 16#FF00#, Exc);
                   if Exc = None then PDU_Len := 5; end if;   --  echo FC+addr+value
@@ -161,41 +178,63 @@ package body Modbus.Slave is
                A : constant Address := Address (Get_U16 (Buf, 8));
                V : constant Word    := Get_U16 (Buf, 10);
             begin
-               On_Write_Single_Register (Self, Unit, A, V, Exc);
-               if Exc = None then PDU_Len := 5; end if;       --  echo FC+addr+value
+               if Req_Len < 12 then
+                  Exc := Illegal_Data_Value;                --  short frame
+               else
+                  On_Write_Single_Register (Self, Unit, A, V, Exc);
+                  if Exc = None then PDU_Len := 5; end if;    --  echo FC+addr+value
+               end if;
             end;
 
          when FC_Write_Multiple_Coils =>
             declare
                A   : constant Address := Address (Get_U16 (Buf, 8));
-               Qty : constant Natural := Natural (Get_U16 (Buf, 10));
-               Bc  : constant Natural := Natural (Buf (12));
-               V   : Bit_Array (0 .. Natural'Max (Qty, 1) - 1) := (others => False);
+               Qty : constant Natural :=            --  guard reads; validate before sizing
+                 (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
+               Bc  : constant Natural :=
+                 (if Req_Len >= 13 then Natural (Buf (12)) else 0);
             begin
-               if Qty not in 1 .. Max_Write_Bits or else Bc /= (Qty + 7) / 8 then
+               if Req_Len < 13 + Bc                          --  header+byte-count+data
+                 or else Qty not in 1 .. Max_Write_Bits
+                 or else Bc /= (Qty + 7) / 8
+               then
                   Exc := Illegal_Data_Value;
                else
-                  for I in 0 .. Qty - 1 loop
-                     V (I) := (Buf (13 + I / 8) and Byte (2 ** (I mod 8))) /= 0;
-                  end loop;
-                  On_Write_Multiple_Coils (Self, Unit, A, V, Exc);
-                  if Exc = None then PDU_Len := 5; end if;    --  echo FC+addr+qty
+                  declare
+                     V : Bit_Array (0 .. Qty - 1) := (others => False);
+                  begin
+                     for I in 0 .. Qty - 1 loop
+                        V (I) := (Buf (13 + I / 8) and Byte (2 ** (I mod 8))) /= 0;
+                     end loop;
+                     On_Write_Multiple_Coils (Self, Unit, A, V, Exc);
+                     if Exc = None then PDU_Len := 5; end if;    --  echo FC+addr+qty
+                  end;
                end if;
             end;
 
          when FC_Write_Multiple_Registers =>
             declare
                A   : constant Address := Address (Get_U16 (Buf, 8));
-               Qty : constant Natural := Natural (Get_U16 (Buf, 10));
-               Bc  : constant Natural := Natural (Buf (12));
-               V   : Word_Array (0 .. Natural'Max (Qty, 1) - 1) := (others => 0);
+               Qty : constant Natural :=            --  guard reads; validate before sizing
+                 (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
+               Bc  : constant Natural :=
+                 (if Req_Len >= 13 then Natural (Buf (12)) else 0);
             begin
-               if Qty not in 1 .. Max_Write_Registers or else Bc /= 2 * Qty then
+               if Req_Len < 13 + Bc                          --  header+byte-count+data
+                 or else Qty not in 1 .. Max_Write_Registers
+                 or else Bc /= 2 * Qty
+               then
                   Exc := Illegal_Data_Value;
                else
-                  for I in 0 .. Qty - 1 loop V (I) := Get_U16 (Buf, 13 + 2 * I); end loop;
-                  On_Write_Multiple_Registers (Self, Unit, A, V, Exc);
-                  if Exc = None then PDU_Len := 5; end if;    --  echo FC+addr+qty
+                  declare
+                     V : Word_Array (0 .. Qty - 1) := (others => 0);
+                  begin
+                     for I in 0 .. Qty - 1 loop
+                        V (I) := Get_U16 (Buf, 13 + 2 * I);
+                     end loop;
+                     On_Write_Multiple_Registers (Self, Unit, A, V, Exc);
+                     if Exc = None then PDU_Len := 5; end if;    --  echo FC+addr+qty
+                  end;
                end if;
             end;
 
