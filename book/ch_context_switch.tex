@@ -209,10 +209,14 @@ MAC16 \texttt{ACCLO}/\texttt{ACCHI}/\texttt{Mn} & no & \texttt{XCHAL\_HAVE\_MAC1
 \bottomrule
 \end{longtable}
 
-The FPU is handled \emph{eagerly per task}: \texttt{CPENABLE} is enabled globally,
-every task is given a \texttt{CP\_State} save area, and the switch copies all
-sixteen \texttt{F} registers plus \texttt{FCR}/\texttt{FSR} whenever the buffer's
-\texttt{CP\_State} pointer is non-null. \texttt{THREADPTR} was the last addition to
+The FPU is handled \emph{eagerly per task}: the run-time enables the FPU bit
+(\texttt{CP0}) of \texttt{CPENABLE} for every task, gives each a \texttt{CP\_State}
+save area, and the switch copies all sixteen \texttt{F} registers plus
+\texttt{FCR}/\texttt{FSR} whenever the buffer's \texttt{CP\_State} pointer is
+non-null. Note this covers \emph{only} the FPU: the PIE/SIMD coprocessor
+(\texttt{CP3}) is not part of the per-task enable, so a task using
+\texttt{ESP32S3.SIMD} must switch it on itself (\S\ref{ch:asm}) and keep its vector
+work single-task, since the \texttt{q}-registers are not in the save area. \texttt{THREADPTR} was the last addition to
 the list; for some time the field existed in the record but the assembly never
 touched it, leaving all tasks sharing one value \textemdash{} harmless only because
 nothing yet used per-task TLS.

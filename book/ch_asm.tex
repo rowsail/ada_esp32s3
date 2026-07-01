@@ -151,20 +151,28 @@ ships and builds an S3 overlay (\texttt{crates/xtensa-dynconfig}) and exports
 the LX7 PIE instructions assemble with no extra step. Without that overlay the same
 source stops at \texttt{Error: unknown opcode}.
 
-\textbf{The coprocessor has to be on.} The PIE unit is a \emph{coprocessor}, and on
-the S3 it is coprocessor~3 (named \texttt{cop\_ai}; the FPU is coprocessor~0).
-Coprocessors come out of reset disabled, so the first \texttt{ee.*} instruction
-would take a coprocessor-disabled exception. The fix is one word, in two places
-that must agree: the boot \texttt{start.S} and the runtime's per-core CPU
-initialisation both write \texttt{CPENABLE = 16\#09\#}: bit~0 for the FPU, bit~3
-for PIE, exactly the \texttt{XCHAL\_CP\_MASK} the S3 configuration declares. The
-runtime's value is the one that sticks: it re-establishes \texttt{CPENABLE} for each
-core as the scheduler starts, so enabling PIE \emph{only} in \texttt{start.S} is
-silently undone (a lesson learned the hard way: the first board run hung on the
-very first vector instruction). One consequence is worth stating plainly: the FPU's
-state is saved and restored across context switches, but the PIE
-\texttt{q0}--\texttt{q7} registers are not, so \texttt{ESP32S3.SIMD} must be confined
-to a single task.
+\textbf{The coprocessor has to be on --- per task.} The PIE unit is a
+\emph{coprocessor}, and on the S3 it is coprocessor~3 (named \texttt{cop\_ai}; the
+FPU is coprocessor~0). Coprocessors come out of reset disabled, so the first
+\texttt{ee.*} instruction executed with CP3 off takes a coprocessor-disabled
+exception --- which on this bare target simply hangs. \texttt{CPENABLE} gates
+coprocessor use, and the subtlety that bites is that it is \emph{per task}. The boot
+\texttt{start.S} writes \texttt{CPENABLE = 16\#09\#} (bit~0 for the FPU, bit~3 for
+PIE, matching the \texttt{XCHAL\_CP\_MASK} the S3 declares) on the startup thread ---
+but the GNAT run-time gives every task its own coprocessor context and starts it
+with only \texttt{CP0}, the FPU, enabled. Read \texttt{CPENABLE} from inside an
+ordinary task and it is \texttt{16\#01\#}: CP3 is off. So enabling PIE in
+\texttt{start.S} does \emph{not} carry into the tasks --- a lesson learned the hard
+way, with the first board run hanging on the very first vector instruction issued
+from the environment task.
+
+The remedy is for each SIMD-using task to turn CP3 on \emph{itself} before its first
+vector op, by calling \texttt{ESP32S3.SIMD.Enable}, which ORs bit~3 into
+\texttt{CPENABLE} (preserving the FPU bit) and \texttt{rsync}s. It is idempotent and
+cheap; do it once at the top of the task. A second consequence is worth stating
+plainly: the PIE \texttt{q0}--\texttt{q7} registers are \emph{not} saved and restored
+across context switches (unlike the FPU's state), so \texttt{ESP32S3.SIMD} work must
+in any case stay within a single task.
 
 A third, gentler requirement is \textbf{alignment}: the 128-bit loads and stores
 want 16-byte-aligned data. The library's vector types carry
@@ -185,6 +193,7 @@ A : SIMD_I32_Vector (0 .. 1023) := (others => 100);
 B : SIMD_I32_Vector (0 .. 1023) := (others => 25);
 R : SIMD_I32_Vector (0 .. 1023);
 begin
+   Enable;               --  turn CP3 (PIE) on for THIS task -- once, before any op
    Add (A, B, R);        --  R := saturating A + B, four lanes per issue
    Total : constant Integer_32 := Dot_Product (A, B);
 \end{lstlisting}
