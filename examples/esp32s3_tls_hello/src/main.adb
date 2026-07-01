@@ -53,6 +53,11 @@ procedure Main is
    Sock    : Socket_Type;        --  the TCP socket carrying the encrypted records
    Session : TLS_Client.Session; --  TLS state (keys, transcript, peer cert chain)
    Ok      : Boolean;            --  did the handshake open successfully?
+
+   --  Set True only once the server is REALLY authenticated: its Finished and
+   --  CertificateVerify checked AND its cert chain validated to our pinned root.
+   --  The application-data exchange is gated on this, not on Ready alone.
+   Peer_Authenticated : Boolean := False;
 begin
    delay until Clock + Milliseconds (200);
    --  TLS key generation needs real randomness; turn on the hardware CSPRNG
@@ -199,6 +204,17 @@ begin
                Put_Line ("[tls] chain validation (pinned root):" & Natural'Image
                          (TLS_Client.Server_Cert_Count (Session)) & " certs -> "
                          & Result'Image (Chain_Result));
+
+               --  GATE the connection here.  We are inside `if Flight_OK`, so the
+               --  encrypted handshake was authenticated (Finished seen); require
+               --  ALSO that the server proved possession of its certificate's key
+               --  (CertificateVerify) and that its chain validates to our pinned
+               --  root -- Validate additionally enforces the leaf host match and
+               --  each cert's validity window.  Only then is the peer trusted.
+               Peer_Authenticated :=
+                 TLS_Client.Server_Cert_Verify_OK (Session)
+                 and then TLS_Client.Server_Finished_OK (Session)
+                 and then Chain_Result = Valid;
             end;
          end if;
       else
@@ -206,9 +222,15 @@ begin
       end if;
 
       Put_Line ("[tls] ready=" & (if TLS_Client.Ready (Session) then "yes" else "no"));
+      Put_Line ("[tls] peer authenticated="
+                & (if Peer_Authenticated then "yes" else "no"));
 
-      --  Encrypted application data: send an HTTP GET, decrypt the response.
-      if TLS_Client.Ready (Session) then
+      --  Encrypted application data: send the HTTP GET ONLY if the peer is both
+      --  Ready AND authenticated.  Ready alone means the TLS handshake completed
+      --  cryptographically; it does NOT mean the certificate chain was trusted.
+      --  Sending on Ready alone would exchange data with an unauthenticated
+      --  (possibly forged / MITM) server -- the bug this gate closes.
+      if TLS_Client.Ready (Session) and then Peer_Authenticated then
          declare
             --  HTTP/1.0 GET; "Connection: close" so the server ends the body
             --  by closing, which is how Recv below sees the end of data.
@@ -242,6 +264,9 @@ begin
                Put_Line ("[tls] no application data (server closed / alert)");
             end if;
          end;
+      elsif TLS_Client.Ready (Session) then
+         Put_Line ("[tls] REFUSING app data: handshake ready but peer NOT "
+                   & "authenticated (cert chain not trusted) -- connection rejected");
       end if;
    else
       Put_Line ("[tls] handshake opening FAILED");
