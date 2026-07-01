@@ -57,6 +57,22 @@ exception path and the \texttt{Illegal\_Function} default are all host-tested ag
 crafted frames with no sockets at all. \texttt{Run} is a thin one-client-at-a-time loop
 around it.
 
+\texttt{Process} treats the request bytes as \emph{untrusted}, because on a TCP port
+they are. Two disciplines make a malformed frame a clean exception reply rather than
+a fault. First, every field is bounds-checked before it is read: a request is
+rejected with \texttt{Illegal\_Data\_Value} unless the received length actually
+covers the address, quantity and (for the write-multiple functions) byte-count and
+data it is about to parse --- so a truncated frame can never be interpreted against
+stale bytes left in the reused receive buffer from an earlier request. Second, and
+subtler, the request's 16-bit quantity is \emph{range-checked before} it is used to
+size anything. The reply for a read is built in a stack array whose length is the
+requested count; sizing that array straight from the wire would let a single packet
+asking for 65\,535 registers allocate a 128\,KB frame and overflow the task
+stack --- a one-packet remote denial of service. \texttt{Process} validates the
+quantity against the per-function Modbus maximum \emph{first} and only then, in a
+nested block, declares the now-bounded array. The rule generalises past Modbus: never
+let an attacker-supplied count drive an allocation before you have checked it.
+
 \section{The master returns status, not exceptions}
 
 A master is synchronous (send a request, wait for the reply), so each call returns

@@ -429,8 +429,18 @@ hole by copying one block, so over time every logical block visits every physica
 block and a hot block (an ext4 bitmap, say) never wears out one sector. The state
 is written to two configuration blocks \emph{ping-pong} (alternating, each with a
 higher sequence number and a CRC), so a power loss mid-update always leaves a
-consistent earlier state; \texttt{Mount} picks the highest valid sequence. The
-whole stack (erase-aware writes, the wear-level remap, the auto-detected size)
+consistent earlier state; \texttt{Mount} picks the highest valid sequence.
+
+That same ``highest sequence wins'' rule is why \texttt{Format} cannot just write a
+fresh, low-sequence record and stop: a chip that was used before still holds an old
+record with a far higher sequence in the \emph{other} ping-pong slot, and
+\texttt{Mount} would then pick that stale slot and silently bring the volume back up
+with its pre-format wear state, as though the format never happened.
+\texttt{Format} therefore \emph{invalidates both} config slots first --- zeroing
+them, so their magic and version no longer parse --- and only then writes the new
+sequence-one record, so the fresh state is the only thing \texttt{Mount} can find.
+
+The whole stack (erase-aware writes, the wear-level remap, the auto-detected size)
 comes together in four calls:
 
 \begin{lstlisting}

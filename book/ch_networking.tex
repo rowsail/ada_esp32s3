@@ -74,6 +74,19 @@ The engine and everything above it use controlled SPI handles and
 \texttt{Ada.Real\_Time}, so the networking stack requires the \texttt{embedded} or
 \texttt{full} profile.
 
+\textbf{A bounded connect.} \texttt{Connect} is the one operation that must never
+wait forever: a peer that is down, or a \texttt{SYN} that vanishes into a dropped
+segment, would otherwise hang the calling task indefinitely. The engine gives
+\texttt{Connect} a deadline and polls the socket's status register in short
+\texttt{delay until} steps until it either reaches \texttt{ESTABLISHED}, transitions
+to \texttt{CLOSED} (refused --- reported immediately), or the deadline passes
+(\texttt{Timed\_Out}). This is deliberately \emph{not} the interrupt-suspend the
+data path uses: a connection that just hangs never raises the \texttt{INTn} that a
+suspend would sleep on, so a deadline check sitting behind that suspend is
+unreachable --- the bounded poll is what makes the timeout actually fire. Everything
+above inherits it, so a \texttt{GNAT.Sockets.Connect\_Socket} to an unreachable host
+returns \texttt{Socket\_Error} instead of wedging the task.
+
 \section{What GNAT.Sockets provides}\index{GNAT.Sockets}\index{socket}
 \label{ch:net:gnatsockets}
 

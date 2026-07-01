@@ -191,6 +191,21 @@ flag. The optional \texttt{INT} pin is wired through \texttt{Setup} and armed by
 \texttt{ESP32S3.PCF85063A.Interrupts.Attach} as a pulled-up falling-edge input. The
 controlled session restricts this driver to the embedded and full profiles.
 
+The calendar fields are constrained subtypes (\texttt{Hour\_Number} is
+\texttt{0\,..\,23}, \texttt{Year\_Number} \texttt{2000\,..\,2099}, and so on) ---
+the right contract for callers, but it means \texttt{Get\_Time} must not decode a
+raw register straight into one. A chip that lost power (a dead backup cell) or was
+never set can hold out-of-range BCD, and \texttt{Weekday'Val} on the 3-bit day field
+can be handed a 7; decoding those directly into the subtypes would raise
+\texttt{Constraint\_Error} out of the very call whose job is to \emph{report}
+untrustworthy time --- and it would fire precisely when \texttt{Valid} should come
+back False. So \texttt{Get\_Time} decodes into unconstrained locals first,
+range-checks every field, and builds the \texttt{Time} record only when all are in
+range; anything out of range leaves \texttt{T} at its defaults and returns
+\texttt{Valid => False} (with \texttt{Result = OK}, since the bus read itself
+succeeded). The subtypes still guarantee callers a sane \texttt{Time}; the driver
+just stops trusting the wire to supply one.
+
 \begin{lstlisting}
 Bus_Address : constant ESP32S3.I2C.Slave_Address := 16#51#;
 subtype Year_Number is Natural range 2000 .. 2099;   --  also Month/Day/Hour/...
