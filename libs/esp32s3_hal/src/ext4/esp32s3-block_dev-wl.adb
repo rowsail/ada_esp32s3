@@ -267,11 +267,21 @@ package body ESP32S3.Block_Dev.WL is
    end Mount;
 
    procedure Format (V : in out Volume) is
+      Blank : constant Sector := (others => 0);
    begin
       V.Move_Steps   := 0;
       V.Access_Count := 0;
       V.Sequence     := 0;
-      Persist (V);              --  first record, sequence 1
+      --  Invalidate BOTH ping-pong config slots before writing the fresh record.
+      --  A previously-used volume can hold a config in the other slot whose
+      --  sequence is HIGHER than the one we write here (Persist advances to 1);
+      --  since Mount selects the highest sequence, that stale slot would silently
+      --  override the format on the next Mount -- the medium would come back up
+      --  with the pre-format geometry/state.  Zeroing both makes Parse reject them
+      --  (Magic/Version mismatch), so only the fresh record below is valid.
+      Write_Sector (V.Lower, Cfg_Sector (V, 0), Blank);
+      Write_Sector (V.Lower, Cfg_Sector (V, 1), Blank);
+      Persist (V);              --  fresh record, sequence 1 (into slot 1)
       V.Mounted := True;
    end Format;
 
