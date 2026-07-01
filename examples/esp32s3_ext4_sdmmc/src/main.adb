@@ -24,7 +24,6 @@
 --  held high over I2C0 (SDA=IO8, SCL=IO9) before the card is initialised.
 with System;
 with Interfaces;   use Interfaces;
-with Interfaces.C; use Interfaces.C;
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.CH422G;
@@ -72,15 +71,12 @@ procedure Main is
    Card             : aliased SDMMC.Card;
    Card_Status      : SDMMC.Status;
 
-   Empty : aliased constant String := (1 => Character'Val (0));
-
    --  Let the USB-serial console attach before the first line is printed.
    Startup_Delay : constant Time_Span := Milliseconds (200);
 
    procedure Stage (Name : String) is
-      C_Name : aliased constant String := Cstr (Name);
    begin
-      Err_R (C_Name'Address);
+      Err_R (Name);
    end Stage;
 begin
    delay until Clock + Startup_Delay;
@@ -104,7 +100,7 @@ begin
                 Width => SDMMC.Width_1, Data_Clock_Hz => SDMMC_Clock_Hz,
                 High_Speed => True);
    SDMMC.Initialize (Card, Card_Status);
-   Card_R (Boolean'Pos (Card_Status = SDMMC.OK));
+   Card_R (Card_Status = SDMMC.OK);
 
    if Card_Status = SDMMC.OK then
       declare
@@ -114,7 +110,7 @@ begin
       begin
          Mount.Open (Block_Device, Read_Only => True,
                      Cache_Blocks => FS_Cache_Blocks);
-         Mount_R (1, int (Mount.Block_Size));
+         Mount_R (True, Natural (Mount.Block_Size));
 
          --  List the root directory.
          declare
@@ -141,15 +137,11 @@ begin
                for K in 0 .. Last - 1 loop
                   Text (K + 1) := Character'Val (Buf (K));
                end loop;
-               declare
-                  P : aliased constant String := Cstr (Text);
-               begin
-                  File_R (1, int (Last), P'Address);
-               end;
+               File_R (True, Last, Clean (Text));
             end;
          exception
             when others =>
-               File_R (0, 0, Empty'Address);
+               File_R (False, 0, "");
          end;
       exception
          when others =>
