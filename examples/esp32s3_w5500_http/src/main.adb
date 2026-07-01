@@ -108,19 +108,35 @@ begin
 
    Create_Socket  (Sock, Family_Inet, Socket_Stream);
    Put_Line ("[http] connecting to " & Server_IP & ":8000 ...");
-   Connect_Socket (Sock, (Family_Inet, Inet_Addr (Server_IP), Server_Port));
-   Send_Socket    (Sock, To_SEA (Request), SLast);
 
-   Put_Line ("[http] --- response ---");
-   loop
-      Receive_Socket (Sock, Buf, Last);
-      exit when Last < Buf'First;          --  server closed the connection
-      Put_SEA (Buf (Buf'First .. Last));
-   end loop;
-   New_Line;
-   Put_Line ("[http] --- done ---");
+   --  Guard the whole exchange: Connect_Socket raises GNAT.Sockets.Socket_Error
+   --  when the server is down / unreachable / refuses the connection, and
+   --  Send/Receive can raise if the peer resets mid-transfer.  Unhandled, that
+   --  propagated out of Main and crashed the demo instead of reporting a plain
+   --  "could not connect".  Report it and fall through to the idle park below.
+   begin
+      Connect_Socket (Sock, (Family_Inet, Inet_Addr (Server_IP), Server_Port));
+      Send_Socket    (Sock, To_SEA (Request), SLast);
 
-   Close_Socket (Sock);
+      Put_Line ("[http] --- response ---");
+      loop
+         Receive_Socket (Sock, Buf, Last);
+         exit when Last < Buf'First;          --  server closed the connection
+         Put_SEA (Buf (Buf'First .. Last));
+      end loop;
+      New_Line;
+      Put_Line ("[http] --- done ---");
+      Close_Socket (Sock);
+   exception
+      when others =>
+         Put_Line ("[http] connection failed -- is a web server listening on "
+                   & Server_IP & ":8000?");
+         begin
+            Close_Socket (Sock);          --  best-effort cleanup; ignore errors
+         exception
+            when others => null;
+         end;
+   end;
 
    --  Run is complete; nothing more to do, so park forever.
    loop
