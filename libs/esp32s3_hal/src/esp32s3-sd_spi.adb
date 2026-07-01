@@ -197,9 +197,13 @@ package body ESP32S3.SD_SPI is
 
       --  ACMD41 (CMD55 then CMD41) until the card leaves idle.  HCS bit set for
       --  v2 so an SDHC card reports high capacity in the OCR.
+      --  ACMD41 argument carries the host's supported voltage window (OCR bits
+      --  20..21 = 3.2 .. 3.4 V) alongside HCS: a card that gates on the window
+      --  never leaves idle if it is sent as zero.  (Matches the SDMMC driver.)
       for Tries in 1 .. 2000 loop
          R := Command (C, S, CMD55, 0);
-         R := Command (C, S, ACMD41, (if V2 then 16#4000_0000# else 0));
+         R := Command (C, S, ACMD41,
+                       (if V2 then 16#4030_0000# else 16#0030_0000#));
          if R = 0 then
             Done := True;
             exit;

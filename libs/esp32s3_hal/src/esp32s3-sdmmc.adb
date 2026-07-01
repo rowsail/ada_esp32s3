@@ -136,10 +136,13 @@ package body ESP32S3.SDMMC is
    end Clock_Command;
 
    procedure Set_Card_Clock (Slot_No : Natural; Hz : Positive) is
-      Div : Natural := Src_Hz / (2 * Hz);
+      --  cclk = Src_Hz / (2 * Div), so round Div UP -- Div = ceil(Src_Hz/(2*Hz))
+      --  -- to keep the card clock at or below Hz.  Truncating (floor) OVERCLOCKED:
+      --  25 MHz gave Div=3 -> 26.7 MHz, and 50 MHz High-Speed gave Div=1 -> 80 MHz.
+      Div : Natural := (Src_Hz + 2 * Hz - 1) / (2 * Hz);
    begin
       if Div < 1 then
-         Div := 0;                             --  0 => bypass (cclk = source)
+         Div := 1;                             --  never bypass (= source clock)
       elsif Div > 255 then
          Div := 255;
       end if;
