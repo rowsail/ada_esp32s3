@@ -13,27 +13,34 @@ package body ESP32S3.Ext4.Bitmap is
       Phantom_Frees := 0;
    end Reset_Phantom_Free_Count;
 
-   --  Find the first 0 bit (0 .. Count-1) in bitmap block Bmp; set it; return its
-   --  index, or -1 if the group is full.  One byte at a time -> no big buffer.
-   function Claim_Bit (V : in out Volume.Context; Bmp : Block_Number; Count : U32)
-      return Integer
+   --  Find the first 0 bit (0 .. Count-1) in bitmap block Bmp and set it: on
+   --  success Found is True and Bit is its index; on a full group Found is False.
+   --  One byte at a time -> no big buffer.
+   procedure Claim_Bit (V     : in out Volume.Context;
+                        Bmp   : Block_Number;
+                        Count : U32;
+                        Bit   : out U32;
+                        Found : out Boolean)
    is
       Byte : Byte_Array (0 .. 0);
    begin
+      Bit   := 0;
+      Found := False;
       for I in 0 .. Integer (Count) - 1 loop
          declare
             Byte_Idx : constant Natural := I / 8;
-            Bit      : constant Natural := I mod 8;
+            Bit_In   : constant Natural := I mod 8;
          begin
             ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Bmp, Byte_Idx, Byte);
-            if (Byte (0) and Shift_Left (U8 (1), Bit)) = 0 then
-               Byte (0) := Byte (0) or Shift_Left (U8 (1), Bit);
+            if (Byte (0) and Shift_Left (U8 (1), Bit_In)) = 0 then
+               Byte (0) := Byte (0) or Shift_Left (U8 (1), Bit_In);
                ESP32S3.Ext4.Block_Cache.Write_At (V.Cache, Bmp, Byte_Idx, Byte);
-               return I;
+               Bit   := U32 (I);
+               Found := True;
+               return;
             end if;
          end;
       end loop;
-      return -1;
    end Claim_Bit;
 
    -----------------
@@ -41,14 +48,15 @@ package body ESP32S3.Ext4.Bitmap is
    -----------------
 
    function Alloc_Block (V : in out Volume.Context) return Block_Number is
-      GD  : Group_Desc.Desc;
-      Bit : Integer;
+      GD    : Group_Desc.Desc;
+      Bit   : U32;
+      Found : Boolean;
    begin
       for G in 0 .. V.SB.Groups_Count - 1 loop
          Group_Desc.Read (V, G, GD);
          if GD.Free_Blocks > 0 then
-            Bit := Claim_Bit (V, GD.Block_Bitmap, V.SB.Blocks_Per_Group);
-            if Bit >= 0 then
+            Claim_Bit (V, GD.Block_Bitmap, V.SB.Blocks_Per_Group, Bit, Found);
+            if Found then
                GD.Free_Blocks := GD.Free_Blocks - 1;
                Group_Desc.Write (V, G, GD);
                V.SB.Free_Blocks := V.SB.Free_Blocks - 1;
@@ -68,14 +76,15 @@ package body ESP32S3.Ext4.Bitmap is
    function Alloc_Inode (V : in out Volume.Context; As_Dir : Boolean)
       return Inode_Number
    is
-      GD  : Group_Desc.Desc;
-      Bit : Integer;
+      GD    : Group_Desc.Desc;
+      Bit   : U32;
+      Found : Boolean;
    begin
       for G in 0 .. V.SB.Groups_Count - 1 loop
          Group_Desc.Read (V, G, GD);
          if GD.Free_Inodes > 0 then
-            Bit := Claim_Bit (V, GD.Inode_Bitmap, V.SB.Inodes_Per_Group);
-            if Bit >= 0 then
+            Claim_Bit (V, GD.Inode_Bitmap, V.SB.Inodes_Per_Group, Bit, Found);
+            if Found then
                GD.Free_Inodes := GD.Free_Inodes - 1;
                if As_Dir then
                   GD.Used_Dirs := GD.Used_Dirs + 1;
@@ -83,7 +92,7 @@ package body ESP32S3.Ext4.Bitmap is
                Group_Desc.Write (V, G, GD);
                V.SB.Free_Inodes := V.SB.Free_Inodes - 1;
                --  Inode numbers are 1-based.
-               return Inode_Number (G * V.SB.Inodes_Per_Group + U32 (Bit) + 1);
+               return Inode_Number (G * V.SB.Inodes_Per_Group + Bit + 1);
             end if;
          end if;
       end loop;

@@ -132,12 +132,16 @@ private
    end record;
    Any_Inet_Addr : constant Inet_Addr_Type := (B => (0, 0, 0, 0));
 
-   --  A socket names a registered interface and one of its sockets (-1 = none).
-   --  Pin is the interface it is pinned to, or -1 to route freely by destination.
+   --  A socket, when Bound, names a registered interface (Iface) and one of its
+   --  sockets (Index); an unbound socket has no identity.  When Pinned it routes
+   --  through exactly one interface (Pin, fail-closed); otherwise it routes freely
+   --  by destination.  Iface/Index/Pin are meaningful only under their flag.
    type Socket_Type is record
-      Iface : Integer := -1;
-      Index : Integer := -1;
-      Pin   : Integer := -1;
+      Bound  : Boolean       := False;
+      Iface  : Interface_Id  := Interface_Id'First;
+      Index  : Natural       := 0;
+      Pinned : Boolean       := False;
+      Pin    : Interface_Id  := Interface_Id'First;
    end record;
-   No_Socket : constant Socket_Type := (Iface => -1, Index => -1, Pin => -1);
+   No_Socket : constant Socket_Type := (others => <>);
 end GNAT.Sockets;

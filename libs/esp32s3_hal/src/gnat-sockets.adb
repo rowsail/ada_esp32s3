@@ -62,17 +62,15 @@ package body GNAT.Sockets is
    --  Which interface a socket lives on / its socket index / its device.
    function If_Of (S : Socket_Type) return Interface_Id is
    begin
-      if S.Iface not in 0 .. Integer (Interface_Id'Last)
-        or else Registry (Interface_Id (S.Iface)) = null
-      then
+      if not S.Bound or else Registry (S.Iface) = null then
          raise Socket_Error;
       end if;
-      return Interface_Id (S.Iface);
+      return S.Iface;
    end If_Of;
 
    function Ix_Of (S : Socket_Type) return Sock_Index is
    begin
-      if S.Index not in Sock_Index then
+      if not S.Bound or else S.Index not in Sock_Index then
          raise Socket_Error;
       end if;
       return S.Index;
@@ -129,13 +127,14 @@ package body GNAT.Sockets is
          return;
       end if;
       declare
-         Count : constant Natural  := Registry (Target).Socket_Count;
-         New_J : Integer           := -1;
+         Count : constant Natural     := Registry (Target).Socket_Count;
+         New_J : Sock_Index           := 0;
+         Found : Boolean              := False;
       begin
          for J in 0 .. Count - 1 loop
-            if not In_Use (Target, J) then New_J := J; exit; end if;
+            if not In_Use (Target, J) then New_J := J; Found := True; exit; end if;
          end loop;
-         if New_J < 0 then
+         if not Found then
             raise Socket_Error;                     --  target interface is full
          end if;
          if Opened (Old_Id, Old_J) then
@@ -148,7 +147,8 @@ package body GNAT.Sockets is
          Opened       (Target, New_J) := False;
          In_Use (Old_Id, Old_J) := False;
          Opened (Old_Id, Old_J) := False;
-         Socket := (Iface => Integer (Target), Index => New_J, Pin => Socket.Pin);
+         Socket := (Bound  => True,          Iface => Target, Index => New_J,
+                    Pinned => Socket.Pinned, Pin   => Socket.Pin);
       end;
    end Move_To;
 
@@ -234,7 +234,7 @@ package body GNAT.Sockets is
             Modes        (Id, J) := Mode;
             Opened       (Id, J) := False;
             Recv_Timeout (Id, J) := 0.0;
-            Socket := (Iface => Integer (Id), Index => J, Pin => -1);
+            Socket := (Bound => True, Iface => Id, Index => J, others => <>);
             return;
          end if;
       end loop;
@@ -244,7 +244,8 @@ package body GNAT.Sockets is
    procedure Set_Interface (Socket : in out Socket_Type; Iface : Interface_Id) is
    begin
       Move_To (Socket, Iface);
-      Socket.Pin := Integer (Iface);
+      Socket.Pinned := True;
+      Socket.Pin    := Iface;
    end Set_Interface;
 
    procedure Bind_Socket (Socket : in out Socket_Type; Address : Sock_Addr_Type) is
@@ -310,8 +311,8 @@ package body GNAT.Sockets is
       --  never re-routed.  Otherwise route by destination; with no routes this is
       --  the default interface (unchanged behaviour), with routes a down interface
       --  yields no route -> Socket_Error.
-      if Socket.Pin >= 0 then
-         Target := Interface_Id (Socket.Pin);
+      if Socket.Pinned then
+         Target := Socket.Pin;
          if not Iface_Is_Up (Target) then
             raise Socket_Error;                  --  fail closed, do not fall through
          end if;
@@ -396,11 +397,9 @@ package body GNAT.Sockets is
 
    procedure Close_Socket (Socket : in out Socket_Type) is
    begin
-      if Socket.Iface in 0 .. Integer (Interface_Id'Last)
-        and then Socket.Index in Sock_Index
-      then
+      if Socket.Bound and then Socket.Index in Sock_Index then
          declare
-            Id : constant Interface_Id := Interface_Id (Socket.Iface);
+            Id : constant Interface_Id := Socket.Iface;
             J  : constant Sock_Index   := Socket.Index;
          begin
             if Registry (Id) /= null then
