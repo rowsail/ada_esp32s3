@@ -1,7 +1,9 @@
 with Ada.Finalization;
-with ESP32S3.Ext4;
-with ESP32S3.Ext4.Inode;
-with ESP32S3.Ext4.VFS;
+--  NOTE: the ext4 dependency is deliberately confined to the BODY (which withs
+--  ESP32S3.Ext4[.FS/.Inode/.VFS]).  The visible + private spec here uses NONE of
+--  those types -- File_Type is just an access to an opaque Control_Block defined
+--  in the body -- so a console-only client (Standard_Output / Put_Line) does NOT
+--  pull the whole ext4 filesystem into its link closure.  Keep it that way.
 
 --  Pure-Ada text I/O tracking a large subset of Ada.Text_IO -- over ext4 files
 --  AND the console, with NO Interfaces.C_Streams and no C glue.
