@@ -241,11 +241,30 @@ package body ESP32S3.Text_IO is
       Advance (B);
    end Await;
 
+   --  Blocking peek: on a console, spin until a byte is available and return it
+   --  WITHOUT consuming (it stays in the pushback for the next Advance).  This is
+   --  how the token Gets (integer / real / num / enum) wait for interactive input
+   --  the way Ada's Integer_IO.Get blocks -- a human types a digit every ~100 ms,
+   --  far slower than the read loop, so a non-blocking peek would truncate the
+   --  token after its first character.  On a disk file it is exactly Peek (real
+   --  EOF, no spin), so disk parsing is byte-for-byte unchanged.
+   procedure Peek_Wait (B : CB_Access; C : out Character; Avail : out Boolean) is
+   begin
+      if B.Kind = Console then
+         loop
+            Peek (B, C, Avail);
+            exit when Avail;
+         end loop;
+      else
+         Peek (B, C, Avail);
+      end if;
+   end Peek_Wait;
+
    procedure Skip_Blanks (B : CB_Access) is
       C : Character; Av : Boolean;
    begin
       loop
-         Peek (B, C, Av);
+         Peek_Wait (B, C, Av);
          exit when not Av;
          exit when C /= ' ' and then C /= ASCII.HT
                    and then C /= ASCII.LF and then C /= ASCII.CR;
@@ -261,24 +280,24 @@ package body ESP32S3.Text_IO is
    begin
       Require_Read (B);
       Skip_Blanks (B);
-      Peek (B, C, Av);
+      Peek_Wait (B, C, Av);
       if Av and then (C = '-' or else C = '+') then Neg := C = '-'; Advance (B); end if;
       loop
-         Peek (B, C, Av);
+         Peek_Wait (B, C, Av);
          exit when not Av or else Digit_Val (C) < 0 or else Digit_Val (C) > 9;
          V := V * 10 + Long_Long_Integer (Digit_Val (C));
          Advance (B);
       end loop;
-      Peek (B, C, Av);
+      Peek_Wait (B, C, Av);
       if Av and then C = '#' then
          Base := V; V := 0; Advance (B);
          loop
-            Peek (B, C, Av);
+            Peek_Wait (B, C, Av);
             exit when not Av or else C = '#';
             V := V * Base + Long_Long_Integer (Digit_Val (C));
             Advance (B);
          end loop;
-         Peek (B, C, Av);
+         Peek_Wait (B, C, Av);
          if Av and then C = '#' then Advance (B); end if;
       end if;
       return (if Neg then -V else V);
@@ -440,20 +459,20 @@ package body ESP32S3.Text_IO is
       Require_Read (B);
       Skip_Blanks (B);
       Len := 0;
-      Peek (B, C, Av);
+      Peek_Wait (B, C, Av);
       if Av and then (C = '-' or else C = '+') then Take; end if;
       loop
-         Peek (B, C, Av);
+         Peek_Wait (B, C, Av);
          exit when not Av or else (Digit_Val (C) not in 0 .. 9 and then C /= '.');
          Take;
       end loop;
-      Peek (B, C, Av);
+      Peek_Wait (B, C, Av);
       if Av and then (C = 'e' or else C = 'E') then
          Take;
-         Peek (B, C, Av);
+         Peek_Wait (B, C, Av);
          if Av and then (C = '-' or else C = '+') then Take; end if;
          loop
-            Peek (B, C, Av);
+            Peek_Wait (B, C, Av);
             exit when not Av or else Digit_Val (C) not in 0 .. 9;
             Take;
          end loop;
@@ -1176,32 +1195,32 @@ package body ESP32S3.Text_IO is
       begin
          Require_Read (B);
          Skip_Blanks (B);
-         Peek (B, C, Av);
+         Peek_Wait (B, C, Av);
          if Av and then (C = '-' or else C = '+') then Neg := C = '-'; Advance (B); end if;
          loop
-            Peek (B, C, Av);
+            Peek_Wait (B, C, Av);
             exit when not Av or else Digit_Val (C) < 0 or else Digit_Val (C) > 9;
             V := V * 10.0 + Num (Digit_Val (C)); Advance (B);
          end loop;
-         Peek (B, C, Av);
+         Peek_Wait (B, C, Av);
          if Av and then C = '.' then
             Advance (B);
             declare Scale : Num := 0.1; begin
                loop
-                  Peek (B, C, Av);
+                  Peek_Wait (B, C, Av);
                   exit when not Av or else Digit_Val (C) < 0 or else Digit_Val (C) > 9;
                   V := V + Num (Digit_Val (C)) * Scale; Scale := Scale / 10.0; Advance (B);
                end loop;
             end;
          end if;
-         Peek (B, C, Av);
+         Peek_Wait (B, C, Av);
          if Av and then (C = 'e' or else C = 'E') then
             Advance (B);
             declare ENeg : Boolean := False; E : Natural := 0; begin
-               Peek (B, C, Av);
+               Peek_Wait (B, C, Av);
                if Av and then (C = '-' or else C = '+') then ENeg := C = '-'; Advance (B); end if;
                loop
-                  Peek (B, C, Av);
+                  Peek_Wait (B, C, Av);
                   exit when not Av or else Digit_Val (C) < 0 or else Digit_Val (C) > 9;
                   E := E * 10 + Digit_Val (C); Advance (B);
                end loop;
@@ -1285,7 +1304,7 @@ package body ESP32S3.Text_IO is
          Require_Read (B);
          Skip_Blanks (B);
          loop
-            Peek (B, C, Av);
+            Peek_Wait (B, C, Av);
             exit when not Av;
             exit when C not in 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_';
             if L < Buf'Last then L := L + 1; Buf (L) := C; end if;
