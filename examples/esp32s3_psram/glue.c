@@ -43,15 +43,8 @@ void spi_flash_set_rom_required_regs(void)        { }                  /* no SPI
 void spi_flash_set_vendor_required_regs(void)     { }
 int  esp_log_default_level = 3;                                        /* ESP_LOG_INFO */
 
-/* ---- example native: the env task reports the buffer's address + checksum ----
- * 0x3C/0x3D = external PSRAM data range; 0x3F = internal SRAM. */
-void native_buf_report(unsigned addr, unsigned bytes, unsigned checksum)
-{
-    const char *where = ((addr >> 24) == 0x3c || (addr >> 24) == 0x3d) ? "PSRAM"
-                      : ((addr >> 24) == 0x3f) ? "internal-SRAM" : "?";
-    esp_rom_printf("[psram] buffer @ 0x%08x  %u bytes  checksum=0x%08x  (%s)\n",
-                   addr, bytes, checksum, where);
-}
+/* The example's buffer report (address + checksum) now prints from Ada over the
+ * buffered ESP32S3.Log console (see big.adb), not esp_rom_printf. */
 
 /* ---- the bring-up: enable octal PSRAM, then map it to the array's vaddr ------ */
 #define PSRAM_ENABLE 0   /* PSRAM is now brought up + mapped by our 2nd-stage bootloader

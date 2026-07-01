@@ -1,4 +1,5 @@
 with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
+with "../../libs/esp32s3_hal/esp32s3_hal.gpr";   --  ESP32S3.Log (buffered console)
 
 --  PSRAM example: enables the module's external PSRAM and uses a 1 MB static
 --  Ada array placed in it, built against the pinned Jorvik runtime to a
