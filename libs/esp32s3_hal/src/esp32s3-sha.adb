@@ -1,4 +1,6 @@
+with Ada.Real_Time;
 with Interfaces;                 use Interfaces;
+with ESP32S3.Endian;             use ESP32S3.Endian;
 with ESP32S3_Registers;          use ESP32S3_Registers;
 with ESP32S3_Registers.SHA;      use ESP32S3_Registers.SHA;
 with ESP32S3_Registers.SYSTEM;
@@ -74,10 +76,8 @@ package body ESP32S3.SHA is
                   --  stream (matches esp-idf's direct word copy on this
                   --  little-endian core).
                   SHA_Periph.M_MEM (W) :=
-                    UInt32 (Padded_Byte (K)) or
-                    Shift_Left (UInt32 (Padded_Byte (K + 1)),  8) or
-                    Shift_Left (UInt32 (Padded_Byte (K + 2)), 16) or
-                    Shift_Left (UInt32 (Padded_Byte (K + 3)), 24);
+                    UInt32 (Join_LE (Padded_Byte (K),     Padded_Byte (K + 1),
+                                     Padded_Byte (K + 2), Padded_Byte (K + 3)));
                end;
             end loop;
 
@@ -86,9 +86,17 @@ package body ESP32S3.SHA is
             else
                SHA_Periph.CONTINUE := (CONTINUE => 1, others => <>);
             end if;
-            while SHA_Periph.BUSY.STATE loop
-               null;
-            end loop;
+            --  A block hash completes in microseconds; bound the poll so a
+            --  wedged core can't hang here forever.
+            declare
+               use type Ada.Real_Time.Time;
+               Deadline : constant Ada.Real_Time.Time :=
+                 Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (100);
+            begin
+               while SHA_Periph.BUSY.STATE loop
+                  exit when Ada.Real_Time.Clock >= Deadline;
+               end loop;
+            end;
          end loop;
 
          --  Read all 8 result words; callers use the prefix they need.
@@ -107,10 +115,7 @@ package body ESP32S3.SHA is
             H : constant UInt32 := Words (I);
             B : constant Natural := Into'First + I * 4;
          begin
-            Into (B)     := Unsigned_8 (H and 16#FF#);
-            Into (B + 1) := Unsigned_8 (Shift_Right (H, 8)  and 16#FF#);
-            Into (B + 2) := Unsigned_8 (Shift_Right (H, 16) and 16#FF#);
-            Into (B + 3) := Unsigned_8 (Shift_Right (H, 24) and 16#FF#);
+            Split_LE (Unsigned_32 (H), Into (B), Into (B + 1), Into (B + 2), Into (B + 3));
          end;
       end loop;
    end Unpack;

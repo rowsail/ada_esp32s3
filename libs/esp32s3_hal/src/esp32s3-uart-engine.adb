@@ -3,9 +3,11 @@ with ESP32S3_Registers.UART;     use ESP32S3_Registers.UART;
 with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.IO_MUX;
 with ESP32S3_Registers.SYSTEM;
+with ESP32S3.GPIO_Signals;
 
 package body ESP32S3.UART.Engine is
 
+   package Sigs renames ESP32S3.GPIO_Signals;
    package GR renames ESP32S3_Registers.GPIO;    --  GPIO matrix register layer
    package MX renames ESP32S3_Registers.IO_MUX;  --  IO_MUX (per-pad config)
    package G  renames ESP32S3.GPIO;              --  valid-pad subtype
@@ -16,10 +18,10 @@ package body ESP32S3.UART.Engine is
    --  GPIO-matrix signal index per port (gpio_sig_map.h): TXD-out and RXD-in
    --  share one index per UART; RTS-out and CTS-in share another.
    function Signal (Port : UART_Port) return Natural is
-     (case Port is when UART0 => 12, when UART1 => 15, when UART2 => 18);
+     (case Port is when UART0 => Sigs.U0TXD_OUT, when UART1 => Sigs.U1TXD_OUT, when UART2 => Sigs.U2TXD_OUT);
 
    function Flow_Signal (Port : UART_Port) return Natural is
-     (case Port is when UART0 => 13, when UART1 => 16, when UART2 => 19);
+     (case Port is when UART0 => Sigs.U0RTS_OUT, when UART1 => Sigs.U1RTS_OUT, when UART2 => Sigs.U2RTS_OUT);
 
    function Regs_Of (Port : UART_Port) return Periph_Ref is
      (case Port is when UART0 => UART0_Periph'Access,

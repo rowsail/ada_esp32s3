@@ -1,4 +1,7 @@
+with Interfaces;
+with Ada.Unchecked_Conversion;
 with ESP32S3.GPIO;
+with ESP32S3.GPIO_Signals;
 with ESP32S3_Registers;         use ESP32S3_Registers;
 with ESP32S3_Registers.I2C;     use ESP32S3_Registers.I2C;
 with ESP32S3_Registers.GPIO;
@@ -7,6 +10,7 @@ with ESP32S3_Registers.SYSTEM;
 
 package body ESP32S3.I2C.Engine is
 
+   package Sigs renames ESP32S3.GPIO_Signals;
    package GR renames ESP32S3_Registers.GPIO;    --  GPIO matrix register layer
    package MX renames ESP32S3_Registers.IO_MUX;  --  IO_MUX (per-pad config)
    package G  renames ESP32S3.GPIO;              --  Pin_Id (valid-pad subtype)
@@ -28,22 +32,41 @@ package body ESP32S3.I2C.Engine is
 
    function Signals (Host : I2C_Host) return Sig is
      (case Host is
-         when I2C0 => (Scl => 89, Sda => 90),    --  I2CEXT0_SCL/SDA (gpio_sig_map)
-         when I2C1 => (Scl => 91, Sda => 92));   --  I2CEXT1_SCL/SDA
+         when I2C0 => (Scl => Sigs.I2CEXT0_SCL_OUT, Sda => Sigs.I2CEXT0_SDA_OUT),    --  I2CEXT0_SCL/SDA (gpio_sig_map)
+         when I2C1 => (Scl => Sigs.I2CEXT1_SCL_OUT, Sda => Sigs.I2CEXT1_SDA_OUT));   --  I2CEXT1_SCL/SDA
 
-   --  Build a COMD command word: byte_num[0..7], ack_check_en[8], ack_exp[9],
-   --  ack_val[10], op_code[11..13].
+   --  A COMD command word as its documented bit fields, so the layout is named
+   --  and compiler-placed instead of hand-shifted.  (The bit positions are
+   --  verified bit-for-bit against the previous arithmetic in the host test
+   --  test/repclause_host.)  Op_Field is 3 bits: RSTART/WRITE/READ/STOP all fit.
+   type Op_Field is mod 2 ** 3;
+   type Cmd_Word is record
+      Byte_Num  : Interfaces.Unsigned_8;   --  bytes to move for this step
+      Ack_Check : Boolean;                 --  check the ACK bit (writes)
+      Ack_Exp   : Boolean;                 --  expected ACK level
+      Ack_Val   : Boolean;                 --  ACK value we drive (reads)
+      Op        : Op_Field;                --  RSTART / WRITE / READ / STOP
+   end record;
+   for Cmd_Word use record
+      Byte_Num  at 0 range 0 .. 7;
+      Ack_Check at 0 range 8 .. 8;
+      Ack_Exp   at 0 range 9 .. 9;
+      Ack_Val   at 0 range 10 .. 10;
+      Op        at 0 range 11 .. 13;
+   end record;
+   for Cmd_Word'Size use 14;
+   function To_Field is new Ada.Unchecked_Conversion (Cmd_Word, COMD_COMMAND_Field);
+
    function Cmd (Op        : Natural;
                  Bytes     : Natural := 0;
                  Ack_Check : Boolean := False;
                  Ack_Exp   : Boolean := False;
                  Ack_Val   : Boolean := False) return COMD_COMMAND_Field is
-     (COMD_COMMAND_Field
-        (Bytes
-         + (if Ack_Check then 2 ** 8  else 0)
-         + (if Ack_Exp   then 2 ** 9  else 0)
-         + (if Ack_Val   then 2 ** 10 else 0)
-         + Op * 2 ** 11));
+     (To_Field ((Byte_Num  => Interfaces.Unsigned_8 (Bytes),
+                 Ack_Check => Ack_Check,
+                 Ack_Exp   => Ack_Exp,
+                 Ack_Val   => Ack_Val,
+                 Op        => Op_Field (Op))));
 
    function Regs_Of (Host : I2C_Host) return Periph_Ref is
      (case Host is when I2C0 => I2C0_Periph'Access,
@@ -333,7 +356,6 @@ package body ESP32S3.I2C.Engine is
                    Success  : out Boolean) is
       Regs : constant Periph_Ref := B.Regs;
       Len  : constant Natural := Data'Length;
-      Idx  : Natural := 0;
    begin
       Success := False;
       if not B.Valid or else Len = 0 or else Len > Max_Transfer then
@@ -361,9 +383,8 @@ package body ESP32S3.I2C.Engine is
       Run_Sequence (Regs, Success);
 
       if Success then
-         while Idx < Len loop
-            Data (Data'First + Idx) := Byte (Regs.DATA.FIFO_RDATA);
-            Idx := Idx + 1;
+         for I in Data'Range loop
+            Data (I) := Byte (Regs.DATA.FIFO_RDATA);
          end loop;
       end if;
    end Read;

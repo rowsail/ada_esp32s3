@@ -410,11 +410,12 @@ package body ESP32S3.Text_IO is
    end Read_Number_Token;
 
    function To_Lower (S : String) return String is
+      Case_Delta : constant := Character'Pos ('a') - Character'Pos ('A');
       R : String := S;
    begin
       for I in R'Range loop
          if R (I) in 'A' .. 'Z' then
-            R (I) := Character'Val (Character'Pos (R (I)) + 32);
+            R (I) := Character'Val (Character'Pos (R (I)) + Case_Delta);
          end if;
       end loop;
       return R;

@@ -1,4 +1,6 @@
+with Ada.Real_Time;
 with Interfaces;                 use Interfaces;
+with ESP32S3.Endian;             use ESP32S3.Endian;
 with ESP32S3_Registers;          use ESP32S3_Registers;
 with ESP32S3_Registers.AES;      use ESP32S3_Registers.AES;
 with ESP32S3_Registers.SYSTEM;
@@ -16,8 +18,7 @@ package body ESP32S3.AES is
    --  AES register byte order (esp-idf writes the block by direct word copy on
    --  this little-endian core).
    function To_Word (B0, B1, B2, B3 : Unsigned_8) return UInt32 is
-     (UInt32 (B0) or Shift_Left (UInt32 (B1), 8) or
-      Shift_Left (UInt32 (B2), 16) or Shift_Left (UInt32 (B3), 24));
+     (UInt32 (Join_LE (B0, B1, B2, B3)));
 
    --------------------------------------------------------------------------
    --  One shared accelerator; serialise the whole transform.
@@ -61,19 +62,22 @@ package body ESP32S3.AES is
          end loop;
 
          AES_Periph.TRIGGER := (TRIGGER => True, others => <>);
-         while AES_Periph.STATE.STATE = 1 loop      --  1 = working
-            null;
-         end loop;
+         --  A single-block transform completes in microseconds; bound the poll
+         --  with a wall-clock deadline so a wedged core can't hang here forever.
+         declare
+            use type Ada.Real_Time.Time;
+            Deadline : constant Ada.Real_Time.Time :=
+              Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (100);
+         begin
+            while AES_Periph.STATE.STATE = 1 loop      --  1 = working
+               exit when Ada.Real_Time.Clock >= Deadline;
+            end loop;
+         end;
 
          for I in 0 .. 3 loop
-            declare
-               W : constant UInt32 := AES_Periph.TEXT_OUT (I);
-            begin
-               Output (I * 4)     := Unsigned_8 (W and 16#FF#);
-               Output (I * 4 + 1) := Unsigned_8 (Shift_Right (W, 8)  and 16#FF#);
-               Output (I * 4 + 2) := Unsigned_8 (Shift_Right (W, 16) and 16#FF#);
-               Output (I * 4 + 3) := Unsigned_8 (Shift_Right (W, 24) and 16#FF#);
-            end;
+            Split_LE (Unsigned_32 (AES_Periph.TEXT_OUT (I)),
+                      Output (I * 4),     Output (I * 4 + 1),
+                      Output (I * 4 + 2), Output (I * 4 + 3));
          end loop;
       end Transform;
 

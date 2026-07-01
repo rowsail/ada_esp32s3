@@ -1,3 +1,4 @@
+with Ada.Real_Time;
 with ESP32S3_Registers;            use ESP32S3_Registers;
 with ESP32S3_Registers.RSA;
 with ESP32S3_Registers.SYSTEM;
@@ -7,7 +8,16 @@ package body ESP32S3.RSA is
    package R   renames ESP32S3_Registers.RSA;
    package Sys renames ESP32S3_Registers.SYSTEM;
 
-   Spin_Limit : constant := 100_000_000;   --  ~1-2 s at 240 MHz; modexp takes ms
+   --  Wall-clock bound on the accelerator polls below, rather than an iteration
+   --  count (which the optimiser collapses to microseconds at -O2, giving up
+   --  before the operation finishes).  Memory-init and a modexp each complete in
+   --  milliseconds; 1 s is a generous worst case that still escapes a wedged
+   --  accelerator instead of spinning.  Same rationale as the SDMMC driver.
+   use type Ada.Real_Time.Time;
+   RSA_Timeout : constant Ada.Real_Time.Time_Span :=
+     Ada.Real_Time.Milliseconds (1000);
+   function Past (D : Ada.Real_Time.Time) return Boolean is
+     (Ada.Real_Time.Clock >= D);
 
    --  -M^-1 mod 2^32 from the low word of M (Newton's iteration; M is odd, so M0
    --  is odd and invertible mod 2^32).  Inv := M0 is correct to 3 bits; each step
@@ -27,11 +37,16 @@ package body ESP32S3.RSA is
       Sys.SYSTEM_Periph.PERIP_CLK_EN1.CRYPTO_RSA_CLK_EN := True;
       Sys.SYSTEM_Periph.PERIP_RST_EN1.CRYPTO_RSA_RST    := False;  --  release reset
       Sys.SYSTEM_Periph.RSA_PD_CTRL.RSA_MEM_PD          := False;  --  power up memory
-      for K in 1 .. Spin_Limit loop
-         if R.RSA_Periph.CLEAN.CLEAN then       --  1 = memories initialised
-            return True;
-         end if;
-      end loop;
+      declare
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + RSA_Timeout;
+      begin
+         loop
+            if R.RSA_Periph.CLEAN.CLEAN then       --  1 = memories initialised
+               return True;
+            end if;
+            exit when Past (Deadline);
+         end loop;
+      end;
       return False;
    end Enable;
 
@@ -66,12 +81,17 @@ package body ESP32S3.RSA is
       R.RSA_Periph.SEARCH_ENABLE.SEARCH_ENABLE := False;
       R.RSA_Periph.MODEXP_START.MODEXP_START   := True;
 
-      for K in 1 .. Spin_Limit loop
-         if R.RSA_Periph.IDLE.IDLE then        --  1 = accelerator idle (done)
-            Done := True;
-            exit;
-         end if;
-      end loop;
+      declare
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + RSA_Timeout;
+      begin
+         loop
+            if R.RSA_Periph.IDLE.IDLE then        --  1 = accelerator idle (done)
+               Done := True;
+               exit;
+            end if;
+            exit when Past (Deadline);
+         end loop;
+      end;
       R.RSA_Periph.CLEAR_INTERRUPT.CLEAR_INTERRUPT := True;
 
       if Done then
@@ -126,8 +146,8 @@ package body ESP32S3.RSA is
       for Step in 1 .. 2 * N * 32 loop      --  double 2*(32N) times: -> 2^(2*32N)
          Carry := 0;                        --  T := T << 1 (capturing carry-out)
          for I in 0 .. N - 1 loop
-            Top    := T (I) / 16#8000_0000#;          --  old bit 31
-            T (I)  := (T (I) * 2) or Carry;           --  << 1, bring in low carry
+            Top    := Shift_Right (T (I), 31);        --  old bit 31
+            T (I)  := Shift_Left (T (I), 1) or Carry;  --  << 1, bring in low carry
             Carry  := Top;
          end loop;
          if Carry = 1 or else Ge then       --  2T >= M -> reduce once

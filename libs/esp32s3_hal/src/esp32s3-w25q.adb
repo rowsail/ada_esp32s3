@@ -1,3 +1,5 @@
+with Ada.Real_Time;
+
 package body ESP32S3.W25Q is
 
    package SPI renames ESP32S3.SPI;
@@ -74,11 +76,23 @@ package body ESP32S3.W25Q is
       return Rsp (1);                 --  Rsp(1): the byte clocked in after the opcode
    end Read_Register;
 
-   --  Poll status register 1 until BUSY clears (erase/program complete).
+   --  Poll status register 1 until BUSY clears (erase/program complete).  Bound
+   --  it with a wall-clock deadline rather than an unbounded spin: a wedged part
+   --  (or a floating MISO) would otherwise hang the core forever.  The longest
+   --  legitimate wait here is a 4 KB sector erase (<=400 ms on the W25Q256FV);
+   --  a page program is <=3 ms.  1 s covers the worst case with margin.  A
+   --  wall-clock bound (not an iteration count) stays correct regardless of CPU
+   --  speed / optimisation -- the same rationale as the SDMMC driver.
+   Ready_Span : constant Ada.Real_Time.Time_Span :=
+     Ada.Real_Time.Milliseconds (1000);
+
    procedure Wait_Until_Ready (S : in out SPI.Session) is
+      use type Ada.Real_Time.Time;
+      Deadline : constant Ada.Real_Time.Time :=
+        Ada.Real_Time.Clock + Ready_Span;
    begin
       while (Read_Register (S, Cmd_Read_Status1) and Status_Busy) /= 0 loop
-         null;
+         exit when Ada.Real_Time.Clock >= Deadline;
       end loop;
    end Wait_Until_Ready;
 

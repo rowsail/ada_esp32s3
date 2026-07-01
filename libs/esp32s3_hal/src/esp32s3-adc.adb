@@ -1,5 +1,6 @@
 with Interfaces;                 use Interfaces;
 with System;
+with Ada.Real_Time;
 with Ada.Unchecked_Conversion;
 with ESP32S3.GPIO;
 with ESP32S3_Registers;          use ESP32S3_Registers;
@@ -92,7 +93,12 @@ package body ESP32S3.ADC is
       A_Val   : constant UInt32 := Shift_Left (UInt32 (Attenuation'Pos (Atten)),
                                                Shift);
       A_Mask  : constant UInt32 := Shift_Left (UInt32 (3), Shift);
-      Guard   : Natural := 200_000;
+      --  Wall-clock bound on the conversion-done poll (a conversion is a few
+      --  microseconds).  A real-time deadline stays correct under -O2, where an
+      --  iteration count would expire long before DONE could assert.
+      use type Ada.Real_Time.Time;
+      Deadline : constant Ada.Real_Time.Time :=
+        Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (10);
    begin
       case Unit is
          when ADC1 =>
@@ -103,9 +109,9 @@ package body ESP32S3.ADC is
             SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_START_SAR := False;
             SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_START_SAR := True;
             while not SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DONE_SAR
-              and then Guard > 0
+              and then Ada.Real_Time.Clock < Deadline
             loop
-               Guard := Guard - 1;
+               null;
             end loop;
             Done_Flag := SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DONE_SAR;
             return Natural (SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DATA_SAR and 16#0FFF#);
@@ -117,9 +123,9 @@ package body ESP32S3.ADC is
             SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_START_SAR := False;
             SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_START_SAR := True;
             while not SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DONE_SAR
-              and then Guard > 0
+              and then Ada.Real_Time.Clock < Deadline
             loop
-               Guard := Guard - 1;
+               null;
             end loop;
             Done_Flag := SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DONE_SAR;
             return Natural (SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DATA_SAR and 16#0FFF#);

@@ -1,0 +1,12 @@
+--  Native (x86) host test proving the driver register bit-field records encode
+--  bit-for-bit the same value as the arithmetic they replaced.  Pure logic --
+--  builds and runs natively, no bare-metal runtime, no hardware.
+project Repclause_Host is
+   for Source_Dirs use (".");
+   for Object_Dir use "obj";
+   for Exec_Dir use ".";
+   for Main use ("repcheck.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-g", "-O0", "-gnata", "-gnat2022");
+   end Compiler;
+end Repclause_Host;

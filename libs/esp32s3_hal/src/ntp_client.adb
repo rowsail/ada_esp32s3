@@ -1,6 +1,7 @@
 with Ada.Streams;  use Ada.Streams;
 with GNAT.Sockets; use GNAT.Sockets;
 with Interfaces;   use Interfaces;
+with ESP32S3.Endian;
 
 package body NTP_Client is
 
@@ -48,10 +49,9 @@ package body NTP_Client is
       then
          return False;
       end if;
-      Secs := Shift_Left (Unsigned_32 (Resp (40)), 24)
-           or Shift_Left (Unsigned_32 (Resp (41)), 16)
-           or Shift_Left (Unsigned_32 (Resp (42)),  8)
-           or            Unsigned_32 (Resp (43));
+      Secs := ESP32S3.Endian.Join_BE32
+                (Unsigned_8 (Resp (40)), Unsigned_8 (Resp (41)),
+                 Unsigned_8 (Resp (42)), Unsigned_8 (Resp (43)));
       if Secs = 0 then                        --  unsynchronised / kiss-o'-death
          return False;
       end if;

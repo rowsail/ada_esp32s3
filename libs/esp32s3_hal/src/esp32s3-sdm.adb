@@ -1,4 +1,5 @@
 with ESP32S3.GPIO;
+with ESP32S3.GPIO_Signals;
 with ESP32S3_Registers;          use ESP32S3_Registers;
 with ESP32S3_Registers.GPIOSD;   use ESP32S3_Registers.GPIOSD;
 with ESP32S3_Registers.GPIO;
@@ -6,10 +7,12 @@ with ESP32S3_Registers.GPIO;
 package body ESP32S3.SDM is
 
    package GR renames ESP32S3_Registers.GPIO;
-   package G  renames ESP32S3.GPIO;
+   package G    renames ESP32S3.GPIO;
+   package Sigs renames ESP32S3.GPIO_Signals;
 
-   --  Output matrix signal for a channel (GPIO_SD0_OUT = 93 .. SD7_OUT = 100).
-   function Out_Signal (Idx : Channel_Index) return Natural is (93 + Natural (Idx));
+   --  Output matrix signal for a channel (GPIO_SD0_OUT .. SD7_OUT).
+   function Out_Signal (Idx : Channel_Index) return Natural is
+     (Sigs.GPIO_SD0_OUT + Natural (Idx));
 
    procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
       O : GR.FUNC_OUT_SEL_CFG_Register :=

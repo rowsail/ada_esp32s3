@@ -1,5 +1,7 @@
 with Interfaces;                 use Interfaces;
+with Ada.Unchecked_Conversion;
 with ESP32S3.GPIO;
+with ESP32S3.GPIO_Signals;
 with ESP32S3_Registers;          use ESP32S3_Registers;
 with ESP32S3_Registers.TWAI;     use ESP32S3_Registers.TWAI;
 with ESP32S3_Registers.GPIO;
@@ -8,9 +10,32 @@ with ESP32S3_Registers.SYSTEM;
 
 package body ESP32S3.TWAI.Engine is
 
+   --  The CAN frame-information byte as its documented bit fields, so the layout
+   --  is named and compiler-placed rather than hand-masked.  Reserved (bits 4..5)
+   --  is defined so no undefined padding leaks onto the wire.  (Both directions
+   --  are verified against the previous arithmetic in test/repclause_host.)
+   type DLC_Field is mod 2 ** 4;
+   type Rsvd_2    is mod 2 ** 2;
+   type Frame_Info is record
+      Length   : DLC_Field;   --  DLC: 0..8 used (9..15 legal on the wire = 8)
+      Reserved : Rsvd_2;      --  bits 4..5, always 0
+      Remote   : Boolean;     --  RTR
+      Extended : Boolean;     --  FF (extended id)
+   end record;
+   for Frame_Info use record
+      Length   at 0 range 0 .. 3;
+      Reserved at 0 range 4 .. 5;
+      Remote   at 0 range 6 .. 6;
+      Extended at 0 range 7 .. 7;
+   end record;
+   for Frame_Info'Size use 8;
+   function To_Byte is new Ada.Unchecked_Conversion (Frame_Info, Unsigned_8);
+   function To_Info is new Ada.Unchecked_Conversion (Unsigned_8, Frame_Info);
+
    package GR renames ESP32S3_Registers.GPIO;
    package MX renames ESP32S3_Registers.IO_MUX;
-   package G  renames ESP32S3.GPIO;
+   package G    renames ESP32S3.GPIO;
+   package Sigs renames ESP32S3.GPIO_Signals;
 
    Src_Hz : constant := 80_000_000;             --  APB clock feeds the TWAI
 
@@ -124,10 +149,10 @@ package body ESP32S3.TWAI.Engine is
          return;
       end if;
       if Tx /= G.No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Tx), 116);     --  TWAI_TX_IDX
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Tx), Sigs.TWAI_TX);
       end if;
       if Rx /= G.No_Pin then
-         Route_In (116, ESP32S3.GPIO.Pin_Id (Rx));       --  TWAI_RX_IDX
+         Route_In (Sigs.TWAI_RX, ESP32S3.GPIO.Pin_Id (Rx));
       end if;
    end Configure_Pins;
 
@@ -140,9 +165,9 @@ package body ESP32S3.TWAI.Engine is
       if not B.Valid then
          return;
       end if;
-      --  TX out and RX in share matrix index 116; drive the pad and read it back.
-      Drive_Out (Pad, 116);
-      Route_In (116, Pad);
+      --  TX out and RX in share the matrix index; drive the pad and read it back.
+      Drive_Out (Pad, Sigs.TWAI_TX);
+      Route_In (Sigs.TWAI_RX, Pad);
    end Enable_Loopback;
 
    ----------
@@ -154,8 +179,8 @@ package body ESP32S3.TWAI.Engine is
    is
       --  frame-info byte: FF (bit 7) = extended, RTR (bit 6) = remote, DLC = low 4.
       Info : constant Unsigned_8 :=
-        (if Extended then 16#80# else 0) or (if Remote then 16#40# else 0)
-        or Unsigned_8 (Length);
+        To_Byte ((Length   => DLC_Field (Length), Reserved => 0,
+                  Remote   => Remote,             Extended => Extended));
       Off  : Natural;                   --  first data byte (after the id bytes)
    begin
       if not B.Valid then
@@ -236,7 +261,6 @@ package body ESP32S3.TWAI.Engine is
                       Got : out Boolean)
    is
       Wait : Natural := 5_000_000;
-      Info : Unsigned_8;
       Off  : Natural;
    begin
       Id     := 0;
@@ -254,16 +278,19 @@ package body ESP32S3.TWAI.Engine is
          return;                        --  nothing arrived
       end if;
 
-      Info := Get (0);
-      if ((Info and 16#80#) /= 0) /= Want_Extended then
-         return;                        --  other width: leave it for the matching
-      end if;                           --  overload, Got stays False
+      declare
+         FI : constant Frame_Info := To_Info (Get (0));
+      begin
+         if FI.Extended /= Want_Extended then
+            return;                     --  other width: leave it for the matching
+         end if;                        --  overload, Got stays False
 
-      Remote := (Info and 16#40#) /= 0;            --  RTR bit
-      --  A CAN DLC of 9 .. 15 is legal on the wire (all mean 8 data bytes); clamp
-      --  before the Data_Length (0 .. 8) conversion so a remote node sending a
-      --  high DLC does not raise Constraint_Error and kill the receive path.
-      Length := Data_Length (Natural'Min (8, Natural (Info and 16#0F#)));
+         Remote := FI.Remote;           --  RTR bit
+         --  A CAN DLC of 9 .. 15 is legal on the wire (all mean 8 data bytes);
+         --  clamp before the Data_Length (0 .. 8) conversion so a remote node
+         --  sending a high DLC does not raise Constraint_Error on receive.
+         Length := Data_Length (Natural'Min (8, Natural (FI.Length)));
+      end;
       if Want_Extended then
          Id := Shift_Left (Unsigned_32 (Get (1)), 21)
                  or Shift_Left (Unsigned_32 (Get (2)), 13)

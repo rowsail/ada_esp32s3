@@ -1,5 +1,6 @@
 with System;
 with ESP32S3.GPIO;
+with ESP32S3.GPIO_Signals;
 with ESP32S3_Registers;          use ESP32S3_Registers;
 with ESP32S3_Registers.RMT;      use ESP32S3_Registers.RMT;
 with ESP32S3_Registers.GPIO;
@@ -8,9 +9,10 @@ with ESP32S3_Registers.SYSTEM;
 
 package body ESP32S3.RMT is
 
-   package GR renames ESP32S3_Registers.GPIO;
-   package MX renames ESP32S3_Registers.IO_MUX;
-   package G  renames ESP32S3.GPIO;
+   package GR   renames ESP32S3_Registers.GPIO;
+   package MX   renames ESP32S3_Registers.IO_MUX;
+   package G    renames ESP32S3.GPIO;
+   package Sigs renames ESP32S3.GPIO_Signals;
 
    Src_Hz : constant := 80_000_000;             --  APB clock feeds the RMT
 
@@ -240,7 +242,7 @@ package body ESP32S3.RMT is
          MEM_SIZE => CH_TX_CONF0_MEM_SIZE_Field (C.Blocks),
          IDLE_OUT_EN => True, IDLE_OUT_LV => False,
          CARRIER_EN => False, CARRIER_EFF_EN => False, others => <>);
-      Drive_Out (Pin, 81 + Natural (C.Idx));
+      Drive_Out (Pin, Sigs.RMT_SIG_OUT0 + Natural (C.Idx));
    end Configure;
 
    procedure Transmit (C : TX_Channel; Symbols : Symbol_Array) is
@@ -386,7 +388,7 @@ package body ESP32S3.RMT is
       --  RMT exposes four matrix signal slots (81 .. 84); RMT_SIG_OUTn drives a
       --  TX channel and RMT_SIG_INn feeds RX channel n -- same index, opposite
       --  direction.  So RX register index r reads input signal 81 + r.
-      Route_In (81 + Natural (C.Idx), Pin);
+      Route_In (Sigs.RMT_SIG_IN0 + Natural (C.Idx), Pin);
    end Configure;
 
    procedure Start (C : RX_Channel) is
@@ -427,7 +429,7 @@ package body ESP32S3.RMT is
       --  at an empty entry (Duration0 = 0) or after the symbol whose second
       --  pulse the idle period truncated (Duration1 = 0 marks the last symbol).
       RX_Conf (C.Idx).CONF1.MEM_OWNER := False;
-      while J <= 47 and then J <= Into'Length - 1 loop
+      while J <= Block_Symbols - 1 and then J <= Into'Length - 1 loop
          declare
             S : constant RMT_Symbol := RMTMEM (Blk) (J);
          begin

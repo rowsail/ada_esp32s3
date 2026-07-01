@@ -1,4 +1,5 @@
 with ESP32S3.GPIO;
+with ESP32S3.GPIO_Signals;
 with ESP32S3_Registers;         use ESP32S3_Registers;
 with ESP32S3_Registers.SPI2;    use ESP32S3_Registers.SPI2;
 with ESP32S3_Registers.GPIO;
@@ -6,6 +7,7 @@ with ESP32S3_Registers.SYSTEM;
 
 package body ESP32S3.SPI.Engine is
 
+   package Sigs renames ESP32S3.GPIO_Signals;
    package GD renames ESP32S3.GDMA;            --  the DMA engine we consume
    package GR renames ESP32S3_Registers.GPIO;  --  GPIO matrix register layer
 
@@ -18,8 +20,8 @@ package body ESP32S3.SPI.Engine is
 
    function Signals (Host : SPI_Host) return Sig is
      (case Host is
-         when SPI2 => (Clk => 101, Mosi_Out => 103, Miso_In => 102, Cs => 110),
-         when SPI3 => (Clk =>  66, Mosi_Out =>  68, Miso_In =>  67, Cs =>  71));
+         when SPI2 => (Clk => Sigs.FSPICLK_OUT, Mosi_Out => Sigs.FSPID_OUT, Miso_In => Sigs.FSPIQ_IN, Cs => Sigs.FSPICS0_OUT),
+         when SPI3 => (Clk => Sigs.SPI3_CLK_OUT, Mosi_Out => Sigs.SPI3_D_OUT, Miso_In => Sigs.SPI3_Q_IN, Cs => Sigs.SPI3_CS0_OUT));
 
    function GDMA_Periph (Host : SPI_Host) return GD.Peripheral is
      (case Host is when SPI2 => GD.SPI2, when SPI3 => GD.SPI3);

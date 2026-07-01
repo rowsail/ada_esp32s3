@@ -1,0 +1,17 @@
+--  Native (x86) host test for the shared ESP32S3.Endian helpers.  Compiles the
+--  REAL package (it depends only on Interfaces, so it is host-portable) and
+--  checks it against arithmetic references.  No hardware.
+project Endian_Host is
+   for Source_Dirs use (".", "../../src");
+   for Object_Dir use "obj";
+   for Exec_Dir use ".";
+   for Main use ("endian_check.adb");
+   for Source_Files use
+     ("endian_check.adb",
+      "esp32s3.ads",
+      "esp32s3-endian.ads",
+      "esp32s3-endian.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-g", "-O2", "-gnata", "-gnat2022");
+   end Compiler;
+end Endian_Host;

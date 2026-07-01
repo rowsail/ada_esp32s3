@@ -1,4 +1,5 @@
 with System;
+with Ada.Real_Time;
 with Interfaces;             use Interfaces;
 with Ada.Unchecked_Conversion;
 with ESP32S3_Registers;      use ESP32S3_Registers;
@@ -48,13 +49,17 @@ package body ESP32S3.Temperature is
    TSENS_DAC_Msb    : constant Unsigned_8 := 3;
    TSENS_DAC_Lsb    : constant Unsigned_8 := 0;
 
-   --  Crude busy-wait to let the analog settle after power-up; not critical
-   --  (the dump/ready handshake gates each reading), just bias settling time.
+   --  Let the analog settle after power-up; not critical (the dump/ready
+   --  handshake gates each reading), just bias settling time.  A wall-clock
+   --  wait states the intended duration directly and, unlike an iteration
+   --  count, cannot be optimised away or vary with CPU speed.
    procedure Settle is
-      Spin : Integer := 0 with Volatile;
+      use type Ada.Real_Time.Time;
+      Deadline : constant Ada.Real_Time.Time :=
+        Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (5);
    begin
-      while Spin < 200_000 loop
-         Spin := Spin + 1;
+      while Ada.Real_Time.Clock < Deadline loop
+         null;
       end loop;
    end Settle;
 
@@ -111,9 +116,19 @@ package body ESP32S3.Temperature is
          end if;
          --  Latch a fresh conversion: dump_out=1, wait ready, dump_out=0.
          SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_DUMP_OUT := True;
-         while not SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_READY loop
-            null;
-         end loop;
+         --  Ready arrives within microseconds; bound the poll so a stuck sensor
+         --  cannot hang the (protected) sample forever.
+         declare
+            use type Ada.Real_Time.Time;
+            Deadline : constant Ada.Real_Time.Time :=
+              Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (10);
+         begin
+            while not SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_READY
+              and then Ada.Real_Time.Clock < Deadline
+            loop
+               null;
+            end loop;
+         end;
          SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_DUMP_OUT := False;
          Raw   := SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_OUT;
          Centi := (ADC_Factor * Integer (Raw)

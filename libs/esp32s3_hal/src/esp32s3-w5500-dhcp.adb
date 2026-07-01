@@ -16,6 +16,38 @@ package body ESP32S3.W5500.DHCP is
    Request  : constant Byte := 3;
    Ack      : constant Byte := 5;
 
+   --  DHCP option codes (RFC 2132).
+   Opt_Subnet     : constant := 1;
+   Opt_Router     : constant := 3;
+   Opt_DNS        : constant := 6;
+   Opt_Req_IP     : constant := 50;
+   Opt_Lease      : constant := 51;
+   Opt_Msg_Type   : constant := 53;
+   Opt_Server_Id  : constant := 54;
+   Opt_Param_List : constant := 55;
+   Opt_Pad        : constant := 0;
+   Opt_End        : constant := 255;
+
+   --  Fixed BOOTP header field offsets (RFC 951 / 2131).  chaddr is 16 bytes but
+   --  we only fill the 6-byte MAC.  The option block starts after the cookie.
+   Off_Op      : constant := 0;     --  op (1 = BOOTREQUEST, 2 = BOOTREPLY)
+   Off_Flags   : constant := 10;
+   Off_Ciaddr  : constant := 12;
+   Off_Yiaddr  : constant := 16;
+   Off_Chaddr  : constant := 28;
+   Off_Cookie  : constant := 236;
+   Off_Options : constant := 240;
+
+   Boot_Reply    : constant Byte := 2;
+   Flag_Bcast_Hi : constant Byte := 16#80#;   --  high byte of the BOOTP flags word
+
+   --  The fixed transaction id we use for our single-client exchange, and the
+   --  DHCP magic cookie (RFC 2131: 99, 130, 83, 99).  Off_Xid is where the xid
+   --  sits in the header; both are matched whole on replies.
+   Off_Xid : constant := 4;
+   Xid     : constant Byte_Array (0 .. 3) := (16#39#, 16#03#, 16#F3#, 16#26#);
+   Cookie  : constant Byte_Array (0 .. 3) := (16#63#, 16#82#, 16#53#, 16#63#);
+
    Zero_IP : constant IPv4_Address := (0, 0, 0, 0);
    Bcast   : constant IPv4_Address := (255, 255, 255, 255);
 
@@ -36,26 +68,25 @@ package body ESP32S3.W5500.DHCP is
    begin
       TX := (others => 0);
       TX (0) := 1;  TX (1) := 1;  TX (2) := 6;  TX (3) := 0;     --  op/htype/hlen/hops
-      TX (4) := 16#39#; TX (5) := 16#03#;                        --  xid (fixed)
-      TX (6) := 16#F3#; TX (7) := 16#26#;
-      if Broadcast then TX (10) := 16#80#; end if;              --  flags
-      for I in 0 .. 3 loop TX (12 + I) := Ciaddr (I); end loop;  --  ciaddr
-      for I in 0 .. 5 loop TX (28 + I) := MAC (I);    end loop;  --  chaddr = MAC
-      TX (236) := 16#63#; TX (237) := 16#82#;                    --  magic cookie
-      TX (238) := 16#53#; TX (239) := 16#63#;
-      P := 240;
-      TX (P) := 53; TX (P + 1) := 1; TX (P + 2) := Msg;  P := P + 3;
+      TX (Off_Xid .. Off_Xid + 3) := Xid;
+      if Broadcast then TX (Off_Flags) := Flag_Bcast_Hi; end if;
+      TX (Off_Ciaddr .. Off_Ciaddr + 3) := Ciaddr;
+      TX (Off_Chaddr .. Off_Chaddr + 5) := MAC;                  --  chaddr = MAC
+      TX (Off_Cookie .. Off_Cookie + 3) := Cookie;               --  magic cookie
+      P := Off_Options;
+      TX (P) := Opt_Msg_Type; TX (P + 1) := 1; TX (P + 2) := Msg;  P := P + 3;
       if Req_IP /= Zero_IP then
-         TX (P) := 50; TX (P + 1) := 4;
-         for I in 0 .. 3 loop TX (P + 2 + I) := Req_IP (I); end loop;  P := P + 6;
+         TX (P) := Opt_Req_IP; TX (P + 1) := 4;
+         TX (P + 2 .. P + 5) := Req_IP;  P := P + 6;
       end if;
       if Server_Id /= Zero_IP then
-         TX (P) := 54; TX (P + 1) := 4;
-         for I in 0 .. 3 loop TX (P + 2 + I) := Server_Id (I); end loop;  P := P + 6;
+         TX (P) := Opt_Server_Id; TX (P + 1) := 4;
+         TX (P + 2 .. P + 5) := Server_Id;  P := P + 6;
       end if;
-      TX (P) := 55; TX (P + 1) := 4;                             --  param request list
-      TX (P + 2) := 1; TX (P + 3) := 3; TX (P + 4) := 6; TX (P + 5) := 51;  P := P + 6;
-      TX (P) := 255;                                             --  end
+      TX (P) := Opt_Param_List; TX (P + 1) := 4;                 --  param request list
+      TX (P + 2) := Opt_Subnet; TX (P + 3) := Opt_Router;
+      TX (P + 4) := Opt_DNS;    TX (P + 5) := Opt_Lease;  P := P + 6;
+      TX (P) := Opt_End;
       return P + 1;
    end Build;
 
@@ -68,7 +99,8 @@ package body ESP32S3.W5500.DHCP is
       FP           : WS.Port_Number;
       Count        : Natural;
       Rst          : WS.Status;
-      P, Code, Len : Natural;
+      P, Len       : Natural;
+      Code         : Byte;
       Msg          : Byte;
    begin
       Server_Id := Zero_IP;  Yiaddr := Zero_IP;
@@ -78,33 +110,31 @@ package body ESP32S3.W5500.DHCP is
          --  Only trust a datagram that is a BOOTREPLY (op=2) for OUR exchange
          --  (matching xid) carrying the DHCP magic cookie; otherwise it is a
          --  stray/rogue packet on UDP/68 and is ignored.
-         if Count >= 240
-           and then RX (0) = 2
-           and then RX (4) = 16#39# and then RX (5) = 16#03#
-           and then RX (6) = 16#F3# and then RX (7) = 16#26#
-           and then RX (236) = 16#63# and then RX (237) = 16#82#
-           and then RX (238) = 16#53# and then RX (239) = 16#63#
+         if Count >= Off_Options
+           and then RX (Off_Op) = Boot_Reply
+           and then RX (Off_Xid .. Off_Xid + 3) = Xid
+           and then RX (Off_Cookie .. Off_Cookie + 3) = Cookie
          then
-            Msg := 0;  P := 240;
+            Msg := 0;  P := Off_Options;
             --  Walk the option block, never reading past the received bytes: a
             --  truncated header or a length that runs off the end ends the walk,
             --  and each fixed-width option is taken only when its Len delivers it.
             while P <= Count - 1 loop
-               Code := Natural (RX (P));
-               exit when Code = 255;                 --  end option
-               if Code = 0 then                      --  pad
+               Code := RX (P);
+               exit when Code = Opt_End;
+               if Code = Opt_Pad then
                   P := P + 1;
                else
                   exit when P + 1 > Count - 1;        --  length byte must exist
                   Len := Natural (RX (P + 1));
                   exit when P + 1 + Len > Count - 1;  --  whole option body must exist
                   case Code is
-                     when 53 => if Len >= 1 then Msg := RX (P + 2); end if;
-                     when 54 => if Len >= 4 then for I in 0 .. 3 loop Server_Id (I) := RX (P + 2 + I); end loop; end if;
-                     when 1  => if Len >= 4 then for I in 0 .. 3 loop Lease.Subnet  (I) := RX (P + 2 + I); end loop; end if;
-                     when 3  => if Len >= 4 then for I in 0 .. 3 loop Lease.Gateway (I) := RX (P + 2 + I); end loop; end if;
-                     when 6  => if Len >= 4 then for I in 0 .. 3 loop Lease.DNS     (I) := RX (P + 2 + I); end loop; end if;
-                     when 51 =>
+                     when Opt_Msg_Type  => if Len >= 1 then Msg := RX (P + 2); end if;
+                     when Opt_Server_Id => if Len >= 4 then Server_Id     := RX (P + 2 .. P + 5); end if;
+                     when Opt_Subnet    => if Len >= 4 then Lease.Subnet  := RX (P + 2 .. P + 5); end if;
+                     when Opt_Router    => if Len >= 4 then Lease.Gateway := RX (P + 2 .. P + 5); end if;
+                     when Opt_DNS       => if Len >= 4 then Lease.DNS     := RX (P + 2 .. P + 5); end if;
+                     when Opt_Lease =>
                         if Len >= 4 then
                            Lease.Lease_Seconds :=
                              Shift_Left (Unsigned_32 (RX (P + 2)), 24) or
@@ -118,7 +148,7 @@ package body ESP32S3.W5500.DHCP is
                end if;
             end loop;
             if Msg = Want then
-               for I in 0 .. 3 loop Yiaddr (I) := RX (16 + I); end loop;
+               Yiaddr := RX (Off_Yiaddr .. Off_Yiaddr + 3);
                return True;
             end if;
          end if;

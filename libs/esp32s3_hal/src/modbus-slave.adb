@@ -282,13 +282,14 @@ package body Modbus.Slave is
 
    function Send_All (Conn : Socket_Type; Buf : Byte_Array; Count : Natural)
                       return Boolean is
-      Data : Stream_Element_Array (0 .. Stream_Element_Offset (Count) - 1);
+      --  View the first Count bytes of Buf as a Stream_Element_Array with no
+      --  copy: Byte and Stream_Element are both 8-bit, so the layout matches
+      --  (same overlay idiom as ESP32S3.W5500.Net_Device).
+      Data : Stream_Element_Array (0 .. Stream_Element_Offset (Count) - 1)
+               with Import, Address => Buf'Address;
       Last : Stream_Element_Offset;
       Pos  : Stream_Element_Offset := 0;
    begin
-      for I in 0 .. Count - 1 loop
-         Data (Stream_Element_Offset (I)) := Stream_Element (Buf (I));
-      end loop;
       while Pos <= Data'Last loop
          Send_Socket (Conn, Data (Pos .. Data'Last), Last);
          exit when Last < Pos;

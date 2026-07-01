@@ -1,5 +1,7 @@
 with Ada.Streams;  use Ada.Streams;
 with GNAT.Sockets; use GNAT.Sockets;
+with Interfaces;   use Interfaces;
+with ESP32S3.Endian;
 
 package body DNS_Client is
 
@@ -74,7 +76,8 @@ package body DNS_Client is
       end Skip_Name;
 
       function U16 (Pos : Stream_Element_Offset) return Integer is
-        (Integer (Resp (Pos)) * 256 + Integer (Resp (Pos + 1)));
+        (Integer (ESP32S3.Endian.Join_BE16 (Unsigned_8 (Resp (Pos)),
+                                    Unsigned_8 (Resp (Pos + 1)))));
    begin
       Addr := Any_Inet_Addr;
       Build_Query;

@@ -1,5 +1,6 @@
 with Interfaces;                 use Interfaces;
 with ESP32S3.GPIO;
+with ESP32S3.GPIO_Signals;
 with ESP32S3_Registers;          use ESP32S3_Registers;
 with ESP32S3_Registers.PWM;      use ESP32S3_Registers.PWM;
 with ESP32S3_Registers.GPIO;
@@ -10,7 +11,8 @@ package body ESP32S3.MCPWM is
 
    package GR renames ESP32S3_Registers.GPIO;     --  GPIO matrix register layer
    package MX renames ESP32S3_Registers.IO_MUX;   --  IO_MUX (per-pad config)
-   package G  renames ESP32S3.GPIO;
+   package G    renames ESP32S3.GPIO;
+   package Sigs renames ESP32S3.GPIO_Signals;
 
    --  PWM_clk source with CLK_CFG.CLK_PRESCALE = 0 (period 6.25 ns = 160 MHz).
    Src_Hz   : constant := 160_000_000;
@@ -22,10 +24,11 @@ package body ESP32S3.MCPWM is
      (case Unit is when MCPWM0 => MCPWM0_Periph'Access,
                    when MCPWM1 => MCPWM1_Periph'Access);
 
-   --  GPIO-matrix output signal for channel A (gpio_sig_map: MCPWM0 OUT0A=160,
-   --  OUT1A=162, OUT2A=164; MCPWM1 OUT0A=166, OUT1A=168, OUT2A=170).
+   --  Generator outputs OUTnA = base + 2n (OUTnB = +1); fault/capture inputs
+   --  stride by 1.  Bases come from ESP32S3.GPIO_Signals (gpio_sig_map).
    function Out_Signal (Unit : MCPWM_Unit; Ch : Channel_Index) return Natural is
-     ((if Unit = MCPWM0 then 160 else 166) + 2 * Channel_Index'Pos (Ch));
+     ((if Unit = MCPWM0 then Sigs.PWM0_OUT0A else Sigs.PWM1_OUT0A)
+      + 2 * Channel_Index'Pos (Ch));
 
    --  Route a generator output signal to Pin as a push-pull matrix output.
    procedure Route_Out (Pin : G.Pin_Id; Sig : Natural) is
@@ -57,9 +60,11 @@ package body ESP32S3.MCPWM is
 
    --  Fault / capture matrix input-signal indices (gpio_sig_map).
    function Fault_Signal (Unit : MCPWM_Unit; Input : Fault_Input) return Natural is
-     ((if Unit = MCPWM0 then 163 else 172) + Fault_Input'Pos (Input));
+     ((if Unit = MCPWM0 then Sigs.PWM0_F0_IN else Sigs.PWM1_F0_IN)
+      + Fault_Input'Pos (Input));
    function Cap_Signal (Unit : MCPWM_Unit; Chan : Cap_Index) return Natural is
-     ((if Unit = MCPWM0 then 166 else 175) + Cap_Index'Pos (Chan));
+     ((if Unit = MCPWM0 then Sigs.PWM0_CAP0_IN else Sigs.PWM1_CAP0_IN)
+      + Cap_Index'Pos (Chan));
 
    --  Per-channel period in timer ticks (= TIMER_PERIOD + 1), set by
    --  Configure_Channel and read by Set_Duty.  Plain reads/writes of a Natural

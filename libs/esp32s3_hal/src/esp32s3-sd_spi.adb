@@ -40,9 +40,7 @@ package body ESP32S3.SD_SPI is
    --  Clock N idle (0xFF) bytes (card sees MOSI high); ignore what comes back.
    procedure Idle_Clocks (C : Card; S : ESP32S3.SPI.Session; N : Natural) is
    begin
-      for I in 0 .. N - 1 loop
-         Tx_Buf (C.Host) (I) := 16#FF#;
-      end loop;
+      Tx_Buf (C.Host) (0 .. N - 1) := (others => 16#FF#);
       Shift (C, S, N);
    end Idle_Clocks;
 
@@ -303,9 +301,7 @@ package body ESP32S3.SD_SPI is
       --  512 data bytes, then 2 (ignored) CRC bytes.
       Tx_Buf (C.Host) := (others => 16#FF#);
       Shift (C, S, 512);
-      for I in Block'Range loop
-         Data (I) := Rx_Buf (C.Host) (I);
-      end loop;
+      Data := Block (Rx_Buf (C.Host));
       R := Swap (C, S, 16#FF#);
       R := Swap (C, S, 16#FF#);
 
@@ -340,9 +336,7 @@ package body ESP32S3.SD_SPI is
       R := Swap (C, S, 16#FF#);                --  one gap byte before the token
       R := Swap (C, S, Data_Token);            --  start-of-block token
 
-      for I in Block'Range loop                --  512 data bytes
-         Tx_Buf (C.Host) (I) := Data (I);
-      end loop;
+      Tx_Buf (C.Host) := Buf (Data);           --  512 data bytes
       Shift (C, S, 512);
 
       R := Swap (C, S, 16#FF#);                --  2 dummy CRC bytes

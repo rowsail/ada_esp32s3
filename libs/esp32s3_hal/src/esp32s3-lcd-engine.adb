@@ -2,12 +2,14 @@ with ESP32S3_Registers;          use ESP32S3_Registers;
 with ESP32S3_Registers.LCD_CAM; use ESP32S3_Registers.LCD_CAM;
 with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.SYSTEM;
+with ESP32S3.GPIO_Signals;
 
 package body ESP32S3.LCD.Engine is
 
    package GD renames ESP32S3.GDMA;
    package GR renames ESP32S3_Registers.GPIO;
-   package G  renames ESP32S3.GPIO;
+   package G    renames ESP32S3.GPIO;
+   package Sigs renames ESP32S3.GPIO_Signals;
 
    Src_Hz : constant := 160_000_000;            --  LCD_CLK_SEL = 3 source clock
 
@@ -91,11 +93,11 @@ package body ESP32S3.LCD.Engine is
       end if;
       for I in Data'Range loop
          if Data (I) /= G.No_Pin then
-            Drive_Out (ESP32S3.GPIO.Pin_Id (Data (I)), 133 + I);  --  LCD_DATA_OUTi
+            Drive_Out (ESP32S3.GPIO.Pin_Id (Data (I)), Sigs.LCD_DATA_OUT0 + I);
          end if;
       end loop;
       if Pclk /= G.No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Pclk), 154);            --  LCD_PCLK
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Pclk), Sigs.LCD_PCLK);
       end if;
    end Configure_Pins;
 
@@ -108,7 +110,7 @@ package body ESP32S3.LCD.Engine is
       if not B.Valid then
          return;
       end if;
-      Drive_Out (Pclk_Pad, 154);
+      Drive_Out (Pclk_Pad, Sigs.LCD_PCLK);
       --  Continuous output: the transaction never ends, so PCLK free-runs.
       LCD_CAM_Periph.LCD_USER.LCD_ALWAYS_OUT_EN  := True;
       LCD_CAM_Periph.LCD_USER.LCD_DOUT           := True;

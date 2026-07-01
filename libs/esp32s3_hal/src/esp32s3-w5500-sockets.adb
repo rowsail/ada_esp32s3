@@ -1,5 +1,6 @@
 with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
+with ESP32S3.Endian;
 
 package body ESP32S3.W5500.Sockets is
 
@@ -446,9 +447,9 @@ package body ESP32S3.W5500.Sockets is
       RD := R16 (S, Sn_RX_RD);
       Read (S.Dev.all, Socket_RX (S.Index), RD, Hdr);    --  IP(4) port(2) len(2)
       From      := (Hdr (0), Hdr (1), Hdr (2), Hdr (3));
-      From_Port := Shift_Left (Unsigned_16 (Hdr (4)), 8) or Unsigned_16 (Hdr (5));
-      Plen      := Natural (Shift_Left (Unsigned_16 (Hdr (6)), 8)
-                            or Unsigned_16 (Hdr (7)));
+      From_Port := ESP32S3.Endian.Join_BE16 (Unsigned_8 (Hdr (4)), Unsigned_8 (Hdr (5)));
+      Plen      := Natural (ESP32S3.Endian.Join_BE16 (Unsigned_8 (Hdr (6)),
+                                              Unsigned_8 (Hdr (7))));
       RD := RD + 8;
       N  := Natural'Min (Into'Length, Plen);
       if N > 0 then

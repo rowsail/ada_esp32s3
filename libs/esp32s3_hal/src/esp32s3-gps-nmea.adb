@@ -17,6 +17,19 @@ package body ESP32S3.GPS.NMEA is
          when 'a' .. 'f' => Character'Pos (C) - Character'Pos ('a') + 10,
          when others     => -1);
 
+   --  Index of the last '.' in S, or 0 if there is none.  An NMEA numeric field
+   --  carries at most one decimal point, so "last" = "the" point.
+   function Last_Dot (S : String) return Integer is
+      D : Integer := 0;
+   begin
+      for I in S'Range loop
+         if S (I) = '.' then
+            D := I;
+         end if;
+      end loop;
+      return D;
+   end Last_Dot;
+
    --  Unsigned integer value of the leading digits of S (stops at the first
    --  non-digit); empty / no digits -> 0.
    function To_Nat (S : String) return Natural is
@@ -84,11 +97,7 @@ package body ESP32S3.GPS.NMEA is
       if S = "" then
          return 0;
       end if;
-      for I in S'Range loop
-         if S (I) = '.' then
-            Dot := I;
-         end if;
-      end loop;
+      Dot := Last_Dot (S);
       declare
          --  Compute in 64-bit and clamp to Integer: To_Nat is saturated but
          --  To_Nat * 10**Places can still exceed Integer on garbage input.
@@ -122,11 +131,7 @@ package body ESP32S3.GPS.NMEA is
       if S = "" then
          return 0;
       end if;
-      for I in S'Range loop
-         if S (I) = '.' then
-            Dot := I;
-         end if;
-      end loop;
+      Dot := Last_Dot (S);
       if Dot < S'First + 3 then
          return 0;          --  too short to hold dd + mm.
       end if;
@@ -157,11 +162,7 @@ package body ESP32S3.GPS.NMEA is
       T.Hour   := To_Nat (S (S'First     .. S'First + 1));
       T.Minute := To_Nat (S (S'First + 2 .. S'First + 3));
       T.Second := To_Nat (S (S'First + 4 .. S'First + 5));
-      for I in S'Range loop
-         if S (I) = '.' then
-            Dot := I;
-         end if;
-      end loop;
+      Dot := Last_Dot (S);
       if Dot /= 0 then
          T.Centi := Frac (S (Dot + 1 .. S'Last), 2);
       end if;

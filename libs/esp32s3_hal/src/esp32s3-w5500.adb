@@ -1,4 +1,5 @@
 with System;
+with Ada.Unchecked_Conversion;
 with Interfaces;            use Interfaces;
 with Ada.Real_Time;         use Ada.Real_Time;
 
@@ -32,9 +33,26 @@ package body ESP32S3.W5500 is
    Scratch_Tx : array (ESP32S3.SPI.SPI_Host) of Frame := (others => (others => 0));
    Scratch_Rx : array (ESP32S3.SPI.SPI_Host) of Frame := (others => (others => 0));
 
-   --  Control byte = BSB[4:0]<<3 | RWB<<2 | OM[1:0]; VDM => OM = 00.
+   --  Control byte as its documented bit fields (BSB[3..7], RWB[2], OM[0..1]),
+   --  so the layout is named and compiler-placed rather than hand-shifted.  We
+   --  only ever use variable-length data mode, so OM = 00.  (Verified bit-for-bit
+   --  against the previous "Blk*8 + 4" arithmetic in test/repclause_host.)
+   type OM_Mode is mod 2 ** 2;
+   type Control_Byte is record
+      OM  : OM_Mode;   --  operation mode (0 = VDM)
+      RWB : Boolean;   --  read = False, write = True
+      BSB : Block;     --  block-select (5 bits)
+   end record;
+   for Control_Byte use record
+      OM  at 0 range 0 .. 1;
+      RWB at 0 range 2 .. 2;
+      BSB at 0 range 3 .. 7;
+   end record;
+   for Control_Byte'Size use 8;
+   function To_Byte is new Ada.Unchecked_Conversion (Control_Byte, Byte);
+
    function Control (Blk : Block; Write_Access : Boolean) return Byte is
-     (Byte (Blk) * 8 + (if Write_Access then 4 else 0));
+     (To_Byte ((OM => 0, RWB => Write_Access, BSB => Blk)));
 
    ---------------------------------------------------------------------------
    --  Transport

@@ -1,13 +1,16 @@
 with Interfaces;                 use Interfaces;
 with Ada.Real_Time;
+with ESP32S3.Endian;             use ESP32S3.Endian;
 with ESP32S3_Registers;          use ESP32S3_Registers;
 with ESP32S3_Registers.SDHOST;   use ESP32S3_Registers.SDHOST;
 with ESP32S3_Registers.SYSTEM;
 with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.IO_MUX;
+with ESP32S3.GPIO_Signals;
 
 package body ESP32S3.SDMMC is
 
+   package Sigs renames ESP32S3.GPIO_Signals;
    package GR renames ESP32S3_Registers.GPIO;
    package MX renames ESP32S3_Registers.IO_MUX;
 
@@ -25,8 +28,12 @@ package body ESP32S3.SDMMC is
    end record;
 
    Sig : constant array (Slot) of Sig_Set :=
-     (Slot1 => (Cclk => 172, Ccmd => 178, Cdat => (180, 181, 182, 183)),
-      Slot2 => (Cclk => 173, Ccmd => 179, Cdat => (213, 214, 215, 216)));
+     (Slot1 => (Cclk => Sigs.SDHOST_CCLK_OUT_1, Ccmd => Sigs.SDHOST_CCMD_OUT_1,
+                Cdat => (Sigs.SDHOST_CDATA_OUT_10, Sigs.SDHOST_CDATA_OUT_11,
+                         Sigs.SDHOST_CDATA_OUT_12, Sigs.SDHOST_CDATA_OUT_13)),
+      Slot2 => (Cclk => Sigs.SDHOST_CCLK_OUT_2, Ccmd => Sigs.SDHOST_CCMD_OUT_2,
+                Cdat => (Sigs.SDHOST_CDATA_OUT_20, Sigs.SDHOST_CDATA_OUT_21,
+                         Sigs.SDHOST_CDATA_OUT_22, Sigs.SDHOST_CDATA_OUT_23)));
 
    function Card_No (S : Slot) return Natural is (Slot'Pos (S));
 
@@ -71,6 +78,11 @@ package body ESP32S3.SDMMC is
    Busy_Span : constant Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (1000);
    Reg_Span  : constant Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (50);
    ACMD41_Tries : constant := 400;        --  ~SD spec's 1 s power-up budget
+
+   --  SD data block geometry: 512 bytes = 128 FIFO words.  CMD16 fixes this, and
+   --  SDSC uses byte addressing (LBA * Block_Bytes) while SDHC uses the LBA.
+   Block_Bytes : constant := 512;
+   Block_Words : constant := Block_Bytes / 4;
 
    --  True once the wall-clock has passed Deadline (used by the poll loops).
    use type Ada.Real_Time.Time;
@@ -247,7 +259,7 @@ package body ESP32S3.SDMMC is
    --  PIO data transfer through the FIFO (no DMA).
    ---------------------------------------------------------------------------
 
-   procedure Prepare_Data (Bytes : Natural := 512) is
+   procedure Prepare_Data (Bytes : Natural := Block_Bytes) is
    begin
       SDHOST_Periph.CTRL.FIFO_RESET := True;
       declare
@@ -292,10 +304,8 @@ package body ESP32S3.SDMMC is
             end if;
          end;
          W := FIFO;
-         Buf (Word * 4)     := Unsigned_8 (W and 16#FF#);
-         Buf (Word * 4 + 1) := Unsigned_8 (Shift_Right (W, 8)  and 16#FF#);
-         Buf (Word * 4 + 2) := Unsigned_8 (Shift_Right (W, 16) and 16#FF#);
-         Buf (Word * 4 + 3) := Unsigned_8 (Shift_Right (W, 24) and 16#FF#);
+         Split_LE (Unsigned_32 (W), Buf (Word * 4),     Buf (Word * 4 + 1),
+                                    Buf (Word * 4 + 2), Buf (Word * 4 + 3));
       end loop;
       declare
          D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
@@ -316,7 +326,7 @@ package body ESP32S3.SDMMC is
    function Read_FIFO (Data : out Block) return Status is
       W : UInt32;
    begin
-      for Word in 0 .. 127 loop
+      for Word in 0 .. Block_Words - 1 loop
          declare
             Ready : Boolean := False;
             D     : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
@@ -339,10 +349,8 @@ package body ESP32S3.SDMMC is
             end if;
          end;
          W := FIFO;
-         Data (Word * 4)     := Unsigned_8 (W and 16#FF#);
-         Data (Word * 4 + 1) := Unsigned_8 (Shift_Right (W, 8)  and 16#FF#);
-         Data (Word * 4 + 2) := Unsigned_8 (Shift_Right (W, 16) and 16#FF#);
-         Data (Word * 4 + 3) := Unsigned_8 (Shift_Right (W, 24) and 16#FF#);
+         Split_LE (Unsigned_32 (W), Data (Word * 4),     Data (Word * 4 + 1),
+                                    Data (Word * 4 + 2), Data (Word * 4 + 3));
       end loop;
 
       --  Wait for the data-transfer-over flag.
@@ -365,7 +373,7 @@ package body ESP32S3.SDMMC is
    function Write_FIFO (Data : Block) return Status is
       W : UInt32;
    begin
-      for Word in 0 .. 127 loop
+      for Word in 0 .. Block_Words - 1 loop
          declare
             Ready : Boolean := False;
             D     : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
@@ -385,10 +393,8 @@ package body ESP32S3.SDMMC is
                return Write_Error;
             end if;
          end;
-         W := UInt32 (Data (Word * 4))
-              or Shift_Left (UInt32 (Data (Word * 4 + 1)),  8)
-              or Shift_Left (UInt32 (Data (Word * 4 + 2)), 16)
-              or Shift_Left (UInt32 (Data (Word * 4 + 3)), 24);
+         W := UInt32 (Join_LE (Data (Word * 4),     Data (Word * 4 + 1),
+                               Data (Word * 4 + 2), Data (Word * 4 + 3)));
          FIFO := W;
       end loop;
 
@@ -419,7 +425,7 @@ package body ESP32S3.SDMMC is
    function Addr_Of (C : Card; LBA : Block_Address) return UInt32 is
      (if C.Block_Addressed
       then UInt32 (LBA)
-      else UInt32 (LBA) * 512);
+      else UInt32 (LBA) * Block_Bytes);
 
    --  Decode the 8-byte SCR (Buf big-endian) into spec version + bus widths.
    procedure Decode_SCR (C : in out Card; Buf : Small_Buf) is
@@ -431,17 +437,20 @@ package body ESP32S3.SDMMC is
    begin
       C.Bus_4bit := (Buf (1) and 16#04#) /= 0;     --  SD_BUS_WIDTHS bit 2
       C.Spec_Minor := 0;
-      if Sd_Spec = 0 then
-         C.Spec_Major := 1;
-      elsif Sd_Spec = 1 then
-         C.Spec_Major := 1; C.Spec_Minor := 1;
-      elsif Sd_Spec = 2 then
-         if not Sd_Spec3 then       C.Spec_Major := 2;
-         elsif Sd_Specx >= 1 then   C.Spec_Major := 4 + Sd_Specx;  --  5/6/7..
-         elsif Sd_Spec4 then        C.Spec_Major := 4;
-         else                       C.Spec_Major := 3;
-         end if;
-      end if;
+      case Sd_Spec is
+         when 0 =>
+            C.Spec_Major := 1;
+         when 1 =>
+            C.Spec_Major := 1; C.Spec_Minor := 1;
+         when 2 =>
+            if not Sd_Spec3 then       C.Spec_Major := 2;
+            elsif Sd_Specx >= 1 then   C.Spec_Major := 4 + Sd_Specx;  --  5/6/7..
+            elsif Sd_Spec4 then        C.Spec_Major := 4;
+            else                       C.Spec_Major := 3;
+            end if;
+         when others =>
+            null;                      --  reserved SD_SPEC value: leave defaults
+      end case;
    end Decode_SCR;
 
    procedure Do_Initialize (C : in out Card; Result : out Status) is
@@ -519,7 +528,7 @@ package body ESP32S3.SDMMC is
       end if;
 
       --  CMD16: 512-byte blocks (required for SDSC, harmless for SDHC).
-      St := Issue (16, 512, Short_Resp, Slot_No => N);
+      St := Issue (16, Block_Bytes, Short_Resp, Slot_No => N);
 
       --  SCR (ACMD51): SD spec version + supported bus widths (8-byte data read).
       declare

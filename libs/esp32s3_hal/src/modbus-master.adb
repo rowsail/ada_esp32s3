@@ -53,13 +53,14 @@ package body Modbus.Master is
 
    --  Send Count bytes of S.Buf.  False on a socket error.
    function Send_All (S : in out Session; Count : Natural) return Boolean is
-      Data : Stream_Element_Array (0 .. Stream_Element_Offset (Count) - 1);
+      --  View the first Count bytes of S.Buf as a Stream_Element_Array with no
+      --  copy: Byte and Stream_Element are both 8-bit, so the layout matches
+      --  (same overlay idiom as ESP32S3.W5500.Net_Device).
+      Data : Stream_Element_Array (0 .. Stream_Element_Offset (Count) - 1)
+               with Import, Address => S.Buf'Address;
       Last : Stream_Element_Offset;
       Pos  : Stream_Element_Offset := 0;
    begin
-      for I in 0 .. Count - 1 loop
-         Data (Stream_Element_Offset (I)) := Stream_Element (S.Buf (I));
-      end loop;
       while Pos <= Data'Last loop
          Send_Socket (S.Sock, Data (Pos .. Data'Last), Last);
          exit when Last < Pos;

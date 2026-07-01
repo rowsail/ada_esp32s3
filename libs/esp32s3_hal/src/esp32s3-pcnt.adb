@@ -1,4 +1,7 @@
+with Interfaces;
+with Ada.Unchecked_Conversion;
 with ESP32S3.GPIO;
+with ESP32S3.GPIO_Signals;
 with ESP32S3_Registers;          use ESP32S3_Registers;
 with ESP32S3_Registers.PCNT;     use ESP32S3_Registers.PCNT;
 with ESP32S3_Registers.GPIO;
@@ -9,7 +12,8 @@ package body ESP32S3.PCNT is
 
    package GR renames ESP32S3_Registers.GPIO;
    package MX renames ESP32S3_Registers.IO_MUX;
-   package G  renames ESP32S3.GPIO;
+   package G    renames ESP32S3.GPIO;
+   package Sigs renames ESP32S3.GPIO_Signals;
 
    --  Per-unit config block (CONF0/CONF1/CONF2), re-imposed as an array (the
    --  svd flattened it; stride 0x0C from U_CONF00).
@@ -29,8 +33,11 @@ package body ESP32S3.PCNT is
    Conf : U_Array
      with Import, Volatile, Address => PCNT_Periph.U_CONF00'Address;
 
-   --  Input signal index for a unit's channel-0 SIG input (33, 37, 41, 45).
-   function Sig_In (Idx : Unit_Index) return Natural is (33 + 4 * Natural (Idx));
+   --  Input signal index for a unit's channel-0 SIG input (33, 37, 41, 45): each
+   --  unit owns 4 matrix signals (sig/ctrl x ch0/ch1), so they stride by 4.
+   PCNT_Sigs_Per_Unit : constant := 4;
+   function Sig_In (Idx : Unit_Index) return Natural is
+     (Sigs.PCNT_SIG_CH0_IN0 + PCNT_Sigs_Per_Unit * Natural (Idx));
 
    procedure Route_In (Sig : Natural; Pin : G.Pin_Id) is
       Ix : constant Natural := Natural (Pin);
@@ -166,19 +173,18 @@ package body ESP32S3.PCNT is
    -- Count --
    -----------
 
+   --  Reinterpret the 16-bit counter field as a two's-complement signed value,
+   --  letting the type system carry the sign instead of a hand >= 32768 test.
+   function To_Signed is new Ada.Unchecked_Conversion
+     (Interfaces.Unsigned_16, Interfaces.Integer_16);
+
    function Count (U : Unit) return Integer is
-      Raw : Natural;
    begin
       if not U.Held then
          return 0;
       end if;
-      Raw := Natural (PCNT_Periph.U_CNT (Integer (U.Idx)).CNT);
-      --  Interpret the 16-bit field as a signed count.
-      if Raw >= 32_768 then
-         return Raw - 65_536;
-      else
-         return Raw;
-      end if;
+      return Integer (To_Signed (Interfaces.Unsigned_16
+        (PCNT_Periph.U_CNT (Integer (U.Idx)).CNT)));
    end Count;
 
    -----------
