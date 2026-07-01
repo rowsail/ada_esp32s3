@@ -27,11 +27,11 @@
 --      SCLK = GPIO12   MOSI = GPIO11   MISO = GPIO13   CS = GPIO10
 --      card VDD = 3V3, VSS = GND, 10k pull-up on MISO recommended.
 with Interfaces;   use Interfaces;
-with Interfaces.C; use Interfaces.C;
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.SD_SPI;
 with ESP32S3.SPI;
+with ESP32S3.Text_IO;   use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -42,14 +42,71 @@ procedure Main is
    use type SD_SPI.Status;
    use type SD_SPI.Block;
 
-   --  Console report -- ROM printf glue in glue.c (the reliable path here).
-   procedure Banner;  pragma Import (C, Banner, "native_sd_banner");
-   procedure Init_R (Status, Kind : int);  pragma Import (C, Init_R, "native_sd_init");
-   procedure Read_R (Which, Status, B0, B1, B2, B3 : int);
-   pragma Import (C, Read_R, "native_sd_read");
-   procedure Write_R (Status : int);  pragma Import (C, Write_R, "native_sd_write");
-   procedure Verify_R (Ok : int);     pragma Import (C, Verify_R, "native_sd_verify");
-   procedure Done;    pragma Import (C, Done, "native_sd_done");
+   package Nat_IO is new Integer_IO (Natural);
+
+   --  Decimal with no field padding (like C "%d").
+   procedure Put_Nat (V : Natural) is
+   begin
+      Nat_IO.Put (V, Width => 1);
+   end Put_Nat;
+
+   --  Bare lowercase hex, zero-padded to Min_Digits (like C "%0Nx").
+   Hex_Digit : constant array (0 .. 15) of Character := "0123456789abcdef";
+   procedure Put_Hex (V : Unsigned_64; Min_Digits : Positive := 1) is
+      Buf   : String (1 .. 16);
+      X     : Unsigned_64 := V;
+      First : Natural := Buf'Last;
+   begin
+      for I in reverse Buf'Range loop
+         Buf (I) := Hex_Digit (Natural (X and 16#F#));
+         X := Shift_Right (X, 4);
+      end loop;
+      for I in Buf'Range loop
+         if Buf (I) /= '0' then First := I; exit; end if;
+      end loop;
+      if Buf'Last - First + 1 < Min_Digits then
+         First := Buf'Last - Min_Digits + 1;
+      end if;
+      Put (Buf (First .. Buf'Last));
+   end Put_Hex;
+
+   function Kind_Name (K : ESP32S3.SD_SPI.Card_Kind) return String is
+     (case K is
+         when ESP32S3.SD_SPI.Unknown  => "Unknown",
+         when ESP32S3.SD_SPI.SD_V1    => "SD v1.x (SDSC)",
+         when ESP32S3.SD_SPI.SD_V2_SC => "SD v2 SDSC",
+         when ESP32S3.SD_SPI.SD_V2_HC => "SDHC/SDXC");
+
+   --  Console reporters, formerly esp_rom_printf natives in glue.c, now pure Ada
+   --  over the buffered ESP32S3.Text_IO console.
+
+   procedure Banner is
+   begin
+      Put_Line ("[sd-spi] bare-metal SD-over-SPI self-test (needs a wired card)");
+   end Banner;
+
+   procedure Report_Init (Status : ESP32S3.SD_SPI.Status;
+                          Kind   : ESP32S3.SD_SPI.Card_Kind) is
+   begin
+      Put ("[sd-spi] init: ");  Put (ESP32S3.SD_SPI.Status'Image (Status));
+      Put ("   card: ");        Put_Line (Kind_Name (Kind));
+   end Report_Init;
+
+   procedure Report_Write (Status : ESP32S3.SD_SPI.Status) is
+   begin
+      Put_Line ("[sd-spi] write-back: " & ESP32S3.SD_SPI.Status'Image (Status));
+   end Report_Write;
+
+   procedure Report_Verify (Ok : Boolean) is
+   begin
+      Put_Line ("[sd-spi] round-trip (re-read == original): "
+                & (if Ok then "PASS" else "FAIL"));
+   end Report_Verify;
+
+   procedure Done is
+   begin
+      Put_Line ("[sd-spi] done.");
+   end Done;
 
    --  SPI2 pins for the card (edit to match your board / SD breakout).
    SCLK_Pin : constant := 12;
@@ -72,13 +129,19 @@ procedure Main is
    Original    : SD_SPI.Block;     --  the scratch sector as first read
    Read_Back   : SD_SPI.Block;     --  the same sector re-read after write-back
 
-   --  Report a block read: pass status + the first four bytes to the C glue.
-   procedure Report_Read (Which  : int;
+   --  Report a block read: status + the first four bytes.
+   procedure Report_Read (Which  : Natural;
                           Status : SD_SPI.Status;
                           Data   : SD_SPI.Block) is
    begin
-      Read_R (Which, int (SD_SPI.Status'Pos (Status)),
-              int (Data (0)), int (Data (1)), int (Data (2)), int (Data (3)));
+      Put ("[sd-spi] read#");  Put_Nat (Which);
+      Put (": ");              Put (SD_SPI.Status'Image (Status));
+      Put ("   first bytes = ");
+      Put_Hex (Unsigned_64 (Data (0)), 2);  Put (" ");
+      Put_Hex (Unsigned_64 (Data (1)), 2);  Put (" ");
+      Put_Hex (Unsigned_64 (Data (2)), 2);  Put (" ");
+      Put_Hex (Unsigned_64 (Data (3)), 2);
+      New_Line;
    end Report_Read;
 begin
    delay until Clock + Milliseconds (200);
@@ -90,8 +153,7 @@ begin
       Init_Clock_Hz => Init_Clock_Hz, Data_Clock_Hz => Data_Clock_Hz);
 
    SD_SPI.Initialize (Card_Device, Card_Status);
-   Init_R (int (SD_SPI.Status'Pos (Card_Status)),
-           int (SD_SPI.Card_Kind'Pos (SD_SPI.Kind (Card_Device))));
+   Report_Init (Card_Status, SD_SPI.Kind (Card_Device));
 
    if Card_Status = SD_SPI.OK then
       SD_SPI.Read_Block (Card_Device, Test_LBA, Original, Card_Status);
@@ -100,14 +162,13 @@ begin
       if Card_Status = SD_SPI.OK then
          --  Write the SAME bytes back (non-destructive), then re-read.
          SD_SPI.Write_Block (Card_Device, Test_LBA, Original, Card_Status);
-         Write_R (int (SD_SPI.Status'Pos (Card_Status)));
+         Report_Write (Card_Status);
 
          if Card_Status = SD_SPI.OK then
             SD_SPI.Read_Block (Card_Device, Test_LBA, Read_Back, Card_Status);
             Report_Read (2, Card_Status, Read_Back);
-            Verify_R
-              (Boolean'Pos (Card_Status = SD_SPI.OK
-                            and then Original = Read_Back));
+            Report_Verify (Card_Status = SD_SPI.OK
+                           and then Original = Read_Back);
          end if;
       end if;
    end if;
