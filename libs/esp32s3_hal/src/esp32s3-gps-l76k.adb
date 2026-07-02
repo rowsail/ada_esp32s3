@@ -4,34 +4,34 @@ use type Interfaces.Unsigned_8;
 package body ESP32S3.GPS.L76K is
 
    --  Hex digit (0..15) -> ASCII.
-   function Hex (V : Interfaces.Unsigned_8) return Character
-   is (if V < 10
-       then Character'Val (Character'Pos ('0') + Integer (V))
-       else Character'Val (Character'Pos ('A') + Integer (V) - 10));
+   function Hex (Nibble : Interfaces.Unsigned_8) return Character
+   is (if Nibble < 10
+       then Character'Val (Character'Pos ('0') + Integer (Nibble))
+       else Character'Val (Character'Pos ('A') + Integer (Nibble) - 10));
 
    --  Frame Body ("$" ... "*HH" CR LF) and queue it for transmission.  Body is
    --  the text between '$' and '*' (e.g. "PCAS04,3").
    procedure Send_PCAS (Body_Text : String) is
       Sum      : Interfaces.Unsigned_8 := 0;
       Sentence : String (1 .. Body_Text'Length + 6);
-      L        : constant Natural := Body_Text'Length;
+      Len      : constant Natural := Body_Text'Length;
    begin
       for C of Body_Text loop
          Sum := Sum xor Interfaces.Unsigned_8 (Character'Pos (C));
       end loop;
       Sentence (1) := '$';
-      Sentence (2 .. L + 1) := Body_Text;
-      Sentence (L + 2) := '*';
-      Sentence (L + 3) := Hex (Sum / 16);
-      Sentence (L + 4) := Hex (Sum mod 16);
-      Sentence (L + 5) := ASCII.CR;
-      Sentence (L + 6) := ASCII.LF;
+      Sentence (2 .. Len + 1) := Body_Text;
+      Sentence (Len + 2) := '*';
+      Sentence (Len + 3) := Hex (Sum / 16);
+      Sentence (Len + 4) := Hex (Sum mod 16);
+      Sentence (Len + 5) := ASCII.CR;
+      Sentence (Len + 6) := ASCII.LF;
       ESP32S3.GPS.Send (Sentence);
    end Send_PCAS;
 
    --  Single decimal digit for a small value.
-   function Digit (V : Natural) return Character
-   is (Character'Val (Character'Pos ('0') + V));
+   function Digit (Value : Natural) return Character
+   is (Character'Val (Character'Pos ('0') + Value));
 
    -----------------------
    -- Set_Constellation --  PCAS04 (tested)

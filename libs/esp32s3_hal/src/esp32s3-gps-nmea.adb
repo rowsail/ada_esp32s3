@@ -21,14 +21,14 @@ package body ESP32S3.GPS.NMEA is
    --  Index of the last '.' in S, or 0 if there is none.  An NMEA numeric field
    --  carries at most one decimal point, so "last" = "the" point.
    function Last_Dot (S : String) return Integer is
-      D : Integer := 0;
+      Dot : Integer := 0;
    begin
       for I in S'Range loop
          if S (I) = '.' then
-            D := I;
+            Dot := I;
          end if;
       end loop;
-      return D;
+      return Dot;
    end Last_Dot;
 
    --  Unsigned integer value of the leading digits of S (stops at the first
@@ -51,17 +51,17 @@ package body ESP32S3.GPS.NMEA is
    --  Fractional digits of S scaled to exactly Places digits (pad or truncate).
    --  e.g. Frac ("123", 5) = 12300 ;  Frac ("123456", 5) = 12345.
    function Frac (S : String; Places : Natural) return Natural is
-      Acc : Natural := 0;
-      N   : Natural := 0;
+      Acc   : Natural := 0;
+      Count : Natural := 0;
    begin
       for C of S loop
-         exit when C not in '0' .. '9' or else N = Places;
+         exit when C not in '0' .. '9' or else Count = Places;
          Acc := Acc * 10 + (Character'Pos (C) - Character'Pos ('0'));
-         N := N + 1;
+         Count := Count + 1;
       end loop;
-      while N < Places loop
+      while Count < Places loop
          Acc := Acc * 10;
-         N := N + 1;
+         Count := Count + 1;
       end loop;
       return Acc;
    end Frac;
@@ -158,33 +158,33 @@ package body ESP32S3.GPS.NMEA is
 
    --  "hhmmss.ss" -> UTC_Time.
    function To_Time (S : String) return UTC_Time is
-      T   : UTC_Time;
-      Dot : Integer := 0;
+      Result : UTC_Time;
+      Dot    : Integer := 0;
    begin
       if S'Length < 6 then
-         return T;
+         return Result;
       end if;
-      T.Hour := To_Nat (S (S'First .. S'First + 1));
-      T.Minute := To_Nat (S (S'First + 2 .. S'First + 3));
-      T.Second := To_Nat (S (S'First + 4 .. S'First + 5));
+      Result.Hour := To_Nat (S (S'First .. S'First + 1));
+      Result.Minute := To_Nat (S (S'First + 2 .. S'First + 3));
+      Result.Second := To_Nat (S (S'First + 4 .. S'First + 5));
       Dot := Last_Dot (S);
       if Dot /= 0 then
-         T.Centi := Frac (S (Dot + 1 .. S'Last), 2);
+         Result.Centi := Frac (S (Dot + 1 .. S'Last), 2);
       end if;
-      return T;
+      return Result;
    end To_Time;
 
    --  "ddmmyy" -> Date (year 2000+yy).
    function To_Date (S : String) return Date is
-      D : Date;
+      Result : Date;
    begin
       if S'Length < 6 then
-         return D;
+         return Result;
       end if;
-      D.Day := To_Nat (S (S'First .. S'First + 1));
-      D.Month := To_Nat (S (S'First + 2 .. S'First + 3));
-      D.Year := 2000 + To_Nat (S (S'First + 4 .. S'First + 5));
-      return D;
+      Result.Day := To_Nat (S (S'First .. S'First + 1));
+      Result.Month := To_Nat (S (S'First + 2 .. S'First + 3));
+      Result.Year := 2000 + To_Nat (S (S'First + 4 .. S'First + 5));
+      return Result;
    end To_Date;
 
    ---------------------------------------------------------------------------
@@ -231,18 +231,18 @@ package body ESP32S3.GPS.NMEA is
 
    --  Constellation from a sentence's two-letter talker prefix.
    function System_Of (Kind : String) return GNSS_System is
-      T : constant String :=
+      Prefix : constant String :=
         (if Kind'Length >= 2 then Kind (Kind'First .. Kind'First + 1) else "");
    begin
-      if T = "GP" then
+      if Prefix = "GP" then
          return GPS;
-      elsif T = "GL" then
+      elsif Prefix = "GL" then
          return GLONASS;
-      elsif T = "GA" then
+      elsif Prefix = "GA" then
          return Galileo;
-      elsif T = "GB" or else T = "BD" then
+      elsif Prefix = "GB" or else Prefix = "BD" then
          return BeiDou;
-      elsif T = "GQ" then
+      elsif Prefix = "GQ" then
          return QZSS;
       else
          return Other;
@@ -264,21 +264,21 @@ package body ESP32S3.GPS.NMEA is
       end if;
 
       declare
-         P    : String renames Sentence (First .. Last);
-         Kind : constant String := Field (P, 0);
+         Payload : String renames Sentence (First .. Last);
+         Kind    : constant String := Field (Payload, 0);
       begin
          if Is_Type (Kind, "GGA") then
             --  $..GGA,time,lat,N/S,lon,E/W,qual,sats,hdop,alt,M,...
             Result.Recognised := True;
             declare
-               Tm   : constant String := Field (P, 1);
-               La   : constant String := Field (P, 2);
-               Ns   : constant String := Field (P, 3);
-               Lo   : constant String := Field (P, 4);
-               Ew   : constant String := Field (P, 5);
-               Q    : constant Natural := To_Nat (Field (P, 6));
-               Sats : constant String := Field (P, 7);
-               Alt  : constant String := Field (P, 9);
+               Tm   : constant String := Field (Payload, 1);   --  time  hhmmss.ss
+               La   : constant String := Field (Payload, 2);   --  latitude
+               Ns   : constant String := Field (Payload, 3);   --  N/S hemisphere
+               Lo   : constant String := Field (Payload, 4);   --  longitude
+               Ew   : constant String := Field (Payload, 5);   --  E/W hemisphere
+               Q    : constant Natural := To_Nat (Field (Payload, 6));  --  fix quality
+               Sats : constant String := Field (Payload, 7);   --  satellites used
+               Alt  : constant String := Field (Payload, 9);   --  altitude, metres
             begin
                if Tm /= "" then
                   Result.Has_Time := True;
@@ -311,15 +311,15 @@ package body ESP32S3.GPS.NMEA is
             --  $..RMC,time,status,lat,N/S,lon,E/W,speed,course,date,...
             Result.Recognised := True;
             declare
-               Tm  : constant String := Field (P, 1);
-               St  : constant String := Field (P, 2);
-               La  : constant String := Field (P, 3);
-               Ns  : constant String := Field (P, 4);
-               Lo  : constant String := Field (P, 5);
-               Ew  : constant String := Field (P, 6);
-               Spd : constant String := Field (P, 7);   --  knots
-               Cog : constant String := Field (P, 8);   --  degrees true
-               Dt  : constant String := Field (P, 9);   --  ddmmyy
+               Tm  : constant String := Field (Payload, 1);   --  time  hhmmss.ss
+               St  : constant String := Field (Payload, 2);   --  status ('A' valid)
+               La  : constant String := Field (Payload, 3);   --  latitude
+               Ns  : constant String := Field (Payload, 4);   --  N/S hemisphere
+               Lo  : constant String := Field (Payload, 5);   --  longitude
+               Ew  : constant String := Field (Payload, 6);   --  E/W hemisphere
+               Spd : constant String := Field (Payload, 7);   --  knots
+               Cog : constant String := Field (Payload, 8);   --  degrees true
+               Dt  : constant String := Field (Payload, 9);   --  ddmmyy
             begin
                Result.Fix_Valid := St = "A";
                if Tm /= "" then
@@ -351,10 +351,10 @@ package body ESP32S3.GPS.NMEA is
             --  year is the full 4 digits here (unlike RMC's ddmmyy).
             Result.Recognised := True;
             declare
-               Tm : constant String := Field (P, 1);
-               Dd : constant String := Field (P, 2);
-               Mm : constant String := Field (P, 3);
-               Yy : constant String := Field (P, 4);
+               Tm : constant String := Field (Payload, 1);   --  time  hhmmss.ss
+               Dd : constant String := Field (Payload, 2);   --  day of month
+               Mm : constant String := Field (Payload, 3);   --  month
+               Yy : constant String := Field (Payload, 4);   --  year (4 digits)
             begin
                if Tm /= "" then
                   Result.Has_Time := True;
@@ -370,12 +370,12 @@ package body ESP32S3.GPS.NMEA is
             --  $..GLL,lat,N/S,lon,E/W,hhmmss.ss,status,mode
             Result.Recognised := True;
             declare
-               La : constant String := Field (P, 1);
-               Ns : constant String := Field (P, 2);
-               Lo : constant String := Field (P, 3);
-               Ew : constant String := Field (P, 4);
-               Tm : constant String := Field (P, 5);
-               St : constant String := Field (P, 6);
+               La : constant String := Field (Payload, 1);   --  latitude
+               Ns : constant String := Field (Payload, 2);   --  N/S hemisphere
+               Lo : constant String := Field (Payload, 3);   --  longitude
+               Ew : constant String := Field (Payload, 4);   --  E/W hemisphere
+               Tm : constant String := Field (Payload, 5);   --  time  hhmmss.ss
+               St : constant String := Field (Payload, 6);   --  status ('A' valid)
             begin
                Result.Fix_Valid := St = "A";
                if Tm /= "" then
@@ -396,9 +396,9 @@ package body ESP32S3.GPS.NMEA is
             --  data is invalid; absent mode is treated as valid.
             Result.Recognised := True;
             declare
-               Cog  : constant String := Field (P, 1);   --  true course, degrees
-               Spd  : constant String := Field (P, 5);   --  knots
-               Mode : constant String := Field (P, 9);   --  may be absent
+               Cog  : constant String := Field (Payload, 1);   --  true course, degrees
+               Spd  : constant String := Field (Payload, 5);   --  knots
+               Mode : constant String := Field (Payload, 9);   --  may be absent
             begin
                if Mode /= "N" and then (Spd /= "" or else Cog /= "") then
                   Result.Has_Velocity := True;
@@ -414,29 +414,29 @@ package body ESP32S3.GPS.NMEA is
             --  NMEA-4.10 signalId field is misread as a PRN.
             Result.Recognised := True;
             declare
-               Msg_No : constant Natural := To_Nat (Field (P, 2));
-               View   : constant String := Field (P, 3);
+               Msg_No : constant Natural := To_Nat (Field (Payload, 2));
+               View   : constant String := Field (Payload, 3);
                In_V   : constant Natural := To_Nat (View);
                Sys    : constant GNSS_System := System_Of (Kind);
                Before : constant Natural := (if Msg_No >= 1 then 4 * (Msg_No - 1) else 0);
                Here   : constant Natural :=
                  (if In_V > Before then Natural'Min (4, In_V - Before) else 0);
                Best   : Natural := 0;
-               N      : Natural := 0;
+               Count  : Natural := 0;   --  satellites decoded in this message
             begin
                if View /= "" then
                   Result.In_View := In_V;
                end if;
                for K in 0 .. Here - 1 loop
                   declare
-                     Prn : constant String := Field (P, 4 + 4 * K);
-                     Elv : constant String := Field (P, 5 + 4 * K);
-                     Azm : constant String := Field (P, 6 + 4 * K);
-                     Snr : constant String := Field (P, 7 + 4 * K);
+                     Prn : constant String := Field (Payload, 4 + 4 * K);  --  satellite id
+                     Elv : constant String := Field (Payload, 5 + 4 * K);  --  elevation, deg
+                     Azm : constant String := Field (Payload, 6 + 4 * K);  --  azimuth, deg
+                     Snr : constant String := Field (Payload, 7 + 4 * K);  --  C/N0, dB-Hz
                   begin
                      if Prn /= "" then
-                        N := N + 1;
-                        Result.Sats (N) :=
+                        Count := Count + 1;
+                        Result.Sats (Count) :=
                           (System    => Sys,
                            PRN       => To_Nat (Prn),
                            Elevation => To_Nat (Elv),
@@ -448,17 +448,17 @@ package body ESP32S3.GPS.NMEA is
                      end if;
                   end;
                end loop;
-               Result.Sat_Count := N;
+               Result.Sat_Count := Count;
                Result.Max_SNR := Best;
-               Result.Has_Sky := View /= "" or else N > 0;
+               Result.Has_Sky := View /= "" or else Count > 0;
             end;
 
          elsif Is_Type (Kind, "GSA") then
             --  $..GSA,mode,fixtype,{prn} x12,PDOP,HDOP,VDOP
             Result.Recognised := True;
             declare
-               FT : constant Natural := To_Nat (Field (P, 2));
-               N  : Natural := 0;
+               FT : constant Natural := To_Nat (Field (Payload, 2));  --  fix type (2D/3D)
+               Used_Count : Natural := 0;
             begin
                Result.Has_DOP := True;
                Result.Mode :=
@@ -467,14 +467,14 @@ package body ESP32S3.GPS.NMEA is
                     when 3      => Fix_3D,
                     when others => Fix_None);
                for K in 3 .. 14 loop
-                  if Field (P, K) /= "" then
-                     N := N + 1;
+                  if Field (Payload, K) /= "" then
+                     Used_Count := Used_Count + 1;
                   end if;
                end loop;
-               Result.Used := N;
-               Result.PDOP_C := Scaled (Field (P, 15), 2);
-               Result.HDOP_C := Scaled (Field (P, 16), 2);
-               Result.VDOP_C := Scaled (Field (P, 17), 2);
+               Result.Used := Used_Count;
+               Result.PDOP_C := Scaled (Field (Payload, 15), 2);
+               Result.HDOP_C := Scaled (Field (Payload, 16), 2);
+               Result.VDOP_C := Scaled (Field (Payload, 17), 2);
             end;
          end if;
       end;
