@@ -113,32 +113,32 @@ procedure Main is
    procedure Measure
      (Pin : ESP32S3.GPIO.Pin_Id; Window_Ms : Positive; Duty_Pct, Freq_Hz : out Float)
    is
-      T0                     : constant Time := Clock;
-      Deadline               : constant Time := T0 + Milliseconds (Window_Ms);
+      Start_Time             : constant Time := Clock;
+      Deadline               : constant Time := Start_Time + Milliseconds (Window_Ms);
       Samples, Highs, Rising : Natural := 0;
-      Cur                    : Boolean;
-      Prev                   : Boolean := False;
-      Secs                   : Float;
+      Current                : Boolean;
+      Previous               : Boolean := False;
+      Elapsed_Seconds        : Float;
    begin
       loop
-         Cur := ESP32S3.GPIO.Read (Pin);
+         Current := ESP32S3.GPIO.Read (Pin);
          Samples := Samples + 1;
-         if Cur then
+         if Current then
             Highs := Highs + 1;
-            if not Prev then
+            if not Previous then
                Rising := Rising + 1;
             end if;
          end if;
-         Prev := Cur;
+         Previous := Current;
          exit when Clock >= Deadline;
       end loop;
-      Secs := Float (To_Duration (Clock - T0));
+      Elapsed_Seconds := Float (To_Duration (Clock - Start_Time));
       Duty_Pct := (if Samples = 0 then 0.0 else Float (Highs) / Float (Samples) * 100.0);
-      Freq_Hz := (if Secs = 0.0 then 0.0 else Float (Rising) / Secs);
+      Freq_Hz := (if Elapsed_Seconds = 0.0 then 0.0 else Float (Rising) / Elapsed_Seconds);
    end Measure;
 
-   D, F : Float;
-   Ok   : Boolean;
+   Duty, Freq : Float;
+   Ok         : Boolean;
 begin
    --  Let the console settle before the first line (USB-Serial-JTAG enumerate).
    delay until Clock + Milliseconds (Startup_Delay_Ms);
@@ -153,11 +153,12 @@ begin
       for I in Duties'Range loop
          Set_Duty (Ch0, Duties (I));
          delay until Clock + Milliseconds (Duty_Settle_Ms);
-         Measure (Output_Pin, Measure_Window_Ms, D, F);
+         Measure (Output_Pin, Measure_Window_Ms, Duty, Freq);
          Ok :=
-           abs (D - Float (Duties (I))) <= Duty_Tolerance_Pct
-           and then abs (F - Float (Frequency_Hz)) <= Float (Frequency_Hz) * Freq_Tolerance_Frac;
-         Result (Integer (Float (Duties (I))), Integer (D * 10.0), Integer (F), Ok);
+           abs (Duty - Float (Duties (I))) <= Duty_Tolerance_Pct
+           and then abs (Freq - Float (Frequency_Hz))
+                    <= Float (Frequency_Hz) * Freq_Tolerance_Frac;
+         Result (Integer (Float (Duties (I))), Integer (Duty * 10.0), Integer (Freq), Ok);
       end loop;
    end;                                  --  Ch0 finalizes -> output stopped, freed
 

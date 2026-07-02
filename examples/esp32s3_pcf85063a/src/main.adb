@@ -59,21 +59,21 @@ procedure Main is
 
    --  Zero-padded decimal, at least Width digits (like C "%0Nd").
    procedure Put_Dec0 (V : Natural; Width : Positive) is
-      S : String (1 .. 12);
-      P : Natural := S'Last;
-      X : Natural := V;
+      Buffer : String (1 .. 12);
+      Pos    : Natural := Buffer'Last;
+      Value  : Natural := V;
    begin
       loop
-         S (P) := Character'Val (Character'Pos ('0') + X mod 10);
-         X := X / 10;
-         exit when X = 0;
-         P := P - 1;
+         Buffer (Pos) := Character'Val (Character'Pos ('0') + Value mod 10);
+         Value := Value / 10;
+         exit when Value = 0;
+         Pos := Pos - 1;
       end loop;
-      while S'Last - P + 1 < Width loop
-         P := P - 1;
-         S (P) := '0';
+      while Buffer'Last - Pos + 1 < Width loop
+         Pos := Pos - 1;
+         Buffer (Pos) := '0';
       end loop;
-      Put (S (P .. S'Last));
+      Put (Buffer (Pos .. Buffer'Last));
    end Put_Dec0;
 
    Dow : constant array (0 .. 6) of String (1 .. 3) :=

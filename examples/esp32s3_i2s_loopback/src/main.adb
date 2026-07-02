@@ -72,12 +72,12 @@ begin
    end loop;
 
    declare
-      S  : Session;                       --  limited: cannot be copied/shared
-      Ok : Boolean := False;
+      Session_Handle : Session;   --  limited: cannot be copied/shared
+      Ok             : Boolean := False;
    begin
-      Acquire (S, I2S0, Sample_Rate => Sample_Rate_Hz, Bits => Bits_16);
-      Enable_Loopback (S, Pad => Loopback_Data_Pad);   --  on the held port
-      Transfer (S, Tx, Rx);   --  typed: byte count + width derived from PCM_16
+      Acquire (Session_Handle, I2S0, Sample_Rate => Sample_Rate_Hz, Bits => Bits_16);
+      Enable_Loopback (Session_Handle, Pad => Loopback_Data_Pad);   --  on the held port
+      Transfer (Session_Handle, Tx, Rx);   --  typed: byte count + width derived from PCM_16
       Ok := (for all I in Tx'Range => Rx (I) = Tx (I));
       Put ("[i2s] full-duplex loopback (");
       Put (Tx'Length);

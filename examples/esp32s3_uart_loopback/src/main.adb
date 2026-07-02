@@ -104,7 +104,7 @@ procedure Main is
    Flow_Tx : Byte_Array (0 .. 63);
 
    --  The held-port handle; everything below runs through it.
-   S : Session;
+   Session_Handle : Session;
 
    --  Receive buffers, one per test, each sized to its sent payload.
    Rx           : Byte_Array (Tx'Range);
@@ -128,11 +128,11 @@ begin
    delay until Clock + Milliseconds (200);   --  let the console settle
    Put_Line ("[uart] bare-metal UART self-test " & "(internal TX->RX loopback, no wiring)");
 
-   Acquire (S, Port, Baud => Baud_Rate);     --  claim + 8-N-1, no pins routed
-   Enable_Loopback (S);                      --  internal TX->RX (held port)
-   Write (S, Tx);
-   Read (S, Rx, Loopback_Got);
-   Release (S);
+   Acquire (Session_Handle, Port, Baud => Baud_Rate);     --  claim + 8-N-1, no pins routed
+   Enable_Loopback (Session_Handle);                      --  internal TX->RX (held port)
+   Write (Session_Handle, Tx);
+   Read (Session_Handle, Rx, Loopback_Got);
+   Release (Session_Handle);
 
    Equal := Loopback_Got = Tx'Length;
    if Equal then
@@ -160,14 +160,17 @@ begin
       Flow_Tx (I) := Byte (I);
    end loop;
 
-   Acquire (S, Port);
+   Acquire (Session_Handle, Port);
    Configure_Pins
-     (S, Rts => Flow_Control_Pad, Cts => Flow_Control_Pad, Rx_Flow_Threshold => Rx_Flow_Threshold);
-   Write (S, Flow_Tx);                       --  64 bytes queued to the TX FIFO
+     (Session_Handle,
+      Rts               => Flow_Control_Pad,
+      Cts               => Flow_Control_Pad,
+      Rx_Flow_Threshold => Rx_Flow_Threshold);
+   Write (Session_Handle, Flow_Tx);                       --  64 bytes queued to the TX FIFO
    delay until Clock + Milliseconds (20);    --  let TX run until throttled
-   Capped := Available (S);                  --  RX should be stuck near threshold
-   Read (S, Flow_Rx, Flow_Got);              --  drain -> RTS re-asserts -> rest flows
-   Release (S);
+   Capped := Available (Session_Handle);                  --  RX should be stuck near threshold
+   Read (Session_Handle, Flow_Rx, Flow_Got);              --  drain -> RTS re-asserts -> rest flows
+   Release (Session_Handle);
 
    Equal := Flow_Got = Flow_Tx'Length and then Capped < Flow_Tx'Length;
    if Equal then
@@ -193,14 +196,16 @@ begin
    --  That asymmetry proves the inversion takes effect and is per-line.
    ----------------------------------------------------------------------------
    --  TX inverted only -> polarity mismatch -> link should NOT round-trip cleanly.
-   Acquire (S, Port);
-   Enable_Loopback (S, False);                          --  off; use a real pad
+   Acquire (Session_Handle, Port);
+   Enable_Loopback (Session_Handle, False);                          --  off; use a real pad
    Configure_Pins
-     (S, Tx => Inversion_Pad, Rx => Inversion_Pad);             --  single-pad loopback
-   Set_Inversion (S, Tx => True);
-   Write (S, Inversion_Tx);
-   Read (S, Inversion_Rx, Inversion_Got);
-   Release (S);
+     (Session_Handle,
+      Tx => Inversion_Pad,
+      Rx => Inversion_Pad);             --  single-pad loopback
+   Set_Inversion (Session_Handle, Tx => True);
+   Write (Session_Handle, Inversion_Tx);
+   Read (Session_Handle, Inversion_Rx, Inversion_Got);
+   Release (Session_Handle);
    Tx_Only_Broke := Inversion_Got /= Inversion_Tx'Length;
    for I in Inversion_Tx'First .. Inversion_Tx'First + Inversion_Got - 1 loop
       if Inversion_Rx (I) /= Inversion_Tx (I) then
@@ -212,11 +217,11 @@ begin
    --  TX and RX both inverted -> ends agree again -> clean round-trip.  Acquire
    --  re-routes the single-pad loopback (it resets pins, so we pass them again);
    --  loopback stays off and the TX inversion from above persists until reset.
-   Acquire (S, Port, Tx => Inversion_Pad, Rx => Inversion_Pad);
-   Set_Inversion (S, Tx => True, Rx => True);
-   Write (S, Inversion_Tx);
-   Read (S, Inversion_Rx, Both_Got);
-   Release (S);
+   Acquire (Session_Handle, Port, Tx => Inversion_Pad, Rx => Inversion_Pad);
+   Set_Inversion (Session_Handle, Tx => True, Rx => True);
+   Write (Session_Handle, Inversion_Tx);
+   Read (Session_Handle, Inversion_Rx, Both_Got);
+   Release (Session_Handle);
    Tx_Rx_Match := Both_Got = Inversion_Tx'Length;
    for I in Inversion_Tx'Range loop
       if Inversion_Rx (I) /= Inversion_Tx (I) then

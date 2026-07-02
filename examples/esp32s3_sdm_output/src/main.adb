@@ -88,12 +88,12 @@ begin
    Put_Line ("[sdm] bare-metal SDM sigma-delta density self-test " & "(GPIO-sampled, no wiring)");
 
    declare
-      Ch : Channel;
+      Channel_Handle : Channel;
    begin
-      Claim (Ch, Test_Channel_Index);
-      Configure (Ch, Pin => Output_Pin, Carrier_Hz => Carrier_Frequency_Hz);
+      Claim (Channel_Handle, Test_Channel_Index);
+      Configure (Channel_Handle, Pin => Output_Pin, Carrier_Hz => Carrier_Frequency_Hz);
       for I in Densities'Range loop
-         Set_Density (Ch, Densities (I));
+         Set_Density (Channel_Handle, Densities (I));
          delay until Clock + Milliseconds (Settle_Ms);
          Measured := Measure (Measure_Window_Ms);
          Ok := abs (Measured - Float (Densities (I))) <= Tolerance_Percent;
@@ -140,10 +140,10 @@ begin
       end;
 
       declare
-         C : Channel;
+         Channel_Handle : Channel;
       begin
-         Claim (C, 0);
-         Reclaimed := Is_Valid (C);
+         Claim (Channel_Handle, 0);
+         Reclaimed := Is_Valid (Channel_Handle);
       end;
 
       Put ("[sdm] raii: 8-claimed=");

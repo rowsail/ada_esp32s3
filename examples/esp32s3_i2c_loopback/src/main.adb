@@ -80,8 +80,8 @@ procedure Main is
 
    Payload : constant Byte_Array := (16#A5#, 16#3C#, 16#01#, 16#FE#, 16#7D#);
 
-   S  : Session;
-   Ok : Boolean;
+   Session_Handle : Session;
+   Ok             : Boolean;
 begin
    delay until Clock + Milliseconds (200);   --  let the console settle
    Put_Line ("[i2c] bare-metal I2C master hardware self-test " & "(no wiring, no device)");
@@ -90,15 +90,15 @@ begin
    Configure_Pins (Host, Scl => Scl_Pad, Sda => Sda_Pad);
 
    --  test0: ACK-checked write to an absent address -> expect NACK.
-   Acquire (S, Host);
-   Write (S, Absent, (1 => 16#00#), Ok);
-   Release (S);
+   Acquire (Session_Handle, Host);
+   Write (Session_Handle, Absent, (1 => 16#00#), Ok);
+   Release (Session_Handle);
    Verdict (0, not Ok);                       --  PASS = NACK correctly detected
 
    --  test1: multi-byte write, ACK-checking off -> expect completion.
-   Acquire (S, Host);
-   Write (S, Absent, Payload, Ok, Check_Ack => False);
-   Release (S);
+   Acquire (Session_Handle, Host);
+   Write (Session_Handle, Absent, Payload, Ok, Check_Ack => False);
+   Release (Session_Handle);
    Verdict (1, Ok);                           --  PASS = full transaction completed
 
    --  test2: the Session is a controlled type, so it auto-releases the host when
@@ -111,9 +111,9 @@ begin
    begin
       begin
          declare
-            T : Session;
+            Session_Handle : Session;
          begin
-            Acquire (T, Host);
+            Acquire (Session_Handle, Host);
             raise Program_Error;          --  fault before any explicit Release
          end;                             --  Finalize (T) -> Release on unwind
       exception
@@ -122,11 +122,11 @@ begin
       end;
 
       declare
-         T : Session;
+         Session_Handle : Session;
       begin
-         Acquire (T, Host);               --  would deadlock if the lock leaked
+         Acquire (Session_Handle, Host);  --  would deadlock if the lock leaked
          Reacquired := True;
-         Release (T);
+         Release (Session_Handle);
       end;
       Verdict (2, Reacquired);
    end;

@@ -73,47 +73,48 @@ begin
    Put_Line ("[timer] bare-metal general-purpose timer self-test");
 
    declare
-      T : Timer;
+      Timer_Handle : Timer;
    begin
-      Claim (T, TIMG0);
-      Configure (T, Tick_Hz => Tick_Rate_Hz);    --  1 tick = 1 us
+      Claim (Timer_Handle, TIMG0);
+      Configure (Timer_Handle, Tick_Hz => Tick_Rate_Hz);    --  1 tick = 1 us
 
       --  Count test: run for 50 ms of runtime time, expect ~50000 ticks.
-      Reset (T);
-      Start (T);
+      Reset (Timer_Handle);
+      Start (Timer_Handle);
       delay until Clock + Count_Window;
       declare
-         Measured : constant Ticks := Value (T);
+         Measured : constant Ticks := Value (Timer_Handle);
          Ok       : constant Boolean :=
            abs (Integer (Measured) - Expected_Count)
            <= Expected_Count / Count_Tol_Frac;   --  within 2 %
       begin
          Count_Result (Expected_Count, Integer (Measured), Ok);
       end;
-      Stop (T);
+      Stop (Timer_Handle);
 
       --  Alarm test: reset, alarm at 30000 ticks (30 ms), run and wait for it.
-      Reset (T);
-      Set_Alarm (T, Alarm_Ticks);
+      Reset (Timer_Handle);
+      Set_Alarm (Timer_Handle, Alarm_Ticks);
       declare
-         T0    : constant Time := Clock;
-         Guard : Natural := Poll_Guard;
-         Fired : Boolean := False;
-         Us    : Integer;
+         Start_Time : constant Time := Clock;
+         Guard      : Natural := Poll_Guard;
+         Fired      : Boolean := False;
+         Elapsed_Us : Integer;
       begin
-         Start (T);
+         Start (Timer_Handle);
          while not Fired and then Guard > 0 loop
-            Fired := Alarm_Fired (T);
+            Fired := Alarm_Fired (Timer_Handle);
             Guard := Guard - 1;
          end loop;
-         Us := Integer (To_Duration (Clock - T0) * 1_000_000.0);
+         Elapsed_Us := Integer (To_Duration (Clock - Start_Time) * 1_000_000.0);
          --  Should fire near 30 ms (30000 us); allow generous slack for the
          --  polling loop and clock granularity.
-         Alarm_Result (Fired, Us, Fired and then abs (Us - Alarm_Ticks) <= Alarm_Tol_Us);
-         Clear_Alarm (T);
-         Stop (T);
+         Alarm_Result
+           (Fired, Elapsed_Us, Fired and then abs (Elapsed_Us - Alarm_Ticks) <= Alarm_Tol_Us);
+         Clear_Alarm (Timer_Handle);
+         Stop (Timer_Handle);
       end;
-   end;                                  --  T finalizes -> stopped, released
+   end;                                  --  Timer_Handle finalizes -> stopped, released
 
    Put_Line ("[timer] done.");
 

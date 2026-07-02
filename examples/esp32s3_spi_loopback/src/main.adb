@@ -71,12 +71,12 @@ begin
 
    --  test0: full-duplex loopback transfer; MISO captures what MOSI shifts out.
    declare
-      S  : Session;
-      Ok : Boolean;
+      Session_Handle : Session;
+      Ok             : Boolean;
    begin
-      Acquire (S, Host, Mode => 0, Clock_Hz => 8_000_000);
-      Transfer (S, Tx'Address, Rx'Address, Tx'Length);
-      Release (S);
+      Acquire (Session_Handle, Host, Mode => 0, Clock_Hz => 8_000_000);
+      Transfer (Session_Handle, Tx'Address, Rx'Address, Tx'Length);
+      Release (Session_Handle);
       Ok := (for all I in Tx'Range => Rx (I) = Tx (I));
       Put ("[spi] test0 (32-byte loopback): ");
       Put_Line (if Ok then "PASS" else "FAIL");
@@ -90,9 +90,9 @@ begin
    begin
       begin
          declare
-            T : Session;
+            Session_Handle : Session;
          begin
-            Acquire (T, Host);
+            Acquire (Session_Handle, Host);
             raise Program_Error;          --  fault before any explicit Release
          end;                             --  Finalize (T) -> Release on unwind
       exception
@@ -101,11 +101,11 @@ begin
       end;
 
       declare
-         T : Session;
+         Session_Handle : Session;
       begin
-         Acquire (T, Host);               --  would deadlock if the lock leaked
+         Acquire (Session_Handle, Host);  --  would deadlock if the lock leaked
          Reacquired := True;
-         Release (T);
+         Release (Session_Handle);
       end;
       Put ("[spi] test1 (RAII auto-release): ");
       Put_Line (if Reacquired then "PASS" else "FAIL");

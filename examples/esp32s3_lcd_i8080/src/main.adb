@@ -75,25 +75,25 @@ begin
    end loop;
 
    declare
-      S    : Session;
-      Ok   : Boolean;
-      T0   : Time;
-      Secs : Float;
-      Meas : Integer;
+      Session_Handle  : Session;
+      Ok              : Boolean;
+      Start_Time      : Time;
+      Elapsed_Seconds : Float;
+      Measured_Khz    : Integer;
    begin
       Acquire
-        (S,
+        (Session_Handle,
          Pclk_Hz => Set_Khz * Hz_Per_Khz,
          Data    => D_Pins,
          Pclk    => Pclk_Pin);     --  own + configure
       Ok := True;
-      T0 := Clock;
+      Start_Time := Clock;
       for R in 1 .. Reps loop
-         Transmit (S, Buf'Address, Buffer'Length, Ok);  --  blocks until done
+         Transmit (Session_Handle, Buf'Address, Buffer'Length, Ok);  --  blocks until done
          exit when not Ok;
       end loop;
-      Secs := Float (To_Duration (Clock - T0));
-      Release (S);
+      Elapsed_Seconds := Float (To_Duration (Clock - Start_Time));
+      Release (Session_Handle);
 
       --  trans-done proves the DMA -> LCD data path; one byte per PCLK, so the
       --  byte rate IS the pixel-clock rate.
@@ -104,14 +104,18 @@ begin
       Put ("  ");
       Put_Line (if Ok then "PASS" else "FAIL");
 
-      Meas := (if Secs = 0.0 then 0 else Integer (Float (Buffer'Length * Reps) / Secs / 1000.0));
+      Measured_Khz :=
+        (if Elapsed_Seconds = 0.0
+         then 0
+         else Integer (Float (Buffer'Length * Reps) / Elapsed_Seconds / 1000.0));
       Put ("[lcd] pclk: set=");
       Put (Set_Khz);
       Put (" kHz measured=");
-      Put (Meas);
+      Put (Measured_Khz);
       Put (" kHz  ");
       --  +/-5 %: the wall-clock timing has some jitter at MHz rates.
-      Put_Line (if Ok and then abs (Meas - Set_Khz) <= Set_Khz / 20 then "PASS" else "FAIL");
+      Put_Line
+        (if Ok and then abs (Measured_Khz - Set_Khz) <= Set_Khz / 20 then "PASS" else "FAIL");
    end;
 
    Put_Line ("[lcd] done.");
