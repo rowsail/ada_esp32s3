@@ -24,9 +24,9 @@ package body ESP32S3.SHT41 is
    function CRC8 (Hi, Lo : Byte) return Byte is
       Crc : Unsigned_8 := 16#FF#;
 
-      procedure Add (B : Unsigned_8) is
+      procedure Add (Data_Byte : Unsigned_8) is
       begin
-         Crc := Crc xor B;
+         Crc := Crc xor Data_Byte;
          for I in 1 .. 8 loop
             if (Crc and 16#80#) /= 0 then
                Crc := Shift_Left (Crc, 1) xor 16#31#;
@@ -53,14 +53,14 @@ package body ESP32S3.SHT41 is
    is (Integer (-45_000 + (175_000 * Ticks (Hi, Lo)) / 65_535));
 
    function To_Hum_MRH (Hi, Lo : Byte) return Integer is
-      V : LLI := -6_000 + (125_000 * Ticks (Hi, Lo)) / 65_535;
+      Milli_RH : LLI := -6_000 + (125_000 * Ticks (Hi, Lo)) / 65_535;
    begin
-      if V < 0 then
-         V := 0;
-      elsif V > 100_000 then
-         V := 100_000;
+      if Milli_RH < 0 then
+         Milli_RH := 0;
+      elsif Milli_RH > 100_000 then
+         Milli_RH := 100_000;
       end if;
-      return Integer (V);
+      return Integer (Milli_RH);
    end To_Hum_MRH;
 
    ---------------------------------------------------------------------------
@@ -125,29 +125,29 @@ package body ESP32S3.SHT41 is
       Result        : out Status;
       Repeatability : Precision := High)
    is
-      Cmd  : constant Byte :=
+      Cmd   : constant Byte :=
         (case Repeatability is
            when High   => Cmd_Measure_High,
            when Medium => Cmd_Measure_Med,
            when Low    => Cmd_Measure_Low);
-      Wait : constant Time_Span :=
+      Wait  : constant Time_Span :=
         (case Repeatability is
            when High   => Milliseconds (10),
            when Medium => Milliseconds (5),
            when Low    => Milliseconds (2));
-      R    : Byte_Array (0 .. 5);   --  T_hi T_lo T_crc  RH_hi RH_lo RH_crc
+      Reply : Byte_Array (0 .. 5);   --  T_hi T_lo T_crc  RH_hi RH_lo RH_crc
    begin
       Value := (others => <>);
-      Transact (Dev, Cmd, Wait, R, Result);
+      Transact (Dev, Cmd, Wait, Reply, Result);
       if Result /= OK then
          return;
       end if;
-      if not CRC_Good (R) then
+      if not CRC_Good (Reply) then
          Result := CRC_Error;
          return;
       end if;
-      Value.Temperature := To_Temp_MC (R (0), R (1));
-      Value.Humidity := To_Hum_MRH (R (3), R (4));
+      Value.Temperature := To_Temp_MC (Reply (0), Reply (1));
+      Value.Humidity := To_Hum_MRH (Reply (3), Reply (4));
    end Measure;
 
    ------------------------

@@ -33,15 +33,15 @@ package body ESP32S3.ES8311 is
    end Write_Reg;
 
    procedure Read_Reg (S : ESP32S3.I2C.Session; Reg : Byte; Val : out Byte; Ok : in out Boolean) is
-      D       : ESP32S3.I2C.Byte_Array (0 .. 0);
-      Success : Boolean;
+      Reg_Data : ESP32S3.I2C.Byte_Array (0 .. 0);
+      Success  : Boolean;
    begin
       Val := 0;
       if Ok then
          ESP32S3.I2C.Write (S, Cfg_Addr, (0 => Reg), Success);  --  set reg pointer
          if Success then
-            ESP32S3.I2C.Read (S, Cfg_Addr, D, Success);
-            Val := D (0);
+            ESP32S3.I2C.Read (S, Cfg_Addr, Reg_Data, Success);
+            Val := Reg_Data (0);
          end if;
          Ok := Success;
       end if;

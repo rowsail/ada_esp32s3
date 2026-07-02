@@ -94,19 +94,19 @@ package body ESP32S3.TCA9555 is
    --  Read-modify-write one bit of register Reg.
    procedure Update_Bit (S : Session; Reg : Byte; Mask : Byte; Set : Boolean; Result : out Status)
    is
-      B : Byte_Array (0 .. 0);
+      Regs : Byte_Array (0 .. 0);
    begin
-      Read_Reg (S, Reg, B, Result);
+      Read_Reg (S, Reg, Regs, Result);
       if Result /= OK then
          return;
       end if;
-      B (0) := (if Set then B (0) or Mask else B (0) and not Mask);
-      Write_Reg (S, Reg, B, Result);
+      Regs (0) := (if Set then Regs (0) or Mask else Regs (0) and not Mask);
+      Write_Reg (S, Reg, Regs, Result);
    end Update_Bit;
 
    --  Split a 16-bit value into the two port bytes (port 0 low, port 1 high).
-   function Pair (V : Port_Value) return Byte_Array
-   is (0 => Byte (V and 16#FF#), 1 => Byte (V / 256));
+   function Pair (Value : Port_Value) return Byte_Array
+   is (0 => Byte (Value and 16#FF#), 1 => Byte (Value / 256));
 
    -----------
    -- Setup --
@@ -201,12 +201,12 @@ package body ESP32S3.TCA9555 is
 
    --  Read a 16-bit register pair starting at Reg into Value.
    procedure Read_Pair (S : Session; Reg : Byte; Value : out Port_Value; Result : out Status) is
-      B : Byte_Array (0 .. 1);
+      Regs : Byte_Array (0 .. 1);
    begin
       Value := 0;
-      Read_Reg (S, Reg, B, Result);
+      Read_Reg (S, Reg, Regs, Result);
       if Result = OK then
-         Value := Port_Value (B (0)) + Port_Value (B (1)) * 256;
+         Value := Port_Value (Regs (0)) + Port_Value (Regs (1)) * 256;
       end if;
    end Read_Pair;
 
@@ -232,12 +232,12 @@ package body ESP32S3.TCA9555 is
 
    procedure Read_Pin (S : Session; Pin : Pin_Number; State : out Pin_State; Result : out Status)
    is
-      B : Byte_Array (0 .. 0);
+      Regs : Byte_Array (0 .. 0);
    begin
       State := Low;
-      Read_Reg (S, Reg_Input + Port_Of (Pin), B, Result);
+      Read_Reg (S, Reg_Input + Port_Of (Pin), Regs, Result);
       if Result = OK then
-         State := (if (B (0) and Mask_Of (Pin)) /= 0 then High else Low);
+         State := (if (Regs (0) and Mask_Of (Pin)) /= 0 then High else Low);
       end if;
    end Read_Pin;
 

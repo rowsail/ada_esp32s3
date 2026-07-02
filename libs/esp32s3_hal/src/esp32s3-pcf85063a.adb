@@ -70,14 +70,14 @@ package body ESP32S3.PCF85063A is
    --  Read-modify-write one register: keep the bits outside Mask, set the bits
    --  inside Mask to Bits.
    procedure Update_Reg (S : Session; Reg, Mask, Bits : Byte; Result : out Status) is
-      V : Byte_Array (0 .. 0);
+      Reg_Value : Byte_Array (0 .. 0);
    begin
-      Read_Regs (S, Reg, V, Result);
+      Read_Regs (S, Reg, Reg_Value, Result);
       if Result /= OK then
          return;
       end if;
-      V (0) := (V (0) and not Mask) or (Bits and Mask);
-      Write_Regs (S, Reg, V, Result);
+      Reg_Value (0) := (Reg_Value (0) and not Mask) or (Bits and Mask);
+      Write_Regs (S, Reg, Reg_Value, Result);
    end Update_Reg;
 
    --  An alarm register byte: the BCD value, or the "disabled" sentinel.
@@ -113,8 +113,8 @@ package body ESP32S3.PCF85063A is
    --------------
 
    procedure Get_Time (Dev : Device; T : out Time; Valid : out Boolean; Result : out Status) is
-      S : Session;                 --  released by finalization on return
-      R : Byte_Array (0 .. 6);     --  Seconds (0x04) .. Years (0x0A)
+      S    : Session;              --  released by finalization on return
+      Regs : Byte_Array (0 .. 6);  --  Seconds (0x04) .. Years (0x0A)
 
       --  Decode into UNCONSTRAINED locals first.  A chip that lost power (dead
       --  VBAT) or was never set can hold out-of-range BCD (e.g. an hour byte of
@@ -122,24 +122,25 @@ package body ESP32S3.PCF85063A is
       --  into the constrained Time subtypes would raise Constraint_Error out of
       --  the very routine whose job is to REPORT untrustworthy time, not crash on
       --  it -- and that fires exactly when the time is not valid (power lost).
+      --  Se/Mi/Ho/Da/Mo/Yr = Second, Minute, Hour, Day, Month, Year; Wd = weekday.
       Se, Mi, Ho, Da, Mo, Yr : Natural;
       Wd                     : Natural;
    begin
       Valid := False;
       Acquire (S, Dev.Host);
-      Read_Regs (S, Reg_Seconds, R, Result);
+      Read_Regs (S, Reg_Seconds, Regs, Result);
       if Result /= OK then
          return;   --  T keeps its default value
 
       end if;
 
-      Se := From_BCD (R (0) and 16#7F#);
-      Mi := From_BCD (R (1) and 16#7F#);
-      Ho := From_BCD (R (2) and 16#3F#);   --  24-hour mode
-      Da := From_BCD (R (3) and 16#3F#);
-      Wd := Natural (R (4) and 16#07#);
-      Mo := From_BCD (R (5) and 16#1F#);
-      Yr := 2000 + From_BCD (R (6));
+      Se := From_BCD (Regs (0) and 16#7F#);
+      Mi := From_BCD (Regs (1) and 16#7F#);
+      Ho := From_BCD (Regs (2) and 16#3F#);   --  24-hour mode
+      Da := From_BCD (Regs (3) and 16#3F#);
+      Wd := Natural (Regs (4) and 16#07#);
+      Mo := From_BCD (Regs (5) and 16#1F#);
+      Yr := 2000 + From_BCD (Regs (6));
 
       --  Only publish the reading if every field is in range (so the subtype
       --  assignment is safe); otherwise leave T at its defaults.  A bus read
@@ -162,7 +163,7 @@ package body ESP32S3.PCF85063A is
             Minute      => Mi,
             Second      => Se);
          --  Trust it only if the oscillator never stopped since the last set.
-         Valid := (R (0) and OS_Flag) = 0;
+         Valid := (Regs (0) and OS_Flag) = 0;
       end if;
    end Get_Time;
 
@@ -171,8 +172,8 @@ package body ESP32S3.PCF85063A is
    --------------
 
    procedure Set_Time (Dev : Device; T : Time; Result : out Status) is
-      S : Session;
-      R : Byte_Array (0 .. 6);
+      S    : Session;
+      Regs : Byte_Array (0 .. 6);
    begin
       Acquire (S, Dev.Host);
 
@@ -183,14 +184,14 @@ package body ESP32S3.PCF85063A is
          return;
       end if;
 
-      R (0) := To_BCD (T.Second);   --  bit 7 = 0 here clears the OS flag
-      R (1) := To_BCD (T.Minute);
-      R (2) := To_BCD (T.Hour);
-      R (3) := To_BCD (T.Day);
-      R (4) := Byte (Weekday'Pos (T.Day_Of_Week));
-      R (5) := To_BCD (T.Month);
-      R (6) := To_BCD (T.Year - 2000);
-      Write_Regs (S, Reg_Seconds, R, Result);
+      Regs (0) := To_BCD (T.Second);   --  bit 7 = 0 here clears the OS flag
+      Regs (1) := To_BCD (T.Minute);
+      Regs (2) := To_BCD (T.Hour);
+      Regs (3) := To_BCD (T.Day);
+      Regs (4) := Byte (Weekday'Pos (T.Day_Of_Week));
+      Regs (5) := To_BCD (T.Month);
+      Regs (6) := To_BCD (T.Year - 2000);
+      Write_Regs (S, Reg_Seconds, Regs, Result);
       if Result /= OK then
          return;
       end if;
@@ -233,17 +234,17 @@ package body ESP32S3.PCF85063A is
    ---------------
 
    procedure Set_Alarm (Dev : Device; A : Alarm; Result : out Status) is
-      S : Session;
-      R : Byte_Array (0 .. 4);   --  Second .. Weekday alarm (0x0B .. 0x0F)
+      S    : Session;
+      Regs : Byte_Array (0 .. 4);   --  Second .. Weekday alarm (0x0B .. 0x0F)
    begin
       Acquire (S, Dev.Host);
 
-      R (0) := Alarm_Field (A.Use_Second, To_BCD (A.Second));
-      R (1) := Alarm_Field (A.Use_Minute, To_BCD (A.Minute));
-      R (2) := Alarm_Field (A.Use_Hour, To_BCD (A.Hour));
-      R (3) := Alarm_Field (A.Use_Day, To_BCD (A.Day));
-      R (4) := Alarm_Field (A.Use_Weekday, Byte (Weekday'Pos (A.Day_Of_Week)));
-      Write_Regs (S, Reg_Second_Alarm, R, Result);
+      Regs (0) := Alarm_Field (A.Use_Second, To_BCD (A.Second));
+      Regs (1) := Alarm_Field (A.Use_Minute, To_BCD (A.Minute));
+      Regs (2) := Alarm_Field (A.Use_Hour, To_BCD (A.Hour));
+      Regs (3) := Alarm_Field (A.Use_Day, To_BCD (A.Day));
+      Regs (4) := Alarm_Field (A.Use_Weekday, Byte (Weekday'Pos (A.Day_Of_Week)));
+      Write_Regs (S, Reg_Second_Alarm, Regs, Result);
       if Result /= OK then
          return;
       end if;
@@ -262,14 +263,14 @@ package body ESP32S3.PCF85063A is
    ---------------------
 
    procedure Alarm_Triggered (Dev : Device; Fired : out Boolean; Result : out Status) is
-      S : Session;
-      V : Byte_Array (0 .. 0);
+      S         : Session;
+      Reg_Value : Byte_Array (0 .. 0);
    begin
       Fired := False;
       Acquire (S, Dev.Host);
-      Read_Regs (S, Reg_Control_2, V, Result);
+      Read_Regs (S, Reg_Control_2, Reg_Value, Result);
       if Result = OK then
-         Fired := (V (0) and Alarm_Flag) /= 0;
+         Fired := (Reg_Value (0) and Alarm_Flag) /= 0;
       end if;
    end Alarm_Triggered;
 

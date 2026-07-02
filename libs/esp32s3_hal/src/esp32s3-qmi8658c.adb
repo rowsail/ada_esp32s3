@@ -78,17 +78,17 @@ package body ESP32S3.QMI8658C is
    end Write_Regs;
 
    --  Read the 3 axes that start at Reg (6 bytes, little-endian L/H pairs).
-   procedure Read_Axes (Dev : Device; Reg : Byte; V : out Axes; Result : out Status) is
-      S : Session;
-      R : Byte_Array (0 .. 5);
+   procedure Read_Axes (Dev : Device; Reg : Byte; Values : out Axes; Result : out Status) is
+      S    : Session;
+      Regs : Byte_Array (0 .. 5);
    begin
-      V := (0, 0, 0);
+      Values := (0, 0, 0);
       Acquire (S, Dev.Host);
-      Read_Regs (S, Dev.Address, Reg, R, Result);
+      Read_Regs (S, Dev.Address, Reg, Regs, Result);
       if Result = OK then
-         V.X := Signed (R (0), R (1));
-         V.Y := Signed (R (2), R (3));
-         V.Z := Signed (R (4), R (5));
+         Values.X := Signed (Regs (0), Regs (1));
+         Values.Y := Signed (Regs (2), Regs (3));
+         Values.Z := Signed (Regs (4), Regs (5));
       end if;
    end Read_Axes;
 
@@ -128,14 +128,14 @@ package body ESP32S3.QMI8658C is
    ------------------
 
    procedure Read_Who_Am_I (Dev : Device; Id : out Interfaces.Unsigned_8; Result : out Status) is
-      S : Session;
-      V : Byte_Array (0 .. 0);
+      S         : Session;
+      Reg_Value : Byte_Array (0 .. 0);
    begin
       Id := 0;
       Acquire (S, Dev.Host);
-      Read_Regs (S, Dev.Address, Reg_Who_Am_I, V, Result);
+      Read_Regs (S, Dev.Address, Reg_Who_Am_I, Reg_Value, Result);
       if Result = OK then
-         Id := Interfaces.Unsigned_8 (V (0));
+         Id := Interfaces.Unsigned_8 (Reg_Value (0));
       end if;
    end Read_Who_Am_I;
 
@@ -162,7 +162,7 @@ package body ESP32S3.QMI8658C is
       Result : out Status)
    is
       S   : Session;
-      ODR : constant Byte := Byte (Output_Rate'Pos (Rate));
+      ODR : constant Byte := Byte (Output_Rate'Pos (Rate));   --  output data rate nibble
    begin
       Dev.Accel_Rng := Accel;
       Dev.Gyro_Rng := Gyro;
@@ -217,14 +217,14 @@ package body ESP32S3.QMI8658C is
 
    procedure Read_Temperature (Dev : Device; Raw : out Interfaces.Integer_16; Result : out Status)
    is
-      S : Session;
-      R : Byte_Array (0 .. 1);
+      S    : Session;
+      Regs : Byte_Array (0 .. 1);
    begin
       Raw := 0;
       Acquire (S, Dev.Host);
-      Read_Regs (S, Dev.Address, Reg_Temp_L, R, Result);
+      Read_Regs (S, Dev.Address, Reg_Temp_L, Regs, Result);
       if Result = OK then
-         Raw := Signed (R (0), R (1));
+         Raw := Signed (Regs (0), Regs (1));
       end if;
    end Read_Temperature;
 
@@ -233,16 +233,16 @@ package body ESP32S3.QMI8658C is
    ----------------
 
    procedure Data_Ready (Dev : Device; Accel, Gyro : out Boolean; Result : out Status) is
-      S : Session;
-      V : Byte_Array (0 .. 0);
+      S         : Session;
+      Reg_Value : Byte_Array (0 .. 0);
    begin
       Accel := False;
       Gyro := False;
       Acquire (S, Dev.Host);
-      Read_Regs (S, Dev.Address, Reg_Status0, V, Result);
+      Read_Regs (S, Dev.Address, Reg_Status0, Reg_Value, Result);
       if Result = OK then
-         Accel := (V (0) and Status_Accel_Ready) /= 0;
-         Gyro := (V (0) and Status_Gyro_Ready) /= 0;
+         Accel := (Reg_Value (0) and Status_Accel_Ready) /= 0;
+         Gyro := (Reg_Value (0) and Status_Gyro_Ready) /= 0;
       end if;
    end Data_Ready;
 
