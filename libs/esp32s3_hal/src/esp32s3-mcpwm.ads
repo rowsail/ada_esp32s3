@@ -29,8 +29,7 @@ with ESP32S3.GPIO;
 package ESP32S3.MCPWM is
 
    type MCPWM_Unit is (MCPWM0, MCPWM1);
-   type Channel_Index is
-     (Ch0, Ch1, Ch2);    --  which generator channel of a unit
+   type Channel_Index is (Ch0, Ch1, Ch2);    --  which generator channel of a unit
 
    subtype Duty_Percent is Float range 0.0 .. 100.0;
 
@@ -51,8 +50,7 @@ package ESP32S3.MCPWM is
    --  released first.)  The unit's clock comes up on the first Claim.  C releases
    --  its channel automatically on scope exit -- call Release only to hand it
    --  back early.
-   procedure Claim
-     (C : in out Channel; Unit : MCPWM_Unit; Index : Channel_Index);
+   procedure Claim (C : in out Channel; Unit : MCPWM_Unit; Index : Channel_Index);
 
    --  True when Claim succeeded (a real channel is held).
    function Is_Valid (C : Channel) return Boolean;
@@ -146,16 +144,14 @@ package ESP32S3.MCPWM is
    type Cap_Index is (Cap0, Cap1, Cap2);
    type Cap_Edge is (Rising, Falling, Both_Edges);
 
-   Capture_Clock_Hz : constant :=
-     80_000_000;   --  APB clock the cap timer counts
+   Capture_Clock_Hz : constant := 80_000_000;   --  APB clock the cap timer counts
 
    --  Opaque, non-copyable handle to a claimed capture channel.
    type Capture is limited private;
 
    --  Claim capture channel Index of Unit into Cap (see Claim for a Channel).
    --  The unit's clock comes up on the first Claim of any of its channels.
-   procedure Claim
-     (Cap : in out Capture; Unit : MCPWM_Unit; Index : Cap_Index);
+   procedure Claim (Cap : in out Capture; Unit : MCPWM_Unit; Index : Cap_Index);
    function Is_Valid (Cap : Capture) return Boolean;
    procedure Release (Cap : in out Capture);
 
@@ -170,9 +166,7 @@ package ESP32S3.MCPWM is
    --  Read the latest capture timestamp (in Capture_Clock_Hz ticks) and which
    --  edge it was, and clear the pending flag.
    procedure Read_Capture
-     (Cap     : Capture;
-      Value   : out Interfaces.Unsigned_32;
-      Falling : out Boolean);
+     (Cap : Capture; Value : out Interfaces.Unsigned_32; Falling : out Boolean);
 
 private
 

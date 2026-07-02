@@ -222,8 +222,7 @@ package body ESP32S3.W5500.Sockets is
                   IR : constant Byte := R8 (S, Sn_IR);
                begin
                   W8 (S, Sn_IR, IR);                        --  clear
-                  Result :=
-                    (if (IR and IR_TIMEOUT) /= 0 then Timed_Out else Refused);
+                  Result := (if (IR and IR_TIMEOUT) /= 0 then Timed_Out else Refused);
                   return;
                end;
             end if;
@@ -356,10 +355,7 @@ package body ESP32S3.W5500.Sockets is
    --  Issue SEND and wait for SEND_OK (or TIMEOUT).  Returns False on timeout.
    function Flush_Send (S : Socket) return Boolean is
    begin
-      W8
-        (S,
-         Sn_IR,
-         IR_SEND_OK);                            --  clear stale SEND_OK
+      W8 (S, Sn_IR, IR_SEND_OK);                            --  clear stale SEND_OK
       Issue (S, Cmd_Send);
       loop
          declare
@@ -377,11 +373,7 @@ package body ESP32S3.W5500.Sockets is
       end loop;
    end Flush_Send;
 
-   procedure Send
-     (S      : in out Socket;
-      Data   : Byte_Array;
-      Sent   : out Natural;
-      Result : out Status)
+   procedure Send (S : in out Socket; Data : Byte_Array; Sent : out Natural; Result : out Status)
    is
       Free     : Unsigned_16;
       WR       : Unsigned_16;
@@ -420,11 +412,7 @@ package body ESP32S3.W5500.Sockets is
       end loop;
       N := Natural'Min (Data'Length, Natural (Free));
       WR := R16 (S, Sn_TX_WR);
-      Write
-        (S.Dev.all,
-         Socket_TX (S.Index),
-         WR,
-         Data (Data'First .. Data'First + N - 1));
+      Write (S.Dev.all, Socket_TX (S.Index), WR, Data (Data'First .. Data'First + N - 1));
       W16 (S, Sn_TX_WR, WR + Unsigned_16 (N));
       if Flush_Send (S) then
          Sent := N;
@@ -439,10 +427,7 @@ package body ESP32S3.W5500.Sockets is
    end Send;
 
    procedure Receive
-     (S      : in out Socket;
-      Into   : out Byte_Array;
-      Count  : out Natural;
-      Result : out Status)
+     (S : in out Socket; Into : out Byte_Array; Count : out Natural; Result : out Status)
    is
       RSR : Unsigned_16;
       RD  : Unsigned_16;
@@ -456,23 +441,15 @@ package body ESP32S3.W5500.Sockets is
       RSR := R16_Stable (S, Sn_RX_RSR);
       if RSR = 0 then
          Count := 0;
-         Result :=
-           (if R8 (S, Sn_SR) = SR_CLOSE_WAIT then Closed_By_Peer else OK);
+         Result := (if R8 (S, Sn_SR) = SR_CLOSE_WAIT then Closed_By_Peer else OK);
          return;
       end if;
       N := Natural'Min (Into'Length, Natural (RSR));
       RD := R16 (S, Sn_RX_RD);
-      Read
-        (S.Dev.all,
-         Socket_RX (S.Index),
-         RD,
-         Into (Into'First .. Into'First + N - 1));
+      Read (S.Dev.all, Socket_RX (S.Index), RD, Into (Into'First .. Into'First + N - 1));
       W16 (S, Sn_RX_RD, RD + Unsigned_16 (N));
       Issue (S, Cmd_Recv);
-      W8
-        (S,
-         Sn_IR,
-         IR_RECV);     --  clear RECV so INTn re-arms for the next data
+      W8 (S, Sn_IR, IR_RECV);     --  clear RECV so INTn re-arms for the next data
       Count := N;
       Result := OK;
    end Receive;
@@ -537,26 +514,16 @@ package body ESP32S3.W5500.Sockets is
          return;
       end if;
       RD := R16 (S, Sn_RX_RD);
-      Read
-        (S.Dev.all, Socket_RX (S.Index), RD, Hdr);    --  IP(4) port(2) len(2)
+      Read (S.Dev.all, Socket_RX (S.Index), RD, Hdr);    --  IP(4) port(2) len(2)
       From := (Hdr (0), Hdr (1), Hdr (2), Hdr (3));
-      From_Port :=
-        ESP32S3.Endian.Join_BE16 (Unsigned_8 (Hdr (4)), Unsigned_8 (Hdr (5)));
-      Plen :=
-        Natural
-          (ESP32S3.Endian.Join_BE16
-             (Unsigned_8 (Hdr (6)), Unsigned_8 (Hdr (7))));
+      From_Port := ESP32S3.Endian.Join_BE16 (Unsigned_8 (Hdr (4)), Unsigned_8 (Hdr (5)));
+      Plen := Natural (ESP32S3.Endian.Join_BE16 (Unsigned_8 (Hdr (6)), Unsigned_8 (Hdr (7))));
       RD := RD + 8;
       N := Natural'Min (Into'Length, Plen);
       if N > 0 then
-         Read
-           (S.Dev.all,
-            Socket_RX (S.Index),
-            RD,
-            Into (Into'First .. Into'First + N - 1));
+         Read (S.Dev.all, Socket_RX (S.Index), RD, Into (Into'First .. Into'First + N - 1));
       end if;
-      RD :=
-        RD + Unsigned_16 (Plen);                 --  skip the whole datagram
+      RD := RD + Unsigned_16 (Plen);                 --  skip the whole datagram
       W16 (S, Sn_RX_RD, RD);
       Issue (S, Cmd_Recv);
       Count := N;

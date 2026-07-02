@@ -61,11 +61,11 @@ procedure Main is
    --       DNS     => ESP32S3.W5500.IPv4 (8, 8, 8, 8));
    Net_Config : constant W5500_Dev.IP_Settings := W5500_Dev.DHCP_Config;
 
-   Host       : constant String         := "ftp.gnu.org";
-   FTP_Port   : constant Port_Type       := 21;
-   User       : constant String          := "anonymous";
-   Pass       : constant String          := "esp32s3@example.com";
-   Get_Path   : constant String          := "/README";
+   Host     : constant String := "ftp.gnu.org";
+   FTP_Port : constant Port_Type := 21;
+   User     : constant String := "anonymous";
+   Pass     : constant String := "esp32s3@example.com";
+   Get_Path : constant String := "/README";
 
    Lookup_Timeout : constant Duration := 5.0;
    Op_Timeout     : constant Duration := 15.0;
@@ -91,12 +91,13 @@ begin
    end if;
 
    --  Use the lease's resolver (DHCP- or statically-set); fall back to public DNS.
-   DNS_Server := (if Lease.DNS = No_Address then Inet_Addr ("8.8.8.8")
-                  else Inet_Addr (W5500_Dev.Image (Lease.DNS)));
+   DNS_Server :=
+     (if Lease.DNS = No_Address
+      then Inet_Addr ("8.8.8.8")
+      else Inet_Addr (W5500_Dev.Image (Lease.DNS)));
 
    Put_Line ("[ftp] resolving " & Host & " via " & Image (DNS_Server) & " ...");
-   if not DNS_Client.Resolve (DNS_Server, Host, Server_IP, Timeout => Lookup_Timeout)
-   then
+   if not DNS_Client.Resolve (DNS_Server, Host, Server_IP, Timeout => Lookup_Timeout) then
       Put_Line ("[ftp] DNS resolution failed");
       loop
          delay until Clock + Park;
@@ -105,8 +106,13 @@ begin
    Put_Line ("[ftp] " & Host & " = " & Image (Server_IP));
 
    FTP_Client.Connect
-     (S, Host => Server_IP, User => User, Password => Pass,
-      Result => St, Port => FTP_Port, Timeout => Op_Timeout);
+     (S,
+      Host     => Server_IP,
+      User     => User,
+      Password => Pass,
+      Result   => St,
+      Port     => FTP_Port,
+      Timeout  => Op_Timeout);
    if St /= FTP_Client.OK then
       Put ("[ftp] connect/login failed: ");
       Put_Line (St'Image);
@@ -125,8 +131,7 @@ begin
    end if;
 
    FTP_Sinks.Reset_Count;
-   FTP_Client.Retrieve
-     (S, Get_Path, FTP_Sinks.Count_Chunk'Access, System.Null_Address, St);
+   FTP_Client.Retrieve (S, Get_Path, FTP_Sinks.Count_Chunk'Access, System.Null_Address, St);
    Put ("[ftp] RETR " & Get_Path & ": ");
    Put (FTP_Sinks.Bytes_Seen);
    Put (" bytes received, result ");
@@ -134,8 +139,7 @@ begin
 
    --  List the root directory.
    Put_Line ("[ftp] --- NLST / ---");
-   FTP_Client.List
-     (S, FTP_Sinks.Put_Chunk'Access, System.Null_Address, St, Path => "/");
+   FTP_Client.List (S, FTP_Sinks.Put_Chunk'Access, System.Null_Address, St, Path => "/");
    New_Line;
    Put ("[ftp] list result: ");
    Put_Line (St'Image);

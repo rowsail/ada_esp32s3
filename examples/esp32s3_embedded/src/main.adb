@@ -1,10 +1,10 @@
-with Ada.Text_IO;               use Ada.Text_IO;
-with Ada.Exceptions;            use Ada.Exceptions;
-with Ada.Real_Time;             use Ada.Real_Time;
+with Ada.Text_IO;    use Ada.Text_IO;
+with Ada.Exceptions; use Ada.Exceptions;
+with Ada.Real_Time;  use Ada.Real_Time;
 with Ada.Unchecked_Deallocation;
 
-with Shapes;                    use Shapes;
-with Resources;                 use Resources;
+with Shapes;    use Shapes;
+with Resources; use Resources;
 
 --  Pull the SMP slave-start entry (__gnat_start_slave_cpus, called from glue.c
 --  after elaboration) into the link closure so core 1 is brought up.
@@ -53,17 +53,16 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 --    [3] exception propagation:
 --        caught MAIN.MY_ERROR (deliberate)
 --    === demo complete; environment task now idles ===
+
 procedure Main is
 
-   type Shape_Access    is access all Shape'Class;
+   type Shape_Access is access all Shape'Class;
    type Resource_Access is access Resource;
    procedure Free is new Ada.Unchecked_Deallocation (Resource, Resource_Access);
 
    --  Heap-allocated, library-level tagged objects -> dispatch tables in flash.
    Gallery : constant array (Positive range <>) of Shape_Access :=
-     (new Circle'(Radius => 5),
-      new Rectangle'(Width => 4, Height => 6),
-      new Circle'(Radius => 2));
+     (new Circle'(Radius => 5), new Rectangle'(Width => 4, Height => 6), new Circle'(Radius => 2));
 
    My_Error : exception;
 
@@ -104,8 +103,7 @@ begin
       raise My_Error with "deliberate";
    exception
       when E : others =>
-         Put_Line ("    caught " & Exception_Name (E)
-                   & " (" & Exception_Message (E) & ")");
+         Put_Line ("    caught " & Exception_Name (E) & " (" & Exception_Message (E) & ")");
    end;
 
    Put_Line ("=== demo complete; environment task now idles ===");

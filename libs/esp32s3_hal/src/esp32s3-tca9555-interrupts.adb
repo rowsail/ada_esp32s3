@@ -16,12 +16,10 @@ package body ESP32S3.TCA9555.Interrupts is
       end if;
 
       declare
-         Pin : constant ESP32S3.GPIO.Pin_Id :=
-           ESP32S3.GPIO.Pin_Id (Dev.Int_Pin);
+         Pin : constant ESP32S3.GPIO.Pin_Id := ESP32S3.GPIO.Pin_Id (Dev.Int_Pin);
       begin
          --  Input with the internal pull-up: INT idles high, the chip pulls low.
-         ESP32S3.GPIO.Configure
-           (Pin, Mode => ESP32S3.GPIO.Input, Pull => ESP32S3.GPIO.Pull_Up);
+         ESP32S3.GPIO.Configure (Pin, Mode => ESP32S3.GPIO.Input, Pull => ESP32S3.GPIO.Pull_Up);
          ESP32S3.GPIO.Interrupts.Enable
            (Pin, On => ESP32S3.GPIO.Interrupts.Falling_Edge, Action => Action);
       end;

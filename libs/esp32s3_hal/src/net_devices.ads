@@ -26,8 +26,7 @@ package Net_Devices is
 
    --  Mirrors ESP32S3.W5500.Sockets.Status literal-for-literal (so a backend over
    --  that engine can convert by position).
-   type Status is
-     (OK, Not_Open, Closed_By_Peer, Timed_Out, Refused, No_Space, Error);
+   type Status is (OK, Not_Open, Closed_By_Peer, Timed_Out, Refused, No_Space, Error);
 
    type Transport is (TCP, UDP);
 
@@ -59,17 +58,11 @@ package Net_Devices is
    procedure Close (Self : in out Device; Index : Natural) is abstract;
 
    --  TCP server: move to LISTEN; block until a client connects; report the peer.
-   procedure Listen
-     (Self : in out Device; Index : Natural; Result : out Status)
-   is abstract;
-   procedure Wait_Connected
-     (Self : in out Device; Index : Natural; Result : out Status)
+   procedure Listen (Self : in out Device; Index : Natural; Result : out Status) is abstract;
+   procedure Wait_Connected (Self : in out Device; Index : Natural; Result : out Status)
    is abstract;
    procedure Peer
-     (Self  : in out Device;
-      Index : Natural;
-      Addr  : out IPv4_Address;
-      Port  : out Port_Number)
+     (Self : in out Device; Index : Natural; Addr : out IPv4_Address; Port : out Port_Number)
    is abstract;
 
    --  TCP client: connect to Host:Port.
@@ -83,9 +76,7 @@ package Net_Devices is
 
    --  TCP data transfer.  Wait_Data blocks until data is ready, the peer closes,
    --  or the receive timeout elapses (Timed_Out).
-   procedure Wait_Data
-     (Self : in out Device; Index : Natural; Result : out Status)
-   is abstract;
+   procedure Wait_Data (Self : in out Device; Index : Natural; Result : out Status) is abstract;
    procedure Send
      (Self   : in out Device;
       Index  : Natural;
@@ -120,8 +111,7 @@ package Net_Devices is
       Result    : out Status)
    is abstract;
 
-   procedure Set_Receive_Timeout
-     (Self : in out Device; Index : Natural; To : Duration)
+   procedure Set_Receive_Timeout (Self : in out Device; Index : Natural; To : Duration)
    is abstract;
 
 end Net_Devices;

@@ -22,8 +22,7 @@ package body ESP32S3.HC595 is
 
    --------------------------------------------------------------------------
 
-   procedure Set_Output (C : in out Controller; Index : Natural; On : Boolean)
-   is
+   procedure Set_Output (C : in out Controller; Index : Natural; On : Boolean) is
       Chip : constant Positive := Index / 8 + 1;   --  0-based -> 1-based store
    begin
       if On then
@@ -55,12 +54,7 @@ package body ESP32S3.HC595 is
          Tx (K) := C.State (C.Chips - K + 1);
       end loop;
 
-      S.Acquire
-        (Sess,
-         C.Host,
-         Mode      => 0,
-         Clock_Hz  => C.Clock,
-         Select_CB => No_CS'Access);
+      S.Acquire (Sess, C.Host, Mode => 0, Clock_Hz => C.Clock, Select_CB => No_CS'Access);
       S.Transfer (Sess, Tx'Address, Rx'Address, C.Chips);
       S.Release (Sess);
 
@@ -80,8 +74,7 @@ package body ESP32S3.HC595 is
       end if;
    end Update;
 
-   procedure Write_Output
-     (C : in out Controller; Index : Natural; On : Boolean) is
+   procedure Write_Output (C : in out Controller; Index : Natural; On : Boolean) is
    begin
       Set_Output (C, Index, On);
       Update (C);

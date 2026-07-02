@@ -18,7 +18,6 @@ package ESP32S3.Wait is
    function Until_True
      (Ready   : access function return Boolean;
       Timeout : Ada.Real_Time.Time_Span;
-      Poll    : Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (1))
-      return Boolean;
+      Poll    : Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (1)) return Boolean;
 
 end ESP32S3.Wait;

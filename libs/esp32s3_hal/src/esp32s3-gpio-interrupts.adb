@@ -49,10 +49,7 @@ package body ESP32S3.GPIO.Interrupts is
          if not Routed then
             --  Route the GPIO source to CPU_INT 23 (Attach_Handler already
             --  enabled it; the custom L3 vector handles the dispatch).
-            IC
-              .INTERRUPT_CORE0_Periph
-              .GPIO_INTERRUPT_PRO_MAP
-              .GPIO_INTERRUPT_PRO_MAP :=
+            IC.INTERRUPT_CORE0_Periph.GPIO_INTERRUPT_PRO_MAP.GPIO_INTERRUPT_PRO_MAP :=
               GPIO_CPU_Int;
             Routed := True;
          end if;
@@ -71,16 +68,13 @@ package body ESP32S3.GPIO.Interrupts is
       end Remove;
 
       procedure Handler is
-         Lo : constant UInt32 :=
-           Reg.GPIO_Periph.STATUS;                  --  0..31
-         Hi : constant UInt32 :=
-           UInt32 (Reg.GPIO_Periph.STATUS1.INTERRUPT); -- 32..48
+         Lo : constant UInt32 := Reg.GPIO_Periph.STATUS;                  --  0..31
+         Hi : constant UInt32 := UInt32 (Reg.GPIO_Periph.STATUS1.INTERRUPT); -- 32..48
       begin
          --  Clear the latched status first so the level-3 source deasserts.
          Reg.GPIO_Periph.STATUS_W1TC := Lo;
          Reg.GPIO_Periph.STATUS1_W1TC :=
-           (STATUS1_W1TC => Reg.STATUS1_W1TC_STATUS1_W1TC_Field (Hi),
-            others       => <>);
+           (STATUS1_W1TC => Reg.STATUS1_W1TC_STATUS1_W1TC_Field (Hi), others => <>);
          --  Dispatch to each pin that fired.
          for P in Pin_Id loop
             declare

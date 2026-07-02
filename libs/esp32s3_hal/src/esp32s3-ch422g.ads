@@ -90,19 +90,16 @@ package ESP32S3.CH422G is
 
    --  IO0..IO7 outputs (WR-IO) -- effective only after Configure (Outputs).
    procedure Write_IO (S : Session; Value : IO_Value; Result : out Status);
-   procedure Write_IO_Pin
-     (S : Session; Pin : IO_Pin; State : Pin_State; Result : out Status);
+   procedure Write_IO_Pin (S : Session; Pin : IO_Pin; State : Pin_State; Result : out Status);
 
    --  IO0..IO7 current pin state (RD-IO).
    procedure Read_IO (S : Session; Value : out IO_Value; Result : out Status);
-   procedure Read_IO_Pin
-     (S : Session; Pin : IO_Pin; State : out Pin_State; Result : out Status);
+   procedure Read_IO_Pin (S : Session; Pin : IO_Pin; State : out Pin_State; Result : out Status);
 
    --  OC0..OC3 outputs (WR-OC).  1 = high (push-pull) / not-driven (open-drain),
    --  0 = low.
    procedure Write_OC (S : Session; Value : OC_Value; Result : out Status);
-   procedure Write_OC_Pin
-     (S : Session; Pin : OC_Pin; State : Pin_State; Result : out Status);
+   procedure Write_OC_Pin (S : Session; Pin : OC_Pin; State : Pin_State; Result : out Status);
 
 private
    type Device is record

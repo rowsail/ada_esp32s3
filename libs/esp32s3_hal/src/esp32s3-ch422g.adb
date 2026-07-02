@@ -50,18 +50,14 @@ package body ESP32S3.CH422G is
    procedure Check_Owned (S : Session) is
    begin
       if not S.Active then
-         raise Not_Owned
-           with "CH422G used without holding it -- Acquire first";
+         raise Not_Owned with "CH422G used without holding it -- Acquire first";
       end if;
    end Check_Owned;
 
    --  One-byte write to a command address, opening a SHORT-LIVED I2C Session
    --  (the host lock) that is released when Bus finalises at scope exit.
    procedure Cmd
-     (S      : Session;
-      Addr   : ESP32S3.I2C.Slave_Address;
-      Value  : ESP32S3.I2C.Byte;
-      Result : out Status)
+     (S : Session; Addr : ESP32S3.I2C.Slave_Address; Value : ESP32S3.I2C.Byte; Result : out Status)
    is
       Bus   : ESP32S3.I2C.Session;
       Acked : Boolean;
@@ -86,8 +82,7 @@ package body ESP32S3.CH422G is
       Dev := (Host => Host, Configured => True);
       ESP32S3.I2C.Setup (Host, Clock_Hz => Clock_Hz);
       ESP32S3.I2C.Configure_Pins (Host, Scl => Scl, Sda => Sda);
-      Shadows (Host) :=
-        (Cfg => 0, IO_Out => 0, OC_Out => 16#0F#);  --  power-on
+      Shadows (Host) := (Cfg => 0, IO_Out => 0, OC_Out => 16#0F#);  --  power-on
    end Setup;
 
    -------------------------
@@ -192,9 +187,7 @@ package body ESP32S3.CH422G is
       end if;
    end Write_IO;
 
-   procedure Write_IO_Pin
-     (S : Session; Pin : IO_Pin; State : Pin_State; Result : out Status)
-   is
+   procedure Write_IO_Pin (S : Session; Pin : IO_Pin; State : Pin_State; Result : out Status) is
       M : constant ESP32S3.I2C.Byte := 2**Natural (Pin);
       B : ESP32S3.I2C.Byte;
    begin
@@ -215,8 +208,7 @@ package body ESP32S3.CH422G is
    -- Read_IO --
    -------------
 
-   procedure Read_IO (S : Session; Value : out IO_Value; Result : out Status)
-   is
+   procedure Read_IO (S : Session; Value : out IO_Value; Result : out Status) is
       Bus   : ESP32S3.I2C.Session;
       Data  : ESP32S3.I2C.Byte_Array (1 .. 1);
       Acked : Boolean;
@@ -233,14 +225,11 @@ package body ESP32S3.CH422G is
       end if;
    end Read_IO;
 
-   procedure Read_IO_Pin
-     (S : Session; Pin : IO_Pin; State : out Pin_State; Result : out Status)
-   is
+   procedure Read_IO_Pin (S : Session; Pin : IO_Pin; State : out Pin_State; Result : out Status) is
       V : IO_Value;
    begin
       Read_IO (S, V, Result);
-      State :=
-        (if (V and IO_Value (2**Natural (Pin))) /= 0 then High else Low);
+      State := (if (V and IO_Value (2**Natural (Pin))) /= 0 then High else Low);
    end Read_IO_Pin;
 
    --------------
@@ -256,9 +245,7 @@ package body ESP32S3.CH422G is
       end if;
    end Write_OC;
 
-   procedure Write_OC_Pin
-     (S : Session; Pin : OC_Pin; State : Pin_State; Result : out Status)
-   is
+   procedure Write_OC_Pin (S : Session; Pin : OC_Pin; State : Pin_State; Result : out Status) is
       M : constant ESP32S3.I2C.Byte := 2**Natural (Pin);
       B : ESP32S3.I2C.Byte;
    begin

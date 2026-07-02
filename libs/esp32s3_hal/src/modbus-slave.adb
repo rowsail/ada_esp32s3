@@ -136,13 +136,11 @@ package body Modbus.Slave is
                  (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
             begin
                if Req_Len < 12 or else Qty not in 1 .. Max_Read_Bits then
-                  Exc :=
-                    Illegal_Data_Value;                --  short frame or bad Qty
+                  Exc := Illegal_Data_Value;                --  short frame or bad Qty
 
                else
                   declare
-                     Bc : constant Natural :=
-                       (Qty + 7) / 8;      --  Qty bounded now
+                     Bc : constant Natural := (Qty + 7) / 8;      --  Qty bounded now
                      B  : Bit_Array (0 .. Qty - 1) := (others => False);
                   begin
                      if FC = FC_Read_Coils then
@@ -158,8 +156,7 @@ package body Modbus.Slave is
                         end loop;
                         for I in 0 .. Qty - 1 loop
                            if B (I) then
-                              Buf (9 + I / 8) :=
-                                Buf (9 + I / 8) or Byte (2**(I mod 8));
+                              Buf (9 + I / 8) := Buf (9 + I / 8) or Byte (2**(I mod 8));
                            end if;
                         end loop;
                         PDU_Len := 2 + Bc;
@@ -171,18 +168,15 @@ package body Modbus.Slave is
          when FC_Read_Holding_Registers | FC_Read_Input_Registers =>
             declare
                A   : constant Address := Address (Get_U16 (Buf, 8));
-               Qty :
-                 constant Natural :=              --  validate before sizing (see above)
-                   (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
+               Qty : constant Natural :=              --  validate before sizing (see above)
+                 (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
             begin
                if Req_Len < 12 or else Qty not in 1 .. Max_Read_Registers then
-                  Exc :=
-                    Illegal_Data_Value;                --  short frame or bad Qty
+                  Exc := Illegal_Data_Value;                --  short frame or bad Qty
 
                else
                   declare
-                     W : Word_Array (0 .. Qty - 1) :=
-                       (others => 0);   --  Qty bounded
+                     W : Word_Array (0 .. Qty - 1) := (others => 0);   --  Qty bounded
                   begin
                      if FC = FC_Read_Holding_Registers then
                         On_Read_Holding_Registers (Self, Unit, A, Qty, W, Exc);
@@ -206,10 +200,8 @@ package body Modbus.Slave is
                A : constant Address := Address (Get_U16 (Buf, 8));
                V : constant Word := Get_U16 (Buf, 10);
             begin
-               if Req_Len < 12 or else (V /= 16#FF00# and then V /= 16#0000#)
-               then
-                  Exc :=
-                    Illegal_Data_Value;                --  short frame or bad V
+               if Req_Len < 12 or else (V /= 16#FF00# and then V /= 16#0000#) then
+                  Exc := Illegal_Data_Value;                --  short frame or bad V
 
                else
                   On_Write_Single_Coil (Self, Unit, A, V = 16#FF00#, Exc);
@@ -238,14 +230,11 @@ package body Modbus.Slave is
          when FC_Write_Multiple_Coils                             =>
             declare
                A   : constant Address := Address (Get_U16 (Buf, 8));
-               Qty :
-                 constant Natural :=            --  guard reads; validate before sizing
-                   (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
-               Bc  : constant Natural :=
-                 (if Req_Len >= 13 then Natural (Buf (12)) else 0);
+               Qty : constant Natural :=            --  guard reads; validate before sizing
+                 (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
+               Bc  : constant Natural := (if Req_Len >= 13 then Natural (Buf (12)) else 0);
             begin
-               if Req_Len
-                 < 13 + Bc                          --  header+byte-count+data
+               if Req_Len < 13 + Bc                          --  header+byte-count+data
                  or else Qty not in 1 .. Max_Write_Bits
                  or else Bc /= (Qty + 7) / 8
                then
@@ -255,8 +244,7 @@ package body Modbus.Slave is
                      V : Bit_Array (0 .. Qty - 1) := (others => False);
                   begin
                      for I in 0 .. Qty - 1 loop
-                        V (I) :=
-                          (Buf (13 + I / 8) and Byte (2**(I mod 8))) /= 0;
+                        V (I) := (Buf (13 + I / 8) and Byte (2**(I mod 8))) /= 0;
                      end loop;
                      On_Write_Multiple_Coils (Self, Unit, A, V, Exc);
                      if Exc = None then
@@ -269,14 +257,11 @@ package body Modbus.Slave is
          when FC_Write_Multiple_Registers                         =>
             declare
                A   : constant Address := Address (Get_U16 (Buf, 8));
-               Qty :
-                 constant Natural :=            --  guard reads; validate before sizing
-                   (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
-               Bc  : constant Natural :=
-                 (if Req_Len >= 13 then Natural (Buf (12)) else 0);
+               Qty : constant Natural :=            --  guard reads; validate before sizing
+                 (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
+               Bc  : constant Natural := (if Req_Len >= 13 then Natural (Buf (12)) else 0);
             begin
-               if Req_Len
-                 < 13 + Bc                          --  header+byte-count+data
+               if Req_Len < 13 + Bc                          --  header+byte-count+data
                  or else Qty not in 1 .. Max_Write_Registers
                  or else Bc /= 2 * Qty
                then
@@ -316,16 +301,13 @@ package body Modbus.Slave is
 
    --  Read exactly Count bytes into Buf at Offset.  False on close/error.
    function Recv_Exact
-     (Conn : Socket_Type; Buf : in out Byte_Array; Offset, Count : Natural)
-      return Boolean
+     (Conn : Socket_Type; Buf : in out Byte_Array; Offset, Count : Natural) return Boolean
    is
       Got : Natural := 0;
    begin
       while Got < Count loop
          declare
-            Chunk :
-              Stream_Element_Array
-                (0 .. Stream_Element_Offset (Count - Got) - 1);
+            Chunk : Stream_Element_Array (0 .. Stream_Element_Offset (Count - Got) - 1);
             Last  : Stream_Element_Offset;
          begin
             Receive_Socket (Conn, Chunk, Last);
@@ -344,9 +326,7 @@ package body Modbus.Slave is
          return False;
    end Recv_Exact;
 
-   function Send_All
-     (Conn : Socket_Type; Buf : Byte_Array; Count : Natural) return Boolean
-   is
+   function Send_All (Conn : Socket_Type; Buf : Byte_Array; Count : Natural) return Boolean is
       --  View the first Count bytes of Buf as a Stream_Element_Array with no
       --  copy: Byte and Stream_Element are both 8-bit, so the layout matches
       --  (same overlay idiom as ESP32S3.W5500.Net_Device).
@@ -397,16 +377,12 @@ package body Modbus.Slave is
       loop
          Create_Socket (Listener);
          if Configure /= null then
-            Configure
-              (Listener);                  --  e.g. bind/pin to an interface
+            Configure (Listener);                  --  e.g. bind/pin to an interface
 
          end if;
-         Bind_Socket
-           (Listener,
-            (Family => Family_Inet, Addr => Any_Inet_Addr, Port => Port));
+         Bind_Socket (Listener, (Family => Family_Inet, Addr => Any_Inet_Addr, Port => Port));
          Listen_Socket (Listener);
-         Accept_Socket
-           (Listener, Conn, Peer);      --  listener becomes the connection
+         Accept_Socket (Listener, Conn, Peer);      --  listener becomes the connection
          begin
             Serve (Self, Conn);
          exception

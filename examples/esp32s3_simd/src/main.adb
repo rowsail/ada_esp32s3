@@ -24,8 +24,8 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
 
-   N     : constant := 1024;   --  elements per vector
-   Iters : constant := 64;     --  repetitions, to average out timing noise
+   N       : constant := 1024;   --  elements per vector
+   Iters   : constant := 64;     --  repetitions, to average out timing noise
    CPU_MHz : constant := 240;  --  start.S selects the 240 MHz PLL
 
    subtype Idx is Natural range 0 .. N - 1;
@@ -33,7 +33,7 @@ procedure Main is
    --  16-byte-aligned vectors (the SIMD types guarantee the alignment the
    --  ee.vld/ee.vst 128-bit load/store instructions need).
    A32, B32, R32, Ref32 : SIMD_I32_Vector (Idx);
-   Af,  Bf,  Rf,  Reff  : SIMD_F32_Vector (Idx);
+   Af, Bf, Rf, Reff     : SIMD_F32_Vector (Idx);
 
    --  Read the Xtensa cycle counter (CCOUNT) with a one-instruction asm insert --
    --  the smallest possible taste of the same System.Machine_Code mechanism the
@@ -41,20 +41,20 @@ procedure Main is
    function Cycles return Unsigned_32 is
       V : Unsigned_32;
    begin
-      Asm ("rsr.ccount %0",
-           Outputs  => Unsigned_32'Asm_Output ("=r", V),
-           Volatile => True);
+      Asm ("rsr.ccount %0", Outputs => Unsigned_32'Asm_Output ("=r", V), Volatile => True);
       return V;
    end Cycles;
-
 
    --  Saturating scalar reference for Integer_32 add (the SIMD Add saturates).
    function Sat_Add (X, Y : Integer_32) return Integer_32 is
       S : constant Integer_64 := Integer_64 (X) + Integer_64 (Y);
    begin
-      if    S > Integer_64 (Integer_32'Last)  then return Integer_32'Last;
-      elsif S < Integer_64 (Integer_32'First) then return Integer_32'First;
-      else  return Integer_32 (S);
+      if S > Integer_64 (Integer_32'Last) then
+         return Integer_32'Last;
+      elsif S < Integer_64 (Integer_32'First) then
+         return Integer_32'First;
+      else
+         return Integer_32 (S);
       end if;
    end Sat_Add;
 
@@ -62,24 +62,30 @@ procedure Main is
    procedure Report (Label : String; Simd_C, Scalar_C : Unsigned_32; Ok : Boolean) is
    begin
       Put (Label);
-      Put (" SIMD=");   Put_Unsigned (Simd_C);
-      Put (" scalar="); Put_Unsigned (Scalar_C);
+      Put (" SIMD=");
+      Put_Unsigned (Simd_C);
+      Put (" scalar=");
+      Put_Unsigned (Scalar_C);
       Put (" speedup=");
-      if Simd_C = 0 then Put ("inf");
-      else Put_Fixed (Integer (Scalar_C), Positive (Simd_C), Decimals => 1); Put ("x");
+      if Simd_C = 0 then
+         Put ("inf");
+      else
+         Put_Fixed (Integer (Scalar_C), Positive (Simd_C), Decimals => 1);
+         Put ("x");
       end if;
       Put_Line (if Ok then "  PASS" else "  *** FAIL ***");
    end Report;
 
    T0, T1, Sc0, Sc1 : Unsigned_32;
-   Ok : Boolean;
+   Ok               : Boolean;
 
 begin
    Enable;   --  MUST precede any SIMD op: this task starts with CP3 disabled.
 
    Put_Line ("");
    Put_Line ("=== ESP32-S3 PIE SIMD on bare-metal Ada ===");
-   Put (CPU_MHz, 0); Put_Line (" MHz, vectors of 1024 elements, 64 iterations");
+   Put (CPU_MHz, 0);
+   Put_Line (" MHz, vectors of 1024 elements, 64 iterations");
    Put_Line ("");
 
    ---------------------------------------------------------------------------
@@ -93,16 +99,22 @@ begin
    --  without these every sum stays small and Sat_Add degenerates to a plain
    --  add, so a non-saturating (wrapping) SIMD Add would still PASS.  Both the
    --  SIMD Add and the scalar Sat_Add must clamp to the same Integer_32 bound.
-   A32 (Idx'First) := Integer_32'Last - 10;   B32 (Idx'First) := 1000;   --  -> 'Last
-   A32 (Idx'Last)  := Integer_32'First + 10;  B32 (Idx'Last)  := -1000;  --  -> 'First
+   A32 (Idx'First) := Integer_32'Last - 10;
+   B32 (Idx'First) := 1000;   --  -> 'Last
+   A32 (Idx'Last) := Integer_32'First + 10;
+   B32 (Idx'Last) := -1000;  --  -> 'First
 
    T0 := Cycles;
-   for K in 1 .. Iters loop Add (A32, B32, R32); end loop;
+   for K in 1 .. Iters loop
+      Add (A32, B32, R32);
+   end loop;
    T1 := Cycles;
 
    Sc0 := Cycles;
    for K in 1 .. Iters loop
-      for I in Idx loop Ref32 (I) := Sat_Add (A32 (I), B32 (I)); end loop;
+      for I in Idx loop
+         Ref32 (I) := Sat_Add (A32 (I), B32 (I));
+      end loop;
    end loop;
    Sc1 := Cycles;
 
@@ -121,13 +133,17 @@ begin
       SD, RD : Integer_32 := 0;
    begin
       T0 := Cycles;
-      for K in 1 .. Iters loop SD := Dot_Product (A32, B32); end loop;
+      for K in 1 .. Iters loop
+         SD := Dot_Product (A32, B32);
+      end loop;
       T1 := Cycles;
 
       Sc0 := Cycles;
       for K in 1 .. Iters loop
          RD := 0;
-         for I in Idx loop RD := RD + A32 (I) * B32 (I); end loop;
+         for I in Idx loop
+            RD := RD + A32 (I) * B32 (I);
+         end loop;
       end loop;
       Sc1 := Cycles;
 
@@ -143,12 +159,16 @@ begin
    end loop;
 
    T0 := Cycles;
-   for K in 1 .. Iters loop Add (Af, Bf, Rf); end loop;
+   for K in 1 .. Iters loop
+      Add (Af, Bf, Rf);
+   end loop;
    T1 := Cycles;
 
    Sc0 := Cycles;
    for K in 1 .. Iters loop
-      for I in Idx loop Reff (I) := Af (I) + Bf (I); end loop;
+      for I in Idx loop
+         Reff (I) := Af (I) + Bf (I);
+      end loop;
    end loop;
    Sc1 := Cycles;
 
@@ -158,15 +178,21 @@ begin
    ---------------------------------------------------------------------------
    --  4. Copy, Integer_32 (bulk move)
    ---------------------------------------------------------------------------
-   for I in Idx loop A32 (I) := Integer_32 (I) * 7 - 11; end loop;
+   for I in Idx loop
+      A32 (I) := Integer_32 (I) * 7 - 11;
+   end loop;
 
    T0 := Cycles;
-   for K in 1 .. Iters loop Copy (A32, R32); end loop;
+   for K in 1 .. Iters loop
+      Copy (A32, R32);
+   end loop;
    T1 := Cycles;
 
    Sc0 := Cycles;
    for K in 1 .. Iters loop
-      for I in Idx loop Ref32 (I) := A32 (I); end loop;
+      for I in Idx loop
+         Ref32 (I) := A32 (I);
+      end loop;
    end loop;
    Sc1 := Cycles;
 
@@ -182,7 +208,9 @@ begin
    end loop;
 
    T0 := Cycles;
-   for K in 1 .. Iters loop Compare_GT (A32, B32, R32); end loop;
+   for K in 1 .. Iters loop
+      Compare_GT (A32, B32, R32);
+   end loop;
    T1 := Cycles;
 
    Sc0 := Cycles;
@@ -198,5 +226,7 @@ begin
 
    Put_Line ("");
    Put_Line ("done.");
-   loop null; end loop;
+   loop
+      null;
+   end loop;
 end Main;

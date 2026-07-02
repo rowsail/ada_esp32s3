@@ -48,10 +48,10 @@ with ESP32S3.SPI;
 with ESP32S3.W25Q;
 with ESP32S3.GPIO;
 with ESP32S3.Log;
-with ESP32S3.Block_Dev;             use ESP32S3.Block_Dev;
+with ESP32S3.Block_Dev; use ESP32S3.Block_Dev;
 with ESP32S3.Block_Dev.W25Q_Source;
 with ESP32S3.Block_Dev.WL;
-with ESP32S3.Ext4;                  use ESP32S3.Ext4;
+with ESP32S3.Ext4;      use ESP32S3.Ext4;
 with ESP32S3.Ext4.Mkfs;
 with ESP32S3.Ext4.FS;
 with ESP32S3.Ext4.Inode;
@@ -60,12 +60,12 @@ with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
-   package SPI  renames ESP32S3.SPI;
+   package SPI renames ESP32S3.SPI;
    package W25Q renames ESP32S3.W25Q;
-   package Log  renames ESP32S3.Log;
-   package BDW  renames ESP32S3.Block_Dev.W25Q_Source;
-   package WL   renames ESP32S3.Block_Dev.WL;
-   package FS   renames ESP32S3.Ext4.FS;
+   package Log renames ESP32S3.Log;
+   package BDW renames ESP32S3.Block_Dev.W25Q_Source;
+   package WL renames ESP32S3.Block_Dev.WL;
+   package FS renames ESP32S3.Ext4.FS;
    package Mkfs renames ESP32S3.Ext4.Mkfs;
 
    SCLK_Pin : constant := 1;
@@ -88,8 +88,7 @@ procedure Main is
    --  exercises the on-device journaled formatter + the FS's JBD2 commit path.
    Use_Journal : constant Boolean := True;
 
-   Flash   : W25Q.Flash :=
-     (Host => SPI.SPI2, Clock_Hz => Clock_Hz, CS_Pin => CS_Pin, others => <>);
+   Flash : W25Q.Flash := (Host => SPI.SPI2, Clock_Hz => Clock_Hz, CS_Pin => CS_Pin, others => <>);
 
    ID      : W25Q.JEDEC_ID;
    Mode_OK : Boolean;
@@ -133,7 +132,9 @@ procedure Main is
                N := N + 1;
                Line (N) := (if Character'Pos (C) in 32 .. 126 then C else '.');
                if N = Line'Last then
-                  Log.Put (Line); N := 0; delay until Clock + Milliseconds (20);
+                  Log.Put (Line);
+                  N := 0;
+                  delay until Clock + Milliseconds (20);
                end if;
             end if;
          end;
@@ -160,14 +161,15 @@ begin
    Log.Put_Line ("[mkfs] format a blank SPI NOR flash to ext4 on-device (SPI2, CS=IO21)");
 
    SPI.Setup (SPI.SPI2);
-   SPI.Configure_Pins (SPI.SPI2, Sclk => SCLK_Pin, Mosi => MOSI_Pin,
-                       Miso => MISO_Pin);
+   SPI.Configure_Pins (SPI.SPI2, Sclk => SCLK_Pin, Mosi => MOSI_Pin, Miso => MISO_Pin);
 
    W25Q.Read_Identification (Flash, ID);
    W25Q.Initialize (Flash, Mode_OK);
    Log.Put ("[mkfs] flash ");
-   Log.Put_Hex (Unsigned_32 (ID.Manufacturer), 2); Log.Put (' ');
-   Log.Put_Hex (Unsigned_32 (ID.Memory_Type), 2);  Log.Put (' ');
+   Log.Put_Hex (Unsigned_32 (ID.Manufacturer), 2);
+   Log.Put (' ');
+   Log.Put_Hex (Unsigned_32 (ID.Memory_Type), 2);
+   Log.Put (' ');
    Log.Put_Hex (Unsigned_32 (ID.Capacity), 2);
    Log.Put_Line (", 4-byte mode: " & (if Mode_OK then "OK" else "FAILED"));
 
@@ -216,8 +218,7 @@ begin
          begin
             for C in 0 .. Chunk_Count - 1 loop
                for K in Chunk'Range loop
-                  Chunk (K) :=
-                    Unsigned_8 ((C * Chunk_Bytes + K) mod Pattern_Period);
+                  Chunk (K) := Unsigned_8 ((C * Chunk_Bytes + K) mod Pattern_Period);
                end loop;
                M.Append (N, Chunk);
             end loop;
@@ -225,7 +226,8 @@ begin
 
          M.Commit;
          M.Close;
-         Log.Put_Line ("[mkfs] wrote /boot.txt, /logs/1.txt, streamed /logs/stream.bin; committed");
+         Log.Put_Line
+           ("[mkfs] wrote /boot.txt, /logs/1.txt, streamed /logs/stream.bin; committed");
       exception
          when others =>
             Log.Put_Line ("[mkfs] format/write FAILED");
@@ -261,9 +263,9 @@ begin
             end loop;
             Log.Put ("[mkfs] /logs/stream.bin ");
             Log.Put_Unsigned (Unsigned_32 (Info.Size));
-            Log.Put_Line (" bytes via Append, readback "
-                          & (if OK and then Off = Natural (Info.Size) then "PASS"
-                             else "FAIL"));
+            Log.Put_Line
+              (" bytes via Append, readback "
+               & (if OK and then Off = Natural (Info.Size) then "PASS" else "FAIL"));
          end;
          M.Close;
       exception

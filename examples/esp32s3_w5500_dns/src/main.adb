@@ -69,8 +69,7 @@ begin
    end if;
 
    Put_Line ("[dns] resolving " & Hostname & " ...");
-   if DNS_Client.Resolve (DNS_Server, Hostname, Addr, Timeout => Resolve_Timeout)
-   then
+   if DNS_Client.Resolve (DNS_Server, Hostname, Addr, Timeout => Resolve_Timeout) then
       Put_Line ("[dns] " & Hostname & " = " & Image (Addr));
    else
       Put_Line ("[dns] no answer (timed out) or no A record");

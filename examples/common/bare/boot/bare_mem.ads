@@ -14,25 +14,23 @@ with Interfaces.C;
 --  NOTE: the body MUST be compiled with -fno-tree-loop-distribute-patterns (see
 --  bare_boot.gpr) or GCC turns the byte loops back into calls to memcpy/memset
 --  -- infinite self-recursion.
+
 package Bare_Mem is
 
-   function Memcpy (Dest, Src : System.Address; N : Interfaces.C.size_t)
-                    return System.Address;
+   function Memcpy (Dest, Src : System.Address; N : Interfaces.C.size_t) return System.Address;
    pragma Export (C, Memcpy, "memcpy");
    pragma Machine_Attribute (Memcpy, "weak");
 
-   function Memmove (Dest, Src : System.Address; N : Interfaces.C.size_t)
-                     return System.Address;
+   function Memmove (Dest, Src : System.Address; N : Interfaces.C.size_t) return System.Address;
    pragma Export (C, Memmove, "memmove");
    pragma Machine_Attribute (Memmove, "weak");
 
-   function Memset (Dest : System.Address; C : Interfaces.C.int;
-                    N : Interfaces.C.size_t) return System.Address;
+   function Memset
+     (Dest : System.Address; C : Interfaces.C.int; N : Interfaces.C.size_t) return System.Address;
    pragma Export (C, Memset, "memset");
    pragma Machine_Attribute (Memset, "weak");
 
-   function Memcmp (S1, S2 : System.Address; N : Interfaces.C.size_t)
-                    return Interfaces.C.int;
+   function Memcmp (S1, S2 : System.Address; N : Interfaces.C.size_t) return Interfaces.C.int;
    pragma Export (C, Memcmp, "memcmp");
    pragma Machine_Attribute (Memcmp, "weak");
 

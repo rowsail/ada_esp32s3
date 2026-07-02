@@ -27,12 +27,12 @@
 --    is fed back into data-in on a single GPIO pad through the signal matrix --
 --    so no external BCLK/WS/DOUT/DIN routing and no loopback jumper are needed.
 
-with Interfaces;   use Interfaces;
+with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
-with ESP32S3.I2S;   use ESP32S3.I2S;
+with ESP32S3.I2S; use ESP32S3.I2S;
 with ESP32S3.GPIO;
-with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
 --  elaboration); core 1 just idles -- the test runs on core 0.
@@ -53,8 +53,8 @@ procedure Main is
    --  2**16, spread across the signed range.  The constants are arbitrary (a
    --  large odd stride + an odd offset); they only need to make the 64 samples
    --  distinct and span the 16-bit range.
-   Pattern_Step   : constant := 1031;
-   Pattern_Offset : constant := 17;
+   Pattern_Step    : constant := 1031;
+   Pattern_Offset  : constant := 17;
    Pattern_Modulus : constant := 65536;   --  2**16
 
    --  64 samples = 32 stereo frames = 128 bytes.  PCM_16 is the driver's typed
@@ -65,12 +65,10 @@ procedure Main is
    Rx : PCM_16 (Sample_Range) := (others => 0);
 begin
    delay until Clock + Milliseconds (200);
-   Put_Line ("[i2s] bare-metal I2S full-duplex DMA loopback self-test "
-             & "(no wiring)");
+   Put_Line ("[i2s] bare-metal I2S full-duplex DMA loopback self-test " & "(no wiring)");
 
    for I in Tx'Range loop
-      Tx (I) := Integer_16 ((I * Pattern_Step + Pattern_Offset) mod
-                            Pattern_Modulus - 32768);
+      Tx (I) := Integer_16 ((I * Pattern_Step + Pattern_Offset) mod Pattern_Modulus - 32768);
    end loop;
 
    declare

@@ -24,8 +24,7 @@ package Modbus.Master is
    --  null, the socket routes normally.  Keeping the pin out here (rather than a
    --  facade-only parameter) lets the same source be host-tested; the board example
    --  esp32s3_modbus_master shows a one-line pin hook.
-   type Socket_Hook is
-     access procedure (Socket : in out GNAT.Sockets.Socket_Type);
+   type Socket_Hook is access procedure (Socket : in out GNAT.Sockets.Socket_Type);
 
    --  Open a TCP connection to a slave at dotted-decimal Host:Port.  Timeout caps
    --  how long each transaction waits for a reply.  Result is OK or Disconnected.

@@ -12,13 +12,11 @@ package body GNAT.Sockets is
    use type Net_Devices.IPv4_Address;
    use type Interfaces.Unsigned_16;
 
-   Max_Sockets : constant :=
-     8;                 --  most any one interface provides
+   Max_Sockets : constant := 8;                 --  most any one interface provides
    subtype Sock_Index is Natural range 0 .. Max_Sockets - 1;
 
    --  Registered interfaces and the per-(interface, socket) state.
-   Registry : array (Interface_Id) of Net_Devices.Device_Access :=
-     (others => null);
+   Registry : array (Interface_Id) of Net_Devices.Device_Access := (others => null);
    N_Ifaces : Natural := 0;
 
    --  Liveness source for the routing table: is interface Id usable right now?
@@ -26,24 +24,19 @@ package body GNAT.Sockets is
    function Iface_Is_Up (Id : Interface_Id) return Boolean
    is (Registry (Id) /= null and then Registry (Id).Is_Up);
 
-   In_Use       : array (Interface_Id, Sock_Index) of Boolean :=
-     (others => (others => False));
-   Local_Ports  :
-     array (Interface_Id, Sock_Index) of Net_Devices.Port_Number :=
-       (others => (others => 0));
+   In_Use       : array (Interface_Id, Sock_Index) of Boolean := (others => (others => False));
+   Local_Ports  : array (Interface_Id, Sock_Index) of Net_Devices.Port_Number :=
+     (others => (others => 0));
    Modes        : array (Interface_Id, Sock_Index) of Mode_Type :=
      (others => (others => Socket_Stream));
-   Opened       : array (Interface_Id, Sock_Index) of Boolean :=
-     (others => (others => False));
-   Recv_Timeout : array (Interface_Id, Sock_Index) of Duration :=
-     (others => (others => 0.0));
+   Opened       : array (Interface_Id, Sock_Index) of Boolean := (others => (others => False));
+   Recv_Timeout : array (Interface_Id, Sock_Index) of Duration := (others => (others => 0.0));
 
    ---------------------------------------------------------------------------
    --  Interface registry
    ---------------------------------------------------------------------------
 
-   function Add_Interface
-     (Device : Net_Devices.Device_Access) return Interface_Id is
+   function Add_Interface (Device : Net_Devices.Device_Access) return Interface_Id is
    begin
       if Device = null or else N_Ifaces > Natural (Interface_Id'Last) then
          raise Socket_Error;
@@ -99,9 +92,7 @@ package body GNAT.Sockets is
    procedure Ensure_Open (Id : Interface_Id; J : Sock_Index) is
       St : Net_Devices.Status;
       M  : constant Net_Devices.Transport :=
-        (if Modes (Id, J) = Socket_Datagram
-         then Net_Devices.UDP
-         else Net_Devices.TCP);
+        (if Modes (Id, J) = Socket_Datagram then Net_Devices.UDP else Net_Devices.TCP);
    begin
       if not Opened (Id, J) then
          Registry (Id).Open (J, M, Local_Ports (Id, J), St);
@@ -116,9 +107,7 @@ package body GNAT.Sockets is
    --  configured (longest-prefix, metric, live interfaces only); otherwise the
    --  default interface, so a board that sets up no routes behaves as before.
    procedure Resolve_Iface
-     (Dest  : Net_Devices.IPv4_Address;
-      Id    : out Interface_Id;
-      Found : out Boolean) is
+     (Dest : Net_Devices.IPv4_Address; Id : out Interface_Id; Found : out Boolean) is
    begin
       if Net_Routes.Has_Routes then
          Net_Routes.Resolve (Dest, Id, Found);
@@ -155,8 +144,7 @@ package body GNAT.Sockets is
 
          end if;
          if Opened (Old_Id, Old_J) then
-            Registry (Old_Id).Close
-              (Old_J);        --  not yet opened in practice
+            Registry (Old_Id).Close (Old_J);        --  not yet opened in practice
 
          end if;
          In_Use (Target, New_J) := True;
@@ -177,9 +165,7 @@ package body GNAT.Sockets is
 
    --  Find the interface whose own IP is Addr (for bind-to-address pinning).
    procedure Iface_Of_Addr
-     (Addr  : Net_Devices.IPv4_Address;
-      Id    : out Interface_Id;
-      Found : out Boolean) is
+     (Addr : Net_Devices.IPv4_Address; Id : out Interface_Id; Found : out Boolean) is
    begin
       Id := 0;
       Found := False;
@@ -282,16 +268,14 @@ package body GNAT.Sockets is
       raise Socket_Error;                        --  all of this interface's sockets in use
    end Create_Socket;
 
-   procedure Set_Interface (Socket : in out Socket_Type; Iface : Interface_Id)
-   is
+   procedure Set_Interface (Socket : in out Socket_Type; Iface : Interface_Id) is
    begin
       Move_To (Socket, Iface);
       Socket.Pinned := True;
       Socket.Pin := Iface;
    end Set_Interface;
 
-   procedure Bind_Socket
-     (Socket : in out Socket_Type; Address : Sock_Addr_Type) is
+   procedure Bind_Socket (Socket : in out Socket_Type; Address : Sock_Addr_Type) is
    begin
       --  Binding to a specific interface's own address pins the socket there (so a
       --  server listens on just that interface); Any_Inet_Addr leaves it free.
@@ -312,16 +296,13 @@ package body GNAT.Sockets is
       begin
          Local_Ports (Id, J) := Net_Devices.Port_Number (Address.Port);
          if Modes (Id, J) = Socket_Datagram then
-            Ensure_Open
-              (Id, J);                 --  UDP is ready to send/recv now
+            Ensure_Open (Id, J);                 --  UDP is ready to send/recv now
 
          end if;
       end;
    end Bind_Socket;
 
-   procedure Listen_Socket
-     (Socket : in out Socket_Type; Length : Natural := 15)
-   is
+   procedure Listen_Socket (Socket : in out Socket_Type; Length : Natural := 15) is
       pragma Unreferenced (Length);
       Id : constant Interface_Id := If_Of (Socket);
       J  : constant Sock_Index := Ix_Of (Socket);
@@ -335,9 +316,7 @@ package body GNAT.Sockets is
    end Listen_Socket;
 
    procedure Accept_Socket
-     (Server  : Socket_Type;
-      Socket  : out Socket_Type;
-      Address : out Sock_Addr_Type)
+     (Server : Socket_Type; Socket : out Socket_Type; Address : out Sock_Addr_Type)
    is
       Id   : constant Interface_Id := If_Of (Server);
       J    : constant Sock_Index := Ix_Of (Server);
@@ -349,16 +328,12 @@ package body GNAT.Sockets is
       if St /= Net_Devices.OK then
          raise Socket_Error;
       end if;
-      Socket :=
-        Server;                          --  the listener IS the connection
+      Socket := Server;                          --  the listener IS the connection
       Registry (Id).Peer (J, Peer, Port);
-      Address :=
-        (Family => Family_Inet, Addr => (B => Peer), Port => Port_Type (Port));
+      Address := (Family => Family_Inet, Addr => (B => Peer), Port => Port_Type (Port));
    end Accept_Socket;
 
-   procedure Connect_Socket
-     (Socket : in out Socket_Type; Server : Sock_Addr_Type)
-   is
+   procedure Connect_Socket (Socket : in out Socket_Type; Server : Sock_Addr_Type) is
       Target : Interface_Id;
       Found  : Boolean;
    begin
@@ -388,10 +363,8 @@ package body GNAT.Sockets is
             --  pick an ephemeral local port
             Local_Ports (Id, J) := Net_Devices.Port_Number (50_000 + J);
          end if;
-         Ensure_Open
-           (Id, J);                     --  open TCP on the local port
-         Registry (Id).Connect
-           (J, Server.Addr.B, Net_Devices.Port_Number (Server.Port), St);
+         Ensure_Open (Id, J);                     --  open TCP on the local port
+         Registry (Id).Connect (J, Server.Addr.B, Net_Devices.Port_Number (Server.Port), St);
          if St /= Net_Devices.OK then
             raise Socket_Error;
          end if;
@@ -411,13 +384,11 @@ package body GNAT.Sockets is
    begin
       Ensure_Open (Id, J);
       if To /= null then
-         Registry (Id).Send_To
-           (J, To.Addr.B, Net_Devices.Port_Number (To.Port), Item, St);
+         Registry (Id).Send_To (J, To.Addr.B, Net_Devices.Port_Number (To.Port), Item, St);
          if St /= Net_Devices.OK then
             raise Socket_Error;
          end if;
-         Last :=
-           Item'Last;                       --  a datagram is all-or-nothing
+         Last := Item'Last;                       --  a datagram is all-or-nothing
 
       else
          Registry (Id).Send (J, Item, Sent, St);
@@ -457,10 +428,7 @@ package body GNAT.Sockets is
             FP : Net_Devices.Port_Number;
          begin
             Registry (Id).Receive_From (J, FA, FP, Item, Count, St);
-            From.all :=
-              (Family => Family_Inet,
-               Addr   => (B => FA),
-               Port   => Port_Type (FP));
+            From.all := (Family => Family_Inet, Addr => (B => FA), Port => Port_Type (FP));
          end;
       else
          Registry (Id).Receive (J, Item, Count, St);
@@ -486,9 +454,7 @@ package body GNAT.Sockets is
    end Close_Socket;
 
    procedure Set_Socket_Option
-     (Socket : Socket_Type;
-      Level  : Level_Type := Socket_Level;
-      Option : Option_Type)
+     (Socket : Socket_Type; Level : Level_Type := Socket_Level; Option : Option_Type)
    is
       pragma Unreferenced (Level);
       Id : constant Interface_Id := If_Of (Socket);
@@ -516,12 +482,9 @@ package body GNAT.Sockets is
       Item   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset);
    overriding
-   procedure Write
-     (Stream : in out Socket_Stream_Type;
-      Item   : Ada.Streams.Stream_Element_Array);
+   procedure Write (Stream : in out Socket_Stream_Type; Item : Ada.Streams.Stream_Element_Array);
 
-   Stream_Pool :
-     array (Interface_Id, Sock_Index) of aliased Socket_Stream_Type;
+   Stream_Pool : array (Interface_Id, Sock_Index) of aliased Socket_Stream_Type;
 
    overriding
    procedure Read
@@ -533,10 +496,7 @@ package body GNAT.Sockets is
    end Read;
 
    overriding
-   procedure Write
-     (Stream : in out Socket_Stream_Type;
-      Item   : Ada.Streams.Stream_Element_Array)
-   is
+   procedure Write (Stream : in out Socket_Stream_Type; Item : Ada.Streams.Stream_Element_Array) is
       use Ada.Real_Time;
       First : Stream_Element_Offset := Item'First;
       Last  : Stream_Element_Offset;

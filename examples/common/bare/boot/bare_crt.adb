@@ -1,4 +1,4 @@
-with System.Storage_Elements;  use System.Storage_Elements;
+with System.Storage_Elements; use System.Storage_Elements;
 
 package body Bare_Crt is
 
@@ -6,7 +6,8 @@ package body Bare_Crt is
 
    --  Byte (char) at an address (overlay; -gnatp, no checks).
    function Load (A : System.Address) return Storage_Element is
-      B : Storage_Element with Import, Address => A;
+      B : Storage_Element
+      with Import, Address => A;
    begin
       return B;
    end Load;
@@ -57,7 +58,8 @@ package body Bare_Crt is
       V    : Integer := 0;
       C    : Storage_Element;
    begin
-      loop                                   --  skip leading blanks
+      loop
+         --  skip leading blanks
          C := Load (S + I);
          exit when C /= Ch_Sp and then C /= Ch_HT;
          I := I + 1;
@@ -69,7 +71,8 @@ package body Bare_Crt is
       elsif C = Character'Pos ('+') then
          I := I + 1;
       end if;
-      loop                                    --  digits
+      loop
+         --  digits
          C := Load (S + I);
          exit when C < Ch_0 or else C > Ch_9;
          V := V * 10 + (Integer (C) - Integer (Ch_0));
@@ -93,10 +96,12 @@ package body Bare_Crt is
    -----------
 
    procedure Hal_Log_Cstr (S : System.Address)
-     with Import, Convention => C, External_Name => "hal_log_cstr";
+   with Import, Convention => C, External_Name => "hal_log_cstr";
 
-   function Write (Fd : Interfaces.C.int; Buf : System.Address;
-                   N : Interfaces.C.unsigned) return Interfaces.C.int is
+   function Write
+     (Fd : Interfaces.C.int; Buf : System.Address; N : Interfaces.C.unsigned)
+      return Interfaces.C.int
+   is
       pragma Unreferenced (Fd);
       Len : constant Natural := Natural (N);
       --  Copy into a NUL-terminated buffer and emit with one "%s" (console text
@@ -104,8 +109,7 @@ package body Bare_Crt is
       Tmp : String (1 .. Len + 1);
    begin
       for I in 0 .. Len - 1 loop
-         Tmp (I + 1) :=
-           Character'Val (Integer (Load (Buf + Storage_Offset (I))));
+         Tmp (I + 1) := Character'Val (Integer (Load (Buf + Storage_Offset (I))));
       end loop;
       Tmp (Len + 1) := ASCII.NUL;
       Hal_Log_Cstr (Tmp'Address);
@@ -117,7 +121,7 @@ package body Bare_Crt is
    ----------------
 
    procedure Esp_Restart
-     with Import, Convention => C, External_Name => "esp_restart";
+   with Import, Convention => C, External_Name => "esp_restart";
 
    procedure Abort_Exec is
    begin
@@ -132,10 +136,10 @@ package body Bare_Crt is
    -----------------------
 
    Eh_Frame_Start : Storage_Element
-     with Import, Convention => C, External_Name => "__eh_frame_start";
+   with Import, Convention => C, External_Name => "__eh_frame_start";
 
    procedure Register_Frame (Fde : System.Address)
-     with Import, Convention => C, External_Name => "__register_frame";
+   with Import, Convention => C, External_Name => "__register_frame";
 
    procedure Register_Eh_Frames is
    begin

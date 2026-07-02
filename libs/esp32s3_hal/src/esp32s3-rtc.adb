@@ -12,15 +12,13 @@ package body ESP32S3.RTC is
    Wake_Ext1  : constant Unsigned_32 := 2;
    Wake_Timer : constant := 8;
 
-   Deepsleep_Reset : constant :=
-     5;       --  RESET_CAUSE_PROCPU for a deep-sleep wake
+   Deepsleep_Reset : constant := 5;       --  RESET_CAUSE_PROCPU for a deep-sleep wake
 
    --------------------
    -- Word accessors --
    --------------------
 
-   type Word_Array is array (Word_Index) of Interfaces.Unsigned_32
-   with Volatile;
+   type Word_Array is array (Word_Index) of Interfaces.Unsigned_32 with Volatile;
    Words : Word_Array
    with Import, Volatile, Address => Slow_Memory;
 
@@ -74,10 +72,8 @@ package body ESP32S3.RTC is
    --  never returns; it returns only if the FSM REJECTED the sleep.
    procedure Enter_Deep_Sleep (Wake_Mask : Natural) is
    begin
-      RTC_CNTL_Periph.WAKEUP_STATE.WAKEUP_ENA :=
-        WAKEUP_STATE_WAKEUP_ENA_Field (Wake_Mask);
-      RTC_CNTL_Periph.DIG_PWC.DG_WRAP_PD_EN :=
-        True;     --  deep sleep: digital off
+      RTC_CNTL_Periph.WAKEUP_STATE.WAKEUP_ENA := WAKEUP_STATE_WAKEUP_ENA_Field (Wake_Mask);
+      RTC_CNTL_Periph.DIG_PWC.DG_WRAP_PD_EN := True;     --  deep sleep: digital off
       RTC_CNTL_Periph.SLP_REJECT_CONF.SLEEP_REJECT_ENA := 0;
       RTC_CNTL_Periph.INT_CLR_RTC :=
         (SLP_WAKEUP_INT_CLR => True, SLP_REJECT_INT_CLR => True, others => <>);
@@ -102,8 +98,7 @@ package body ESP32S3.RTC is
          null;
       end loop;
       return
-        Shift_Left
-          (Unsigned_64 (RTC_CNTL_Periph.TIME_HIGH0.TIMER_VALUE0_HIGH), 32)
+        Shift_Left (Unsigned_64 (RTC_CNTL_Periph.TIME_HIGH0.TIMER_VALUE0_HIGH), 32)
         or Unsigned_64 (RTC_CNTL_Periph.TIME_LOW0);
    end Now;
 
@@ -112,8 +107,7 @@ package body ESP32S3.RTC is
    -------------------
 
    procedure Deep_Sleep_For (Wake_After : Duration) is
-      Ticks  : constant Unsigned_64 :=
-        Unsigned_64 (Float (Wake_After) * Float (RTC_Slow_Hz));
+      Ticks  : constant Unsigned_64 := Unsigned_64 (Float (Wake_After) * Float (RTC_Slow_Hz));
       Target : constant Unsigned_64 := Now + Ticks;
    begin
       RTC_CNTL_Periph.SLP_TIMER0 := UInt32 (Target and 16#FFFF_FFFF#);
@@ -129,15 +123,12 @@ package body ESP32S3.RTC is
    -- Deep_Sleep_Until --
    ----------------------
 
-   procedure Deep_Sleep_Until
-     (Pin : ESP32S3.RTC_IO.RTC_Pin; High : Boolean := True)
-   is
+   procedure Deep_Sleep_Until (Pin : ESP32S3.RTC_IO.RTC_Pin; High : Boolean := True) is
       Sel : constant UInt22 := 2**Natural (Pin);   --  Pin <= 21, no wrap
    begin
       --  EXT1: wake when any selected RTC pad reaches the chosen level.
       RTC_CNTL_Periph.EXT_WAKEUP1 :=
-        (EXT_WAKEUP1_SEL => EXT_WAKEUP1_EXT_WAKEUP1_SEL_Field (Sel),
-         others          => <>);
+        (EXT_WAKEUP1_SEL => EXT_WAKEUP1_EXT_WAKEUP1_SEL_Field (Sel), others => <>);
       RTC_CNTL_Periph.EXT_WAKEUP_CONF.EXT_WAKEUP1_LV := High;
       Enter_Deep_Sleep (2);              --  EXT1 wake bit
    end Deep_Sleep_Until;

@@ -50,7 +50,7 @@
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.I2C;
-with ESP32S3.Log;  use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
 --  elaboration); core 1 just idles -- the test runs on core 0.
@@ -84,8 +84,7 @@ procedure Main is
    Ok : Boolean;
 begin
    delay until Clock + Milliseconds (200);   --  let the console settle
-   Put_Line ("[i2c] bare-metal I2C master hardware self-test "
-             & "(no wiring, no device)");
+   Put_Line ("[i2c] bare-metal I2C master hardware self-test " & "(no wiring, no device)");
 
    Setup (Host, Clock_Hz => 100_000);
    Configure_Pins (Host, Scl => Scl_Pad, Sda => Sda_Pad);
@@ -118,7 +117,8 @@ begin
             raise Program_Error;          --  fault before any explicit Release
          end;                             --  Finalize (T) -> Release on unwind
       exception
-         when others => null;
+         when others =>
+            null;
       end;
 
       declare

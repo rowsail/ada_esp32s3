@@ -5,11 +5,14 @@ package body Lisp is
    True_Obj  : aliased Object := (Mark => False, K => K_Bool, B => True);
    False_Obj : aliased Object := (Mark => False, K => K_Bool, B => False);
 
-   function Nil        return Ref is (Nil_Obj'Access);
-   function Lisp_True  return Ref is (True_Obj'Access);
-   function Lisp_False return Ref is (False_Obj'Access);
-   function Make_Bool  (V : Boolean) return Ref is
-     (if V then True_Obj'Access else False_Obj'Access);
+   function Nil return Ref
+   is (Nil_Obj'Access);
+   function Lisp_True return Ref
+   is (True_Obj'Access);
+   function Lisp_False return Ref
+   is (False_Obj'Access);
+   function Make_Bool (V : Boolean) return Ref
+   is (if V then True_Obj'Access else False_Obj'Access);
 
    --------------------------------------------------------------------------
    --  The cell arena: a uniform pool with a free list.  Free cells are linked
@@ -20,21 +23,22 @@ package body Lisp is
    --  the free list is a separate array of indices, and a cell is (re)written by
    --  direct array assignment Arena (I) := Template (which does permit a kind
    --  change); the sweep only relinks indices, never rewrites a cell.
-   type Cell_Array  is array (Positive range <>) of aliased Object;
+   type Cell_Array is array (Positive range <>) of aliased Object;
    type Index_Array is array (Positive range <>) of Natural;
-   type Cell_Access  is access Cell_Array;
+   type Cell_Access is access Cell_Array;
    type Index_Access is access Index_Array;
-   Arena      : Cell_Access  := null;          --  heap-allocated (PSRAM on the board)
+   Arena      : Cell_Access := null;          --  heap-allocated (PSRAM on the board)
    Free_Next  : Index_Access := null;          --  Free_Next (I) = next free index, 0=end
    Free_Head  : Natural := 0;                  --  head index of the free list (0=empty)
    Arena_Size : Natural := 0;
    In_Use     : Natural := 0;
 
-   function Cells_Used return Natural is (In_Use);
+   function Cells_Used return Natural
+   is (In_Use);
 
    procedure Build_Free_List is
    begin
-      In_Use    := 0;
+      In_Use := 0;
       Free_Head := 1;
       for I in 1 .. Arena_Size loop
          Free_Next (I) := (if I < Arena_Size then I + 1 else 0);
@@ -43,8 +47,8 @@ package body Lisp is
 
    procedure Init (Cells : Positive := 200_000) is
    begin
-      Arena      := new Cell_Array  (1 .. Cells);
-      Free_Next  := new Index_Array (1 .. Cells);
+      Arena := new Cell_Array (1 .. Cells);
+      Free_Next := new Index_Array (1 .. Cells);
       Arena_Size := Cells;
       Build_Free_List;
    end Init;
@@ -54,26 +58,26 @@ package body Lisp is
    begin
       if Arena = null then
          Init;                                  --  lazy default (host convenience)
+
       end if;
       if Free_Head = 0 then
          raise Lisp_Error with "out of memory (arena full this form)";
       end if;
-      I         := Free_Head;
+      I := Free_Head;
       Free_Head := Free_Next (I);
       Arena (I) := Template;                     --  direct assignment: kind may change
-      In_Use    := In_Use + 1;
+      In_Use := In_Use + 1;
       return Arena (I)'Access;
    end Alloc;
 
-   function Cons (A, D : Ref) return Ref is
-     (Alloc ((Mark => False, K => K_Cons, Car => A, Cdr => D)));
+   function Cons (A, D : Ref) return Ref
+   is (Alloc ((Mark => False, K => K_Cons, Car => A, Cdr => D)));
 
-   function Make_Int (V : Long_Long_Integer) return Ref is
-     (Alloc ((Mark => False, K => K_Int, I => V)));
+   function Make_Int (V : Long_Long_Integer) return Ref
+   is (Alloc ((Mark => False, K => K_Int, I => V)));
 
-   function Make_Closure (Params, Code, Env : Ref) return Ref is
-     (Alloc ((Mark => False, K => K_Closure,
-              Params => Params, Code => Code, Env => Env)));
+   function Make_Closure (Params, Code, Env : Ref) return Ref
+   is (Alloc ((Mark => False, K => K_Closure, Params => Params, Code => Code, Env => Env)));
 
    function Int_Value (O : Ref) return Long_Long_Integer is
    begin
@@ -93,15 +97,14 @@ package body Lisp is
       Len  : Natural := 0;
       Obj  : aliased Object := (Mark => False, K => K_Symbol, Sym => 0);
    end record;
-   Symbols : array (1 .. 1024) of Sym_Entry;   --  static (internal RAM); keep modest
-   N_Sym   : Natural := 0;
+   Symbols  : array (1 .. 1024) of Sym_Entry;   --  static (internal RAM); keep modest
+   N_Sym    : Natural := 0;
 
    function Intern (Name : String) return Ref is
       L : constant Natural := Natural'Min (Name'Length, Max_Name);
    begin
       for I in 1 .. N_Sym loop
-         if Symbols (I).Len = Name'Length
-           and then Symbols (I).Name (1 .. Symbols (I).Len) = Name
+         if Symbols (I).Len = Name'Length and then Symbols (I).Name (1 .. Symbols (I).Len) = Name
          then
             return Symbols (I).Obj'Access;
          end if;
@@ -116,8 +119,8 @@ package body Lisp is
       return Symbols (N_Sym).Obj'Access;
    end Intern;
 
-   function Name_Of (Id : Symbol_Id) return String is
-     (Symbols (Natural (Id)).Name (1 .. Symbols (Natural (Id)).Len));
+   function Name_Of (Id : Symbol_Id) return String
+   is (Symbols (Natural (Id)).Name (1 .. Symbols (Natural (Id)).Len));
 
    function Make_Prim (Name : String; Fn : Prim_Fn) return Ref is
       Sym : constant Ref := Intern (Name);   --  canonical symbol for the name
@@ -125,27 +128,35 @@ package body Lisp is
       return Alloc ((Mark => False, K => K_Prim, Fn => Fn, Fn_Name => Sym.Sym));
    end Make_Prim;
 
-   function Symbol_Name (O : Ref) return String is (Name_Of (O.Sym));
+   function Symbol_Name (O : Ref) return String
+   is (Name_Of (O.Sym));
 
    --------------------------------------------------------------------------
    --  Accessors / predicates
    --------------------------------------------------------------------------
-   function Is_Nil    (O : Ref) return Boolean is (O = null or else O.K = K_Nil);
-   function Is_Cons   (O : Ref) return Boolean is (O /= null and then O.K = K_Cons);
-   function Is_Symbol (O : Ref) return Boolean is (O /= null and then O.K = K_Symbol);
+   function Is_Nil (O : Ref) return Boolean
+   is (O = null or else O.K = K_Nil);
+   function Is_Cons (O : Ref) return Boolean
+   is (O /= null and then O.K = K_Cons);
+   function Is_Symbol (O : Ref) return Boolean
+   is (O /= null and then O.K = K_Symbol);
 
-   function Is_Truthy (O : Ref) return Boolean is
-     (not (Is_Nil (O) or else (O.K = K_Bool and then not O.B)));
+   function Is_Truthy (O : Ref) return Boolean
+   is (not (Is_Nil (O) or else (O.K = K_Bool and then not O.B)));
 
    function Car (O : Ref) return Ref is
    begin
-      if not Is_Cons (O) then raise Lisp_Error with "car of non-pair"; end if;
+      if not Is_Cons (O) then
+         raise Lisp_Error with "car of non-pair";
+      end if;
       return O.Car;
    end Car;
 
    function Cdr (O : Ref) return Ref is
    begin
-      if not Is_Cons (O) then raise Lisp_Error with "cdr of non-pair"; end if;
+      if not Is_Cons (O) then
+         raise Lisp_Error with "cdr of non-pair";
+      end if;
       return O.Cdr;
    end Cdr;
 
@@ -172,15 +183,30 @@ package body Lisp is
       end Print_List;
 
    begin
-      if O = null then return "()"; end if;
+      if O = null then
+         return "()";
+      end if;
       case O.K is
-         when K_Nil     => return "()";
-         when K_Bool    => return (if O.B then "#t" else "#f");
-         when K_Int     => return Int_Image (O.I);
-         when K_Symbol  => return Name_Of (O.Sym);
-         when K_Cons    => return "(" & Print_List (O) & ")";
-         when K_Prim    => return "#<primitive " & Name_Of (O.Fn_Name) & ">";
-         when K_Closure => return "#<closure>";
+         when K_Nil     =>
+            return "()";
+
+         when K_Bool    =>
+            return (if O.B then "#t" else "#f");
+
+         when K_Int     =>
+            return Int_Image (O.I);
+
+         when K_Symbol  =>
+            return Name_Of (O.Sym);
+
+         when K_Cons    =>
+            return "(" & Print_List (O) & ")";
+
+         when K_Prim    =>
+            return "#<primitive " & Name_Of (O.Fn_Name) & ">";
+
+         when K_Closure =>
+            return "#<closure>";
       end case;
    end Print;
 
@@ -191,12 +217,21 @@ package body Lisp is
    begin
       if O = null or else O.Mark then
          return;                                --  null, or already visited (cycles)
+
       end if;
       O.Mark := True;
       case O.K is
-         when K_Cons    => Mark_Obj (O.Car);  Mark_Obj (O.Cdr);
-         when K_Closure => Mark_Obj (O.Params);  Mark_Obj (O.Code);  Mark_Obj (O.Env);
-         when others    => null;               --  no outgoing arena references
+         when K_Cons    =>
+            Mark_Obj (O.Car);
+            Mark_Obj (O.Cdr);
+
+         when K_Closure =>
+            Mark_Obj (O.Params);
+            Mark_Obj (O.Code);
+            Mark_Obj (O.Env);
+
+         when others    =>
+            null;               --  no outgoing arena references
       end case;
    end Mark_Obj;
 
@@ -208,8 +243,9 @@ package body Lisp is
       end if;
       Mark_Obj (Root);
       Free_Head := 0;
-      In_Use    := 0;
-      for I in Arena'Range loop                 --  sweep
+      In_Use := 0;
+      for I in Arena'Range loop
+         --  sweep
          if Arena (I).Mark then
             Arena (I).Mark := False;            --  live: keep, clear the bit
             In_Use := In_Use + 1;

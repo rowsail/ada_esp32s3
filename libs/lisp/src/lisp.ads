@@ -6,6 +6,7 @@
 --  the same size and live as uniform cells in a bump-allocated arena (garbage
 --  collection comes later -- for now the arena only grows).  References between
 --  objects are Ref values into that arena.
+
 package Lisp is
 
    type Object;
@@ -22,13 +23,27 @@ package Lisp is
    type Object (K : Kind := K_Nil) is record
       Mark : Boolean := False;            --  GC mark bit
       case K is
-         when K_Nil     => null;
-         when K_Bool    => B : Boolean;
-         when K_Int     => I : Long_Long_Integer;
-         when K_Symbol  => Sym : Symbol_Id;
-         when K_Cons    => Car, Cdr : Ref;
-         when K_Prim    => Fn : Prim_Fn; Fn_Name : Symbol_Id;
-         when K_Closure => Params, Code, Env : Ref;
+         when K_Nil =>
+            null;
+
+         when K_Bool =>
+            B : Boolean;
+
+         when K_Int =>
+            I : Long_Long_Integer;
+
+         when K_Symbol =>
+            Sym : Symbol_Id;
+
+         when K_Cons =>
+            Car, Cdr : Ref;
+
+         when K_Prim =>
+            Fn      : Prim_Fn;
+            Fn_Name : Symbol_Id;
+
+         when K_Closure =>
+            Params, Code, Env : Ref;
       end case;
    end record;
 
@@ -38,16 +53,16 @@ package Lisp is
    --------------------------------------------------------------------------
    --  Singletons and constructors
    --------------------------------------------------------------------------
-   function Nil        return Ref;
-   function Lisp_True  return Ref;
+   function Nil return Ref;
+   function Lisp_True return Ref;
    function Lisp_False return Ref;
 
-   function Cons      (A, D : Ref) return Ref;
-   function Make_Int  (V : Long_Long_Integer) return Ref;
+   function Cons (A, D : Ref) return Ref;
+   function Make_Int (V : Long_Long_Integer) return Ref;
    function Make_Bool (V : Boolean) return Ref;
-   function Intern    (Name : String) return Ref;   --  the canonical symbol object
+   function Intern (Name : String) return Ref;   --  the canonical symbol object
 
-   function Make_Prim    (Name : String; Fn : Prim_Fn) return Ref;
+   function Make_Prim (Name : String; Fn : Prim_Fn) return Ref;
    function Make_Closure (Params, Code, Env : Ref) return Ref;
 
    --  Integer value of an Int object (Lisp_Error if it is not one).
@@ -58,10 +73,11 @@ package Lisp is
    --------------------------------------------------------------------------
    function Car (O : Ref) return Ref;               --  Lisp_Error if not a cons
    function Cdr (O : Ref) return Ref;
-   function Cadr (O : Ref) return Ref is (Car (Cdr (O)));
+   function Cadr (O : Ref) return Ref
+   is (Car (Cdr (O)));
 
-   function Is_Nil    (O : Ref) return Boolean;
-   function Is_Cons   (O : Ref) return Boolean;
+   function Is_Nil (O : Ref) return Boolean;
+   function Is_Cons (O : Ref) return Boolean;
    function Is_Symbol (O : Ref) return Boolean;
    function Is_Truthy (O : Ref) return Boolean;     --  everything but #f and ()
 
@@ -85,6 +101,6 @@ package Lisp is
    function GC (Root : Ref) return Natural;
 
    procedure Reset;                                 --  empty the arena (tests)
-   function  Cells_Used return Natural;
+   function Cells_Used return Natural;
 
 end Lisp;

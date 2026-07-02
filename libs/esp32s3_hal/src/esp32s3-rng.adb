@@ -47,8 +47,7 @@ package body ESP32S3.RNG is
    procedure Enable_Entropy_Source is
       A  : ESP32S3_Registers.APB_SARADC.APB_SARADC_Peripheral renames
         ESP32S3_Registers.APB_SARADC.APB_SARADC_Periph;
-      S  : ESP32S3_Registers.SENS.SENS_Peripheral renames
-        ESP32S3_Registers.SENS.SENS_Periph;
+      S  : ESP32S3_Registers.SENS.SENS_Peripheral renames ESP32S3_Registers.SENS.SENS_Periph;
       Sy : ESP32S3_Registers.SYSTEM.SYSTEM_Peripheral renames
         ESP32S3_Registers.SYSTEM.SYSTEM_Periph;
       Rt : ESP32S3_Registers.RTC_CNTL.RTC_CNTL_Peripheral renames
@@ -74,8 +73,7 @@ package body ESP32S3.RNG is
       A.CLKM_CONF.CLK_EN := True;
       A.CLKM_CONF.CLKM_DIV_NUM := 3;
       A.CTRL.SARADC_SAR_CLK_DIV := 3;       --  SAR clock divider (>= 2)
-      A.CTRL2.SARADC_TIMER_TARGET :=
-        70;      --  read freq well below sample freq
+      A.CTRL2.SARADC_TIMER_TARGET := 70;      --  read freq well below sample freq
 
       A.CTRL.SARADC_START_FORCE := False;
       S.SAR_POWER_XPD_SAR.FORCE_XPD_SAR := 3; --  power up the SAR analog block
@@ -88,8 +86,7 @@ package body ESP32S3.RNG is
       A.CTRL.SARADC_SAR1_PATT_LEN := 0;
       A.SAR1_PATT_TAB1.SARADC_SAR1_PATT_TAB1 := 16#AF_FFFF#;
 
-      S.SAR_MEAS1_MUX.SAR1_DIG_FORCE :=
-        True;  --  ADC1 driven by the dig controller
+      S.SAR_MEAS1_MUX.SAR1_DIG_FORCE := True;  --  ADC1 driven by the dig controller
       S.SAR_MEAS2_MUX.SAR2_RTC_FORCE := False;
       A.ARB_CTRL.ADC_ARB_GRANT_FORCE := False;
       A.ARB_CTRL.ADC_ARB_FIX_PRIORITY := False;
@@ -110,14 +107,12 @@ package body ESP32S3.RNG is
    procedure Disable_Entropy_Source is
       A : ESP32S3_Registers.APB_SARADC.APB_SARADC_Peripheral renames
         ESP32S3_Registers.APB_SARADC.APB_SARADC_Periph;
-      S : ESP32S3_Registers.SENS.SENS_Peripheral renames
-        ESP32S3_Registers.SENS.SENS_Periph;
+      S : ESP32S3_Registers.SENS.SENS_Peripheral renames ESP32S3_Registers.SENS.SENS_Periph;
    begin
       S.SAR_POWER_XPD_SAR.FORCE_XPD_SAR := 0;     --  power off the SAR
       S.SAR_MEAS1_MUX.SAR1_DIG_FORCE := False;
       A.CTRL2.SARADC_TIMER_EN := False; --  stop sampling
-      ESP32S3_Registers.SYSTEM.SYSTEM_Periph.PERIP_CLK_EN0.APB_SARADC_CLK_EN :=
-        False;
+      ESP32S3_Registers.SYSTEM.SYSTEM_Periph.PERIP_CLK_EN0.APB_SARADC_CLK_EN := False;
    --  (the 8 MHz clock entropy source is left running)
    end Disable_Entropy_Source;
 

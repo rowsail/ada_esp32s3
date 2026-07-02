@@ -25,21 +25,15 @@ package body ESP32S3.UART.Text is
       null;   --  UART.Write goes straight to the TX FIFO; nothing buffered here
    end Flush_Adapter;
 
-   function As_Device (S : aliased in out Session) return ESP32S3.Serial.Device
-   is
+   function As_Device (S : aliased in out Session) return ESP32S3.Serial.Device is
    begin
-      return
-        (Write => Write_Adapter'Access,
-         Flush => Flush_Adapter'Access,
-         Ctx   => S'Address);
+      return (Write => Write_Adapter'Access, Flush => Flush_Adapter'Access, Ctx => S'Address);
    end As_Device;
 
    --  Non-blocking single-byte input from the held UART.  Only touch the RX FIFO
    --  when Available reports a byte waiting, so the read returns immediately
    --  instead of paying UART.Read's per-byte settle wait on an empty FIFO.
-   procedure Read_Adapter
-     (Ctx : System.Address; C : out Character; Avail : out Boolean)
-   is
+   procedure Read_Adapter (Ctx : System.Address; C : out Character; Avail : out Boolean) is
       Sess : constant Conv.Object_Pointer := Conv.To_Pointer (Ctx);
       One  : Byte_Array (0 .. 0);
       N    : Natural;
@@ -56,8 +50,7 @@ package body ESP32S3.UART.Text is
       Avail := False;
    end Read_Adapter;
 
-   function As_Input_Device
-     (S : aliased in out Session) return ESP32S3.Serial.In_Device is
+   function As_Input_Device (S : aliased in out Session) return ESP32S3.Serial.In_Device is
    begin
       return (Read => Read_Adapter'Access, Ctx => S'Address);
    end As_Input_Device;

@@ -47,12 +47,13 @@ procedure Main is
 
    --  The FTP server to talk to (same /24 as the board's static IP).  Edit for
    --  your LAN; credentials match the bundled test server (any user/pass there).
-   Server_IP   : constant String    := "192.168.1.100";   --  the LAN host running the server
-   Server_Port : constant Port_Type  := 2121;              --  matches ftp_server.py 2121 (21 for a real daemon)
-   User        : constant String     := "demo";
-   Pass        : constant String     := "password";
-   Get_Path    : constant String     := "/hello.txt";
-   Put_Path    : constant String     := "/from_board.bin";   --  STOR target
+   Server_IP   : constant String := "192.168.1.100";   --  the LAN host running the server
+   Server_Port : constant Port_Type :=
+     2121;              --  matches ftp_server.py 2121 (21 for a real daemon)
+   User        : constant String := "demo";
+   Pass        : constant String := "password";
+   Get_Path    : constant String := "/hello.txt";
+   Put_Path    : constant String := "/from_board.bin";   --  STOR target
 
    Startup_Settle : constant Time_Span := Milliseconds (200);
    Park_Interval  : constant Time_Span := Seconds (3600);
@@ -76,8 +77,13 @@ begin
    Put_Line (" ...");
 
    FTP_Client.Connect
-     (S, Host => Inet_Addr (Server_IP), User => User, Password => Pass,
-      Result => St, Port => Server_Port, Timeout => 10.0);
+     (S,
+      Host     => Inet_Addr (Server_IP),
+      User     => User,
+      Password => Pass,
+      Result   => St,
+      Port     => Server_Port,
+      Timeout  => 10.0);
 
    if St /= FTP_Client.OK then
       Put ("[ftp] connect/login failed: ");
@@ -93,15 +99,13 @@ begin
       end if;
 
       Put_Line ("[ftp] --- RETR " & Get_Path & " ---");
-      FTP_Client.Retrieve
-        (S, Get_Path, FTP_Print.Put_Chunk'Access, System.Null_Address, St);
+      FTP_Client.Retrieve (S, Get_Path, FTP_Print.Put_Chunk'Access, System.Null_Address, St);
       New_Line;
       Put ("[ftp] retrieve result: ");
       Put_Line (St'Image);
 
       Put_Line ("[ftp] --- NLST ---");
-      FTP_Client.List
-        (S, FTP_Print.Put_Chunk'Access, System.Null_Address, St);
+      FTP_Client.List (S, FTP_Print.Put_Chunk'Access, System.Null_Address, St);
       Put ("[ftp] list result: ");
       Put_Line (St'Image);
 
@@ -109,8 +113,7 @@ begin
       --  and verify it byte-exact -- a full upload round-trip from the board.
       Put_Line ("[ftp] --- STOR + read-back round-trip ---");
       FTP_Print.Reset_Source;
-      FTP_Client.Store
-        (S, Put_Path, FTP_Print.Test_Source'Access, System.Null_Address, St);
+      FTP_Client.Store (S, Put_Path, FTP_Print.Test_Source'Access, System.Null_Address, St);
       Put ("[ftp] STOR " & Put_Path & " (");
       Put (FTP_Print.Upload_Bytes);
       Put (" bytes): ");
@@ -118,8 +121,7 @@ begin
 
       if St = FTP_Client.OK then
          FTP_Print.Reset_Verify;
-         FTP_Client.Retrieve
-           (S, Put_Path, FTP_Print.Verify_Chunk'Access, System.Null_Address, St);
+         FTP_Client.Retrieve (S, Put_Path, FTP_Print.Verify_Chunk'Access, System.Null_Address, St);
          Put ("[ftp] read-back ");
          Put (FTP_Print.Verify_Count);
          Put (" bytes: ");

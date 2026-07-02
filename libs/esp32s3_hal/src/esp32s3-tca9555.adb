@@ -53,8 +53,7 @@ package body ESP32S3.TCA9555 is
    procedure Check_Owned (S : Session) is
    begin
       if not S.Active then
-         raise Not_Owned
-           with "TCA9555 used without holding it -- Acquire first";
+         raise Not_Owned with "TCA9555 used without holding it -- Acquire first";
       end if;
    end Check_Owned;
 
@@ -64,9 +63,7 @@ package body ESP32S3.TCA9555 is
    --  even while the caller still holds this device's Session.
    ---------------------------------------------------------------------------
 
-   procedure Read_Reg
-     (S : Session; Reg : Byte; Data : out Byte_Array; Result : out Status)
-   is
+   procedure Read_Reg (S : Session; Reg : Byte; Data : out Byte_Array; Result : out Status) is
       Bus   : ESP32S3.I2C.Session;
       Acked : Boolean;
    begin
@@ -79,9 +76,7 @@ package body ESP32S3.TCA9555 is
       Result := (if Acked then OK else Bus_Error);
    end Read_Reg;                                               --  Bus released here
 
-   procedure Write_Reg
-     (S : Session; Reg : Byte; Data : Byte_Array; Result : out Status)
-   is
+   procedure Write_Reg (S : Session; Reg : Byte; Data : Byte_Array; Result : out Status) is
       Bus   : ESP32S3.I2C.Session;
       Acked : Boolean;
       Buf   : Byte_Array (0 .. Data'Length);
@@ -97,8 +92,7 @@ package body ESP32S3.TCA9555 is
    end Write_Reg;
 
    --  Read-modify-write one bit of register Reg.
-   procedure Update_Bit
-     (S : Session; Reg : Byte; Mask : Byte; Set : Boolean; Result : out Status)
+   procedure Update_Bit (S : Session; Reg : Byte; Mask : Byte; Set : Boolean; Result : out Status)
    is
       B : Byte_Array (0 .. 0);
    begin
@@ -149,8 +143,7 @@ package body ESP32S3.TCA9555 is
       if not Dev.Configured then
          raise Not_Initialized with "TCA9555 acquired before Setup";
       end if;
-      Guards (Dev.Host, Dev.Addr)
-        .Acquire;   --  suspends until this chip is free
+      Guards (Dev.Host, Dev.Addr).Acquire;   --  suspends until this chip is free
       S.Active := True;
       S.Host := Dev.Host;
       S.Addr := Dev.Addr;
@@ -175,43 +168,31 @@ package body ESP32S3.TCA9555 is
    -- Direction --
    --------------------
 
-   procedure Set_Directions
-     (S : Session; Inputs : Port_Value; Result : out Status) is
+   procedure Set_Directions (S : Session; Inputs : Port_Value; Result : out Status) is
    begin
       Write_Reg (S, Reg_Config, Pair (Inputs), Result);
    end Set_Directions;
 
-   procedure Set_Direction
-     (S : Session; Pin : Pin_Number; Dir : Direction; Result : out Status) is
+   procedure Set_Direction (S : Session; Pin : Pin_Number; Dir : Direction; Result : out Status) is
    begin
       --  Config bit 1 = input, 0 = output.
       Update_Bit
-        (S,
-         Reg_Config + Port_Of (Pin),
-         Mask_Of (Pin),
-         Set    => Dir = Input,
-         Result => Result);
+        (S, Reg_Config + Port_Of (Pin), Mask_Of (Pin), Set => Dir = Input, Result => Result);
    end Set_Direction;
 
    ------------
    -- Output --
    ------------
 
-   procedure Write_Port (S : Session; Value : Port_Value; Result : out Status)
-   is
+   procedure Write_Port (S : Session; Value : Port_Value; Result : out Status) is
    begin
       Write_Reg (S, Reg_Output, Pair (Value), Result);
    end Write_Port;
 
-   procedure Write_Pin
-     (S : Session; Pin : Pin_Number; State : Pin_State; Result : out Status) is
+   procedure Write_Pin (S : Session; Pin : Pin_Number; State : Pin_State; Result : out Status) is
    begin
       Update_Bit
-        (S,
-         Reg_Output + Port_Of (Pin),
-         Mask_Of (Pin),
-         Set    => State = High,
-         Result => Result);
+        (S, Reg_Output + Port_Of (Pin), Mask_Of (Pin), Set => State = High, Result => Result);
    end Write_Pin;
 
    -----------
@@ -219,9 +200,7 @@ package body ESP32S3.TCA9555 is
    -----------
 
    --  Read a 16-bit register pair starting at Reg into Value.
-   procedure Read_Pair
-     (S : Session; Reg : Byte; Value : out Port_Value; Result : out Status)
-   is
+   procedure Read_Pair (S : Session; Reg : Byte; Value : out Port_Value; Result : out Status) is
       B : Byte_Array (0 .. 1);
    begin
       Value := 0;
@@ -231,35 +210,27 @@ package body ESP32S3.TCA9555 is
       end if;
    end Read_Pair;
 
-   procedure Read_Port
-     (S : Session; Value : out Port_Value; Result : out Status) is
+   procedure Read_Port (S : Session; Value : out Port_Value; Result : out Status) is
    begin
       Read_Pair (S, Reg_Input, Value, Result);
    end Read_Port;
 
-   procedure Read_Directions
-     (S : Session; Inputs : out Port_Value; Result : out Status) is
+   procedure Read_Directions (S : Session; Inputs : out Port_Value; Result : out Status) is
    begin
       Read_Pair (S, Reg_Config, Inputs, Result);
    end Read_Directions;
 
-   procedure Read_Outputs
-     (S : Session; Value : out Port_Value; Result : out Status) is
+   procedure Read_Outputs (S : Session; Value : out Port_Value; Result : out Status) is
    begin
       Read_Pair (S, Reg_Output, Value, Result);
    end Read_Outputs;
 
-   procedure Read_Polarity
-     (S : Session; Inverted : out Port_Value; Result : out Status) is
+   procedure Read_Polarity (S : Session; Inverted : out Port_Value; Result : out Status) is
    begin
       Read_Pair (S, Reg_Polarity, Inverted, Result);
    end Read_Polarity;
 
-   procedure Read_Pin
-     (S      : Session;
-      Pin    : Pin_Number;
-      State  : out Pin_State;
-      Result : out Status)
+   procedure Read_Pin (S : Session; Pin : Pin_Number; State : out Pin_State; Result : out Status)
    is
       B : Byte_Array (0 .. 0);
    begin
@@ -274,8 +245,7 @@ package body ESP32S3.TCA9555 is
    -- Polarity --
    --------------
 
-   procedure Set_Polarity
-     (S : Session; Inverted : Port_Value; Result : out Status) is
+   procedure Set_Polarity (S : Session; Inverted : Port_Value; Result : out Status) is
    begin
       Write_Reg (S, Reg_Polarity, Pair (Inverted), Result);
    end Set_Polarity;

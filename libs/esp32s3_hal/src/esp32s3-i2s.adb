@@ -49,29 +49,21 @@ package body ESP32S3.I2S is
          Mode                      : I2S_Mode;
          Bclk, Ws, Dout, Din, Mclk : ESP32S3.GPIO.Optional_Pin);
       --  Force a re-open of the held port's audio format (Reconfigure).
-      procedure Reopen
-        (S           : Session;
-         Sample_Rate : Positive;
-         Bits        : Sample_Bits;
-         Mode        : I2S_Mode);
+      procedure Reopen (S : Session; Sample_Rate : Positive; Bits : Sample_Bits; Mode : I2S_Mode);
       function Owned (S : Session) return access E.Bus;
       --  The sample width the held port was last opened at (requires ownership).
       function Width (S : Session) return Sample_Bits;
    end State;
 
    package body State is
-      Buses     :
-        array (I2S_Port) of aliased E.Bus;  --  raw port instance, hidden
+      Buses     : array (I2S_Port) of aliased E.Bus;  --  raw port instance, hidden
       Ready_Map : array (I2S_Port) of Boolean := (others => False);
       --  The Bits each port was last opened at -- the source of Configured_Bits,
       --  which the typed transfers' preconditions check the buffer width against.
       Width_Map : array (I2S_Port) of Sample_Bits := (others => Bits_16);
 
       procedure Open_Now
-        (Port        : I2S_Port;
-         Sample_Rate : Positive;
-         Bits        : Sample_Bits;
-         Mode        : I2S_Mode) is
+        (Port : I2S_Port; Sample_Rate : Positive; Bits : Sample_Bits; Mode : I2S_Mode) is
       begin
          E.Open (Buses (Port), Port, Sample_Rate, Bits, Mode);
          Width_Map (Port) := Bits;
@@ -86,8 +78,7 @@ package body ESP32S3.I2S is
          Bclk, Ws, Dout, Din, Mclk : ESP32S3.GPIO.Optional_Pin) is
       begin
          if not S.Active then
-            raise Not_Owned
-              with "I2S port used without holding it -- Acquire first";
+            raise Not_Owned with "I2S port used without holding it -- Acquire first";
          end if;
          --  Open + route pins ONCE per port: a later Acquire reuses the open
          --  port as-is (and so must NOT re-route to defaults).
@@ -97,15 +88,11 @@ package body ESP32S3.I2S is
          end if;
       end Ensure;
 
-      procedure Reopen
-        (S           : Session;
-         Sample_Rate : Positive;
-         Bits        : Sample_Bits;
-         Mode        : I2S_Mode) is
+      procedure Reopen (S : Session; Sample_Rate : Positive; Bits : Sample_Bits; Mode : I2S_Mode)
+      is
       begin
          if not S.Active then
-            raise Not_Owned
-              with "I2S port used without holding it -- Acquire first";
+            raise Not_Owned with "I2S port used without holding it -- Acquire first";
          end if;
          Open_Now (S.Port, Sample_Rate, Bits, Mode);
       end Reopen;
@@ -113,8 +100,7 @@ package body ESP32S3.I2S is
       function Owned (S : Session) return access E.Bus is
       begin
          if not S.Active then
-            raise Not_Owned
-              with "I2S port used without holding it -- Acquire first";
+            raise Not_Owned with "I2S port used without holding it -- Acquire first";
          end if;
          return Buses (S.Port)'Access;
       end Owned;
@@ -122,8 +108,7 @@ package body ESP32S3.I2S is
       function Width (S : Session) return Sample_Bits is
       begin
          if not S.Active then
-            raise Not_Owned
-              with "I2S port used without holding it -- Acquire first";
+            raise Not_Owned with "I2S port used without holding it -- Acquire first";
          end if;
          return Width_Map (S.Port);
       end Width;
@@ -260,8 +245,7 @@ package body ESP32S3.I2S is
    -- Transfer --
    --------------
 
-   procedure Transfer_Raw
-     (S : Session; Tx, Rx : System.Address; Length : Natural) is
+   procedure Transfer_Raw (S : Session; Tx, Rx : System.Address; Length : Natural) is
    begin
       E.Transfer (State.Owned (S).all, Tx, Rx, Length);
    end Transfer_Raw;
@@ -285,8 +269,7 @@ package body ESP32S3.I2S is
    -- Start_Continuous --
    ----------------------
 
-   procedure Start_Continuous_Raw
-     (S : Session; Tx : System.Address; Length : Natural) is
+   procedure Start_Continuous_Raw (S : Session; Tx : System.Address; Length : Natural) is
    begin
       E.Start_Continuous (State.Owned (S).all, Tx, Length);
    end Start_Continuous_Raw;
@@ -319,8 +302,7 @@ package body ESP32S3.I2S is
    -- Capture --
    -------------
 
-   procedure Capture_Raw (S : Session; Rx : System.Address; Length : Natural)
-   is
+   procedure Capture_Raw (S : Session; Rx : System.Address; Length : Natural) is
    begin
       E.Capture (State.Owned (S).all, Rx, Length);
    end Capture_Raw;

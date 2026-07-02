@@ -18,11 +18,7 @@ package body ESP32S3.Fonts.Render is
 
    --  Rasterise glyph G (its inked box top-left at (X0, Y0)) and blit it.
    procedure Emit
-     (S      : Surface;
-      F      : ESP32S3.Fonts.Font;
-      G      : Natural;
-      X0, Y0 : Integer;
-      Ramp   : Ramp16)
+     (S : Surface; F : ESP32S3.Fonts.Font; G : Natural; X0, Y0 : Integer; Ramp : Ramp16)
    is
       W : constant Natural := ESP32S3.Fonts.Glyph_W (F, G);
       H : constant Natural := ESP32S3.Fonts.Glyph_H (F, G);

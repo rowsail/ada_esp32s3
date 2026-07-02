@@ -14,8 +14,7 @@ package body ESP32S3.RSA is
    --  milliseconds; 1 s is a generous worst case that still escapes a wedged
    --  accelerator instead of spinning.  Same rationale as the SDMMC driver.
    use type Ada.Real_Time.Time;
-   RSA_Timeout : constant Ada.Real_Time.Time_Span :=
-     Ada.Real_Time.Milliseconds (1000);
+   RSA_Timeout : constant Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (1000);
    function Past (D : Ada.Real_Time.Time) return Boolean
    is (Ada.Real_Time.Clock >= D);
 
@@ -35,12 +34,10 @@ package body ESP32S3.RSA is
    function Enable return Boolean is
    begin
       Sys.SYSTEM_Periph.PERIP_CLK_EN1.CRYPTO_RSA_CLK_EN := True;
-      Sys.SYSTEM_Periph.PERIP_RST_EN1.CRYPTO_RSA_RST :=
-        False;  --  release reset
+      Sys.SYSTEM_Periph.PERIP_RST_EN1.CRYPTO_RSA_RST := False;  --  release reset
       Sys.SYSTEM_Periph.RSA_PD_CTRL.RSA_MEM_PD := False;  --  power up memory
       declare
-         Deadline : constant Ada.Real_Time.Time :=
-           Ada.Real_Time.Clock + RSA_Timeout;
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + RSA_Timeout;
       begin
          loop
             if R.RSA_Periph.CLEAN.CLEAN then
@@ -58,9 +55,7 @@ package body ESP32S3.RSA is
       Sys.SYSTEM_Periph.PERIP_CLK_EN1.CRYPTO_RSA_CLK_EN := False;
    end Disable;
 
-   procedure Mod_Exp
-     (X, Y, M, R2 : Word_Array; Z : out Word_Array; Ok : out Boolean)
-   is
+   procedure Mod_Exp (X, Y, M, R2 : Word_Array; Z : out Word_Array; Ok : out Boolean) is
       N    : constant Natural := M'Length;
       Done : Boolean := False;
    begin
@@ -80,14 +75,12 @@ package body ESP32S3.RSA is
       end loop;
       R.RSA_Periph.M_PRIME := UInt32 (M_Prime (M (M'First)));
 
-      R.RSA_Periph.CONSTANT_TIME.CONSTANT_TIME :=
-        True;        --  timing-attack guard
+      R.RSA_Periph.CONSTANT_TIME.CONSTANT_TIME := True;        --  timing-attack guard
       R.RSA_Periph.SEARCH_ENABLE.SEARCH_ENABLE := False;
       R.RSA_Periph.MODEXP_START.MODEXP_START := True;
 
       declare
-         Deadline : constant Ada.Real_Time.Time :=
-           Ada.Real_Time.Clock + RSA_Timeout;
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + RSA_Timeout;
       begin
          loop
             if R.RSA_Periph.IDLE.IDLE then
@@ -151,12 +144,10 @@ package body ESP32S3.RSA is
    begin
       for Step in 1 .. 2 * N * 32 loop
          --  double 2*(32N) times: -> 2^(2*32N)
-         Carry :=
-           0;                        --  T := T << 1 (capturing carry-out)
+         Carry := 0;                        --  T := T << 1 (capturing carry-out)
          for I in 0 .. N - 1 loop
             Top := Shift_Right (T (I), 31);        --  old bit 31
-            T (I) :=
-              Shift_Left (T (I), 1) or Carry;  --  << 1, bring in low carry
+            T (I) := Shift_Left (T (I), 1) or Carry;  --  << 1, bring in low carry
             Carry := Top;
          end loop;
          if Carry = 1 or else Ge then
@@ -167,9 +158,7 @@ package body ESP32S3.RSA is
       R2 := T;
    end Compute_R2;
 
-   procedure Mod_Exp
-     (X, Y, M : Word_Array; Z : out Word_Array; Ok : out Boolean)
-   is
+   procedure Mod_Exp (X, Y, M : Word_Array; Z : out Word_Array; Ok : out Boolean) is
       R2 : Word_Array (0 .. M'Length - 1);
    begin
       Compute_R2 (M, R2);

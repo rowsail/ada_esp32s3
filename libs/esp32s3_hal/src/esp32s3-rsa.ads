@@ -13,15 +13,13 @@ with Interfaces;
 package ESP32S3.RSA is
 
    type Word is new Interfaces.Unsigned_32;
-   type Word_Array is
-     array (Natural range <>) of Word;   --  little-endian limbs
+   type Word_Array is array (Natural range <>) of Word;   --  little-endian limbs
 
    --  Z := X^Y mod M.  R2 is the Montgomery constant R^2 mod M with R = 2^(32*N)
    --  (N = M'Length words); compute it on the host or with a bignum helper.  Ok is
    --  False if the accelerator did not become ready / finish within a bounded wait
    --  (a hardware fault) -- Z is then meaningless.
-   procedure Mod_Exp
-     (X, Y, M, R2 : Word_Array; Z : out Word_Array; Ok : out Boolean)
+   procedure Mod_Exp (X, Y, M, R2 : Word_Array; Z : out Word_Array; Ok : out Boolean)
    with
      Pre =>
        M'Length in 1 .. 128
@@ -34,8 +32,7 @@ package ESP32S3.RSA is
    --  (shift / compare / subtract -- no multiply, the hardware does that), so it
    --  works on any modulus, e.g. an X.509 certificate's, with no host-precomputed
    --  constant.  M must be odd.
-   procedure Mod_Exp
-     (X, Y, M : Word_Array; Z : out Word_Array; Ok : out Boolean)
+   procedure Mod_Exp (X, Y, M : Word_Array; Z : out Word_Array; Ok : out Boolean)
    with
      Pre =>
        M'Length in 1 .. 128

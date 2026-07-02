@@ -20,17 +20,14 @@ package body ESP32S3.SHA is
    --------------------------------------------------------------------------
 
    protected Engine is
-      procedure Hash
-        (Data : Byte_Array; Mode : UInt32; Words : out Word_Buffer);
+      procedure Hash (Data : Byte_Array; Mode : UInt32; Words : out Word_Buffer);
    private
       Inited : Boolean := False;
    end Engine;
 
    protected body Engine is
 
-      procedure Hash
-        (Data : Byte_Array; Mode : UInt32; Words : out Word_Buffer)
-      is
+      procedure Hash (Data : Byte_Array; Mode : UInt32; Words : out Word_Buffer) is
          use ESP32S3_Registers.SYSTEM;
          Msg     : constant Natural := Data'Length;
          Bit_Len : constant Unsigned_64 := Unsigned_64 (Msg) * 8;
@@ -48,9 +45,7 @@ package body ESP32S3.SHA is
                return 16#80#;
             elsif I >= Padded - 8 then
                --  big-endian 64-bit bit length in the last 8 bytes
-               return
-                 Unsigned_8
-                   (Shift_Right (Bit_Len, 8 * (Padded - 1 - I)) and 16#FF#);
+               return Unsigned_8 (Shift_Right (Bit_Len, 8 * (Padded - 1 - I)) and 16#FF#);
             else
                return 0;
             end if;
@@ -118,12 +113,7 @@ package body ESP32S3.SHA is
             H : constant UInt32 := Words (I);
             B : constant Natural := Into'First + I * 4;
          begin
-            Split_LE
-              (Unsigned_32 (H),
-               Into (B),
-               Into (B + 1),
-               Into (B + 2),
-               Into (B + 3));
+            Split_LE (Unsigned_32 (H), Into (B), Into (B + 1), Into (B + 2), Into (B + 3));
          end;
       end loop;
    end Unpack;

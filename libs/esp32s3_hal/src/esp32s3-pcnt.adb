@@ -49,9 +49,7 @@ package body ESP32S3.PCNT is
       P.FUN_IE := True;          --  input buffer on so PCNT reads the pad
       MX.IO_MUX_Periph.GPIO (Ix) := P;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Sig) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix),
-         SEL    => True,
-         others => <>);
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix), SEL => True, others => <>);
    end Route_In;
 
    procedure Reset_Unit (Idx : Unit_Index) is
@@ -168,10 +166,8 @@ package body ESP32S3.PCNT is
    -- Configure --
    ---------------
 
-   procedure Configure
-     (U          : in out Unit;
-      Pin        : ESP32S3.GPIO.Pin_Id;
-      Both_Edges : Boolean := False) is
+   procedure Configure (U : in out Unit; Pin : ESP32S3.GPIO.Pin_Id; Both_Edges : Boolean := False)
+   is
    begin
       if not U.Held then
          return;
@@ -215,10 +211,7 @@ package body ESP32S3.PCNT is
          return 0;
       end if;
       return
-        Integer
-          (To_Signed
-             (Interfaces.Unsigned_16
-                (PCNT_Periph.U_CNT (Integer (U.Idx)).CNT)));
+        Integer (To_Signed (Interfaces.Unsigned_16 (PCNT_Periph.U_CNT (Integer (U.Idx)).CNT)));
    end Count;
 
    -----------

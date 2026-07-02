@@ -4,6 +4,7 @@ with X509;
 --  verification (Cert_Verify), validity dates, hostname matching, and the X.509 v3
 --  usage extensions (basicConstraints / keyUsage / extKeyUsage) -- and anchor the
 --  chain to a pinned set of root certificates.
+
 package Chain_Verify is
 
    type Result is
@@ -18,7 +19,7 @@ package Chain_Verify is
 
    --  A certificate is referenced by its (library-level, aliased) DER bytes, so no
    --  copying and no heap.
-   type Cert_Ref  is record
+   type Cert_Ref is record
       Data : access constant X509.Byte_Array;
    end record;
    type Cert_List is array (Positive range <>) of Cert_Ref;
@@ -28,9 +29,6 @@ package Chain_Verify is
    --  (root certificates the device trusts).  Each certificate must be valid at
    --  Now, each link's signature must verify under the next certificate's key, the
    --  leaf must match Host, and the top must be anchored.
-   function Validate
-     (Chain, Anchors : Cert_List;
-      Host           : String;
-      Now            : X509.Time_64) return Result;
+   function Validate (Chain, Anchors : Cert_List; Host : String; Now : X509.Time_64) return Result;
 
 end Chain_Verify;

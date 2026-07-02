@@ -85,12 +85,10 @@ begin
    Put_Line ("[main] block exited -> both dynamic tasks terminated + freed");
 
    --  Abort the periodic task and watch 'Terminated change across the abort.
-   Put_Line ("[main] Heartbeat'Terminated before abort = "
-             & Boolean'Image (Heartbeat'Terminated));
+   Put_Line ("[main] Heartbeat'Terminated before abort = " & Boolean'Image (Heartbeat'Terminated));
    abort Heartbeat;
    delay until Clock + Milliseconds (300);
-   Put_Line ("[main] Heartbeat'Terminated after  abort = "
-             & Boolean'Image (Heartbeat'Terminated));
+   Put_Line ("[main] Heartbeat'Terminated after  abort = " & Boolean'Image (Heartbeat'Terminated));
    Put_Line ("[main] done.");
 
    loop

@@ -62,8 +62,7 @@ package body ESP32S3.Stack_Usage is
    ---------------------
 
    procedure Paint_Env_Stack is
-      Here  : aliased Integer :=
-        0;   --  lives in THIS frame, near the current SP
+      Here  : aliased Integer := 0;   --  lives in THIS frame, near the current SP
       Limit : constant System.Address := Here'Address - Guard;
    begin
       --  Paint [__stack_start, here - guard): the still-unused region below us.

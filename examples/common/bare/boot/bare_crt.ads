@@ -8,6 +8,7 @@ with Interfaces.C;
 --
 --  Body MUST be compiled with -fno-tree-loop-distribute-patterns (bare_boot.gpr)
 --  so GCC does not turn the strlen byte loop into a call to strlen.
+
 package Bare_Crt is
 
    function Strlen (S : System.Address) return Interfaces.C.size_t;
@@ -25,12 +26,14 @@ package Bare_Crt is
 
    --  Route bytes to the ROM console (via the hal_log_cstr shim).  Used by any
    --  runtime path writing to fd 1/2.
-   function Write (Fd : Interfaces.C.int; Buf : System.Address;
-                   N : Interfaces.C.unsigned) return Interfaces.C.int;
+   function Write
+     (Fd : Interfaces.C.int; Buf : System.Address; N : Interfaces.C.unsigned)
+      return Interfaces.C.int;
    pragma Export (C, Write, "write");
 
    --  Last-chance / failed-alloc path: reset the board.
-   procedure Abort_Exec with No_Return;
+   procedure Abort_Exec
+   with No_Return;
    pragma Export (C, Abort_Exec, "abort");
 
    --  Register the DWARF unwind frames for ZCX exceptions (libgcc

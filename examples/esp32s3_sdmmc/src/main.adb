@@ -30,11 +30,11 @@
 --    (the SD bus idles high).  Default pins (route any free GPIOs):
 --      CLK = GPIO14  CMD = GPIO15  D0 = GPIO2  D1 = GPIO4  D2 = GPIO12  D3 = GPIO13
 --      card VDD = 3V3, VSS = GND.
-with Interfaces;   use Interfaces;
+with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.SDMMC;
-with ESP32S3.Text_IO;   use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
+with ESP32S3.Text_IO; use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -60,7 +60,10 @@ procedure Main is
          X := Shift_Right (X, 4);
       end loop;
       for I in Buf'Range loop
-         if Buf (I) /= '0' then First := I; exit; end if;
+         if Buf (I) /= '0' then
+            First := I;
+            exit;
+         end if;
       end loop;
       if Buf'Last - First + 1 < Min_Digits then
          First := Buf'Last - Min_Digits + 1;
@@ -68,8 +71,8 @@ procedure Main is
       Put (Buf (First .. Buf'Last));
    end Put_Hex;
 
-   function Kind_Name (K : ESP32S3.SDMMC.Card_Kind) return String is
-     (case K is
+   function Kind_Name (K : ESP32S3.SDMMC.Card_Kind) return String
+   is (case K is
          when ESP32S3.SDMMC.Unknown => "Unknown",
          when ESP32S3.SDMMC.SDSC    => "SDSC",
          when ESP32S3.SDMMC.SDHC    => "SDHC/SDXC");
@@ -79,17 +82,18 @@ procedure Main is
 
    procedure Banner is
    begin
-      Put_Line
-        ("[sdmmc] bare-metal native SD/MMC-host self-test (needs a wired card)");
+      Put_Line ("[sdmmc] bare-metal native SD/MMC-host self-test (needs a wired card)");
    end Banner;
 
    procedure Report_Init
-     (Status : ESP32S3.SDMMC.Status; Kind : ESP32S3.SDMMC.Card_Kind;
-      Width  : Natural) is
+     (Status : ESP32S3.SDMMC.Status; Kind : ESP32S3.SDMMC.Card_Kind; Width : Natural) is
    begin
-      Put ("[sdmmc] init: ");   Put (ESP32S3.SDMMC.Status'Image (Status));
-      Put ("   card: ");        Put (Kind_Name (Kind));
-      Put ("   bus: ");         Put_Nat (Width);
+      Put ("[sdmmc] init: ");
+      Put (ESP32S3.SDMMC.Status'Image (Status));
+      Put ("   card: ");
+      Put (Kind_Name (Kind));
+      Put ("   bus: ");
+      Put_Nat (Width);
       Put_Line ("-bit");
    end Report_Init;
 
@@ -100,8 +104,7 @@ procedure Main is
 
    procedure Report_Verify (Ok : Boolean) is
    begin
-      Put_Line ("[sdmmc] round-trip (re-read == original): "
-                & (if Ok then "PASS" else "FAIL"));
+      Put_Line ("[sdmmc] round-trip (re-read == original): " & (if Ok then "PASS" else "FAIL"));
    end Report_Verify;
 
    procedure Done is
@@ -138,15 +141,19 @@ procedure Main is
    Orig        : ESP32S3.SDMMC.Block;   --  bytes read first, then written back
    Back        : ESP32S3.SDMMC.Block;   --  the re-read, compared against Orig
 
-   procedure Report_Read (Which : Natural; S : ESP32S3.SDMMC.Status;
-                          B : ESP32S3.SDMMC.Block) is
+   procedure Report_Read (Which : Natural; S : ESP32S3.SDMMC.Status; B : ESP32S3.SDMMC.Block) is
    begin
-      Put ("[sdmmc] read#");  Put_Nat (Which);
-      Put (": ");             Put (ESP32S3.SDMMC.Status'Image (S));
+      Put ("[sdmmc] read#");
+      Put_Nat (Which);
+      Put (": ");
+      Put (ESP32S3.SDMMC.Status'Image (S));
       Put ("   first bytes = ");
-      Put_Hex (Unsigned_64 (B (0)), 2);  Put (" ");
-      Put_Hex (Unsigned_64 (B (1)), 2);  Put (" ");
-      Put_Hex (Unsigned_64 (B (2)), 2);  Put (" ");
+      Put_Hex (Unsigned_64 (B (0)), 2);
+      Put (" ");
+      Put_Hex (Unsigned_64 (B (1)), 2);
+      Put (" ");
+      Put_Hex (Unsigned_64 (B (2)), 2);
+      Put (" ");
       Put_Hex (Unsigned_64 (B (3)), 2);
       New_Line;
    end Report_Read;
@@ -155,11 +162,17 @@ begin
    Banner;
 
    ESP32S3.SDMMC.Setup
-     (C, On => ESP32S3.SDMMC.Slot1,
-      Clk => Clk_Pin, Cmd => Cmd_Pin,
-      D0 => D0_Pin, D1 => D1_Pin, D2 => D2_Pin, D3 => D3_Pin,
-      Width => ESP32S3.SDMMC.Width_4,
-      Init_Clock_Hz => Init_Clock_Hz, Data_Clock_Hz => Data_Clock_Hz);
+     (C,
+      On            => ESP32S3.SDMMC.Slot1,
+      Clk           => Clk_Pin,
+      Cmd           => Cmd_Pin,
+      D0            => D0_Pin,
+      D1            => D1_Pin,
+      D2            => D2_Pin,
+      D3            => D3_Pin,
+      Width         => ESP32S3.SDMMC.Width_4,
+      Init_Clock_Hz => Init_Clock_Hz,
+      Data_Clock_Hz => Data_Clock_Hz);
 
    ESP32S3.SDMMC.Initialize (C, Card_Status);
    Report_Init (Card_Status, ESP32S3.SDMMC.Kind (C), Bus_Width_Bits);
@@ -175,8 +188,7 @@ begin
          if Card_Status = ESP32S3.SDMMC.OK then
             ESP32S3.SDMMC.Read_Block (C, Test_LBA, Back, Card_Status);
             Report_Read (2, Card_Status, Back);
-            Report_Verify
-              (Card_Status = ESP32S3.SDMMC.OK and then Orig = Back);
+            Report_Verify (Card_Status = ESP32S3.SDMMC.OK and then Orig = Back);
          end if;
       end if;
    end if;

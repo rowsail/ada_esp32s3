@@ -22,7 +22,7 @@ with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.SPI;
 with ESP32S3.W5500;
 with ESP32S3.GPIO;
-with ESP32S3.Log;            use ESP32S3.Log;
+with ESP32S3.Log;   use ESP32S3.Log;
 with ESP32S3.W5500.DHCP;
 with ESP32S3.W5500.Net_Device;
 with ESP32S3.MAC;
@@ -37,7 +37,7 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
    package W5500 renames ESP32S3.W5500;
-   package GS    renames GNAT.Sockets;
+   package GS renames GNAT.Sockets;
    use type Net_Devices.Interface_Id;
    use type ESP32S3.W5500.Link_State;
 
@@ -48,32 +48,37 @@ procedure Main is
    --  already used by the primary, so derive a LOCALLY-administered address (base+4
    --  with the local bit set) -- distinct and guaranteed not to clash with a real
    --  one.
-   function To_W5500 (M : ESP32S3.MAC.MAC_Address) return W5500.MAC_Address is
-     (W5500.Byte (M (0)), W5500.Byte (M (1)), W5500.Byte (M (2)),
-      W5500.Byte (M (3)), W5500.Byte (M (4)), W5500.Byte (M (5)));
-   MAC1 : constant W5500.MAC_Address :=
-     To_W5500 (ESP32S3.MAC.Local (ESP32S3.MAC.Derived (4)));
+   function To_W5500 (M : ESP32S3.MAC.MAC_Address) return W5500.MAC_Address
+   is (W5500.Byte (M (0)),
+       W5500.Byte (M (1)),
+       W5500.Byte (M (2)),
+       W5500.Byte (M (3)),
+       W5500.Byte (M (4)),
+       W5500.Byte (M (5)));
+   MAC1 : constant W5500.MAC_Address := To_W5500 (ESP32S3.MAC.Local (ESP32S3.MAC.Derived (4)));
 
    Lease     : ESP32S3.W5500.DHCP.Lease_Info;
    Have_Eth1 : Boolean := False;
    Ok        : Boolean;
    Park      : constant Time_Span := Seconds (3600);
 
-   function YN (B : Boolean) return String is (if B then "yes" else "no");
+   function YN (B : Boolean) return String
+   is (if B then "yes" else "no");
 
    --  Print the interface a destination would route out (via the real registry
    --  liveness), or that no live route exists.
    procedure Show_Route (Label : String; A, B, C, D : W5500.Byte) is
       Dest  : constant Net_Devices.IPv4_Address :=
-        (Net_Devices.Octet (A), Net_Devices.Octet (B),
-         Net_Devices.Octet (C), Net_Devices.Octet (D));
+        (Net_Devices.Octet (A),
+         Net_Devices.Octet (B),
+         Net_Devices.Octet (C),
+         Net_Devices.Octet (D));
       Id    : Net_Devices.Interface_Id;
       Found : Boolean;
    begin
       Net_Routes.Resolve (Dest, Id, Found);
       if Found then
-         Put_Line ("[nic] route " & Label & " -> eth"
-                   & (if Id = Eth0 then "0" else "1"));
+         Put_Line ("[nic] route " & Label & " -> eth" & (if Id = Eth0 then "0" else "1"));
       else
          Put_Line ("[nic] route " & Label & " -> NO ROUTE (no live interface)");
       end if;
@@ -112,15 +117,24 @@ begin
 
    --  2. Secondary W5500: CS=IO40, software reset (no pin -> leaves the primary's
    --  IO11 alone), static address.  Present even with no cable; link stays down.
-   W5500.Setup (NICs.Eth1_Dev, Sclk => 1, Mosi => 4, Miso => 45, Cs => 40,
-                Rst => ESP32S3.GPIO.No_Pin, Int => 2,
-                Host => ESP32S3.SPI.SPI2, Clock_Hz => 10_000_000);
+   W5500.Setup
+     (NICs.Eth1_Dev,
+      Sclk     => 1,
+      Mosi     => 4,
+      Miso     => 45,
+      Cs       => 40,
+      Rst      => ESP32S3.GPIO.No_Pin,
+      Int      => 2,
+      Host     => ESP32S3.SPI.SPI2,
+      Clock_Hz => 10_000_000);
    W5500.Reset (NICs.Eth1_Dev, Ok);                 --  software reset (MR.RST)
    if Ok and then W5500.Present (NICs.Eth1_Dev) then
-      W5500.Configure (NICs.Eth1_Dev, MAC => MAC1,
-                       IP      => (10, 0, 0, 2),
-                       Subnet  => (255, 255, 255, 0),
-                       Gateway => (10, 0, 0, 1));
+      W5500.Configure
+        (NICs.Eth1_Dev,
+         MAC     => MAC1,
+         IP      => (10, 0, 0, 2),
+         Subnet  => (255, 255, 255, 0),
+         Gateway => (10, 0, 0, 1));
       NICs.Eth1_If.Attach (NICs.Eth1_Dev'Access);
       declare
          Id : constant GS.Interface_Id := GS.Add_Interface (NICs.Eth1_If'Access);
@@ -136,9 +150,10 @@ begin
    --  3. Liveness, straight from the chips.
    Put_Line ("[nic] eth0 link up: " & YN (W5500.Link (W5500_Dev.Dev) = W5500.Up));
    if Have_Eth1 then
-      Put_Line ("[nic] eth1 link up: "
-                & YN (W5500.Link (NICs.Eth1_Dev) = W5500.Up)
-                & "  (expected no -- not cabled)");
+      Put_Line
+        ("[nic] eth1 link up: "
+         & YN (W5500.Link (NICs.Eth1_Dev) = W5500.Up)
+         & "  (expected no -- not cabled)");
    end if;
 
    --  4. Routes: both interfaces get a default route, the primary preferred by a

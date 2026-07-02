@@ -17,8 +17,7 @@ private package ESP32S3.SPI.Engine is
    --  a (limited, controlled) GDMA Channel; built in place by Open.
    type Bus is limited private;
 
-   procedure Open
-     (B : in out Bus; Host : SPI_Host; Mode : SPI_Mode; Clock_Hz : Positive);
+   procedure Open (B : in out Bus; Host : SPI_Host; Mode : SPI_Mode; Clock_Hz : Positive);
 
    function Is_Open (B : Bus) return Boolean;
 

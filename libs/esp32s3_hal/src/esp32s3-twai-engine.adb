@@ -55,8 +55,7 @@ package body ESP32S3.TWAI.Engine is
    is (Unsigned_8 (Buf (N).TX_BYTE_0));
 
    procedure Drive_Out (Pad : G.Pin_Id; Sig : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register :=
-        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
+      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
    begin
       G.Configure (Pad, Mode => G.Output, Drive => G.Drive_Strong);
       O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
@@ -74,9 +73,7 @@ package body ESP32S3.TWAI.Engine is
       P.FUN_IE := True;
       MX.IO_MUX_Periph.GPIO (Ix) := P;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Sig) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix),
-         SEL    => True,
-         others => <>);
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix), SEL => True, others => <>);
    end Route_In;
 
    ----------
@@ -93,8 +90,7 @@ package body ESP32S3.TWAI.Engine is
       --  ODD BRP=5 for 1 Mbit, which the even-rounding turned into 1.25 Mbit/s, a
       --  25% error that will not communicate on a real bus.)
       Tq_Per_Bit : constant := 20;
-      BRP        : Integer :=
-        Integer (Src_Hz / (Bit_Rate * Tq_Per_Bit));   --  ~ even prescaler
+      BRP        : Integer := Integer (Src_Hz / (Bit_Rate * Tq_Per_Bit));   --  ~ even prescaler
    begin
       if BRP < 2 then
          BRP := 2;
@@ -118,8 +114,7 @@ package body ESP32S3.TWAI.Engine is
          others          => <>);
       TWAI0_Periph.BUS_TIMING_1 :=
         (TIME_SEG1 => 15, TIME_SEG2 => 2, TIME_SAMP => False, others => <>);
-      TWAI0_Periph.CLOCK_DIVIDER :=
-        (CD => 0, CLOCK_OFF => False, others => <>);
+      TWAI0_Periph.CLOCK_DIVIDER := (CD => 0, CLOCK_OFF => False, others => <>);
 
       --  Acceptance filter: accept everything (mask = all "don't care").  In
       --  reset mode the data registers are the ACR (0..3) / AMR (4..7) filter.
@@ -188,12 +183,8 @@ package body ESP32S3.TWAI.Engine is
       --  frame-info byte: FF (bit 7) = extended, RTR (bit 6) = remote, DLC = low 4.
       Info : constant Unsigned_8 :=
         To_Byte
-          ((Length   => DLC_Field (Length),
-            Reserved => 0,
-            Remote   => Remote,
-            Extended => Extended));
-      Off  :
-        Natural;                   --  first data byte (after the id bytes)
+          ((Length => DLC_Field (Length), Reserved => 0, Remote => Remote, Extended => Extended));
+      Off  : Natural;                   --  first data byte (after the id bytes)
    begin
       if not B.Valid then
          return;
@@ -317,9 +308,7 @@ package body ESP32S3.TWAI.Engine is
            or Shift_Right (Unsigned_32 (Get (4)), 3);
          Off := 5;
       else
-         Id :=
-           Shift_Left (Unsigned_32 (Get (1)), 3)
-           or Shift_Right (Unsigned_32 (Get (2)), 5);
+         Id := Shift_Left (Unsigned_32 (Get (1)), 3) or Shift_Right (Unsigned_32 (Get (2)), 5);
          Off := 3;
       end if;
       --  A remote frame has no data field; leave Data zeroed.

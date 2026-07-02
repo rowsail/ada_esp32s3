@@ -73,8 +73,7 @@ package body DNS_Client is
          Len : Integer;
       begin
          loop
-            exit when
-              Pos > RLast;   --  truncated / malformed: stop here rather
+            exit when Pos > RLast;   --  truncated / malformed: stop here rather
             --  than read stale bytes or walk off Resp
             Len := Integer (Resp (Pos));
             if Len = 0 then
@@ -92,19 +91,16 @@ package body DNS_Client is
 
       function U16 (Pos : Stream_Element_Offset) return Integer
       is (Integer
-            (ESP32S3.Endian.Join_BE16
-               (Unsigned_8 (Resp (Pos)), Unsigned_8 (Resp (Pos + 1)))));
+            (ESP32S3.Endian.Join_BE16 (Unsigned_8 (Resp (Pos)), Unsigned_8 (Resp (Pos + 1)))));
    begin
       Addr := Any_Inet_Addr;
       Build_Query;
       Create_Socket (Sock, Family_Inet, Socket_Datagram);
       Bind_Socket (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
       if Timeout > 0.0 then
-         Set_Socket_Option
-           (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
+         Set_Socket_Option (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
       end if;
-      Send_Socket
-        (Sock, Query (Query'First .. QLen - 1), SLast, To => To'Access);
+      Send_Socket (Sock, Query (Query'First .. QLen - 1), SLast, To => To'Access);
       begin
          Receive_Socket (Sock, Resp, RLast, From => From'Access);
       exception
@@ -116,8 +112,7 @@ package body DNS_Client is
 
       declare
          AnCount : constant Integer := U16 (Resp'First + 6);   --  answer count
-         Pos     : Stream_Element_Offset :=
-           Resp'First + 12;   --  past the header
+         Pos     : Stream_Element_Offset := Resp'First + 12;   --  past the header
          Found   : Boolean := False;
       begin
          Skip_Name (Pos);                 --  skip the question's QNAME

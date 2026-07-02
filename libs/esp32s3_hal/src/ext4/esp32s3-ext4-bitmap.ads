@@ -12,8 +12,7 @@ package ESP32S3.Ext4.Bitmap is
 
    --  Allocate one inode; returns its number.  As_Dir bumps the group's
    --  used-dirs count.  Raises No_Space.
-   function Alloc_Inode
-     (V : in out Volume.Context; As_Dir : Boolean) return Inode_Number;
+   function Alloc_Inode (V : in out Volume.Context; As_Dir : Boolean) return Inode_Number;
 
    --  Release a previously-allocated block / inode.  The free counts (group +
    --  superblock; used-dirs for a directory inode) are adjusted ONLY when the
@@ -21,8 +20,7 @@ package ESP32S3.Ext4.Bitmap is
    --  bitmap read (e.g. a flaky SD card) is a no-op rather than a count drift,
    --  and the count stays consistent with the bitmap by construction.
    procedure Free_Block (V : in out Volume.Context; B : Block_Number);
-   procedure Free_Inode
-     (V : in out Volume.Context; N : Inode_Number; Was_Dir : Boolean);
+   procedure Free_Inode (V : in out Volume.Context; N : Inode_Number; Was_Dir : Boolean);
 
    --  TRIPWIRE.  Number of Free_Block/Free_Inode calls that hit an ALREADY-clear
    --  bit (a double-free bug, or a stale read).  The count update is suppressed

@@ -1,5 +1,5 @@
 with System;
-with System.Storage_Elements;  use System.Storage_Elements;
+with System.Storage_Elements; use System.Storage_Elements;
 
 --  Two-Level Segregated Fit (TLSF) allocator -- O(1) malloc AND free, bounded
 --  fragmentation, so it scales to a large/slow (e.g. PSRAM) heap where the
@@ -12,17 +12,17 @@ with System.Storage_Elements;  use System.Storage_Elements;
 --
 --  Same interface as Bare_Heap_Core, so the same host harness (boot/test/) runs
 --  it.  Target-dependency-free (no lock, no linker symbols); caller serialises.
+
 package Tlsf_Core is
 
    procedure Init (Base : System.Address; Size : Storage_Count);
-   function  Allocate (N : Storage_Count) return System.Address;
+   function Allocate (N : Storage_Count) return System.Address;
    procedure Deallocate (P : System.Address);
-   function  Reallocate (P : System.Address; N : Storage_Count)
-                         return System.Address;
-   function  Ready return Boolean;
+   function Reallocate (P : System.Address; N : Storage_Count) return System.Address;
+   function Ready return Boolean;
 
    --  Test-only: physical-chain consistency (prev-phys links, ascending,
    --  contiguous, no two adjacent free, ends at the sentinel).
-   function  Invariants_Hold return Boolean;
+   function Invariants_Hold return Boolean;
 
 end Tlsf_Core;

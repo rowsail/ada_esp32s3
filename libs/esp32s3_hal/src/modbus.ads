@@ -45,8 +45,7 @@ package Modbus is
    FC_Write_Single_Register    : constant Function_Code := 16#06#;
    FC_Write_Multiple_Coils     : constant Function_Code := 16#0F#;
    FC_Write_Multiple_Registers : constant Function_Code := 16#10#;
-   Exception_Flag              : constant Function_Code :=
-     16#80#;  --  OR'd in an error reply
+   Exception_Flag              : constant Function_Code := 16#80#;  --  OR'd in an error reply
 
    --  Modbus exception codes; None means "no exception / success".
    type Exception_Code is
@@ -62,8 +61,7 @@ package Modbus is
       Gateway_Target_Failed_To_Respond);
 
    function To_Byte (E : Exception_Code) return Byte;
-   function To_Exception
-     (B : Byte) return Exception_Code;   --  unknown -> Slave_Device_Failure
+   function To_Exception (B : Byte) return Exception_Code;   --  unknown -> Slave_Device_Failure
 
    ---------------------------------------------------------------------------
    --  Wire helpers (big-endian).  Pos is the index of the high byte.
@@ -74,15 +72,10 @@ package Modbus is
    --  MBAP header: Transaction Id, Protocol Id (0), Length, Unit Id.  PDU_Len is
    --  the count of PDU bytes that follow; the Length field is PDU_Len + 1 (it
    --  covers the Unit byte too).  B must have room for MBAP_Size bytes from B'First.
-   procedure Put_MBAP
-     (B : in out Byte_Array; TID : Word; Unit : Unit_Id; PDU_Len : Natural);
+   procedure Put_MBAP (B : in out Byte_Array; TID : Word; Unit : Unit_Id; PDU_Len : Natural);
 
    --  Parse an MBAP header.  Length is the raw Length field (Unit + PDU bytes), so
    --  the PDU is Length - 1 bytes.
-   procedure Get_MBAP
-     (B      : Byte_Array;
-      TID    : out Word;
-      Unit   : out Unit_Id;
-      Length : out Natural);
+   procedure Get_MBAP (B : Byte_Array; TID : out Word; Unit : out Unit_Id; Length : out Natural);
 
 end Modbus;

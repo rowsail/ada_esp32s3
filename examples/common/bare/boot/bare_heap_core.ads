@@ -1,5 +1,5 @@
 with System;
-with System.Storage_Elements;  use System.Storage_Elements;
+with System.Storage_Elements; use System.Storage_Elements;
 
 --  First-fit free-list allocator core -- the algorithm that was in bare_heap.c,
 --  now in Ada and free of target dependencies (no lock, no linker symbols), so
@@ -9,6 +9,7 @@ with System.Storage_Elements;  use System.Storage_Elements;
 --  Blocks are kept in ascending address order (split forward, never reordered);
 --  free does a single forward coalescing sweep, so adjacent free blocks never
 --  persist.  Payloads and the header are 16-byte aligned.
+
 package Bare_Heap_Core is
 
    --  One-time init: hand the allocator the arena [Base, Base+Size).
@@ -23,8 +24,7 @@ package Bare_Heap_Core is
 
    --  realloc: keep the block if the request still fits, else allocate, copy
    --  the old payload, and free.  N = 0 frees and returns Null_Address.
-   function Reallocate (P : System.Address; N : Storage_Count)
-                        return System.Address;
+   function Reallocate (P : System.Address; N : Storage_Count) return System.Address;
 
    --  True once Init has run.
    function Ready return Boolean;

@@ -54,7 +54,8 @@ procedure Main is
    Startup_Delay : constant Time_Span := Milliseconds (200);
    Park_Forever  : constant Time_Span := Seconds (3600);
 
-   function Read return Boolean is (ESP32S3.GPIO.Read (Hold_Pin));
+   function Read return Boolean
+   is (ESP32S3.GPIO.Read (Hold_Pin));
 begin
    delay until Clock + Startup_Delay;
    Put_Line ("[rtcio] bare-metal RTC-IO pad-hold self-test (no wiring)");

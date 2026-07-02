@@ -15,8 +15,8 @@ package body Bare_Heap_Core is
    type Header_Acc is access all Header;
    function To_Hdr is new Ada.Unchecked_Conversion (System.Address, Header_Acc);
 
-   function Round_Up (X : Storage_Count) return Storage_Count is
-     (((X + (Align - 1)) / Align) * Align);
+   function Round_Up (X : Storage_Count) return Storage_Count
+   is (((X + (Align - 1)) / Align) * Align);
 
    Hdr_Sz : constant Storage_Count :=
      Round_Up (Storage_Count (Header'Object_Size / System.Storage_Unit));
@@ -26,16 +26,17 @@ package body Bare_Heap_Core is
    Top_Addr  : System.Address := System.Null_Address;
    Inited    : Boolean := False;
 
-   function Align_Down (A : Integer_Address) return Integer_Address is
-     (A / Integer_Address (Align) * Integer_Address (Align));
-   function Align_Up (A : Integer_Address) return Integer_Address is
-     (Align_Down (A + Integer_Address (Align) - 1));
+   function Align_Down (A : Integer_Address) return Integer_Address
+   is (A / Integer_Address (Align) * Integer_Address (Align));
+   function Align_Up (A : Integer_Address) return Integer_Address
+   is (Align_Down (A + Integer_Address (Align) - 1));
 
    -----------
    -- Ready --
    -----------
 
-   function Ready return Boolean is (Inited);
+   function Ready return Boolean
+   is (Inited);
 
    ----------
    -- Init --
@@ -47,9 +48,9 @@ package body Bare_Heap_Core is
         To_Address (Align_Down (To_Integer (Base) + Integer_Address (Size)));
       H    : constant Header_Acc := To_Hdr (B);
    begin
-      Head      := B;
+      Head := B;
       Base_Addr := B;
-      Top_Addr  := Topa;
+      Top_Addr := Topa;
       H.Size := Storage_Count (To_Integer (Topa) - To_Integer (B)) - Hdr_Sz;
       H.Next := System.Null_Address;
       H.Used := False;
@@ -71,7 +72,8 @@ package body Bare_Heap_Core is
       while Cur /= System.Null_Address loop
          B := To_Hdr (Cur);
          if not B.Used and then B.Size >= Want then
-            if B.Size >= Want + Hdr_Sz + Align then     --  split off a remainder
+            if B.Size >= Want + Hdr_Sz + Align then
+               --  split off a remainder
                declare
                   NB_Addr : constant System.Address := Cur + (Hdr_Sz + Want);
                   NB      : constant Header_Acc := To_Hdr (NB_Addr);
@@ -79,8 +81,8 @@ package body Bare_Heap_Core is
                   NB.Size := B.Size - Want - Hdr_Sz;
                   NB.Next := B.Next;
                   NB.Used := False;
-                  B.Size  := Want;
-                  B.Next  := NB_Addr;
+                  B.Size := Want;
+                  B.Next := NB_Addr;
                end;
             end if;
             B.Used := True;
@@ -96,8 +98,7 @@ package body Bare_Heap_Core is
    ----------------
 
    procedure Deallocate (P : System.Address) is
-      B  : constant Header_Acc :=
-        (if P = System.Null_Address then null else To_Hdr (P - Hdr_Sz));
+      B  : constant Header_Acc := (if P = System.Null_Address then null else To_Hdr (P - Hdr_Sz));
       C  : System.Address := Head;
       Cb : Header_Acc;
       Nb : Header_Acc;
@@ -106,7 +107,8 @@ package body Bare_Heap_Core is
          return;
       end if;
       B.Used := False;
-      while C /= System.Null_Address loop               --  full forward coalesce
+      while C /= System.Null_Address loop
+         --  full forward coalesce
          Cb := To_Hdr (C);
          loop
             exit when Cb.Next = System.Null_Address;
@@ -123,8 +125,7 @@ package body Bare_Heap_Core is
    -- Reallocate --
    ----------------
 
-   function Reallocate (P : System.Address; N : Storage_Count)
-                        return System.Address is
+   function Reallocate (P : System.Address; N : Storage_Count) return System.Address is
       B  : Header_Acc;
       Np : System.Address;
    begin
@@ -138,12 +139,15 @@ package body Bare_Heap_Core is
       B := To_Hdr (P - Hdr_Sz);
       if B.Size >= Round_Up (N) then
          return P;                                       --  fits in place
+
       end if;
       Np := Allocate (N);
       if Np /= System.Null_Address then
          declare
-            Src : Storage_Array (1 .. B.Size) with Import, Address => P;
-            Dst : Storage_Array (1 .. B.Size) with Import, Address => Np;
+            Src : Storage_Array (1 .. B.Size)
+            with Import, Address => P;
+            Dst : Storage_Array (1 .. B.Size)
+            with Import, Address => Np;
          begin
             Dst := Src;
          end;
@@ -176,10 +180,12 @@ package body Bare_Heap_Core is
          if Cb.Next /= System.Null_Address then
             if To_Integer (Cb.Next) <= To_Integer (C) then
                return False;                             --  must strictly ascend
+
             end if;
             Nb := To_Hdr (Cb.Next);
             if not Cb.Used and then not Nb.Used then
                return False;                             --  adjacent free => not coalesced
+
             end if;
          end if;
          Prev_End := C + (Hdr_Sz + Cb.Size);

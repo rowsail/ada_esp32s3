@@ -24,9 +24,9 @@
 --    pad an input and connect e.g. a potentiometer wiper / 3V3 / GND to GPIO1.)
 with Ada.Real_Time; use Ada.Real_Time;
 
-with ESP32S3.ADC;  use ESP32S3.ADC;
+with ESP32S3.ADC; use ESP32S3.ADC;
 with ESP32S3.GPIO;
-with ESP32S3.Log;  use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -35,8 +35,7 @@ procedure Main is
    --  ADC1 channel 0, which the S3 fixed-maps to pad GPIO1 (Channel_Pin asks the
    --  driver for that mapping rather than hard-coding the pin number here).
    Sense_Channel : constant Channel_Index := 0;
-   Sense_Pin     : constant ESP32S3.GPIO.Pin_Id :=
-     Channel_Pin (ADC1, Sense_Channel);
+   Sense_Pin     : constant ESP32S3.GPIO.Pin_Id := Channel_Pin (ADC1, Sense_Channel);
 
    --  Let the just-set GPIO level settle on the pad (and through the ADC's input
    --  RC) before sampling.

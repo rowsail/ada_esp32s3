@@ -35,26 +35,30 @@ package body W5500_Dev is
    function Bring_Up return Boolean is
       Ok : Boolean;
    begin
-      Net.Setup (Dev, Sclk => Pin_Sclk, Mosi => Pin_Mosi, Miso => Pin_Miso,
-                 Cs => Pin_Cs, Rst => Pin_Rst, Int => Pin_Int,
-                 Host => ESP32S3.SPI.SPI2, Clock_Hz => SPI_Clock_Hz);
+      Net.Setup
+        (Dev,
+         Sclk     => Pin_Sclk,
+         Mosi     => Pin_Mosi,
+         Miso     => Pin_Miso,
+         Cs       => Pin_Cs,
+         Rst      => Pin_Rst,
+         Int      => Pin_Int,
+         Host     => ESP32S3.SPI.SPI2,
+         Clock_Hz => SPI_Clock_Hz);
       Net.Reset (Dev, Ok);
       if not Ok then
          Put_Line ("[w5500] not found (VERSIONR /= 0x04 -- check wiring)");
          return False;
       end if;
-      Net.Configure (Dev,
-                     MAC     => MAC,
-                     IP      => Station_IP,
-                     Subnet  => Netmask,
-                     Gateway => Gateway_IP);
+      Net.Configure (Dev, MAC => MAC, IP => Station_IP, Subnet => Netmask, Gateway => Gateway_IP);
       for Try in 1 .. Link_Poll_Tries loop
          exit when Net.Link (Dev) = Net.Up;
          delay until Clock + Link_Poll_Interval;
       end loop;
-      Put_Line (if Net.Link (Dev) = Net.Up
-                then "[w5500] link up, IP 192.168.1.50"
-                else "[w5500] link DOWN -- check the cable");
+      Put_Line
+        (if Net.Link (Dev) = Net.Up
+         then "[w5500] link up, IP 192.168.1.50"
+         else "[w5500] link DOWN -- check the cable");
       ESP32S3.W5500.Net_Device.Register_Default (Dev'Access);
       return True;
    end Bring_Up;

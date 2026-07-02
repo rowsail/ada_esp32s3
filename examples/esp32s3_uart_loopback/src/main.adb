@@ -31,7 +31,7 @@ with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.UART;
-with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
 --  elaboration); core 1 just idles -- the test runs on core 0.
@@ -68,8 +68,22 @@ procedure Main is
    --  Loopback-test pattern: 16 mixed bytes (sync/marker values plus a counting
    --  ramp) so a stuck or shifted bit shows up in the byte-for-byte compare.
    Tx : constant Byte_Array :=
-     (16#55#, 16#AA#, 16#00#, 16#FF#, 16#12#, 16#34#, 16#56#, 16#78#,
-      16#9A#, 16#BC#, 16#DE#, 16#F0#, 16#0F#, 16#A5#, 16#5A#, 16#C3#);
+     (16#55#,
+      16#AA#,
+      16#00#,
+      16#FF#,
+      16#12#,
+      16#34#,
+      16#56#,
+      16#78#,
+      16#9A#,
+      16#BC#,
+      16#DE#,
+      16#F0#,
+      16#0F#,
+      16#A5#,
+      16#5A#,
+      16#C3#);
 
    --  Start a labelled byte line then dump Count bytes as " %02x".
    --  Recv selects the label: True = "recv", False = "sent".
@@ -107,13 +121,12 @@ procedure Main is
    Capped : Natural;
 
    --  Per-test verdicts.
-   Equal             : Boolean;   --  reused: loopback compare, then flow compare
-   Tx_Only_Broke     : Boolean;   --  TX-only inversion broke the link (as wanted)
-   Tx_Rx_Match       : Boolean;   --  TX+RX inversion round-tripped intact
+   Equal         : Boolean;   --  reused: loopback compare, then flow compare
+   Tx_Only_Broke : Boolean;   --  TX-only inversion broke the link (as wanted)
+   Tx_Rx_Match   : Boolean;   --  TX+RX inversion round-tripped intact
 begin
    delay until Clock + Milliseconds (200);   --  let the console settle
-   Put_Line ("[uart] bare-metal UART self-test "
-             & "(internal TX->RX loopback, no wiring)");
+   Put_Line ("[uart] bare-metal UART self-test " & "(internal TX->RX loopback, no wiring)");
 
    Acquire (S, Port, Baud => Baud_Rate);     --  claim + 8-N-1, no pins routed
    Enable_Loopback (S);                      --  internal TX->RX (held port)
@@ -148,9 +161,8 @@ begin
    end loop;
 
    Acquire (S, Port);
-   Configure_Pins (S,
-                   Rts => Flow_Control_Pad, Cts => Flow_Control_Pad,
-                   Rx_Flow_Threshold => Rx_Flow_Threshold);
+   Configure_Pins
+     (S, Rts => Flow_Control_Pad, Cts => Flow_Control_Pad, Rx_Flow_Threshold => Rx_Flow_Threshold);
    Write (S, Flow_Tx);                       --  64 bytes queued to the TX FIFO
    delay until Clock + Milliseconds (20);    --  let TX run until throttled
    Capped := Available (S);                  --  RX should be stuck near threshold
@@ -183,16 +195,17 @@ begin
    --  TX inverted only -> polarity mismatch -> link should NOT round-trip cleanly.
    Acquire (S, Port);
    Enable_Loopback (S, False);                          --  off; use a real pad
-   Configure_Pins (S, Tx => Inversion_Pad,
-                      Rx => Inversion_Pad);             --  single-pad loopback
+   Configure_Pins
+     (S, Tx => Inversion_Pad, Rx => Inversion_Pad);             --  single-pad loopback
    Set_Inversion (S, Tx => True);
    Write (S, Inversion_Tx);
-   Read  (S, Inversion_Rx, Inversion_Got);
+   Read (S, Inversion_Rx, Inversion_Got);
    Release (S);
    Tx_Only_Broke := Inversion_Got /= Inversion_Tx'Length;
    for I in Inversion_Tx'First .. Inversion_Tx'First + Inversion_Got - 1 loop
       if Inversion_Rx (I) /= Inversion_Tx (I) then
          Tx_Only_Broke := True;       --  any deviation = link broke (as expected)
+
       end if;
    end loop;
 
@@ -202,7 +215,7 @@ begin
    Acquire (S, Port, Tx => Inversion_Pad, Rx => Inversion_Pad);
    Set_Inversion (S, Tx => True, Rx => True);
    Write (S, Inversion_Tx);
-   Read  (S, Inversion_Rx, Both_Got);
+   Read (S, Inversion_Rx, Both_Got);
    Release (S);
    Tx_Rx_Match := Both_Got = Inversion_Tx'Length;
    for I in Inversion_Tx'Range loop

@@ -73,8 +73,7 @@ package body ESP32S3.SPI is
    end State;
 
    package body State is
-      Buses     :
-        array (SPI_Host) of aliased E.Bus;  --  raw bus per host, hidden
+      Buses     : array (SPI_Host) of aliased E.Bus;  --  raw bus per host, hidden
       Ready_Map : array (SPI_Host) of Boolean := (others => False);
 
       procedure Open (Host : SPI_Host; Mode : SPI_Mode; Clock_Hz : Positive) is
@@ -119,8 +118,7 @@ package body ESP32S3.SPI is
       function Owned (S : Session) return access E.Bus is
       begin
          if not S.Active then
-            raise Not_Owned
-              with "SPI host used without holding it -- Acquire first";
+            raise Not_Owned with "SPI host used without holding it -- Acquire first";
          end if;
          return Buses (S.Host)'Access;
       end Owned;
@@ -203,8 +201,7 @@ package body ESP32S3.SPI is
       --  A device that drives its own select (software CS pin or callback)
       --  suppresses the hardware CS0 for this hold so it cannot disturb another
       --  device on the bus; a plain hardware-CS device re-enables it.
-      State.Set_Hardware_CS
-        (Host, Enabled => CS_Pin = No_Pin and then Select_CB = null);
+      State.Set_Hardware_CS (Host, Enabled => CS_Pin = No_Pin and then Select_CB = null);
    end Acquire;
 
    --------------------
@@ -214,8 +211,7 @@ package body ESP32S3.SPI is
    procedure Select_Device (S : in out Session; On : Boolean) is
    begin
       if not S.Active then
-         raise Not_Owned
-           with "SPI Select_Device without holding the host -- Acquire first";
+         raise Not_Owned with "SPI Select_Device without holding the host -- Acquire first";
       end if;
       if S.CS_Pin /= No_Pin or else S.Select_CB /= null then
          --  no-op for hw CS0
@@ -228,8 +224,7 @@ package body ESP32S3.SPI is
    -- Transfer --
    --------------
 
-   procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural)
-   is
+   procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural) is
    begin
       --  Owned raises unless we hold the host; runs OUTSIDE the guard.
       E.Transfer (State.Owned (S).all, Tx, Rx, Length);

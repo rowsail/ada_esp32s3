@@ -7,34 +7,26 @@ package body ESP32S3.Block_Dev.SD_SPI_Source is
    use type ESP32S3.SD_SPI.Status;
 
    type Card_Access is access all ESP32S3.SD_SPI.Card;
-   function To_Card is new
-     Ada.Unchecked_Conversion (System.Address, Card_Access);
+   function To_Card is new Ada.Unchecked_Conversion (System.Address, Card_Access);
 
-   procedure Do_Read
-     (Ctx : System.Address; LBA : Sector_Index; Data : out Sector)
-   is
+   procedure Do_Read (Ctx : System.Address; LBA : Sector_Index; Data : out Sector) is
       C  : constant Card_Access := To_Card (Ctx);
       B  : ESP32S3.SD_SPI.Block;
       St : ESP32S3.SD_SPI.Status;
    begin
-      ESP32S3.SD_SPI.Read_Block
-        (C.all, ESP32S3.SD_SPI.Block_Address (LBA), B, St);
+      ESP32S3.SD_SPI.Read_Block (C.all, ESP32S3.SD_SPI.Block_Address (LBA), B, St);
       if St /= ESP32S3.SD_SPI.OK then
          raise Ada.IO_Exceptions.Device_Error with "SD read failed";
       end if;
       Data := Sector (B);
    end Do_Read;
 
-   procedure Do_Write (Ctx : System.Address; LBA : Sector_Index; Data : Sector)
-   is
+   procedure Do_Write (Ctx : System.Address; LBA : Sector_Index; Data : Sector) is
       C  : constant Card_Access := To_Card (Ctx);
       St : ESP32S3.SD_SPI.Status;
    begin
       ESP32S3.SD_SPI.Write_Block
-        (C.all,
-         ESP32S3.SD_SPI.Block_Address (LBA),
-         ESP32S3.SD_SPI.Block (Data),
-         St);
+        (C.all, ESP32S3.SD_SPI.Block_Address (LBA), ESP32S3.SD_SPI.Block (Data), St);
       if St /= ESP32S3.SD_SPI.OK then
          raise Ada.IO_Exceptions.Device_Error with "SD write failed";
       end if;

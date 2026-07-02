@@ -18,16 +18,22 @@ package body FS_Glue is
       P : Natural := S'First;
    begin
       Nat_IO.Put (S, V);                                   --  right-justified
-      while P < S'Last and then S (P) = ' ' loop P := P + 1; end loop;
+      while P < S'Last and then S (P) = ' ' loop
+         P := P + 1;
+      end loop;
       Put (S (P .. S'Last));                               --  the digits
-      for J in 1 .. Width - (S'Last - P + 1) loop Put (' '); end loop;
+      for J in 1 .. Width - (S'Last - P + 1) loop
+         Put (' ');
+      end loop;
    end Put_Dec_LJ;
 
    --  Left-justified string in a field of Width (like C "%-Ns").
    procedure Put_Str_LJ (S : String; Width : Natural) is
    begin
       Put (S);
-      for J in 1 .. Width - S'Length loop Put (' '); end loop;
+      for J in 1 .. Width - S'Length loop
+         Put (' ');
+      end loop;
    end Put_Str_LJ;
 
    function Clean (Str : String) return String is
@@ -37,8 +43,7 @@ package body FS_Glue is
          declare
             Char : constant Character := Str (Str'First + I - 1);
          begin
-            Result (I) :=
-              (if Character'Pos (Char) in 32 .. 126 then Char else '.');
+            Result (I) := (if Character'Pos (Char) in 32 .. 126 then Char else '.');
          end;
       end loop;
       return Result;
@@ -56,15 +61,13 @@ package body FS_Glue is
 
    procedure Mount_R (Ok : Boolean; Block_Size : Natural) is
    begin
-      Put ("[ext4] mount: " & (if Ok then "OK" else "FAILED")
-           & "   block size = ");
+      Put ("[ext4] mount: " & (if Ok then "OK" else "FAILED") & "   block size = ");
       Put_Dec (Block_Size);
       New_Line;
    end Mount_R;
 
-   function Ftype_Name (T : ESP32S3.Ext4.U8) return String is
-     (if T = 1 then "file" elsif T = 2 then "dir"
-      elsif T = 7 then "link" else "?");
+   function Ftype_Name (T : ESP32S3.Ext4.U8) return String
+   is (if T = 1 then "file" elsif T = 2 then "dir" elsif T = 7 then "link" else "?");
 
    --  One directory entry:  "[ext4]   %-4s ino=%-6d %s".
    procedure Entry_R (Name : String; Ino : Natural; Ftype : ESP32S3.Ext4.U8) is
@@ -83,8 +86,11 @@ package body FS_Glue is
          Put_Line ("[ext4] /hello.txt: not found");
          return;
       end if;
-      Put ("[ext4] /hello.txt: ");  Put_Dec (Size);
-      Put (" bytes = """);          Put (Preview);  Put_Line ("""");
+      Put ("[ext4] /hello.txt: ");
+      Put_Dec (Size);
+      Put (" bytes = """);
+      Put (Preview);
+      Put_Line ("""");
    end File_R;
 
    procedure Err_R (Stage : String) is
@@ -97,9 +103,7 @@ package body FS_Glue is
       Put_Line ("[ext4] done.");
    end Done;
 
-   procedure Visit (Name      : String;
-                    Ino       : ESP32S3.Ext4.Inode_Number;
-                    File_Type : ESP32S3.Ext4.U8) is
+   procedure Visit (Name : String; Ino : ESP32S3.Ext4.Inode_Number; File_Type : ESP32S3.Ext4.U8) is
    begin
       Entry_R (Clean (Name), Natural (Ino), File_Type);
    end Visit;

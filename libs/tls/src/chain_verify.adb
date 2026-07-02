@@ -9,65 +9,86 @@ package body Chain_Verify is
    --  carries a keyUsage extension it must assert keyCertSign (RFC 5280 4.2.1.3 /
    --  4.2.1.9).  Applied to every certificate that signs another, including the
    --  pinned anchor when it issues the top of the chain.
-   function Is_Valid_CA (C : X509.Certificate) return Boolean is
-     (C.Is_CA and then (not C.KU_Present or else C.KU_Cert_Sign));
+   function Is_Valid_CA (C : X509.Certificate) return Boolean
+   is (C.Is_CA and then (not C.KU_Present or else C.KU_Cert_Sign));
 
    --  A TLS server leaf: if it restricts extKeyUsage it must allow id-kp-serverAuth,
    --  and if it restricts keyUsage it must allow digitalSignature (in TLS 1.3 the
    --  server signs CertificateVerify with this key).
-   function Leaf_Usage_OK (C : X509.Certificate) return Boolean is
-     ((not C.EKU_Present or else C.EKU_Server)
-      and then (not C.KU_Present or else C.KU_Digital_Sig));
+   function Leaf_Usage_OK (C : X509.Certificate) return Boolean
+   is ((not C.EKU_Present or else C.EKU_Server)
+       and then (not C.KU_Present or else C.KU_Digital_Sig));
 
    --  Does Child's signature verify under Issuer's public key?  Dispatches on how
    --  the child was signed (RSA-PKCS1-SHA256, or ECDSA/P-256 with SHA-256/384) and
    --  requires the issuer to hold a matching key type.
-   function Sig_OK (Child_Buf : X509.Byte_Array; Child : X509.Certificate;
-                    Iss_Buf : X509.Byte_Array; Iss : X509.Certificate)
-                    return Boolean
+   function Sig_OK
+     (Child_Buf : X509.Byte_Array;
+      Child     : X509.Certificate;
+      Iss_Buf   : X509.Byte_Array;
+      Iss       : X509.Certificate) return Boolean
    is
       TBS : X509.Byte_Array renames Child_Buf (Child.TBS.First .. Child.TBS.Last);
-      Sig : X509.Byte_Array renames
-              Child_Buf (Child.Signature.First .. Child.Signature.Last);
+      Sig : X509.Byte_Array renames Child_Buf (Child.Signature.First .. Child.Signature.Last);
    begin
       case Child.Sig_Kind is
-         when X509.Sig_RSA_SHA256 =>
-            return Iss.Key_Kind = X509.Key_RSA and then Cert_Verify.RSA_PKCS1_SHA256
-              (TBS, Sig,
-               Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
-               Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
-         when X509.Sig_RSA_SHA384 =>
-            return Iss.Key_Kind = X509.Key_RSA and then Cert_Verify.RSA_PKCS1_SHA384
-              (TBS, Sig,
-               Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
-               Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
-         when X509.Sig_RSA_SHA512 =>
-            return Iss.Key_Kind = X509.Key_RSA and then Cert_Verify.RSA_PKCS1_SHA512
-              (TBS, Sig,
-               Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
-               Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
-         when X509.Sig_Ed25519 =>
-            return Iss.Key_Kind = X509.Key_Ed25519 and then Cert_Verify.Ed25519_Verify
-              (TBS, Sig, Iss_Buf (Iss.Ed_Pub.First .. Iss.Ed_Pub.Last));
+         when X509.Sig_RSA_SHA256   =>
+            return
+              Iss.Key_Kind = X509.Key_RSA
+              and then Cert_Verify.RSA_PKCS1_SHA256
+                         (TBS,
+                          Sig,
+                          Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
+                          Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
+
+         when X509.Sig_RSA_SHA384   =>
+            return
+              Iss.Key_Kind = X509.Key_RSA
+              and then Cert_Verify.RSA_PKCS1_SHA384
+                         (TBS,
+                          Sig,
+                          Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
+                          Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
+
+         when X509.Sig_RSA_SHA512   =>
+            return
+              Iss.Key_Kind = X509.Key_RSA
+              and then Cert_Verify.RSA_PKCS1_SHA512
+                         (TBS,
+                          Sig,
+                          Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
+                          Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
+
+         when X509.Sig_Ed25519      =>
+            return
+              Iss.Key_Kind = X509.Key_Ed25519
+              and then Cert_Verify.Ed25519_Verify
+                         (TBS, Sig, Iss_Buf (Iss.Ed_Pub.First .. Iss.Ed_Pub.Last));
+
          when X509.Sig_ECDSA_SHA256 =>
-            return Iss.Key_Kind = X509.Key_EC_P256 and then Cert_Verify.ECDSA_P256_SHA256
-              (TBS, Sig,
-               Iss_Buf (Iss.EC_X.First .. Iss.EC_X.Last),
-               Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last));
+            return
+              Iss.Key_Kind = X509.Key_EC_P256
+              and then Cert_Verify.ECDSA_P256_SHA256
+                         (TBS,
+                          Sig,
+                          Iss_Buf (Iss.EC_X.First .. Iss.EC_X.Last),
+                          Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last));
+
          when X509.Sig_ECDSA_SHA384 =>
-            return Iss.Key_Kind = X509.Key_EC_P256 and then Cert_Verify.ECDSA_P256_SHA384
-              (TBS, Sig,
-               Iss_Buf (Iss.EC_X.First .. Iss.EC_X.Last),
-               Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last));
-         when others =>
+            return
+              Iss.Key_Kind = X509.Key_EC_P256
+              and then Cert_Verify.ECDSA_P256_SHA384
+                         (TBS,
+                          Sig,
+                          Iss_Buf (Iss.EC_X.First .. Iss.EC_X.Last),
+                          Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last));
+
+         when others                =>
             return False;
       end case;
    end Sig_OK;
 
-   function Validate
-     (Chain, Anchors : Cert_List;
-      Host           : String;
-      Now            : X509.Time_64) return Result
+   function Validate (Chain, Anchors : Cert_List; Host : String; Now : X509.Time_64) return Result
    is
    begin
       if Chain'Length = 0 then
@@ -117,7 +138,8 @@ package body Chain_Verify is
                   if not Sig_OK (CB, C, IB, Iss) then
                      return Bad_Signature;
                   end if;
-                  if not Is_Valid_CA (Iss) then     --  intermediate must be a CA
+                  if not Is_Valid_CA (Iss) then
+                     --  intermediate must be a CA
                      return Not_A_CA;
                   end if;
                end;
@@ -137,9 +159,7 @@ package body Chain_Verify is
                Ac : X509.Certificate;
             begin
                X509.Parse (AB, Ac);
-               if Ac.Valid and then Is_Valid_CA (Ac)
-                 and then Sig_OK (TB, Top, AB, Ac)
-               then
+               if Ac.Valid and then Is_Valid_CA (Ac) and then Sig_OK (TB, Top, AB, Ac) then
                   return Valid;
                end if;
             end;

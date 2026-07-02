@@ -48,8 +48,7 @@ package body ESP32S3.TWAI is
       procedure Bring_Up (S : Session; Mode : Bus_Mode; Bit_Rate : Positive) is
       begin
          if not S.Active then
-            raise Not_Owned
-              with "TWAI used without holding it -- Acquire first";
+            raise Not_Owned with "TWAI used without holding it -- Acquire first";
          end if;
          The_Bus := E.Open (Mode, Bit_Rate);
       end Bring_Up;
@@ -57,8 +56,7 @@ package body ESP32S3.TWAI is
       function Owned (S : Session) return E.Bus is
       begin
          if not S.Active then
-            raise Not_Owned
-              with "TWAI used without holding it -- Acquire first";
+            raise Not_Owned with "TWAI used without holding it -- Acquire first";
          end if;
          return The_Bus;
       end Owned;
@@ -69,22 +67,18 @@ package body ESP32S3.TWAI is
    -------------
 
    procedure Acquire
-     (S        : in out Session;
-      Mode     : Bus_Mode := Normal;
-      Bit_Rate : Positive := 125_000) is
+     (S : in out Session; Mode : Bus_Mode := Normal; Bit_Rate : Positive := 125_000) is
    begin
       Guard.Acquire;
       S.Active := True;
-      Reconfigure
-        (S, Mode, Bit_Rate);   --  bring it up through the held Session
+      Reconfigure (S, Mode, Bit_Rate);   --  bring it up through the held Session
    end Acquire;
 
    -----------------
    -- Reconfigure --
    -----------------
 
-   procedure Reconfigure
-     (S : Session; Mode : Bus_Mode := Normal; Bit_Rate : Positive := 125_000)
+   procedure Reconfigure (S : Session; Mode : Bus_Mode := Normal; Bit_Rate : Positive := 125_000)
    is
    begin
       State.Bring_Up (S, Mode, Bit_Rate);
@@ -95,9 +89,7 @@ package body ESP32S3.TWAI is
    --------------------
 
    procedure Configure_Pins
-     (S  : Session;
-      Tx : ESP32S3.GPIO.Optional_Pin;
-      Rx : ESP32S3.GPIO.Optional_Pin) is
+     (S : Session; Tx : ESP32S3.GPIO.Optional_Pin; Rx : ESP32S3.GPIO.Optional_Pin) is
    begin
       E.Configure_Pins (State.Owned (S), Tx, Rx);
    end Configure_Pins;
@@ -151,8 +143,7 @@ package body ESP32S3.TWAI is
    -- Receive --
    -------------
 
-   procedure Receive (S : Session; F : out Standard_Frame; Got : out Boolean)
-   is
+   procedure Receive (S : Session; F : out Standard_Frame; Got : out Boolean) is
       Id  : Interfaces.Unsigned_32;
       Rmt : Boolean;
       Len : Data_Length;
@@ -168,13 +159,11 @@ package body ESP32S3.TWAI is
          Got           => Got);
       F :=
         (if Got
-         then
-           (Id => Standard_Id (Id), Remote => Rmt, Length => Len, Data => Dat)
+         then (Id => Standard_Id (Id), Remote => Rmt, Length => Len, Data => Dat)
          else (others => <>));
    end Receive;
 
-   procedure Receive (S : Session; F : out Extended_Frame; Got : out Boolean)
-   is
+   procedure Receive (S : Session; F : out Extended_Frame; Got : out Boolean) is
       Id  : Interfaces.Unsigned_32;
       Rmt : Boolean;
       Len : Data_Length;
@@ -190,8 +179,7 @@ package body ESP32S3.TWAI is
          Got           => Got);
       F :=
         (if Got
-         then
-           (Id => Extended_Id (Id), Remote => Rmt, Length => Len, Data => Dat)
+         then (Id => Extended_Id (Id), Remote => Rmt, Length => Len, Data => Dat)
          else (others => <>));
    end Receive;
 

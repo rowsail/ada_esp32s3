@@ -36,8 +36,7 @@ package body FTP_Client is
       Buf : SEA (1 .. SEO (Text'Length) + 2);
    begin
       for I in Text'Range loop
-         Buf (SEO (I - Text'First + 1)) :=
-           Stream_Element (Character'Pos (Text (I)));
+         Buf (SEO (I - Text'First + 1)) := Stream_Element (Character'Pos (Text (I)));
       end loop;
       Buf (Buf'Last - 1) := CR;
       Buf (Buf'Last) := LF;
@@ -47,11 +46,7 @@ package body FTP_Client is
    --  Read one CRLF-terminated line from the control connection into Line (CR/LF
    --  stripped).  Refills the session buffer via Receive_Socket as needed; a peer
    --  close becomes Connect_Failed, a Receive timeout becomes Timed_Out.
-   procedure Get_Line
-     (S    : in out Session;
-      Line : out String;
-      Last : out Natural;
-      St   : out Status)
+   procedure Get_Line (S : in out Session; Line : out String; Last : out Natural; St : out Status)
    is
       N : Natural := 0;
       C : Interfaces.Unsigned_8;
@@ -74,8 +69,7 @@ package body FTP_Client is
                S.Head := 0;
                S.Tail := Natural (RLast - Scratch'First + 1);
                for I in 0 .. S.Tail - 1 loop
-                  S.Buf (I) :=
-                    Interfaces.Unsigned_8 (Scratch (Scratch'First + SEO (I)));
+                  S.Buf (I) := Interfaces.Unsigned_8 (Scratch (Scratch'First + SEO (I)));
                end loop;
             end;
          end if;
@@ -105,8 +99,7 @@ package body FTP_Client is
    function Code_Of (Line : String; Last : Natural) return Integer is
       F : constant Natural := Line'First;
    begin
-      if Last >= 3 and then (for all I in F .. F + 2 => Line (I) in '0' .. '9')
-      then
+      if Last >= 3 and then (for all I in F .. F + 2 => Line (I) in '0' .. '9') then
          return
            (Character'Pos (Line (F)) - Character'Pos ('0'))
            * 100
@@ -123,13 +116,10 @@ package body FTP_Client is
    is (Last >= 4 and then Line (Line'First + 3) = '-');
 
    function Is_Final_Line (Line : String; Last, Code : Natural) return Boolean
-   is (Code_Of (Line, Last) = Code
-       and then (Last < 4 or else Line (Line'First + 3) = ' '));
+   is (Code_Of (Line, Last) = Code and then (Last < 4 or else Line (Line'First + 3) = ' '));
 
    --  Read a whole reply (consuming any continuation lines); return its code.
-   procedure Read_Reply
-     (S : in out Session; Code : out Integer; St : out Status)
-   is
+   procedure Read_Reply (S : in out Session; Code : out Integer; St : out Status) is
       Line  : String (1 .. 256);
       Last  : Natural;
       First : Integer;
@@ -159,9 +149,7 @@ package body FTP_Client is
    end Read_Reply;
 
    --  Send a command and read its reply code.
-   procedure Command
-     (S : in out Session; Text : String; Code : out Integer; St : out Status)
-   is
+   procedure Command (S : in out Session; Text : String; Code : out Integer; St : out Status) is
       Sent : Boolean;
    begin
       Send_Line (S, Text, Sent);
@@ -237,9 +225,7 @@ package body FTP_Client is
    --  advertised IP is intentionally ignored -- the data connection reuses the
    --  control connection's server IP (S.Host), which is what a NATed server
    --  actually wants and is identical for a direct server.
-   procedure Open_Passive
-     (S : in out Session; Data : out Socket_Type; St : out Status)
-   is
+   procedure Open_Passive (S : in out Session; Data : out Socket_Type; St : out Status) is
       Line : String (1 .. 256);
       Last : Natural;
       Code : Integer;
@@ -269,10 +255,7 @@ package body FTP_Client is
       while I <= Line'First + Last - 1 and then Slot <= 6 loop
          exit when Line (I) = ')';
          if Line (I) in '0' .. '9' then
-            Nums (Slot) :=
-              Nums (Slot)
-              * 10
-              + (Character'Pos (Line (I)) - Character'Pos ('0'));
+            Nums (Slot) := Nums (Slot) * 10 + (Character'Pos (Line (I)) - Character'Pos ('0'));
          elsif Line (I) = ',' then
             Slot := Slot + 1;
          end if;
@@ -285,16 +268,12 @@ package body FTP_Client is
 
       declare
          Addr : constant Sock_Addr_Type :=
-           (Family => Family_Inet,
-            Addr   => S.Host,
-            Port   => Port_Type (Nums (5) * 256 + Nums (6)));
+           (Family => Family_Inet, Addr => S.Host, Port => Port_Type (Nums (5) * 256 + Nums (6)));
       begin
          Create_Socket (Data, Family_Inet, Socket_Stream);
          if S.Timeout > 0.0 then
             Set_Socket_Option
-              (Data,
-               Socket_Level,
-               (Name => Receive_Timeout, Timeout => S.Timeout));
+              (Data, Socket_Level, (Name => Receive_Timeout, Timeout => S.Timeout));
          end if;
          Connect_Socket (Data, Addr);
          St := OK;
@@ -330,9 +309,7 @@ package body FTP_Client is
          Create_Socket (S.Control, Family_Inet, Socket_Stream);
          if Timeout > 0.0 then
             Set_Socket_Option
-              (S.Control,
-               Socket_Level,
-               (Name => Receive_Timeout, Timeout => Timeout));
+              (S.Control, Socket_Level, (Name => Receive_Timeout, Timeout => Timeout));
          end if;
          Connect_Socket (S.Control, (Family_Inet, Host, Port));
       exception
@@ -468,10 +445,7 @@ package body FTP_Client is
       if Code not in 100 .. 199 then
          --  expect 150 / 125
          Close_Socket (Data);
-         Finish
-           (S,
-            (if Code in 400 .. 599 then Server_Error else Protocol_Error),
-            Result);
+         Finish (S, (if Code in 400 .. 599 then Server_Error else Protocol_Error), Result);
          return;
       end if;
 
@@ -489,8 +463,7 @@ package body FTP_Client is
             Chunk : Byte_Array (0 .. Natural (RLast - Scratch'First));
          begin
             for J in Chunk'Range loop
-               Chunk (J) :=
-                 Interfaces.Unsigned_8 (Scratch (Scratch'First + SEO (J)));
+               Chunk (J) := Interfaces.Unsigned_8 (Scratch (Scratch'First + SEO (J)));
             end loop;
             Sink (Ctx, Chunk);
          end;
@@ -567,10 +540,7 @@ package body FTP_Client is
       end if;
       if Code not in 100 .. 199 then
          Close_Socket (Data);
-         Finish
-           (S,
-            (if Code in 400 .. 599 then Server_Error else Protocol_Error),
-            Result);
+         Finish (S, (if Code in 400 .. 599 then Server_Error else Protocol_Error), Result);
          return;
       end if;
 
@@ -622,35 +592,27 @@ package body FTP_Client is
       Finish (S, Simple_Result (Code, St), Result);
    end Simple;
 
-   procedure Change_Dir
-     (S : in out Session; Path : String; Result : out Status) is
+   procedure Change_Dir (S : in out Session; Path : String; Result : out Status) is
    begin
       Simple (S, "CWD " & Path, Result);
    end Change_Dir;
 
-   procedure Make_Dir (S : in out Session; Path : String; Result : out Status)
-   is
+   procedure Make_Dir (S : in out Session; Path : String; Result : out Status) is
    begin
       Simple (S, "MKD " & Path, Result);
    end Make_Dir;
 
-   procedure Remove_Dir
-     (S : in out Session; Path : String; Result : out Status) is
+   procedure Remove_Dir (S : in out Session; Path : String; Result : out Status) is
    begin
       Simple (S, "RMD " & Path, Result);
    end Remove_Dir;
 
-   procedure Delete_File
-     (S : in out Session; Path : String; Result : out Status) is
+   procedure Delete_File (S : in out Session; Path : String; Result : out Status) is
    begin
       Simple (S, "DELE " & Path, Result);
    end Delete_File;
 
-   procedure File_Size
-     (S      : in out Session;
-      Path   : String;
-      Size   : out Natural;
-      Result : out Status)
+   procedure File_Size (S : in out Session; Path : String; Size : out Natural; Result : out Status)
    is
       Line : String (1 .. 256);
       Last : Natural;
@@ -670,8 +632,7 @@ package body FTP_Client is
       if Code = 213 then
          for I in Line'First + 4 .. Line'First + Last - 1 loop
             if Line (I) in '0' .. '9' then
-               Size :=
-                 Size * 10 + (Character'Pos (Line (I)) - Character'Pos ('0'));
+               Size := Size * 10 + (Character'Pos (Line (I)) - Character'Pos ('0'));
             end if;
          end loop;
          Finish (S, OK, Result);

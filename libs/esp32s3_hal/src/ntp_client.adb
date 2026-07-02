@@ -5,8 +5,7 @@ with ESP32S3.Endian;
 
 package body NTP_Client is
 
-   NTP_Unix : constant :=
-     2_208_988_800;   --  seconds from 1900-01-01 to 1970-01-01
+   NTP_Unix : constant := 2_208_988_800;   --  seconds from 1900-01-01 to 1970-01-01
 
    function Query
      (Server     : Inet_Addr_Type;
@@ -16,8 +15,7 @@ package body NTP_Client is
    is
       Sock : Socket_Type;
       --  48-byte SNTP request: LI=0, VN=3, Mode=3 (client) in the first byte.
-      Req  : constant Stream_Element_Array (0 .. 47) :=
-        (0 => 16#1B#, others => 0);
+      Req  : constant Stream_Element_Array (0 .. 47) := (0 => 16#1B#, others => 0);
       Resp : Stream_Element_Array (0 .. 47);
       Last : Stream_Element_Offset;
       To   : aliased Sock_Addr_Type := (Family_Inet, Server, 123);
@@ -28,8 +26,7 @@ package body NTP_Client is
       Create_Socket (Sock, Family_Inet, Socket_Datagram);
       Bind_Socket (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
       if Timeout > 0.0 then
-         Set_Socket_Option
-           (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
+         Set_Socket_Option (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
       end if;
       Send_Socket (Sock, Req, Last, To => To'Access);
       begin
@@ -46,8 +43,7 @@ package body NTP_Client is
       --  datagram that happened to arrive on Local_Port within the timeout: it
       --  must come from the queried server, be Mode 4 (server), and carry a sane
       --  stratum (1 .. 15; 0 = kiss-o'-death / unsynchronised, > 15 = reserved).
-      if Last
-        < 43                                     --  txstamp is bytes 40..43
+      if Last < 43                                     --  txstamp is bytes 40..43
         or else From.Addr /= Server
         or else (Resp (0) and 2#0000_0111#) /= 4       --  Mode = server
         or else Resp (1) = 0
@@ -83,8 +79,7 @@ package body NTP_Client is
       Z      : constant Integer_64 := D_Days + 719_468;
       Era    : constant Integer_64 := Z / 146_097;
       DOE    : constant Integer_64 := Z - Era * 146_097;
-      YOE    : constant Integer_64 :=
-        (DOE - DOE / 1460 + DOE / 36524 - DOE / 146096) / 365;
+      YOE    : constant Integer_64 := (DOE - DOE / 1460 + DOE / 36524 - DOE / 146096) / 365;
       Yr     : constant Integer_64 := YOE + Era * 400;
       DOY    : constant Integer_64 := DOE - (365 * YOE + YOE / 4 - YOE / 100);
       MP     : constant Integer_64 := (5 * DOY + 2) / 153;

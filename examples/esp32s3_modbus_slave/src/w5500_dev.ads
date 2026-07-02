@@ -6,6 +6,7 @@ with ESP32S3.W5500.DHCP;
 --  the IP / subnet / GATEWAY into the chip) + hand the chip to the GNAT.Sockets
 --  facade.  No address is hand-configured -- the router assigns it, and the
 --  returned lease also carries the DNS server to use.
+
 package W5500_Dev is
    Dev : aliased ESP32S3.W5500.Device;
 
@@ -13,7 +14,9 @@ package W5500_Dev is
    --  / gateway / DNS), or a static configuration you supply.
    type IP_Settings (Use_DHCP : Boolean := True) is record
       case Use_DHCP is
-         when True  => null;
+         when True =>
+            null;
+
          when False =>
             IP, Subnet, Gateway, DNS : ESP32S3.W5500.IPv4_Address;
       end case;
@@ -28,8 +31,8 @@ package W5500_Dev is
    --  the DHCP lease, or the static values echoed back -- so the caller reads
    --  Lease.DNS the same way either way.
    function Bring_Up
-     (Settings : IP_Settings := DHCP_Config;
-      Lease    : out ESP32S3.W5500.DHCP.Lease_Info) return Boolean;
+     (Settings : IP_Settings := DHCP_Config; Lease : out ESP32S3.W5500.DHCP.Lease_Info)
+      return Boolean;
 
    --  Dotted-decimal text of an IPv4 address, e.g. "192.168.1.50".
    function Image (A : ESP32S3.W5500.IPv4_Address) return String;

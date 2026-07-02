@@ -17,17 +17,14 @@ package ESP32S3.Ext4.Dir is
    --  Look up Name directly in directory Dir; return its inode number, or 0 if
    --  not present.
    function Lookup
-     (V : in out Volume.Context; Dir : Inode.Info; Name : String)
-      return Inode_Number;
+     (V : in out Volume.Context; Dir : Inode.Info; Name : String) return Inode_Number;
 
    --  Call Visit for every real entry (skips unused slots).  "." and ".." are
    --  reported like any other entry.
    procedure Iterate
      (V     : in out Volume.Context;
       Dir   : Inode.Info;
-      Visit :
-        not null access procedure
-          (Name : String; Ino : Inode_Number; File_Type : U8));
+      Visit : not null access procedure (Name : String; Ino : Inode_Number; File_Type : U8));
 
    --  Add Name -> Child (with File_Type) to directory Dir by splitting slack in
    --  one of its existing data blocks.  Raises No_Space if no block has room
@@ -45,18 +42,14 @@ package ESP32S3.Ext4.Dir is
    --  or zeroing its inode if first in the block).  Returns the removed entry's
    --  child inode number, or 0 if Name was not found.
    function Remove_Entry
-     (V : in out Volume.Context; Dir : Inode.Info; Name : String)
-      return Inode_Number;
+     (V : in out Volume.Context; Dir : Inode.Info; Name : String) return Inode_Number;
 
    --  True if Dir contains only "." and ".." (i.e. is empty).
-   function Is_Empty
-     (V : in out Volume.Context; Dir : Inode.Info) return Boolean;
+   function Is_Empty (V : in out Volume.Context; Dir : Inode.Info) return Boolean;
 
    --  Repoint entry Name in Dir at inode New_Ino.  Returns True if found.
    function Set_Entry_Inode
-     (V       : in out Volume.Context;
-      Dir     : Inode.Info;
-      Name    : String;
-      New_Ino : Inode_Number) return Boolean;
+     (V : in out Volume.Context; Dir : Inode.Info; Name : String; New_Ino : Inode_Number)
+      return Boolean;
 
 end ESP32S3.Ext4.Dir;

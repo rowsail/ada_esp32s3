@@ -31,9 +31,9 @@
 with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
-with ESP32S3.SPI;   use ESP32S3.SPI;
+with ESP32S3.SPI; use ESP32S3.SPI;
 with ESP32S3.GPIO;
-with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
 --  elaboration); core 1 just idles -- the test runs on core 0.
@@ -59,8 +59,7 @@ procedure Main is
    Rx : aliased Buffer := (others => 0);
 begin
    delay until Clock + Milliseconds (200);   --  let the console settle
-   Put_Line ("[spi] bare-metal SPI master full-duplex DMA loopback self-test "
-             & "(no wiring)");
+   Put_Line ("[spi] bare-metal SPI master full-duplex DMA loopback self-test " & "(no wiring)");
 
    for I in Tx'Range loop
       Tx (I) := Unsigned_8 ((I * 37 + 19) mod 256);
@@ -97,7 +96,8 @@ begin
             raise Program_Error;          --  fault before any explicit Release
          end;                             --  Finalize (T) -> Release on unwind
       exception
-         when others => null;
+         when others =>
+            null;
       end;
 
       declare

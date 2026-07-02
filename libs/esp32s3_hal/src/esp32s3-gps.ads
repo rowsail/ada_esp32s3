@@ -113,8 +113,7 @@ package ESP32S3.GPS is
 
    type Velocity_Reading is record
       Speed_MMS   : Natural := 0;        --  ground speed, millimetres / second
-      Course_CDeg : Natural :=
-        0;        --  course over ground, centi-degrees true
+      Course_CDeg : Natural := 0;        --  course over ground, centi-degrees true
       Updated_At  : Ada.Real_Time.Time := Ada.Real_Time.Time_First;
       Valid       : Boolean := False;
    end record;
@@ -178,8 +177,7 @@ package ESP32S3.GPS is
 
    --  Time elapsed since a reading's Updated_At -- compare against your tolerance
    --  to decide whether the value is stale.
-   function Age
-     (Updated_At : Ada.Real_Time.Time) return Ada.Real_Time.Time_Span;
+   function Age (Updated_At : Ada.Real_Time.Time) return Ada.Real_Time.Time_Span;
 
    --  Send a raw command string to the receiver (e.g. a vendor configuration
    --  sentence).  The bytes are sent VERBATIM -- the caller frames and checksums

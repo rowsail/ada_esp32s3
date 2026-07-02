@@ -19,16 +19,14 @@ package body ESP32S3.Ext4.Superblock is
       Buf (512 .. 1023) := Byte_Array (Sec);
 
       if Get_U16 (Buf, 16#38#) /= Magic then
-         raise Corrupt
-           with "not an ext2/3/4 filesystem (bad superblock magic)";
+         raise Corrupt with "not an ext2/3/4 filesystem (bad superblock magic)";
       end if;
 
       Log := Get_U32 (Buf, 16#18#);
       if Log > 6 then
          --  ext4 block size is 1 KiB .. 64 KiB (log 0..6);
          raise Corrupt          --  a larger shift would wrap Block_Size to 0 (then
-           with
-             "ext4 superblock: unsupported block size (s_log_block_size > 6)";
+           with "ext4 superblock: unsupported block size (s_log_block_size > 6)";
       end if;                   --  divide-by-zero) or overflow the Natural below
       SB.Block_Size := Natural (Shift_Left (U32 (1024), Natural (Log)));
       SB.First_Data_Block := Get_U32 (Buf, 16#14#);
@@ -61,10 +59,8 @@ package body ESP32S3.Ext4.Superblock is
       end if;
 
       if Is_64Bit (SB) then
-         SB.Blocks_Count :=
-           SB.Blocks_Count or Shift_Left (U64 (Get_U32 (Buf, 16#150#)), 32);
-         SB.Free_Blocks :=
-           SB.Free_Blocks or Shift_Left (U64 (Get_U32 (Buf, 16#158#)), 32);
+         SB.Blocks_Count := SB.Blocks_Count or Shift_Left (U64 (Get_U32 (Buf, 16#150#)), 32);
+         SB.Free_Blocks := SB.Free_Blocks or Shift_Left (U64 (Get_U32 (Buf, 16#158#)), 32);
          DSz := Get_U16 (Buf, 16#FE#);
          SB.Desc_Size := (if DSz = 0 then 32 else Natural (DSz));
       else
@@ -73,19 +69,16 @@ package body ESP32S3.Ext4.Superblock is
       --  Group_Desc.Read decodes a 32- or 64-byte descriptor into a fixed buffer;
       --  reject any other size rather than overrun / silently short-read it.
       if SB.Desc_Size /= 32 and then SB.Desc_Size /= 64 then
-         raise Corrupt
-           with "ext4 superblock: unsupported group-descriptor size";
+         raise Corrupt with "ext4 superblock: unsupported group-descriptor size";
       end if;
 
       --  Number of block groups = ceil((blocks - first_data_block) / per_group).
       if SB.Blocks_Count <= U64 (SB.First_Data_Block) then
-         raise Corrupt
-           with "ext4 superblock: blocks_count <= first_data_block";
+         raise Corrupt with "ext4 superblock: blocks_count <= first_data_block";
       end if;
       declare
          Span : constant U64 := SB.Blocks_Count - U64 (SB.First_Data_Block);
-         Per  : constant U64 :=
-           U64 (SB.Blocks_Per_Group);   --  /= 0 (checked above)
+         Per  : constant U64 := U64 (SB.Blocks_Per_Group);   --  /= 0 (checked above)
       begin
          SB.Groups_Count := U32 ((Span + Per - 1) / Per);
       end;
@@ -96,8 +89,7 @@ package body ESP32S3.Ext4.Superblock is
       if SB.Has_Csum then
          declare
             Stored : constant U32 := Get_U32 (Buf, 16#3FC#);
-            Calc   : constant U32 :=
-              CRC32C.Update (16#FFFF_FFFF#, Buf (0 .. 16#3FB#));
+            Calc   : constant U32 := CRC32C.Update (16#FFFF_FFFF#, Buf (0 .. 16#3FB#));
          begin
             if Calc /= Stored then
                raise Bad_Checksum with "superblock checksum mismatch";
@@ -125,9 +117,7 @@ package body ESP32S3.Ext4.Superblock is
       end if;
       if SB.Has_Csum then
          Put_U32
-           (Buf,
-            Base + 16#3FC#,
-            CRC32C.Update (16#FFFF_FFFF#, Buf (Base .. Base + 16#3FB#)));
+           (Buf, Base + 16#3FC#, CRC32C.Update (16#FFFF_FFFF#, Buf (Base .. Base + 16#3FB#)));
       end if;
    end Encode;
 

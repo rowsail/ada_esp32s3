@@ -28,7 +28,7 @@
 --    controller's own TX back into its RX on a single pad, so no external CAN
 --    transceiver and no jumper are needed.  For a real bus, Configure_Pins would
 --    route TX/RX to a transceiver (e.g. SN65HVD230) instead of Enable_Loopback.
-with Interfaces;   use Interfaces;
+with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.TWAI; use ESP32S3.TWAI;
@@ -41,13 +41,21 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 procedure Main is
    --  One self-rx result line.
    procedure Result
-     (Extended : Boolean;          --  29-bit id frame vs 11-bit standard
-      Remote   : Boolean;          --  remote-request (RTR) vs data frame
-      Got      : Boolean;          --  a frame was received at all
-      Data_Ok  : Boolean;          --  echoed id/width/RTR/len/payload all match
-      Ok       : Boolean;          --  overall pass = Got and Data_Ok
-      Id       : Unsigned_32;      --  received identifier (for the printout)
-      Len      : Unsigned_32) is   --  received length / DLC (for the printout)
+     (Extended : Boolean;
+      --  29-bit id frame vs 11-bit standard
+      Remote   : Boolean;
+      --  remote-request (RTR) vs data frame
+      Got      : Boolean;
+      --  a frame was received at all
+      Data_Ok  : Boolean;
+      --  echoed id/width/RTR/len/payload all match
+      Ok       : Boolean;
+      --  overall pass = Got and Data_Ok
+      Id       : Unsigned_32;
+      --  received identifier (for the printout)
+      Len      : Unsigned_32)
+   is
+      --  received length / DLC (for the printout)
    begin
       Put ("[twai] ");
       Put (if Extended then "extended(29-bit)" else "standard(11-bit)");
@@ -77,14 +85,16 @@ procedure Main is
    --  Standard (11-bit id) data frame.  Payload is an arbitrary 5-byte test
    --  pattern (the trailing zeros fill the fixed 8-byte Data array, unused).
    Standard_Data : constant Standard_Frame :=
-     (Id     => 16#123#,                         --  11-bit data frame
+     (Id     => 16#123#,
+      --  11-bit data frame
       Length => 5,
       Data   => (16#DE#, 16#AD#, 16#BE#, 16#EF#, 16#42#, 0, 0, 0),
       others => <>);
 
    --  Extended (29-bit id) data frame, 3-byte payload.
    Extended_Data : constant Extended_Frame :=
-     (Id     => 16#14AB_CDE#,                    --  29-bit data frame
+     (Id     => 16#14AB_CDE#,
+      --  29-bit data frame
       Length => 3,
       Data   => (16#01#, 16#02#, 16#03#, others => 0),
       others => <>);
@@ -92,14 +102,17 @@ procedure Main is
    --  Standard remote-transmission request: carries an id and a requested DLC
    --  (8) but no payload -- it asks another node for data.
    Standard_Remote : constant Standard_Frame :=
-     (Id     => 16#7A5#,                         --  11-bit remote request (RTR)
-      Remote => True,                            --  requests 8 bytes, sends none
+     (Id     => 16#7A5#,
+      --  11-bit remote request (RTR)
+      Remote => True,
+      --  requests 8 bytes, sends none
       Length => 8,
       others => <>);
 
    --  Extended remote-transmission request -- RTR is orthogonal to id width.
    Extended_Remote : constant Extended_Frame :=
-     (Id     => 16#1F1_2345#,                    --  29-bit remote request (RTR)
+     (Id     => 16#1F1_2345#,
+      --  29-bit remote request (RTR)
       Remote => True,
       Length => 6,
       others => <>);
@@ -123,19 +136,24 @@ begin
       if Got then
          Receive (Bus, Rx_Standard, Got);
       end if;
-      Data_Ok := Got and then not Rx_Standard.Remote
-                   and then Rx_Standard.Id = Standard_Data.Id
-                   and then Rx_Standard.Length = Standard_Data.Length;
+      Data_Ok :=
+        Got
+        and then not Rx_Standard.Remote
+        and then Rx_Standard.Id = Standard_Data.Id
+        and then Rx_Standard.Length = Standard_Data.Length;
       if Data_Ok then
          for I in 0 .. Standard_Data.Length - 1 loop
-            Data_Ok := Data_Ok
-                         and then Rx_Standard.Data (I) = Standard_Data.Data (I);
+            Data_Ok := Data_Ok and then Rx_Standard.Data (I) = Standard_Data.Data (I);
          end loop;
       end if;
-      Result (Extended => False, Remote => False, Got => Got, Data_Ok => Data_Ok,
-              Ok => Got and then Data_Ok,
-              Id => Unsigned_32 (Rx_Standard.Id),
-              Len => Unsigned_32 (Rx_Standard.Length));
+      Result
+        (Extended => False,
+         Remote   => False,
+         Got      => Got,
+         Data_Ok  => Data_Ok,
+         Ok       => Got and then Data_Ok,
+         Id       => Unsigned_32 (Rx_Standard.Id),
+         Len      => Unsigned_32 (Rx_Standard.Length));
 
       --  Extended (29-bit) data round-trip.
       Send (Bus, Extended_Data);
@@ -143,19 +161,24 @@ begin
       if Got then
          Receive (Bus, Rx_Extended, Got);
       end if;
-      Data_Ok := Got and then not Rx_Extended.Remote
-                   and then Rx_Extended.Id = Extended_Data.Id
-                   and then Rx_Extended.Length = Extended_Data.Length;
+      Data_Ok :=
+        Got
+        and then not Rx_Extended.Remote
+        and then Rx_Extended.Id = Extended_Data.Id
+        and then Rx_Extended.Length = Extended_Data.Length;
       if Data_Ok then
          for I in 0 .. Extended_Data.Length - 1 loop
-            Data_Ok := Data_Ok
-                         and then Rx_Extended.Data (I) = Extended_Data.Data (I);
+            Data_Ok := Data_Ok and then Rx_Extended.Data (I) = Extended_Data.Data (I);
          end loop;
       end if;
-      Result (Extended => True, Remote => False, Got => Got, Data_Ok => Data_Ok,
-              Ok => Got and then Data_Ok,
-              Id => Unsigned_32 (Rx_Extended.Id),
-              Len => Unsigned_32 (Rx_Extended.Length));
+      Result
+        (Extended => True,
+         Remote   => False,
+         Got      => Got,
+         Data_Ok  => Data_Ok,
+         Ok       => Got and then Data_Ok,
+         Id       => Unsigned_32 (Rx_Extended.Id),
+         Len      => Unsigned_32 (Rx_Extended.Length));
 
       --  Standard remote-request (RTR) round-trip: carries Id + DLC, no data.
       Send (Bus, Standard_Remote);
@@ -164,13 +187,19 @@ begin
          Receive (Bus, Rx_Standard, Got);
       end if;
       --  A correct RTR echo: Remote set, matching Id and requested length.
-      Data_Ok := Got and then Rx_Standard.Remote
-                   and then Rx_Standard.Id = Standard_Remote.Id
-                   and then Rx_Standard.Length = Standard_Remote.Length;
-      Result (Extended => False, Remote => True, Got => Got, Data_Ok => Data_Ok,
-              Ok => Got and then Data_Ok,
-              Id => Unsigned_32 (Rx_Standard.Id),
-              Len => Unsigned_32 (Rx_Standard.Length));
+      Data_Ok :=
+        Got
+        and then Rx_Standard.Remote
+        and then Rx_Standard.Id = Standard_Remote.Id
+        and then Rx_Standard.Length = Standard_Remote.Length;
+      Result
+        (Extended => False,
+         Remote   => True,
+         Got      => Got,
+         Data_Ok  => Data_Ok,
+         Ok       => Got and then Data_Ok,
+         Id       => Unsigned_32 (Rx_Standard.Id),
+         Len      => Unsigned_32 (Rx_Standard.Length));
 
       --  Extended (29-bit) remote-request (RTR) round-trip -- RTR works on either
       --  width, the Remote flag is orthogonal to the addressing standard.
@@ -179,13 +208,19 @@ begin
       if Got then
          Receive (Bus, Rx_Extended, Got);
       end if;
-      Data_Ok := Got and then Rx_Extended.Remote
-                   and then Rx_Extended.Id = Extended_Remote.Id
-                   and then Rx_Extended.Length = Extended_Remote.Length;
-      Result (Extended => True, Remote => True, Got => Got, Data_Ok => Data_Ok,
-              Ok => Got and then Data_Ok,
-              Id => Unsigned_32 (Rx_Extended.Id),
-              Len => Unsigned_32 (Rx_Extended.Length));
+      Data_Ok :=
+        Got
+        and then Rx_Extended.Remote
+        and then Rx_Extended.Id = Extended_Remote.Id
+        and then Rx_Extended.Length = Extended_Remote.Length;
+      Result
+        (Extended => True,
+         Remote   => True,
+         Got      => Got,
+         Data_Ok  => Data_Ok,
+         Ok       => Got and then Data_Ok,
+         Id       => Unsigned_32 (Rx_Extended.Id),
+         Len      => Unsigned_32 (Rx_Extended.Length));
    end;                               --  Bus finalizes -> controller released
 
    Put_Line ("[twai] done.");

@@ -28,11 +28,11 @@
 with Ada.Real_Time; use Ada.Real_Time;
 with X509;
 with Chain_Verify;  use Chain_Verify;
-with Chain_Certs;    use Chain_Certs;
-with Neg_Certs;      use Neg_Certs;
-with Alg_Certs;      use Alg_Certs;
+with Chain_Certs;   use Chain_Certs;
+with Neg_Certs;     use Neg_Certs;
+with Alg_Certs;     use Alg_Certs;
 with ESP32S3.RNG;
-with ESP32S3.Log;    use ESP32S3.Log;
+with ESP32S3.Log;   use ESP32S3.Log;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -42,7 +42,8 @@ procedure Main is
    --  bytes (see Chain_Certs for the legend and provenance).
    Leaf  : constant Cert_Ref := (Data => Leaf_DER'Access);   --  CN=test.example.com
    CA    : constant Cert_Ref := (Data => CA_DER'Access);     --  CN=Test Root CA (issues Leaf)
-   Other : constant Cert_Ref := (Data => Other_DER'Access);  --  CN=Unrelated CA (a different, unpinned root)
+   Other : constant Cert_Ref :=
+     (Data => Other_DER'Access);  --  CN=Unrelated CA (a different, unpinned root)
 
    --  Negative-test PKI (see Neg_Certs): a rogue intermediate marked CA:FALSE that
    --  nonetheless signs a leaf, and a leaf whose only extKeyUsage is clientAuth.
@@ -78,8 +79,11 @@ procedure Main is
 
    procedure Check (Name : String; Got, Want : Result) is
    begin
-      Put_Line ("[chain] " & Name & " : "
-                & (if Got = Want then "PASS" else "FAIL (" & Result'Image (Got) & ")"));
+      Put_Line
+        ("[chain] "
+         & Name
+         & " : "
+         & (if Got = Want then "PASS" else "FAIL (" & Result'Image (Got) & ")"));
    end Check;
 begin
    delay until Clock + Console_Settle;
@@ -90,25 +94,39 @@ begin
    Put_Line ("[chain] certificate-chain validation (leaf <- CA, pinned root)");
 
    --  Positive: full leaf<-CA chain, CA pinned as the trust anchor.
-   Check ("leaf+CA, pinned CA",   Validate ((Leaf, CA),   (1 => CA),    Host, Within_Window), Valid);
+   Check ("leaf+CA, pinned CA", Validate ((Leaf, CA), (1 => CA), Host, Within_Window), Valid);
    --  Positive: leaf alone is enough when its issuer is itself the pinned anchor.
-   Check ("leaf only, anchor CA", Validate ((1 => Leaf),  (1 => CA),    Host, Within_Window), Valid);
+   Check ("leaf only, anchor CA", Validate ((1 => Leaf), (1 => CA), Host, Within_Window), Valid);
    --  Negative: leaf does not cover this host name.
-   Check ("wrong hostname",       Validate ((Leaf, CA),   (1 => CA),    "evil.example.com", Within_Window), Name_Mismatch);
+   Check
+     ("wrong hostname",
+      Validate ((Leaf, CA), (1 => CA), "evil.example.com", Within_Window),
+      Name_Mismatch);
    --  Negative: evaluated past the certificates' validity window.
-   Check ("expired (2050)",       Validate ((Leaf, CA),   (1 => CA),    Host, Past_Window), Expired);
+   Check ("expired (2050)", Validate ((Leaf, CA), (1 => CA), Host, Past_Window), Expired);
    --  Negative: leaf<-leaf is a forged link; the second cert did not sign the first.
-   Check ("broken link",          Validate ((Leaf, Leaf), (1 => CA),    Host, Within_Window), Bad_Signature);
+   Check ("broken link", Validate ((Leaf, Leaf), (1 => CA), Host, Within_Window), Bad_Signature);
    --  Negative: the chain's root is not among the pinned anchors.
-   Check ("untrusted root",       Validate ((Leaf, CA),   (1 => Other), Host, Within_Window), Untrusted_Root);
+   Check
+     ("untrusted root", Validate ((Leaf, CA), (1 => Other), Host, Within_Window), Untrusted_Root);
    --  Negative: the rogue issuer's signature verifies, but it is marked CA:FALSE.
-   Check ("non-CA issuer",        Validate ((N_Leaf, N_Rogue), (1 => N_Root), Host, Within_Window), Not_A_CA);
+   Check
+     ("non-CA issuer", Validate ((N_Leaf, N_Rogue), (1 => N_Root), Host, Within_Window), Not_A_CA);
    --  Negative: the leaf chains and dates fine, but its EKU forbids serverAuth.
-   Check ("leaf EKU clientAuth",  Validate ((1 => N_EKU),      (1 => N_Root), Host, Within_Window), Bad_Key_Usage);
+   Check
+     ("leaf EKU clientAuth",
+      Validate ((1 => N_EKU), (1 => N_Root), Host, Within_Window),
+      Bad_Key_Usage);
    --  Positive: other signature algorithms -- Ed25519, and RSA with SHA-384/512.
-   Check ("Ed25519 chain",        Validate ((Ed_Lf, Ed_Rt),     (1 => Ed_Rt),   Host, Within_Window), Valid);
-   Check ("RSA-SHA384 chain",     Validate ((R384_Lf, R384_Rt), (1 => R384_Rt), Host, Within_Window), Valid);
-   Check ("RSA-SHA512 chain",     Validate ((R512_Lf, R512_Rt), (1 => R512_Rt), Host, Within_Window), Valid);
+   Check ("Ed25519 chain", Validate ((Ed_Lf, Ed_Rt), (1 => Ed_Rt), Host, Within_Window), Valid);
+   Check
+     ("RSA-SHA384 chain",
+      Validate ((R384_Lf, R384_Rt), (1 => R384_Rt), Host, Within_Window),
+      Valid);
+   Check
+     ("RSA-SHA512 chain",
+      Validate ((R512_Lf, R512_Rt), (1 => R512_Rt), Host, Within_Window),
+      Valid);
    Put_Line ("[chain] done");
 
    loop

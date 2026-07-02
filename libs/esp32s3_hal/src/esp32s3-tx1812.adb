@@ -7,14 +7,10 @@ package body ESP32S3.TX1812 is
    --  a short high then long low, a '1' the reverse, ~1.2 us per bit).  Tune here
    --  if a particular part is fussy.
    Resolution_Hz : constant := 10_000_000;            --  100 ns / tick
-   T0H           : constant ESP32S3.RMT.Tick_Count :=
-     3;        --  '0' high  300 ns
-   T0L           : constant ESP32S3.RMT.Tick_Count :=
-     9;        --  '0' low   900 ns
-   T1H           : constant ESP32S3.RMT.Tick_Count :=
-     7;        --  '1' high  700 ns
-   T1L           : constant ESP32S3.RMT.Tick_Count :=
-     6;        --  '1' low   600 ns
+   T0H           : constant ESP32S3.RMT.Tick_Count := 3;        --  '0' high  300 ns
+   T0L           : constant ESP32S3.RMT.Tick_Count := 9;        --  '0' low   900 ns
+   T1H           : constant ESP32S3.RMT.Tick_Count := 7;        --  '1' high  700 ns
+   T1L           : constant ESP32S3.RMT.Tick_Count := 6;        --  '1' low   600 ns
 
    -------------
    -- Acquire --
@@ -29,10 +25,7 @@ package body ESP32S3.TX1812 is
       ESP32S3.RMT.Claim (S.Chan, Channel);
       if ESP32S3.RMT.Is_Valid (S.Chan) then
          ESP32S3.RMT.Configure
-           (S.Chan,
-            Resolution_Hz => Resolution_Hz,
-            Pin           => Pin,
-            Blocks        => Blocks);
+           (S.Chan, Resolution_Hz => Resolution_Hz, Pin => Pin, Blocks => Blocks);
          S.Ready := True;
       end if;
    end Acquire;
@@ -90,17 +83,9 @@ package body ESP32S3.TX1812 is
       begin
          for I in reverse 0 .. 7 loop
             if (B and Shift_Left (Unsigned_8 (1), I)) /= 0 then
-               Flat (K) :=
-                 (Level0    => True,
-                  Duration0 => T1H,
-                  Level1    => False,
-                  Duration1 => T1L);
+               Flat (K) := (Level0 => True, Duration0 => T1H, Level1 => False, Duration1 => T1L);
             else
-               Flat (K) :=
-                 (Level0    => True,
-                  Duration0 => T0H,
-                  Level1    => False,
-                  Duration1 => T0L);
+               Flat (K) := (Level0 => True, Duration0 => T0H, Level1 => False, Duration1 => T0L);
             end if;
             K := K + 1;
          end loop;

@@ -78,12 +78,8 @@ package ESP32S3.SD_SPI is
 
    --  Read / write one 512-byte block at logical address LBA.
    procedure Read_Block
-     (C      : in out Card;
-      LBA    : Block_Address;
-      Data   : out Block;
-      Result : out Status);
-   procedure Write_Block
-     (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status);
+     (C : in out Card; LBA : Block_Address; Data : out Block; Result : out Status);
+   procedure Write_Block (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status);
 
 private
    type Card is limited record

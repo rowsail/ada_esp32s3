@@ -49,9 +49,7 @@ package body ESP32S3.GPS is
       function Velocity_Of return Velocity_Reading;
       function Signal_Of return Signal_Reading;
       procedure Get_Sky
-        (List    : out Satellite_List;
-         Count   : out Natural;
-         Max_Age : Ada.Real_Time.Time_Span);
+        (List : out Satellite_List; Count : out Natural; Max_Age : Ada.Real_Time.Time_Span);
    private
       Pos     : Position_Reading;
       Fix     : Fix_Reading;
@@ -74,9 +72,7 @@ package body ESP32S3.GPS is
          Stale_T : Ada.Real_Time.Time := Ada.Real_Time.Time_Last;
       begin
          for I in Sky'Range loop
-            if Sky (I).Used
-              and then Sky (I).Sat.System = S.System
-              and then Sky (I).Sat.PRN = S.PRN
+            if Sky (I).Used and then Sky (I).Sat.System = S.System and then Sky (I).Sat.PRN = S.PRN
             then
                Sky (I) := (Sat => S, Updated_At => Now, Used => True);
                return;
@@ -162,8 +158,7 @@ package body ESP32S3.GPS is
       procedure Get_Raw (Buffer : out String; Length : out Natural) is
       begin
          Length := Natural'Min (Raw_Len, Buffer'Length);
-         Buffer (Buffer'First .. Buffer'First + Length - 1) :=
-           Raw (1 .. Length);
+         Buffer (Buffer'First .. Buffer'First + Length - 1) := Raw (1 .. Length);
       end Get_Raw;
 
       function Position_Of return Position_Reading
@@ -180,9 +175,7 @@ package body ESP32S3.GPS is
       is (Sig);
 
       procedure Get_Sky
-        (List    : out Satellite_List;
-         Count   : out Natural;
-         Max_Age : Ada.Real_Time.Time_Span)
+        (List : out Satellite_List; Count : out Natural; Max_Age : Ada.Real_Time.Time_Span)
       is
          Now : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
          N   : Natural := 0;
@@ -216,10 +209,7 @@ package body ESP32S3.GPS is
    protected body PPS_Box is
       procedure Tick is
       begin
-         Data :=
-           (Last  => Ada.Real_Time.Clock,
-            Count => Data.Count + 1,
-            Valid => True);
+         Data := (Last => Ada.Real_Time.Clock, Count => Data.Count + 1, Valid => True);
       end Tick;
       function Get return PPS_Reading
       is (Data);
@@ -305,8 +295,7 @@ package body ESP32S3.GPS is
 
       --  Own the port and shape it to the link in one call -- configuration is
       --  part of Acquire, so it cannot precede ownership.
-      ESP32S3.UART.Acquire
-        (S, Cfg.Port, Baud => Cfg.Baud, Tx => Cfg.Tx, Rx => Cfg.Rx);
+      ESP32S3.UART.Acquire (S, Cfg.Port, Baud => Cfg.Baud, Tx => Cfg.Tx, Rx => Cfg.Rx);
 
       loop
          --  Transmit anything queued by Send (we hold the UART Session).
@@ -320,8 +309,7 @@ package body ESP32S3.GPS is
                   Bytes : ESP32S3.UART.Byte_Array (1 .. Out_Len);
                begin
                   for I in 1 .. Out_Len loop
-                     Bytes (I) :=
-                       ESP32S3.UART.Byte (Character'Pos (Out_Buf (I)));
+                     Bytes (I) := ESP32S3.UART.Byte (Character'Pos (Out_Buf (I)));
                   end loop;
                   ESP32S3.UART.Write (S, Bytes);
                end;
@@ -330,8 +318,7 @@ package body ESP32S3.GPS is
 
          ESP32S3.UART.Read (S, Chunk, N);
          if N = 0 then
-            delay until
-              Ada.Real_Time.Clock + Milliseconds (5);  --  idle pacing
+            delay until Ada.Real_Time.Clock + Milliseconds (5);  --  idle pacing
 
          end if;
          for I in 1 .. N loop
@@ -383,18 +370,13 @@ package body ESP32S3.GPS is
             Pin : constant ESP32S3.GPIO.Pin_Id := ESP32S3.GPIO.Pin_Id (Pps);
          begin
             ESP32S3.GPIO.Configure
-              (Pin,
-               Mode => ESP32S3.GPIO.Input,
-               Pull => ESP32S3.GPIO.Pull_Down);
+              (Pin, Mode => ESP32S3.GPIO.Input, Pull => ESP32S3.GPIO.Pull_Down);
             ESP32S3.GPIO.Interrupts.Enable
-              (Pin,
-               On     => ESP32S3.GPIO.Interrupts.Rising_Edge,
-               Action => PPS_ISR'Access);
+              (Pin, On => ESP32S3.GPIO.Interrupts.Rising_Edge, Action => PPS_ISR'Access);
          end;
       end if;
 
-      Ada.Synchronous_Task_Control.Set_True
-        (Start_Signal);   --  release Reader
+      Ada.Synchronous_Task_Control.Set_True (Start_Signal);   --  release Reader
    end Setup;
 
    ---------------------------------------------------------------------------
@@ -419,14 +401,12 @@ package body ESP32S3.GPS is
    procedure Satellites_In_View
      (List    : out Satellite_List;
       Count   : out Natural;
-      Max_Age : Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (3000))
-   is
+      Max_Age : Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (3000)) is
    begin
       Store.Get_Sky (List, Count, Max_Age);
    end Satellites_In_View;
 
-   function Age
-     (Updated_At : Ada.Real_Time.Time) return Ada.Real_Time.Time_Span
+   function Age (Updated_At : Ada.Real_Time.Time) return Ada.Real_Time.Time_Span
    is (Ada.Real_Time.Clock - Updated_At);
 
    procedure Send (Command : String) is

@@ -3,8 +3,7 @@ with Interfaces;    use Interfaces;
 
 package body ESP32S3.SHT41 is
 
-   use ESP32S3
-         .I2C;   --  Byte, Byte_Array, Session, Slave_Address, Acquire/Write/Read
+   use ESP32S3.I2C;   --  Byte, Byte_Array, Session, Slave_Address, Acquire/Write/Read
 
    subtype LLI is Long_Long_Integer;
 
@@ -70,11 +69,7 @@ package body ESP32S3.SHT41 is
    ---------------------------------------------------------------------------
 
    procedure Transact
-     (Dev    : Device;
-      Cmd    : Byte;
-      Wait   : Time_Span;
-      Data   : out Byte_Array;
-      Result : out Status)
+     (Dev : Device; Cmd : Byte; Wait : Time_Span; Data : out Byte_Array; Result : out Status)
    is
       S     : Session;
       Acked : Boolean;

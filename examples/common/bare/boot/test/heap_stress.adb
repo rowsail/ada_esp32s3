@@ -1,11 +1,12 @@
-with Ada.Text_IO;  use Ada.Text_IO;
-with Interfaces;    use Interfaces;
-with System;        use System;
+with Ada.Text_IO; use Ada.Text_IO;
+with Interfaces;  use Interfaces;
+with System;      use System;
 
 procedure Heap_Stress (Fails : out Natural) is
 
    Arena_Bytes : constant := 64 * 1024;
-   Arena : Storage_Array (1 .. Arena_Bytes) with Alignment => 16;
+   Arena       : Storage_Array (1 .. Arena_Bytes)
+   with Alignment => 16;
 
    Bad    : Natural := 0;
    Checks : Natural := 0;
@@ -20,14 +21,15 @@ procedure Heap_Stress (Fails : out Natural) is
    end Check;
 
    procedure Fill (A : Address; Sz : Storage_Count; V : Storage_Element) is
-      Arr : Storage_Array (1 .. Sz) with Import, Address => A;
+      Arr : Storage_Array (1 .. Sz)
+      with Import, Address => A;
    begin
       Arr := (others => V);
    end Fill;
 
-   function Verify (A : Address; Sz : Storage_Count; V : Storage_Element)
-                    return Boolean is
-      Arr : Storage_Array (1 .. Sz) with Import, Address => A;
+   function Verify (A : Address; Sz : Storage_Count; V : Storage_Element) return Boolean is
+      Arr : Storage_Array (1 .. Sz)
+      with Import, Address => A;
    begin
       return (for all B of Arr => B = V);
    end Verify;
@@ -78,8 +80,8 @@ begin
          Sz  : Storage_Count := 0;
          Pat : Storage_Element := 0;
       end record;
-      Live : array (1 .. Max_Live) of Slot;
-      Idx, Sz : Natural;
+      Live     : array (1 .. Max_Live) of Slot;
+      Idx, Sz  : Natural;
    begin
       for Step in 1 .. 300_000 loop
          Idx := Rnd (Max_Live) + 1;
@@ -90,14 +92,12 @@ begin
             begin
                if A /= Null_Address then
                   Check (To_Integer (A) mod 16 = 0, "stress aligned");
-                  Live (Idx) := (A, Storage_Count (Sz),
-                                 Storage_Element (Rnd (256)));
+                  Live (Idx) := (A, Storage_Count (Sz), Storage_Element (Rnd (256)));
                   Fill (A, Live (Idx).Sz, Live (Idx).Pat);
                end if;
             end;
          else
-            Check (Verify (Live (Idx).A, Live (Idx).Sz, Live (Idx).Pat),
-                   "stress pattern intact");
+            Check (Verify (Live (Idx).A, Live (Idx).Sz, Live (Idx).Pat), "stress pattern intact");
             Deallocate (Live (Idx).A);
             Live (Idx) := (Null_Address, 0, 0);
          end if;
@@ -125,7 +125,12 @@ begin
       Deallocate (Big);
    end;
 
-   Put_Line (Name & ": checks:" & Checks'Image & "  failures:" & Bad'Image
-             & (if Bad = 0 then "  PASS" else "  *** FAIL ***"));
+   Put_Line
+     (Name
+      & ": checks:"
+      & Checks'Image
+      & "  failures:"
+      & Bad'Image
+      & (if Bad = 0 then "  PASS" else "  *** FAIL ***"));
    Fails := Bad;
 end Heap_Stress;

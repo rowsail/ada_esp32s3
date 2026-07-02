@@ -1,7 +1,7 @@
 pragma Warnings (Off);
 with Interfaces.C;
 with System;
-with Ada.Real_Time;                use Ada.Real_Time;
+with Ada.Real_Time; use Ada.Real_Time;
 
 package body Comm is
 
@@ -20,7 +20,8 @@ package body Comm is
    --  Multiprocessors).  Gets counts how many entry calls completed in a
    --  period: it stays ~1, proving the consumer truly blocks between posts
    --  rather than busy-returning.
-   Gets : Integer := 0 with Atomic, Volatile;
+   Gets : Integer := 0
+   with Atomic, Volatile;
 
    --  GNARL numbers CPUs from 1 (System.Multiprocessors.CPU_Range), so the
    --  `CPU =>` aspect is one more than the hardware core the task runs on:
@@ -44,20 +45,21 @@ package body Comm is
       procedure Post (Value, From : Integer) is
       begin
          Item := Value;
-         Src  := From;
+         Src := From;
          Full := True;
       end Post;
       entry Get (Value, From : out Integer) when Full is
       begin
          Value := Item;
-         From  := Src;
-         Full  := False;
+         From := Src;
+         Full := False;
       end Get;
    end Mailbox;
 
    --  Producer on core 1: posts an incrementing value every 500 ms and reports
    --  how many consumer entry calls completed in the period (~1 == healthy).
-   task Producer with Priority => System.Priority'Last - 1, CPU => Producer_CPU;
+   task Producer
+     with Priority => System.Priority'Last - 1, CPU => Producer_CPU;
    task body Producer is
       Count : Integer := 0;
       Next  : Time := Clock + Post_Period;
@@ -74,7 +76,8 @@ package body Comm is
 
    --  Consumer on core 0: blocks in the entry until the core-1 producer posts,
    --  then reads and logs the cross-core transfer on a single line.
-   task Consumer with Priority => System.Priority'Last - 1, CPU => Consumer_CPU;
+   task Consumer
+     with Priority => System.Priority'Last - 1, CPU => Consumer_CPU;
    task body Consumer is
       Value     : Integer;
       From_Core : Integer;
@@ -82,8 +85,7 @@ package body Comm is
       loop
          Mailbox.Get (Value, From_Core);          --  blocks across cores
          Gets := Gets + 1;
-         Log_Xfer (Interfaces.C.int (Value),
-                   Interfaces.C.int (From_Core), Core_Id);
+         Log_Xfer (Interfaces.C.int (Value), Interfaces.C.int (From_Core), Core_Id);
       end loop;
    end Consumer;
 

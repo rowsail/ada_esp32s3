@@ -12,8 +12,7 @@ package ESP32S3.W5500.Net_Device is
 
    --  Bind this interface object to a W5500 that is already Setup / Reset /
    --  Configured.  Call once before registering it with GNAT.Sockets.
-   procedure Attach
-     (Self : in out Instance; Dev : access ESP32S3.W5500.Device);
+   procedure Attach (Self : in out Instance; Dev : access ESP32S3.W5500.Device);
 
    --  Convenience for the common single-NIC board: attach a built-in interface
    --  object to Dev and register it with GNAT.Sockets as the default interface.
@@ -50,15 +49,10 @@ private
    overriding
    procedure Close (Self : in out Instance; Index : Natural);
    overriding
-   procedure Listen
-     (Self   : in out Instance;
-      Index  : Natural;
-      Result : out Net_Devices.Status);
+   procedure Listen (Self : in out Instance; Index : Natural; Result : out Net_Devices.Status);
    overriding
    procedure Wait_Connected
-     (Self   : in out Instance;
-      Index  : Natural;
-      Result : out Net_Devices.Status);
+     (Self : in out Instance; Index : Natural; Result : out Net_Devices.Status);
    overriding
    procedure Peer
      (Self  : in out Instance;
@@ -73,10 +67,7 @@ private
       Port   : Net_Devices.Port_Number;
       Result : out Net_Devices.Status);
    overriding
-   procedure Wait_Data
-     (Self   : in out Instance;
-      Index  : Natural;
-      Result : out Net_Devices.Status);
+   procedure Wait_Data (Self : in out Instance; Index : Natural; Result : out Net_Devices.Status);
    overriding
    procedure Send
      (Self   : in out Instance;
@@ -109,6 +100,5 @@ private
       Count     : out Natural;
       Result    : out Net_Devices.Status);
    overriding
-   procedure Set_Receive_Timeout
-     (Self : in out Instance; Index : Natural; To : Duration);
+   procedure Set_Receive_Timeout (Self : in out Instance; Index : Natural; To : Duration);
 end ESP32S3.W5500.Net_Device;

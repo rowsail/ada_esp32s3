@@ -28,9 +28,9 @@
 --         voltage, or just an LED + series resistor to dim it.
 with Ada.Real_Time; use Ada.Real_Time;
 
-with ESP32S3.SDM;   use ESP32S3.SDM;
+with ESP32S3.SDM; use ESP32S3.SDM;
 with ESP32S3.GPIO;
-with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -65,8 +65,8 @@ procedure Main is
    --  Average the output pad over Window_Ms -> high fraction as a percentage.
    function Measure (Window_Ms : Positive) return Float is
       Deadline : constant Time := Clock + Milliseconds (Window_Ms);
-      Samples : Natural := 0;
-      Highs   : Natural := 0;
+      Samples  : Natural := 0;
+      Highs    : Natural := 0;
    begin
       loop
          Samples := Samples + 1;
@@ -85,8 +85,7 @@ procedure Main is
    Console_Warmup_Ms : constant Positive := 200;
 begin
    delay until Clock + Milliseconds (Console_Warmup_Ms);
-   Put_Line ("[sdm] bare-metal SDM sigma-delta density self-test "
-             & "(GPIO-sampled, no wiring)");
+   Put_Line ("[sdm] bare-metal SDM sigma-delta density self-test " & "(GPIO-sampled, no wiring)");
 
    declare
       Ch : Channel;
@@ -116,14 +115,14 @@ begin
       Reclaimed      : Boolean := False;
    begin
       declare
-         C0 : Channel;
-         C1 : Channel;
-         C2 : Channel;
-         C3 : Channel;
-         C4 : Channel;
-         C5 : Channel;
-         C6 : Channel;
-         C7 : Channel;
+         C0    : Channel;
+         C1    : Channel;
+         C2    : Channel;
+         C3    : Channel;
+         C4    : Channel;
+         C5    : Channel;
+         C6    : Channel;
+         C7    : Channel;
          Extra : Channel;
       begin
          Claim (C0, 0);

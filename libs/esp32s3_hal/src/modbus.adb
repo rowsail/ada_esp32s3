@@ -84,19 +84,15 @@ package body Modbus is
       B (Pos + 1) := Byte (V and 16#FF#);
    end Put_U16;
 
-   procedure Put_MBAP
-     (B : in out Byte_Array; TID : Word; Unit : Unit_Id; PDU_Len : Natural) is
+   procedure Put_MBAP (B : in out Byte_Array; TID : Word; Unit : Unit_Id; PDU_Len : Natural) is
    begin
       Put_U16 (B, B'First, TID);                     --  transaction id
       Put_U16 (B, B'First + 2, 0);                       --  protocol id = 0
-      Put_U16
-        (B, B'First + 4, Word (PDU_Len + 1));      --  length = unit + PDU
+      Put_U16 (B, B'First + 4, Word (PDU_Len + 1));      --  length = unit + PDU
       B (B'First + 6) := Byte (Unit);
    end Put_MBAP;
 
-   procedure Get_MBAP
-     (B : Byte_Array; TID : out Word; Unit : out Unit_Id; Length : out Natural)
-   is
+   procedure Get_MBAP (B : Byte_Array; TID : out Word; Unit : out Unit_Id; Length : out Natural) is
    begin
       TID := Get_U16 (B, B'First);
       Length := Natural (Get_U16 (B, B'First + 4));

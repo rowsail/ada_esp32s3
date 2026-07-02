@@ -28,11 +28,9 @@ package body ESP32S3.Ext4.File is
          declare
             L_Block : constant U64 := Pos / BS;
             B_Off   : constant Natural := Natural (Pos mod BS);
-            Chunk   : constant Natural :=
-              Natural (U64'Min (BS - U64 (B_Off), Want - Done));
+            Chunk   : constant Natural := Natural (U64'Min (BS - U64 (B_Off), Want - Done));
             Dst_Lo  : constant Natural := Into'First + Natural (Done);
-            Phys    : constant Block_Number :=
-              Block_Map.Logical_To_Physical (V, I, L_Block);
+            Phys    : constant Block_Number := Block_Map.Logical_To_Physical (V, I, L_Block);
          begin
             if Phys = 0 then
                Into (Dst_Lo .. Dst_Lo + Chunk - 1) := [others => 0];

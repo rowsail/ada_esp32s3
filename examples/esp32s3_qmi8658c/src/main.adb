@@ -60,8 +60,8 @@ procedure Main is
    --  Board wiring for THIS example (the driver hard-codes none).  This board
    --  does not wire the QMI8658C INT line, so Interrupt_Pin is No_Pin and the
    --  demo polls; point it at a real GPIO to arm the data-ready interrupt.
-   IMU_SDA       : constant ESP32S3.GPIO.Pin_Id       := 8;
-   IMU_SCL       : constant ESP32S3.GPIO.Pin_Id       := 7;
+   IMU_SDA       : constant ESP32S3.GPIO.Pin_Id := 8;
+   IMU_SCL       : constant ESP32S3.GPIO.Pin_Id := 7;
    Interrupt_Pin : constant ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
 
    --  The two possible SA0 addresses; the probe below tries each in turn.
@@ -97,16 +97,15 @@ procedure Main is
       Put_Line (if Ok then "OK" else "FAIL");
    end Put_Step;
 
-   Device      : IMU.Device;
-   Result      : IMU.Status;
-   Who_Am_I    : Unsigned_8;
-   Found       : Boolean := False;
-   Address     : ESP32S3.I2C.Slave_Address := IMU.Address_SA0_Low;
+   Device   : IMU.Device;
+   Result   : IMU.Status;
+   Who_Am_I : Unsigned_8;
+   Found    : Boolean := False;
+   Address  : ESP32S3.I2C.Slave_Address := IMU.Address_SA0_Low;
 
    --  Raw counts -> milli-units, in 32-bit integer math (raw * 1000 fits).
-   function Milli_Units (Raw : Integer_16; LSB_Per_Unit : Positive)
-                         return Integer is
-     (Integer (Raw) * Milli_Per_Unit / LSB_Per_Unit);
+   function Milli_Units (Raw : Integer_16; LSB_Per_Unit : Positive) return Integer
+   is (Integer (Raw) * Milli_Per_Unit / LSB_Per_Unit);
 
    --  Integer floor(sqrt(N)) -- the accel magnitude needs no float library.
    function Integer_Sqrt (N : Integer) return Integer is
@@ -117,10 +116,10 @@ procedure Main is
          return 0;
       end if;
       Estimate := N;
-      Next     := (Estimate + 1) / 2;
+      Next := (Estimate + 1) / 2;
       while Next < Estimate loop
          Estimate := Next;
-         Next     := (Estimate + N / Estimate) / 2;
+         Next := (Estimate + N / Estimate) / 2;
       end loop;
       return Estimate;
    end Integer_Sqrt;
@@ -132,8 +131,8 @@ begin
    --  probe: try each SA0 address until WHO_AM_I answers Who_Am_I_Value (0x05).
    for I in Address_Candidates'Range loop
       Address := Address_Candidates (I);
-      IMU.Setup (Device, Sda => IMU_SDA, Scl => IMU_SCL,
-                 Int_Pin => Interrupt_Pin, Address => Address);
+      IMU.Setup
+        (Device, Sda => IMU_SDA, Scl => IMU_SCL, Int_Pin => Interrupt_Pin, Address => Address);
       IMU.Read_Who_Am_I (Device, Who_Am_I, Result);
       if Result = IMU.OK and then Who_Am_I = IMU.Who_Am_I_Value then
          Found := True;
@@ -161,11 +160,12 @@ begin
    Put_Step ("reset", Result = IMU.OK);
    delay until Clock + Milliseconds (15);     --  reset settle time
 
-   IMU.Configure (Device,
-                  Accel  => IMU.Range_8G,
-                  Gyro   => IMU.Range_512DPS,
-                  Rate   => IMU.ODR_235_Hz,
-                  Result => Result);
+   IMU.Configure
+     (Device,
+      Accel  => IMU.Range_8G,
+      Gyro   => IMU.Range_512DPS,
+      Rate   => IMU.ODR_235_Hz,
+      Result => Result);
    Put_Step ("configure", Result = IMU.OK);
    if Result /= IMU.OK then
       loop
@@ -177,11 +177,11 @@ begin
    --  one line each (the glue builds the whole line and emits it with a single
    --  esp_rom_printf).
    declare
-      Accel             : IMU.Axes;
-      Gyro              : IMU.Axes;
-      Temperature_Raw   : Integer_16;
-      Accel_LSB_Per_G   : constant Positive := IMU.Accel_LSB_Per_G (Device);
-      Gyro_LSB_Per_DPS  : constant Positive := IMU.Gyro_LSB_Per_DPS (Device);
+      Accel            : IMU.Axes;
+      Gyro             : IMU.Axes;
+      Temperature_Raw  : Integer_16;
+      Accel_LSB_Per_G  : constant Positive := IMU.Accel_LSB_Per_G (Device);
+      Gyro_LSB_Per_DPS : constant Positive := IMU.Gyro_LSB_Per_DPS (Device);
    begin
       --  one temperature reading up front (its own spaced line), then stream.
       delay until Clock + Milliseconds (250);
@@ -189,8 +189,8 @@ begin
       if Result = IMU.OK then
          Put ("[imu] temp[C]=");
          --  raw / 256 = degC; scaled to centi-degC for the 2-decimal print.
-         Put_Fixed (Integer (Temperature_Raw) * Centi_Per_Unit
-                    / Temp_LSB_Per_Deg_C, Centi_Per_Unit, 2);
+         Put_Fixed
+           (Integer (Temperature_Raw) * Centi_Per_Unit / Temp_LSB_Per_Deg_C, Centi_Per_Unit, 2);
          New_Line;
       end if;
 
@@ -205,18 +205,14 @@ begin
          exit when Result /= IMU.OK;
 
          declare
-            Accel_X_Mg : constant Integer :=
-              Milli_Units (Accel.X, Accel_LSB_Per_G);
-            Accel_Y_Mg : constant Integer :=
-              Milli_Units (Accel.Y, Accel_LSB_Per_G);
-            Accel_Z_Mg : constant Integer :=
-              Milli_Units (Accel.Z, Accel_LSB_Per_G);
+            Accel_X_Mg : constant Integer := Milli_Units (Accel.X, Accel_LSB_Per_G);
+            Accel_Y_Mg : constant Integer := Milli_Units (Accel.Y, Accel_LSB_Per_G);
+            Accel_Z_Mg : constant Integer := Milli_Units (Accel.Z, Accel_LSB_Per_G);
 
             --  |a| in milli-g, then in centi-m/s2 (for the 2-decimal print).
-            Magnitude_Mg : constant Integer :=
-              Integer_Sqrt (Accel_X_Mg * Accel_X_Mg
-                            + Accel_Y_Mg * Accel_Y_Mg
-                            + Accel_Z_Mg * Accel_Z_Mg);
+            Magnitude_Mg         : constant Integer :=
+              Integer_Sqrt
+                (Accel_X_Mg * Accel_X_Mg + Accel_Y_Mg * Accel_Y_Mg + Accel_Z_Mg * Accel_Z_Mg);
             Magnitude_Centi_Mps2 : constant Integer :=
               Magnitude_Mg * Centi_Mps2_Per_G / Milli_G_Per_G;
          begin

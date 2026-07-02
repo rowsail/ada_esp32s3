@@ -110,26 +110,19 @@ package body ESP32S3.ST7789.Text is
    ---------------
 
    procedure Draw_Char
-     (S      : Session;
-      X, Y   : Natural;
-      Ch     : Character;
-      FG, BG : Color;
-      Scale  : Positive := 1)
+     (S : Session; X, Y : Natural; Ch : Character; FG, BG : Color; Scale : Positive := 1)
    is
       W   : constant Natural := Cell_Width * Scale;
       H   : constant Natural := Cell_Height * Scale;
       Pix : Color_Array (0 .. W * H - 1);
-      G   : constant Glyph :=
-        (if Ch in Font'Range then Font (Ch) else (others => 0));
+      G   : constant Glyph := (if Ch in Font'Range then Font (Ch) else (others => 0));
    begin
       --  Expand the glyph into the (scaled) opaque cell, row-major.
       for Ry in 0 .. Cell_Height - 1 loop
          for Rx in 0 .. Cell_Width - 1 loop
             declare
                On : constant Boolean :=
-                 Rx < 5
-                 and then Ry < 7
-                 and then (G (Rx) and Shift_Left (Byte (1), Ry)) /= 0;
+                 Rx < 5 and then Ry < 7 and then (G (Rx) and Shift_Left (Byte (1), Ry)) /= 0;
                C  : constant Color := (if On then FG else BG);
             begin
                for Sy in 0 .. Scale - 1 loop
@@ -149,11 +142,7 @@ package body ESP32S3.ST7789.Text is
    ---------------
 
    procedure Draw_Text
-     (S      : Session;
-      X, Y   : Natural;
-      Str    : String;
-      FG, BG : Color;
-      Scale  : Positive := 1)
+     (S : Session; X, Y : Natural; Str : String; FG, BG : Color; Scale : Positive := 1)
    is
       Cx : Natural := X;
       Cy : Natural := Y;

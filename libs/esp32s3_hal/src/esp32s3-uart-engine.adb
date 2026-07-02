@@ -12,10 +12,8 @@ package body ESP32S3.UART.Engine is
    package MX renames ESP32S3_Registers.IO_MUX;  --  IO_MUX (per-pad config)
    package G renames ESP32S3.GPIO;              --  valid-pad subtype
 
-   Src_Hz   : constant :=
-     40_000_000;            --  XTAL clock (CLK_CONF SCLK_SEL=3)
-   Fifo_Len : constant :=
-     128;                   --  default per-port FIFO depth
+   Src_Hz   : constant := 40_000_000;            --  XTAL clock (CLK_CONF SCLK_SEL=3)
+   Fifo_Len : constant := 128;                   --  default per-port FIFO depth
 
    --  GPIO-matrix signal index per port (gpio_sig_map.h): TXD-out and RXD-in
    --  share one index per UART; RTS-out and CTS-in share another.
@@ -41,8 +39,7 @@ package body ESP32S3.UART.Engine is
    procedure Enable_Clock (Port : UART_Port) is
       use ESP32S3_Registers.SYSTEM;
    begin
-      SYSTEM_Periph.PERIP_CLK_EN0.UART_MEM_CLK_EN :=
-        True;   --  shared FIFO RAM
+      SYSTEM_Periph.PERIP_CLK_EN0.UART_MEM_CLK_EN := True;   --  shared FIFO RAM
       case Port is
          when UART0 =>
             SYSTEM_Periph.PERIP_CLK_EN0.UART_CLK_EN := True;
@@ -91,11 +88,8 @@ package body ESP32S3.UART.Engine is
    ----------
 
    function Open
-     (Port   : UART_Port;
-      Baud   : Baud_Rate;
-      Bits   : Data_Bits;
-      Parity : Parity_Mode;
-      Stop   : Stop_Bits) return Bus
+     (Port : UART_Port; Baud : Baud_Rate; Bits : Data_Bits; Parity : Parity_Mode; Stop : Stop_Bits)
+      return Bus
    is
       Regs : constant Periph_Ref := Regs_Of (Port);
    begin
@@ -174,8 +168,7 @@ package body ESP32S3.UART.Engine is
    --  Drive Pad as a push-pull output sourced from the matrix signal Sig.
    procedure Drive_Out (Pad : G.Pin_Id; Sig : Natural) is
       Ix : constant Natural := Natural (Pad);
-      O  : GR.FUNC_OUT_SEL_CFG_Register :=
-        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
+      O  : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
    begin
       G.Configure (Pad, Mode => G.Output, Drive => G.Drive_Strong);
       O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
@@ -192,11 +185,9 @@ package body ESP32S3.UART.Engine is
       Ix : constant Natural := Natural (Pad);
       P  : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Ix);
    begin
-      P.MCU_SEL :=
-        1;                           --  route through the GPIO matrix
+      P.MCU_SEL := 1;                           --  route through the GPIO matrix
       P.FUN_IE := True;                        --  input buffer on
-      P.FUN_WPU :=
-        True;                        --  pull-up (idle/disconnect high)
+      P.FUN_WPU := True;                        --  pull-up (idle/disconnect high)
       MX.IO_MUX_Periph.GPIO (Ix) := P;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Sig) :=
         (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix),
@@ -233,8 +224,7 @@ package body ESP32S3.UART.Engine is
       if Rts /= G.No_Pin then
          Drive_Out (G.Pin_Id (Rts), Flow_Sig);
          B.Regs.MEM_CONF.RX_FLOW_THRHD :=
-           MEM_CONF_RX_FLOW_THRHD_Field
-             (Natural'Min (127, Natural'Max (1, Rx_Flow_Threshold)));
+           MEM_CONF_RX_FLOW_THRHD_Field (Natural'Min (127, Natural'Max (1, Rx_Flow_Threshold)));
       end if;
       B.Regs.CONF1.RX_FLOW_EN := Rts /= G.No_Pin;
 
@@ -293,14 +283,11 @@ package body ESP32S3.UART.Engine is
          declare
             Guard : Natural := 5_000_000;
          begin
-            while Natural (B.Regs.STATUS.TXFIFO_CNT) >= Fifo_Len
-              and then Guard > 0
-            loop
+            while Natural (B.Regs.STATUS.TXFIFO_CNT) >= Fifo_Len and then Guard > 0 loop
                Guard := Guard - 1;
             end loop;
          end;
-         B.Regs.FIFO :=
-           (RXFIFO_RD_BYTE => ESP32S3_Registers.Byte (D), others => <>);
+         B.Regs.FIFO := (RXFIFO_RD_BYTE => ESP32S3_Registers.Byte (D), others => <>);
       end loop;
    end Write;
 
@@ -326,8 +313,7 @@ package body ESP32S3.UART.Engine is
          declare
             Guard : Natural := 5_000_000;
          begin
-            while Natural (B.Regs.STATUS.RXFIFO_CNT) = 0 and then Guard > 0
-            loop
+            while Natural (B.Regs.STATUS.RXFIFO_CNT) = 0 and then Guard > 0 loop
                Guard := Guard - 1;
             end loop;
             exit when Natural (B.Regs.STATUS.RXFIFO_CNT) = 0;

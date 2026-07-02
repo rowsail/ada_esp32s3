@@ -49,10 +49,10 @@
 --  The expander's own 16 IO pins stay inputs here (the demo never drives them);
 --  on this board they read the fixed external pattern 0xff77.  Wire LEDs to free
 --  expander pins and call Set_Directions + Write_Pin to light them.
-with Interfaces;     use Interfaces;
-with Ada.Real_Time;  use Ada.Real_Time;
+with Interfaces;    use Interfaces;
+with Ada.Real_Time; use Ada.Real_Time;
 
-with ESP32S3.Log;    use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 with ESP32S3.TCA9555;
 
 with System.BB.CPU_Primitives.Multiprocessors;
@@ -65,31 +65,30 @@ procedure Main is
 
    --  Wiring + strap (see the header).  Addr is the A2/A1/A0 strap value 0..7,
    --  which the part maps to bus address 0x20 + Addr -- here 0 -> 0x20.
-   Strap_Address       : constant := 0;
-   Serial_Data_Pin     : constant := 8;    --  SDA -> IO8
-   Serial_Clock_Pin    : constant := 7;    --  SCL -> IO7
+   Strap_Address    : constant := 0;
+   Serial_Data_Pin  : constant := 8;    --  SDA -> IO8
+   Serial_Clock_Pin : constant := 7;    --  SCL -> IO7
 
    --  Set_Directions takes a 1 bit = input mask; all-ones makes every pin an
    --  input -- a known, non-driving state so nothing fights the external wiring.
-   All_Pins_Input      : constant TCA9555.Port_Value := 16#FFFF#;
+   All_Pins_Input : constant TCA9555.Port_Value := 16#FFFF#;
 
    --  Bit mask for the single pin the per-pin RMW step toggles (pin 5).
-   Toggle_Pin          : constant TCA9555.Pin_Number := 5;
-   Toggle_Pin_Mask     : constant TCA9555.Port_Value := 2 ** 5;
+   Toggle_Pin      : constant TCA9555.Pin_Number := 5;
+   Toggle_Pin_Mask : constant TCA9555.Port_Value := 2**5;
 
    --  Polarity-inversion register value written then read back (an arbitrary
    --  walking pattern); the step restores 0 (normal polarity) afterwards.
-   Polarity_Pattern    : constant TCA9555.Port_Value := 16#A55A#;
-   Polarity_Normal     : constant TCA9555.Port_Value := 0;
+   Polarity_Pattern : constant TCA9555.Port_Value := 16#A55A#;
+   Polarity_Normal  : constant TCA9555.Port_Value := 0;
 
    --  Two output-register patterns written + read back, one per round-trip.
-   Output_Patterns     : constant array (1 .. 2) of TCA9555.Port_Value :=
-     (16#A55A#, 16#5AA5#);
+   Output_Patterns : constant array (1 .. 2) of TCA9555.Port_Value := (16#A55A#, 16#5AA5#);
 
    --  Low 16 bits of a port value as an Unsigned_32, for the "0x%04x" hex
    --  output (Put_Hex takes an Unsigned_32).
-   function Low_16_Bits (Value : TCA9555.Port_Value) return Unsigned_32 is
-     (Unsigned_32 (Value) and 16#FFFF#);
+   function Low_16_Bits (Value : TCA9555.Port_Value) return Unsigned_32
+   is (Unsigned_32 (Value) and 16#FFFF#);
 
    --  "[gpio] probe   : inputs=0x%04x  %s" (ok ? "(present)" : "(no ACK!)").
    procedure Report_Probe (Inputs : TCA9555.Port_Value; Present : Boolean) is
@@ -102,10 +101,7 @@ procedure Main is
 
    --  "[gpio] %-7s : wrote=0x%04x read=0x%04x  %s" for out-reg / pol-reg
    --  (Name is "out-reg" or "pol-reg", both 7 chars so no padding is needed).
-   procedure Report_Register
-     (Name : String;
-      Wrote, Read_Back : TCA9555.Port_Value;
-      Pass : Boolean)
+   procedure Report_Register (Name : String; Wrote, Read_Back : TCA9555.Port_Value; Pass : Boolean)
    is
    begin
       Put ("[gpio] ");
@@ -120,10 +116,7 @@ procedure Main is
 
    --  "[gpio] pin %-2d  : set=%d  out-bit=%d  %s" (pin left-justified to width
    --  2, so a single-digit pin gets one trailing space).
-   procedure Report_Pin
-     (Pin, Set_Value, Output_Bit : Integer;
-      Pass : Boolean)
-   is
+   procedure Report_Pin (Pin, Set_Value, Output_Bit : Integer; Pass : Boolean) is
    begin
       Put ("[gpio] pin ");
       Put (Pin);
@@ -152,20 +145,15 @@ procedure Main is
 
 begin
    delay until Clock + Milliseconds (200);
-   Put_Line ("[gpio] TCA9555 16-bit I2C GPIO expander demo "
-             & "(0x20, SDA=IO8 SCL=IO7)");
+   Put_Line ("[gpio] TCA9555 16-bit I2C GPIO expander demo " & "(0x20, SDA=IO8 SCL=IO7)");
 
    TCA9555.Setup
-     (Expander,
-      Addr => Strap_Address,
-      Sda  => Serial_Data_Pin,
-      Scl  => Serial_Clock_Pin);
+     (Expander, Addr => Strap_Address, Sda => Serial_Data_Pin, Scl => Serial_Clock_Pin);
    TCA9555.Acquire (Expander_Session, Expander);   --  hold the expander for the test
 
    --  Force every pin to an input -- a known, non-driving state (independent of
    --  whatever the registers held before) so nothing fights the external wiring.
-   TCA9555.Set_Directions
-     (Expander_Session, Inputs => All_Pins_Input, Result => Expander_Status);
+   TCA9555.Set_Directions (Expander_Session, Inputs => All_Pins_Input, Result => Expander_Status);
 
    --  probe: read the input port.
    TCA9555.Read_Port (Expander_Session, Input_Levels, Expander_Status);
@@ -187,40 +175,41 @@ begin
       end if;
       Drain_Console;
       Report_Register
-        ("out-reg", Pattern, Read_Value,
+        ("out-reg",
+         Pattern,
+         Read_Value,
          Expander_Status = TCA9555.OK and then Read_Value = Pattern);
    end loop;
 
    --  per-pin RMW of the output register: drive the bit high, read it back.
-   TCA9555.Write_Pin
-     (Expander_Session, Toggle_Pin, TCA9555.High, Expander_Status);
+   TCA9555.Write_Pin (Expander_Session, Toggle_Pin, TCA9555.High, Expander_Status);
    TCA9555.Read_Outputs (Expander_Session, Read_Value, Expander_Status);
    Drain_Console;
    Report_Pin
-     (Integer (Toggle_Pin), 1,
+     (Integer (Toggle_Pin),
+      1,
       Boolean'Pos ((Read_Value and Toggle_Pin_Mask) /= 0),
-      Expander_Status = TCA9555.OK
-        and then (Read_Value and Toggle_Pin_Mask) /= 0);
+      Expander_Status = TCA9555.OK and then (Read_Value and Toggle_Pin_Mask) /= 0);
 
-   TCA9555.Write_Pin
-     (Expander_Session, Toggle_Pin, TCA9555.Low, Expander_Status);
+   TCA9555.Write_Pin (Expander_Session, Toggle_Pin, TCA9555.Low, Expander_Status);
    TCA9555.Read_Outputs (Expander_Session, Read_Value, Expander_Status);
    Drain_Console;
    Report_Pin
-     (Integer (Toggle_Pin), 0,
+     (Integer (Toggle_Pin),
+      0,
       Boolean'Pos ((Read_Value and Toggle_Pin_Mask) /= 0),
-      Expander_Status = TCA9555.OK
-        and then (Read_Value and Toggle_Pin_Mask) = 0);
+      Expander_Status = TCA9555.OK and then (Read_Value and Toggle_Pin_Mask) = 0);
 
    --  polarity-inversion register round-trip (write then read back).
-   TCA9555.Set_Polarity
-     (Expander_Session, Polarity_Pattern, Expander_Status);
+   TCA9555.Set_Polarity (Expander_Session, Polarity_Pattern, Expander_Status);
    if Expander_Status = TCA9555.OK then
       TCA9555.Read_Polarity (Expander_Session, Read_Value, Expander_Status);
    end if;
    Drain_Console;
    Report_Register
-     ("pol-reg", Polarity_Pattern, Read_Value,
+     ("pol-reg",
+      Polarity_Pattern,
+      Read_Value,
       Expander_Status = TCA9555.OK and then Read_Value = Polarity_Pattern);
    TCA9555.Set_Polarity
      (Expander_Session, Polarity_Normal, Expander_Status);   --  restore normal polarity

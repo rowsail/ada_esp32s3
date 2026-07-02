@@ -27,10 +27,8 @@ package ESP32S3.TWAI is
    --  CAN identifiers come in two widths.  Each frame type carries its own, so
    --  the identifier is range-checked to the standard it belongs to, and Send is
    --  overloaded on it --- you cannot put a 29-bit id in a standard frame.
-   subtype Standard_Id is
-     Interfaces.Unsigned_32 range 0 .. 16#7FF#;        --  11-bit
-   subtype Extended_Id is
-     Interfaces.Unsigned_32 range 0 .. 16#1FFF_FFFF#;  --  29-bit
+   subtype Standard_Id is Interfaces.Unsigned_32 range 0 .. 16#7FF#;        --  11-bit
+   subtype Extended_Id is Interfaces.Unsigned_32 range 0 .. 16#1FFF_FFFF#;  --  29-bit
 
    --  A standard (11-bit ID) CAN frame.  Remote => True makes it a remote-transmission
    --  request (RTR): it carries Id and Length (the requested data length) but no
@@ -77,21 +75,16 @@ package ESP32S3.TWAI is
    --  transceiver with Configure_Pins, or loop back for a self-test with
    --  Enable_Loopback, once held.
    procedure Acquire
-     (S        : in out Session;
-      Mode     : Bus_Mode := Normal;
-      Bit_Rate : Positive := 125_000);
+     (S : in out Session; Mode : Bus_Mode := Normal; Bit_Rate : Positive := 125_000);
 
    --  Re-apply the mode and bit rate on the controller S already holds, without
    --  releasing it.  Raises Not_Owned unless S holds the controller.
-   procedure Reconfigure
-     (S : Session; Mode : Bus_Mode := Normal; Bit_Rate : Positive := 125_000);
+   procedure Reconfigure (S : Session; Mode : Bus_Mode := Normal; Bit_Rate : Positive := 125_000);
 
    --  Route TWAI TX/RX to physical pads (for a real transceiver), on the held
    --  controller.  Raises Not_Owned unless S holds it.
    procedure Configure_Pins
-     (S  : Session;
-      Tx : ESP32S3.GPIO.Optional_Pin;
-      Rx : ESP32S3.GPIO.Optional_Pin);
+     (S : Session; Tx : ESP32S3.GPIO.Optional_Pin; Rx : ESP32S3.GPIO.Optional_Pin);
 
    --  Loop TX back to RX through one pad for a wiring-free self-test (use with
    --  Setup (Self_Test)), on the held controller.  Raises Not_Owned unless held.

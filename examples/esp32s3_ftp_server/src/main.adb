@@ -24,11 +24,11 @@ with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.SPI;
 with ESP32S3.W25Q;
 with ESP32S3.GPIO;
-with ESP32S3.Log;                   use ESP32S3.Log;
-with ESP32S3.Block_Dev;             use ESP32S3.Block_Dev;
+with ESP32S3.Log;       use ESP32S3.Log;
+with ESP32S3.Block_Dev; use ESP32S3.Block_Dev;
 with ESP32S3.Block_Dev.W25Q_Source;
 with ESP32S3.Block_Dev.WL;
-with ESP32S3.Ext4;                  use ESP32S3.Ext4;
+with ESP32S3.Ext4;      use ESP32S3.Ext4;
 with ESP32S3.Ext4.Mkfs;
 with ESP32S3.Ext4.FS;
 with ESP32S3.Ext4.VFS;
@@ -41,11 +41,11 @@ with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
-   package SPI  renames ESP32S3.SPI;
+   package SPI renames ESP32S3.SPI;
    package W25Q renames ESP32S3.W25Q;
-   package BDW  renames ESP32S3.Block_Dev.W25Q_Source;
-   package WL   renames ESP32S3.Block_Dev.WL;
-   package FS   renames ESP32S3.Ext4.FS;
+   package BDW renames ESP32S3.Block_Dev.W25Q_Source;
+   package WL renames ESP32S3.Block_Dev.WL;
+   package FS renames ESP32S3.Ext4.FS;
    package Mkfs renames ESP32S3.Ext4.Mkfs;
 
    SCLK_Pin : constant := 1;
@@ -54,16 +54,16 @@ procedure Main is
    CS_Pin   : constant ESP32S3.GPIO.Pin_Id := 21;
    Clock_Hz : constant := 8_000_000;
 
-   Flash : W25Q.Flash :=
+   Flash   : W25Q.Flash :=
      (Host => SPI.SPI2, Clock_Hz => Clock_Hz, CS_Pin => CS_Pin, others => <>);
    ID      : W25Q.JEDEC_ID;
    Mode_OK : Boolean;
 
    --  The flash stack lives in Flash_FS (library level -- see that package).
    Raw : ESP32S3.Block_Dev.W25Q_Source.Source renames Flash_FS.Raw;
-   Vol : ESP32S3.Block_Dev.WL.Volume          renames Flash_FS.Vol;
-   Dev : Device                               renames Flash_FS.Dev;
-   M   : FS.Mount                             renames Flash_FS.M;
+   Vol : ESP32S3.Block_Dev.WL.Volume renames Flash_FS.Vol;
+   Dev : Device renames Flash_FS.Dev;
+   M   : FS.Mount renames Flash_FS.M;
    N   : Inode_Number;
 
    Lease : ESP32S3.W5500.DHCP.Lease_Info;
@@ -109,8 +109,7 @@ begin
 
    --  3. Seed a little content so the first listing is not empty.
    N := M.Create_File ("/", "readme.txt");
-   M.Write_File
-     (N, To_Bytes ("Files on the ESP32-S3 ext4 flash, served over FTP." & ASCII.LF));
+   M.Write_File (N, To_Bytes ("Files on the ESP32-S3 ext4 flash, served over FTP." & ASCII.LF));
    M.Mkdir ("/", "uploads");
    M.Commit;
 
@@ -121,8 +120,10 @@ begin
    --  be stored in the VFS table that outlives this procedure.
    ESP32S3.Ext4.VFS.Add ("flash", M'Access);
 
-   Put_Line ("[ftpd] serving on " & W5500_Dev.Image (Lease.IP)
-             & ":21  (anonymous, read-write)  ->  /flash");
+   Put_Line
+     ("[ftpd] serving on "
+      & W5500_Dev.Image (Lease.IP)
+      & ":21  (anonymous, read-write)  ->  /flash");
 
    --  5. Serve forever.  No Local_IP: the server reads its own address from each
    --  accepted connection (Get_Socket_Name), so PASV always advertises the IP the

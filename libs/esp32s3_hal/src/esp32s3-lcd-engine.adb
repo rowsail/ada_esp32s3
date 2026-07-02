@@ -11,12 +11,10 @@ package body ESP32S3.LCD.Engine is
    package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
 
-   Src_Hz : constant :=
-     160_000_000;            --  LCD_CLK_SEL = 3 source clock
+   Src_Hz : constant := 160_000_000;            --  LCD_CLK_SEL = 3 source clock
 
    procedure Drive_Out (Pad : G.Pin_Id; Sig : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register :=
-        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
+      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
    begin
       G.Configure (Pad, Mode => G.Output, Drive => G.Drive_Strong);
       O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
@@ -46,18 +44,15 @@ package body ESP32S3.LCD.Engine is
       --  pclk above ~625 kHz -- i.e. every realistic display clock.)
       Total      : constant Natural := Natural'Max (2, Src_Hz / Pclk_Hz);
       --  Module divider: just large enough to keep the prescale within its 64 max.
-      Nm         : constant Natural :=
-        Natural'Max (2, Natural'Min (255, (Total + 63) / 64));
+      Nm         : constant Natural := Natural'Max (2, Natural'Min (255, (Total + 63) / 64));
       --  Prescale carries the rest of the division (clamped to its 1 .. 64 range).
-      P          : constant Natural :=
-        Natural'Max (1, Natural'Min (64, Total / Nm));
+      P          : constant Natural := Natural'Max (1, Natural'Min (64, Total / Nm));
       --  CLKCNT_N can't be 0; the divide-by-1 case is expressed via EQU_SYSCLK.
       Equ_Sysclk : constant Boolean := P = 1;
       Clk_Cnt    : constant Natural := (if P = 1 then 1 else P - 1);
    begin
       SYSTEM_Periph.PERIP_CLK_EN1.LCD_CAM_CLK_EN := True;
-      SYSTEM_Periph.PERIP_RST_EN1.LCD_CAM_RST :=
-        True;     --  default set; pulse
+      SYSTEM_Periph.PERIP_RST_EN1.LCD_CAM_RST := True;     --  default set; pulse
       SYSTEM_Periph.PERIP_RST_EN1.LCD_CAM_RST := False;
 
       --  Clock: source sel 3, module = src/Nm, pixel = module/P.
@@ -94,9 +89,7 @@ package body ESP32S3.LCD.Engine is
    -- Configure_Pins --
    --------------------
 
-   procedure Configure_Pins
-     (B : Bus; Data : Data_Pins; Pclk : ESP32S3.GPIO.Optional_Pin)
-   is
+   procedure Configure_Pins (B : Bus; Data : Data_Pins; Pclk : ESP32S3.GPIO.Optional_Pin) is
       use type ESP32S3.GPIO.Pad_Number;
    begin
       if not B.Valid then
@@ -134,9 +127,7 @@ package body ESP32S3.LCD.Engine is
    -- Transmit --
    --------------
 
-   procedure Transmit
-     (B : Bus; Tx : System.Address; Length : Natural; Ok : out Boolean)
-   is
+   procedure Transmit (B : Bus; Tx : System.Address; Length : Natural; Ok : out Boolean) is
       Wait : Natural := 5_000_000;
       Chan : GD.Channel;          --  claimed transiently; released on return
    begin
@@ -153,8 +144,7 @@ package body ESP32S3.LCD.Engine is
       --  One byte per PCLK; arm the GDMA OUT path with the buffer.
       LCD_CAM_Periph.LCD_USER.LCD_ALWAYS_OUT_EN := False;
       LCD_CAM_Periph.LCD_USER.LCD_DOUT := True;
-      LCD_CAM_Periph.LCD_USER.LCD_DOUT_CYCLELEN :=
-        LCD_USER_LCD_DOUT_CYCLELEN_Field (Length - 1);
+      LCD_CAM_Periph.LCD_USER.LCD_DOUT_CYCLELEN := LCD_USER_LCD_DOUT_CYCLELEN_Field (Length - 1);
       LCD_CAM_Periph.LCD_MISC.LCD_AFIFO_RESET := True;
 
       GD.Start (Chan, GD.Mem_To_Periph, Tx, Length);
@@ -163,9 +153,7 @@ package body ESP32S3.LCD.Engine is
       LCD_CAM_Periph.LCD_USER.LCD_UPDATE := True;
       LCD_CAM_Periph.LCD_USER.LCD_START := True;
 
-      while not LCD_CAM_Periph.LC_DMA_INT_RAW.LCD_TRANS_DONE_INT_RAW
-        and then Wait > 0
-      loop
+      while not LCD_CAM_Periph.LC_DMA_INT_RAW.LCD_TRANS_DONE_INT_RAW and then Wait > 0 loop
          Wait := Wait - 1;
       end loop;
       Ok := LCD_CAM_Periph.LC_DMA_INT_RAW.LCD_TRANS_DONE_INT_RAW;

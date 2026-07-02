@@ -1,11 +1,7 @@
 with Ada.Unchecked_Deallocation;
 with ESP32S3.Ext4;         --  moved here from the spec: the ext4 backing is a
-with ESP32S3
-       .Ext4
-       .Inode;   --  body-only concern, so console-only clients of the
-with ESP32S3
-       .Ext4
-       .VFS;     --  spec do not drag the filesystem into their closure.
+with ESP32S3.Ext4.Inode;   --  body-only concern, so console-only clients of the
+with ESP32S3.Ext4.VFS;     --  spec do not drag the filesystem into their closure.
 with ESP32S3.Ext4.FS;
 with ESP32S3.Serial;
 
@@ -116,8 +112,7 @@ package body ESP32S3.Text_IO is
    begin
       --  Reading is allowed from a disk file OR the console, but only when the
       --  file was opened for input (Standard_Input is a Console/In_File file).
-      if B.Mode /= In_File or else (B.Kind /= Disk and then B.Kind /= Console)
-      then
+      if B.Mode /= In_File or else (B.Kind /= Disk and then B.Kind /= Console) then
          raise ESP32S3.Ext4.Mode_Error;
       end if;
    end Require_Read;
@@ -299,8 +294,7 @@ package body ESP32S3.Text_IO is
    --  far slower than the read loop, so a non-blocking peek would truncate the
    --  token after its first character.  On a disk file it is exactly Peek (real
    --  EOF, no spin), so disk parsing is byte-for-byte unchanged.
-   procedure Peek_Wait (B : CB_Access; C : out Character; Avail : out Boolean)
-   is
+   procedure Peek_Wait (B : CB_Access; C : out Character; Avail : out Boolean) is
    begin
       if B.Kind = Console then
          loop
@@ -319,11 +313,7 @@ package body ESP32S3.Text_IO is
       loop
          Peek_Wait (B, C, Av);
          exit when not Av;
-         exit when
-           C /= ' '
-           and then C /= ASCII.HT
-           and then C /= ASCII.LF
-           and then C /= ASCII.CR;
+         exit when C /= ' ' and then C /= ASCII.HT and then C /= ASCII.LF and then C /= ASCII.CR;
          Advance (B);
       end loop;
    end Skip_Blanks;
@@ -367,9 +357,7 @@ package body ESP32S3.Text_IO is
       return (if Neg then -V else V);
    end Get_Integer;
 
-   function Based_Image
-     (V : Long_Long_Integer; Base : Number_Base) return String
-   is
+   function Based_Image (V : Long_Long_Integer; Base : Number_Base) return String is
       Digs : constant String := "0123456789ABCDEF";
       Tmp  : String (1 .. 72);
       P    : Natural := Tmp'Last + 1;
@@ -393,10 +381,7 @@ package body ESP32S3.Text_IO is
                Pre : constant String :=
                  (if Base < 10
                   then (1 => Character'Val (Character'Pos ('0') + Base))
-                  else
-                    "1"
-                    & (1 =>
-                         Character'Val (Character'Pos ('0') + (Base - 10))));
+                  else "1" & (1 => Character'Val (Character'Pos ('0') + (Base - 10))));
             begin
                return Sign & Pre & "#" & Body_Str & "#";
             end;
@@ -426,9 +411,7 @@ package body ESP32S3.Text_IO is
 
    --  Parse a signed integer (decimal, or Base#digits#) out of a String. Last is
    --  the index of the last character used; Data_Error if no number is present.
-   procedure Scan_Integer
-     (From : String; V : out Long_Long_Integer; Last : out Natural)
-   is
+   procedure Scan_Integer (From : String; V : out Long_Long_Integer; Last : out Natural) is
       I       : Natural := From'First;
       Neg     : Boolean := False;
       Base    : Long_Long_Integer := 10;
@@ -436,9 +419,7 @@ package body ESP32S3.Text_IO is
    begin
       V := 0;
       Last := From'First - 1;
-      while I <= From'Last
-        and then (From (I) = ' ' or else From (I) = ASCII.HT)
-      loop
+      while I <= From'Last and then (From (I) = ' ' or else From (I) = ASCII.HT) loop
          I := I + 1;
       end loop;
       if I <= From'Last and then (From (I) = '-' or else From (I) = '+') then
@@ -476,8 +457,7 @@ package body ESP32S3.Text_IO is
 
    --  Build "[-]whole.frac" from a value pre-split into a non-negative integer
    --  part and an A-digit fractional part. Used by Fixed_IO / Decimal_IO.
-   function Scaled_Image
-     (Neg : Boolean; Whole, Frac : Long_Long_Integer; A : Field) return String
+   function Scaled_Image (Neg : Boolean; Whole, Frac : Long_Long_Integer; A : Field) return String
    is
       FS : String (1 .. A) := (others => '0');
       T  : Long_Long_Integer := Frac;
@@ -512,9 +492,7 @@ package body ESP32S3.Text_IO is
       P := 0;
       Neg := False;
       Last := From'First - 1;
-      while I <= From'Last
-        and then (From (I) = ' ' or else From (I) = ASCII.HT)
-      loop
+      while I <= From'Last and then (From (I) = ' ' or else From (I) = ASCII.HT) loop
          I := I + 1;
       end loop;
       if I <= From'Last and then (From (I) = '-' or else From (I) = '+') then
@@ -540,8 +518,7 @@ package body ESP32S3.Text_IO is
       end if;
       if I <= From'Last and then (From (I) = 'e' or else From (I) = 'E') then
          I := I + 1;
-         if I <= From'Last and then (From (I) = '-' or else From (I) = '+')
-         then
+         if I <= From'Last and then (From (I) = '-' or else From (I) = '+') then
             ENeg := From (I) = '-';
             I := I + 1;
          end if;
@@ -561,9 +538,7 @@ package body ESP32S3.Text_IO is
    end Scan_Real_Str;
 
    --  Collect a numeric token from a file into Buf (sign, digits, '.', exponent).
-   procedure Read_Number_Token
-     (B : CB_Access; Buf : out String; Len : out Natural)
-   is
+   procedure Read_Number_Token (B : CB_Access; Buf : out String; Len : out Natural) is
       C  : Character;
       Av : Boolean;
       procedure Take is
@@ -584,8 +559,7 @@ package body ESP32S3.Text_IO is
       end if;
       loop
          Peek_Wait (B, C, Av);
-         exit when
-           not Av or else (Digit_Val (C) not in 0 .. 9 and then C /= '.');
+         exit when not Av or else (Digit_Val (C) not in 0 .. 9 and then C /= '.');
          Take;
       end loop;
       Peek_Wait (B, C, Av);
@@ -708,9 +682,7 @@ package body ESP32S3.Text_IO is
       end if;
    end New_CB;
 
-   procedure Open_For_Write
-     (B : CB_Access; Nm : String; Mode : File_Mode; Truncate : Boolean)
-   is
+   procedure Open_For_Write (B : CB_Access; Nm : String; Mode : File_Mode; Truncate : Boolean) is
       FS     : ESP32S3.Ext4.VFS.Mount_Ref;
       SF, SL : Natural;
    begin
@@ -728,9 +700,7 @@ package body ESP32S3.Text_IO is
          exception
             when others =>
                Split (Sub, Dir_Last, Name_First);
-               N :=
-                 FS.Create_File
-                   (Sub (Sub'First .. Dir_Last), Sub (Name_First .. Sub'Last));
+               N := FS.Create_File (Sub (Sub'First .. Dir_Last), Sub (Name_First .. Sub'Last));
          end;
          B.Kind := Disk;
          B.FS := FS;
@@ -746,29 +716,19 @@ package body ESP32S3.Text_IO is
    ----------------------------------------------------------------------------
 
    procedure Create
-     (File : in out File_Type;
-      Name : String;
-      Mode : File_Mode := Out_File;
-      Form : String := "")
+     (File : in out File_Type; Name : String; Mode : File_Mode := Out_File; Form : String := "")
    is
       Sync : Boolean;
    begin
       Parse_Form (Form, Sync);                     --  validate before creating
       New_CB (File);
       Open_For_Write
-        (File.CB,
-         Name,
-         (if Mode = In_File then Out_File else Mode),
-         Truncate => True);
+        (File.CB, Name, (if Mode = In_File then Out_File else Mode), Truncate => True);
       File.CB.Sync := Sync;
       Set_Form (File.CB, Form);
    end Create;
 
-   procedure Open
-     (File : in out File_Type;
-      Name : String;
-      Mode : File_Mode;
-      Form : String := "")
+   procedure Open (File : in out File_Type; Name : String; Mode : File_Mode; Form : String := "")
    is
       FS     : ESP32S3.Ext4.VFS.Mount_Ref;
       SF, SL : Natural;
@@ -825,8 +785,7 @@ package body ESP32S3.Text_IO is
          raise ESP32S3.Ext4.Use_Error;     --  cannot delete the console
 
       end if;
-      Close
-        (File);                         --  close (commits any pending writes)
+      Close (File);                         --  close (commits any pending writes)
       Locate (Nm, FS, SF, SL);
       declare
          Sub                  : constant String := Nm (SF .. SL);
@@ -973,8 +932,7 @@ package body ESP32S3.Text_IO is
       B : constant CB_Access := CB (File);
       T : constant Positive := Positive (To);
    begin
-      if B.Mode = In_File and then (B.Kind = Disk or else B.Kind = Console)
-      then
+      if B.Mode = In_File and then (B.Kind = Disk or else B.Kind = Console) then
          while B.Column < T loop
             --  input: skip forward
             declare
@@ -1005,8 +963,7 @@ package body ESP32S3.Text_IO is
       B : constant CB_Access := CB (File);
       T : constant Positive := Positive (To);
    begin
-      if B.Mode = In_File and then (B.Kind = Disk or else B.Kind = Console)
-      then
+      if B.Mode = In_File and then (B.Kind = Disk or else B.Kind = Console) then
          --  Input: skip lines FORWARD until the line number reaches T (a stream
          --  has no backward seek; a target at/behind the current line is a no-op).
          --  A live console has no seekable line index, so it is a plain no-op.
@@ -1018,12 +975,10 @@ package body ESP32S3.Text_IO is
       elsif T > B.Line_No then
          New_Line (File, Positive_Count (T - B.Line_No));      --  forward
       elsif T < B.Line_No then
-         New_Page
-           (File);                                      --  can't go back:
+         New_Page (File);                                      --  can't go back:
          if T > 1 then
             --  new page, then
-            New_Line
-              (File, Positive_Count (T - 1));           --  down to line T
+            New_Line (File, Positive_Count (T - 1));           --  down to line T
 
          end if;
       end if;
@@ -1092,9 +1047,7 @@ package body ESP32S3.Text_IO is
       Get (Cur_In.all, Item);
    end Get;
 
-   procedure Look_Ahead
-     (File : File_Type; Item : out Character; End_Of_Line : out Boolean)
-   is
+   procedure Look_Ahead (File : File_Type; Item : out Character; End_Of_Line : out Boolean) is
       B  : constant CB_Access := CB (File);
       C  : Character;
       Av : Boolean;
@@ -1132,9 +1085,7 @@ package body ESP32S3.Text_IO is
       Get_Immediate (Cur_In.all, Item);
    end Get_Immediate;
 
-   procedure Get_Immediate
-     (File : File_Type; Item : out Character; Available : out Boolean)
-   is
+   procedure Get_Immediate (File : File_Type; Item : out Character; Available : out Boolean) is
       B  : constant CB_Access := CB (File);
       C  : Character;
       Av : Boolean;
@@ -1167,8 +1118,7 @@ package body ESP32S3.Text_IO is
       end if;
    end Swallow_LF_After_CR;
 
-   procedure Get_Line (File : File_Type; Item : out String; Last : out Natural)
-   is
+   procedure Get_Line (File : File_Type; Item : out String; Last : out Natural) is
       B  : constant CB_Access := CB (File);
       C  : Character;
       Av : Boolean;
@@ -1319,8 +1269,7 @@ package body ESP32S3.Text_IO is
       if B.Kind = Disk and then B.Mode = In_File then
          return B.Offset >= B.Info.Size;
       elsif B.Kind = Console and then B.Mode = In_File then
-         return
-           False;   --  the console is an endless stream: never at end-of-file
+         return False;   --  the console is an endless stream: never at end-of-file
       else
          raise ESP32S3.Ext4.Mode_Error;
       end if;
@@ -1363,13 +1312,10 @@ package body ESP32S3.Text_IO is
          Width : Field := Default_Width;
          Base  : Number_Base := Default_Base) is
       begin
-         Put_Number
-           (CB (File), Based_Image (Long_Long_Integer (Item), Base), Width);
+         Put_Number (CB (File), Based_Image (Long_Long_Integer (Item), Base), Width);
       end Put;
       procedure Put
-        (Item  : Num;
-         Width : Field := Default_Width;
-         Base  : Number_Base := Default_Base) is
+        (Item : Num; Width : Field := Default_Width; Base : Number_Base := Default_Base) is
       begin
          Put (Cur_Out.all, Item, Width, Base);
       end Put;
@@ -1381,8 +1327,7 @@ package body ESP32S3.Text_IO is
       begin
          Get (Cur_In.all, Item);
       end Get;
-      procedure Put
-        (To : out String; Item : Num; Base : Number_Base := Default_Base) is
+      procedure Put (To : out String; Item : Num; Base : Number_Base := Default_Base) is
       begin
          Right_Justify (To, Based_Image (Long_Long_Integer (Item), Base));
       end Put;
@@ -1403,13 +1348,10 @@ package body ESP32S3.Text_IO is
          Width : Field := Default_Width;
          Base  : Number_Base := Default_Base) is
       begin
-         Put_Number
-           (CB (File), Based_Image (Long_Long_Integer (Item), Base), Width);
+         Put_Number (CB (File), Based_Image (Long_Long_Integer (Item), Base), Width);
       end Put;
       procedure Put
-        (Item  : Num;
-         Width : Field := Default_Width;
-         Base  : Number_Base := Default_Base) is
+        (Item : Num; Width : Field := Default_Width; Base : Number_Base := Default_Base) is
       begin
          Put (Cur_Out.all, Item, Width, Base);
       end Put;
@@ -1421,8 +1363,7 @@ package body ESP32S3.Text_IO is
       begin
          Get (Cur_In.all, Item);
       end Get;
-      procedure Put
-        (To : out String; Item : Num; Base : Number_Base := Default_Base) is
+      procedure Put (To : out String; Item : Num; Base : Number_Base := Default_Base) is
       begin
          Right_Justify (To, Based_Image (Long_Long_Integer (Item), Base));
       end Put;
@@ -1441,23 +1382,20 @@ package body ESP32S3.Text_IO is
       --  Format Item with Aft fractional digits, rounded. Exp = 0 -> fixed point
       --  (sign + integer part + '.' + Aft digits). Exp > 0 -> scientific: a
       --  mantissa normalised to [1,10) + 'E' + signed exponent of >= Exp digits.
-      function Float_Image (Item : Num; Aft : Field; Exp : Field) return String
-      is
+      function Float_Image (Item : Num; Aft : Field; Exp : Field) return String is
          A    : constant Field := Field'Min (Aft, 18);
          Neg  : constant Boolean := Item < 0.0;
          Sign : constant String := (if Neg then "-" else "");
          M    : Num := abs Item;
 
-         function Frac_Digits (Frac : Num; Carry : out Boolean) return String
-         is
+         function Frac_Digits (Frac : Num; Carry : out Boolean) return String is
             Scale : Long_Long_Integer := 1;
          begin
             for I in 1 .. A loop
                Scale := Scale * 10;
             end loop;
             declare
-               Sd : Long_Long_Integer :=
-                 Long_Long_Integer (Num'Rounding (Frac * Num (Scale)));
+               Sd : Long_Long_Integer := Long_Long_Integer (Num'Rounding (Frac * Num (Scale)));
                R  : String (1 .. A) := (others => '0');
                T  : Long_Long_Integer;
             begin
@@ -1469,8 +1407,7 @@ package body ESP32S3.Text_IO is
                end if;
                T := Sd;
                for K in reverse R'Range loop
-                  R (K) :=
-                    Character'Val (Character'Pos ('0') + Integer (T mod 10));
+                  R (K) := Character'Val (Character'Pos ('0') + Integer (T mod 10));
                   T := T / 10;
                end loop;
                return R;
@@ -1480,18 +1417,14 @@ package body ESP32S3.Text_IO is
       begin
          if Exp = 0 then
             declare
-               IP : Long_Long_Integer :=
-                 Long_Long_Integer (Num'Truncation (M));
+               IP : Long_Long_Integer := Long_Long_Integer (Num'Truncation (M));
                Cy : Boolean;
                FS : constant String := Frac_Digits (M - Num (IP), Cy);
             begin
                if Cy then
                   IP := IP + 1;
                end if;
-               return
-                 Sign
-                 & Based_Image (IP, 10)
-                 & (if A > 0 then "." & FS else "");
+               return Sign & Based_Image (IP, 10) & (if A > 0 then "." & FS else "");
             end;
          else
             declare
@@ -1508,8 +1441,7 @@ package body ESP32S3.Text_IO is
                   end loop;
                end if;
                declare
-                  Lead : Long_Long_Integer :=
-                    Long_Long_Integer (Num'Truncation (M));
+                  Lead : Long_Long_Integer := Long_Long_Integer (Num'Truncation (M));
                   Cy   : Boolean;
                   FS   : constant String := Frac_Digits (M - Num (Lead), Cy);
                begin
@@ -1522,17 +1454,12 @@ package body ESP32S3.Text_IO is
                   end if;
                   declare
                      Mant  : constant String :=
-                       Based_Image (Lead, 10)
-                       & (if A > 0 then "." & FS else "");
+                       Based_Image (Lead, 10) & (if A > 0 then "." & FS else "");
                      ESign : constant String := (if E < 0 then "-" else "+");
-                     EDig  : constant String :=
-                       Based_Image (Long_Long_Integer (abs E), 10);
+                     EDig  : constant String := Based_Image (Long_Long_Integer (abs E), 10);
                      EW    : constant Field := Field'Max (Exp, 1);
                      EPad  : constant String :=
-                       (if EDig'Length < EW
-                        then (1 .. EW - EDig'Length => '0')
-                        else "")
-                       & EDig;
+                       (if EDig'Length < EW then (1 .. EW - EDig'Length => '0') else "") & EDig;
                   begin
                      return Sign & Mant & "E" & ESign & EPad;
                   end;
@@ -1559,8 +1486,7 @@ package body ESP32S3.Text_IO is
             end if;
          end loop;
          declare
-            Int_Len : constant Natural :=
-              Dot - S'First;     --  chars before the point
+            Int_Len : constant Natural := Dot - S'First;     --  chars before the point
          begin
             if Fore > Int_Len then
                Write_Tracked (B, Spaces (Fore - Int_Len) & S);
@@ -1580,10 +1506,7 @@ package body ESP32S3.Text_IO is
       end Put;
 
       procedure Put
-        (To   : out String;
-         Item : Num;
-         Aft  : Field := Default_Aft;
-         Exp  : Field := Default_Exp) is
+        (To : out String; Item : Num; Aft : Field := Default_Aft; Exp : Field := Default_Exp) is
       begin
          Right_Justify (To, Float_Image (Item, Aft, Exp));
       end Put;
@@ -1604,8 +1527,7 @@ package body ESP32S3.Text_IO is
          end if;
          loop
             Peek_Wait (B, C, Av);
-            exit when
-              not Av or else Digit_Val (C) < 0 or else Digit_Val (C) > 9;
+            exit when not Av or else Digit_Val (C) < 0 or else Digit_Val (C) > 9;
             V := V * 10.0 + Num (Digit_Val (C));
             Advance (B);
          end loop;
@@ -1617,8 +1539,7 @@ package body ESP32S3.Text_IO is
             begin
                loop
                   Peek_Wait (B, C, Av);
-                  exit when
-                    not Av or else Digit_Val (C) < 0 or else Digit_Val (C) > 9;
+                  exit when not Av or else Digit_Val (C) < 0 or else Digit_Val (C) > 9;
                   V := V + Num (Digit_Val (C)) * Scale;
                   Scale := Scale / 10.0;
                   Advance (B);
@@ -1639,8 +1560,7 @@ package body ESP32S3.Text_IO is
                end if;
                loop
                   Peek_Wait (B, C, Av);
-                  exit when
-                    not Av or else Digit_Val (C) < 0 or else Digit_Val (C) > 9;
+                  exit when not Av or else Digit_Val (C) < 0 or else Digit_Val (C) > 9;
                   E := E * 10 + Digit_Val (C);
                   Advance (B);
                end loop;
@@ -1667,13 +1587,10 @@ package body ESP32S3.Text_IO is
          Started : Boolean := False;
          LN      : Natural := From'First - 1;
       begin
-         while I <= From'Last
-           and then (From (I) = ' ' or else From (I) = ASCII.HT)
-         loop
+         while I <= From'Last and then (From (I) = ' ' or else From (I) = ASCII.HT) loop
             I := I + 1;
          end loop;
-         if I <= From'Last and then (From (I) = '-' or else From (I) = '+')
-         then
+         if I <= From'Last and then (From (I) = '-' or else From (I) = '+') then
             Neg := From (I) = '-';
             I := I + 1;
          end if;
@@ -1689,8 +1606,7 @@ package body ESP32S3.Text_IO is
             declare
                Scale : Num := 0.1;
             begin
-               while I <= From'Last and then Digit_Val (From (I)) in 0 .. 9
-               loop
+               while I <= From'Last and then Digit_Val (From (I)) in 0 .. 9 loop
                   V := V + Num (Digit_Val (From (I))) * Scale;
                   Scale := Scale / 10.0;
                   LN := I;
@@ -1699,21 +1615,17 @@ package body ESP32S3.Text_IO is
                end loop;
             end;
          end if;
-         if I <= From'Last and then (From (I) = 'e' or else From (I) = 'E')
-         then
+         if I <= From'Last and then (From (I) = 'e' or else From (I) = 'E') then
             I := I + 1;
             declare
                ENeg : Boolean := False;
                E    : Natural := 0;
             begin
-               if I <= From'Last
-                 and then (From (I) = '-' or else From (I) = '+')
-               then
+               if I <= From'Last and then (From (I) = '-' or else From (I) = '+') then
                   ENeg := From (I) = '-';
                   I := I + 1;
                end if;
-               while I <= From'Last and then Digit_Val (From (I)) in 0 .. 9
-               loop
+               while I <= From'Last and then Digit_Val (From (I)) in 0 .. 9 loop
                   E := E * 10 + Digit_Val (From (I));
                   LN := I;
                   I := I + 1;
@@ -1744,21 +1656,17 @@ package body ESP32S3.Text_IO is
       is
          B   : constant CB_Access := CB (File);
          Img : constant String := Enum'Image (Item);
-         S   : constant String :=
-           (if Set = Lower_Case then To_Lower (Img) else Img);
+         S   : constant String := (if Set = Lower_Case then To_Lower (Img) else Img);
       begin
          if Width > S'Length then
-            Write_Tracked
-              (B, S & Spaces (Width - S'Length));   --  enums: left-justify
+            Write_Tracked (B, S & Spaces (Width - S'Length));   --  enums: left-justify
 
          else
             Write_Tracked (B, S);
          end if;
       end Put;
       procedure Put
-        (Item  : Enum;
-         Width : Field := Default_Width;
-         Set   : Type_Set := Default_Setting) is
+        (Item : Enum; Width : Field := Default_Width; Set : Type_Set := Default_Setting) is
       begin
          Put (Cur_Out.all, Item, Width, Set);
       end Put;
@@ -1799,8 +1707,7 @@ package body ESP32S3.Text_IO is
       function Image (Item : Num; Aft : Field) return String is
          A      : constant Field := Field'Min (Aft, 15);
          Neg    : constant Boolean := Item < 0.0;
-         X      : constant Long_Float :=
-           abs (Long_Float (Item));  --  range-safe
+         X      : constant Long_Float := abs (Long_Float (Item));  --  range-safe
          FScale : Long_Float := 1.0;
          IScale : Long_Long_Integer := 1;
       begin
@@ -1816,9 +1723,7 @@ package body ESP32S3.Text_IO is
          end;
       end Image;
 
-      procedure Set_Value
-        (Item : out Num; M : Long_Long_Integer; P : Integer; Neg : Boolean)
-      is
+      procedure Set_Value (Item : out Num; M : Long_Long_Integer; P : Integer; Neg : Boolean) is
          X : Long_Float := Long_Float (M);
       begin
          if P >= 0 then
@@ -1870,10 +1775,7 @@ package body ESP32S3.Text_IO is
          Put (Cur_Out.all, Item, Fore, Aft, Exp);
       end Put;
       procedure Put
-        (To   : out String;
-         Item : Num;
-         Aft  : Field := Default_Aft;
-         Exp  : Field := Default_Exp)
+        (To : out String; Item : Num; Aft : Field := Default_Aft; Exp : Field := Default_Exp)
       is
          pragma Unreferenced (Exp);
       begin
@@ -1913,8 +1815,7 @@ package body ESP32S3.Text_IO is
       function Image (Item : Num; Aft : Field) return String is
          A      : constant Field := Field'Min (Aft, 15);
          Neg    : constant Boolean := Item < 0.0;
-         X      : constant Long_Float :=
-           abs (Long_Float (Item));  --  range-safe
+         X      : constant Long_Float := abs (Long_Float (Item));  --  range-safe
          FScale : Long_Float := 1.0;
          IScale : Long_Long_Integer := 1;
       begin
@@ -1930,9 +1831,7 @@ package body ESP32S3.Text_IO is
          end;
       end Image;
 
-      procedure Set_Value
-        (Item : out Num; M : Long_Long_Integer; P : Integer; Neg : Boolean)
-      is
+      procedure Set_Value (Item : out Num; M : Long_Long_Integer; P : Integer; Neg : Boolean) is
          X : Long_Float := Long_Float (M);
       begin
          if P >= 0 then
@@ -1984,10 +1883,7 @@ package body ESP32S3.Text_IO is
          Put (Cur_Out.all, Item, Fore, Aft, Exp);
       end Put;
       procedure Put
-        (To   : out String;
-         Item : Num;
-         Aft  : Field := Default_Aft;
-         Exp  : Field := Default_Exp)
+        (To : out String; Item : Num; Aft : Field := Default_Aft; Exp : Field := Default_Exp)
       is
          pragma Unreferenced (Exp);
       begin
@@ -2042,12 +1938,9 @@ package body ESP32S3.Text_IO is
    end Finalize;
 
 begin
-   Std_Out.CB :=
-     new Control_Block'(Kind => Console, Mode => Out_File, others => <>);
-   Std_Err.CB :=
-     new Control_Block'(Kind => Console, Mode => Out_File, others => <>);
-   Std_In.CB :=
-     new Control_Block'(Kind => Console, Mode => In_File, others => <>);
+   Std_Out.CB := new Control_Block'(Kind => Console, Mode => Out_File, others => <>);
+   Std_Err.CB := new Control_Block'(Kind => Console, Mode => Out_File, others => <>);
+   Std_In.CB := new Control_Block'(Kind => Console, Mode => In_File, others => <>);
    Cur_Out := Std_Out'Access;
    Cur_Err := Std_Err'Access;
    Cur_In := Std_In'Access;

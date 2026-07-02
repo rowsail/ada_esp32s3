@@ -11,8 +11,7 @@ package body ESP32S3.LEDC is
    package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
 
-   Src_Hz : constant :=
-     80_000_000;             --  APB clock feeds the LEDC timers
+   Src_Hz : constant := 80_000_000;             --  APB clock feeds the LEDC timers
 
    type Timer_Index is range 0 .. 3;
 
@@ -72,8 +71,7 @@ package body ESP32S3.LEDC is
    is (Sigs.LEDC_LS_SIG_OUT0 + Natural (Idx));
 
    procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register :=
-        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
+      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
    begin
       G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
       O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
@@ -105,8 +103,7 @@ package body ESP32S3.LEDC is
             SYSTEM_Periph.PERIP_RST_EN0.LEDC_RST := True;
             SYSTEM_Periph.PERIP_RST_EN0.LEDC_RST := False;
             --  Global slow clock = APB (80 MHz), module clock gate on.
-            LEDC_Periph.CONF :=
-              (APB_CLK_SEL => 1, CLK_EN => True, others => <>);
+            LEDC_Periph.CONF := (APB_CLK_SEL => 1, CLK_EN => True, others => <>);
             Inited := True;
          end if;
 
@@ -182,10 +179,7 @@ package body ESP32S3.LEDC is
    ---------------
 
    procedure Configure
-     (C    : in out Channel;
-      Freq : Positive;
-      Pin  : ESP32S3.GPIO.Pin_Id;
-      Bits : Resolution := 10)
+     (C : in out Channel; Freq : Positive; Pin : ESP32S3.GPIO.Pin_Id; Bits : Resolution := 10)
    is
       T   : constant Timer_Index := Timer_Of (C.Idx);
       Max : constant Natural := 2**Bits;
@@ -203,8 +197,7 @@ package body ESP32S3.LEDC is
       if not C.Held then
          return;
       end if;
-      C.Bits :=
-        Bits;                        --  remembered for Set_Duty's scaling
+      C.Bits := Bits;                        --  remembered for Set_Duty's scaling
 
       --  Timer: set divider + resolution, commit, then pulse reset to start it.
       Timers (T).CONF :=
@@ -242,8 +235,7 @@ package body ESP32S3.LEDC is
 
    procedure Set_Duty (C : Channel; Percent : Duty_Percent) is
       Max : constant Natural := 2**C.Bits;
-      Cnt : constant Natural :=
-        Natural'Min (Max, Natural (Float (Max) * Percent / 100.0));
+      Cnt : constant Natural := Natural'Min (Max, Natural (Float (Max) * Percent / 100.0));
    begin
       if not C.Held then
          return;

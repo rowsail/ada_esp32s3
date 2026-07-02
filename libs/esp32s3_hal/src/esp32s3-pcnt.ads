@@ -27,10 +27,7 @@ package ESP32S3.PCNT is
    --  Route Pin to U's input and start counting.  By default each rising edge
    --  increments; set Both_Edges to count rising and falling edges.  The counter
    --  is cleared to 0.
-   procedure Configure
-     (U          : in out Unit;
-      Pin        : ESP32S3.GPIO.Pin_Id;
-      Both_Edges : Boolean := False);
+   procedure Configure (U : in out Unit; Pin : ESP32S3.GPIO.Pin_Id; Both_Edges : Boolean := False);
 
    --  Current counter value (signed; wraps at +/- 32768).
    function Count (U : Unit) return Integer;

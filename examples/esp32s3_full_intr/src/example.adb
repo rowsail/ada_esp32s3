@@ -1,5 +1,5 @@
 pragma Warnings (Off);
-with Interfaces.C; use Interfaces.C;
+with Interfaces.C;  use Interfaces.C;
 with Ada.Real_Time; use Ada.Real_Time;
 with Blink;
 
@@ -42,13 +42,17 @@ with Blink;
 --  --------
 --  None (self-contained).  The L2/L3 interrupts are fired in software via the
 --  FROM_CPU interrupt-matrix sources -- no external wiring.
+
 procedure Example is
    procedure Log (Marker : Interfaces.C.int);
    pragma Import (C, Log, "ada_log");
-   procedure Setup;   pragma Import (C, Setup,   "ada_setup_l2l3");
-   procedure Fire_L2; pragma Import (C, Fire_L2, "ada_fire_l2");
-   procedure Fire_L3; pragma Import (C, Fire_L3, "ada_fire_l3");
-   function  Get_TP return Interfaces.C.unsigned;
+   procedure Setup;
+   pragma Import (C, Setup, "ada_setup_l2l3");
+   procedure Fire_L2;
+   pragma Import (C, Fire_L2, "ada_fire_l2");
+   procedure Fire_L3;
+   pragma Import (C, Fire_L3, "ada_fire_l3");
+   function Get_TP return Interfaces.C.unsigned;
    pragma Import (C, Get_TP, "ada_get_tp");
    procedure Set_TP (Value : Interfaces.C.unsigned);
    pragma Import (C, Set_TP, "ada_set_tp");
@@ -70,8 +74,10 @@ procedure Example is
    --  Loop factors: Loop_Mul * Loop_Inv = 1.0 exactly (2.0 * 0.5), so each
    --  accumulator is an identity over the batch and must return to its seed.
    --  Read from Volatile cells so the compiler cannot fold the loop away.
-   Mul_Cell : Float := 2.0 with Volatile;
-   Inv_Cell : Float := 0.5 with Volatile;
+   Mul_Cell : Float := 2.0
+   with Volatile;
+   Inv_Cell : Float := 0.5
+   with Volatile;
    Loop_Mul : constant Float := Mul_Cell;
    Loop_Inv : constant Float := Inv_Cell;
 
@@ -103,8 +109,7 @@ begin
          end if;
       end loop;
 
-      if X1 /= 1.0 or else X2 /= 2.0 or else X3 /= 3.0 or else X4 /= 4.0
-        or else Get_TP /= Sentinel
+      if X1 /= 1.0 or else X2 /= 2.0 or else X3 /= 3.0 or else X4 /= 4.0 or else Get_TP /= Sentinel
       then
          Log (Context_Lost);
          X1 := 1.0;
@@ -114,8 +119,8 @@ begin
          Set_TP (Sentinel);
       else
          Clean_Batches := Clean_Batches + 1;
-         Log (L2_Marker_Base    + Interfaces.C.int (Blink.L2_Count));
-         Log (L3_Marker_Base    + Interfaces.C.int (Blink.L3_Count));
+         Log (L2_Marker_Base + Interfaces.C.int (Blink.L2_Count));
+         Log (L3_Marker_Base + Interfaces.C.int (Blink.L3_Count));
          Log (Clean_Marker_Base + Clean_Batches);
       end if;
    end loop;

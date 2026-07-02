@@ -21,7 +21,7 @@ with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.GPIO;
 with ESP32S3.TX1812;
-with ESP32S3.Log;    use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 with LED_Panel;
 
 with System.BB.CPU_Primitives.Multiprocessors;
@@ -52,9 +52,9 @@ procedure Main is
    Off   : constant := 4;
 
    Colors : constant array (0 .. 4) of LED.Color :=
-     (Red   => (R => Brightness, G => 0,          B => 0),
-      Green => (R => 0,          G => Brightness, B => 0),
-      Blue  => (R => 0,          G => 0,          B => Brightness),
+     (Red   => (R => Brightness, G => 0, B => 0),
+      Green => (R => 0, G => Brightness, B => 0),
+      Blue  => (R => 0, G => 0, B => Brightness),
       White => (R => Brightness, G => Brightness, B => Brightness),
       Off   => LED.Off);
 
@@ -62,26 +62,37 @@ procedure Main is
    begin
       Put ("[led] ");
       case Color_Index is
-         when Red    => Put_Line ("red");
-         when Green  => Put_Line ("green");
-         when Blue   => Put_Line ("blue");
-         when White  => Put_Line ("white");
-         when Off    => Put_Line ("off");
-         when others => Put_Line ("?");
+         when Red    =>
+            Put_Line ("red");
+
+         when Green  =>
+            Put_Line ("green");
+
+         when Blue   =>
+            Put_Line ("blue");
+
+         when White  =>
+            Put_Line ("white");
+
+         when Off    =>
+            Put_Line ("off");
+
+         when others =>
+            Put_Line ("?");
       end case;
    end Name;
 begin
    delay until Clock + Startup_Delay;
-   Put_Line ("[led] TX1812 string of 64 LEDs on IO48 via RMT "
-             & "(wrap-streamed; on-board LED = pixel 1)");
+   Put_Line
+     ("[led] TX1812 string of 64 LEDs on IO48 via RMT "
+      & "(wrap-streamed; on-board LED = pixel 1)");
 
    --  Acquire the channel BEFORE driving the string.  Channel 0, default 1 RMT
    --  block (the wrap path handles all 64 LEDs); pass Blocks => 4 to push up to
    --  ~7 LEDs out in one shot without wrap.
    LED.Acquire (LED_Panel.Panel, Pin => Data_Pin, Channel => 0);
    Put ("[led] acquire RMT TX channel: ");
-   Put_Line (if LED.Is_Valid (LED_Panel.Panel) then "OK"
-             else "FAILED (channel busy?)");
+   Put_Line (if LED.Is_Valid (LED_Panel.Panel) then "OK" else "FAILED (channel busy?)");
    if not LED.Is_Valid (LED_Panel.Panel) then
       --  Channel busy / unroutable: nothing to drive, so idle forever.
       loop

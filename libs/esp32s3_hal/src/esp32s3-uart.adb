@@ -50,8 +50,7 @@ package body ESP32S3.UART is
    end State;
 
    package body State is
-      Buses :
-        array (UART_Port) of E.Bus;       --  raw bus per port, hidden here
+      Buses : array (UART_Port) of E.Bus;       --  raw bus per port, hidden here
       Made  : array (UART_Port) of Boolean := (others => False);
 
       procedure Ensure (Port : UART_Port) is
@@ -67,8 +66,7 @@ package body ESP32S3.UART is
       function Owned (S : Session) return E.Bus is
       begin
          if not S.Active then
-            raise Not_Owned
-              with "UART port used without holding it -- Acquire first";
+            raise Not_Owned with "UART port used without holding it -- Acquire first";
          end if;
          return Buses (S.Port);
       end Owned;
@@ -97,8 +95,7 @@ package body ESP32S3.UART is
       S.Active := True;
       --  Now that S holds the port, apply the requested settings through the
       --  same ownership-checked path every other configuration call uses.
-      Reconfigure
-        (S, Baud, Bits, Parity, Stop, Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
+      Reconfigure (S, Baud, Bits, Parity, Stop, Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
    end Acquire;
 
    -----------------
@@ -117,8 +114,7 @@ package body ESP32S3.UART is
       Cts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Rx_Flow_Threshold : Natural := 100)
    is
-      B : constant E.Bus :=
-        State.Owned (S);  --  raises unless we hold the port
+      B : constant E.Bus := State.Owned (S);  --  raises unless we hold the port
    begin
       E.Set_Baud (B, Baud);
       E.Set_Data_Bits (B, Bits);
@@ -193,8 +189,7 @@ package body ESP32S3.UART is
 
    procedure Write (S : Session; Data : Byte_Array) is
    begin
-      E.Write
-        (State.Owned (S), Data);   --  Owned raises unless we hold the port
+      E.Write (State.Owned (S), Data);   --  Owned raises unless we hold the port
    end Write;
 
    ----------

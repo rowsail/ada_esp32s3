@@ -7,11 +7,7 @@ package body X509 is
    --  Read the element at P within [.. Limit]; require Valid and (if Want /= 0) a
    --  matching tag.  Clears Ok on failure and short-circuits once Ok is False.
    procedure Expect
-     (Buf      : Byte_Array;
-      P, Limit : Natural;
-      Want     : U8;
-      E        : out DER.TLV;
-      Ok       : in out Boolean) is
+     (Buf : Byte_Array; P, Limit : Natural; Want : U8; E : out DER.TLV; Ok : in out Boolean) is
    begin
       E := (Valid => False, others => <>);
       if not Ok then
@@ -26,8 +22,7 @@ package body X509 is
    --  All the v3 extensions we read live under arc 2.5.29 ("55 1D .."), so a
    --  3-byte OID whose last byte selects the extension: subjectAltName .17 (0x11),
    --  keyUsage .15 (0x0F), basicConstraints .19 (0x13), extKeyUsage .37 (0x25).
-   function Is_Ext_OID
-     (Cert : Byte_Array; S : Slice; Last_Byte : U8) return Boolean
+   function Is_Ext_OID (Cert : Byte_Array; S : Slice; Last_Byte : U8) return Boolean
    is (Length (S) = 3
        and then Cert (S.First) = 16#55#
        and then Cert (S.First + 1) = 16#1D#
@@ -38,9 +33,8 @@ package body X509 is
      (16#2A#, 16#86#, 16#48#, 16#86#, 16#F7#, 16#0D#, 16#01#, 16#01#, 16#01#);
    OID_EC_PubKey    : constant Byte_Array :=          --  1.2.840.10045.2.1
      (16#2A#, 16#86#, 16#48#, 16#CE#, 16#3D#, 16#02#, 16#01#);
-   OID_P256_Curve   :
-     constant Byte_Array :=          --  1.2.840.10045.3.1.7 prime256v1
-       (16#2A#, 16#86#, 16#48#, 16#CE#, 16#3D#, 16#03#, 16#01#, 16#07#);
+   OID_P256_Curve   : constant Byte_Array :=          --  1.2.840.10045.3.1.7 prime256v1
+     (16#2A#, 16#86#, 16#48#, 16#CE#, 16#3D#, 16#03#, 16#01#, 16#07#);
    OID_RSA_SHA256   : constant Byte_Array :=          --  1.2.840.113549.1.1.11
      (16#2A#, 16#86#, 16#48#, 16#86#, 16#F7#, 16#0D#, 16#01#, 16#01#, 16#0B#);
    OID_ECDSA_SHA256 : constant Byte_Array :=          --  1.2.840.10045.4.3.2
@@ -51,22 +45,17 @@ package body X509 is
      (16#2A#, 16#86#, 16#48#, 16#86#, 16#F7#, 16#0D#, 16#01#, 16#01#, 16#0C#);
    OID_RSA_SHA512   : constant Byte_Array :=          --  1.2.840.113549.1.1.13
      (16#2A#, 16#86#, 16#48#, 16#86#, 16#F7#, 16#0D#, 16#01#, 16#01#, 16#0D#);
-   OID_Ed25519      :
-     constant Byte_Array :=          --  1.3.101.112 id-Ed25519
-       (16#2B#, 16#65#, 16#70#);
-   OID_Server_Auth  :
-     constant Byte_Array :=          --  1.3.6.1.5.5.7.3.1 id-kp-serverAuth
-       (16#2B#, 16#06#, 16#01#, 16#05#, 16#05#, 16#07#, 16#03#, 16#01#);
-   OID_Client_Auth  :
-     constant Byte_Array :=          --  1.3.6.1.5.5.7.3.2 id-kp-clientAuth
-       (16#2B#, 16#06#, 16#01#, 16#05#, 16#05#, 16#07#, 16#03#, 16#02#);
-   OID_Any_EKU      :
-     constant Byte_Array :=          --  2.5.29.37.0 anyExtendedKeyUsage
-       (16#55#, 16#1D#, 16#25#, 16#00#);
+   OID_Ed25519      : constant Byte_Array :=          --  1.3.101.112 id-Ed25519
+     (16#2B#, 16#65#, 16#70#);
+   OID_Server_Auth  : constant Byte_Array :=          --  1.3.6.1.5.5.7.3.1 id-kp-serverAuth
+     (16#2B#, 16#06#, 16#01#, 16#05#, 16#05#, 16#07#, 16#03#, 16#01#);
+   OID_Client_Auth  : constant Byte_Array :=          --  1.3.6.1.5.5.7.3.2 id-kp-clientAuth
+     (16#2B#, 16#06#, 16#01#, 16#05#, 16#05#, 16#07#, 16#03#, 16#02#);
+   OID_Any_EKU      : constant Byte_Array :=          --  2.5.29.37.0 anyExtendedKeyUsage
+     (16#55#, 16#1D#, 16#25#, 16#00#);
 
    --  Do the OID content bytes at Slice S equal OID?
-   function OID_Match
-     (Cert : Byte_Array; S : Slice; OID : Byte_Array) return Boolean is
+   function OID_Match (Cert : Byte_Array; S : Slice; OID : Byte_Array) return Boolean is
    begin
       if Length (S) /= OID'Length then
          return False;
@@ -80,9 +69,7 @@ package body X509 is
    end OID_Match;
 
    --  GeneralNames ::= SEQUENCE OF GeneralName; collect dNSName ([2], tag 0x82).
-   procedure Parse_SAN
-     (Cert : Byte_Array; First, Last : Natural; Result : in out Certificate)
-   is
+   procedure Parse_SAN (Cert : Byte_Array; First, Last : Natural; Result : in out Certificate) is
       Seq, Name : DER.TLV;
       P         : Natural;
    begin
@@ -123,8 +110,7 @@ package body X509 is
          DER.Read (Cert, P, Seq.Content.Last, T);
       end if;
       if T.Valid
-        and then T.Tag
-                 = 16#02#                    --  pathLenConstraint INTEGER
+        and then T.Tag = 16#02#                    --  pathLenConstraint INTEGER
         and then Length (T.Content) in 1 .. 2
       then
          declare
@@ -148,8 +134,7 @@ package body X509 is
    begin
       Result.KU_Present := True;
       DER.Read (Cert, First, Last, BS);
-      if not BS.Valid or else BS.Tag /= 16#03# or else Length (BS.Content) < 2
-      then
+      if not BS.Valid or else BS.Tag /= 16#03# or else Length (BS.Content) < 2 then
          return;
       end if;
       Bits0 := Cert (BS.Content.First + 1);                 --  first data byte
@@ -158,9 +143,7 @@ package body X509 is
    end Parse_Key_Usage;
 
    --  ExtKeyUsage ::= SEQUENCE OF KeyPurposeId (OID).
-   procedure Parse_EKU
-     (Cert : Byte_Array; First, Last : Natural; Result : in out Certificate)
-   is
+   procedure Parse_EKU (Cert : Byte_Array; First, Last : Natural; Result : in out Certificate) is
       Seq, Purpose : DER.TLV;
       P            : Natural;
    begin
@@ -215,9 +198,7 @@ package body X509 is
                DER.Read (Cert, EP, Ext.Content.Last, Val);
                if Val.Valid and then Val.Tag = 16#01# then
                   --  critical BOOLEAN
-                  Critical :=
-                    Length (Val.Content) >= 1
-                    and then Cert (Val.Content.First) /= 0;
+                  Critical := Length (Val.Content) >= 1 and then Cert (Val.Content.First) /= 0;
                   EP := Val.Elem_Last + 1;
                   DER.Read (Cert, EP, Ext.Content.Last, Val);
                end if;
@@ -225,23 +206,19 @@ package body X509 is
                   --  extnValue OCTET STRING
                   if Is_Ext_OID (Cert, OID.Content, 16#11#) then
                      --  subjectAltName
-                     Parse_SAN
-                       (Cert, Val.Content.First, Val.Content.Last, Result);
+                     Parse_SAN (Cert, Val.Content.First, Val.Content.Last, Result);
                      Recognized := True;
                   elsif Is_Ext_OID (Cert, OID.Content, 16#13#) then
                      --  basicConstraints
-                     Parse_Basic_Constraints
-                       (Cert, Val.Content.First, Val.Content.Last, Result);
+                     Parse_Basic_Constraints (Cert, Val.Content.First, Val.Content.Last, Result);
                      Recognized := True;
                   elsif Is_Ext_OID (Cert, OID.Content, 16#0F#) then
                      --  keyUsage
-                     Parse_Key_Usage
-                       (Cert, Val.Content.First, Val.Content.Last, Result);
+                     Parse_Key_Usage (Cert, Val.Content.First, Val.Content.Last, Result);
                      Recognized := True;
                   elsif Is_Ext_OID (Cert, OID.Content, 16#25#) then
                      --  extKeyUsage
-                     Parse_EKU
-                       (Cert, Val.Content.First, Val.Content.Last, Result);
+                     Parse_EKU (Cert, Val.Content.First, Val.Content.Last, Result);
                      Recognized := True;
                   end if;
                end if;
@@ -258,12 +235,9 @@ package body X509 is
    end Parse_Extensions;
 
    procedure Parse (Cert : Byte_Array; Result : out Certificate) is
-      Ok                                                               :
-        Boolean := True;
-      Outer, Tbs, E, Validity, SPKI, Bits, RSASeq, SigAlg, OID, SigVal :
-        DER.TLV;
-      P, L                                                             :
-        Natural;
+      Ok                                                               : Boolean := True;
+      Outer, Tbs, E, Validity, SPKI, Bits, RSASeq, SigAlg, OID, SigVal : DER.TLV;
+      P, L                                                             : Natural;
    begin
       Result := (Valid => False, others => <>);
       if Cert'Length < 2 then
@@ -336,8 +310,7 @@ package body X509 is
             SL    : constant Natural := SPKI.Content.Last;
             AlgId : DER.TLV;
          begin
-            Expect
-              (Cert, SP, SL, 16#30#, AlgId, Ok);     --  algorithm SEQUENCE
+            Expect (Cert, SP, SL, 16#30#, AlgId, Ok);     --  algorithm SEQUENCE
             --  Classify the key algorithm from the first OID inside it.
             declare
                AP         : Natural := AlgId.Content.First;
@@ -351,61 +324,34 @@ package body X509 is
                      --  EC: the next OID is the named curve; require prime256v1.
                      AP := Alg.Elem_Last + 1;
                      Expect (Cert, AP, AlgId.Content.Last, 16#06#, Curve, Ok);
-                     if Ok
-                       and then OID_Match (Cert, Curve.Content, OID_P256_Curve)
-                     then
+                     if Ok and then OID_Match (Cert, Curve.Content, OID_P256_Curve) then
                         Result.Key_Kind := Key_EC_P256;
                      else
-                        Ok :=
-                          False;                       --  unsupported curve
+                        Ok := False;                       --  unsupported curve
                      end if;
                   elsif OID_Match (Cert, Alg.Content, OID_Ed25519) then
-                     Result.Key_Kind :=
-                       Key_Ed25519;       --  no params / no curve
+                     Result.Key_Kind := Key_Ed25519;       --  no params / no curve
                   else
-                     Ok :=
-                       False;                          --  unsupported key type
+                     Ok := False;                          --  unsupported key type
                   end if;
                end if;
             end;
             SP := AlgId.Elem_Last + 1;
-            Expect
-              (Cert,
-               SP,
-               SL,
-               16#03#,
-               Bits,
-               Ok);      --  subjectPublicKey BIT STRING
+            Expect (Cert, SP, SL, 16#03#, Bits, Ok);      --  subjectPublicKey BIT STRING
 
-            if Ok
-              and then Result.Key_Kind = Key_RSA
-              and then Length (Bits.Content) >= 2
-            then
+            if Ok and then Result.Key_Kind = Key_RSA and then Length (Bits.Content) >= 2 then
                --  Skip the BIT STRING's unused-bits byte; parse RSAPublicKey.
-               Expect
-                 (Cert,
-                  Bits.Content.First + 1,
-                  Bits.Content.Last,
-                  16#30#,
-                  RSASeq,
-                  Ok);
+               Expect (Cert, Bits.Content.First + 1, Bits.Content.Last, 16#30#, RSASeq, Ok);
                if Ok then
                   declare
                      RP    : Natural := RSASeq.Content.First;
                      RL    : constant Natural := RSASeq.Content.Last;
                      M, Ex : DER.TLV;
                   begin
-                     Expect
-                       (Cert, RP, RL, 16#02#, M, Ok);   --  modulus INTEGER
+                     Expect (Cert, RP, RL, 16#02#, M, Ok);   --  modulus INTEGER
                      Result.RSA_Modulus := M.Content;
                      RP := M.Elem_Last + 1;
-                     Expect
-                       (Cert,
-                        RP,
-                        RL,
-                        16#02#,
-                        Ex,
-                        Ok);  --  publicExponent INTEGER
+                     Expect (Cert, RP, RL, 16#02#, Ex, Ok);  --  publicExponent INTEGER
                      Result.RSA_Exponent := Ex.Content;
                   end;
                end if;
@@ -413,25 +359,16 @@ package body X509 is
             elsif Ok
               and then Result.Key_Kind = Key_EC_P256
               and then Length (Bits.Content) >= 66
-              and then Cert (Bits.Content.First + 1)
-                       = 16#04#   --  uncompressed point
+              and then Cert (Bits.Content.First + 1) = 16#04#   --  uncompressed point
             then
                --  BIT STRING content = unused-bits(1) || 0x04 || X(32) || Y(32).
-               Result.EC_X :=
-                 (First => Bits.Content.First + 2,
-                  Last  => Bits.Content.First + 33);
-               Result.EC_Y :=
-                 (First => Bits.Content.First + 34,
-                  Last  => Bits.Content.First + 65);
+               Result.EC_X := (First => Bits.Content.First + 2, Last => Bits.Content.First + 33);
+               Result.EC_Y := (First => Bits.Content.First + 34, Last => Bits.Content.First + 65);
 
-            elsif Ok
-              and then Result.Key_Kind = Key_Ed25519
-              and then Length (Bits.Content) >= 33
+            elsif Ok and then Result.Key_Kind = Key_Ed25519 and then Length (Bits.Content) >= 33
             then
                --  BIT STRING content = unused-bits(1) || 32-byte Ed25519 public key.
-               Result.Ed_Pub :=
-                 (First => Bits.Content.First + 1,
-                  Last  => Bits.Content.First + 32);
+               Result.Ed_Pub := (First => Bits.Content.First + 1, Last => Bits.Content.First + 32);
             else
                Ok := False;
             end if;
@@ -450,8 +387,7 @@ package body X509 is
       --  signatureAlgorithm SEQUENCE { OID ... }
       P := Tbs.Elem_Last + 1;
       Expect (Cert, P, Outer.Content.Last, 16#30#, SigAlg, Ok);
-      Expect
-        (Cert, SigAlg.Content.First, SigAlg.Content.Last, 16#06#, OID, Ok);
+      Expect (Cert, SigAlg.Content.First, SigAlg.Content.Last, 16#06#, OID, Ok);
       Result.Sig_Alg_OID := OID.Content;
       if Ok then
          if OID_Match (Cert, OID.Content, OID_RSA_SHA256) then
@@ -473,8 +409,7 @@ package body X509 is
       --  signatureValue BIT STRING (drop the leading unused-bits byte).
       Expect (Cert, P, Outer.Content.Last, 16#03#, SigVal, Ok);
       if Ok and then Length (SigVal.Content) >= 1 then
-         Result.Signature :=
-           (First => SigVal.Content.First + 1, Last => SigVal.Content.Last);
+         Result.Signature := (First => SigVal.Content.First + 1, Last => SigVal.Content.Last);
       else
          Ok := False;
       end if;
@@ -490,9 +425,7 @@ package body X509 is
 
    --  Parse an ASN.1 Time (UTCTime YYMMDDHHMMSSZ or GeneralizedTime
    --  YYYYMMDDHHMMSSZ) at slice S into a packed Time_64.  False if malformed.
-   function Parse_Time
-     (Cert : Byte_Array; S : Slice; Tag : U8; T : out Time_64) return Boolean
-   is
+   function Parse_Time (Cert : Byte_Array; S : Slice; Tag : U8; T : out Time_64) return Boolean is
       F                          : constant Natural := S.First;
       L                          : constant Natural := Length (S);
       Base                       : Natural;
@@ -550,9 +483,7 @@ package body X509 is
       return True;
    end Parse_Time;
 
-   function Valid_At
-     (Cert : Byte_Array; C : Certificate; Now : Time_64) return Boolean
-   is
+   function Valid_At (Cert : Byte_Array; C : Certificate; Now : Time_64) return Boolean is
       NB, NA : Time_64;
    begin
       if not Parse_Time (Cert, C.Not_Before, C.NB_Tag, NB)
@@ -572,24 +503,20 @@ package body X509 is
 
    --  Case-insensitive equality of Cert[BF..BL] (ASCII bytes) and Host[HF..HL].
    function Eq_CI
-     (Cert : Byte_Array; BF, BL : Natural; Host : String; HF, HL : Natural)
-      return Boolean is
+     (Cert : Byte_Array; BF, BL : Natural; Host : String; HF, HL : Natural) return Boolean is
    begin
       if BL < BF or else HL < HF or else BL - BF /= HL - HF then
          return False;
       end if;
       for K in 0 .. BL - BF loop
-         if Lower (Cert (BF + K)) /= Lower (U8 (Character'Pos (Host (HF + K))))
-         then
+         if Lower (Cert (BF + K)) /= Lower (U8 (Character'Pos (Host (HF + K)))) then
             return False;
          end if;
       end loop;
       return True;
    end Eq_CI;
 
-   function Name_Matches
-     (Cert : Byte_Array; S : Slice; Host : String) return Boolean
-   is
+   function Name_Matches (Cert : Byte_Array; S : Slice; Host : String) return Boolean is
       function Has_Dot (From, To : Natural) return Boolean is
       begin
          for I in From .. To loop
@@ -606,10 +533,7 @@ package body X509 is
 
       --  Wildcard "*." : match exactly one leftmost label of Host, and only where
       --  the remainder still has two labels (a dot).
-      if Length (S) >= 2
-        and then Cert (S.First) = 16#2A#
-        and then Cert (S.First + 1) = 16#2E#
-      then
+      if Length (S) >= 2 and then Cert (S.First) = 16#2A# and then Cert (S.First + 1) = 16#2E# then
          declare
             Dot : Natural := 0;
          begin
@@ -632,8 +556,7 @@ package body X509 is
       end if;
    end Name_Matches;
 
-   function Host_Matches
-     (Cert : Byte_Array; C : Certificate; Host : String) return Boolean is
+   function Host_Matches (Cert : Byte_Array; C : Certificate; Host : String) return Boolean is
    begin
       for I in 1 .. C.SAN_Count loop
          if Name_Matches (Cert, C.SAN (I), Host) then

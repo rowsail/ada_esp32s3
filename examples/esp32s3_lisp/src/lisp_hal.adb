@@ -9,8 +9,8 @@ with Lisp.Eval;
 package body Lisp_HAL is
 
    package GPIO renames ESP32S3.GPIO;
-   package ADC  renames ESP32S3.ADC;
-   package SPI  renames ESP32S3.SPI;
+   package ADC renames ESP32S3.ADC;
+   package SPI renames ESP32S3.SPI;
 
    ADC1 : ADC.Reader;                       --  claimed once in Register
 
@@ -21,13 +21,13 @@ package body Lisp_HAL is
    Sessions : array (1 .. Max_SPI) of aliased SPI.Session;
    N_SPI    : Natural := 0;
 
-   function Pin_Of (Args : Ref) return GPIO.Pin_Id is
-     (GPIO.Pin_Id (Int_Value (Car (Args))));
+   function Pin_Of (Args : Ref) return GPIO.Pin_Id
+   is (GPIO.Pin_Id (Int_Value (Car (Args))));
 
    --  (gpio-out PIN VAL): configure output, drive, return VAL.
    function Prim_Gpio_Out (Args : Ref) return Ref is
       Pin : constant GPIO.Pin_Id := Pin_Of (Args);
-      Val : constant Ref         := Car (Cdr (Args));
+      Val : constant Ref := Car (Cdr (Args));
    begin
       GPIO.Configure (Pin, GPIO.Output);
       GPIO.Write (Pin, Is_Truthy (Val));
@@ -51,8 +51,7 @@ package body Lisp_HAL is
 
    --  (adc-read CH): one ADC1 sample, 0 .. 4095.
    function Prim_Adc_Read (Args : Ref) return Ref is
-      Ch : constant ADC.Channel_Index :=
-             ADC.Channel_Index (Int_Value (Car (Args)));
+      Ch : constant ADC.Channel_Index := ADC.Channel_Index (Int_Value (Car (Args)));
    begin
       return Make_Int (Long_Long_Integer (ADC.Read (ADC1, Ch)));
    end Prim_Adc_Read;
@@ -75,8 +74,7 @@ package body Lisp_HAL is
       N_SPI := N_SPI + 1;
       SPI.Setup (SPI.SPI2);
       SPI.Configure_Pins (SPI.SPI2, Sclk => 1, Mosi => 4, Miso => 45);
-      SPI.Acquire (Sessions (N_SPI), SPI.SPI2, Mode => 0,
-                   Clock_Hz => 8_000_000, CS_Pin => 21);
+      SPI.Acquire (Sessions (N_SPI), SPI.SPI2, Mode => 0, Clock_Hz => 8_000_000, CS_Pin => 21);
       return Make_Int (Long_Long_Integer (N_SPI));
    end Prim_Spi_Open;
 
@@ -84,25 +82,31 @@ package body Lisp_HAL is
    --  returns the received bytes as a list.
    function Prim_Spi_Xfer (Args : Ref) return Ref is
       Id  : constant Natural := Natural (Int_Value (Car (Args)));
-      Lst : constant Ref     := Car (Cdr (Args));
+      Lst : constant Ref := Car (Cdr (Args));
       N   : Natural := 0;
       P   : Ref := Lst;
    begin
       if Id not in 1 .. N_SPI then
          raise Lisp_Error with "bad SPI handle";
       end if;
-      while Is_Cons (P) loop N := N + 1; P := Cdr (P); end loop;
-      if N = 0 then return Nil; end if;
+      while Is_Cons (P) loop
+         N := N + 1;
+         P := Cdr (P);
+      end loop;
+      if N = 0 then
+         return Nil;
+      end if;
       declare
-         Tx : array (0 .. N - 1) of Unsigned_8;          --  stack = internal SRAM (DMA)
-         Rx : array (0 .. N - 1) of Unsigned_8 := (others => 0);
-         I  : Natural := 0;
-         Q  : Ref := Lst;
+         Tx     : array (0 .. N - 1) of Unsigned_8;          --  stack = internal SRAM (DMA)
+         Rx     : array (0 .. N - 1) of Unsigned_8 := (others => 0);
+         I      : Natural := 0;
+         Q      : Ref := Lst;
          Result : Ref := Nil;
       begin
          while Is_Cons (Q) loop
             Tx (I) := Unsigned_8 (Int_Value (Car (Q)) mod 256);
-            I := I + 1;  Q := Cdr (Q);
+            I := I + 1;
+            Q := Cdr (Q);
          end loop;
          SPI.Select_Device (Sessions (Id), True);
          SPI.Transfer (Sessions (Id), Tx'Address, Rx'Address, N);
@@ -117,13 +121,13 @@ package body Lisp_HAL is
    procedure Register is
    begin
       ADC.Claim (ADC1, ADC.ADC1);
-      Lisp.Eval.Register_Primitive ("gpio-out",    Prim_Gpio_Out'Access);
+      Lisp.Eval.Register_Primitive ("gpio-out", Prim_Gpio_Out'Access);
       Lisp.Eval.Register_Primitive ("gpio-toggle", Prim_Gpio_Toggle'Access);
-      Lisp.Eval.Register_Primitive ("gpio-in",     Prim_Gpio_In'Access);
-      Lisp.Eval.Register_Primitive ("adc-read",    Prim_Adc_Read'Access);
-      Lisp.Eval.Register_Primitive ("room",        Prim_Room'Access);
-      Lisp.Eval.Register_Primitive ("spi-open",    Prim_Spi_Open'Access);
-      Lisp.Eval.Register_Primitive ("spi-xfer",    Prim_Spi_Xfer'Access);
+      Lisp.Eval.Register_Primitive ("gpio-in", Prim_Gpio_In'Access);
+      Lisp.Eval.Register_Primitive ("adc-read", Prim_Adc_Read'Access);
+      Lisp.Eval.Register_Primitive ("room", Prim_Room'Access);
+      Lisp.Eval.Register_Primitive ("spi-open", Prim_Spi_Open'Access);
+      Lisp.Eval.Register_Primitive ("spi-xfer", Prim_Spi_Xfer'Access);
    end Register;
 
 end Lisp_HAL;

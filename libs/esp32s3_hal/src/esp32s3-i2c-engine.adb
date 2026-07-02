@@ -36,8 +36,7 @@ package body ESP32S3.I2C.Engine is
            (Scl => Sigs.I2CEXT0_SCL_OUT,
             Sda => Sigs.I2CEXT0_SDA_OUT),    --  I2CEXT0_SCL/SDA (gpio_sig_map)
          when I2C1 =>
-           (Scl => Sigs.I2CEXT1_SCL_OUT,
-            Sda => Sigs.I2CEXT1_SDA_OUT));   --  I2CEXT1_SCL/SDA
+           (Scl => Sigs.I2CEXT1_SCL_OUT, Sda => Sigs.I2CEXT1_SDA_OUT));   --  I2CEXT1_SCL/SDA
 
    --  A COMD command word as its documented bit fields, so the layout is named
    --  and compiler-placed instead of hand-shifted.  (The bit positions are
@@ -60,8 +59,7 @@ package body ESP32S3.I2C.Engine is
        Op at 0 range 11 .. 13;
      end record;
    for Cmd_Word'Size use 14;
-   function To_Field is new
-     Ada.Unchecked_Conversion (Cmd_Word, COMD_COMMAND_Field);
+   function To_Field is new Ada.Unchecked_Conversion (Cmd_Word, COMD_COMMAND_Field);
 
    function Cmd
      (Op        : Natural;
@@ -88,13 +86,11 @@ package body ESP32S3.I2C.Engine is
    procedure Pad_Open_Drain (Pad : G.Pin_Id; Out_Sig : Natural) is
       Ix : constant Natural := Natural (Pad);
       P  : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Ix);
-      O  : GR.FUNC_OUT_SEL_CFG_Register :=
-        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
+      O  : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
    begin
       P.MCU_SEL := 1;                       --  route through the GPIO matrix
       P.FUN_IE := True;                    --  input buffer on (read-back)
-      P.FUN_WPU :=
-        True;                    --  internal pull-up (line idles high)
+      P.FUN_WPU := True;                    --  internal pull-up (line idles high)
       P.FUN_WPD := False;
       P.FUN_DRV := 2;                       --  ~20 mA, fine for open-drain
       MX.IO_MUX_Periph.GPIO (Ix) := P;
@@ -102,8 +98,7 @@ package body ESP32S3.I2C.Engine is
       GR.GPIO_Periph.PIN (Ix).PAD_DRIVER := True;   --  open-drain
 
       O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Out_Sig);
-      O.OEN_SEL :=
-        False;                   --  use the peripheral's output-enable
+      O.OEN_SEL := False;                   --  use the peripheral's output-enable
       GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix) := O;
 
       if Ix <= 31 then
@@ -117,9 +112,7 @@ package body ESP32S3.I2C.Engine is
    procedure Route_Input (In_Sig : Natural; Pad : G.Pin_Id) is
    begin
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (In_Sig) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Natural (Pad)),
-         SEL    => True,
-         others => <>);
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Natural (Pad)), SEL => True, others => <>);
    end Route_Input;
 
    --  One pad reads back into the same controller that drives it (real bus).
@@ -142,8 +135,7 @@ package body ESP32S3.I2C.Engine is
    end Bit_Length;
 
    procedure Set_Timing (Regs : Periph_Ref; Hz : Positive) is
-      Freq      : constant Natural :=
-        Natural'Max (1_000, Natural'Min (Hz, 1_000_000));
+      Freq      : constant Natural := Natural'Max (1_000, Natural'Min (Hz, 1_000_000));
       --  Match esp-idf i2c_ll_master_cal_bus_clk: the *1024 keeps the module
       --  clock high (clkm_div small) and half_cycle ~ source/(freq*1024*2),
       --  i.e. just under the 9-bit period fields.  Counting filter / sample /
@@ -151,21 +143,15 @@ package body ESP32S3.I2C.Engine is
       --  with real bus edges.
       Clkm_Div  : constant Natural := Src_Hz / (Freq * 1024) + 1;
       Sclk_Freq : constant Natural := Src_Hz / Clkm_Div;
-      Half      : constant Natural :=
-        Natural'Min (511, Natural'Max (4, Sclk_Freq / Freq / 2));
+      Half      : constant Natural := Natural'Min (511, Natural'Max (4, Sclk_Freq / Freq / 2));
       Wait_High : constant Natural :=
-        Natural'Min
-          (127,
-           (if Freq >= 80_000
-            then Natural'Max (1, Half / 2 - 2)
-            else Half / 4));
+        Natural'Min (127, (if Freq >= 80_000 then Natural'Max (1, Half / 2 - 2) else Half / 4));
       High      : constant Natural := Natural'Max (1, Half - Wait_High);
       Hold_SDA  : constant Natural := Natural'Max (1, Half / 4);
       Sample    : constant Natural := Natural'Max (1, Half / 2);
       Setup     : constant Natural := Half;
       Hold      : constant Natural := Half;
-      Tout      : constant Natural :=
-        Natural'Min (31, Bit_Length (5 * Half) + 2);
+      Tout      : constant Natural := Natural'Min (31, Bit_Length (5 * Half) + 2);
    begin
       Regs.CLK_CONF :=
         (SCLK_DIV_NUM => CLK_CONF_SCLK_DIV_NUM_Field (Clkm_Div - 1),
@@ -174,13 +160,10 @@ package body ESP32S3.I2C.Engine is
          SCLK_ACTIVE  => True,
          others       => <>);
 
-      Regs.SCL_LOW_PERIOD.SCL_LOW_PERIOD :=
-        SCL_LOW_PERIOD_SCL_LOW_PERIOD_Field (Half - 1);
+      Regs.SCL_LOW_PERIOD.SCL_LOW_PERIOD := SCL_LOW_PERIOD_SCL_LOW_PERIOD_Field (Half - 1);
       Regs.SCL_HIGH_PERIOD :=
-        (SCL_HIGH_PERIOD      =>
-           SCL_HIGH_PERIOD_SCL_HIGH_PERIOD_Field (High - 1),
-         SCL_WAIT_HIGH_PERIOD =>
-           SCL_HIGH_PERIOD_SCL_WAIT_HIGH_PERIOD_Field (Wait_High),
+        (SCL_HIGH_PERIOD      => SCL_HIGH_PERIOD_SCL_HIGH_PERIOD_Field (High - 1),
+         SCL_WAIT_HIGH_PERIOD => SCL_HIGH_PERIOD_SCL_WAIT_HIGH_PERIOD_Field (Wait_High),
          others               => <>);
       Regs.SDA_HOLD.TIME := SDA_HOLD_TIME_Field (Hold_SDA - 1);
       Regs.SDA_SAMPLE.TIME := SDA_SAMPLE_TIME_Field (Sample - 1);
@@ -189,9 +172,7 @@ package body ESP32S3.I2C.Engine is
       Regs.SCL_START_HOLD.TIME := SCL_START_HOLD_TIME_Field (Hold - 1);
       Regs.SCL_STOP_HOLD.TIME := SCL_STOP_HOLD_TIME_Field (Hold - 1);
       Regs.TO :=
-        (TIME_OUT_VALUE => TO_TIME_OUT_VALUE_Field (Tout),
-         TIME_OUT_EN    => True,
-         others         => <>);
+        (TIME_OUT_VALUE => TO_TIME_OUT_VALUE_Field (Tout), TIME_OUT_EN => True, others => <>);
    end Set_Timing;
 
    ----------
@@ -334,8 +315,7 @@ package body ESP32S3.I2C.Engine is
 
    procedure Push (Regs : Periph_Ref; Value : Byte) is
    begin
-      Regs.DATA :=
-        (FIFO_RDATA => ESP32S3_Registers.Byte (Value), others => <>);
+      Regs.DATA := (FIFO_RDATA => ESP32S3_Registers.Byte (Value), others => <>);
    end Push;
 
    -----------
@@ -374,8 +354,7 @@ package body ESP32S3.I2C.Engine is
       --  device aborts the write; the single-pad write self-test turns it off
       --  (the slave's ACK can't reach the master when both only read one pad).
       Regs.COMD (0).COMMAND := Cmd (Op_RSTART);
-      Regs.COMD (1).COMMAND :=
-        Cmd (Op_WRITE, Bytes => 1 + Len, Ack_Check => Check_Ack);
+      Regs.COMD (1).COMMAND := Cmd (Op_WRITE, Bytes => 1 + Len, Ack_Check => Check_Ack);
       Regs.COMD (2).COMMAND := Cmd (Op_STOP);
 
       Run_Sequence (Regs, Success);
@@ -385,12 +364,7 @@ package body ESP32S3.I2C.Engine is
    -- Read --
    ----------
 
-   procedure Read
-     (B       : Bus;
-      Addr    : Slave_Address;
-      Data    : out Byte_Array;
-      Success : out Boolean)
-   is
+   procedure Read (B : Bus; Addr : Slave_Address; Data : out Byte_Array; Success : out Boolean) is
       Regs : constant Periph_Ref := B.Regs;
       Len  : constant Natural := Data'Length;
    begin
@@ -409,8 +383,7 @@ package body ESP32S3.I2C.Engine is
       Regs.COMD (0).COMMAND := Cmd (Op_RSTART);
       Regs.COMD (1).COMMAND := Cmd (Op_WRITE, Bytes => 1, Ack_Check => True);
       if Len > 1 then
-         Regs.COMD (2).COMMAND :=
-           Cmd (Op_READ, Bytes => Len - 1, Ack_Val => False);
+         Regs.COMD (2).COMMAND := Cmd (Op_READ, Bytes => Len - 1, Ack_Val => False);
          Regs.COMD (3).COMMAND := Cmd (Op_READ, Bytes => 1, Ack_Val => True);
          Regs.COMD (4).COMMAND := Cmd (Op_STOP);
       else

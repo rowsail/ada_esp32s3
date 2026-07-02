@@ -35,8 +35,7 @@ package ESP32S3.GPS.L76K is
    --  PCAS01 -- NMEA port baud rate.  NOTE: after this takes effect the receiver
    --  talks at the new rate; reconfigure the host UART (ESP32S3.GPS only sets
    --  the rate at Setup) to keep receiving.
-   type Baud_Setting is
-     (B_4800, B_9600, B_19200, B_38400, B_57600, B_115200);  --  modes 0..5
+   type Baud_Setting is (B_4800, B_9600, B_19200, B_38400, B_57600, B_115200);  --  modes 0..5
    procedure Set_Baud_Rate (Rate : Baud_Setting);   --  $PCAS01,<n>  UNTESTED
 
    --  PCAS02 -- positioning (fix) rate.  Rates above 1 Hz require single NMEA

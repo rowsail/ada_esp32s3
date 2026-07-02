@@ -20,8 +20,7 @@ begin
    Put_Line ("[mac]   wifi-softap     : " & M.Image (M.Wi_Fi_SoftAP));
    Put_Line ("[mac]   bluetooth       : " & M.Image (M.Bluetooth));
    Put_Line ("[mac]   ethernet (W5500): " & M.Image (M.Ethernet));
-   Put_Line ("[mac]   2nd NIC (local) : "
-             & M.Image (M.Local (M.Derived (4))));
+   Put_Line ("[mac]   2nd NIC (local) : " & M.Image (M.Local (M.Derived (4))));
    Put_Line ("[mac] done.");
    loop
       delay until Clock + Seconds (3600);

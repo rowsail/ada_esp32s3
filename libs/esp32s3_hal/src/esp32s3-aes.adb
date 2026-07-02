@@ -25,17 +25,14 @@ package body ESP32S3.AES is
    --------------------------------------------------------------------------
 
    protected Engine is
-      procedure Transform
-        (Mode : UInt32; Key : Key_Bytes; Input : Block; Output : out Block);
+      procedure Transform (Mode : UInt32; Key : Key_Bytes; Input : Block; Output : out Block);
    private
       Inited : Boolean := False;
    end Engine;
 
    protected body Engine is
 
-      procedure Transform
-        (Mode : UInt32; Key : Key_Bytes; Input : Block; Output : out Block)
-      is
+      procedure Transform (Mode : UInt32; Key : Key_Bytes; Input : Block; Output : out Block) is
          use ESP32S3_Registers.SYSTEM;
       begin
          if not Inited then
@@ -45,8 +42,7 @@ package body ESP32S3.AES is
             Inited := True;
          end if;
 
-         AES_Periph.DMA_ENABLE :=
-           (DMA_ENABLE => False, others => <>);  --  typical mode
+         AES_Periph.DMA_ENABLE := (DMA_ENABLE => False, others => <>);  --  typical mode
          AES_Periph.MODE := (MODE => MODE_MODE_Field (Mode), others => <>);
 
          --  Key = Key'Length/4 little-endian words (4/6/8 for 128/192/256-bit);
@@ -62,11 +58,7 @@ package body ESP32S3.AES is
 
          for I in 0 .. 3 loop
             AES_Periph.TEXT_IN (I) :=
-              To_Word
-                (Input (I * 4),
-                 Input (I * 4 + 1),
-                 Input (I * 4 + 2),
-                 Input (I * 4 + 3));
+              To_Word (Input (I * 4), Input (I * 4 + 1), Input (I * 4 + 2), Input (I * 4 + 3));
          end loop;
 
          AES_Periph.TRIGGER := (TRIGGER => True, others => <>);

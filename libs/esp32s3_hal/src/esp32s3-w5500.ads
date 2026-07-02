@@ -88,9 +88,7 @@ package ESP32S3.W5500 is
 
    --  Program the source MAC and the static IPv4 identity (IP, subnet, gateway).
    procedure Configure
-     (Dev                 : in out Device;
-      MAC                 : MAC_Address;
-      IP, Subnet, Gateway : IPv4_Address);
+     (Dev : in out Device; MAC : MAC_Address; IP, Subnet, Gateway : IPv4_Address);
 
    function Get_MAC (Dev : Device) return MAC_Address;
    function Get_IP (Dev : Device) return IPv4_Address;
@@ -116,29 +114,16 @@ package ESP32S3.W5500 is
    --  offset within the selected Block and auto-increments across the data.
    --  Scalars are big-endian on the wire (the W5500 register convention).
    ---------------------------------------------------------------------------
-   procedure Write
-     (Dev  : Device;
-      Blk  : Block;
-      Addr : Interfaces.Unsigned_16;
-      Data : Byte_Array);
+   procedure Write (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16; Data : Byte_Array);
    procedure Read
-     (Dev  : Device;
-      Blk  : Block;
-      Addr : Interfaces.Unsigned_16;
-      Data : out Byte_Array);
+     (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16; Data : out Byte_Array);
 
-   procedure Write_U8
-     (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16; V : Byte);
-   function Read_U8
-     (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16) return Byte;
+   procedure Write_U8 (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16; V : Byte);
+   function Read_U8 (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16) return Byte;
    procedure Write_U16
-     (Dev  : Device;
-      Blk  : Block;
-      Addr : Interfaces.Unsigned_16;
-      V    : Interfaces.Unsigned_16);
+     (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16; V : Interfaces.Unsigned_16);
    function Read_U16
-     (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16)
-      return Interfaces.Unsigned_16;
+     (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16) return Interfaces.Unsigned_16;
 
 private
    type Device is record

@@ -12,7 +12,7 @@
 --  Hardware:     none (self-contained).
 with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.Stack_Usage;
-with ESP32S3.Log; use ESP32S3.Log;
+with ESP32S3.Log;   use ESP32S3.Log;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -59,7 +59,9 @@ begin
    loop
       delay until Clock + Seconds (3);
       --  Touch Sink so the deep call is not optimised away.
-      Put ("  Sink="); Put (Sink); Put ("  ");
+      Put ("  Sink=");
+      Put (Sink);
+      Put ("  ");
       ESP32S3.Stack_Usage.Report;
    end loop;
 end Main;

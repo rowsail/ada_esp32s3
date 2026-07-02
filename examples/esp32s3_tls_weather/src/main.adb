@@ -35,9 +35,9 @@
 --  checked without trusted wall-clock time, so the run aborts if NTP fails.
 --
 --  Edit Latitude / Longitude below for another place.
-with Ada.Real_Time;  use Ada.Real_Time;
+with Ada.Real_Time; use Ada.Real_Time;
 with Interfaces;
-with GNAT.Sockets;   use GNAT.Sockets;
+with GNAT.Sockets;  use GNAT.Sockets;
 with TLS_Client;
 with X509;
 with Chain_Verify;
@@ -47,18 +47,18 @@ with DNS_Client;
 with NTP_Client;
 with W5500_Dev;
 with ESP32S3.RNG;
-with ESP32S3.Log;    use ESP32S3.Log;
+with ESP32S3.Log;   use ESP32S3.Log;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
-   Host        : constant String         := "api.open-meteo.com";
+   Host        : constant String := "api.open-meteo.com";
    DNS_Server  : constant Inet_Addr_Type := Inet_Addr ("8.8.8.8");      --  Google public DNS
    NTP_Server  : constant Inet_Addr_Type := Inet_Addr ("216.239.35.0"); --  time.google.com
-   Server_Port : constant Port_Type      := 443;                        --  HTTPS
-   Latitude    : constant String         := "52.52";    --  Berlin, DE
-   Longitude   : constant String         := "13.41";
+   Server_Port : constant Port_Type := 443;                        --  HTTPS
+   Latitude    : constant String := "52.52";    --  Berlin, DE
+   Longitude   : constant String := "13.41";
 
    --  How long DNS / NTP lookups wait for a UDP reply before giving up (seconds).
    Lookup_Timeout : constant Duration := 5.0;
@@ -76,9 +76,18 @@ procedure Main is
 
    CRLF : constant String := (1 => ASCII.CR, 2 => ASCII.LF);
    Req  : constant String :=
-     "GET /v1/forecast?latitude=" & Latitude & "&longitude=" & Longitude
-       & "&current=temperature_2m,wind_speed_10m HTTP/1.0" & CRLF
-       & "Host: " & Host & CRLF & "Connection: close" & CRLF & CRLF;
+     "GET /v1/forecast?latitude="
+     & Latitude
+     & "&longitude="
+     & Longitude
+     & "&current=temperature_2m,wind_speed_10m HTTP/1.0"
+     & CRLF
+     & "Host: "
+     & Host
+     & CRLF
+     & "Connection: close"
+     & CRLF
+     & CRLF;
 
    Server_IP : Inet_Addr_Type;
    Sock      : Socket_Type;
@@ -106,8 +115,7 @@ procedure Main is
                end loop;
                --  A digit or leading '-' means this is the numeric occurrence.
                if Value_Start <= Text'Last
-                 and then (Text (Value_Start) in '0' .. '9'
-                           or else Text (Value_Start) = '-')
+                 and then (Text (Value_Start) in '0' .. '9' or else Text (Value_Start) = '-')
                then
                   declare
                      Value_End : Natural := Value_Start;   --  one past the number
@@ -155,8 +163,8 @@ begin
    --  Current UTC time from NTP -- the board has no RTC, and certificate validity
    --  cannot be checked without trusted time, so abort if NTP does not answer.
    declare
-      Unix                                          : Interfaces.Integer_64;
-      Year, Month, Day, Hour, Minute, Second        : Integer;
+      Unix                                   : Interfaces.Integer_64;
+      Year, Month, Day, Hour, Minute, Second : Integer;
       --  Print a date/time field zero-padded to two digits (e.g. 7 -> "07").
       procedure Put_Padded (N : Integer) is
       begin
@@ -194,18 +202,20 @@ begin
    --  TLS 1.3 handshake, retried (the path to this host is intermittently flaky).
    for Attempt in 1 .. Max_Handshake_Attempts loop
       begin
-         Create_Socket  (Sock, Family_Inet, Socket_Stream);
+         Create_Socket (Sock, Family_Inet, Socket_Stream);
          Connect_Socket (Sock, (Family_Inet, Server_IP, Server_Port));
          TLS_Client.Hello (Session, Sock, Host, Ok);
       exception
-         when others => Ok := False;
+         when others =>
+            Ok := False;
       end;
       exit when Ok;
       --  Drop the dead socket before the next attempt; ignore any close error.
       begin
          Close_Socket (Sock);
       exception
-         when others => null;
+         when others =>
+            null;
       end;
       Put_Line ("[wx] handshake attempt" & Integer'Image (Attempt) & " failed; retry");
       delay until Clock + Handshake_Retry_Delay;
@@ -221,17 +231,18 @@ begin
    Put ("[wx] TLS 1.3 up: cipher 0x");
    Put_Hex (Interfaces.Unsigned_32 (TLS_Client.Cipher_Suite (Session)), 4);
    New_Line;
-   Put_Line ("[wx] CertificateVerify (RSA-PSS): "
-             & (if TLS_Client.Server_Cert_Verify_OK (Session) then "OK" else "FAIL"));
-   Put_Line ("[wx] server Finished: "
-             & (if TLS_Client.Server_Finished_OK (Session) then "OK" else "FAIL"));
+   Put_Line
+     ("[wx] CertificateVerify (RSA-PSS): "
+      & (if TLS_Client.Server_Cert_Verify_OK (Session) then "OK" else "FAIL"));
+   Put_Line
+     ("[wx] server Finished: "
+      & (if TLS_Client.Server_Finished_OK (Session) then "OK" else "FAIL"));
 
    --  Authenticate the chain: validate the server's leaf+intermediate up to the
    --  pinned ISRG Root X1, checking each link's signature and the leaf hostname.
    declare
       use Chain_Verify;
-      Anchors : constant Cert_List :=
-        (1 => (Data => Trust_Anchors.Root_DER'Access));
+      Anchors : constant Cert_List := (1 => (Data => Trust_Anchors.Root_DER'Access));
       Verdict : Result;
    begin
       Chain_Buffers.Reset;
@@ -239,8 +250,11 @@ begin
          Chain_Buffers.Add (TLS_Client.Server_Chain_Cert (Session, I));
       end loop;
       Verdict := Validate (Chain_Buffers.Chain, Anchors, Host, Now);
-      Put_Line ("[wx] chain validation to ISRG Root X1:" & Natural'Image
-                (TLS_Client.Server_Cert_Count (Session)) & " certs -> " & Result'Image (Verdict));
+      Put_Line
+        ("[wx] chain validation to ISRG Root X1:"
+         & Natural'Image (TLS_Client.Server_Cert_Count (Session))
+         & " certs -> "
+         & Result'Image (Verdict));
 
       --  Authenticate the peer before sending ANY application data.  Three
       --  independent conditions must ALL hold:
@@ -258,8 +272,9 @@ begin
         or else not TLS_Client.Server_Cert_Verify_OK (Session)
         or else not TLS_Client.Server_Finished_OK (Session)
       then
-         Put_Line ("[wx] WARNING: peer NOT authenticated"
-                   & " (chain/CertificateVerify/Finished) -- aborting before sending data");
+         Put_Line
+           ("[wx] WARNING: peer NOT authenticated"
+            & " (chain/CertificateVerify/Finished) -- aborting before sending data");
          Close_Socket (Sock);
          loop
             delay until Clock + Park_Forever;

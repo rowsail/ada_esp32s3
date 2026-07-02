@@ -45,10 +45,7 @@ package body ESP32S3.Console is
    function CCOUNT return Unsigned_32 is
       R : Unsigned_32;
    begin
-      Asm
-        ("rsr.ccount %0",
-         Outputs  => Unsigned_32'Asm_Output ("=a", R),
-         Volatile => True);
+      Asm ("rsr.ccount %0", Outputs => Unsigned_32'Asm_Output ("=a", R), Volatile => True);
       return R;
    end CCOUNT;
 
@@ -129,20 +126,17 @@ package body ESP32S3.Console is
             if not Host_Seen then
                return S'Last - I + 1;   --  no host confirmed: drop, never wait
             elsif not Wait_Ready then
-               Host_Seen :=
-                 False;      --  confirmed host went away: stop blocking
+               Host_Seen := False;      --  confirmed host went away: stop blocking
                return S'Last - I + 1;
             end if;
          elsif Pending then
-            Host_Seen :=
-              True;      --  drained since our last write => host present
+            Host_Seen := True;      --  drained since our last write => host present
          end if;
 
          --  Endpoint is free: write up to one 64-byte packet and send it.
          N := 0;
          while I <= S'Last and then N < Fifo_Size loop
-            USB_DEVICE_Periph.EP1 :=
-              (RDWR_BYTE => Byte (Character'Pos (S (I))), others => <>);
+            USB_DEVICE_Periph.EP1 := (RDWR_BYTE => Byte (Character'Pos (S (I))), others => <>);
             I := I + 1;
             N := N + 1;
          end loop;

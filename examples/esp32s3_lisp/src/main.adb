@@ -44,7 +44,9 @@ procedure Main is
       C : Character;
    begin
       loop
-         if Try_Get (C) then return C; end if;
+         if Try_Get (C) then
+            return C;
+         end if;
          delay until Clock + Milliseconds (2);
       end loop;
    end Get_Char;
@@ -60,7 +62,9 @@ procedure Main is
          if C = ASCII.BS or else C = ASCII.DEL then
             if Last > 0 then
                Last := Last - 1;
-               Put (ASCII.BS); Put (' '); Put (ASCII.BS);
+               Put (ASCII.BS);
+               Put (' ');
+               Put (ASCII.BS);
             end if;
          elsif Last < Buf'Length then
             Last := Last + 1;

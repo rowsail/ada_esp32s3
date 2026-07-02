@@ -15,8 +15,7 @@ package body ESP32S3.SDM is
    is (Sigs.GPIO_SD0_OUT + Natural (Idx));
 
    procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register :=
-        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
+      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
    begin
       G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
       O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
@@ -92,8 +91,7 @@ package body ESP32S3.SDM is
    procedure Release (C : in out Channel) is
    begin
       if C.Held then
-         GPIO_SD_Periph.SIGMADELTA (Integer (C.Idx)).SD_IN :=
-           128;  --  0% (output low)
+         GPIO_SD_Periph.SIGMADELTA (Integer (C.Idx)).SD_IN := 128;  --  0% (output low)
          Pool.Release (C.Idx);
          C.Held := False;
       end if;
@@ -110,17 +108,13 @@ package body ESP32S3.SDM is
    ---------------
 
    procedure Configure
-     (C          : in out Channel;
-      Pin        : ESP32S3.GPIO.Pin_Id;
-      Carrier_Hz : Positive := 1_000_000)
+     (C : in out Channel; Pin : ESP32S3.GPIO.Pin_Id; Carrier_Hz : Positive := 1_000_000)
    is
-      APB_Hz : constant :=
-        80_000_000;                      --  modulator source clock
+      APB_Hz : constant := 80_000_000;                      --  modulator source clock
       --  Nearest integer divider N in 1 .. 256 for the requested carrier; the
       --  register field holds N-1 (the hardware divides APB by field+1).
       Div    : constant Natural :=
-        Natural'Max
-          (1, Natural'Min (256, (APB_Hz + Carrier_Hz / 2) / Carrier_Hz));
+        Natural'Max (1, Natural'Min (256, (APB_Hz + Carrier_Hz / 2) / Carrier_Hz));
    begin
       if not C.Held then
          return;
@@ -140,8 +134,7 @@ package body ESP32S3.SDM is
    procedure Set_Density (C : Channel; Percent : Density_Percent) is
    begin
       if C.Held then
-         GPIO_SD_Periph.SIGMADELTA (Integer (C.Idx)).SD_IN :=
-           Duty_Byte (Percent);
+         GPIO_SD_Periph.SIGMADELTA (Integer (C.Idx)).SD_IN := Duty_Byte (Percent);
       end if;
    end Set_Density;
 

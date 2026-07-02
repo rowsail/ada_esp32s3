@@ -35,16 +35,16 @@ procedure Main is
 
    --  Count cross-check: run for this much *runtime* time and expect Tick_Rate_Hz
    --  * 0.050 s = 50_000 ticks back from the (independently clocked) timer.
-   Count_Window  : constant Time_Span := Milliseconds (50);
+   Count_Window   : constant Time_Span := Milliseconds (50);
    Expected_Count : constant := 50_000;         --  Tick_Rate_Hz * 0.050 s
    Count_Tol_Frac : constant := 50;             --  pass within Expected/50 = 2 %
 
    --  One-shot alarm: fire when the counter reaches this tick (30_000 us = 30 ms).
-   Alarm_Ticks   : constant := 30_000;          --  30 ms at 1 us/tick
-   Alarm_Tol_Us  : constant := 5_000;           --  generous slack for the poll loop
+   Alarm_Ticks  : constant := 30_000;          --  30 ms at 1 us/tick
+   Alarm_Tol_Us : constant := 5_000;           --  generous slack for the poll loop
 
    --  Bound the busy-poll waiting for the alarm so a missed alarm can't hang.
-   Poll_Guard    : constant := 50_000_000;
+   Poll_Guard : constant := 50_000_000;
 
    --  "[timer] 1 MHz count over 50 ms: expected~%d measured=%d  %s\n".
    procedure Count_Result (Expected, Measured : Integer; Ok : Boolean) is
@@ -58,8 +58,7 @@ procedure Main is
    end Count_Result;
 
    --  "[timer] alarm@30000: fired=%d at~%d us  %s\n" (fired printed as 0/1).
-   procedure Alarm_Result (Fired : Boolean; Elapsed_Us : Integer; Ok : Boolean)
-   is
+   procedure Alarm_Result (Fired : Boolean; Elapsed_Us : Integer; Ok : Boolean) is
    begin
       Put ("[timer] alarm@30000: fired=");
       Put (Boolean'Pos (Fired));
@@ -85,9 +84,9 @@ begin
       delay until Clock + Count_Window;
       declare
          Measured : constant Ticks := Value (T);
-         Ok : constant Boolean :=
+         Ok       : constant Boolean :=
            abs (Integer (Measured) - Expected_Count)
-             <= Expected_Count / Count_Tol_Frac;   --  within 2 %
+           <= Expected_Count / Count_Tol_Frac;   --  within 2 %
       begin
          Count_Result (Expected_Count, Integer (Measured), Ok);
       end;
@@ -110,8 +109,7 @@ begin
          Us := Integer (To_Duration (Clock - T0) * 1_000_000.0);
          --  Should fire near 30 ms (30000 us); allow generous slack for the
          --  polling loop and clock granularity.
-         Alarm_Result (Fired, Us,
-                       Fired and then abs (Us - Alarm_Ticks) <= Alarm_Tol_Us);
+         Alarm_Result (Fired, Us, Fired and then abs (Us - Alarm_Ticks) <= Alarm_Tol_Us);
          Clear_Alarm (T);
          Stop (T);
       end;

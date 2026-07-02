@@ -5,8 +5,7 @@ with Ada.IO_Exceptions;
 
 package body ESP32S3.Block_Dev.WL is
 
-   SPB        : constant :=
-     Sectors_Per_Block;        --  512-byte sectors per 4 KB block
+   SPB        : constant := Sectors_Per_Block;        --  512-byte sectors per 4 KB block
    Cfg_Blocks : constant := 2;                 --  ping-pong config blocks
 
    --  Config record layout inside a 512-byte sector (little-endian).
@@ -24,8 +23,7 @@ package body ESP32S3.Block_Dev.WL is
    Off_CRC      : constant := 40;               --  CRC over bytes 0 .. 39
 
    type Volume_Access is access all Volume;
-   function To_Volume is new
-     Ada.Unchecked_Conversion (System.Address, Volume_Access);
+   function To_Volume is new Ada.Unchecked_Conversion (System.Address, Volume_Access);
 
    ----------------------------------------------------------------------------
    --  Little-endian field access + CRC-32 over a config sector
@@ -145,8 +143,7 @@ package body ESP32S3.Block_Dev.WL is
 
    --  Parse a config sector for THIS volume's geometry.  Returns its sequence in
    --  Seq and True if it is a valid record matching the attached geometry.
-   function Parse
-     (V : Volume; Rec : Sector; Seq : out Unsigned_64) return Boolean is
+   function Parse (V : Volume; Rec : Sector; Seq : out Unsigned_64) return Boolean is
    begin
       Seq := 0;
       if Get_U32 (Rec, Off_Magic) /= Magic
@@ -194,9 +191,7 @@ package body ESP32S3.Block_Dev.WL is
    --  Block_Dev vtable
    ----------------------------------------------------------------------------
 
-   procedure Do_Read
-     (Ctx : System.Address; LBA : Sector_Index; Data : out Sector)
-   is
+   procedure Do_Read (Ctx : System.Address; LBA : Sector_Index; Data : out Sector) is
       V : constant Volume_Access := To_Volume (Ctx);
    begin
       if LBA >= Logical_Sectors (V.all) then
@@ -205,13 +200,11 @@ package body ESP32S3.Block_Dev.WL is
       Read_Sector (V.Lower, Phys_Sector (V.all, LBA), Data);
    end Do_Read;
 
-   procedure Do_Write (Ctx : System.Address; LBA : Sector_Index; Data : Sector)
-   is
+   procedure Do_Write (Ctx : System.Address; LBA : Sector_Index; Data : Sector) is
       V : constant Volume_Access := To_Volume (Ctx);
    begin
       if LBA >= Logical_Sectors (V.all) then
-         raise Ada.IO_Exceptions.Device_Error
-           with "WL: write LBA out of range";
+         raise Ada.IO_Exceptions.Device_Error with "WL: write LBA out of range";
       end if;
       Write_Sector (V.Lower, Phys_Sector (V.all, LBA), Data);
 
@@ -219,8 +212,7 @@ package body ESP32S3.Block_Dev.WL is
       if V.Access_Count >= V.Update_Rate then
          Do_Move (V.all);
          V.Access_Count := 0;
-         Persist
-           (V.all);             --  commits the move (highest valid seq wins)
+         Persist (V.all);             --  commits the move (highest valid seq wins)
 
       end if;
    end Do_Write;
@@ -232,14 +224,11 @@ package body ESP32S3.Block_Dev.WL is
    --  Public operations
    ----------------------------------------------------------------------------
 
-   procedure Attach
-     (V : in out Volume; Lower : Device; Update_Rate : Positive := 16)
-   is
+   procedure Attach (V : in out Volume; Lower : Device; Update_Rate : Positive := 16) is
       Phys_Blocks : constant Sector_Index := Sector_Count (Lower) / SPB;
    begin
       if Phys_Blocks < Cfg_Blocks + 2 then
-         raise Constraint_Error
-           with "WL: medium too small (need >= 4 erase blocks)";
+         raise Constraint_Error with "WL: medium too small (need >= 4 erase blocks)";
       end if;
       V.Lower := Lower;
       V.Data_Blocks := Natural (Phys_Blocks) - Cfg_Blocks;   --  D

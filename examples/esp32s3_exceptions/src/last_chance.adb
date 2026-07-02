@@ -9,8 +9,12 @@ package body Last_Chance is
 
    procedure Handler (Except : Exception_Occurrence) is
       Line : constant String :=
-        "*** LAST CHANCE HANDLER: unhandled " & Exception_Name (Except)
-        & " -- " & Exception_Message (Except) & " ***" & ASCII.NUL;
+        "*** LAST CHANCE HANDLER: unhandled "
+        & Exception_Name (Except)
+        & " -- "
+        & Exception_Message (Except)
+        & " ***"
+        & ASCII.NUL;
    begin
       Put_C (Line'Address);
       --  An unhandled exception is fatal: halt (the default LCH would reset).

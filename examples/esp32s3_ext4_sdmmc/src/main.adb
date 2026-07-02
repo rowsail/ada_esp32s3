@@ -23,24 +23,24 @@
 --  DAT3/CD line is not on a GPIO but on a CH422G I2C expander (IO4), so it is
 --  held high over I2C0 (SDA=IO8, SCL=IO9) before the card is initialised.
 with System;
-with Interfaces;   use Interfaces;
+with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.CH422G;
 with ESP32S3.SDMMC;
 with ESP32S3.Block_Dev;
 with ESP32S3.Block_Dev.SDMMC_Source;
-with ESP32S3.Ext4;       use ESP32S3.Ext4;
+with ESP32S3.Ext4; use ESP32S3.Ext4;
 with ESP32S3.Ext4.FS;
 with ESP32S3.Ext4.Inode;
-with FS_Glue;            use FS_Glue;   --  library-level glue (closure-free cb)
+with FS_Glue;      use FS_Glue;   --  library-level glue (closure-free cb)
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
    package CH422G renames ESP32S3.CH422G;
-   package SDMMC  renames ESP32S3.SDMMC;
+   package SDMMC renames ESP32S3.SDMMC;
    use type CH422G.Status;
    use type SDMMC.Status;
 
@@ -57,10 +57,10 @@ procedure Main is
    CH422G_IO4_High : constant := 16#10#;
 
    --  SDMMC slot-1 wiring (1-bit bus) and clock.
-   SDMMC_Clk_Pin    : constant := 12;
-   SDMMC_Cmd_Pin    : constant := 11;
-   SDMMC_D0_Pin     : constant := 13;
-   SDMMC_Clock_Hz   : constant := 50_000_000;   --  High Speed: 50 MHz
+   SDMMC_Clk_Pin  : constant := 12;
+   SDMMC_Cmd_Pin  : constant := 11;
+   SDMMC_D0_Pin   : constant := 13;
+   SDMMC_Clock_Hz : constant := 50_000_000;   --  High Speed: 50 MHz
 
    --  ext4 block cache: 16 blocks (16 x 4 KB) on the heap build.sh sized.
    FS_Cache_Blocks : constant := 16;
@@ -89,27 +89,33 @@ begin
    CH422G.Acquire (Expander_Session, Expander);
    CH422G.Write_IO (Expander_Session, CH422G_IO4_High, Expander_Status);
    if Expander_Status = CH422G.OK then
-      CH422G.Configure (Expander_Session,
-                        IO_Dir => CH422G.Outputs, OC_Mode => CH422G.Push_Pull,
-                        Result => Expander_Status);
+      CH422G.Configure
+        (Expander_Session,
+         IO_Dir  => CH422G.Outputs,
+         OC_Mode => CH422G.Push_Pull,
+         Result  => Expander_Status);
    end if;
 
    --  SDMMC: 1-bit, High Speed (50 MHz) if the card supports it.
-   SDMMC.Setup (Card, On => SDMMC.Slot1,
-                Clk => SDMMC_Clk_Pin, Cmd => SDMMC_Cmd_Pin, D0 => SDMMC_D0_Pin,
-                Width => SDMMC.Width_1, Data_Clock_Hz => SDMMC_Clock_Hz,
-                High_Speed => True);
+   SDMMC.Setup
+     (Card,
+      On            => SDMMC.Slot1,
+      Clk           => SDMMC_Clk_Pin,
+      Cmd           => SDMMC_Cmd_Pin,
+      D0            => SDMMC_D0_Pin,
+      Width         => SDMMC.Width_1,
+      Data_Clock_Hz => SDMMC_Clock_Hz,
+      High_Speed    => True);
    SDMMC.Initialize (Card, Card_Status);
    Card_R (Card_Status = SDMMC.OK);
 
    if Card_Status = SDMMC.OK then
       declare
          Block_Device : constant ESP32S3.Block_Dev.Device :=
-                ESP32S3.Block_Dev.SDMMC_Source.Make (Card'Access);
+           ESP32S3.Block_Dev.SDMMC_Source.Make (Card'Access);
          Mount        : ESP32S3.Ext4.FS.Mount;
       begin
-         Mount.Open (Block_Device, Read_Only => True,
-                     Cache_Blocks => FS_Cache_Blocks);
+         Mount.Open (Block_Device, Read_Only => True, Cache_Blocks => FS_Cache_Blocks);
          Mount_R (True, Natural (Mount.Block_Size));
 
          --  List the root directory.

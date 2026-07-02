@@ -16,16 +16,51 @@ package body P256 is
    ---------------------------------------------------------------------------
    --  Curve parameters (NIST P-256), little-endian limbs.
    ---------------------------------------------------------------------------
-   P  : constant Num := (16#FFFFFFFF#, 16#FFFFFFFF#, 16#FFFFFFFF#, 16#00000000#,
-                         16#00000000#, 16#00000000#, 16#00000001#, 16#FFFFFFFF#);
-   NN : constant Num := (16#FC632551#, 16#F3B9CAC2#, 16#A7179E84#, 16#BCE6FAAD#,
-                         16#FFFFFFFF#, 16#FFFFFFFF#, 16#00000000#, 16#FFFFFFFF#);
-   B  : constant Num := (16#27D2604B#, 16#3BCE3C3E#, 16#CC53B0F6#, 16#651D06B0#,
-                         16#769886BC#, 16#B3EBBD55#, 16#AA3A93E7#, 16#5AC635D8#);
-   GX : constant Num := (16#D898C296#, 16#F4A13945#, 16#2DEB33A0#, 16#77037D81#,
-                         16#63A440F2#, 16#F8BCE6E5#, 16#E12C4247#, 16#6B17D1F2#);
-   GY : constant Num := (16#37BF51F5#, 16#CBB64068#, 16#6B315ECE#, 16#2BCE3357#,
-                         16#7C0F9E16#, 16#8EE7EB4A#, 16#FE1A7F9B#, 16#4FE342E2#);
+   P  : constant Num :=
+     (16#FFFFFFFF#,
+      16#FFFFFFFF#,
+      16#FFFFFFFF#,
+      16#00000000#,
+      16#00000000#,
+      16#00000000#,
+      16#00000001#,
+      16#FFFFFFFF#);
+   NN : constant Num :=
+     (16#FC632551#,
+      16#F3B9CAC2#,
+      16#A7179E84#,
+      16#BCE6FAAD#,
+      16#FFFFFFFF#,
+      16#FFFFFFFF#,
+      16#00000000#,
+      16#FFFFFFFF#);
+   B  : constant Num :=
+     (16#27D2604B#,
+      16#3BCE3C3E#,
+      16#CC53B0F6#,
+      16#651D06B0#,
+      16#769886BC#,
+      16#B3EBBD55#,
+      16#AA3A93E7#,
+      16#5AC635D8#);
+   GX : constant Num :=
+     (16#D898C296#,
+      16#F4A13945#,
+      16#2DEB33A0#,
+      16#77037D81#,
+      16#63A440F2#,
+      16#F8BCE6E5#,
+      16#E12C4247#,
+      16#6B17D1F2#);
+   GY : constant Num :=
+     (16#37BF51F5#,
+      16#CBB64068#,
+      16#6B315ECE#,
+      16#2BCE3357#,
+      16#7C0F9E16#,
+      16#8EE7EB4A#,
+      16#FE1A7F9B#,
+      16#4FE342E2#);
 
    ---------------------------------------------------------------------------
    --  Plain 256-bit helpers.
@@ -33,7 +68,9 @@ package body P256 is
    function Is_Zero (A : Num) return Boolean is
    begin
       for I in Num'Range loop
-         if A (I) /= 0 then return False; end if;
+         if A (I) /= 0 then
+            return False;
+         end if;
       end loop;
       return True;
    end Is_Zero;
@@ -41,7 +78,9 @@ package body P256 is
    function "=" (A, B : Num) return Boolean is
    begin
       for I in Num'Range loop
-         if A (I) /= B (I) then return False; end if;
+         if A (I) /= B (I) then
+            return False;
+         end if;
       end loop;
       return True;
    end "=";
@@ -50,7 +89,9 @@ package body P256 is
    function Geq (A, B : Num) return Boolean is
    begin
       for I in reverse Num'Range loop
-         if A (I) /= B (I) then return A (I) > B (I); end if;
+         if A (I) /= B (I) then
+            return A (I) > B (I);
+         end if;
       end loop;
       return True;
    end Geq;
@@ -83,7 +124,8 @@ package body P256 is
 
    --  (A + B) mod M, for A, B < M.
    function Add_Mod (A, B, M : Num) return Num is
-      R : Num;  C : U64;
+      R : Num;
+      C : U64;
    begin
       Add_Raw (A, B, R, C);
       if C /= 0 or else Geq (R, M) then
@@ -98,7 +140,10 @@ package body P256 is
       if Geq (A, B) then
          return Sub_Raw (A, B);
       else
-         declare R : Num; C : U64; begin
+         declare
+            R : Num;
+            C : U64;
+         begin
             Add_Raw (Sub_Raw (A, B), M, R, C);   --  (A - B + 2^256) + M, keep low
             return R;
          end;
@@ -135,7 +180,7 @@ package body P256 is
             Cr := Shift_Right (CS, 32);
          end loop;
          CS := U64 (T (Limbs)) + Cr;
-         T (Limbs)     := U32 (CS and 16#FFFF_FFFF#);
+         T (Limbs) := U32 (CS and 16#FFFF_FFFF#);
          T (Limbs + 1) := U32 (Shift_Right (CS, 32));
 
          MM := (U64 (T (0)) * U64 (M0)) and 16#FFFF_FFFF#;
@@ -148,10 +193,12 @@ package body P256 is
          end loop;
          CS := U64 (T (Limbs)) + Cr;
          T (Limbs - 1) := U32 (CS and 16#FFFF_FFFF#);
-         T (Limbs)     := T (Limbs + 1) + U32 (Shift_Right (CS, 32));
+         T (Limbs) := T (Limbs + 1) + U32 (Shift_Right (CS, 32));
          T (Limbs + 1) := 0;
       end loop;
-      for K in Num'Range loop R (K) := T (K); end loop;
+      for K in Num'Range loop
+         R (K) := T (K);
+      end loop;
       if T (Limbs) /= 0 or else Geq (R, M) then
          R := Sub_Raw (R, M);
       end if;
@@ -174,8 +221,8 @@ package body P256 is
    P_R2 : constant Num := Compute_R2 (P);
    N_R2 : constant Num := Compute_R2 (NN);
 
-   function To_Mont (A, M : Num; M0 : U32; R2 : Num) return Num is
-     (Mont_Mul (A, R2, M, M0));                       --  a*R mod M
+   function To_Mont (A, M : Num; M0 : U32; R2 : Num) return Num
+   is (Mont_Mul (A, R2, M, M0));                       --  a*R mod M
 
    --  Montgomery form of 1 (= R mod M).
    P_One_M : constant Num := To_Mont (One, P, P_M0, P_R2);
@@ -205,20 +252,26 @@ package body P256 is
    end Inv_Mod;
 
    --  (A * B) mod M, plain in, plain out.
-   function Mul_Mod (A, B, M : Num; M0 : U32; R2 : Num) return Num is
-     (Mont_Mul (Mont_Mul (A, R2, M, M0), B, M, M0));     --  (aR)*b*R^-1 = ab
+   function Mul_Mod (A, B, M : Num; M0 : U32; R2 : Num) return Num
+   is (Mont_Mul (Mont_Mul (A, R2, M, M0), B, M, M0));     --  (aR)*b*R^-1 = ab
 
    ---------------------------------------------------------------------------
    --  Jacobian point arithmetic over GF(p); coordinates in Montgomery form.
    --  Z = 0 marks the point at infinity.
    ---------------------------------------------------------------------------
-   type Point is record X, Y, Z : Num; end record;
+   type Point is record
+      X, Y, Z : Num;
+   end record;
    Infinity : constant Point := (Zero, Zero, Zero);
 
-   function FMul (A, B : Num) return Num is (Mont_Mul (A, B, P, P_M0));
-   function FAdd (A, B : Num) return Num is (Add_Mod (A, B, P));
-   function FSub (A, B : Num) return Num is (Sub_Mod (A, B, P));
-   function FDbl (A : Num)    return Num is (Add_Mod (A, A, P));
+   function FMul (A, B : Num) return Num
+   is (Mont_Mul (A, B, P, P_M0));
+   function FAdd (A, B : Num) return Num
+   is (Add_Mod (A, B, P));
+   function FSub (A, B : Num) return Num
+   is (Sub_Mod (A, B, P));
+   function FDbl (A : Num) return Num
+   is (Add_Mod (A, A, P));
 
    function Dbl (Q : Point) return Point is
       Dlt, Gamma, Beta, Alpha, T, X3, Y3, Z3, G2 : Num;
@@ -227,19 +280,19 @@ package body P256 is
          return Infinity;
       end if;
       Dlt := FMul (Q.Z, Q.Z);                 --  Z^2
-      Gamma  := FMul (Q.Y, Q.Y);                 --  Y^2
-      Beta   := FMul (Q.X, Gamma);               --  X*Y^2
+      Gamma := FMul (Q.Y, Q.Y);                 --  Y^2
+      Beta := FMul (Q.X, Gamma);               --  X*Y^2
       --  alpha = 3*(X-delta)*(X+delta)
-      Alpha  := FMul (FSub (Q.X, Dlt), FAdd (Q.X, Dlt));
-      Alpha  := FAdd (FDbl (Alpha), Alpha);      --  *3
+      Alpha := FMul (FSub (Q.X, Dlt), FAdd (Q.X, Dlt));
+      Alpha := FAdd (FDbl (Alpha), Alpha);      --  *3
       --  X3 = alpha^2 - 8*beta
-      T  := FDbl (FDbl (FDbl (Beta)));           --  8*beta
+      T := FDbl (FDbl (FDbl (Beta)));           --  8*beta
       X3 := FSub (FMul (Alpha, Alpha), T);
       --  Z3 = (Y+Z)^2 - gamma - delta
       Z3 := FMul (FAdd (Q.Y, Q.Z), FAdd (Q.Y, Q.Z));
       Z3 := FSub (FSub (Z3, Gamma), Dlt);
       --  Y3 = alpha*(4*beta - X3) - 8*gamma^2
-      T  := FSub (FDbl (FDbl (Beta)), X3);       --  4*beta - X3
+      T := FSub (FDbl (FDbl (Beta)), X3);       --  4*beta - X3
       G2 := FMul (Gamma, Gamma);
       G2 := FDbl (FDbl (FDbl (G2)));             --  8*gamma^2
       Y3 := FSub (FMul (Alpha, T), G2);
@@ -249,8 +302,12 @@ package body P256 is
    function Add (P1, P2 : Point) return Point is
       Z1Z1, Z2Z2, U1, U2, S1, S2, H, I, J, Rr, V, X3, Y3, Z3, T : Num;
    begin
-      if Is_Zero (P1.Z) then return P2; end if;
-      if Is_Zero (P2.Z) then return P1; end if;
+      if Is_Zero (P1.Z) then
+         return P2;
+      end if;
+      if Is_Zero (P2.Z) then
+         return P1;
+      end if;
       Z1Z1 := FMul (P1.Z, P1.Z);
       Z2Z2 := FMul (P2.Z, P2.Z);
       U1 := FMul (P1.X, Z2Z2);
@@ -264,15 +321,16 @@ package body P256 is
             return Infinity;                     --  P + (-P)
          end if;
       end if;
-      H  := FSub (U2, U1);
-      I  := FDbl (H);  I := FMul (I, I);          --  (2H)^2
-      J  := FMul (H, I);
+      H := FSub (U2, U1);
+      I := FDbl (H);
+      I := FMul (I, I);          --  (2H)^2
+      J := FMul (H, I);
       Rr := FDbl (FSub (S2, S1));                 --  2*(S2-S1)
-      V  := FMul (U1, I);
+      V := FMul (U1, I);
       --  X3 = r^2 - J - 2V
       X3 := FSub (FSub (FMul (Rr, Rr), J), FDbl (V));
       --  Y3 = r*(V - X3) - 2*S1*J
-      T  := FMul (FDbl (S1), J);
+      T := FMul (FDbl (S1), J);
       Y3 := FSub (FMul (Rr, FSub (V, X3)), T);
       --  Z3 = ((Z1+Z2)^2 - Z1Z1 - Z2Z2) * H
       Z3 := FMul (FAdd (P1.Z, P2.Z), FAdd (P1.Z, P2.Z));
@@ -300,20 +358,20 @@ package body P256 is
    function From_BE (Bz : Bytes_32) return Num is
       R : Num;
    begin
-      for I in 0 .. Limbs - 1 loop                --  word I = bytes [28-4I .. 31-4I]
-         R (I) := Shift_Left (U32 (Bz (28 - 4 * I)), 24)
-               or Shift_Left (U32 (Bz (29 - 4 * I)), 16)
-               or Shift_Left (U32 (Bz (30 - 4 * I)),  8)
-               or            U32 (Bz (31 - 4 * I));
+      for I in 0 .. Limbs - 1 loop
+         --  word I = bytes [28-4I .. 31-4I]
+         R (I) :=
+           Shift_Left (U32 (Bz (28 - 4 * I)), 24)
+           or Shift_Left (U32 (Bz (29 - 4 * I)), 16)
+           or Shift_Left (U32 (Bz (30 - 4 * I)), 8)
+           or U32 (Bz (31 - 4 * I));
       end loop;
       return R;
    end From_BE;
 
    --  Affine (plain x, y) -> Jacobian with Montgomery coords (Z = 1).
-   function To_Jacobian (X, Y : Num) return Point is
-     (X => Mont_Mul (X, P_R2, P, P_M0),
-      Y => Mont_Mul (Y, P_R2, P, P_M0),
-      Z => P_One_M);
+   function To_Jacobian (X, Y : Num) return Point
+   is (X => Mont_Mul (X, P_R2, P, P_M0), Y => Mont_Mul (Y, P_R2, P, P_M0), Z => P_One_M);
 
    --  Is (x, y) (plain affine) on the curve y^2 = x^3 - 3x + b mod p?
    function On_Curve (X, Y : Num) return Boolean is
@@ -331,48 +389,47 @@ package body P256 is
    ---------------------------------------------------------------------------
    --  ECDSA verification.
    ---------------------------------------------------------------------------
-   function Verify (Pub_X, Pub_Y : Bytes_32;
-                    Hash         : Bytes_32;
-                    R, S         : Bytes_32) return Boolean
-   is
-      Qx : constant Num := From_BE (Pub_X);
-      Qy : constant Num := From_BE (Pub_Y);
-      Rr : constant Num := From_BE (R);
-      Ss : constant Num := From_BE (S);
-      E  : Num := From_BE (Hash);
-      W, U1, U2, Vx : Num;
+   function Verify (Pub_X, Pub_Y : Bytes_32; Hash : Bytes_32; R, S : Bytes_32) return Boolean is
+      Qx             : constant Num := From_BE (Pub_X);
+      Qy             : constant Num := From_BE (Pub_Y);
+      Rr             : constant Num := From_BE (R);
+      Ss             : constant Num := From_BE (S);
+      E              : Num := From_BE (Hash);
+      W, U1, U2, Vx  : Num;
       G_Pt, Q_Pt, RP : Point;
       Zinv, Z2inv    : Num;
    begin
       --  r, s must be in [1, n-1].
-      if Is_Zero (Rr) or else Geq (Rr, NN)
-        or else Is_Zero (Ss) or else Geq (Ss, NN)
-      then
+      if Is_Zero (Rr) or else Geq (Rr, NN) or else Is_Zero (Ss) or else Geq (Ss, NN) then
          return False;
       end if;
       --  Public key on the curve and in range.
       if Geq (Qx, P) or else Geq (Qy, P) or else not On_Curve (Qx, Qy) then
          return False;
       end if;
-      if Geq (E, NN) then E := Sub_Raw (E, NN); end if;   --  e mod n
+      if Geq (E, NN) then
+         E := Sub_Raw (E, NN);
+      end if;   --  e mod n
 
-      W  := Inv_Mod (Ss, NN, N_M0, N_R2, To_Mont (One, NN, N_M0, N_R2));
-      U1 := Mul_Mod (E,  W, NN, N_M0, N_R2);
+      W := Inv_Mod (Ss, NN, N_M0, N_R2, To_Mont (One, NN, N_M0, N_R2));
+      U1 := Mul_Mod (E, W, NN, N_M0, N_R2);
       U2 := Mul_Mod (Rr, W, NN, N_M0, N_R2);
 
       G_Pt := To_Jacobian (GX, GY);
       Q_Pt := To_Jacobian (Qx, Qy);
-      RP   := Add (Scalar_Mul (U1, G_Pt), Scalar_Mul (U2, Q_Pt));
+      RP := Add (Scalar_Mul (U1, G_Pt), Scalar_Mul (U2, Q_Pt));
       if Is_Zero (RP.Z) then
          return False;
       end if;
 
       --  Affine x = X / Z^2 (in Montgomery), then back to plain.
-      Zinv  := Mont_Pow (RP.Z, Sub_Raw (P, (0 => 2, others => 0)), P, P_M0, P_One_M);
+      Zinv := Mont_Pow (RP.Z, Sub_Raw (P, (0 => 2, others => 0)), P, P_M0, P_One_M);
       Z2inv := FMul (Zinv, Zinv);
-      Vx    := FMul (RP.X, Z2inv);
-      Vx    := Mont_Mul (Vx, One, P, P_M0);              --  out of Montgomery
-      if Geq (Vx, NN) then Vx := Sub_Raw (Vx, NN); end if;  --  x mod n
+      Vx := FMul (RP.X, Z2inv);
+      Vx := Mont_Mul (Vx, One, P, P_M0);              --  out of Montgomery
+      if Geq (Vx, NN) then
+         Vx := Sub_Raw (Vx, NN);
+      end if;  --  x mod n
       return Vx = Rr;
    end Verify;
 
@@ -386,7 +443,7 @@ package body P256 is
    begin
       for I in 0 .. Limbs - 1 loop
          R (31 - 4 * I) := Byte (A (I) and 16#FF#);
-         R (30 - 4 * I) := Byte (Shift_Right (A (I),  8) and 16#FF#);
+         R (30 - 4 * I) := Byte (Shift_Right (A (I), 8) and 16#FF#);
          R (29 - 4 * I) := Byte (Shift_Right (A (I), 16) and 16#FF#);
          R (28 - 4 * I) := Byte (Shift_Right (A (I), 24) and 16#FF#);
       end loop;
@@ -397,11 +454,13 @@ package body P256 is
    procedure To_Affine (Pt : Point; AX, AY : out Num; Ok : out Boolean) is
       Zinv, Z2inv, Z3inv : Num;
    begin
-      AX := Zero;  AY := Zero;
+      AX := Zero;
+      AY := Zero;
       if Is_Zero (Pt.Z) then
-         Ok := False;  return;
+         Ok := False;
+         return;
       end if;
-      Zinv  := Mont_Pow (Pt.Z, Sub_Raw (P, (0 => 2, others => 0)), P, P_M0, P_One_M);
+      Zinv := Mont_Pow (Pt.Z, Sub_Raw (P, (0 => 2, others => 0)), P, P_M0, P_One_M);
       Z2inv := FMul (Zinv, Zinv);
       Z3inv := FMul (Z2inv, Zinv);
       AX := Mont_Mul (FMul (Pt.X, Z2inv), One, P, P_M0);   --  x = X*Z^-2, out of Montgomery
@@ -415,7 +474,8 @@ package body P256 is
       AX, AY : Num;
       Ok     : Boolean;
    begin
-      Pub_X := (others => 0);  Pub_Y := (others => 0);
+      Pub_X := (others => 0);
+      Pub_Y := (others => 0);
       if Is_Zero (D) or else Geq (D, NN) then
          return False;
       end if;
@@ -424,12 +484,13 @@ package body P256 is
       if not Ok then
          return False;
       end if;
-      Pub_X := To_BE (AX);  Pub_Y := To_BE (AY);
+      Pub_X := To_BE (AX);
+      Pub_Y := To_BE (AY);
       return True;
    end Public_Key;
 
-   function ECDH (Priv : Bytes_32; Peer_X, Peer_Y : Bytes_32;
-                  Shared_X : out Bytes_32) return Boolean
+   function ECDH
+     (Priv : Bytes_32; Peer_X, Peer_Y : Bytes_32; Shared_X : out Bytes_32) return Boolean
    is
       D      : constant Num := From_BE (Priv);
       QX     : constant Num := From_BE (Peer_X);
@@ -510,11 +571,15 @@ package body P256 is
       K       : Bytes_32 := (others => 16#00#);
       Count   : Natural := 0;
    begin
-      R := (others => 0);  S := (others => 0);
-      if Is_Zero (D) or else Geq (D, NN) then            --  private key in [1, n-1]
+      R := (others => 0);
+      S := (others => 0);
+      if Is_Zero (D) or else Geq (D, NN) then
+         --  private key in [1, n-1]
          return False;
       end if;
-      if Geq (E, NN) then E := Sub_Raw (E, NN); end if;  --  e = hash mod n
+      if Geq (E, NN) then
+         E := Sub_Raw (E, NN);
+      end if;  --  e = hash mod n
 
       declare
          X_Oct : constant Bytes_32 := Priv;              --  int2octets(x)
@@ -522,12 +587,16 @@ package body P256 is
          Seed  : Bytes (0 .. 96);                        --  V(32) || sep(1) || X || H
       begin
          --  RFC 6979 3.2 (b)..(g): seed the HMAC-DRBG.
-         Seed (0 .. 31) := V;  Seed (32) := 16#00#;
-         Seed (33 .. 64) := X_Oct;  Seed (65 .. 96) := H_Oct;
+         Seed (0 .. 31) := V;
+         Seed (32) := 16#00#;
+         Seed (33 .. 64) := X_Oct;
+         Seed (65 .. 96) := H_Oct;
          K := HMAC_SHA256 (K, Seed);
          V := HMAC_SHA256 (K, V);
-         Seed (0 .. 31) := V;  Seed (32) := 16#01#;
-         Seed (33 .. 64) := X_Oct;  Seed (65 .. 96) := H_Oct;
+         Seed (0 .. 31) := V;
+         Seed (32) := 16#01#;
+         Seed (33 .. 64) := X_Oct;
+         Seed (65 .. 96) := H_Oct;
          K := HMAC_SHA256 (K, Seed);
          V := HMAC_SHA256 (K, V);
 
@@ -537,10 +606,10 @@ package body P256 is
             Count := Count + 1;
             V := HMAC_SHA256 (K, V);
             declare
-               Kk     : constant Num := From_BE (V);
-               KG     : Point;
-               AX, AY : Num;
-               Ok     : Boolean;
+               Kk        : constant Num := From_BE (V);
+               KG        : Point;
+               AX, AY    : Num;
+               Ok        : Boolean;
                Rn, Sn, T : Num;
             begin
                if not Is_Zero (Kk) and then not Geq (Kk, NN) then
@@ -548,11 +617,13 @@ package body P256 is
                   To_Affine (KG, AX, AY, Ok);
                   if Ok then
                      Rn := AX;
-                     if Geq (Rn, NN) then Rn := Sub_Raw (Rn, NN); end if;  --  r = x mod n
+                     if Geq (Rn, NN) then
+                        Rn := Sub_Raw (Rn, NN);
+                     end if;  --  r = x mod n
                      if not Is_Zero (Rn) then
                         --  s = k^-1 (e + r*d) mod n
-                        T  := Mul_Mod (Rn, D, NN, N_M0, N_R2);
-                        T  := Add_Mod (E, T, NN);
+                        T := Mul_Mod (Rn, D, NN, N_M0, N_R2);
+                        T := Add_Mod (E, T, NN);
                         Sn := Inv_Mod (Kk, NN, N_M0, N_R2, N_One_M);
                         Sn := Mul_Mod (Sn, T, NN, N_M0, N_R2);
                         if not Is_Zero (Sn) then
@@ -568,7 +639,8 @@ package body P256 is
             declare
                M : Bytes (0 .. 32);
             begin
-               M (0 .. 31) := V;  M (32) := 16#00#;
+               M (0 .. 31) := V;
+               M (32) := 16#00#;
                K := HMAC_SHA256 (K, M);
                V := HMAC_SHA256 (K, V);
             end;

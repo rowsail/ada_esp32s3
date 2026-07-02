@@ -34,7 +34,7 @@ with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.GPIO;
 with ESP32S3.PCF85063A;
 with ESP32S3.PCF85063A.Interrupts;
-with ESP32S3.Text_IO;  use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
+with ESP32S3.Text_IO; use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
 with Alarm_IRQ;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
@@ -50,8 +50,8 @@ procedure Main is
    --  PCF85063A on this board has no INT line, so its pin is No_Pin and the
    --  alarm is found by polling AF over I2C.  Point it at a real GPIO (and the
    --  Attach below arms the hardware interrupt) if INT is wired.
-   Rtc_Sda : constant ESP32S3.GPIO.Pin_Id       := 8;   --  I2C data  -> IO8
-   Rtc_Scl : constant ESP32S3.GPIO.Pin_Id       := 7;   --  I2C clock -> IO7
+   Rtc_Sda : constant ESP32S3.GPIO.Pin_Id := 8;   --  I2C data  -> IO8
+   Rtc_Scl : constant ESP32S3.GPIO.Pin_Id := 7;   --  I2C clock -> IO7
    Rtc_Int : constant ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
 
    --  Console reporters, formerly esp_rom_printf natives in glue.c, now pure Ada
@@ -89,7 +89,9 @@ procedure Main is
    begin
       Put ("[rtc] ");
       Put (Name);
-      for J in 1 .. 9 - Name'Length loop Put (' '); end loop;
+      for J in 1 .. 9 - Name'Length loop
+         Put (' ');
+      end loop;
       Put_Line (" : " & (if Ok then "OK" else "FAIL"));
    end Step;
 
@@ -100,8 +102,10 @@ procedure Main is
 
    procedure Alarm (By_Int : Boolean) is
    begin
-      Put_Line ("[rtc] *** ALARM fired ***  (detected via "
-                & (if By_Int then "INT interrupt" else "I2C poll") & ")");
+      Put_Line
+        ("[rtc] *** ALARM fired ***  (detected via "
+         & (if By_Int then "INT interrupt" else "I2C poll")
+         & ")");
    end Alarm;
 
    procedure Done is
@@ -112,24 +116,35 @@ procedure Main is
    Clock_Dev    : RTC.Device;        --  the RTC chip + its recorded wiring
    Reading      : RTC.Time;          --  the calendar read back from the chip
    Integrity_Ok : Boolean;           --  chip's clock-integrity flag (oscillator
-                                     --  did not stop since the last set)
+   --  did not stop since the last set)
    Result       : RTC.Status;        --  outcome of the last driver call
 
    --  2026-06-22 is a Monday.
    Initial : constant RTC.Time :=
-     (Year   => 2026, Month  => 6, Day    => 22, Day_Of_Week => RTC.Monday,
-      Hour   => 14,   Minute => 30, Second => 0);
+     (Year        => 2026,
+      Month       => 6,
+      Day         => 22,
+      Day_Of_Week => RTC.Monday,
+      Hour        => 14,
+      Minute      => 30,
+      Second      => 0);
 
    --  One calendar reading:  "[rtc] Mon 2026-06-22 14:30:00  (integrity OK)".
    procedure Print (When_T : RTC.Time; Integrity : Boolean) is
    begin
       Put ("[rtc] ");
-      Put (Dow (RTC.Weekday'Pos (When_T.Day_Of_Week)));  Put (" ");
-      Put_Dec0 (Natural (When_T.Year),   4);  Put ("-");
-      Put_Dec0 (Natural (When_T.Month),  2);  Put ("-");
-      Put_Dec0 (Natural (When_T.Day),    2);  Put (" ");
-      Put_Dec0 (Natural (When_T.Hour),   2);  Put (":");
-      Put_Dec0 (Natural (When_T.Minute), 2);  Put (":");
+      Put (Dow (RTC.Weekday'Pos (When_T.Day_Of_Week)));
+      Put (" ");
+      Put_Dec0 (Natural (When_T.Year), 4);
+      Put ("-");
+      Put_Dec0 (Natural (When_T.Month), 2);
+      Put ("-");
+      Put_Dec0 (Natural (When_T.Day), 2);
+      Put (" ");
+      Put_Dec0 (Natural (When_T.Hour), 2);
+      Put (":");
+      Put_Dec0 (Natural (When_T.Minute), 2);
+      Put (":");
       Put_Dec0 (Natural (When_T.Second), 2);
       Put_Line ("  (integrity " & (if Integrity then "OK" else "LOST") & ")");
    end Print;
@@ -166,8 +181,7 @@ begin
    end if;
 
    --  arm a seconds-match alarm 5 s out (the time was just set to :00).
-   RTC.Set_Alarm
-     (Clock_Dev, (Use_Second => True, Second => 5, others => <>), Result);
+   RTC.Set_Alarm (Clock_Dev, (Use_Second => True, Second => 5, others => <>), Result);
    Step ("set-alarm", Result = RTC.OK);
 
    --  watch the clock tick; stop when the alarm flag latches.

@@ -42,7 +42,7 @@ with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.SPI;
 with ESP32S3.W5500;
 with ESP32S3.W5500.DHCP;
-with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 with Net_Dev;
 with DHCP_Print;
 
@@ -50,56 +50,56 @@ with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
-   package Net  renames ESP32S3.W5500;
+   package Net renames ESP32S3.W5500;
    package DHCP renames ESP32S3.W5500.DHCP;
    use type Net.Link_State;
 
    Device : Net.Device renames Net_Dev.Dev;
 
    --  W5500-to-SoC wiring on SPI2 (the values passed to Net.Setup's pins).
-   SPI_Clock_Pin    : constant := 1;     --  SCLK
-   SPI_Mosi_Pin     : constant := 4;     --  MOSI (controller out, peripheral in)
-   SPI_Miso_Pin     : constant := 45;    --  MISO (controller in, peripheral out)
-   Chip_Select_Pin  : constant := 39;    --  CS  (active low, held low per frame)
-   Reset_Pin        : constant := 11;    --  RSTn (active low)
-   Interrupt_Pin    : constant := 3;     --  INTn (active low, pulled up)
+   SPI_Clock_Pin   : constant := 1;     --  SCLK
+   SPI_Mosi_Pin    : constant := 4;     --  MOSI (controller out, peripheral in)
+   SPI_Miso_Pin    : constant := 45;    --  MISO (controller in, peripheral out)
+   Chip_Select_Pin : constant := 39;    --  CS  (active low, held low per frame)
+   Reset_Pin       : constant := 11;    --  RSTn (active low)
+   Interrupt_Pin   : constant := 3;     --  INTn (active low, pulled up)
 
    --  Conservative initial SPI clock; the W5500 tolerates up to 80 MHz once the
    --  wiring is proven, but 10 MHz brings the link up reliably first.
-   SPI_Clock_Hz     : constant := 10_000_000;
+   SPI_Clock_Hz : constant := 10_000_000;
 
    --  Client hardware identity for the DHCP exchange.  This is a WIZnet
    --  locally-administered MAC (OUI 00:08:DC); give each board a distinct one.
-   Client_MAC : constant Net.MAC_Address :=
-     (16#00#, 16#08#, 16#DC#, 16#01#, 16#02#, 16#03#);
+   Client_MAC : constant Net.MAC_Address := (16#00#, 16#08#, 16#DC#, 16#01#, 16#02#, 16#03#);
 
    --  PHY auto-negotiation can take a few seconds, so poll the link up to
    --  Link_Up_Polls times, waiting Link_Poll_Interval between checks.
-   Link_Up_Polls       : constant := 40;
-   Link_Poll_Interval  : constant Time_Span := Milliseconds (250);
+   Link_Up_Polls      : constant := 40;
+   Link_Poll_Interval : constant Time_Span := Milliseconds (250);
 
    --  How long to wait after power-up before the first console line, so the
    --  serial monitor has attached and does not miss the banner.
-   Startup_Delay       : constant Time_Span := Milliseconds (200);
+   Startup_Delay : constant Time_Span := Milliseconds (200);
 
    --  Idle period for the parking loop: the maintenance task does all the work,
    --  so Main just sleeps in long (one-hour) hops forever.
-   Park_Interval       : constant Time_Span := Seconds (3600);
+   Park_Interval : constant Time_Span := Seconds (3600);
 
    Present : Boolean;     --  True once Reset confirms the chip answered
 begin
    delay until Clock + Startup_Delay;
    Put_Line ("[dhcp] W5500 DHCP client with lease maintenance");
 
-   Net.Setup (Device,
-              Sclk     => SPI_Clock_Pin,
-              Mosi     => SPI_Mosi_Pin,
-              Miso     => SPI_Miso_Pin,
-              Cs       => Chip_Select_Pin,
-              Rst      => Reset_Pin,
-              Int      => Interrupt_Pin,
-              Host     => ESP32S3.SPI.SPI2,
-              Clock_Hz => SPI_Clock_Hz);
+   Net.Setup
+     (Device,
+      Sclk     => SPI_Clock_Pin,
+      Mosi     => SPI_Mosi_Pin,
+      Miso     => SPI_Miso_Pin,
+      Cs       => Chip_Select_Pin,
+      Rst      => Reset_Pin,
+      Int      => Interrupt_Pin,
+      Host     => ESP32S3.SPI.SPI2,
+      Clock_Hz => SPI_Clock_Hz);
 
    Net.Reset (Device, Present);
    if not Present then
@@ -113,8 +113,7 @@ begin
       exit when Net.Link (Device) = Net.Up;
       delay until Clock + Link_Poll_Interval;
    end loop;
-   Put_Line
-     (if Net.Link (Device) = Net.Up then "[dhcp] link up" else "[dhcp] link down");
+   Put_Line (if Net.Link (Device) = Net.Up then "[dhcp] link up" else "[dhcp] link down");
 
    --  Start the background task: it acquires a lease (On_Bound prints it) and then
    --  renews / rebinds it automatically for as long as the program runs.

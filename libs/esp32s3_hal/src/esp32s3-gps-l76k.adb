@@ -70,8 +70,7 @@ package body ESP32S3.GPS.L76K is
    -- Set_NMEA_Output --  PCAS03 (untested)
    ---------------------
 
-   procedure Set_NMEA_Output
-     (GGA, GLL, GSA, GSV, RMC, VTG, ZDA, ANT : Output_Rate := 1) is
+   procedure Set_NMEA_Output (GGA, GLL, GSA, GSV, RMC, VTG, ZDA, ANT : Output_Rate := 1) is
    begin
       --  8 output rates then the 6 reserved fields the datasheet fixes.
       Send_PCAS

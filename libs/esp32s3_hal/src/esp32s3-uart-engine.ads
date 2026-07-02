@@ -15,11 +15,8 @@ private package ESP32S3.UART.Engine is
    type Bus is private;
 
    function Open
-     (Port   : UART_Port;
-      Baud   : Baud_Rate;
-      Bits   : Data_Bits;
-      Parity : Parity_Mode;
-      Stop   : Stop_Bits) return Bus;
+     (Port : UART_Port; Baud : Baud_Rate; Bits : Data_Bits; Parity : Parity_Mode; Stop : Stop_Bits)
+      return Bus;
 
    function Is_Open (B : Bus) return Boolean;
 

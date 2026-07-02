@@ -11,6 +11,7 @@ with System;
 --  per-task stack watchpoint).  The handlers must be closure-free and
 --  library-level -- a captured-environment handler would need a GNAT trampoline,
 --  which faults on this part (No_Implicit_Dynamic_Code).
+
 package body Blink is
 
    --  Clear the level-triggered FROM_CPU source so the handler does not re-enter
@@ -20,8 +21,8 @@ package body Blink is
    procedure Clear_L3;
    pragma Import (C, Clear_L3, "ada_clear_l3");
 
-   protected L2_PO with
-     Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority
+   protected L2_PO
+     with Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority
    is
       function Count return Integer;
    private
@@ -36,11 +37,12 @@ package body Blink is
          Clear_L2;
          Fired := Fired + 1;
       end Handle;
-      function Count return Integer is (Fired);
+      function Count return Integer
+      is (Fired);
    end L2_PO;
 
-   protected L3_PO with
-     Interrupt_Priority => Ada.Interrupts.Names.Device_L3_Priority
+   protected L3_PO
+     with Interrupt_Priority => Ada.Interrupts.Names.Device_L3_Priority
    is
       function Count return Integer;
    private
@@ -55,10 +57,13 @@ package body Blink is
          Clear_L3;
          Fired := Fired + 1;
       end Handle;
-      function Count return Integer is (Fired);
+      function Count return Integer
+      is (Fired);
    end L3_PO;
 
-   function L2_Count return Integer is (L2_PO.Count);
-   function L3_Count return Integer is (L3_PO.Count);
+   function L2_Count return Integer
+   is (L2_PO.Count);
+   function L3_Count return Integer
+   is (L3_PO.Count);
 
 end Blink;

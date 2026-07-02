@@ -7,6 +7,7 @@ with Ada.Exceptions;
 --  exception (__gnat_last_chance_handler), the runtime's version is not linked,
 --  and we instead print the exception over the ROM console and halt -- so step
 --  [4] of the demo is visible and the board does not reset.
+
 package Last_Chance is
 
    procedure Handler (Except : Ada.Exceptions.Exception_Occurrence);

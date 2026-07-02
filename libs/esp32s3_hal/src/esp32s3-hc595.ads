@@ -60,8 +60,7 @@ package ESP32S3.HC595 is
    procedure Update (C : in out Controller);
 
    --  Set_Output then Update.
-   procedure Write_Output
-     (C : in out Controller; Index : Natural; On : Boolean)
+   procedure Write_Output (C : in out Controller; Index : Natural; On : Boolean)
    with Pre => Index < Output_Count (C);
 
    --  Drive all outputs low / high (sets the shadow and latches).

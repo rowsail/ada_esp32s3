@@ -45,8 +45,7 @@ procedure Main is
 
    --  "[touch] ch1: baseline=%d now=%d  Touched(baseline)=%d "
    --  "Touched(baseline+200k)=%d  %s\n" (the two Touched flags print as 0/1).
-   procedure Thresh (Baseline, Now : Integer;
-                     Untouched, Shifted, Ok : Boolean) is
+   procedure Thresh (Baseline, Now : Integer; Untouched, Shifted, Ok : Boolean) is
    begin
       Put ("[touch] ch1: baseline=");
       Put (Baseline);
@@ -71,7 +70,7 @@ procedure Main is
 
    --  The FSM scans channels on the RTC timer; give it a few scan rounds after
    --  Enable so Read returns a settled count rather than the initial 0.
-   FSM_Warmup     : constant Time_Span := Milliseconds (50);
+   FSM_Warmup : constant Time_Span := Milliseconds (50);
 begin
    delay until Clock + Console_Settle;
    Put_Line ("[touch] bare-metal capacitive-touch read self-test (no wiring)");
@@ -88,11 +87,9 @@ begin
       --  A live FSM gives every pad a non-zero count, and two physically
       --  different pads read different values; both must hold to PASS.
       Ok : constant Boolean :=
-        First_Count > 0
-          and then Second_Count > 0
-          and then First_Count /= Second_Count;
+        First_Count > 0 and then Second_Count > 0 and then First_Count /= Second_Count;
    begin
-      Chan (Integer (First_Channel),  Natural (Pad (First_Channel)),  First_Count);
+      Chan (Integer (First_Channel), Natural (Pad (First_Channel)), First_Count);
       Chan (Integer (Second_Channel), Natural (Pad (Second_Channel)), Second_Count);
       Put ("[touch] baseline counts non-zero + distinct: ");
       Put_Line (if Ok then "PASS" else "FAIL");
@@ -106,28 +103,27 @@ begin
       --  How far the live count must deviate from the reference before Touched
       --  reports a touch.  Sized well above run-to-run baseline noise but below
       --  a real finger's swing.
-      Touch_Margin   : constant Natural := 50_000;
+      Touch_Margin : constant Natural := 50_000;
 
       --  Synthetic touch: push the reference this far past the live count so it
       --  clears Touch_Margin with no finger -- emulating what a touch does.
-      Touch_Shift    : constant Natural := 200_000;
+      Touch_Shift : constant Natural := 200_000;
 
-      Baseline       : constant Natural := Read (First_Channel);
+      Baseline : constant Natural := Read (First_Channel);
 
       --  vs. the real baseline: the live count sits within the margin, so this
       --  reads "not touched".
-      Touched_At_Base   : constant Boolean :=
+      Touched_At_Base : constant Boolean :=
         Touched (First_Channel, Baseline, Margin => Touch_Margin);
 
       --  vs. the shifted reference: the deviation exceeds the margin, so this
       --  reads "touched" -- exercising the positive path.
-      Touched_At_Shift  : constant Boolean :=
+      Touched_At_Shift : constant Boolean :=
         Touched (First_Channel, Baseline + Touch_Shift, Margin => Touch_Margin);
 
       Ok : constant Boolean := not Touched_At_Base and then Touched_At_Shift;
    begin
-      Thresh (Baseline, Read (First_Channel),
-              Touched_At_Base, Touched_At_Shift, Ok);
+      Thresh (Baseline, Read (First_Channel), Touched_At_Base, Touched_At_Shift, Ok);
    end;
 
    Put_Line ("[touch] done.");
