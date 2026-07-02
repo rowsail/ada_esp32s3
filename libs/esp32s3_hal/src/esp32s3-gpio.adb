@@ -47,10 +47,11 @@ package body ESP32S3.GPIO is
 
          --  Route the matrix output as a plain GPIO (output index 256).
          declare
-            O : Reg.FUNC_OUT_SEL_CFG_Register := Reg.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
+            Out_Cfg : Reg.FUNC_OUT_SEL_CFG_Register :=
+              Reg.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
          begin
-            O.OUT_SEL := 256;                  --  SIG_GPIO_OUT_IDX: plain GPIO
-            Reg.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := O;
+            Out_Cfg.OUT_SEL := 256;            --  SIG_GPIO_OUT_IDX: plain GPIO
+            Reg.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := Out_Cfg;
          end;
 
          --  Output driver enable / disable (atomic W1TS / W1TC).

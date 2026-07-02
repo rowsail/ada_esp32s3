@@ -62,9 +62,10 @@ package body ESP32S3.ADC is
 
    --  Program the 12-bit calibration "initial code", per unit.
    procedure Set_Init_Code (Unit : ADC_Unit; Code : Natural) is
-      W   : constant Unsigned_16 := Unsigned_16 (Code);
-      Msb : constant Unsigned_8 := Unsigned_8 (Shift_Right (W, 8) and 16#0F#);
-      Lsb : constant Unsigned_8 := Unsigned_8 (W and 16#FF#);
+      Code_Word : constant Unsigned_16 := Unsigned_16 (Code);
+      --  Msb/Lsb: most/least-significant byte of the 12-bit init code.
+      Msb       : constant Unsigned_8 := Unsigned_8 (Shift_Right (Code_Word, 8) and 16#0F#);
+      Lsb       : constant Unsigned_8 := Unsigned_8 (Code_Word and 16#FF#);
    begin
       case Unit is
          when ADC1 =>
@@ -79,14 +80,14 @@ package body ESP32S3.ADC is
 
    --  Connect the SAR input to the internal ground (for self-calibration).
    procedure Set_Encal_Gnd (Unit : ADC_Unit; On : Boolean) is
-      D : constant Unsigned_8 := (if On then 1 else 0);
+      Enable_Bit : constant Unsigned_8 := (if On then 1 else 0);
    begin
       case Unit is
          when ADC1 =>
-            I2C (16#7#, 5, 5, D);
+            I2C (16#7#, 5, 5, Enable_Bit);
 
          when ADC2 =>
-            I2C (16#7#, 7, 7, D);
+            I2C (16#7#, 7, 7, Enable_Bit);
       end case;
    end Set_Encal_Gnd;
 
@@ -95,20 +96,20 @@ package body ESP32S3.ADC is
    ---------------------------------------------------------------------------
 
    function Convert (Unit : ADC_Unit; Ch : Channel_Index; Atten : Attenuation) return Natural is
-      Shift    : constant Natural := Natural (Ch) * 2;
-      One_Hot  : constant Unsigned_16 := Shift_Left (Unsigned_16 (1), Natural (Ch));
-      A_Val    : constant UInt32 := Shift_Left (UInt32 (Attenuation'Pos (Atten)), Shift);
-      A_Mask   : constant UInt32 := Shift_Left (UInt32 (3), Shift);
+      Shift       : constant Natural := Natural (Ch) * 2;
+      One_Hot     : constant Unsigned_16 := Shift_Left (Unsigned_16 (1), Natural (Ch));
+      Atten_Value : constant UInt32 := Shift_Left (UInt32 (Attenuation'Pos (Atten)), Shift);
+      Atten_Mask  : constant UInt32 := Shift_Left (UInt32 (3), Shift);
       --  Wall-clock bound on the conversion-done poll (a conversion is a few
       --  microseconds).  A real-time deadline stays correct under -O2, where an
       --  iteration count would expire long before DONE could assert.
       use type Ada.Real_Time.Time;
-      Deadline : constant Ada.Real_Time.Time :=
+      Deadline    : constant Ada.Real_Time.Time :=
         Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (10);
    begin
       case Unit is
          when ADC1 =>
-            SENS_Periph.SAR_ATTEN1 := (SENS_Periph.SAR_ATTEN1 and not A_Mask) or A_Val;
+            SENS_Periph.SAR_ATTEN1 := (SENS_Periph.SAR_ATTEN1 and not Atten_Mask) or Atten_Value;
             SENS_Periph.SAR_MEAS1_CTRL2.SAR1_EN_PAD := SAR_MEAS1_CTRL2_SAR1_EN_PAD_Field (One_Hot);
             SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_START_SAR := False;
             SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_START_SAR := True;
@@ -121,7 +122,7 @@ package body ESP32S3.ADC is
             return Natural (SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DATA_SAR and 16#0FFF#);
 
          when ADC2 =>
-            SENS_Periph.SAR_ATTEN2 := (SENS_Periph.SAR_ATTEN2 and not A_Mask) or A_Val;
+            SENS_Periph.SAR_ATTEN2 := (SENS_Periph.SAR_ATTEN2 and not Atten_Mask) or Atten_Value;
             SENS_Periph.SAR_MEAS2_CTRL2.SAR2_EN_PAD := SAR_MEAS2_CTRL2_SAR2_EN_PAD_Field (One_Hot);
             SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_START_SAR := False;
             SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_START_SAR := True;
@@ -139,28 +140,28 @@ package body ESP32S3.ADC is
    --  binary-search the initial code for the value that just reads zero, and
    --  leave that code programmed (esp-idf adc_hal_self_calibration, single pass).
    procedure Calibrate (Unit : ADC_Unit; Atten : Attenuation) is
-      Code_H  : Natural := 4096;
-      Code_L  : Natural := 0;
-      Chk     : Natural := 2048;
-      Reading : Natural;
+      Code_H     : Natural := 4096;
+      Code_L     : Natural := 0;
+      Trial_Code : Natural := 2048;
+      Reading    : Natural;
    begin
       Set_Bias (Unit);
       Set_Encal_Gnd (Unit, True);
-      Set_Init_Code (Unit, Chk);
+      Set_Init_Code (Unit, Trial_Code);
       Reading := Convert (Unit, 0, Atten);
       while Code_H - Code_L > 1 loop
          if Reading = 0 then
-            Code_H := Chk;
+            Code_H := Trial_Code;
          else
-            Code_L := Chk;
+            Code_L := Trial_Code;
          end if;
-         Chk := (Code_H + Code_L) / 2;
-         Set_Init_Code (Unit, Chk);
+         Trial_Code := (Code_H + Code_L) / 2;
+         Set_Init_Code (Unit, Trial_Code);
          Reading := Convert (Unit, 0, Atten);
       end loop;
       Set_Encal_Gnd (Unit, False);
-      Set_Init_Code (Unit, Chk);          --  leave the calibrated code in place
-      Cal_Codes (Unit, Atten) := Chk;
+      Set_Init_Code (Unit, Trial_Code);   --  leave the calibrated code in place
+      Cal_Codes (Unit, Atten) := Trial_Code;
    end Calibrate;
 
    --------------------------------------------------------------------------
@@ -210,9 +211,9 @@ package body ESP32S3.ADC is
             ANA_Config2 := ANA_Config2 or (UInt32'(2)**16);
             --  Calibrate BOTH units at EVERY attenuation (one-time), so a Read at
             --  any atten programs a code that was actually measured for it.
-            for A in Attenuation loop
-               Calibrate (ADC1, A);
-               Calibrate (ADC2, A);
+            for Atten in Attenuation loop
+               Calibrate (ADC1, Atten);
+               Calibrate (ADC2, Atten);
             end loop;
             Inited := True;
          end if;

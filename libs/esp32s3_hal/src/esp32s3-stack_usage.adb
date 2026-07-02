@@ -29,12 +29,12 @@ package body ESP32S3.Stack_Usage is
    -----------
 
    procedure Paint (Low, High : System.Address) is
-      A  : Integer_Address := To_Integer (Low);
-      Hi : constant Integer_Address := To_Integer (High);
+      Addr : Integer_Address := To_Integer (Low);
+      Top  : constant Integer_Address := To_Integer (High);
    begin
-      while A < Hi loop
-         To_Ptr (To_Address (A)).all := Sentinel;
-         A := A + 4;
+      while Addr < Top loop
+         To_Ptr (To_Address (Addr)).all := Sentinel;
+         Addr := Addr + 4;
       end loop;
    end Paint;
 
@@ -43,16 +43,16 @@ package body ESP32S3.Stack_Usage is
    ----------------
 
    function High_Water (Low, High : System.Address) return Natural is
-      A  : Integer_Address := To_Integer (Low);
-      Hi : constant Integer_Address := To_Integer (High);
+      Addr : Integer_Address := To_Integer (Low);
+      Top  : constant Integer_Address := To_Integer (High);
    begin
       --  Scan up from the bottom; the first non-sentinel word is the deepest the
       --  stack ever reached.  Everything from there to High counts as used.
-      while A < Hi loop
-         if To_Ptr (To_Address (A)).all /= Sentinel then
-            return Natural (Hi - A);
+      while Addr < Top loop
+         if To_Ptr (To_Address (Addr)).all /= Sentinel then
+            return Natural (Top - Addr);
          end if;
-         A := A + 4;
+         Addr := Addr + 4;
       end loop;
       return 0;   --  whole region still pristine -> never used
    end High_Water;

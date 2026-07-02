@@ -44,7 +44,7 @@ package body ESP32S3.GPIO.Interrupts is
    protected body Ctrl is
 
       procedure Configure (Pin : Pin_Id; On : Trigger; Action : Callback) is
-         R : Reg.PIN_Register := Reg.GPIO_Periph.PIN (Natural (Pin));
+         Pin_Reg : Reg.PIN_Register := Reg.GPIO_Periph.PIN (Natural (Pin));
       begin
          if not Routed then
             --  Route the GPIO source to CPU_INT 23 (Attach_Handler already
@@ -54,16 +54,16 @@ package body ESP32S3.GPIO.Interrupts is
             Routed := True;
          end if;
          Actions (Pin) := Action;
-         R.INT_TYPE := Int_Type (On);
-         R.INT_ENA := 1;                 --  bit 0: deliver to PRO (core 0) CPU
-         Reg.GPIO_Periph.PIN (Natural (Pin)) := R;
+         Pin_Reg.INT_TYPE := Int_Type (On);
+         Pin_Reg.INT_ENA := 1;           --  bit 0: deliver to PRO (core 0) CPU
+         Reg.GPIO_Periph.PIN (Natural (Pin)) := Pin_Reg;
       end Configure;
 
       procedure Remove (Pin : Pin_Id) is
-         R : Reg.PIN_Register := Reg.GPIO_Periph.PIN (Natural (Pin));
+         Pin_Reg : Reg.PIN_Register := Reg.GPIO_Periph.PIN (Natural (Pin));
       begin
-         R.INT_ENA := 0;
-         Reg.GPIO_Periph.PIN (Natural (Pin)) := R;
+         Pin_Reg.INT_ENA := 0;
+         Reg.GPIO_Periph.PIN (Natural (Pin)) := Pin_Reg;
          Actions (Pin) := null;
       end Remove;
 
@@ -76,15 +76,15 @@ package body ESP32S3.GPIO.Interrupts is
          Reg.GPIO_Periph.STATUS1_W1TC :=
            (STATUS1_W1TC => Reg.STATUS1_W1TC_STATUS1_W1TC_Field (Hi), others => <>);
          --  Dispatch to each pin that fired.
-         for P in Pin_Id loop
+         for Pin in Pin_Id loop
             declare
                Fired : constant Boolean :=
-                 (if P <= 31
-                  then (Lo and UInt32'(2)**Natural (P)) /= 0
-                  else (Hi and UInt32'(2)**(Natural (P) - 32)) /= 0);
+                 (if Pin <= 31
+                  then (Lo and UInt32'(2)**Natural (Pin)) /= 0
+                  else (Hi and UInt32'(2)**(Natural (Pin) - 32)) /= 0);
             begin
-               if Fired and then Actions (P) /= null then
-                  Actions (P).all;
+               if Fired and then Actions (Pin) /= null then
+                  Actions (Pin).all;
                end if;
             end;
          end loop;

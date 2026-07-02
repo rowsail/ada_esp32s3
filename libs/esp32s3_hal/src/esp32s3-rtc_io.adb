@@ -39,19 +39,19 @@ package body ESP32S3.RTC_IO is
    RDE : constant UInt32 := 2**28;    --  pull-down enable
 
    procedure Set_Pull (Pin : RTC_Pin; Mode : Pull_Mode) is
-      V : UInt32 := Pads (Natural (Pin)) and not (RUE or RDE);
+      Value : UInt32 := Pads (Natural (Pin)) and not (RUE or RDE);
    begin
       case Mode is
          when Up      =>
-            V := V or RUE;
+            Value := Value or RUE;
 
          when Down    =>
-            V := V or RDE;
+            Value := Value or RDE;
 
          when No_Pull =>
             null;
       end case;
-      Pads (Natural (Pin)) := V;
+      Pads (Natural (Pin)) := Value;
    end Set_Pull;
 
    MUX_SEL : constant UInt32 := 2**19;   --  select the RTC function for the pad

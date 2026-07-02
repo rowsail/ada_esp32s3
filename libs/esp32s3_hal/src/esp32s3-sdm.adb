@@ -15,25 +15,25 @@ package body ESP32S3.SDM is
    is (Sigs.GPIO_SD0_OUT + Natural (Idx));
 
    procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
+      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
    begin
       G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
-      O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      O.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := O;
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
+      Out_Cfg.OEN_SEL := False;
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := Out_Cfg;
    end Drive_Out;
 
    --  Density 0..100 % -> the signed 8-bit SD_IN value, as a raw byte.  Density =
    --  (SD_IN + 128) / 256, so SD_IN = round(density*256) - 128, clamped -128..127.
    function Duty_Byte (Percent : Density_Percent) return Byte is
-      S : Integer := Integer (Float (Percent) / 100.0 * 256.0) - 128;
+      Signed_Val : Integer := Integer (Float (Percent) / 100.0 * 256.0) - 128;
    begin
-      if S < -128 then
-         S := -128;
-      elsif S > 127 then
-         S := 127;
+      if Signed_Val < -128 then
+         Signed_Val := -128;
+      elsif Signed_Val > 127 then
+         Signed_Val := 127;
       end if;
-      return Byte (S mod 256);
+      return Byte (Signed_Val mod 256);
    end Duty_Byte;
 
    --------------------------------------------------------------------------

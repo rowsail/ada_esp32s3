@@ -95,10 +95,10 @@ package body ESP32S3.TX1812 is
          return;
       end if;
       --  TX1812 / WS2812 wire order is G, R, B.
-      for P in 1 .. S.Count loop
-         Emit (S.Pixels (P).G);
-         Emit (S.Pixels (P).R);
-         Emit (S.Pixels (P).B);
+      for Pixel in 1 .. S.Count loop
+         Emit (S.Pixels (Pixel).G);
+         Emit (S.Pixels (Pixel).R);
+         Emit (S.Pixels (Pixel).B);
       end loop;
       --  RMT clocks out the whole frame -- one shot if it fits the channel's
       --  RAM, else streamed via wrap re-fill (transparent to us).  The channel
