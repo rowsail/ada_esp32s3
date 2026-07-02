@@ -43,10 +43,11 @@ package body ESP32S3.Console is
    --  the RX FIFO -- so the byte write in Send must never read EP1 first.
 
    function CCOUNT return Unsigned_32 is
-      R : Unsigned_32;
+      Cycle_Count : Unsigned_32;
    begin
-      Asm ("rsr.ccount %0", Outputs => Unsigned_32'Asm_Output ("=a", R), Volatile => True);
-      return R;
+      Asm
+        ("rsr.ccount %0", Outputs => Unsigned_32'Asm_Output ("=a", Cycle_Count), Volatile => True);
+      return Cycle_Count;
    end CCOUNT;
 
    function Endpoint_Ready return Boolean
@@ -117,8 +118,8 @@ package body ESP32S3.Console is
    --  WR_DONE.  Returns the number of bytes it could NOT send (0 = all delivered)
    --  -- non-zero when no host is draining, so the caller can account the loss.
    function Emit (S : String) return Natural is
-      I : Integer := S'First;
-      N : Natural;
+      I          : Integer := S'First;
+      Packet_Len : Natural;
    begin
       while I <= S'Last loop
          if not Endpoint_Ready then
@@ -134,11 +135,11 @@ package body ESP32S3.Console is
          end if;
 
          --  Endpoint is free: write up to one 64-byte packet and send it.
-         N := 0;
-         while I <= S'Last and then N < Fifo_Size loop
+         Packet_Len := 0;
+         while I <= S'Last and then Packet_Len < Fifo_Size loop
             USB_DEVICE_Periph.EP1 := (RDWR_BYTE => Byte (Character'Pos (S (I))), others => <>);
             I := I + 1;
-            N := N + 1;
+            Packet_Len := Packet_Len + 1;
          end loop;
 
          USB_DEVICE_Periph.EP1_CONF := (WR_DONE => True, others => <>);
@@ -156,13 +157,13 @@ package body ESP32S3.Console is
    --  only counted as "delivered" (Dropped reset) if it itself got through; its
    --  own bytes are never added to Dropped.
    procedure Announce_Drops is
-      Note : String (1 .. 40);
-      L    : Natural := 0;
+      Note     : String (1 .. 40);
+      Note_Len : Natural := 0;
 
-      procedure Lit (T : String) is
+      procedure Lit (Text : String) is
       begin
-         Note (L + 1 .. L + T'Length) := T;
-         L := L + T'Length;
+         Note (Note_Len + 1 .. Note_Len + Text'Length) := Text;
+         Note_Len := Note_Len + Text'Length;
       end Lit;
 
    begin
@@ -172,21 +173,21 @@ package body ESP32S3.Console is
       Lit ("[console: ");
       declare
          --  decimal of Dropped
-         V : Unsigned_32 := Dropped;
-         D : String (1 .. 10);
-         F : Natural := D'Last + 1;
+         Value     : Unsigned_32 := Dropped;
+         Digit_Str : String (1 .. 10);
+         First     : Natural := Digit_Str'Last + 1;
       begin
          loop
-            F := F - 1;
-            D (F) := Character'Val (Character'Pos ('0') + Integer (V mod 10));
-            V := V / 10;
-            exit when V = 0;
+            First := First - 1;
+            Digit_Str (First) := Character'Val (Character'Pos ('0') + Integer (Value mod 10));
+            Value := Value / 10;
+            exit when Value = 0;
          end loop;
-         Lit (D (F .. D'Last));
+         Lit (Digit_Str (First .. Digit_Str'Last));
       end;
       Lit (" bytes dropped]" & ASCII.LF);
 
-      if Emit (Note (1 .. L)) = 0 then
+      if Emit (Note (1 .. Note_Len)) = 0 then
          --  announced only if it reached the host
          Dropped := 0;
       end if;
@@ -197,16 +198,16 @@ package body ESP32S3.Console is
    -----------
 
    procedure Flush is
-      N : Natural;
+      Chunk_Len : Natural;
    begin
       Announce_Drops;                  --  surface any prior loss first
       if Len > 0 then
          --  Clear the buffer BEFORE emitting, so the drop hook (which may write
          --  to the console from inside Add_Dropped) re-enters a clean buffer
          --  rather than re-sending this line.
-         N := Len;
+         Chunk_Len := Len;
          Len := 0;
-         Add_Dropped (Emit (Buf (1 .. N)));
+         Add_Dropped (Emit (Buf (1 .. Chunk_Len)));
       end if;
    end Flush;
 

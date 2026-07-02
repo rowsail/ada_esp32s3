@@ -143,11 +143,11 @@ package body ESP32S3.UART.Engine is
          return;
       end if;
       declare
-         C : CONF0_Register := B.Regs.CONF0;
+         Conf0 : CONF0_Register := B.Regs.CONF0;
       begin
-         C.PARITY_EN := Parity /= None;
-         C.PARITY := Parity = Odd;          --  PARITY: 1 = odd, 0 = even
-         B.Regs.CONF0 := C;
+         Conf0.PARITY_EN := Parity /= None;
+         Conf0.PARITY := Parity = Odd;          --  PARITY: 1 = odd, 0 = even
+         B.Regs.CONF0 := Conf0;
       end;
    end Set_Parity;
 
@@ -167,13 +167,13 @@ package body ESP32S3.UART.Engine is
 
    --  Drive Pad as a push-pull output sourced from the matrix signal Sig.
    procedure Drive_Out (Pad : G.Pin_Id; Sig : Natural) is
-      Ix : constant Natural := Natural (Pad);
-      O  : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
+      Pad_Index : constant Natural := Natural (Pad);
+      Out_Cfg   : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index);
    begin
       G.Configure (Pad, Mode => G.Output, Drive => G.Drive_Strong);
-      O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      O.OEN_SEL := False;                       --  peripheral output-enable
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix) := O;
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
+      Out_Cfg.OEN_SEL := False;                       --  peripheral output-enable
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index) := Out_Cfg;
    end Drive_Out;
 
    --  Route Pad (input buffer on, pulled up) into the matrix input signal Sig.
@@ -182,15 +182,15 @@ package body ESP32S3.UART.Engine is
    --  RTS->CTS) keeps driving while it is read back.  A pure input pad has its
    --  driver off by default, so this is input-only there.
    procedure Route_In (Sig : Natural; Pad : G.Pin_Id) is
-      Ix : constant Natural := Natural (Pad);
-      P  : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Ix);
+      Pad_Index : constant Natural := Natural (Pad);
+      Pad_Cfg   : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Pad_Index);
    begin
-      P.MCU_SEL := 1;                           --  route through the GPIO matrix
-      P.FUN_IE := True;                        --  input buffer on
-      P.FUN_WPU := True;                        --  pull-up (idle/disconnect high)
-      MX.IO_MUX_Periph.GPIO (Ix) := P;
+      Pad_Cfg.MCU_SEL := 1;                           --  route through the GPIO matrix
+      Pad_Cfg.FUN_IE := True;                        --  input buffer on
+      Pad_Cfg.FUN_WPU := True;                        --  pull-up (idle/disconnect high)
+      MX.IO_MUX_Periph.GPIO (Pad_Index) := Pad_Cfg;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Sig) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix),
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Pad_Index),
          SEL    => True,
          --  use the matrix
          others => <>);
@@ -259,13 +259,13 @@ package body ESP32S3.UART.Engine is
          return;
       end if;
       declare
-         C : CONF0_Register := B.Regs.CONF0;
+         Conf0 : CONF0_Register := B.Regs.CONF0;
       begin
-         C.TXD_INV := Tx;
-         C.RXD_INV := Rx;
-         C.RTS_INV := Rts;
-         C.CTS_INV := Cts;
-         B.Regs.CONF0 := C;
+         Conf0.TXD_INV := Tx;
+         Conf0.RXD_INV := Rx;
+         Conf0.RTS_INV := Rts;
+         Conf0.CTS_INV := Cts;
+         B.Regs.CONF0 := Conf0;
       end;
    end Set_Inversion;
 
@@ -278,7 +278,7 @@ package body ESP32S3.UART.Engine is
       if not B.Valid then
          return;
       end if;
-      for D of Data loop
+      for Data_Byte of Data loop
          --  Wait (bounded) for TX FIFO room.
          declare
             Guard : Natural := 5_000_000;
@@ -287,7 +287,7 @@ package body ESP32S3.UART.Engine is
                Guard := Guard - 1;
             end loop;
          end;
-         B.Regs.FIFO := (RXFIFO_RD_BYTE => ESP32S3_Registers.Byte (D), others => <>);
+         B.Regs.FIFO := (RXFIFO_RD_BYTE => ESP32S3_Registers.Byte (Data_Byte), others => <>);
       end loop;
    end Write;
 

@@ -34,14 +34,14 @@ package body ESP32S3.UART.Text is
    --  when Available reports a byte waiting, so the read returns immediately
    --  instead of paying UART.Read's per-byte settle wait on an empty FIFO.
    procedure Read_Adapter (Ctx : System.Address; C : out Character; Avail : out Boolean) is
-      Sess : constant Conv.Object_Pointer := Conv.To_Pointer (Ctx);
-      One  : Byte_Array (0 .. 0);
-      N    : Natural;
+      Sess       : constant Conv.Object_Pointer := Conv.To_Pointer (Ctx);
+      One_Byte   : Byte_Array (0 .. 0);
+      Read_Count : Natural;
    begin
       if Available (Sess.all) > 0 then
-         Read (Sess.all, One, N);
-         if N > 0 then
-            C := Character'Val (Natural (One (0)));
+         Read (Sess.all, One_Byte, Read_Count);
+         if Read_Count > 0 then
+            C := Character'Val (Natural (One_Byte (0)));
             Avail := True;
             return;
          end if;
