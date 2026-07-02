@@ -112,29 +112,32 @@ package body ESP32S3.ST7789.Text is
    procedure Draw_Char
      (S : Session; X, Y : Natural; Ch : Character; FG, BG : Color; Scale : Positive := 1)
    is
-      W   : constant Natural := Cell_Width * Scale;
-      H   : constant Natural := Cell_Height * Scale;
-      Pix : Color_Array (0 .. W * H - 1);
-      G   : constant Glyph := (if Ch in Font'Range then Font (Ch) else (others => 0));
+      Cell_W     : constant Natural := Cell_Width * Scale;   --  scaled cell width
+      Cell_H     : constant Natural := Cell_Height * Scale;   --  scaled cell height
+      Pix        : Color_Array (0 .. Cell_W * Cell_H - 1);    --  the cell's pixels
+      Glyph_Bits : constant Glyph :=                          --  the 5x7 glyph bitmap
+        (if Ch in Font'Range then Font (Ch) else (others => 0));
    begin
-      --  Expand the glyph into the (scaled) opaque cell, row-major.
+      --  Expand the glyph into the (scaled) opaque cell, row-major.  Rx/Ry index
+      --  the glyph cell; Sx/Sy index the scale-up copies of each glyph pixel.
       for Ry in 0 .. Cell_Height - 1 loop
          for Rx in 0 .. Cell_Width - 1 loop
             declare
-               On : constant Boolean :=
-                 Rx < 5 and then Ry < 7 and then (G (Rx) and Shift_Left (Byte (1), Ry)) /= 0;
-               C  : constant Color := (if On then FG else BG);
+               On    : constant Boolean :=
+                 Rx < 5 and then Ry < 7
+                 and then (Glyph_Bits (Rx) and Shift_Left (Byte (1), Ry)) /= 0;
+               Pixel : constant Color := (if On then FG else BG);
             begin
                for Sy in 0 .. Scale - 1 loop
                   for Sx in 0 .. Scale - 1 loop
-                     Pix ((Ry * Scale + Sy) * W + (Rx * Scale + Sx)) := C;
+                     Pix ((Ry * Scale + Sy) * Cell_W + (Rx * Scale + Sx)) := Pixel;
                   end loop;
                end loop;
             end;
          end loop;
       end loop;
 
-      Draw_Bitmap (S, X, Y, W, H, Pix);
+      Draw_Bitmap (S, X, Y, Cell_W, Cell_H, Pix);
    end Draw_Char;
 
    ---------------
