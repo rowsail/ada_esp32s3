@@ -14,9 +14,9 @@ package body ESP32S3.AES.GCM is
    ---------------------------------------------------------------------------
 
    function GF_Mul (X, H : Blk) return Blk is
-      Z   : Blk := (others => 0);
-      V   : Blk := H;
-      Lsb : U8;
+      Z   : Blk := (others => 0);   --  spec Z: the running GF(2^128) product
+      V   : Blk := H;               --  spec V: H shifted right one bit per step
+      Lsb : U8;                     --  bit shifted out of V this step
    begin
       for I in 0 .. 127 loop
          --  bit i of X, most-significant bit first
@@ -91,8 +91,8 @@ package body ESP32S3.AES.GCM is
 
    --  Cipher := Plain xor AES-CTR keystream starting at inc32 (J0).
    procedure CTR (Key : Key_Bytes; J0 : Blk; Src : Byte_Array; Dst : out Byte_Array) is
-      CB  : Blk := J0;
-      KS  : Blk;
+      CB  : Blk := J0;   --  spec CB: the running counter block
+      KS  : Blk;         --  spec KS: the AES keystream block for CB
       Off : Natural := 0;
    begin
       while Off < Src'Length loop
