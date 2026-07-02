@@ -58,14 +58,14 @@ package body ESP32S3.SD_SPI is
       Crc : Unsigned_8 := 0;
 
       procedure Add (B : Unsigned_8) is
-         D : Unsigned_8 := B;
+         Data_Bits : Unsigned_8 := B;
       begin
          for I in 1 .. 8 loop
             declare
-               In_Bit : constant Unsigned_8 := Shift_Right (D, 7) and 1;
+               In_Bit : constant Unsigned_8 := Shift_Right (Data_Bits, 7) and 1;
                Hi_Bit : constant Unsigned_8 := Shift_Right (Crc, 6) and 1;
             begin
-               D := Shift_Left (D, 1);
+               Data_Bits := Shift_Left (Data_Bits, 1);
                Crc := Shift_Left (Crc, 1) and 16#7F#;
                if (Hi_Bit xor In_Bit) = 1 then
                   Crc := Crc xor 16#09#;          --  poly x^7 + x^3 + 1
@@ -89,23 +89,23 @@ package body ESP32S3.SD_SPI is
    function Command
      (C : Card; S : ESP32S3.SPI.Session; Cmd : Unsigned_8; Arg : Unsigned_32) return Unsigned_8
    is
-      T : Buf renames Tx_Buf (C.Host);
-      R : Unsigned_8 := 16#FF#;
+      Tx       : Buf renames Tx_Buf (C.Host);
+      Response : Unsigned_8 := 16#FF#;   --  R1: first byte with bit7 = 0
    begin
-      T (0) := 16#FF#;                       --  one gap byte before the frame
-      T (1) := 16#40# or Cmd;
-      T (2) := Unsigned_8 (Shift_Right (Arg, 24) and 16#FF#);
-      T (3) := Unsigned_8 (Shift_Right (Arg, 16) and 16#FF#);
-      T (4) := Unsigned_8 (Shift_Right (Arg, 8) and 16#FF#);
-      T (5) := Unsigned_8 (Arg and 16#FF#);
-      T (6) := CRC7_Frame (Cmd, Arg);
+      Tx (0) := 16#FF#;                       --  one gap byte before the frame
+      Tx (1) := 16#40# or Cmd;
+      Tx (2) := Unsigned_8 (Shift_Right (Arg, 24) and 16#FF#);
+      Tx (3) := Unsigned_8 (Shift_Right (Arg, 16) and 16#FF#);
+      Tx (4) := Unsigned_8 (Shift_Right (Arg, 8) and 16#FF#);
+      Tx (5) := Unsigned_8 (Arg and 16#FF#);
+      Tx (6) := CRC7_Frame (Cmd, Arg);
       Shift (C, S, 7);
 
       for I in 1 .. 10 loop
-         R := Swap (C, S, 16#FF#);
-         exit when (R and 16#80#) = 0;
+         Response := Swap (C, S, 16#FF#);
+         exit when (Response and 16#80#) = 0;
       end loop;
-      return R;
+      return Response;
    end Command;
 
    ---------------------------------------------------------------------------
@@ -143,49 +143,49 @@ package body ESP32S3.SD_SPI is
    ----------------
 
    procedure Initialize (C : in out Card; Result : out Status) is
-      S    : ESP32S3.SPI.Session;
-      R    : Unsigned_8;
-      V2   : Boolean := False;
-      Done : Boolean := False;
+      Session  : ESP32S3.SPI.Session;
+      Response : Unsigned_8;               --  R1 byte from each command
+      V2       : Boolean := False;
+      Done     : Boolean := False;
    begin
       C.Kind := Unknown;
       C.Block_Addressed := False;
 
-      ESP32S3.SPI.Acquire (S, C.Host, Clock_Hz => C.Init_Hz);
+      ESP32S3.SPI.Acquire (Session, C.Host, Clock_Hz => C.Init_Hz);
 
       --  Power-up: >= 74 clocks with CS and MOSI high puts the card in SPI mode.
       ESP32S3.GPIO.Set (C.Cs);
-      Idle_Clocks (C, S, 10);
+      Idle_Clocks (C, Session, 10);
 
       ESP32S3.GPIO.Clear (C.Cs);
 
       --  CMD0: enter idle state.  Expect R1 = 0x01.
-      R := Command (C, S, CMD0, 0);
-      if R /= R1_Idle then
+      Response := Command (C, Session, CMD0, 0);
+      if Response /= R1_Idle then
          ESP32S3.GPIO.Set (C.Cs);
-         ESP32S3.SPI.Release (S);
+         ESP32S3.SPI.Release (Session);
          Result := No_Card;
          return;
       end if;
 
       --  CMD8: voltage check.  Illegal-command => v1 card; else read the R7 tail
       --  and confirm the 0xAA check pattern echoes back (a real v2 card).
-      R := Command (C, S, CMD8, 16#1AA#);
-      if (R and R1_Illegal) /= 0 then
+      Response := Command (C, Session, CMD8, 16#1AA#);
+      if (Response and R1_Illegal) /= 0 then
          V2 := False;                         --  SD v1.x
 
       else
          declare
-            B3 : Unsigned_8;                   --  3rd / 4th R7 bytes hold the
-            B4 : Unsigned_8;                   --  voltage + the 0xAA echo
+            R7_Byte    : Unsigned_8;           --  3rd R7 byte (voltage) scratch
+            Check_Echo : Unsigned_8;           --  4th R7 byte: the 0xAA echo
          begin
-            B3 := Swap (C, S, 16#FF#);         --  (1st two R7 bytes ignored)
-            B3 := Swap (C, S, 16#FF#);
-            B3 := Swap (C, S, 16#FF#);
-            B4 := Swap (C, S, 16#FF#);
-            if B4 /= 16#AA# then
+            R7_Byte := Swap (C, Session, 16#FF#);   --  (1st two R7 bytes ignored)
+            R7_Byte := Swap (C, Session, 16#FF#);
+            R7_Byte := Swap (C, Session, 16#FF#);
+            Check_Echo := Swap (C, Session, 16#FF#);
+            if Check_Echo /= 16#AA# then
                ESP32S3.GPIO.Set (C.Cs);
-               ESP32S3.SPI.Release (S);
+               ESP32S3.SPI.Release (Session);
                Result := Unusable;
                return;
             end if;
@@ -199,9 +199,9 @@ package body ESP32S3.SD_SPI is
       --  20..21 = 3.2 .. 3.4 V) alongside HCS: a card that gates on the window
       --  never leaves idle if it is sent as zero.  (Matches the SDMMC driver.)
       for Tries in 1 .. 2000 loop
-         R := Command (C, S, CMD55, 0);
-         R := Command (C, S, ACMD41, (if V2 then 16#4030_0000# else 16#0030_0000#));
-         if R = 0 then
+         Response := Command (C, Session, CMD55, 0);
+         Response := Command (C, Session, ACMD41, (if V2 then 16#4030_0000# else 16#0030_0000#));
+         if Response = 0 then
             Done := True;
             exit;
          end if;
@@ -209,21 +209,21 @@ package body ESP32S3.SD_SPI is
 
       if not Done then
          ESP32S3.GPIO.Set (C.Cs);
-         ESP32S3.SPI.Release (S);
+         ESP32S3.SPI.Release (Session);
          Result := Init_Timeout;
          return;
       end if;
 
       --  Capacity class: CMD58 OCR bit 30 (CCS) set => block-addressed SDHC/SDXC.
       if V2 then
-         R := Command (C, S, CMD58, 0);
+         Response := Command (C, Session, CMD58, 0);
          declare
-            O0 : constant Unsigned_8 := Swap (C, S, 16#FF#);   --  OCR[31:24]
-            O1 : Unsigned_8 := Swap (C, S, 16#FF#);
+            OCR_Hi   : constant Unsigned_8 := Swap (C, Session, 16#FF#);   --  OCR[31:24]
+            OCR_Byte : Unsigned_8 := Swap (C, Session, 16#FF#);
          begin
-            O1 := Swap (C, S, 16#FF#);
-            O1 := Swap (C, S, 16#FF#);                          --  consume OCR[7:0]
-            C.Block_Addressed := (O0 and 16#40#) /= 0;          --  CCS
+            OCR_Byte := Swap (C, Session, 16#FF#);
+            OCR_Byte := Swap (C, Session, 16#FF#);                --  consume OCR[7:0]
+            C.Block_Addressed := (OCR_Hi and 16#40#) /= 0;       --  CCS
             C.Kind := (if C.Block_Addressed then SD_V2_HC else SD_V2_SC);
          end;
       else
@@ -232,12 +232,12 @@ package body ESP32S3.SD_SPI is
 
       --  Byte-addressed cards: fix the block length at 512.
       if not C.Block_Addressed then
-         R := Command (C, S, CMD16, 512);
+         Response := Command (C, Session, CMD16, 512);
       end if;
 
       ESP32S3.GPIO.Set (C.Cs);
-      R := Swap (C, S, 16#FF#);                --  trailing clocks to release MISO
-      ESP32S3.SPI.Release (S);
+      Response := Swap (C, Session, 16#FF#);   --  trailing clocks to release MISO
+      ESP32S3.SPI.Release (Session);
 
       --  Card is ready; subsequent Read_Block/Write_Block acquire at C.Data_Hz.
       Result := OK;
@@ -261,18 +261,18 @@ package body ESP32S3.SD_SPI is
    procedure Read_Block
      (C : in out Card; LBA : Block_Address; Data : out Block; Result : out Status)
    is
-      S         : ESP32S3.SPI.Session;
-      R         : Unsigned_8;
-      T         : Unsigned_8 := 16#FF#;
+      Session   : ESP32S3.SPI.Session;
+      Response  : Unsigned_8;
+      Token     : Unsigned_8 := 16#FF#;
       Got_Token : Boolean := False;
    begin
-      ESP32S3.SPI.Acquire (S, C.Host, Clock_Hz => C.Data_Hz);
+      ESP32S3.SPI.Acquire (Session, C.Host, Clock_Hz => C.Data_Hz);
       ESP32S3.GPIO.Clear (C.Cs);
 
-      R := Command (C, S, CMD17, Card_Arg (C, LBA));
-      if R /= 0 then
+      Response := Command (C, Session, CMD17, Card_Arg (C, LBA));
+      if Response /= 0 then
          ESP32S3.GPIO.Set (C.Cs);
-         ESP32S3.SPI.Release (S);
+         ESP32S3.SPI.Release (Session);
          Data := (others => 0);
          Result := Read_Error;
          return;
@@ -281,18 +281,18 @@ package body ESP32S3.SD_SPI is
       --  Wait for the data start token (0xFE).  A token with the top nibble
       --  clear but /= 0xFE is an error token.
       for I in 1 .. 4000 loop
-         T := Swap (C, S, 16#FF#);
-         exit when T = Data_Token;
-         if T /= 16#FF# then
+         Token := Swap (C, Session, 16#FF#);
+         exit when Token = Data_Token;
+         if Token /= 16#FF# then
             exit;                              --  error token -> bail
 
          end if;
       end loop;
-      Got_Token := (T = Data_Token);
+      Got_Token := (Token = Data_Token);
 
       if not Got_Token then
          ESP32S3.GPIO.Set (C.Cs);
-         ESP32S3.SPI.Release (S);
+         ESP32S3.SPI.Release (Session);
          Data := (others => 0);
          Result := Read_Error;
          return;
@@ -300,14 +300,14 @@ package body ESP32S3.SD_SPI is
 
       --  512 data bytes, then 2 (ignored) CRC bytes.
       Tx_Buf (C.Host) := (others => 16#FF#);
-      Shift (C, S, 512);
+      Shift (C, Session, 512);
       Data := Block (Rx_Buf (C.Host));
-      R := Swap (C, S, 16#FF#);
-      R := Swap (C, S, 16#FF#);
+      Response := Swap (C, Session, 16#FF#);
+      Response := Swap (C, Session, 16#FF#);
 
       ESP32S3.GPIO.Set (C.Cs);
-      R := Swap (C, S, 16#FF#);                --  trailing clocks
-      ESP32S3.SPI.Release (S);
+      Response := Swap (C, Session, 16#FF#);   --  trailing clocks
+      ESP32S3.SPI.Release (Session);
       Result := OK;
    end Read_Block;
 
@@ -317,51 +317,51 @@ package body ESP32S3.SD_SPI is
 
    procedure Write_Block (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status)
    is
-      S    : ESP32S3.SPI.Session;
-      R    : Unsigned_8;
-      Resp : Unsigned_8;
-      Busy : Boolean := True;
+      Session   : ESP32S3.SPI.Session;
+      Response  : Unsigned_8;
+      Data_Resp : Unsigned_8;
+      Busy      : Boolean := True;
    begin
-      ESP32S3.SPI.Acquire (S, C.Host, Clock_Hz => C.Data_Hz);
+      ESP32S3.SPI.Acquire (Session, C.Host, Clock_Hz => C.Data_Hz);
       ESP32S3.GPIO.Clear (C.Cs);
 
-      R := Command (C, S, CMD24, Card_Arg (C, LBA));
-      if R /= 0 then
+      Response := Command (C, Session, CMD24, Card_Arg (C, LBA));
+      if Response /= 0 then
          ESP32S3.GPIO.Set (C.Cs);
-         ESP32S3.SPI.Release (S);
+         ESP32S3.SPI.Release (Session);
          Result := Write_Error;
          return;
       end if;
 
-      R := Swap (C, S, 16#FF#);                --  one gap byte before the token
-      R := Swap (C, S, Data_Token);            --  start-of-block token
+      Response := Swap (C, Session, 16#FF#);       --  one gap byte before the token
+      Response := Swap (C, Session, Data_Token);   --  start-of-block token
 
       Tx_Buf (C.Host) := Buf (Data);           --  512 data bytes
-      Shift (C, S, 512);
+      Shift (C, Session, 512);
 
-      R := Swap (C, S, 16#FF#);                --  2 dummy CRC bytes
-      R := Swap (C, S, 16#FF#);
+      Response := Swap (C, Session, 16#FF#);       --  2 dummy CRC bytes
+      Response := Swap (C, Session, 16#FF#);
 
       --  Data-response byte: bits [4:0] = 0b00101 (0x05) means accepted.
-      Resp := Swap (C, S, 16#FF#);
-      if (Resp and 16#1F#) /= 16#05# then
+      Data_Resp := Swap (C, Session, 16#FF#);
+      if (Data_Resp and 16#1F#) /= 16#05# then
          ESP32S3.GPIO.Set (C.Cs);
-         ESP32S3.SPI.Release (S);
+         ESP32S3.SPI.Release (Session);
          Result := Write_Error;
          return;
       end if;
 
       --  Card holds MISO low (0x00) while it programs; wait for it to release.
       for I in 1 .. 100_000 loop
-         if Swap (C, S, 16#FF#) /= 0 then
+         if Swap (C, Session, 16#FF#) /= 0 then
             Busy := False;
             exit;
          end if;
       end loop;
 
       ESP32S3.GPIO.Set (C.Cs);
-      R := Swap (C, S, 16#FF#);                --  trailing clocks
-      ESP32S3.SPI.Release (S);
+      Response := Swap (C, Session, 16#FF#);   --  trailing clocks
+      ESP32S3.SPI.Release (Session);
       Result := (if Busy then Write_Error else OK);
    end Write_Block;
 
