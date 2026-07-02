@@ -14,12 +14,13 @@ package body ESP32S3.LCD.Engine is
    Src_Hz : constant := 160_000_000;            --  LCD_CLK_SEL = 3 source clock
 
    procedure Drive_Out (Pad : G.Pin_Id; Sig : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
+      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register :=   --  the pad's output-select config
+        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
    begin
       G.Configure (Pad, Mode => G.Output, Drive => G.Drive_Strong);
-      O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      O.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad)) := O;
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
+      Out_Cfg.OEN_SEL := False;
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad)) := Out_Cfg;
    end Drive_Out;
 
    ----------

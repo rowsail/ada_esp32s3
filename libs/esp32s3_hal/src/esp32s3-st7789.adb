@@ -254,7 +254,7 @@ package body ESP32S3.ST7789 is
    end Display_Off;
 
    procedure Set_Rotation (S : Session; Rot : Rotation) is
-      M : constant Byte :=
+      MADCTL : constant Byte :=   --  memory-access-control value for this rotation
         (case Rot is
            when Rot_0   => 16#00#,
            when Rot_90  => 16#60#,
@@ -262,7 +262,7 @@ package body ESP32S3.ST7789 is
            when Rot_270 => 16#A0#);
    begin
       Check_Owned (S);
-      Command (S, Cmd_MADCTL, (1 => M));
+      Command (S, Cmd_MADCTL, (1 => MADCTL));
    end Set_Rotation;
 
    procedure Invert (S : Session; On : Boolean) is
@@ -283,35 +283,35 @@ package body ESP32S3.ST7789 is
    ---------------
 
    procedure Fill_Rect (S : Session; X, Y, W, H : Natural; C : Color) is
-      Bus : ESP32S3.SPI.Session;
-      RW  : Natural := W;
-      RH  : Natural := H;
-      Hi  : constant Byte := Byte (C / 256);
-      Lo  : constant Byte := Byte (C mod 256);
+      Bus    : ESP32S3.SPI.Session;
+      Clip_W : Natural := W;                     --  width  clamped to the panel edge
+      Clip_H : Natural := H;                     --  height clamped to the panel edge
+      Hi     : constant Byte := Byte (C / 256);  --  high byte of the RGB565 colour
+      Lo     : constant Byte := Byte (C mod 256);--  low byte
    begin
       Check_Owned (S);
       if X >= S.W or else Y >= S.H then
          return;
       end if;
-      if X + RW > S.W then
-         RW := S.W - X;
+      if X + Clip_W > S.W then
+         Clip_W := S.W - X;
       end if;
-      if Y + RH > S.H then
-         RH := S.H - Y;
+      if Y + Clip_H > S.H then
+         Clip_H := S.H - Y;
       end if;
-      if RW = 0 or else RH = 0 then
+      if Clip_W = 0 or else Clip_H = 0 then
          return;
       end if;
 
       ESP32S3.SPI.Acquire (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
       ESP32S3.GPIO.Clear (S.CS);
-      Window (Bus, S, X, Y, X + RW - 1, Y + RH - 1);
+      Window (Bus, S, X, Y, X + Clip_W - 1, Y + Clip_H - 1);
       Cmd1 (Bus, S, Cmd_RAMWR);
       ESP32S3.GPIO.Set (S.DC);                         --  data phase
 
       declare
          PPC   : constant Natural := Chunk / 2;        --  pixels per chunk
-         Count : Natural := RW * RH;
+         Count : Natural := Clip_W * Clip_H;
       begin
          for I in 0 .. PPC - 1 loop
             --  prefill the colour once

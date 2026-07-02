@@ -4,16 +4,16 @@ package body ESP32S3.Fonts.Render is
 
    --  16-step FG<-BG ramp built from the 8-bit-per-channel endpoints.
    function Make_Ramp (FG, BG : ESP32S3.Fonts.RGB) return Ramp16 is
-      R : Ramp16;
+      Ramp : Ramp16;   --  the 16 interpolated colours, BG (step 0) .. FG (step 15)
    begin
       for K in Ramp16'Range loop
-         R (K) :=
+         Ramp (K) :=
            To_Color
              (BG.R + (FG.R - BG.R) * K / 15,
               BG.G + (FG.G - BG.G) * K / 15,
               BG.B + (FG.B - BG.B) * K / 15);
       end loop;
-      return R;
+      return Ramp;
    end Make_Ramp;
 
    --  Rasterise glyph G (its inked box top-left at (X0, Y0)) and blit it.

@@ -51,18 +51,18 @@ package body ESP32S3.Fonts is
    ----------------
 
    function Text_Width (F : Font; Str : String) return Natural is
-      W : Natural := 0;
+      Width : Natural := 0;   --  running pixel width of the string so far
    begin
       for Ch of Str loop
          declare
             Code : constant Natural := Character'Pos (Ch);
          begin
             if Has_Glyph (F, Code) then
-               W := W + Glyph_Adv (F, Code - F.First);
+               Width := Width + Glyph_Adv (F, Code - F.First);
             end if;
          end;
       end loop;
-      return W;
+      return Width;
    end Text_Width;
 
 end ESP32S3.Fonts;
