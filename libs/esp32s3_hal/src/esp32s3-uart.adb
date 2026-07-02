@@ -2,7 +2,7 @@ with ESP32S3.UART.Engine;
 
 package body ESP32S3.UART is
 
-   package E renames ESP32S3.UART.Engine;
+   package E renames ESP32S3.UART.Engine;   --  E: the low-level register engine
 
    --  One protected guard per port -- arbitrates exclusive ownership.  The
    --  guarded section is tiny (flip a flag); Write / Read run outside.
@@ -114,13 +114,13 @@ package body ESP32S3.UART is
       Cts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Rx_Flow_Threshold : Natural := 100)
    is
-      B : constant E.Bus := State.Owned (S);  --  raises unless we hold the port
+      Bus_Ref : constant E.Bus := State.Owned (S);  --  raises unless we hold the port
    begin
-      E.Set_Baud (B, Baud);
-      E.Set_Data_Bits (B, Bits);
-      E.Set_Parity (B, Parity);
-      E.Set_Stop_Bits (B, Stop);
-      E.Configure_Pins (B, Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
+      E.Set_Baud (Bus_Ref, Baud);
+      E.Set_Data_Bits (Bus_Ref, Bits);
+      E.Set_Parity (Bus_Ref, Parity);
+      E.Set_Stop_Bits (Bus_Ref, Stop);
+      E.Configure_Pins (Bus_Ref, Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
    end Reconfigure;
 
    ----------------------------------------------------------------------------
@@ -162,10 +162,10 @@ package body ESP32S3.UART is
       Rts_Invert        : Boolean := False;
       Cts_Invert        : Boolean := False)
    is
-      B : constant E.Bus := State.Owned (S);
+      Bus_Ref : constant E.Bus := State.Owned (S);
    begin
-      E.Configure_Pins (B, Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
-      E.Set_Inversion (B, Tx_Invert, Rx_Invert, Rts_Invert, Cts_Invert);
+      E.Configure_Pins (Bus_Ref, Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
+      E.Set_Inversion (Bus_Ref, Tx_Invert, Rx_Invert, Rts_Invert, Cts_Invert);
    end Configure_Pins;
 
    procedure Set_Inversion
