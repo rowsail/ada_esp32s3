@@ -39,22 +39,22 @@ procedure Main is
    --  the smallest possible taste of the same System.Machine_Code mechanism the
    --  SIMD kernels use.  CCOUNT is a free-running 32-bit counter at the CPU clock.
    function Cycles return Unsigned_32 is
-      V : Unsigned_32;
+      Value : Unsigned_32;
    begin
-      Asm ("rsr.ccount %0", Outputs => Unsigned_32'Asm_Output ("=r", V), Volatile => True);
-      return V;
+      Asm ("rsr.ccount %0", Outputs => Unsigned_32'Asm_Output ("=r", Value), Volatile => True);
+      return Value;
    end Cycles;
 
    --  Saturating scalar reference for Integer_32 add (the SIMD Add saturates).
    function Sat_Add (X, Y : Integer_32) return Integer_32 is
-      S : constant Integer_64 := Integer_64 (X) + Integer_64 (Y);
+      Sum : constant Integer_64 := Integer_64 (X) + Integer_64 (Y);
    begin
-      if S > Integer_64 (Integer_32'Last) then
+      if Sum > Integer_64 (Integer_32'Last) then
          return Integer_32'Last;
-      elsif S < Integer_64 (Integer_32'First) then
+      elsif Sum < Integer_64 (Integer_32'First) then
          return Integer_32'First;
       else
-         return Integer_32 (S);
+         return Integer_32 (Sum);
       end if;
    end Sat_Add;
 
@@ -130,24 +130,24 @@ begin
    end loop;
 
    declare
-      SD, RD : Integer_32 := 0;
+      Simd_Dot, Ref_Dot : Integer_32 := 0;
    begin
       T0 := Cycles;
       for K in 1 .. Iters loop
-         SD := Dot_Product (A32, B32);
+         Simd_Dot := Dot_Product (A32, B32);
       end loop;
       T1 := Cycles;
 
       Sc0 := Cycles;
       for K in 1 .. Iters loop
-         RD := 0;
+         Ref_Dot := 0;
          for I in Idx loop
-            RD := RD + A32 (I) * B32 (I);
+            Ref_Dot := Ref_Dot + A32 (I) * B32 (I);
          end loop;
       end loop;
       Sc1 := Cycles;
 
-      Report ("Dot  i32 ", T1 - T0, Sc1 - Sc0, SD = RD);
+      Report ("Dot  i32 ", T1 - T0, Sc1 - Sc0, Simd_Dot = Ref_Dot);
    end;
 
    ---------------------------------------------------------------------------

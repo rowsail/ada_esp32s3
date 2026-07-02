@@ -34,9 +34,9 @@ procedure Main is
    Lease : ESP32S3.W5500.DHCP.Lease_Info;
    Park  : constant Time_Span := Seconds (3600);
 
-   S   : MM.Session;
-   R   : MM.Status;
-   Exc : Exception_Code;
+   Session : MM.Session;
+   Result  : MM.Status;
+   Exc     : Exception_Code;
 
    function Img (N : Integer) return String is
       Str : constant String := Integer'Image (N);
@@ -55,8 +55,12 @@ begin
    end if;
 
    MM.Connect
-     (S, Slave_Host, Port => Slave_Port, Configure => Net_Pin.Pin_Eth0'Access, Result => R);
-   if R /= MM.OK then
+     (Session,
+      Slave_Host,
+      Port      => Slave_Port,
+      Configure => Net_Pin.Pin_Eth0'Access,
+      Result    => Result);
+   if Result /= MM.OK then
       Put_Line ("[modbus] connect to " & Slave_Host & " failed");
       loop
          delay until Clock + Park;
@@ -66,43 +70,43 @@ begin
 
    --  Read holding 0..4.
    declare
-      W : Word_Array (0 .. 4);
+      Regs : Word_Array (0 .. 4);
    begin
       MM.Read_Holding_Registers
-        (S, Unit => 1, Addr => 0, Qty => 5, Into => W, Result => R, Exc => Exc);
-      if R = MM.OK then
+        (Session, Unit => 1, Addr => 0, Qty => 5, Into => Regs, Result => Result, Exc => Exc);
+      if Result = MM.OK then
          Put ("[modbus] holding 0..4 =");
-         for V of W loop
-            Put (" " & Img (Integer (V)));
+         for Value of Regs loop
+            Put (" " & Img (Integer (Value)));
          end loop;
          New_Line;
       else
-         Put_Line ("[modbus] read failed (status=" & MM.Status'Image (R) & ")");
+         Put_Line ("[modbus] read failed (status=" & MM.Status'Image (Result) & ")");
       end if;
    end;
 
    --  Write holding[0] = 4242, then read it back.
-   MM.Write_Single_Register (S, 1, 0, 4242, R, Exc);
-   if R /= MM.OK then
-      --  Check the WRITE status HERE, before the read-back below overwrites R.
-      --  Previously the read reused R and only its result was tested, so a failed
+   MM.Write_Single_Register (Session, 1, 0, 4242, Result, Exc);
+   if Result /= MM.OK then
+      --  Check the WRITE status HERE, before the read-back below overwrites Result.
+      --  Previously the read reused Result and only its result was tested, so a failed
       --  write was masked by a successful read-back (the old value) and silently
       --  reported as success.
-      Put_Line ("[modbus] write holding[0]=4242 failed (status=" & MM.Status'Image (R) & ")");
+      Put_Line ("[modbus] write holding[0]=4242 failed (status=" & MM.Status'Image (Result) & ")");
    else
       declare
-         W : Word_Array (0 .. 0);
+         Regs : Word_Array (0 .. 0);
       begin
-         MM.Read_Holding_Registers (S, 1, 0, 1, W, R, Exc);
-         if R = MM.OK then
-            Put_Line ("[modbus] wrote 4242 -> read back " & Img (Integer (W (0))));
+         MM.Read_Holding_Registers (Session, 1, 0, 1, Regs, Result, Exc);
+         if Result = MM.OK then
+            Put_Line ("[modbus] wrote 4242 -> read back " & Img (Integer (Regs (0))));
          else
-            Put_Line ("[modbus] read-back failed (status=" & MM.Status'Image (R) & ")");
+            Put_Line ("[modbus] read-back failed (status=" & MM.Status'Image (Result) & ")");
          end if;
       end;
    end if;
 
-   MM.Close (S);
+   MM.Close (Session);
    Put_Line ("[modbus] done.");
    loop
       delay until Clock + Park;

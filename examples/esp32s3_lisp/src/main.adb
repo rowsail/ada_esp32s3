@@ -41,11 +41,11 @@ procedure Main is
    end Try_Get;
 
    function Get_Char return Character is
-      C : Character;
+      Ch : Character;
    begin
       loop
-         if Try_Get (C) then
-            return C;
+         if Try_Get (Ch) then
+            return Ch;
          end if;
          delay until Clock + Milliseconds (2);
       end loop;
@@ -53,13 +53,13 @@ procedure Main is
 
    --  Read a CR/LF-terminated line, echoing input back to the console.
    procedure Read_Line (Buf : out String; Last : out Natural) is
-      C : Character;
+      Ch : Character;
    begin
       Last := 0;
       loop
-         C := Get_Char;
-         exit when C = ASCII.CR or else C = ASCII.LF;
-         if C = ASCII.BS or else C = ASCII.DEL then
+         Ch := Get_Char;
+         exit when Ch = ASCII.CR or else Ch = ASCII.LF;
+         if Ch = ASCII.BS or else Ch = ASCII.DEL then
             if Last > 0 then
                Last := Last - 1;
                Put (ASCII.BS);
@@ -68,8 +68,8 @@ procedure Main is
             end if;
          elsif Last < Buf'Length then
             Last := Last + 1;
-            Buf (Buf'First + Last - 1) := C;
-            Put (C);                              --  echo
+            Buf (Buf'First + Last - 1) := Ch;
+            Put (Ch);                              --  echo
          end if;
       end loop;
       New_Line;

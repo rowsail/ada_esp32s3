@@ -14,9 +14,9 @@ package body W5500_Dev is
 
    --  Natural'Image without its leading space.
    function Img (N : Natural) return String is
-      S : constant String := Natural'Image (N);
+      Str : constant String := Natural'Image (N);
    begin
-      return S (S'First + 1 .. S'Last);
+      return Str (Str'First + 1 .. Str'Last);
    end Img;
 
    function Image (A : ESP32S3.W5500.IPv4_Address) return String

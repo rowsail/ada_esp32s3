@@ -86,20 +86,20 @@ procedure Main is
 
    --  Try a TCP connect to 1.1.1.1:53 and report; Pin >= 0 pins to that interface.
    procedure Try_Connect (Label : String; Pin : Integer) is
-      S : GS.Socket_Type;
+      Socket : GS.Socket_Type;
    begin
-      GS.Create_Socket (S);
+      GS.Create_Socket (Socket);
       if Pin >= 0 then
-         GS.Set_Interface (S, Net_Devices.Interface_Id (Pin));
+         GS.Set_Interface (Socket, Net_Devices.Interface_Id (Pin));
       end if;
       begin
-         GS.Connect_Socket (S, (GS.Family_Inet, GS.Inet_Addr ("1.1.1.1"), 53));
+         GS.Connect_Socket (Socket, (GS.Family_Inet, GS.Inet_Addr ("1.1.1.1"), 53));
          Put_Line ("[nic] " & Label & " -> CONNECTED");
       exception
          when GS.Socket_Error =>
             Put_Line ("[nic] " & Label & " -> refused / unreachable");
       end;
-      GS.Close_Socket (S);
+      GS.Close_Socket (Socket);
    end Try_Connect;
 
 begin

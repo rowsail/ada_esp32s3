@@ -99,24 +99,24 @@ procedure Main is
    Dev : Device;
 
    function To_Bytes (Str : String) return Byte_Array is
-      B : Byte_Array (0 .. Str'Length - 1);
+      Bytes : Byte_Array (0 .. Str'Length - 1);
    begin
-      for I in B'Range loop
-         B (I) := Interfaces.Unsigned_8 (Character'Pos (Str (Str'First + I)));
+      for I in Bytes'Range loop
+         Bytes (I) := Interfaces.Unsigned_8 (Character'Pos (Str (Str'First + I)));
       end loop;
-      return B;
+      return Bytes;
    end To_Bytes;
 
    --  Print Buf (0 .. Last-1) a line at a time, with a short drain between lines
    --  so the USB-Serial-JTAG ROM-printf FIFO does not drop the head of a write.
    procedure Print_Text (Buf : Byte_Array; Last : Natural) is
-      Line : String (1 .. 60);
-      N    : Natural := 0;
+      Line  : String (1 .. 60);
+      Count : Natural := 0;
       procedure End_Line is
       begin
-         if N > 0 then
-            Log.Put (Line (1 .. N));
-            N := 0;
+         if Count > 0 then
+            Log.Put (Line (1 .. Count));
+            Count := 0;
          end if;
          Log.New_Line;
          delay until Clock + Milliseconds (20);
@@ -124,22 +124,22 @@ procedure Main is
    begin
       for I in 0 .. Last - 1 loop
          declare
-            C : constant Character := Character'Val (Natural (Buf (I)));
+            Ch : constant Character := Character'Val (Natural (Buf (I)));
          begin
-            if C = ASCII.LF then
+            if Ch = ASCII.LF then
                End_Line;
             else
-               N := N + 1;
-               Line (N) := (if Character'Pos (C) in 32 .. 126 then C else '.');
-               if N = Line'Last then
+               Count := Count + 1;
+               Line (Count) := (if Character'Pos (Ch) in 32 .. 126 then Ch else '.');
+               if Count = Line'Last then
                   Log.Put (Line);
-                  N := 0;
+                  Count := 0;
                   delay until Clock + Milliseconds (20);
                end if;
             end if;
          end;
       end loop;
-      if N > 0 then
+      if Count > 0 then
          End_Line;
       end if;
    end Print_Text;
@@ -196,36 +196,36 @@ begin
 
       --  Mount the new filesystem read-write and populate it.
       declare
-         M : FS.Mount;
-         N : ESP32S3.Ext4.Inode_Number;
+         Mnt  : FS.Mount;
+         Node : ESP32S3.Ext4.Inode_Number;
       begin
-         M.Open (Dev, Read_Only => False);
+         Mnt.Open (Dev, Read_Only => False);
          Log.Put ("[mkfs] mounted read-write; block size ");
-         Log.Put_Unsigned (Unsigned_32 (M.Block_Size));
+         Log.Put_Unsigned (Unsigned_32 (Mnt.Block_Size));
          Log.New_Line;
 
-         N := M.Create_File ("/", "boot.txt");
-         M.Write_File (N, To_Bytes ("formatted on-device by ESP32S3.Ext4.Mkfs!" & ASCII.LF));
-         M.Mkdir ("/", "logs");
-         N := M.Create_File ("/logs", "1.txt");
-         M.Write_File (N, To_Bytes ("log entry one" & ASCII.LF));
+         Node := Mnt.Create_File ("/", "boot.txt");
+         Mnt.Write_File (Node, To_Bytes ("formatted on-device by ESP32S3.Ext4.Mkfs!" & ASCII.LF));
+         Mnt.Mkdir ("/", "logs");
+         Node := Mnt.Create_File ("/logs", "1.txt");
+         Mnt.Write_File (Node, To_Bytes ("log entry one" & ASCII.LF));
 
          --  Streaming: build the file a chunk at a time via Append, never holding
          --  the whole thing -- and large enough to use the single-indirect map.
-         N := M.Create_File ("/logs", "stream.bin");
+         Node := Mnt.Create_File ("/logs", "stream.bin");
          declare
             Chunk : Byte_Array (0 .. Chunk_Bytes - 1);
          begin
-            for C in 0 .. Chunk_Count - 1 loop
+            for Chunk_Index in 0 .. Chunk_Count - 1 loop
                for K in Chunk'Range loop
-                  Chunk (K) := Unsigned_8 ((C * Chunk_Bytes + K) mod Pattern_Period);
+                  Chunk (K) := Unsigned_8 ((Chunk_Index * Chunk_Bytes + K) mod Pattern_Period);
                end loop;
-               M.Append (N, Chunk);
+               Mnt.Append (Node, Chunk);
             end loop;
          end;
 
-         M.Commit;
-         M.Close;
+         Mnt.Commit;
+         Mnt.Close;
          Log.Put_Line
            ("[mkfs] wrote /boot.txt, /logs/1.txt, streamed /logs/stream.bin; committed");
       exception
@@ -235,12 +235,12 @@ begin
 
       --  Remount and read the files back.
       declare
-         M : FS.Mount;
+         Mnt : FS.Mount;
       begin
-         M.Open (Dev, Read_Only => True);
+         Mnt.Open (Dev, Read_Only => True);
          Log.Put_Line ("[mkfs] remounted; reading back:");
-         Show_File (M, "/boot.txt");
-         Show_File (M, "/logs/1.txt");
+         Show_File (Mnt, "/boot.txt");
+         Show_File (Mnt, "/logs/1.txt");
 
          --  Verify the streamed file: every byte must equal offset mod Period.
          declare
@@ -250,9 +250,9 @@ begin
             Off  : Natural := 0;
             OK   : Boolean := True;
          begin
-            M.Stat (M.Lookup ("/logs/stream.bin"), Info);
+            Mnt.Stat (Mnt.Lookup ("/logs/stream.bin"), Info);
             while Off < Natural (Info.Size) loop
-               M.Read_File (Info, ESP32S3.Ext4.U64 (Off), Got, Last);
+               Mnt.Read_File (Info, ESP32S3.Ext4.U64 (Off), Got, Last);
                exit when Last = 0;
                for K in 0 .. Last - 1 loop
                   if Got (K) /= Unsigned_8 ((Off + K) mod Pattern_Period) then
@@ -267,7 +267,7 @@ begin
               (" bytes via Append, readback "
                & (if OK and then Off = Natural (Info.Size) then "PASS" else "FAIL"));
          end;
-         M.Close;
+         Mnt.Close;
       exception
          when others =>
             Log.Put_Line ("[mkfs] remount/read FAILED");
