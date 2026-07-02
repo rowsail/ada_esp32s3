@@ -17,9 +17,9 @@ package body ESP32S3.GDMA is
    --  heap all live here (per the bare linker's dram0_0_seg); flash .rodata and
    --  PSRAM sit in 0x3C000000..0x3E000000 and are not DMA-capable.
    function Is_DMA_Capable (A : System.Address) return Boolean is
-      V : constant Integer_Address := To_Integer (A);
+      Addr : constant Integer_Address := To_Integer (A);   --  A as a plain integer
    begin
-      return V in 16#3FC8_8000# .. 16#3FCF_FFFF#;
+      return Addr in 16#3FC8_8000# .. 16#3FCF_FFFF#;
    end Is_DMA_Capable;
 
    --  PERI_SEL value that DISCONNECTS a path from any peripheral.
@@ -106,13 +106,14 @@ package body ESP32S3.GDMA is
    --  DMA descriptor (in-RAM linked-list node; 12 bytes, 4-byte aligned).
    ---------------------------------------------------------------------------
 
+   --  DW0 = descriptor word 0: the control/status word of a GDMA descriptor.
    type DW0_Field is record
       Size    : UInt12 := 0;    --  buffer capacity in bytes
       Length  : UInt12 := 0;    --  valid bytes (TX: set by us; RX: by HW)
-      Rsv     : UInt4 := 0;
-      Err_EOF : Boolean := False;
-      Rsv29   : Boolean := False;
-      Suc_EOF : Boolean := False;  --  last node in the link
+      Rsv     : UInt4 := 0;        --  reserved (bits 24..27)
+      Err_EOF : Boolean := False;  --  error end-of-frame
+      Rsv29   : Boolean := False;  --  reserved (bit 29)
+      Suc_EOF : Boolean := False;  --  success end-of-frame: last node in the link
       Owner   : Boolean := False;  --  True = owned by DMA engine
    end record;
    for DW0_Field use
@@ -128,9 +129,9 @@ package body ESP32S3.GDMA is
    for DW0_Field'Size use 32;
 
    type Descriptor is record
-      W0     : DW0_Field;
-      Buffer : System.Address;
-      Next   : System.Address;
+      W0     : DW0_Field;        --  control/status word (see DW0_Field above)
+      Buffer : System.Address;   --  the data buffer this node moves
+      Next   : System.Address;   --  next descriptor (or self / null to stop)
    end record
    with Alignment => 4;
 
