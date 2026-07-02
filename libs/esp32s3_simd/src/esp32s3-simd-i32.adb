@@ -67,7 +67,7 @@ package body ESP32S3.SIMD.I32 is
       --  2 ** Amount is the divisor equivalent to shifting right by Amount
       --  bits.  For example, shifting right by 3 is the same as dividing by 8,
       --  with the special handling below for negative values.
-      D : constant Long_Long_Integer := Long_Long_Integer'(2**Amount);
+      Divisor : constant Long_Long_Integer := Long_Long_Integer'(2**Amount);
    begin
       --  A shift by zero leaves the value unchanged.
       if Amount = 0 then
@@ -76,7 +76,7 @@ package body ESP32S3.SIMD.I32 is
       --  For non-negative values, ordinary division already matches the result
       --  of an arithmetic right shift.
       elsif V >= 0 then
-         return V / D;
+         return V / Divisor;
 
       --  For negative values we compute the result manually so the sign bit is
       --  effectively preserved.  The inner expression rounds the magnitude up
@@ -84,7 +84,7 @@ package body ESP32S3.SIMD.I32 is
       --  This gives the same result you would expect from shifting a signed
       --  two's-complement value to the right.
       else
-         return -(((-V) + (D - 1)) / D);
+         return -(((-V) + (Divisor - 1)) / Divisor);
       end if;
    end Arith_Shr;
 
@@ -436,7 +436,7 @@ package body ESP32S3.SIMD.I32 is
       Sh    : unsigned := unsigned (Shift);
       Tail  : size_t := 0;
       I     : Natural;
-      P     : Long_Long_Integer;
+      P     : Long_Long_Integer;  --  widened product, arithmetic-shifted then saturated
    begin
       if A'Length = 0 then
          return;
@@ -769,7 +769,7 @@ package body ESP32S3.SIMD.I32 is
       Tail  : size_t := 0;
       S     : aliased Integer_32 := Scalar;
       I     : Natural;
-      P     : Long_Long_Integer;
+      P     : Long_Long_Integer;  --  widened product, arithmetic-shifted then saturated
    begin
       if A'Length = 0 then
          return;

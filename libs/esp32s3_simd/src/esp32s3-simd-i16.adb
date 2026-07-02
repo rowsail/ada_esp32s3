@@ -38,14 +38,14 @@ package body ESP32S3.SIMD.I16 is
    end Sat_I32;
 
    function Arith_Shr (V : Long_Long_Integer; Amount : Shift_I16) return Long_Long_Integer is
-      D : constant Long_Long_Integer := Long_Long_Integer'(2**Amount);
+      Divisor : constant Long_Long_Integer := Long_Long_Integer'(2**Amount);
    begin
       if Amount = 0 then
          return V;
       elsif V >= 0 then
-         return V / D;
+         return V / Divisor;
       else
-         return -(((-V) + (D - 1)) / D);
+         return -(((-V) + (Divisor - 1)) / Divisor);
       end if;
    end Arith_Shr;
 
@@ -322,7 +322,7 @@ package body ESP32S3.SIMD.I16 is
       Sh    : unsigned := unsigned (Shift);
       Tail  : size_t := 0;
       I     : Natural;
-      P     : Long_Long_Integer;
+      P     : Long_Long_Integer;  --  widened product, arithmetic-shifted then saturated
    begin
       if A'Length = 0 then
          return;
@@ -419,7 +419,7 @@ package body ESP32S3.SIMD.I16 is
       Tail  : size_t := 0;
       S     : aliased Integer_16 := Scalar;
       I     : Natural;
-      P     : Long_Long_Integer;
+      P     : Long_Long_Integer;  --  widened product, arithmetic-shifted then saturated
    begin
       if A'Length = 0 then
          return;
@@ -642,7 +642,8 @@ package body ESP32S3.SIMD.I16 is
       R_Ptr : Address := First_Address (Result);
       Cnt   : size_t := size_t (A'Length);
       Tail  : size_t := 0;
-      Min_1 : aliased Integer_16 := -32767;
+      Min_1 : aliased Integer_16 :=
+        -32767;  --  Integer_16'First + 1: the most negative value that negates without overflow
       I     : Natural;
    begin
       if A'Length = 0 then
@@ -738,7 +739,8 @@ package body ESP32S3.SIMD.I16 is
       R_Ptr : Address := First_Address (Result);
       Cnt   : size_t := size_t (A'Length);
       Tail  : size_t := 0;
-      Min_1 : aliased Integer_16 := -32767;
+      Min_1 : aliased Integer_16 :=
+        -32767;  --  Integer_16'First + 1: the most negative value that negates without overflow
       I     : Natural;
       V     : Integer_16;
    begin
