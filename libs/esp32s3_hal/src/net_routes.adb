@@ -3,22 +3,22 @@ with Interfaces; use Interfaces;
 package body Net_Routes is
 
    --  Pack a dotted address into a 32-bit value for masking/compare.
-   function U32 (A : Net_Devices.IPv4_Address) return Unsigned_32
-   is (Shift_Left (Unsigned_32 (A (0)), 24)
-       or Shift_Left (Unsigned_32 (A (1)), 16)
-       or Shift_Left (Unsigned_32 (A (2)), 8)
-       or Unsigned_32 (A (3)));
+   function U32 (Addr : Net_Devices.IPv4_Address) return Unsigned_32
+   is (Shift_Left (Unsigned_32 (Addr (0)), 24)
+       or Shift_Left (Unsigned_32 (Addr (1)), 16)
+       or Shift_Left (Unsigned_32 (Addr (2)), 8)
+       or Unsigned_32 (Addr (3)));
 
    --  Prefix length = number of set bits in the mask (works for any mask, /0..32).
    function Prefix_Len (Mask : Unsigned_32) return Natural is
-      V : Unsigned_32 := Mask;
-      N : Natural := 0;
+      Bits  : Unsigned_32 := Mask;
+      Count : Natural := 0;
    begin
-      while V /= 0 loop
-         N := N + Natural (V and 1);
-         V := Shift_Right (V, 1);
+      while Bits /= 0 loop
+         Count := Count + Natural (Bits and 1);
+         Bits := Shift_Right (Bits, 1);
       end loop;
-      return N;
+      return Count;
    end Prefix_Len;
 
    type Route is record
@@ -68,7 +68,7 @@ package body Net_Routes is
    procedure Resolve
      (Dest : Net_Devices.IPv4_Address; Iface : out Interface_Id; Found : out Boolean)
    is
-      D           : constant Unsigned_32 := U32 (Dest);
+      Dest_Bits   : constant Unsigned_32 := U32 (Dest);
       Best_Len    : Integer := -1;          --  so the first match always wins
       Best_Metric : Natural := 0;
    begin
@@ -76,19 +76,21 @@ package body Net_Routes is
       Iface := 0;
       for I in 1 .. N_Routes loop
          declare
-            R : Route renames Table (I);
+            Route_Rec : Route renames Table (I);
          begin
-            if R.Valid
-              and then (D and R.Mask) = (R.Dest and R.Mask)        --  matches
-              and then (Up = null or else Up (R.Iface))            --  interface up
+            if Route_Rec.Valid
+              and then (Dest_Bits and Route_Rec.Mask) = (Route_Rec.Dest and Route_Rec.Mask)
+              and then (Up = null or else Up (Route_Rec.Iface))    --  interface up
             then
                declare
-                  Len : constant Natural := Prefix_Len (R.Mask);
+                  Len : constant Natural := Prefix_Len (Route_Rec.Mask);
                begin
-                  if Len > Best_Len or else (Len = Best_Len and then R.Metric < Best_Metric) then
+                  if Len > Best_Len
+                    or else (Len = Best_Len and then Route_Rec.Metric < Best_Metric)
+                  then
                      Best_Len := Len;
-                     Best_Metric := R.Metric;
-                     Iface := R.Iface;
+                     Best_Metric := Route_Rec.Metric;
+                     Iface := Route_Rec.Iface;
                      Found := True;
                   end if;
                end;

@@ -74,22 +74,24 @@ package body NTP_Client is
       Minute    : out Integer;
       Second    : out Integer)
    is
-      D_Days : constant Integer_64 := Unix_Time / 86_400;
-      Sod    : constant Integer_64 := Unix_Time mod 86_400;
-      Z      : constant Integer_64 := D_Days + 719_468;
-      Era    : constant Integer_64 := Z / 146_097;
-      DOE    : constant Integer_64 := Z - Era * 146_097;
-      YOE    : constant Integer_64 := (DOE - DOE / 1460 + DOE / 36524 - DOE / 146096) / 365;
-      Yr     : constant Integer_64 := YOE + Era * 400;
-      DOY    : constant Integer_64 := DOE - (365 * YOE + YOE / 4 - YOE / 100);
-      MP     : constant Integer_64 := (5 * DOY + 2) / 153;
+      Epoch_Days   : constant Integer_64 := Unix_Time / 86_400;
+      Secs_Of_Day  : constant Integer_64 := Unix_Time mod 86_400;
+      Shifted_Days : constant Integer_64 := Epoch_Days + 719_468;
+      Era          : constant Integer_64 := Shifted_Days / 146_097;
+      Day_Of_Era   : constant Integer_64 := Shifted_Days - Era * 146_097;
+      Year_Of_Era  : constant Integer_64 :=
+        (Day_Of_Era - Day_Of_Era / 1460 + Day_Of_Era / 36524 - Day_Of_Era / 146096) / 365;
+      Shifted_Year : constant Integer_64 := Year_Of_Era + Era * 400;
+      Day_Of_Year  : constant Integer_64 :=
+        Day_Of_Era - (365 * Year_Of_Era + Year_Of_Era / 4 - Year_Of_Era / 100);
+      Month_Index  : constant Integer_64 := (5 * Day_Of_Year + 2) / 153;
    begin
-      Day := Integer (DOY - (153 * MP + 2) / 5 + 1);
-      Month := Integer (if MP < 10 then MP + 3 else MP - 9);
-      Year := Integer (if Month <= 2 then Yr + 1 else Yr);
-      Hour := Integer (Sod / 3600);
-      Minute := Integer ((Sod mod 3600) / 60);
-      Second := Integer (Sod mod 60);
+      Day := Integer (Day_Of_Year - (153 * Month_Index + 2) / 5 + 1);
+      Month := Integer (if Month_Index < 10 then Month_Index + 3 else Month_Index - 9);
+      Year := Integer (if Month <= 2 then Shifted_Year + 1 else Shifted_Year);
+      Hour := Integer (Secs_Of_Day / 3600);
+      Minute := Integer ((Secs_Of_Day mod 3600) / 60);
+      Second := Integer (Secs_Of_Day mod 60);
    end To_UTC;
 
 end NTP_Client;

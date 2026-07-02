@@ -60,67 +60,69 @@ package body ESP32S3.W5500 is
    ---------------------------------------------------------------------------
 
    procedure Write (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16; Data : Byte_Array) is
-      S   : ESP32S3.SPI.Session;
-      H   : constant ESP32S3.SPI.SPI_Host := Dev.Host;
-      Ctl : constant Byte := Control (Blk, Write_Access => True);
-      Off : Natural := Data'First;
-      A   : Unsigned_16 := Addr;
+      Session   : ESP32S3.SPI.Session;
+      Host      : constant ESP32S3.SPI.SPI_Host := Dev.Host;
+      Ctrl_Byte : constant Byte := Control (Blk, Write_Access => True);
+      Offset    : Natural := Data'First;
+      Cur_Addr  : Unsigned_16 := Addr;
    begin
       if not Dev.Configured then
          raise Not_Initialized;
       end if;
-      ESP32S3.SPI.Acquire (S, H, Clock_Hz => Dev.Clock_Hz);
-      while Off <= Data'Last loop
+      ESP32S3.SPI.Acquire (Session, Host, Clock_Hz => Dev.Clock_Hz);
+      while Offset <= Data'Last loop
          declare
-            N : constant Natural := Natural'Min (Chunk_Size, Data'Last - Off + 1);
+            Chunk_Len : constant Natural := Natural'Min (Chunk_Size, Data'Last - Offset + 1);
          begin
-            Scratch_Tx (H) (0) := Byte (Shift_Right (A, 8));
-            Scratch_Tx (H) (1) := Byte (A and 16#FF#);
-            Scratch_Tx (H) (2) := Ctl;
-            for I in 0 .. N - 1 loop
-               Scratch_Tx (H) (3 + I) := Data (Off + I);
+            Scratch_Tx (Host) (0) := Byte (Shift_Right (Cur_Addr, 8));
+            Scratch_Tx (Host) (1) := Byte (Cur_Addr and 16#FF#);
+            Scratch_Tx (Host) (2) := Ctrl_Byte;
+            for I in 0 .. Chunk_Len - 1 loop
+               Scratch_Tx (Host) (3 + I) := Data (Offset + I);
             end loop;
             ESP32S3.GPIO.Clear (Dev.Cs);                       --  assert CS (low)
-            ESP32S3.SPI.Transfer (S, Scratch_Tx (H)'Address, Scratch_Rx (H)'Address, 3 + N);
+            ESP32S3.SPI.Transfer
+              (Session, Scratch_Tx (Host)'Address, Scratch_Rx (Host)'Address, 3 + Chunk_Len);
             ESP32S3.GPIO.Set (Dev.Cs);                         --  deassert CS
-            Off := Off + N;
-            A := A + Unsigned_16 (N);
+            Offset := Offset + Chunk_Len;
+            Cur_Addr := Cur_Addr + Unsigned_16 (Chunk_Len);
          end;
       end loop;
-      ESP32S3.SPI.Release (S);
+      ESP32S3.SPI.Release (Session);
    end Write;
 
    procedure Read (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16; Data : out Byte_Array)
    is
-      S   : ESP32S3.SPI.Session;
-      H   : constant ESP32S3.SPI.SPI_Host := Dev.Host;
-      Ctl : constant Byte := Control (Blk, Write_Access => False);
-      Off : Natural := Data'First;
-      A   : Unsigned_16 := Addr;
+      Session   : ESP32S3.SPI.Session;
+      Host      : constant ESP32S3.SPI.SPI_Host := Dev.Host;
+      Ctrl_Byte : constant Byte := Control (Blk, Write_Access => False);
+      Offset    : Natural := Data'First;
+      Cur_Addr  : Unsigned_16 := Addr;
    begin
       if not Dev.Configured then
          raise Not_Initialized;
       end if;
-      ESP32S3.SPI.Acquire (S, H, Clock_Hz => Dev.Clock_Hz);
-      while Off <= Data'Last loop
+      ESP32S3.SPI.Acquire (Session, Host, Clock_Hz => Dev.Clock_Hz);
+      while Offset <= Data'Last loop
          declare
-            N : constant Natural := Natural'Min (Chunk_Size, Data'Last - Off + 1);
+            Chunk_Len : constant Natural := Natural'Min (Chunk_Size, Data'Last - Offset + 1);
          begin
-            Scratch_Tx (H) (0) := Byte (Shift_Right (A, 8));
-            Scratch_Tx (H) (1) := Byte (A and 16#FF#);
-            Scratch_Tx (H) (2) := Ctl;                         --  data phase = don't care
+            Scratch_Tx (Host) (0) := Byte (Shift_Right (Cur_Addr, 8));
+            Scratch_Tx (Host) (1) := Byte (Cur_Addr and 16#FF#);
+            Scratch_Tx (Host) (2) := Ctrl_Byte;                --  data phase = don't care
             ESP32S3.GPIO.Clear (Dev.Cs);
-            ESP32S3.SPI.Transfer (S, Scratch_Tx (H)'Address, Scratch_Rx (H)'Address, 3 + N);
+            ESP32S3.SPI.Transfer
+              (Session, Scratch_Tx (Host)'Address, Scratch_Rx (Host)'Address, 3 + Chunk_Len);
             ESP32S3.GPIO.Set (Dev.Cs);
-            for I in 0 .. N - 1 loop
+            for I in 0 .. Chunk_Len - 1 loop
                --  skip the 3 header echoes
-               Data (Off + I) := Scratch_Rx (H) (3 + I);
+               Data (Offset + I) := Scratch_Rx (Host) (3 + I);
             end loop;
-            Off := Off + N;
-            A := A + Unsigned_16 (N);
+            Offset := Offset + Chunk_Len;
+            Cur_Addr := Cur_Addr + Unsigned_16 (Chunk_Len);
          end;
       end loop;
-      ESP32S3.SPI.Release (S);
+      ESP32S3.SPI.Release (Session);
    end Read;
 
    procedure Write_U8 (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16; V : Byte) is
@@ -129,10 +131,10 @@ package body ESP32S3.W5500 is
    end Write_U8;
 
    function Read_U8 (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16) return Byte is
-      D : Byte_Array (0 .. 0);
+      Data : Byte_Array (0 .. 0);
    begin
-      Read (Dev, Blk, Addr, D);
-      return D (0);
+      Read (Dev, Blk, Addr, Data);
+      return Data (0);
    end Read_U8;
 
    procedure Write_U16
@@ -144,10 +146,10 @@ package body ESP32S3.W5500 is
    function Read_U16
      (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16) return Interfaces.Unsigned_16
    is
-      D : Byte_Array (0 .. 1);
+      Data : Byte_Array (0 .. 1);
    begin
-      Read (Dev, Blk, Addr, D);
-      return Shift_Left (Unsigned_16 (D (0)), 8) or Unsigned_16 (D (1));
+      Read (Dev, Blk, Addr, Data);
+      return Shift_Left (Unsigned_16 (Data (0)), 8) or Unsigned_16 (Data (1));
    end Read_U16;
 
    ---------------------------------------------------------------------------
@@ -227,17 +229,17 @@ package body ESP32S3.W5500 is
    end Configure;
 
    function Get_MAC (Dev : Device) return MAC_Address is
-      M : MAC_Address;
+      Mac : MAC_Address;
    begin
-      Read (Dev, Common_Regs, SHAR, M);
-      return M;
+      Read (Dev, Common_Regs, SHAR, Mac);
+      return Mac;
    end Get_MAC;
 
    function Get_IP (Dev : Device) return IPv4_Address is
-      I : IPv4_Address;
+      IP : IPv4_Address;
    begin
-      Read (Dev, Common_Regs, SIPR, I);
-      return I;
+      Read (Dev, Common_Regs, SIPR, IP);
+      return IP;
    end Get_IP;
 
    ---------------------------------------------------------------------------
@@ -245,12 +247,12 @@ package body ESP32S3.W5500 is
    ---------------------------------------------------------------------------
 
    function Phy (Dev : Device) return Phy_Status is
-      R : constant Byte := Read_U8 (Dev, Common_Regs, PHYCFGR);
+      Regs : constant Byte := Read_U8 (Dev, Common_Regs, PHYCFGR);   --  PHYCFGR value
    begin
       return
-        (Link   => (if (R and PHY_LNK) /= 0 then Up else Down),
-         Speed  => (if (R and PHY_SPD) /= 0 then Mbps_100 else Mbps_10),
-         Duplex => (if (R and PHY_DPX) /= 0 then Full else Half));
+        (Link   => (if (Regs and PHY_LNK) /= 0 then Up else Down),
+         Speed  => (if (Regs and PHY_SPD) /= 0 then Mbps_100 else Mbps_10),
+         Duplex => (if (Regs and PHY_DPX) /= 0 then Full else Half));
    end Phy;
 
    function Link (Dev : Device) return Link_State

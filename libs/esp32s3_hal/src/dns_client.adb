@@ -22,20 +22,20 @@ package body DNS_Client is
       From  : aliased Sock_Addr_Type;
 
       --  Decimal image of E with no leading blank ("84", not " 84").
-      function Img (E : Stream_Element) return String is
-         S : constant String := Integer'Image (Integer (E));
+      function Img (Element : Stream_Element) return String is
+         Image_Str : constant String := Integer'Image (Integer (Element));
       begin
-         return S (S'First + 1 .. S'Last);
+         return Image_Str (Image_Str'First + 1 .. Image_Str'Last);
       end Img;
 
       --  Build a standard recursive A-record query for Name into Query.
       procedure Build_Query is
-         P     : Stream_Element_Offset := Query'First;
+         Pos   : Stream_Element_Offset := Query'First;
          Start : Natural;
-         procedure B (V : Integer) is
+         procedure B (Value : Integer) is
          begin
-            Query (P) := Stream_Element (V);
-            P := P + 1;
+            Query (Pos) := Stream_Element (Value);
+            Pos := Pos + 1;
          end B;
       begin
          B (16#12#);
@@ -65,7 +65,7 @@ package body DNS_Client is
          B (1);                    --  QTYPE  = A
          B (0);
          B (1);                    --  QCLASS = IN
-         QLen := P - Query'First;
+         QLen := Pos - Query'First;
       end Build_Query;
 
       --  Advance Pos past a DNS name (labels, or a 0xC0 compression pointer).

@@ -68,7 +68,7 @@ package body ESP32S3.W5500.DHCP is
       Broadcast         : Boolean;
       Req_IP, Server_Id : IPv4_Address) return Natural
    is
-      P : Natural;
+      Pos : Natural;
    begin
       TX := (others => 0);
       TX (0) := 1;
@@ -82,32 +82,32 @@ package body ESP32S3.W5500.DHCP is
       TX (Off_Ciaddr .. Off_Ciaddr + 3) := Ciaddr;
       TX (Off_Chaddr .. Off_Chaddr + 5) := MAC;                  --  chaddr = MAC
       TX (Off_Cookie .. Off_Cookie + 3) := Cookie;               --  magic cookie
-      P := Off_Options;
-      TX (P) := Opt_Msg_Type;
-      TX (P + 1) := 1;
-      TX (P + 2) := Msg;
-      P := P + 3;
+      Pos := Off_Options;
+      TX (Pos) := Opt_Msg_Type;
+      TX (Pos + 1) := 1;
+      TX (Pos + 2) := Msg;
+      Pos := Pos + 3;
       if Req_IP /= Zero_IP then
-         TX (P) := Opt_Req_IP;
-         TX (P + 1) := 4;
-         TX (P + 2 .. P + 5) := Req_IP;
-         P := P + 6;
+         TX (Pos) := Opt_Req_IP;
+         TX (Pos + 1) := 4;
+         TX (Pos + 2 .. Pos + 5) := Req_IP;
+         Pos := Pos + 6;
       end if;
       if Server_Id /= Zero_IP then
-         TX (P) := Opt_Server_Id;
-         TX (P + 1) := 4;
-         TX (P + 2 .. P + 5) := Server_Id;
-         P := P + 6;
+         TX (Pos) := Opt_Server_Id;
+         TX (Pos + 1) := 4;
+         TX (Pos + 2 .. Pos + 5) := Server_Id;
+         Pos := Pos + 6;
       end if;
-      TX (P) := Opt_Param_List;
-      TX (P + 1) := 4;                 --  param request list
-      TX (P + 2) := Opt_Subnet;
-      TX (P + 3) := Opt_Router;
-      TX (P + 4) := Opt_DNS;
-      TX (P + 5) := Opt_Lease;
-      P := P + 6;
-      TX (P) := Opt_End;
-      return P + 1;
+      TX (Pos) := Opt_Param_List;
+      TX (Pos + 1) := 4;                 --  param request list
+      TX (Pos + 2) := Opt_Subnet;
+      TX (Pos + 3) := Opt_Router;
+      TX (Pos + 4) := Opt_DNS;
+      TX (Pos + 5) := Opt_Lease;
+      Pos := Pos + 6;
+      TX (Pos) := Opt_End;
+      return Pos + 1;
    end Build;
 
    --  Poll S for a reply of type Want until Deadline; parse its options into
@@ -119,18 +119,18 @@ package body ESP32S3.W5500.DHCP is
       Lease             : in out Lease_Info;
       Server_Id, Yiaddr : out IPv4_Address) return Boolean
    is
-      FA     : IPv4_Address;
-      FP     : WS.Port_Number;
-      Count  : Natural;
-      Rst    : WS.Status;
-      P, Len : Natural;
-      Code   : Byte;
-      Msg    : Byte;
+      From_Addr : IPv4_Address;
+      From_Port : WS.Port_Number;
+      Count     : Natural;
+      Recv_St   : WS.Status;
+      Pos, Len  : Natural;
+      Code      : Byte;
+      Msg       : Byte;
    begin
       Server_Id := Zero_IP;
       Yiaddr := Zero_IP;
       loop
-         WS.Receive_From (S, FA, FP, RX, Count, Rst);
+         WS.Receive_From (S, From_Addr, From_Port, RX, Count, Recv_St);
          Count := Natural'Min (Count, RX'Length);   --  never index past RX(299)
          --  Only trust a datagram that is a BOOTREPLY (op=2) for OUR exchange
          --  (matching xid) carrying the DHCP magic cookie; otherwise it is a
@@ -141,58 +141,58 @@ package body ESP32S3.W5500.DHCP is
            and then RX (Off_Cookie .. Off_Cookie + 3) = Cookie
          then
             Msg := 0;
-            P := Off_Options;
+            Pos := Off_Options;
             --  Walk the option block, never reading past the received bytes: a
             --  truncated header or a length that runs off the end ends the walk,
             --  and each fixed-width option is taken only when its Len delivers it.
-            while P <= Count - 1 loop
-               Code := RX (P);
+            while Pos <= Count - 1 loop
+               Code := RX (Pos);
                exit when Code = Opt_End;
                if Code = Opt_Pad then
-                  P := P + 1;
+                  Pos := Pos + 1;
                else
-                  exit when P + 1 > Count - 1;        --  length byte must exist
-                  Len := Natural (RX (P + 1));
-                  exit when P + 1 + Len > Count - 1;  --  whole option body must exist
+                  exit when Pos + 1 > Count - 1;        --  length byte must exist
+                  Len := Natural (RX (Pos + 1));
+                  exit when Pos + 1 + Len > Count - 1;  --  whole option body must exist
                   case Code is
                      when Opt_Msg_Type  =>
                         if Len >= 1 then
-                           Msg := RX (P + 2);
+                           Msg := RX (Pos + 2);
                         end if;
 
                      when Opt_Server_Id =>
                         if Len >= 4 then
-                           Server_Id := RX (P + 2 .. P + 5);
+                           Server_Id := RX (Pos + 2 .. Pos + 5);
                         end if;
 
                      when Opt_Subnet    =>
                         if Len >= 4 then
-                           Lease.Subnet := RX (P + 2 .. P + 5);
+                           Lease.Subnet := RX (Pos + 2 .. Pos + 5);
                         end if;
 
                      when Opt_Router    =>
                         if Len >= 4 then
-                           Lease.Gateway := RX (P + 2 .. P + 5);
+                           Lease.Gateway := RX (Pos + 2 .. Pos + 5);
                         end if;
 
                      when Opt_DNS       =>
                         if Len >= 4 then
-                           Lease.DNS := RX (P + 2 .. P + 5);
+                           Lease.DNS := RX (Pos + 2 .. Pos + 5);
                         end if;
 
                      when Opt_Lease     =>
                         if Len >= 4 then
                            Lease.Lease_Seconds :=
-                             Shift_Left (Unsigned_32 (RX (P + 2)), 24)
-                             or Shift_Left (Unsigned_32 (RX (P + 3)), 16)
-                             or Shift_Left (Unsigned_32 (RX (P + 4)), 8)
-                             or Unsigned_32 (RX (P + 5));
+                             Shift_Left (Unsigned_32 (RX (Pos + 2)), 24)
+                             or Shift_Left (Unsigned_32 (RX (Pos + 3)), 16)
+                             or Shift_Left (Unsigned_32 (RX (Pos + 4)), 8)
+                             or Unsigned_32 (RX (Pos + 5));
                         end if;
 
                      when others        =>
                         null;
                   end case;
-                  P := P + 2 + Len;
+                  Pos := Pos + 2 + Len;
                end if;
             end loop;
             if Msg = Want then
@@ -218,10 +218,10 @@ package body ESP32S3.W5500.DHCP is
       Lease  : out Lease_Info;
       Server : out IPv4_Address) return Boolean
    is
-      S            : WS.Socket;
-      St           : WS.Status;
-      TX_Len       : Natural;
-      Offered, SId : IPv4_Address;
+      S               : WS.Socket;
+      St              : WS.Status;
+      TX_Len          : Natural;
+      Offered, Srv_Id : IPv4_Address;
    begin
       Lease := (others => <>);
       Server := Zero_IP;
@@ -233,14 +233,14 @@ package body ESP32S3.W5500.DHCP is
       for Attempt in 1 .. Tries loop
          TX_Len := Build (Discover, MAC, Zero_IP, True, Zero_IP, Zero_IP);
          WS.Send_To (S, Bcast, Server_Port, TX (0 .. TX_Len - 1), St);
-         if St = WS.OK and then Wait_Reply (S, Offer, Clock + Seconds (2), Lease, SId, Offered)
+         if St = WS.OK and then Wait_Reply (S, Offer, Clock + Seconds (2), Lease, Srv_Id, Offered)
          then
-            TX_Len := Build (Request, MAC, Zero_IP, True, Offered, SId);
+            TX_Len := Build (Request, MAC, Zero_IP, True, Offered, Srv_Id);
             WS.Send_To (S, Bcast, Server_Port, TX (0 .. TX_Len - 1), St);
-            if St = WS.OK and then Wait_Reply (S, Ack, Clock + Seconds (2), Lease, SId, Offered)
+            if St = WS.OK and then Wait_Reply (S, Ack, Clock + Seconds (2), Lease, Srv_Id, Offered)
             then
                Lease.IP := Offered;
-               Server := SId;
+               Server := Srv_Id;
                WS.Close (S);
                Configure (Dev.all, MAC, Lease.IP, Lease.Subnet, Lease.Gateway);
                return True;
@@ -261,10 +261,10 @@ package body ESP32S3.W5500.DHCP is
       Server    : IPv4_Address;
       Lease     : in out Lease_Info) return Boolean
    is
-      S       : WS.Socket;
-      St      : WS.Status;
-      TX_Len  : Natural;
-      SId, Yi : IPv4_Address;
+      S                   : WS.Socket;
+      St                  : WS.Status;
+      TX_Len              : Natural;
+      Srv_Id, Assigned_IP : IPv4_Address;
    begin
       WS.Open_UDP (Dev, S, Socket, Client_Port, St);
       if St /= WS.OK then
@@ -276,9 +276,10 @@ package body ESP32S3.W5500.DHCP is
       else
          WS.Send_To (S, Server, Server_Port, TX (0 .. TX_Len - 1), St);
       end if;
-      if St = WS.OK and then Wait_Reply (S, Ack, Clock + Seconds (2), Lease, SId, Yi) then
-         if Yi /= Zero_IP then
-            Lease.IP := Yi;
+      if St = WS.OK and then Wait_Reply (S, Ack, Clock + Seconds (2), Lease, Srv_Id, Assigned_IP)
+      then
+         if Assigned_IP /= Zero_IP then
+            Lease.IP := Assigned_IP;
          end if;
          WS.Close (S);
          Configure (Dev.all, MAC, Lease.IP, Lease.Subnet, Lease.Gateway);
@@ -366,12 +367,12 @@ package body ESP32S3.W5500.DHCP is
          Bound_At := Clock;
          loop
             declare
-               L  : constant Natural :=
+               Lease_Secs : constant Natural :=
                  Natural
                    (Unsigned_32'Max (60, Unsigned_32'Min (M_Lease.Lease_Seconds, 1_000_000)));
-               T1 : constant Time := Bound_At + Seconds (L / 2);
-               T2 : constant Time := Bound_At + Seconds (L * 7 / 8);
-               Ex : constant Time := Bound_At + Seconds (L);
+               T1         : constant Time := Bound_At + Seconds (Lease_Secs / 2);
+               T2         : constant Time := Bound_At + Seconds (Lease_Secs * 7 / 8);
+               Expiry     : constant Time := Bound_At + Seconds (Lease_Secs);
             begin
                delay until T1;
                Renewed := Do_Renew (M_Dev, M_MAC, M_Socket, False, Server, M_Lease);
@@ -385,7 +386,7 @@ package body ESP32S3.W5500.DHCP is
                      M_Cb (M_Lease);
                   end if;
                else
-                  delay until Ex;
+                  delay until Expiry;
                   exit;                              --  expired -> re-acquire
                end if;
             end;
