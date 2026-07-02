@@ -73,8 +73,7 @@ package ESP32S3.TX1812 is
    procedure Show (S : in out Strip);
 
 private
-   Symbols_Per_LED : constant :=
-     24;                    --  24-bit GRB, 1 sym/bit
+   Symbols_Per_LED : constant := 24;                    --  24-bit GRB, 1 sym/bit
 
    type Pixel_Array is array (Positive range <>) of Color;
 
@@ -85,8 +84,7 @@ private
    type Frame_Array is array (Positive range <>) of LED_Symbols;
 
    type Strip (Count : Positive) is limited record
-      Chan   :
-        ESP32S3.RMT.TX_Channel;                 --  auto-released on final.
+      Chan   : ESP32S3.RMT.TX_Channel;                 --  auto-released on final.
       Pixels : Pixel_Array (1 .. Count) := (others => Off);
       Frame  : Frame_Array (1 .. Count);               --  pre-encoded, static
       Ready  : Boolean := False;

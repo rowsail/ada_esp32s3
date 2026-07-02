@@ -25,9 +25,9 @@
 --    so no external wire or pulse source is needed.
 with Ada.Real_Time; use Ada.Real_Time;
 
-with ESP32S3.PCNT;  use ESP32S3.PCNT;
+with ESP32S3.PCNT; use ESP32S3.PCNT;
 with ESP32S3.GPIO;
-with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3.Log;  use ESP32S3.Log;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -116,7 +116,7 @@ begin
       end loop;
 
       Counted := Count (Counter);
-      Ok      := (Counted = Pulse_Count);
+      Ok := (Counted = Pulse_Count);
       Result (Pulse_Count, Counted, Ok);
    end;                                  --  Counter finalizes -> paused, released
 
@@ -131,8 +131,8 @@ begin
          Claim (U1, 1);
          Claim (U2, 2);
          Claim (U3, 3);
-         Four := Is_Valid (U0) and then Is_Valid (U1)
-                   and then Is_Valid (U2) and then Is_Valid (U3);
+         Four :=
+           Is_Valid (U0) and then Is_Valid (U1) and then Is_Valid (U2) and then Is_Valid (U3);
          Claim (Extra, 0);
          Fifth_Rejected := not Is_Valid (Extra);
       end;
@@ -144,8 +144,7 @@ begin
          Reclaimed := Is_Valid (U);
       end;
 
-      Raii_Result (Four, Fifth_Rejected, Reclaimed,
-                   Four and Fifth_Rejected and Reclaimed);
+      Raii_Result (Four, Fifth_Rejected, Reclaimed, Four and Fifth_Rejected and Reclaimed);
    end;
 
    Done;

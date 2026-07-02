@@ -12,7 +12,7 @@
 with ESP32S3.GPIO;
 with ESP32S3.SPI;
 with ESP32S3.HC595;
-with ESP32S3.Log;  use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -35,11 +35,9 @@ begin
    --  Bring the shared SPI2 bus up and route its lines (no MISO -- write-only).
    ESP32S3.SPI.Setup (ESP32S3.SPI.SPI2);
    ESP32S3.SPI.Configure_Pins
-     (ESP32S3.SPI.SPI2,
-      Sclk => Sclk_Pin, Mosi => Mosi_Pin, Miso => ESP32S3.GPIO.No_Pin);
+     (ESP32S3.SPI.SPI2, Sclk => Sclk_Pin, Mosi => Mosi_Pin, Miso => ESP32S3.GPIO.No_Pin);
 
-   ESP32S3.HC595.Initialize
-     (SR, Host => ESP32S3.SPI.SPI2, RCLK => RCLK_Pin, OE => OE_Pin);
+   ESP32S3.HC595.Initialize (SR, Host => ESP32S3.SPI.SPI2, RCLK => RCLK_Pin, OE => OE_Pin);
 
    N := ESP32S3.HC595.Output_Count (SR);
    Put (N, 0);

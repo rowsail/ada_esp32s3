@@ -36,17 +36,13 @@ package body Modbus.Master is
    begin
       Create_Socket (S.Sock);
       if Configure /= null then
-         Configure
-           (S.Sock);                          --  e.g. pin to an interface
+         Configure (S.Sock);                          --  e.g. pin to an interface
 
       end if;
-      Set_Socket_Option
-        (S.Sock, Socket_Level, (Name => Receive_Timeout, Timeout => Timeout));
+      Set_Socket_Option (S.Sock, Socket_Level, (Name => Receive_Timeout, Timeout => Timeout));
       --  Named components: real GNAT.Sockets orders Sock_Addr_Type differently
       --  from our facade, so a positional aggregate would not be portable.
-      Connect_Socket
-        (S.Sock,
-         (Family => Family_Inet, Addr => Inet_Addr (Host), Port => Port));
+      Connect_Socket (S.Sock, (Family => Family_Inet, Addr => Inet_Addr (Host), Port => Port));
       S.Open := True;
       S.TID := 0;
       Result := OK;
@@ -90,16 +86,12 @@ package body Modbus.Master is
    type Recv_Result is (Recv_OK, Recv_Timeout, Recv_Closed);
 
    --  Read exactly Count bytes into S.Buf starting at Offset.
-   function Recv_Exact
-     (S : in out Session; Offset, Count : Natural) return Recv_Result
-   is
+   function Recv_Exact (S : in out Session; Offset, Count : Natural) return Recv_Result is
       Got : Natural := 0;
    begin
       while Got < Count loop
          declare
-            Chunk :
-              Stream_Element_Array
-                (0 .. Stream_Element_Offset (Count - Got) - 1);
+            Chunk : Stream_Element_Array (0 .. Stream_Element_Offset (Count - Got) - 1);
             Last  : Stream_Element_Offset;
          begin
             begin
@@ -243,8 +235,7 @@ package body Modbus.Master is
          return;
       end if;
       for I in 0 .. Qty - 1 loop
-         Into (Into'First + I) :=
-           (S.Buf (9 + I / 8) and Byte (2**(I mod 8))) /= 0;
+         Into (Into'First + I) := (S.Buf (9 + I / 8) and Byte (2**(I mod 8))) /= 0;
       end loop;
    end Read_Bits;
 
@@ -299,8 +290,7 @@ package body Modbus.Master is
       Result : out Status;
       Exc    : out Exception_Code) is
    begin
-      Read_Bits
-        (S, FC_Read_Discrete_Inputs, Unit, Addr, Qty, Into, Result, Exc);
+      Read_Bits (S, FC_Read_Discrete_Inputs, Unit, Addr, Qty, Into, Result, Exc);
    end Read_Discrete_Inputs;
 
    procedure Read_Holding_Registers
@@ -312,8 +302,7 @@ package body Modbus.Master is
       Result : out Status;
       Exc    : out Exception_Code) is
    begin
-      Read_Regs
-        (S, FC_Read_Holding_Registers, Unit, Addr, Qty, Into, Result, Exc);
+      Read_Regs (S, FC_Read_Holding_Registers, Unit, Addr, Qty, Into, Result, Exc);
    end Read_Holding_Registers;
 
    procedure Read_Input_Registers
@@ -325,8 +314,7 @@ package body Modbus.Master is
       Result : out Status;
       Exc    : out Exception_Code) is
    begin
-      Read_Regs
-        (S, FC_Read_Input_Registers, Unit, Addr, Qty, Into, Result, Exc);
+      Read_Regs (S, FC_Read_Input_Registers, Unit, Addr, Qty, Into, Result, Exc);
    end Read_Input_Registers;
 
    ---------------------------------------------------------------------------
@@ -411,8 +399,7 @@ package body Modbus.Master is
       for I in 0 .. Qty - 1 loop
          Put_U16 (S.Buf, 13 + 2 * I, Values (Values'First + I));
       end loop;
-      Transact
-        (S, Unit, 6 + Bc, FC_Write_Multiple_Registers, RLen, Result, Exc);
+      Transact (S, Unit, 6 + Bc, FC_Write_Multiple_Registers, RLen, Result, Exc);
    end Write_Multiple_Registers;
 
 end Modbus.Master;

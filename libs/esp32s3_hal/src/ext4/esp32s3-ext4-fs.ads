@@ -32,29 +32,21 @@ package ESP32S3.Ext4.FS is
 
    --  Read up to Into'Length bytes of file I from byte Offset; Last = count read.
    procedure Read_File
-     (M      : in out Mount;
-      I      : Inode.Info;
-      Offset : U64;
-      Into   : out Byte_Array;
-      Last   : out Natural);
+     (M : in out Mount; I : Inode.Info; Offset : U64; Into : out Byte_Array; Last : out Natural);
 
    --  Iterate directory I's entries.
    procedure Iterate
      (M     : in out Mount;
       I     : Inode.Info;
-      Visit :
-        not null access procedure
-          (Name : String; Ino : Inode_Number; File_Type : U8));
+      Visit : not null access procedure (Name : String; Ino : Inode_Number; File_Type : U8));
 
    --  Create a regular file Name in directory Dir_Path; return its inode number.
    --  (Requires a writable, non-metadata_csum volume.)
-   function Create_File
-     (M : in out Mount; Dir_Path, Name : String) return Inode_Number;
+   function Create_File (M : in out Mount; Dir_Path, Name : String) return Inode_Number;
 
    --  Set the entire contents of (empty) file inode N from one in-memory buffer
    --  (up to ~4 MiB at 4 KiB blocks: 12 direct + one single-indirect block).
-   procedure Write_File
-     (M : in out Mount; N : Inode_Number; Data : Byte_Array);
+   procedure Write_File (M : in out Mount; N : Inode_Number; Data : Byte_Array);
 
    --  Append Data to the end of regular file inode N.  Streaming: call it
    --  repeatedly with small chunks to grow a file WITHOUT holding the whole
@@ -68,8 +60,7 @@ package ESP32S3.Ext4.FS is
    procedure Rmdir (M : in out Mount; Dir_Path, Name : String);
 
    --  Rename Old_Name in Old_Dir to New_Name in New_Dir.
-   procedure Rename
-     (M : in out Mount; Old_Dir, Old_Name, New_Dir, New_Name : String);
+   procedure Rename (M : in out Mount; Old_Dir, Old_Name, New_Dir, New_Name : String);
 
    --  Truncate file inode N to New_Size; hard-link an existing file.
    procedure Truncate (M : in out Mount; N : Inode_Number; New_Size : U64);
@@ -98,8 +89,7 @@ package ESP32S3.Ext4.FS is
 
    --  Physical block holding logical block L_Block of file I (0 => hole).
    --  (Exposed mainly for tests.)
-   function Map_Block
-     (M : in out Mount; I : Inode.Info; L_Block : U64) return Block_Number;
+   function Map_Block (M : in out Mount; I : Inode.Info; L_Block : U64) return Block_Number;
 
    --  Write one committed journal transaction logging New_Data for Targets and
    --  set the RECOVER flag (does not checkpoint).  Exposed for the crash-safety

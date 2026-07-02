@@ -10,16 +10,12 @@ package body ESP32S3.I2S.Engine is
    package GD renames ESP32S3.GDMA;            --  the DMA engine we consume
    package GR renames ESP32S3_Registers.GPIO;  --  GPIO matrix register layer
 
-   Src_Hz : constant :=
-     160_000_000;           --  CLK160 (PLL) I2S source clock
+   Src_Hz : constant := 160_000_000;           --  CLK160 (PLL) I2S source clock
 
    --  I2S1 register block overlaid with the I2S0 layout (the two svd peripheral
    --  types are distinct but bit-identical), so one Periph_Ref drives either.
    I2S1_As0 : aliased ESP32S3_Registers.I2S.I2S0_Peripheral
-   with
-     Import,
-     Volatile,
-     Address => ESP32S3_Registers.I2S1.I2S1_Periph'Address;
+   with Import, Volatile, Address => ESP32S3_Registers.I2S1.I2S1_Periph'Address;
 
    function Regs_Of (Port : I2S_Port) return Periph_Ref
    is (case Port is
@@ -70,8 +66,7 @@ package body ESP32S3.I2S.Engine is
 
    procedure Drive_Out (Pad : ESP32S3.GPIO.Pin_Id; Signal : Natural) is
       Ix : constant Natural := Natural (Pad);
-      O  : GR.FUNC_OUT_SEL_CFG_Register :=
-        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
+      O  : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
    begin
       ESP32S3.GPIO.Configure
         (Pad, Mode => ESP32S3.GPIO.Output, Drive => ESP32S3.GPIO.Drive_Strong);
@@ -79,16 +74,13 @@ package body ESP32S3.I2S.Engine is
       GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix) := O;
    end Drive_Out;
 
-   procedure Route_In
-     (Signal : Natural; Pad : ESP32S3.GPIO.Pin_Id; As_Input : Boolean) is
+   procedure Route_In (Signal : Natural; Pad : ESP32S3.GPIO.Pin_Id; As_Input : Boolean) is
    begin
       if As_Input then
          ESP32S3.GPIO.Configure (Pad, Mode => ESP32S3.GPIO.Input);
       end if;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Signal) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Natural (Pad)),
-         SEL    => True,
-         others => <>);
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Natural (Pad)), SEL => True, others => <>);
    end Route_In;
 
    ----------
@@ -96,11 +88,7 @@ package body ESP32S3.I2S.Engine is
    ----------
 
    procedure Open
-     (B           : in out Bus;
-      Port        : I2S_Port;
-      Sample_Rate : Positive;
-      Bits        : Sample_Bits;
-      Mode        : I2S_Mode)
+     (B : in out Bus; Port : I2S_Port; Sample_Rate : Positive; Bits : Sample_Bits; Mode : I2S_Mode)
    is
       use ESP32S3_Registers.SYSTEM;
       R      : constant Periph_Ref := Regs_Of (Port);
@@ -112,12 +100,10 @@ package body ESP32S3.I2S.Engine is
       --  960/480) and the RX decimator (DSR = 128); locked to one shared clock,
       --  TX up and RX down net to unity.
       Frame  : constant Natural := (if Is_PDM then 128 else DB * 2);
-      Bclk   : constant Natural :=
-        Sample_Rate * Frame;        --  serial bit clock
+      Bclk   : constant Natural := Sample_Rate * Frame;        --  serial bit clock
       M      : constant Natural := 8;                          --  BCK divider
       N      : constant Natural :=                             --  CLKM divider
-        Natural'Max
-             (2, Natural'Min (255, (Src_Hz + (Bclk * M) / 2) / (Bclk * M)));
+        Natural'Max (2, Natural'Min (255, (Src_Hz + (Bclk * M) / 2) / (Bclk * M)));
    begin
       --  Re-opening a port that is mid-continuous-transmit (Reconfigure while
       --  streaming) must first halt TX and release its held GDMA channel -- the
@@ -186,10 +172,7 @@ package body ESP32S3.I2S.Engine is
 
       --  Two TDM slots, both active.
       R.TX_TDM_CTRL :=
-        (TX_TDM_TOT_CHAN_NUM => 1,
-         TX_TDM_CHAN0_EN     => True,
-         TX_TDM_CHAN1_EN     => True,
-         others              => <>);
+        (TX_TDM_TOT_CHAN_NUM => 1, TX_TDM_CHAN0_EN => True, TX_TDM_CHAN1_EN => True, others => <>);
       R.RX_TDM_CTRL :=
         (RX_TDM_TOT_CHAN_NUM => 1,
          RX_TDM_PDM_CHAN0_EN => True,
@@ -296,8 +279,7 @@ package body ESP32S3.I2S.Engine is
          return;
       end if;
       if Mclk /= No_Pin and then S.Mck_Out /= 0 then
-         Drive_Out
-           (ESP32S3.GPIO.Pin_Id (Mclk), S.Mck_Out);   --  master clock out
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Mclk), S.Mck_Out);   --  master clock out
 
       end if;
       if Bclk /= No_Pin then
@@ -336,12 +318,7 @@ package body ESP32S3.I2S.Engine is
 
    --  Shared TX/RX engine.  Arms whichever directions are requested, kicks the
    --  module, and blocks on the DMA EOF (RX if reading, else TX).
-   procedure Run
-     (B            : Bus;
-      Tx, Rx       : System.Address;
-      Length       : Natural;
-      Do_Tx, Do_Rx : Boolean)
-   is
+   procedure Run (B : Bus; Tx, Rx : System.Address; Length : Natural; Do_Tx, Do_Rx : Boolean) is
       R    : constant Periph_Ref := B.Regs;
       Chan : GD.Channel;          --  claimed transiently; released on return
    begin
@@ -423,16 +400,10 @@ package body ESP32S3.I2S.Engine is
    -- Start_Continuous --
    ----------------------
 
-   procedure Start_Continuous
-     (B : in out Bus; Tx : System.Address; Length : Natural)
-   is
+   procedure Start_Continuous (B : in out Bus; Tx : System.Address; Length : Natural) is
       R : constant Periph_Ref := B.Regs;
    begin
-      if not B.Valid
-        or else B.Streaming
-        or else Length = 0
-        or else Length > 4095
-      then
+      if not B.Valid or else B.Streaming or else Length = 0 or else Length > 4095 then
          return;
       end if;
 
@@ -468,8 +439,7 @@ package body ESP32S3.I2S.Engine is
       if B.Valid then
          B.Regs.TX_CONF.TX_START := False;
          if B.Streaming then
-            GD.Release
-              (B.Chan);          --  return the held channel to the pool
+            GD.Release (B.Chan);          --  return the held channel to the pool
             B.Streaming := False;
          end if;
       end if;
@@ -517,8 +487,7 @@ package body ESP32S3.I2S.Engine is
       declare
          Guard : Natural := 0;
       begin
-         while not GD.Done (Chan, GD.Periph_To_Mem) and then Guard < 50_000_000
-         loop
+         while not GD.Done (Chan, GD.Periph_To_Mem) and then Guard < 50_000_000 loop
             Guard := Guard + 1;
          end loop;
       end;

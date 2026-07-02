@@ -37,10 +37,8 @@ package body ESP32S3.SIMD.I16 is
       end if;
    end Sat_I32;
 
-   function Arith_Shr (V : Long_Long_Integer; Amount : Shift_I16)
-      return Long_Long_Integer
-   is
-      D : constant Long_Long_Integer := Long_Long_Integer'(2 ** Amount);
+   function Arith_Shr (V : Long_Long_Integer; Amount : Shift_I16) return Long_Long_Integer is
+      D : constant Long_Long_Integer := Long_Long_Integer'(2**Amount);
    begin
       if Amount = 0 then
          return V;
@@ -68,43 +66,71 @@ package body ESP32S3.SIMD.I16 is
 
       Asm
         (Template =>
-           "extui   %4, %3, 0, 3" & ASCII.LF &
-           "srli    %3, %3, 3" & ASCII.LF &
-           "beqz    %3, .Ladd_i16_tail_start_%=" & ASCII.LF &
-           "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Ladd_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Ladd_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip         q1, %1, 16" & ASCII.LF &
-           "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip         q1, %1, 16" & ASCII.LF &
-           "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip         q1, %1, 16" & ASCII.LF &
-           "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip         q1, %1, 16" & ASCII.LF &
-           "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %2, 16" & ASCII.LF &
-           ".Ladd_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Ladd_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Ladd_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip         q1, %1, 16" & ASCII.LF &
-           "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %2, 16" & ASCII.LF &
-           ".Ladd_i16_simd_loop_%=:" & ASCII.LF &
-           "addi    %0, %0, -16" & ASCII.LF &
-           ".Ladd_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %4, %3, 0, 3"
+           & ASCII.LF
+           & "srli    %3, %3, 3"
+           & ASCII.LF
+           & "beqz    %3, .Ladd_i16_tail_start_%="
+           & ASCII.LF
+           & "ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Ladd_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Ladd_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip         q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip         q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip         q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip         q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %2, 16"
+           & ASCII.LF
+           & ".Ladd_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Ladd_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Ladd_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip         q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %2, 16"
+           & ASCII.LF
+           & ".Ladd_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi    %0, %0, -16"
+           & ASCII.LF
+           & ".Ladd_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
 
       I := A'Length - Natural (Tail);
@@ -116,8 +142,7 @@ package body ESP32S3.SIMD.I16 is
       end loop;
    end Add;
 
-   procedure Add_Scalar
-     (A : SIMD_I16_Vector; Scalar : Integer_16; Result : in out SIMD_I16_Vector)
+   procedure Add_Scalar (A : SIMD_I16_Vector; Scalar : Integer_16; Result : in out SIMD_I16_Vector)
    is
       A_Ptr : Address := First_Address (A);
       R_Ptr : Address := First_Address (Result);
@@ -132,44 +157,67 @@ package body ESP32S3.SIMD.I16 is
 
       Asm
         (Template =>
-           "extui   %3, %2, 0, 3" & ASCII.LF &
-           "srli    %2, %2, 3" & ASCII.LF &
-           "beqz    %2, .Ladds_i16_tail_start_%=" & ASCII.LF &
-           "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "ee.vldbc.16.ip q1, %4, 0" & ASCII.LF &
-           "extui   a14, %2, 0, 2" & ASCII.LF &
-           "srli    %2, %2, 2" & ASCII.LF &
-           "beqz    %2, .Ladds_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %2, .Ladds_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %1, 16" & ASCII.LF &
-           "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %1, 16" & ASCII.LF &
-           "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %1, 16" & ASCII.LF &
-           "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %1, 16" & ASCII.LF &
-           ".Ladds_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Ladds_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Ladds_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %1, 16" & ASCII.LF &
-           ".Ladds_i16_simd_loop_%=:" & ASCII.LF &
-           "addi    %0, %0, -16" & ASCII.LF &
-           ".Ladds_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %3, %2, 0, 3"
+           & ASCII.LF
+           & "srli    %2, %2, 3"
+           & ASCII.LF
+           & "beqz    %2, .Ladds_i16_tail_start_%="
+           & ASCII.LF
+           & "ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "ee.vldbc.16.ip q1, %4, 0"
+           & ASCII.LF
+           & "extui   a14, %2, 0, 2"
+           & ASCII.LF
+           & "srli    %2, %2, 2"
+           & ASCII.LF
+           & "beqz    %2, .Ladds_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %2, .Ladds_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %1, 16"
+           & ASCII.LF
+           & ".Ladds_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Ladds_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Ladds_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vadds.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %1, 16"
+           & ASCII.LF
+           & ".Ladds_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi    %0, %0, -16"
+           & ASCII.LF
+           & ".Ladds_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => (Address'Asm_Input ("r", S'Address)),
-         Clobber => "a14,memory",
+         Inputs   => (Address'Asm_Input ("r", S'Address)),
+         Clobber  => "a14,memory",
          Volatile => True);
 
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
-         Result (Result'First + I) :=
-           Sat_I16 (Integer (A (A'First + I)) + Integer (Scalar));
+         Result (Result'First + I) := Sat_I16 (Integer (A (A'First + I)) + Integer (Scalar));
          I := I + 1;
          Tail := Tail - 1;
       end loop;
@@ -189,43 +237,71 @@ package body ESP32S3.SIMD.I16 is
 
       Asm
         (Template =>
-           "extui   %4, %3, 0, 3" & ASCII.LF &
-           "srli    %3, %3, 3" & ASCII.LF &
-           "beqz    %3, .Lsub_i16_tail_start_%=" & ASCII.LF &
-           "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Lsub_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Lsub_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip         q1, %1, 16" & ASCII.LF &
-           "  ee.vsubs.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip         q1, %1, 16" & ASCII.LF &
-           "  ee.vsubs.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip         q1, %1, 16" & ASCII.LF &
-           "  ee.vsubs.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip         q1, %1, 16" & ASCII.LF &
-           "  ee.vsubs.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %2, 16" & ASCII.LF &
-           ".Lsub_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lsub_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lsub_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip         q1, %1, 16" & ASCII.LF &
-           "  ee.vsubs.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip         q4, %2, 16" & ASCII.LF &
-           ".Lsub_i16_simd_loop_%=:" & ASCII.LF &
-           "addi    %0, %0, -16" & ASCII.LF &
-           ".Lsub_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %4, %3, 0, 3"
+           & ASCII.LF
+           & "srli    %3, %3, 3"
+           & ASCII.LF
+           & "beqz    %3, .Lsub_i16_tail_start_%="
+           & ASCII.LF
+           & "ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Lsub_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Lsub_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip         q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vsubs.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip         q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vsubs.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip         q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vsubs.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip         q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vsubs.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %2, 16"
+           & ASCII.LF
+           & ".Lsub_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lsub_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lsub_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip         q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vsubs.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip         q4, %2, 16"
+           & ASCII.LF
+           & ".Lsub_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi    %0, %0, -16"
+           & ASCII.LF
+           & ".Lsub_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
 
       I := A'Length - Natural (Tail);
@@ -237,9 +313,7 @@ package body ESP32S3.SIMD.I16 is
       end loop;
    end Sub;
 
-   procedure Mul_Shift
-       (A, B : SIMD_I16_Vector; Result : in out SIMD_I16_Vector;
-         Shift : Shift_I16)
+   procedure Mul_Shift (A, B : SIMD_I16_Vector; Result : in out SIMD_I16_Vector; Shift : Shift_I16)
    is
       A_Ptr : Address := First_Address (A);
       B_Ptr : Address := First_Address (B);
@@ -256,45 +330,74 @@ package body ESP32S3.SIMD.I16 is
 
       Asm
         (Template =>
-           "extui   %5, %3, 0, 3" & ASCII.LF &
-           "srli    %3, %3, 3" & ASCII.LF &
-           "wsr     %4, sar" & ASCII.LF &
-           "beqz    %3, .Lmulsh_i16_tail_start_%=" & ASCII.LF &
-           "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Lmulsh_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Lmulsh_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip        q1, %1, 16" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip        q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip        q1, %1, 16" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip        q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip        q1, %1, 16" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip        q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip        q1, %1, 16" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip        q4, %2, 16" & ASCII.LF &
-           ".Lmulsh_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lmulsh_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lmulsh_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip        q1, %1, 16" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip        q4, %2, 16" & ASCII.LF &
-           ".Lmulsh_i16_simd_loop_%=:" & ASCII.LF &
-           "addi    %0, %0, -16" & ASCII.LF &
-           ".Lmulsh_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %5, %3, 0, 3"
+           & ASCII.LF
+           & "srli    %3, %3, 3"
+           & ASCII.LF
+           & "wsr     %4, sar"
+           & ASCII.LF
+           & "beqz    %3, .Lmulsh_i16_tail_start_%="
+           & ASCII.LF
+           & "ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Lmulsh_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Lmulsh_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip        q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip        q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip        q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip        q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip        q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip        q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip        q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip        q4, %2, 16"
+           & ASCII.LF
+           & ".Lmulsh_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lmulsh_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lmulsh_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip        q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip        q4, %2, 16"
+           & ASCII.LF
+           & ".Lmulsh_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi    %0, %0, -16"
+           & ASCII.LF
+           & ".Lmulsh_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             unsigned'Asm_Output ("+r", Sh),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
 
       I := A'Length - Natural (Tail);
@@ -307,8 +410,7 @@ package body ESP32S3.SIMD.I16 is
    end Mul_Shift;
 
    procedure Mul_Scalar
-     (A : SIMD_I16_Vector; Scalar : Integer_16; Result : in out SIMD_I16_Vector;
-         Shift : Shift_I16)
+     (A : SIMD_I16_Vector; Scalar : Integer_16; Result : in out SIMD_I16_Vector; Shift : Shift_I16)
    is
       A_Ptr : Address := First_Address (A);
       R_Ptr : Address := First_Address (Result);
@@ -325,40 +427,65 @@ package body ESP32S3.SIMD.I16 is
 
       Asm
         (Template =>
-           "extui   %4, %2, 0, 3" & ASCII.LF &
-           "srli    %2, %2, 3" & ASCII.LF &
-           "wsr     %3, sar" & ASCII.LF &
-           "beqz    %2, .Lmuls_i16_tail_start_%=" & ASCII.LF &
-           "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "ee.vldbc.16.ip q1, %5, 0" & ASCII.LF &
-           "extui   a14, %2, 0, 2" & ASCII.LF &
-           "srli    %2, %2, 2" & ASCII.LF &
-           "beqz    %2, .Lmuls_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %2, .Lmuls_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip        q4, %1, 16" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip        q4, %1, 16" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip        q4, %1, 16" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip        q4, %1, 16" & ASCII.LF &
-           ".Lmuls_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lmuls_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lmuls_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip        q4, %1, 16" & ASCII.LF &
-           ".Lmuls_i16_simd_loop_%=:" & ASCII.LF &
-           "addi    %0, %0, -16" & ASCII.LF &
-           ".Lmuls_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %4, %2, 0, 3"
+           & ASCII.LF
+           & "srli    %2, %2, 3"
+           & ASCII.LF
+           & "wsr     %3, sar"
+           & ASCII.LF
+           & "beqz    %2, .Lmuls_i16_tail_start_%="
+           & ASCII.LF
+           & "ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "ee.vldbc.16.ip q1, %5, 0"
+           & ASCII.LF
+           & "extui   a14, %2, 0, 2"
+           & ASCII.LF
+           & "srli    %2, %2, 2"
+           & ASCII.LF
+           & "beqz    %2, .Lmuls_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %2, .Lmuls_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip        q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip        q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip        q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip        q4, %1, 16"
+           & ASCII.LF
+           & ".Lmuls_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lmuls_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lmuls_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp  q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip        q4, %1, 16"
+           & ASCII.LF
+           & ".Lmuls_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi    %0, %0, -16"
+           & ASCII.LF
+           & ".Lmuls_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             unsigned'Asm_Output ("+r", Sh),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => (Address'Asm_Input ("r", S'Address)),
-         Clobber => "a14,memory",
+         Inputs   => (Address'Asm_Input ("r", S'Address)),
+         Clobber  => "a14,memory",
          Volatile => True);
 
       I := A'Length - Natural (Tail);
@@ -384,73 +511,127 @@ package body ESP32S3.SIMD.I16 is
 
       Asm
         (Template =>
-           "extui   %4, %3, 0, 3" & ASCII.LF &
-           "srli    %3, %3, 3" & ASCII.LF &
-           "beqz    %3, .Lmulw_i16_tail_start_%=" & ASCII.LF &
-           "ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Lmulw_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Lmulw_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ssai 16" & ASCII.LF &
-           "  ee.vmul.s16 q2, q0, q1" & ASCII.LF &
-           "  ssai 0" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp q1, %1, q3, q0, q1" & ASCII.LF &
-           "  ee.vzip.16 q3, q2" & ASCII.LF &
-           "  ee.vst.128.ip q3, %2, 16" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ssai 16" & ASCII.LF &
-           "  ee.vmul.s16 q2, q0, q1" & ASCII.LF &
-           "  ssai 0" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp q1, %1, q3, q0, q1" & ASCII.LF &
-           "  ee.vzip.16 q3, q2" & ASCII.LF &
-           "  ee.vst.128.ip q3, %2, 16" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ssai 16" & ASCII.LF &
-           "  ee.vmul.s16 q2, q0, q1" & ASCII.LF &
-           "  ssai 0" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp q1, %1, q3, q0, q1" & ASCII.LF &
-           "  ee.vzip.16 q3, q2" & ASCII.LF &
-           "  ee.vst.128.ip q3, %2, 16" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ssai 16" & ASCII.LF &
-           "  ee.vmul.s16 q2, q0, q1" & ASCII.LF &
-           "  ssai 0" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp q1, %1, q3, q0, q1" & ASCII.LF &
-           "  ee.vzip.16 q3, q2" & ASCII.LF &
-           "  ee.vst.128.ip q3, %2, 16" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           ".Lmulw_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lmulw_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lmulw_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ssai 16" & ASCII.LF &
-           "  ee.vmul.s16 q2, q0, q1" & ASCII.LF &
-           "  ssai 0" & ASCII.LF &
-           "  ee.vmul.s16.ld.incp q1, %1, q3, q0, q1" & ASCII.LF &
-           "  ee.vzip.16 q3, q2" & ASCII.LF &
-           "  ee.vst.128.ip q3, %2, 16" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           ".Lmulw_i16_simd_loop_%=:" & ASCII.LF &
-           "addi    %1, %1, -16" & ASCII.LF &
-           ".Lmulw_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %4, %3, 0, 3"
+           & ASCII.LF
+           & "srli    %3, %3, 3"
+           & ASCII.LF
+           & "beqz    %3, .Lmulw_i16_tail_start_%="
+           & ASCII.LF
+           & "ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Lmulw_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Lmulw_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ssai 16"
+           & ASCII.LF
+           & "  ee.vmul.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ssai 0"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp q1, %1, q3, q0, q1"
+           & ASCII.LF
+           & "  ee.vzip.16 q3, q2"
+           & ASCII.LF
+           & "  ee.vst.128.ip q3, %2, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ssai 16"
+           & ASCII.LF
+           & "  ee.vmul.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ssai 0"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp q1, %1, q3, q0, q1"
+           & ASCII.LF
+           & "  ee.vzip.16 q3, q2"
+           & ASCII.LF
+           & "  ee.vst.128.ip q3, %2, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ssai 16"
+           & ASCII.LF
+           & "  ee.vmul.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ssai 0"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp q1, %1, q3, q0, q1"
+           & ASCII.LF
+           & "  ee.vzip.16 q3, q2"
+           & ASCII.LF
+           & "  ee.vst.128.ip q3, %2, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ssai 16"
+           & ASCII.LF
+           & "  ee.vmul.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ssai 0"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp q1, %1, q3, q0, q1"
+           & ASCII.LF
+           & "  ee.vzip.16 q3, q2"
+           & ASCII.LF
+           & "  ee.vst.128.ip q3, %2, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & ".Lmulw_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lmulw_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lmulw_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ssai 16"
+           & ASCII.LF
+           & "  ee.vmul.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ssai 0"
+           & ASCII.LF
+           & "  ee.vmul.s16.ld.incp q1, %1, q3, q0, q1"
+           & ASCII.LF
+           & "  ee.vzip.16 q3, q2"
+           & ASCII.LF
+           & "  ee.vst.128.ip q3, %2, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & ".Lmulw_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi    %1, %1, -16"
+           & ASCII.LF
+           & ".Lmulw_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
 
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
-         Result (Result'First + I) := Sat_I32 (Long_Long_Integer (A (A'First + I)) * Long_Long_Integer (B (B'First + I)));
+         Result (Result'First + I) :=
+           Sat_I32 (Long_Long_Integer (A (A'First + I)) * Long_Long_Integer (B (B'First + I)));
          I := I + 1;
          Tail := Tail - 1;
       end loop;
@@ -469,45 +650,76 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui   %3, %2, 0, 3" & ASCII.LF &
-           "srli    %2, %2, 3" & ASCII.LF &
-           "beqz    %2, .Lneg_i16_tail_start_%=" & ASCII.LF &
-           "ssai 0" & ASCII.LF &
-           "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "ee.vcmp.eq.s16 q1, q1, q1" & ASCII.LF &
-           "ee.vldbc.16.ip q2, %4, 0" & ASCII.LF &
-           "extui   a14, %2, 0, 2" & ASCII.LF &
-           "srli    %2, %2, 2" & ASCII.LF &
-           "beqz    %2, .Lneg_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %2, .Lneg_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2" & ASCII.LF &
-           "  ee.vmul.s16 q3, q4, q1" & ASCII.LF &
-           "  ee.vst.128.ip q3, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2" & ASCII.LF &
-           "  ee.vmul.s16 q3, q4, q1" & ASCII.LF &
-           "  ee.vst.128.ip q3, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2" & ASCII.LF &
-           "  ee.vmul.s16 q3, q4, q1" & ASCII.LF &
-           "  ee.vst.128.ip q3, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2" & ASCII.LF &
-           "  ee.vmul.s16 q3, q4, q1" & ASCII.LF &
-           "  ee.vst.128.ip q3, %1, 16" & ASCII.LF &
-           ".Lneg_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lneg_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lneg_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2" & ASCII.LF &
-           "  ee.vmul.s16 q3, q4, q1" & ASCII.LF &
-           "  ee.vst.128.ip q3, %1, 16" & ASCII.LF &
-           ".Lneg_i16_simd_loop_%=:" & ASCII.LF &
-           "addi    %0, %0, -16" & ASCII.LF &
-           ".Lneg_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %3, %2, 0, 3"
+           & ASCII.LF
+           & "srli    %2, %2, 3"
+           & ASCII.LF
+           & "beqz    %2, .Lneg_i16_tail_start_%="
+           & ASCII.LF
+           & "ssai 0"
+           & ASCII.LF
+           & "ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "ee.vcmp.eq.s16 q1, q1, q1"
+           & ASCII.LF
+           & "ee.vldbc.16.ip q2, %4, 0"
+           & ASCII.LF
+           & "extui   a14, %2, 0, 2"
+           & ASCII.LF
+           & "srli    %2, %2, 2"
+           & ASCII.LF
+           & "beqz    %2, .Lneg_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %2, .Lneg_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2"
+           & ASCII.LF
+           & "  ee.vmul.s16 q3, q4, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q3, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2"
+           & ASCII.LF
+           & "  ee.vmul.s16 q3, q4, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q3, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2"
+           & ASCII.LF
+           & "  ee.vmul.s16 q3, q4, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q3, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2"
+           & ASCII.LF
+           & "  ee.vmul.s16 q3, q4, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q3, %1, 16"
+           & ASCII.LF
+           & ".Lneg_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lneg_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lneg_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2"
+           & ASCII.LF
+           & "  ee.vmul.s16 q3, q4, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q3, %1, 16"
+           & ASCII.LF
+           & ".Lneg_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi    %0, %0, -16"
+           & ASCII.LF
+           & ".Lneg_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => (Address'Asm_Input ("r", Min_1'Address)),
-         Clobber => "a14,memory",
+         Inputs   => (Address'Asm_Input ("r", Min_1'Address)),
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -528,57 +740,93 @@ package body ESP32S3.SIMD.I16 is
       Tail  : size_t := 0;
       Min_1 : aliased Integer_16 := -32767;
       I     : Natural;
-      V : Integer_16;
+      V     : Integer_16;
    begin
       if A'Length = 0 then
          return;
       end if;
       Asm
         (Template =>
-           "extui   %3, %2, 0, 3" & ASCII.LF &
-           "srli    %2, %2, 3" & ASCII.LF &
-           "beqz    %2, .Labs_i16_tail_start_%=" & ASCII.LF &
-           "ssai 0" & ASCII.LF &
-           "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "ee.vcmp.eq.s16 q1, q1, q1" & ASCII.LF &
-           "ee.vldbc.16.ip q2, %4, 0" & ASCII.LF &
-           "extui   a14, %2, 0, 2" & ASCII.LF &
-           "srli    %2, %2, 2" & ASCII.LF &
-           "beqz    %2, .Labs_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %2, .Labs_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2" & ASCII.LF &
-           "  ee.vmul.s16 q3, q4, q1" & ASCII.LF &
-           "  ee.vmax.s16 q4, q4, q3" & ASCII.LF &
-           "  ee.vst.128.ip q4, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2" & ASCII.LF &
-           "  ee.vmul.s16 q3, q4, q1" & ASCII.LF &
-           "  ee.vmax.s16 q4, q4, q3" & ASCII.LF &
-           "  ee.vst.128.ip q4, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2" & ASCII.LF &
-           "  ee.vmul.s16 q3, q4, q1" & ASCII.LF &
-           "  ee.vmax.s16 q4, q4, q3" & ASCII.LF &
-           "  ee.vst.128.ip q4, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2" & ASCII.LF &
-           "  ee.vmul.s16 q3, q4, q1" & ASCII.LF &
-           "  ee.vmax.s16 q4, q4, q3" & ASCII.LF &
-           "  ee.vst.128.ip q4, %1, 16" & ASCII.LF &
-           ".Labs_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Labs_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Labs_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2" & ASCII.LF &
-           "  ee.vmul.s16 q3, q4, q1" & ASCII.LF &
-           "  ee.vmax.s16 q4, q4, q3" & ASCII.LF &
-           "  ee.vst.128.ip q4, %1, 16" & ASCII.LF &
-           ".Labs_i16_simd_loop_%=:" & ASCII.LF &
-           "addi    %0, %0, -16" & ASCII.LF &
-           ".Labs_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %3, %2, 0, 3"
+           & ASCII.LF
+           & "srli    %2, %2, 3"
+           & ASCII.LF
+           & "beqz    %2, .Labs_i16_tail_start_%="
+           & ASCII.LF
+           & "ssai 0"
+           & ASCII.LF
+           & "ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "ee.vcmp.eq.s16 q1, q1, q1"
+           & ASCII.LF
+           & "ee.vldbc.16.ip q2, %4, 0"
+           & ASCII.LF
+           & "extui   a14, %2, 0, 2"
+           & ASCII.LF
+           & "srli    %2, %2, 2"
+           & ASCII.LF
+           & "beqz    %2, .Labs_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %2, .Labs_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2"
+           & ASCII.LF
+           & "  ee.vmul.s16 q3, q4, q1"
+           & ASCII.LF
+           & "  ee.vmax.s16 q4, q4, q3"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2"
+           & ASCII.LF
+           & "  ee.vmul.s16 q3, q4, q1"
+           & ASCII.LF
+           & "  ee.vmax.s16 q4, q4, q3"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2"
+           & ASCII.LF
+           & "  ee.vmul.s16 q3, q4, q1"
+           & ASCII.LF
+           & "  ee.vmax.s16 q4, q4, q3"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2"
+           & ASCII.LF
+           & "  ee.vmul.s16 q3, q4, q1"
+           & ASCII.LF
+           & "  ee.vmax.s16 q4, q4, q3"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %1, 16"
+           & ASCII.LF
+           & ".Labs_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Labs_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Labs_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q2"
+           & ASCII.LF
+           & "  ee.vmul.s16 q3, q4, q1"
+           & ASCII.LF
+           & "  ee.vmax.s16 q4, q4, q3"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %1, 16"
+           & ASCII.LF
+           & ".Labs_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi    %0, %0, -16"
+           & ASCII.LF
+           & ".Labs_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => (Address'Asm_Input ("r", Min_1'Address)),
-         Clobber => "a14,memory",
+         Inputs   => (Address'Asm_Input ("r", Min_1'Address)),
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -602,43 +850,65 @@ package body ESP32S3.SIMD.I16 is
       One   : aliased Integer_16 := 1;
       Part  : aliased Integer_32 := 0;
       I     : Natural;
-      R : Long_Long_Integer := 0;
+      R     : Long_Long_Integer := 0;
    begin
       if A'Length > 0 then
          Asm
            (Template =>
-              "extui   %2, %1, 0, 3" & ASCII.LF &
-              "srli    %1, %1, 3" & ASCII.LF &
-              "movi.n  a6, 0" & ASCII.LF &
-              "beqz    %1, .Lsum_i16_done_%=" & ASCII.LF &
-              "ee.zero.accx" & ASCII.LF &
-              "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-              "ee.vldbc.16.ip q1, %3, 0" & ASCII.LF &
-              "extui   a14, %1, 0, 2" & ASCII.LF &
-              "srli    %1, %1, 2" & ASCII.LF &
-              "beqz    %1, .Lsum_i16_rem_start_%=" & ASCII.LF &
-              "loopnez %1, .Lsum_i16_loop4_%=" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              ".Lsum_i16_loop4_%=:" & ASCII.LF &
-              ".Lsum_i16_rem_start_%=:" & ASCII.LF &
-              "loopnez a14, .Lsum_i16_loop_%=" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              ".Lsum_i16_loop_%=:" & ASCII.LF &
-              "rur.accx_0 a6" & ASCII.LF &
-              "addi    %0, %0, -16" & ASCII.LF &
-              ".Lsum_i16_done_%=:" & ASCII.LF &
-              "s32i.n  a6, %4, 0",
-            Outputs =>
+              "extui   %2, %1, 0, 3"
+              & ASCII.LF
+              & "srli    %1, %1, 3"
+              & ASCII.LF
+              & "movi.n  a6, 0"
+              & ASCII.LF
+              & "beqz    %1, .Lsum_i16_done_%="
+              & ASCII.LF
+              & "ee.zero.accx"
+              & ASCII.LF
+              & "ee.vld.128.ip q0, %0, 16"
+              & ASCII.LF
+              & "ee.vldbc.16.ip q1, %3, 0"
+              & ASCII.LF
+              & "extui   a14, %1, 0, 2"
+              & ASCII.LF
+              & "srli    %1, %1, 2"
+              & ASCII.LF
+              & "beqz    %1, .Lsum_i16_rem_start_%="
+              & ASCII.LF
+              & "loopnez %1, .Lsum_i16_loop4_%="
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & ".Lsum_i16_loop4_%=:"
+              & ASCII.LF
+              & ".Lsum_i16_rem_start_%=:"
+              & ASCII.LF
+              & "loopnez a14, .Lsum_i16_loop_%="
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & ".Lsum_i16_loop_%=:"
+              & ASCII.LF
+              & "rur.accx_0 a6"
+              & ASCII.LF
+              & "addi    %0, %0, -16"
+              & ASCII.LF
+              & ".Lsum_i16_done_%=:"
+              & ASCII.LF
+              & "s32i.n  a6, %4, 0",
+            Outputs  =>
               (Address'Asm_Output ("+r", A_Ptr),
                size_t'Asm_Output ("+r", Cnt),
                size_t'Asm_Output ("=&r", Tail)),
-            Inputs =>
-              (Address'Asm_Input ("r", One'Address),
-               Address'Asm_Input ("r", Part'Address)),
-            Clobber => "a14,a6,memory",
+            Inputs   =>
+              (Address'Asm_Input ("r", One'Address), Address'Asm_Input ("r", Part'Address)),
+            Clobber  => "a14,a6,memory",
             Volatile => True);
       end if;
       R := Long_Long_Integer (Part);
@@ -658,46 +928,73 @@ package body ESP32S3.SIMD.I16 is
       Tail  : size_t := 0;
       Part  : aliased Integer_32 := 0;
       I     : Natural;
-      R : Long_Long_Integer := 0;
+      R     : Long_Long_Integer := 0;
    begin
       if A'Length > 0 then
          Asm
            (Template =>
-              "extui   %3, %2, 0, 3" & ASCII.LF &
-              "srli    %2, %2, 3" & ASCII.LF &
-              "movi.n  a7, 0" & ASCII.LF &
-              "beqz    %2, .Ldot_i16_done_%=" & ASCII.LF &
-              "ee.zero.accx" & ASCII.LF &
-              "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-              "extui   a14, %2, 0, 2" & ASCII.LF &
-              "srli    %2, %2, 2" & ASCII.LF &
-              "beqz    %2, .Ldot_i16_rem_start_%=" & ASCII.LF &
-              "loopnez %2, .Ldot_i16_loop4_%=" & ASCII.LF &
-              "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              ".Ldot_i16_loop4_%=:" & ASCII.LF &
-              ".Ldot_i16_rem_start_%=:" & ASCII.LF &
-              "loopnez a14, .Ldot_i16_loop_%=" & ASCII.LF &
-              "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              ".Ldot_i16_loop_%=:" & ASCII.LF &
-              "rur.accx_0 a7" & ASCII.LF &
-              "addi    %0, %0, -16" & ASCII.LF &
-              ".Ldot_i16_done_%=:" & ASCII.LF &
-              "s32i.n  a7, %4, 0",
-            Outputs =>
+              "extui   %3, %2, 0, 3"
+              & ASCII.LF
+              & "srli    %2, %2, 3"
+              & ASCII.LF
+              & "movi.n  a7, 0"
+              & ASCII.LF
+              & "beqz    %2, .Ldot_i16_done_%="
+              & ASCII.LF
+              & "ee.zero.accx"
+              & ASCII.LF
+              & "ee.vld.128.ip q0, %0, 16"
+              & ASCII.LF
+              & "extui   a14, %2, 0, 2"
+              & ASCII.LF
+              & "srli    %2, %2, 2"
+              & ASCII.LF
+              & "beqz    %2, .Ldot_i16_rem_start_%="
+              & ASCII.LF
+              & "loopnez %2, .Ldot_i16_loop4_%="
+              & ASCII.LF
+              & "  ee.vld.128.ip q1, %1, 16"
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & "  ee.vld.128.ip q1, %1, 16"
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & "  ee.vld.128.ip q1, %1, 16"
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & "  ee.vld.128.ip q1, %1, 16"
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & ".Ldot_i16_loop4_%=:"
+              & ASCII.LF
+              & ".Ldot_i16_rem_start_%=:"
+              & ASCII.LF
+              & "loopnez a14, .Ldot_i16_loop_%="
+              & ASCII.LF
+              & "  ee.vld.128.ip q1, %1, 16"
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & ".Ldot_i16_loop_%=:"
+              & ASCII.LF
+              & "rur.accx_0 a7"
+              & ASCII.LF
+              & "addi    %0, %0, -16"
+              & ASCII.LF
+              & ".Ldot_i16_done_%=:"
+              & ASCII.LF
+              & "s32i.n  a7, %4, 0",
+            Outputs  =>
               (Address'Asm_Output ("+r", A_Ptr),
                Address'Asm_Output ("+r", B_Ptr),
                size_t'Asm_Output ("+r", Cnt),
                size_t'Asm_Output ("=&r", Tail)),
-            Inputs => (Address'Asm_Input ("r", Part'Address)),
-            Clobber => "a14,a7,memory",
+            Inputs   => (Address'Asm_Input ("r", Part'Address)),
+            Clobber  => "a14,a7,memory",
             Volatile => True);
       end if;
       R := Long_Long_Integer (Part);
@@ -710,54 +1007,76 @@ package body ESP32S3.SIMD.I16 is
       return Sat_I32 (R);
    end Dot_Product;
 
-   procedure MAC (A : SIMD_I16_Vector; Accumulator : in out Integer_32;
-                  Multiplier : Integer_16)
-   is
+   procedure MAC (A : SIMD_I16_Vector; Accumulator : in out Integer_32; Multiplier : Integer_16) is
       A_Ptr : Address := First_Address (A);
       Cnt   : size_t := size_t (A'Length);
       Tail  : size_t := 0;
       Mul   : aliased Integer_16 := Multiplier;
       Acc   : aliased Integer_32 := Accumulator;
       I     : Natural;
-      R : Long_Long_Integer := Long_Long_Integer (Accumulator);
+      R     : Long_Long_Integer := Long_Long_Integer (Accumulator);
    begin
       if A'Length > 0 then
          Asm
            (Template =>
-              "extui   %2, %1, 0, 3" & ASCII.LF &
-              "srli    %1, %1, 3" & ASCII.LF &
-              "movi.n  a7, 0" & ASCII.LF &
-              "beqz    %1, .Lmac_i16_done_%=" & ASCII.LF &
-              "ee.zero.accx" & ASCII.LF &
-              "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-              "ee.vldbc.16.ip q1, %4, 0" & ASCII.LF &
-              "extui   a14, %1, 0, 2" & ASCII.LF &
-              "srli    %1, %1, 2" & ASCII.LF &
-              "beqz    %1, .Lmac_i16_rem_start_%=" & ASCII.LF &
-              "loopnez %1, .Lmac_i16_loop4_%=" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              ".Lmac_i16_loop4_%=:" & ASCII.LF &
-              ".Lmac_i16_rem_start_%=:" & ASCII.LF &
-              "loopnez a14, .Lmac_i16_loop_%=" & ASCII.LF &
-              "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1" & ASCII.LF &
-              ".Lmac_i16_loop_%=:" & ASCII.LF &
-              "rur.accx_0 a7" & ASCII.LF &
-              "addi    %0, %0, -16" & ASCII.LF &
-              "l32i    a9, %3, 0" & ASCII.LF &
-              "add     a7, a9, a7" & ASCII.LF &
-              ".Lmac_i16_done_%=:" & ASCII.LF &
-              "s32i.n  a7, %3, 0",
-            Outputs =>
+              "extui   %2, %1, 0, 3"
+              & ASCII.LF
+              & "srli    %1, %1, 3"
+              & ASCII.LF
+              & "movi.n  a7, 0"
+              & ASCII.LF
+              & "beqz    %1, .Lmac_i16_done_%="
+              & ASCII.LF
+              & "ee.zero.accx"
+              & ASCII.LF
+              & "ee.vld.128.ip q0, %0, 16"
+              & ASCII.LF
+              & "ee.vldbc.16.ip q1, %4, 0"
+              & ASCII.LF
+              & "extui   a14, %1, 0, 2"
+              & ASCII.LF
+              & "srli    %1, %1, 2"
+              & ASCII.LF
+              & "beqz    %1, .Lmac_i16_rem_start_%="
+              & ASCII.LF
+              & "loopnez %1, .Lmac_i16_loop4_%="
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & ".Lmac_i16_loop4_%=:"
+              & ASCII.LF
+              & ".Lmac_i16_rem_start_%=:"
+              & ASCII.LF
+              & "loopnez a14, .Lmac_i16_loop_%="
+              & ASCII.LF
+              & "  ee.vmulas.s16.accx.ld.ip q0, %0, 16, q0, q1"
+              & ASCII.LF
+              & ".Lmac_i16_loop_%=:"
+              & ASCII.LF
+              & "rur.accx_0 a7"
+              & ASCII.LF
+              & "addi    %0, %0, -16"
+              & ASCII.LF
+              & "l32i    a9, %3, 0"
+              & ASCII.LF
+              & "add     a7, a9, a7"
+              & ASCII.LF
+              & ".Lmac_i16_done_%=:"
+              & ASCII.LF
+              & "s32i.n  a7, %3, 0",
+            Outputs  =>
               (Address'Asm_Output ("+r", A_Ptr),
                size_t'Asm_Output ("+r", Cnt),
                size_t'Asm_Output ("=&r", Tail)),
-            Inputs =>
-              (Address'Asm_Input ("r", Acc'Address),
-               Address'Asm_Input ("r", Mul'Address)),
-            Clobber => "a14,a7,a9,memory",
+            Inputs   =>
+              (Address'Asm_Input ("r", Acc'Address), Address'Asm_Input ("r", Mul'Address)),
+            Clobber  => "a14,a7,a9,memory",
             Volatile => True);
          R := Long_Long_Integer (Acc);
       end if;
@@ -771,9 +1090,11 @@ package body ESP32S3.SIMD.I16 is
       Accumulator := Sat_I32 (R);
    end MAC;
 
-    procedure Relu
-       (A : SIMD_I16_Vector; Multiplier : Integer_32; Shift : Shift_I16;
-                   Result : in out SIMD_I16_Vector)
+   procedure Relu
+     (A          : SIMD_I16_Vector;
+      Multiplier : Integer_32;
+      Shift      : Shift_I16;
+      Result     : in out SIMD_I16_Vector)
    is
       A_Ptr : Address := First_Address (A);
       R_Ptr : Address := First_Address (Result);
@@ -782,45 +1103,70 @@ package body ESP32S3.SIMD.I16 is
       M     : Integer_32 := Multiplier;
       Sh    : unsigned := unsigned (Shift);
       I     : Natural;
-      V : Long_Long_Integer;
+      V     : Long_Long_Integer;
    begin
       if A'Length > 0 then
          Asm
            (Template =>
-              "extui   %4, %2, 0, 3" & ASCII.LF &
-              "srli    %2, %2, 3" & ASCII.LF &
-              "extui   a14, %2, 0, 2" & ASCII.LF &
-              "srli    %2, %2, 2" & ASCII.LF &
-              "beqz    %2, .Lrelu_i16_rem_start_%=" & ASCII.LF &
-              "loopnez %2, .Lrelu_i16_loop4_%=" & ASCII.LF &
-              "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-              "  ee.vrelu.s16 q0, %5, %3" & ASCII.LF &
-              "  ee.vst.128.ip q0, %1, 16" & ASCII.LF &
-              "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-              "  ee.vrelu.s16 q0, %5, %3" & ASCII.LF &
-              "  ee.vst.128.ip q0, %1, 16" & ASCII.LF &
-              "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-              "  ee.vrelu.s16 q0, %5, %3" & ASCII.LF &
-              "  ee.vst.128.ip q0, %1, 16" & ASCII.LF &
-              "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-              "  ee.vrelu.s16 q0, %5, %3" & ASCII.LF &
-              "  ee.vst.128.ip q0, %1, 16" & ASCII.LF &
-              ".Lrelu_i16_loop4_%=:" & ASCII.LF &
-              ".Lrelu_i16_rem_start_%=:" & ASCII.LF &
-              "loopnez a14, .Lrelu_i16_loop_%=" & ASCII.LF &
-              "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-              "  ee.vrelu.s16 q0, %5, %3" & ASCII.LF &
-              "  ee.vst.128.ip q0, %1, 16" & ASCII.LF &
-              ".Lrelu_i16_loop_%=:" & ASCII.LF &
-              "extui   %4, %4, 0, 3",
-            Outputs =>
+              "extui   %4, %2, 0, 3"
+              & ASCII.LF
+              & "srli    %2, %2, 3"
+              & ASCII.LF
+              & "extui   a14, %2, 0, 2"
+              & ASCII.LF
+              & "srli    %2, %2, 2"
+              & ASCII.LF
+              & "beqz    %2, .Lrelu_i16_rem_start_%="
+              & ASCII.LF
+              & "loopnez %2, .Lrelu_i16_loop4_%="
+              & ASCII.LF
+              & "  ee.vld.128.ip q0, %0, 16"
+              & ASCII.LF
+              & "  ee.vrelu.s16 q0, %5, %3"
+              & ASCII.LF
+              & "  ee.vst.128.ip q0, %1, 16"
+              & ASCII.LF
+              & "  ee.vld.128.ip q0, %0, 16"
+              & ASCII.LF
+              & "  ee.vrelu.s16 q0, %5, %3"
+              & ASCII.LF
+              & "  ee.vst.128.ip q0, %1, 16"
+              & ASCII.LF
+              & "  ee.vld.128.ip q0, %0, 16"
+              & ASCII.LF
+              & "  ee.vrelu.s16 q0, %5, %3"
+              & ASCII.LF
+              & "  ee.vst.128.ip q0, %1, 16"
+              & ASCII.LF
+              & "  ee.vld.128.ip q0, %0, 16"
+              & ASCII.LF
+              & "  ee.vrelu.s16 q0, %5, %3"
+              & ASCII.LF
+              & "  ee.vst.128.ip q0, %1, 16"
+              & ASCII.LF
+              & ".Lrelu_i16_loop4_%=:"
+              & ASCII.LF
+              & ".Lrelu_i16_rem_start_%=:"
+              & ASCII.LF
+              & "loopnez a14, .Lrelu_i16_loop_%="
+              & ASCII.LF
+              & "  ee.vld.128.ip q0, %0, 16"
+              & ASCII.LF
+              & "  ee.vrelu.s16 q0, %5, %3"
+              & ASCII.LF
+              & "  ee.vst.128.ip q0, %1, 16"
+              & ASCII.LF
+              & ".Lrelu_i16_loop_%=:"
+              & ASCII.LF
+              & "extui   %4, %4, 0, 3",
+            Outputs  =>
               (Address'Asm_Output ("+r", A_Ptr),
                Address'Asm_Output ("+r", R_Ptr),
                size_t'Asm_Output ("+r", Cnt),
                unsigned'Asm_Output ("+r", Sh),
                size_t'Asm_Output ("=&r", Tail)),
-            Inputs => (Integer_32'Asm_Input ("r", M)),
-            Clobber => "a14,memory",
+            Inputs   => (Integer_32'Asm_Input ("r", M)),
+            Clobber  => "a14,memory",
             Volatile => True);
       end if;
       I := A'Length - Natural (Tail);
@@ -835,9 +1181,7 @@ package body ESP32S3.SIMD.I16 is
       end loop;
    end Relu;
 
-   procedure Ceil
-     (A : SIMD_I16_Vector; Result : in out SIMD_I16_Vector; Max_Val : Integer_16)
-   is
+   procedure Ceil (A : SIMD_I16_Vector; Result : in out SIMD_I16_Vector; Max_Val : Integer_16) is
       A_Ptr : Address := First_Address (A);
       R_Ptr : Address := First_Address (Result);
       Cnt   : size_t := size_t (A'Length);
@@ -850,38 +1194,62 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui   %3, %2, 0, 3" & ASCII.LF &
-           "srli    %2, %2, 3" & ASCII.LF &
-           "beqz    %2, .Lceil_i16_tail_start_%=" & ASCII.LF &
-           "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "ee.vldbc.16.ip q1, %4, 0" & ASCII.LF &
-           "extui   a14, %2, 0, 2" & ASCII.LF &
-           "srli    %2, %2, 2" & ASCII.LF &
-           "beqz    %2, .Lceil_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %2, .Lceil_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vmin.s16.ld.incp q0, %0, q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %1, 16" & ASCII.LF &
-           "  ee.vmin.s16.ld.incp q0, %0, q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %1, 16" & ASCII.LF &
-           "  ee.vmin.s16.ld.incp q0, %0, q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %1, 16" & ASCII.LF &
-           "  ee.vmin.s16.ld.incp q0, %0, q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %1, 16" & ASCII.LF &
-           ".Lceil_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lceil_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lceil_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vmin.s16.ld.incp q0, %0, q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %1, 16" & ASCII.LF &
-           ".Lceil_i16_simd_loop_%=:" & ASCII.LF &
-           "addi   %0, %0, -16" & ASCII.LF &
-           ".Lceil_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %3, %2, 0, 3"
+           & ASCII.LF
+           & "srli    %2, %2, 3"
+           & ASCII.LF
+           & "beqz    %2, .Lceil_i16_tail_start_%="
+           & ASCII.LF
+           & "ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "ee.vldbc.16.ip q1, %4, 0"
+           & ASCII.LF
+           & "extui   a14, %2, 0, 2"
+           & ASCII.LF
+           & "srli    %2, %2, 2"
+           & ASCII.LF
+           & "beqz    %2, .Lceil_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %2, .Lceil_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vmin.s16.ld.incp q0, %0, q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %1, 16"
+           & ASCII.LF
+           & "  ee.vmin.s16.ld.incp q0, %0, q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %1, 16"
+           & ASCII.LF
+           & "  ee.vmin.s16.ld.incp q0, %0, q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %1, 16"
+           & ASCII.LF
+           & "  ee.vmin.s16.ld.incp q0, %0, q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %1, 16"
+           & ASCII.LF
+           & ".Lceil_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lceil_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lceil_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vmin.s16.ld.incp q0, %0, q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %1, 16"
+           & ASCII.LF
+           & ".Lceil_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi   %0, %0, -16"
+           & ASCII.LF
+           & ".Lceil_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => (Address'Asm_Input ("r", M'Address)),
-         Clobber => "a14,memory",
+         Inputs   => (Address'Asm_Input ("r", M'Address)),
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -895,9 +1263,7 @@ package body ESP32S3.SIMD.I16 is
       end loop;
    end Ceil;
 
-   procedure Floor
-     (A : SIMD_I16_Vector; Result : in out SIMD_I16_Vector; Min_Val : Integer_16)
-   is
+   procedure Floor (A : SIMD_I16_Vector; Result : in out SIMD_I16_Vector; Min_Val : Integer_16) is
       A_Ptr : Address := First_Address (A);
       R_Ptr : Address := First_Address (Result);
       Cnt   : size_t := size_t (A'Length);
@@ -910,38 +1276,62 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui   %3, %2, 0, 3" & ASCII.LF &
-           "srli    %2, %2, 3" & ASCII.LF &
-           "beqz    %2, .Lfloor_i16_tail_start_%=" & ASCII.LF &
-           "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "ee.vldbc.16.ip q1, %4, 0" & ASCII.LF &
-           "extui   a14, %2, 0, 2" & ASCII.LF &
-           "srli    %2, %2, 2" & ASCII.LF &
-           "beqz    %2, .Lfloor_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %2, .Lfloor_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %1, 16" & ASCII.LF &
-           ".Lfloor_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lfloor_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lfloor_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %1, 16" & ASCII.LF &
-           ".Lfloor_i16_simd_loop_%=:" & ASCII.LF &
-           "addi   %0, %0, -16" & ASCII.LF &
-           ".Lfloor_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %3, %2, 0, 3"
+           & ASCII.LF
+           & "srli    %2, %2, 3"
+           & ASCII.LF
+           & "beqz    %2, .Lfloor_i16_tail_start_%="
+           & ASCII.LF
+           & "ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "ee.vldbc.16.ip q1, %4, 0"
+           & ASCII.LF
+           & "extui   a14, %2, 0, 2"
+           & ASCII.LF
+           & "srli    %2, %2, 2"
+           & ASCII.LF
+           & "beqz    %2, .Lfloor_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %2, .Lfloor_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %1, 16"
+           & ASCII.LF
+           & ".Lfloor_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lfloor_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lfloor_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %1, 16"
+           & ASCII.LF
+           & ".Lfloor_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi   %0, %0, -16"
+           & ASCII.LF
+           & ".Lfloor_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => (Address'Asm_Input ("r", M'Address)),
-         Clobber => "a14,memory",
+         Inputs   => (Address'Asm_Input ("r", M'Address)),
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -968,43 +1358,71 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui   %4, %3, 0, 3" & ASCII.LF &
-           "srli    %3, %3, 3" & ASCII.LF &
-           "beqz    %3, .Lmax_i16_tail_start_%=" & ASCII.LF &
-           "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Lmax_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Lmax_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           ".Lmax_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lmax_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lmax_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           ".Lmax_i16_simd_loop_%=:" & ASCII.LF &
-           "addi   %0, %0, -16" & ASCII.LF &
-           ".Lmax_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %4, %3, 0, 3"
+           & ASCII.LF
+           & "srli    %3, %3, 3"
+           & ASCII.LF
+           & "beqz    %3, .Lmax_i16_tail_start_%="
+           & ASCII.LF
+           & "ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Lmax_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Lmax_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & ".Lmax_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lmax_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lmax_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmax.s16.ld.incp q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & ".Lmax_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi   %0, %0, -16"
+           & ASCII.LF
+           & ".Lmax_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -1031,43 +1449,71 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui   %4, %3, 0, 3" & ASCII.LF &
-           "srli    %3, %3, 3" & ASCII.LF &
-           "beqz    %3, .Lmin_i16_tail_start_%=" & ASCII.LF &
-           "ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Lmin_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Lmin_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vmin.s16.ld.incp q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vmin.s16.ld.incp q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vmin.s16.ld.incp q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vmin.s16.ld.incp q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           ".Lmin_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lmin_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lmin_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vmin.s16.ld.incp q0, %0, q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           ".Lmin_i16_simd_loop_%=:" & ASCII.LF &
-           "addi   %0, %0, -16" & ASCII.LF &
-           ".Lmin_i16_tail_start_%=:",
-         Outputs =>
+           "extui   %4, %3, 0, 3"
+           & ASCII.LF
+           & "srli    %3, %3, 3"
+           & ASCII.LF
+           & "beqz    %3, .Lmin_i16_tail_start_%="
+           & ASCII.LF
+           & "ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Lmin_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Lmin_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmin.s16.ld.incp q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmin.s16.ld.incp q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmin.s16.ld.incp q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmin.s16.ld.incp q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & ".Lmin_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lmin_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lmin_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vmin.s16.ld.incp q0, %0, q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & ".Lmin_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "addi   %0, %0, -16"
+           & ASCII.LF
+           & ".Lmin_i16_tail_start_%=:",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -1094,49 +1540,80 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui %4, %3, 0, 3" & ASCII.LF &
-           "srli  %3, %3, 3" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Land_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Land_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.andq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.andq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.andq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.andq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           ".Land_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Land_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Land_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.andq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           ".Land_i16_simd_loop_%=:" & ASCII.LF &
-           "extui %4, %4, 0, 3",
-         Outputs =>
+           "extui %4, %3, 0, 3"
+           & ASCII.LF
+           & "srli  %3, %3, 3"
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Land_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Land_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.andq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.andq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.andq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.andq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & ".Land_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Land_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Land_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.andq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & ".Land_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "extui %4, %4, 0, 3",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
-         Result (Result'First + I) := To_I16 (To_U16 (A (A'First + I)) and To_U16 (B (B'First + I)));
+         Result (Result'First + I) :=
+           To_I16 (To_U16 (A (A'First + I)) and To_U16 (B (B'First + I)));
          I := I + 1;
          Tail := Tail - 1;
       end loop;
@@ -1155,49 +1632,80 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui %4, %3, 0, 3" & ASCII.LF &
-           "srli  %3, %3, 3" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Lor_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Lor_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.orq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.orq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.orq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.orq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           ".Lor_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lor_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lor_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.orq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           ".Lor_i16_simd_loop_%=:" & ASCII.LF &
-           "extui %4, %4, 0, 3",
-         Outputs =>
+           "extui %4, %3, 0, 3"
+           & ASCII.LF
+           & "srli  %3, %3, 3"
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Lor_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Lor_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.orq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.orq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.orq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.orq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & ".Lor_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lor_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lor_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.orq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & ".Lor_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "extui %4, %4, 0, 3",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
-         Result (Result'First + I) := To_I16 (To_U16 (A (A'First + I)) or To_U16 (B (B'First + I)));
+         Result (Result'First + I) :=
+           To_I16 (To_U16 (A (A'First + I)) or To_U16 (B (B'First + I)));
          I := I + 1;
          Tail := Tail - 1;
       end loop;
@@ -1216,49 +1724,80 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui %4, %3, 0, 3" & ASCII.LF &
-           "srli  %3, %3, 3" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Lxor_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Lxor_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.xorq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.xorq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.xorq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.xorq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           ".Lxor_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lxor_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lxor_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.xorq q4, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q4, %2, 16" & ASCII.LF &
-           ".Lxor_i16_simd_loop_%=:" & ASCII.LF &
-           "extui %4, %4, 0, 3",
-         Outputs =>
+           "extui %4, %3, 0, 3"
+           & ASCII.LF
+           & "srli  %3, %3, 3"
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Lxor_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Lxor_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.xorq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.xorq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.xorq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.xorq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & ".Lxor_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lxor_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lxor_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.xorq q4, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %2, 16"
+           & ASCII.LF
+           & ".Lxor_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "extui %4, %4, 0, 3",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
-         Result (Result'First + I) := To_I16 (To_U16 (A (A'First + I)) xor To_U16 (B (B'First + I)));
+         Result (Result'First + I) :=
+           To_I16 (To_U16 (A (A'First + I)) xor To_U16 (B (B'First + I)));
          I := I + 1;
          Tail := Tail - 1;
       end loop;
@@ -1276,39 +1815,64 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui %3, %2, 0, 3" & ASCII.LF &
-           "srli  %2, %2, 3" & ASCII.LF &
-           "extui   a14, %2, 0, 2" & ASCII.LF &
-           "srli    %2, %2, 2" & ASCII.LF &
-           "beqz    %2, .Lnot_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %2, .Lnot_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.notq q4, q0" & ASCII.LF &
-           "  ee.vst.128.ip q4, %1, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.notq q4, q0" & ASCII.LF &
-           "  ee.vst.128.ip q4, %1, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.notq q4, q0" & ASCII.LF &
-           "  ee.vst.128.ip q4, %1, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.notq q4, q0" & ASCII.LF &
-           "  ee.vst.128.ip q4, %1, 16" & ASCII.LF &
-           ".Lnot_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lnot_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lnot_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.notq q4, q0" & ASCII.LF &
-           "  ee.vst.128.ip q4, %1, 16" & ASCII.LF &
-           ".Lnot_i16_simd_loop_%=:" & ASCII.LF &
-           "extui %3, %3, 0, 3",
-         Outputs =>
+           "extui %3, %2, 0, 3"
+           & ASCII.LF
+           & "srli  %2, %2, 3"
+           & ASCII.LF
+           & "extui   a14, %2, 0, 2"
+           & ASCII.LF
+           & "srli    %2, %2, 2"
+           & ASCII.LF
+           & "beqz    %2, .Lnot_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %2, .Lnot_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.notq q4, q0"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.notq q4, q0"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.notq q4, q0"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %1, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.notq q4, q0"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %1, 16"
+           & ASCII.LF
+           & ".Lnot_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lnot_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lnot_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.notq q4, q0"
+           & ASCII.LF
+           & "  ee.vst.128.ip q4, %1, 16"
+           & ASCII.LF
+           & ".Lnot_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "extui %3, %3, 0, 3",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -1331,47 +1895,79 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui %4, %3, 0, 3" & ASCII.LF &
-           "srli  %3, %3, 3" & ASCII.LF &
-           "beqz %3, .Lcgt_i16_tail_start_%=" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Lcgt_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Lcgt_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.gt.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.gt.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.gt.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.gt.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           ".Lcgt_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lcgt_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lcgt_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.gt.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           ".Lcgt_i16_simd_loop_%=:" & ASCII.LF &
-           ".Lcgt_i16_tail_start_%=:" & ASCII.LF &
-           "extui %4, %4, 0, 3",
-         Outputs =>
+           "extui %4, %3, 0, 3"
+           & ASCII.LF
+           & "srli  %3, %3, 3"
+           & ASCII.LF
+           & "beqz %3, .Lcgt_i16_tail_start_%="
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Lcgt_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Lcgt_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.gt.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.gt.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.gt.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.gt.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & ".Lcgt_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lcgt_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lcgt_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.gt.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & ".Lcgt_i16_simd_loop_%=:"
+           & ASCII.LF
+           & ".Lcgt_i16_tail_start_%=:"
+           & ASCII.LF
+           & "extui %4, %4, 0, 3",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -1398,47 +1994,79 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui %4, %3, 0, 3" & ASCII.LF &
-           "srli  %3, %3, 3" & ASCII.LF &
-           "beqz %3, .Lclt_i16_tail_start_%=" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Lclt_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Lclt_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.lt.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.lt.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.lt.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.lt.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           ".Lclt_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lclt_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lclt_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.lt.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           ".Lclt_i16_simd_loop_%=:" & ASCII.LF &
-           ".Lclt_i16_tail_start_%=:" & ASCII.LF &
-           "extui %4, %4, 0, 3",
-         Outputs =>
+           "extui %4, %3, 0, 3"
+           & ASCII.LF
+           & "srli  %3, %3, 3"
+           & ASCII.LF
+           & "beqz %3, .Lclt_i16_tail_start_%="
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Lclt_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Lclt_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.lt.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.lt.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.lt.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.lt.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & ".Lclt_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lclt_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lclt_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.lt.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & ".Lclt_i16_simd_loop_%=:"
+           & ASCII.LF
+           & ".Lclt_i16_tail_start_%=:"
+           & ASCII.LF
+           & "extui %4, %4, 0, 3",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -1465,45 +2093,75 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui %4, %3, 0, 3" & ASCII.LF &
-           "srli  %3, %3, 3" & ASCII.LF &
-           "extui   a14, %3, 0, 2" & ASCII.LF &
-           "srli    %3, %3, 2" & ASCII.LF &
-           "beqz    %3, .Lceq_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %3, .Lceq_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.eq.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.eq.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.eq.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.eq.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           ".Lceq_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lceq_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lceq_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vld.128.ip q1, %1, 16" & ASCII.LF &
-           "  ee.vcmp.eq.s16 q2, q0, q1" & ASCII.LF &
-           "  ee.vst.128.ip q2, %2, 16" & ASCII.LF &
-           ".Lceq_i16_simd_loop_%=:" & ASCII.LF &
-           "extui %4, %4, 0, 3",
-         Outputs =>
+           "extui %4, %3, 0, 3"
+           & ASCII.LF
+           & "srli  %3, %3, 3"
+           & ASCII.LF
+           & "extui   a14, %3, 0, 2"
+           & ASCII.LF
+           & "srli    %3, %3, 2"
+           & ASCII.LF
+           & "beqz    %3, .Lceq_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %3, .Lceq_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.eq.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.eq.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.eq.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.eq.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & ".Lceq_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lceq_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lceq_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vld.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vld.128.ip q1, %1, 16"
+           & ASCII.LF
+           & "  ee.vcmp.eq.s16 q2, q0, q1"
+           & ASCII.LF
+           & "  ee.vst.128.ip q2, %2, 16"
+           & ASCII.LF
+           & ".Lceq_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "extui %4, %4, 0, 3",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             Address'Asm_Output ("+r", B_Ptr),
             Address'Asm_Output ("+r", R_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -1528,29 +2186,45 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui %2, %1, 0, 3" & ASCII.LF &
-           "srli  %1, %1, 3" & ASCII.LF &
-           "ee.xorq q0, q0, q0" & ASCII.LF &
-           "extui   a14, %1, 0, 2" & ASCII.LF &
-           "srli    %1, %1, 2" & ASCII.LF &
-           "beqz    %1, .Lzeros_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %1, .Lzeros_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           ".Lzeros_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lzeros_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lzeros_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           ".Lzeros_i16_simd_loop_%=:" & ASCII.LF &
-           "extui %2, %2, 0, 3",
-         Outputs =>
+           "extui %2, %1, 0, 3"
+           & ASCII.LF
+           & "srli  %1, %1, 3"
+           & ASCII.LF
+           & "ee.xorq q0, q0, q0"
+           & ASCII.LF
+           & "extui   a14, %1, 0, 2"
+           & ASCII.LF
+           & "srli    %1, %1, 2"
+           & ASCII.LF
+           & "beqz    %1, .Lzeros_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %1, .Lzeros_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & ".Lzeros_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lzeros_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lzeros_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & ".Lzeros_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "extui %2, %2, 0, 3",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => No_Input_Operands,
-         Clobber => "a14,memory",
+         Inputs   => No_Input_Operands,
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -1572,29 +2246,45 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui %2, %1, 0, 3" & ASCII.LF &
-           "srli  %1, %1, 3" & ASCII.LF &
-           "ee.vldbc.16.ip q0, %3, 0" & ASCII.LF &
-           "extui   a14, %1, 0, 2" & ASCII.LF &
-           "srli    %1, %1, 2" & ASCII.LF &
-           "beqz    %1, .Lones_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %1, .Lones_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           ".Lones_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lones_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lones_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           ".Lones_i16_simd_loop_%=:" & ASCII.LF &
-           "extui %2, %2, 0, 3",
-         Outputs =>
+           "extui %2, %1, 0, 3"
+           & ASCII.LF
+           & "srli  %1, %1, 3"
+           & ASCII.LF
+           & "ee.vldbc.16.ip q0, %3, 0"
+           & ASCII.LF
+           & "extui   a14, %1, 0, 2"
+           & ASCII.LF
+           & "srli    %1, %1, 2"
+           & ASCII.LF
+           & "beqz    %1, .Lones_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %1, .Lones_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & ".Lones_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lones_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lones_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & ".Lones_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "extui %2, %2, 0, 3",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => (Address'Asm_Input ("r", One'Address)),
-         Clobber => "a14,memory",
+         Inputs   => (Address'Asm_Input ("r", One'Address)),
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -1616,29 +2306,45 @@ package body ESP32S3.SIMD.I16 is
       end if;
       Asm
         (Template =>
-           "extui %2, %1, 0, 3" & ASCII.LF &
-           "srli  %1, %1, 3" & ASCII.LF &
-           "ee.vldbc.16.ip q0, %3, 0" & ASCII.LF &
-           "extui   a14, %1, 0, 2" & ASCII.LF &
-           "srli    %1, %1, 2" & ASCII.LF &
-           "beqz    %1, .Lfill_i16_simd_rem_start_%=" & ASCII.LF &
-           "loopnez %1, .Lfill_i16_simd_loop4_%=" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           ".Lfill_i16_simd_loop4_%=:" & ASCII.LF &
-           ".Lfill_i16_simd_rem_start_%=:" & ASCII.LF &
-           "loopnez a14, .Lfill_i16_simd_loop_%=" & ASCII.LF &
-           "  ee.vst.128.ip q0, %0, 16" & ASCII.LF &
-           ".Lfill_i16_simd_loop_%=:" & ASCII.LF &
-           "extui %2, %2, 0, 3",
-         Outputs =>
+           "extui %2, %1, 0, 3"
+           & ASCII.LF
+           & "srli  %1, %1, 3"
+           & ASCII.LF
+           & "ee.vldbc.16.ip q0, %3, 0"
+           & ASCII.LF
+           & "extui   a14, %1, 0, 2"
+           & ASCII.LF
+           & "srli    %1, %1, 2"
+           & ASCII.LF
+           & "beqz    %1, .Lfill_i16_simd_rem_start_%="
+           & ASCII.LF
+           & "loopnez %1, .Lfill_i16_simd_loop4_%="
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & ".Lfill_i16_simd_loop4_%=:"
+           & ASCII.LF
+           & ".Lfill_i16_simd_rem_start_%=:"
+           & ASCII.LF
+           & "loopnez a14, .Lfill_i16_simd_loop_%="
+           & ASCII.LF
+           & "  ee.vst.128.ip q0, %0, 16"
+           & ASCII.LF
+           & ".Lfill_i16_simd_loop_%=:"
+           & ASCII.LF
+           & "extui %2, %2, 0, 3",
+         Outputs  =>
            (Address'Asm_Output ("+r", A_Ptr),
             size_t'Asm_Output ("+r", Cnt),
             size_t'Asm_Output ("=&r", Tail)),
-         Inputs => (Address'Asm_Input ("r", V'Address)),
-         Clobber => "a14,memory",
+         Inputs   => (Address'Asm_Input ("r", V'Address)),
+         Clobber  => "a14,memory",
          Volatile => True);
       I := A'Length - Natural (Tail);
       while Tail > 0 loop
@@ -1658,18 +2364,23 @@ package body ESP32S3.SIMD.I16 is
       if A'Length > 0 then
          Asm
            (Template =>
-              "beqz    %2, .Lcopy_i16_tail_start_%=" & ASCII.LF &
-              "loopnez %2, .Lcopy_i16_simd_loop_%=" & ASCII.LF &
-              "  ee.vld.128.ip q1, %0, 16" & ASCII.LF &
-              "  ee.vst.128.ip q1, %1, 16" & ASCII.LF &
-              ".Lcopy_i16_simd_loop_%=:" & ASCII.LF &
-              ".Lcopy_i16_tail_start_%=:",
-            Outputs =>
+              "beqz    %2, .Lcopy_i16_tail_start_%="
+              & ASCII.LF
+              & "loopnez %2, .Lcopy_i16_simd_loop_%="
+              & ASCII.LF
+              & "  ee.vld.128.ip q1, %0, 16"
+              & ASCII.LF
+              & "  ee.vst.128.ip q1, %1, 16"
+              & ASCII.LF
+              & ".Lcopy_i16_simd_loop_%=:"
+              & ASCII.LF
+              & ".Lcopy_i16_tail_start_%=:",
+            Outputs  =>
               (Address'Asm_Output ("+r", A_Ptr),
                Address'Asm_Output ("+r", R_Ptr),
                size_t'Asm_Output ("+r", Cnt)),
-            Inputs => No_Input_Operands,
-            Clobber => "memory",
+            Inputs   => No_Input_Operands,
+            Clobber  => "memory",
             Volatile => True);
       end if;
       I := A'Length - Natural (Tail);
@@ -1691,26 +2402,39 @@ package body ESP32S3.SIMD.I16 is
       if A'Length > 0 then
          Asm
            (Template =>
-              "beqz  %2, .Lto_i32_tail_start_%=" & ASCII.LF &
-              "ee.vldbc.16 q2, %3" & ASCII.LF &
-              "ee.vldbc.32 q3, %3" & ASCII.LF &
-              "loopnez %2, .Lto_i32_simd_loop_%=" & ASCII.LF &
-              "  ee.vld.128.ip q0, %0, 16" & ASCII.LF &
-              "  ee.xorq q1, q1, q1" & ASCII.LF &
-              "  ee.xorq q0, q0, q2" & ASCII.LF &
-              "  ee.vzip.16 q0, q1" & ASCII.LF &
-              "  ee.vsubs.s32 q0, q0, q3" & ASCII.LF &
-              "  ee.vsubs.s32 q1, q1, q3" & ASCII.LF &
-              "  ee.vst.128.ip q0, %1, 16" & ASCII.LF &
-              "  ee.vst.128.ip q1, %1, 16" & ASCII.LF &
-              ".Lto_i32_simd_loop_%=:" & ASCII.LF &
-              ".Lto_i32_tail_start_%=:",
-            Outputs =>
+              "beqz  %2, .Lto_i32_tail_start_%="
+              & ASCII.LF
+              & "ee.vldbc.16 q2, %3"
+              & ASCII.LF
+              & "ee.vldbc.32 q3, %3"
+              & ASCII.LF
+              & "loopnez %2, .Lto_i32_simd_loop_%="
+              & ASCII.LF
+              & "  ee.vld.128.ip q0, %0, 16"
+              & ASCII.LF
+              & "  ee.xorq q1, q1, q1"
+              & ASCII.LF
+              & "  ee.xorq q0, q0, q2"
+              & ASCII.LF
+              & "  ee.vzip.16 q0, q1"
+              & ASCII.LF
+              & "  ee.vsubs.s32 q0, q0, q3"
+              & ASCII.LF
+              & "  ee.vsubs.s32 q1, q1, q3"
+              & ASCII.LF
+              & "  ee.vst.128.ip q0, %1, 16"
+              & ASCII.LF
+              & "  ee.vst.128.ip q1, %1, 16"
+              & ASCII.LF
+              & ".Lto_i32_simd_loop_%=:"
+              & ASCII.LF
+              & ".Lto_i32_tail_start_%=:",
+            Outputs  =>
               (Address'Asm_Output ("+r", A_Ptr),
                Address'Asm_Output ("+r", R_Ptr),
                size_t'Asm_Output ("+r", Cnt)),
-            Inputs => (Address'Asm_Input ("r", Sx'Address)),
-            Clobber => "memory",
+            Inputs   => (Address'Asm_Input ("r", Sx'Address)),
+            Clobber  => "memory",
             Volatile => True);
       end if;
       I := A'Length - Natural (Tail);

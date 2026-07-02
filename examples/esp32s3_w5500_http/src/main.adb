@@ -90,10 +90,20 @@ procedure Main is
    end Put_SEA;
 
    Request : constant String :=
-     "GET " & Path & " HTTP/1.0" & ASCII.CR & ASCII.LF &
-     "Host: " & Server_IP & ASCII.CR & ASCII.LF &
-     "Connection: close" & ASCII.CR & ASCII.LF &
-     ASCII.CR & ASCII.LF;
+     "GET "
+     & Path
+     & " HTTP/1.0"
+     & ASCII.CR
+     & ASCII.LF
+     & "Host: "
+     & Server_IP
+     & ASCII.CR
+     & ASCII.LF
+     & "Connection: close"
+     & ASCII.CR
+     & ASCII.LF
+     & ASCII.CR
+     & ASCII.LF;
 begin
    delay until Clock + Startup_Settle;
    Put_Line ("[http] W5500 HTTP GET client (GNAT.Sockets, TCP)");
@@ -106,7 +116,7 @@ begin
       end loop;
    end if;
 
-   Create_Socket  (Sock, Family_Inet, Socket_Stream);
+   Create_Socket (Sock, Family_Inet, Socket_Stream);
    Put_Line ("[http] connecting to " & Server_IP & ":8000 ...");
 
    --  Guard the whole exchange: Connect_Socket raises GNAT.Sockets.Socket_Error
@@ -116,7 +126,7 @@ begin
    --  "could not connect".  Report it and fall through to the idle park below.
    begin
       Connect_Socket (Sock, (Family_Inet, Inet_Addr (Server_IP), Server_Port));
-      Send_Socket    (Sock, To_SEA (Request), SLast);
+      Send_Socket (Sock, To_SEA (Request), SLast);
 
       Put_Line ("[http] --- response ---");
       loop
@@ -129,12 +139,13 @@ begin
       Close_Socket (Sock);
    exception
       when others =>
-         Put_Line ("[http] connection failed -- is a web server listening on "
-                   & Server_IP & ":8000?");
+         Put_Line
+           ("[http] connection failed -- is a web server listening on " & Server_IP & ":8000?");
          begin
             Close_Socket (Sock);          --  best-effort cleanup; ignore errors
          exception
-            when others => null;
+            when others =>
+               null;
          end;
    end;
 

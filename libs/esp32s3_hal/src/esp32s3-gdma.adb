@@ -139,16 +139,14 @@ package body ESP32S3.GDMA is
    TX_Desc : array (Channel_Id) of aliased Descriptor;
    RX_Desc : array (Channel_Id) of aliased Descriptor;
 
-   function Addr_To_U32 is new
-     Ada.Unchecked_Conversion (System.Address, UInt32);
+   function Addr_To_U32 is new Ada.Unchecked_Conversion (System.Address, UInt32);
 
    --  Low 20 bits of an address, for the *LINK INLINK/OUTLINK_ADDR field.
    function Link_Addr (A : System.Address) return UInt20
    is (UInt20 (Addr_To_U32 (A) and 16#F_FFFF#));
 
    --  Fill a one-node descriptor: whole buffer, last in link, DMA-owned.
-   procedure Set_Desc
-     (D : in out Descriptor; Buf : System.Address; Length : Natural) is
+   procedure Set_Desc (D : in out Descriptor; Buf : System.Address; Length : Natural) is
    begin
       D.W0 :=
         (Size    => UInt12 (Length),
@@ -207,26 +205,16 @@ package body ESP32S3.GDMA is
          if Routed then
             return;
          end if;
-         INTERRUPT_CORE0_Periph.DMA_IN_CH0_INT_MAP.DMA_IN_CH0_INT_MAP :=
-           GDMA_CPU_Int;
-         INTERRUPT_CORE0_Periph.DMA_IN_CH1_INT_MAP.DMA_IN_CH1_INT_MAP :=
-           GDMA_CPU_Int;
-         INTERRUPT_CORE0_Periph.DMA_IN_CH2_INT_MAP.DMA_IN_CH2_INT_MAP :=
-           GDMA_CPU_Int;
-         INTERRUPT_CORE0_Periph.DMA_IN_CH3_INT_MAP.DMA_IN_CH3_INT_MAP :=
-           GDMA_CPU_Int;
-         INTERRUPT_CORE0_Periph.DMA_IN_CH4_INT_MAP.DMA_IN_CH4_INT_MAP :=
-           GDMA_CPU_Int;
-         INTERRUPT_CORE0_Periph.DMA_OUT_CH0_INT_MAP.DMA_OUT_CH0_INT_MAP :=
-           GDMA_CPU_Int;
-         INTERRUPT_CORE0_Periph.DMA_OUT_CH1_INT_MAP.DMA_OUT_CH1_INT_MAP :=
-           GDMA_CPU_Int;
-         INTERRUPT_CORE0_Periph.DMA_OUT_CH2_INT_MAP.DMA_OUT_CH2_INT_MAP :=
-           GDMA_CPU_Int;
-         INTERRUPT_CORE0_Periph.DMA_OUT_CH3_INT_MAP.DMA_OUT_CH3_INT_MAP :=
-           GDMA_CPU_Int;
-         INTERRUPT_CORE0_Periph.DMA_OUT_CH4_INT_MAP.DMA_OUT_CH4_INT_MAP :=
-           GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_IN_CH0_INT_MAP.DMA_IN_CH0_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_IN_CH1_INT_MAP.DMA_IN_CH1_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_IN_CH2_INT_MAP.DMA_IN_CH2_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_IN_CH3_INT_MAP.DMA_IN_CH3_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_IN_CH4_INT_MAP.DMA_IN_CH4_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_OUT_CH0_INT_MAP.DMA_OUT_CH0_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_OUT_CH1_INT_MAP.DMA_OUT_CH1_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_OUT_CH2_INT_MAP.DMA_OUT_CH2_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_OUT_CH3_INT_MAP.DMA_OUT_CH3_INT_MAP := GDMA_CPU_Int;
+         INTERRUPT_CORE0_Periph.DMA_OUT_CH4_INT_MAP.DMA_OUT_CH4_INT_MAP := GDMA_CPU_Int;
          Routed := True;
       end Route;
 
@@ -314,8 +302,7 @@ package body ESP32S3.GDMA is
    type Use_Map is array (Channel_Id) of Boolean;
 
    protected Pool is
-      procedure Claim
-        (Peri : Peripheral; Id : out Channel_Id; Ok : out Boolean);
+      procedure Claim (Peri : Peripheral; Id : out Channel_Id; Ok : out Boolean);
       procedure Release (Id : Channel_Id);
    private
       In_Use : Use_Map := (others => False);
@@ -324,9 +311,7 @@ package body ESP32S3.GDMA is
 
    protected body Pool is
 
-      procedure Claim
-        (Peri : Peripheral; Id : out Channel_Id; Ok : out Boolean)
-      is
+      procedure Claim (Peri : Peripheral; Id : out Channel_Id; Ok : out Boolean) is
          use ESP32S3_Registers.SYSTEM;
       begin
          --  One-time module bring-up: clock on, reset pulse, AHB master reset.
@@ -381,8 +366,7 @@ package body ESP32S3.GDMA is
       Id : Channel_Id;
       Ok : Boolean;
    begin
-      Completion
-        .Route;               --  ensure DMA ints reach CPU_INT 19 (once)
+      Completion.Route;               --  ensure DMA ints reach CPU_INT 19 (once)
       Release (C);                    --  free any channel C already held
       Pool.Claim (Peri, Id, Ok);
       if Ok then
@@ -444,10 +428,8 @@ package body ESP32S3.GDMA is
 
       --  Mount the links and kick both paths (RX first, then TX feeds it).
       Channels (C.Id).IN_LINK.INLINK_AUTO_RET := False;
-      Channels (C.Id).OUT_LINK.OUTLINK_ADDR :=
-        Link_Addr (TX_Desc (C.Id)'Address);
-      Channels (C.Id).IN_LINK.INLINK_ADDR :=
-        Link_Addr (RX_Desc (C.Id)'Address);
+      Channels (C.Id).OUT_LINK.OUTLINK_ADDR := Link_Addr (TX_Desc (C.Id)'Address);
+      Channels (C.Id).IN_LINK.INLINK_ADDR := Link_Addr (RX_Desc (C.Id)'Address);
 
       Channels (C.Id).IN_LINK.INLINK_START := True;
       Channels (C.Id).OUT_LINK.OUTLINK_START := True;
@@ -460,9 +442,7 @@ package body ESP32S3.GDMA is
    -- Start --
    -----------
 
-   procedure Start
-     (C : Channel; Dir : Direction; Buffer : System.Address; Length : Natural)
-   is
+   procedure Start (C : Channel; Dir : Direction; Buffer : System.Address; Length : Natural) is
    begin
       if not C.Valid or else Length = 0 or else Length > Max_Transfer then
          return;
@@ -474,12 +454,9 @@ package body ESP32S3.GDMA is
             Set_Desc (TX_Desc (C.Id), Buffer, Length);
             Channels (C.Id).OUT_INT_CLR.OUT_DONE := True;
             Channels (C.Id).OUT_INT_CLR.OUT_DSCR_ERR := True;
-            Arm
-              (C.Id,
-               Mem_To_Periph);              --  clears OUT_EOF + enables it
+            Arm (C.Id, Mem_To_Periph);              --  clears OUT_EOF + enables it
             Asm ("memw", Volatile => True, Clobber => "memory");
-            Channels (C.Id).OUT_LINK.OUTLINK_ADDR :=
-              Link_Addr (TX_Desc (C.Id)'Address);
+            Channels (C.Id).OUT_LINK.OUTLINK_ADDR := Link_Addr (TX_Desc (C.Id)'Address);
             Channels (C.Id).OUT_LINK.OUTLINK_START := True;
 
          when Periph_To_Mem =>
@@ -487,13 +464,10 @@ package body ESP32S3.GDMA is
             Set_Desc (RX_Desc (C.Id), Buffer, Length);
             Channels (C.Id).IN_INT_CLR.IN_DONE := True;
             Channels (C.Id).IN_INT_CLR.IN_DSCR_ERR := True;
-            Arm
-              (C.Id,
-               Periph_To_Mem);              --  clears IN_SUC_EOF + enables
+            Arm (C.Id, Periph_To_Mem);              --  clears IN_SUC_EOF + enables
             Asm ("memw", Volatile => True, Clobber => "memory");
             Channels (C.Id).IN_LINK.INLINK_AUTO_RET := False;
-            Channels (C.Id).IN_LINK.INLINK_ADDR :=
-              Link_Addr (RX_Desc (C.Id)'Address);
+            Channels (C.Id).IN_LINK.INLINK_ADDR := Link_Addr (RX_Desc (C.Id)'Address);
             Channels (C.Id).IN_LINK.INLINK_START := True;
       end case;
    end Start;
@@ -502,8 +476,7 @@ package body ESP32S3.GDMA is
    -- Start_Loop --
    ----------------
 
-   procedure Start_Loop
-     (C : Channel; Buffer : System.Address; Length : Natural) is
+   procedure Start_Loop (C : Channel; Buffer : System.Address; Length : Natural) is
    begin
       if not C.Valid or else Length = 0 or else Length > Max_Transfer then
          return;
@@ -527,8 +500,7 @@ package body ESP32S3.GDMA is
       Channels (C.Id).OUT_INT_CLR.OUT_EOF := True;
       Channels (C.Id).OUT_INT_CLR.OUT_DSCR_ERR := True;
       Asm ("memw", Volatile => True, Clobber => "memory");
-      Channels (C.Id).OUT_LINK.OUTLINK_ADDR :=
-        Link_Addr (TX_Desc (C.Id)'Address);
+      Channels (C.Id).OUT_LINK.OUTLINK_ADDR := Link_Addr (TX_Desc (C.Id)'Address);
       Channels (C.Id).OUT_LINK.OUTLINK_START := True;
    end Start_Loop;
 
@@ -576,16 +548,12 @@ package body ESP32S3.GDMA is
             Cancelled : Boolean;
          begin
             Set_Handler
-              (Timeout_Ev (C.Id, Dir),
-               Clock + Wait_Timeout,
-               Timeout_Waker.On_Deadline'Access);
+              (Timeout_Ev (C.Id, Dir), Clock + Wait_Timeout, Timeout_Waker.On_Deadline'Access);
             Suspend_Until_True (Done_Signal (C.Id, Dir));
             Cancel_Handler (Timeout_Ev (C.Id, Dir), Cancelled);
          end;
       end if;
-      Disarm
-        (C.Id,
-         Dir);   --  drop the EOF enable (whether the spin or the IRQ won)
+      Disarm (C.Id, Dir);   --  drop the EOF enable (whether the spin or the IRQ won)
    end Wait;
 
 end ESP32S3.GDMA;

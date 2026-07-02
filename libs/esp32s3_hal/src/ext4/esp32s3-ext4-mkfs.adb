@@ -8,34 +8,27 @@ package body ESP32S3.Ext4.Mkfs is
    SPB : constant := BS / 512;      --  512-byte sectors per block = 8
    ISz : constant := 256;           --  inode size
    IPB : constant := BS / ISz;      --  inodes per inode-table block = 16
-   BPG : constant :=
-     8 * BS;        --  blocks per group = 32768 (one bitmap block)
+   BPG : constant := 8 * BS;        --  blocks per group = 32768 (one bitmap block)
 
    Magic          : constant U16 := 16#EF53#;
    Feat_Incompat  : constant U32 := 16#0000_0002#;  --  INCOMPAT_FILETYPE only
    Compat_Journal : constant U32 := 16#0000_0004#; --  COMPAT_HAS_JOURNAL
-   FT_Dir         : constant U8 :=
-     2;       --  ext4_dir_entry file type: directory
+   FT_Dir         : constant U8 := 2;       --  ext4_dir_entry file type: directory
    First_Ino      : constant := 11;          --  first non-reserved inode
    Root_Ino       : constant := 2;
    LPF_Ino        : constant := 11;          --  lost+found
-   Journal_Ino    : constant :=
-     8;           --  the JBD2 journal (a reserved inode)
-   Used_Inodes    : constant :=
-     11;          --  reserved 1..10 + lost+found (11)
+   Journal_Ino    : constant := 8;           --  the JBD2 journal (a reserved inode)
+   Used_Inodes    : constant := 11;          --  reserved 1..10 + lost+found (11)
 
    Direct_Ptrs : constant := 12;          --  i_block[0..11] are direct
-   J_Blocks    : constant U32 :=
-     1024;    --  journal length incl its SB (4 MiB @ 4K)
-   J_Magic     : constant U32 :=
-     16#C03B_3998#;  --  JBD2 superblock magic (BE on disk)
+   J_Blocks    : constant U32 := 1024;    --  journal length incl its SB (4 MiB @ 4K)
+   J_Magic     : constant U32 := 16#C03B_3998#;  --  JBD2 superblock magic (BE on disk)
    J_SB_V2     : constant U32 := 4;        --  JBD2_SUPERBLOCK_V2 block type
 
    subtype Block is Byte_Array (0 .. BS - 1);
 
    --  Write one 4 KiB block as eight 512-byte sectors.
-   procedure Write_Block (Dev : ESP32S3.Block_Dev.Device; Num : U32; B : Block)
-   is
+   procedure Write_Block (Dev : ESP32S3.Block_Dev.Device; Num : U32; B : Block) is
       Sec : ESP32S3.Block_Dev.Sector;
    begin
       for S in 0 .. SPB - 1 loop
@@ -43,9 +36,7 @@ package body ESP32S3.Ext4.Mkfs is
             Sec (I) := B (S * 512 + I);
          end loop;
          ESP32S3.Block_Dev.Write_Sector
-           (Dev,
-            ESP32S3.Block_Dev.Sector_Index (U64 (Num) * SPB + U64 (S)),
-            Sec);
+           (Dev, ESP32S3.Block_Dev.Sector_Index (U64 (Num) * SPB + U64 (S)), Sec);
       end loop;
    end Write_Block;
 
@@ -59,27 +50,19 @@ package body ESP32S3.Ext4.Mkfs is
 
    --  Encode one classic-mapped inode into Tbl at its in-table offset.
    procedure Put_Inode
-     (Tbl   : in out Block;
-      Off   : Natural;
-      Mode  : U16;
-      Links : U16;
-      Size  : U32;
-      Blk0  : U32) is
+     (Tbl : in out Block; Off : Natural; Mode : U16; Links : U16; Size : U32; Blk0 : U32) is
    begin
       Put_U16 (Tbl, Off + 16#00#, Mode);
       Put_U32 (Tbl, Off + 16#04#, Size);                  --  i_size_lo
       Put_U16 (Tbl, Off + 16#1A#, Links);                 --  i_links_count
-      Put_U32
-        (Tbl, Off + 16#1C#, U32 (BS / 512));        --  i_blocks_lo (one block)
-      Put_U32
-        (Tbl, Off + 16#20#, 0);                     --  i_flags: classic map
+      Put_U32 (Tbl, Off + 16#1C#, U32 (BS / 512));        --  i_blocks_lo (one block)
+      Put_U32 (Tbl, Off + 16#20#, 0);                     --  i_flags: classic map
       Put_U32 (Tbl, Off + 16#28#, Blk0);                  --  i_block[0]
       Put_U16 (Tbl, Off + 16#80#, 32);                    --  i_extra_isize
    end Put_Inode;
 
    --  Write a directory entry; Rec_Len is the on-disk record length.
-   procedure Put_Dirent
-     (B : in out Block; Off : Natural; Ino : U32; Rec_Len : U16; Name : String)
+   procedure Put_Dirent (B : in out Block; Off : Natural; Ino : U32; Rec_Len : U16; Name : String)
    is
    begin
       Put_U32 (B, Off + 0, Ino);
@@ -101,18 +84,14 @@ package body ESP32S3.Ext4.Mkfs is
       Volume_Label : String := "";
       Journal      : Boolean := False)
    is
-      Dev_Blocks : constant U64 :=
-        U64 (ESP32S3.Block_Dev.Sector_Count (Dev)) / SPB;
-      T          : constant U32 :=
-        (if Total_Blocks /= 0 then Total_Blocks else U32 (Dev_Blocks));
+      Dev_Blocks : constant U64 := U64 (ESP32S3.Block_Dev.Sector_Count (Dev)) / SPB;
+      T          : constant U32 := (if Total_Blocks /= 0 then Total_Blocks else U32 (Dev_Blocks));
 
       --  Inode count: ~one per 16 KiB (mkfs default), rounded to a whole
       --  inode-table block, at least 16.
       Raw_I : constant U32 := U32'Max (16, T / 4);
-      I     : constant U32 :=
-        ((Raw_I + IPB - 1) / IPB) * IPB;   --  multiple of 16
-      IT    : constant U32 :=
-        I / IPB;                           --  inode-table blocks
+      I     : constant U32 := ((Raw_I + IPB - 1) / IPB) * IPB;   --  multiple of 16
+      IT    : constant U32 := I / IPB;                           --  inode-table blocks
 
       --  Fixed single-group block layout (first_data_block = 0 for BS > 1024):
       GDT_Blk  : constant U32 := 1;
@@ -126,13 +105,10 @@ package body ESP32S3.Ext4.Mkfs is
       --  block 0, the journal superblock) mapped classically -- 12 direct + one
       --  single-indirect block (J_Ind), which addresses 1024 blocks.
       J_First : constant U32 := LPF_Blk + 1;
-      J_Ind   : constant U32 :=
-        J_First + J_Blocks;  --  indirect block (journal only)
-      J_Total : constant U32 :=
-        (if Journal then J_Blocks + 1 else 0);  --  + indirect
+      J_Ind   : constant U32 := J_First + J_Blocks;  --  indirect block (journal only)
+      J_Total : constant U32 := (if Journal then J_Blocks + 1 else 0);  --  + indirect
 
-      Used_Blks : constant U32 :=
-        (if Journal then J_First + J_Total else LPF_Blk + 1);
+      Used_Blks : constant U32 := (if Journal then J_First + J_Total else LPF_Blk + 1);
 
       Free_Blocks : constant U32 := T - Used_Blks;
       Free_Inodes : constant U32 := I - Used_Inodes;
@@ -140,8 +116,7 @@ package body ESP32S3.Ext4.Mkfs is
       B : Block;
    begin
       if Total_Blocks = 0 and then Dev_Blocks = 0 then
-         raise Unknown_Size
-           with "mkfs: device size unknown, pass Total_Blocks";
+         raise Unknown_Size with "mkfs: device size unknown, pass Total_Blocks";
       elsif T > BPG then
          raise Too_Large with "mkfs: > 1 block group not supported";
       elsif T <= Used_Blks then
@@ -162,12 +137,10 @@ package body ESP32S3.Ext4.Mkfs is
          Put_U32 (B, O + 16#00#, I);                   --  s_inodes_count
          Put_U32 (B, O + 16#04#, T);                   --  s_blocks_count_lo
          Put_U32 (B, O + 16#08#, 0);                   --  s_r_blocks_count_lo
-         Put_U32
-           (B, O + 16#0C#, Free_Blocks);         --  s_free_blocks_count_lo
+         Put_U32 (B, O + 16#0C#, Free_Blocks);         --  s_free_blocks_count_lo
          Put_U32 (B, O + 16#10#, Free_Inodes);         --  s_free_inodes_count
          Put_U32 (B, O + 16#14#, 0);                   --  s_first_data_block
-         Put_U32
-           (B, O + 16#18#, 2);                   --  s_log_block_size (4 KiB)
+         Put_U32 (B, O + 16#18#, 2);                   --  s_log_block_size (4 KiB)
          Put_U32 (B, O + 16#1C#, 2);                   --  s_log_cluster_size
          Put_U32 (B, O + 16#20#, BPG);                 --  s_blocks_per_group
          Put_U32 (B, O + 16#24#, BPG);                 --  s_clusters_per_group
@@ -177,8 +150,7 @@ package body ESP32S3.Ext4.Mkfs is
          Put_U16 (B, O + 16#38#, Magic);               --  s_magic
          Put_U16 (B, O + 16#3A#, 1);                   --  s_state = clean
          Put_U16 (B, O + 16#3C#, 1);                   --  s_errors = continue
-         Put_U32
-           (B, O + 16#4C#, 1);                   --  s_rev_level = dynamic
+         Put_U32 (B, O + 16#4C#, 1);                   --  s_rev_level = dynamic
          Put_U32 (B, O + 16#54#, First_Ino);           --  s_first_ino
          Put_U16 (B, O + 16#58#, ISz);                 --  s_inode_size
          Put_U16 (B, O + 16#5A#, 0);                   --  s_block_group_nr
@@ -198,8 +170,7 @@ package body ESP32S3.Ext4.Mkfs is
          end loop;
          --  s_volume_name (0x78 .. 0x87)
          for K in 0 .. Natural'Min (Volume_Label'Length, 16) - 1 loop
-            B (O + 16#78# + K) :=
-              U8 (Character'Pos (Volume_Label (Volume_Label'First + K)));
+            B (O + 16#78# + K) := U8 (Character'Pos (Volume_Label (Volume_Label'First + K)));
          end loop;
       end;
       Write_Block (Dev, 0, B);
@@ -211,18 +182,9 @@ package body ESP32S3.Ext4.Mkfs is
       Put_U32 (B, 16#00#, BBmp_Blk);                   --  bg_block_bitmap_lo
       Put_U32 (B, 16#04#, IBmp_Blk);                   --  bg_inode_bitmap_lo
       Put_U32 (B, 16#08#, ITbl_Blk);                   --  bg_inode_table_lo
-      Put_U16
-        (B,
-         16#0C#,
-         U16 (Free_Blocks and 16#FFFF#));   --  bg_free_blocks_count_lo
-      Put_U16
-        (B,
-         16#0E#,
-         U16 (Free_Inodes and 16#FFFF#));   --  bg_free_inodes_count_lo
-      Put_U16
-        (B,
-         16#10#,
-         2);                          --  bg_used_dirs_count_lo (/, l+f)
+      Put_U16 (B, 16#0C#, U16 (Free_Blocks and 16#FFFF#));   --  bg_free_blocks_count_lo
+      Put_U16 (B, 16#0E#, U16 (Free_Inodes and 16#FFFF#));   --  bg_free_inodes_count_lo
+      Put_U16 (B, 16#10#, 2);                          --  bg_used_dirs_count_lo (/, l+f)
       Write_Block (Dev, GDT_Blk, B);
 
       ----------------------------------------------------------------------
@@ -251,20 +213,10 @@ package body ESP32S3.Ext4.Mkfs is
       B := [others => 0];
       --  root: dir, 0755, links = 2 (".","..") + 1 subdir (lost+found)
       Put_Inode
-        (B,
-         (Root_Ino - 1) * ISz,
-         Mode  => 16#41ED#,
-         Links => 3,
-         Size  => BS,
-         Blk0  => Root_Blk);
+        (B, (Root_Ino - 1) * ISz, Mode => 16#41ED#, Links => 3, Size => BS, Blk0 => Root_Blk);
       --  lost+found: dir, 0700, links = 2 (".", entry in root)
       Put_Inode
-        (B,
-         (LPF_Ino - 1) * ISz,
-         Mode  => 16#41C0#,
-         Links => 2,
-         Size  => BS,
-         Blk0  => LPF_Blk);
+        (B, (LPF_Ino - 1) * ISz, Mode => 16#41C0#, Links => 2, Size => BS, Blk0 => LPF_Blk);
       --  journal (inode 8): a regular file mapping the J_Blocks log blocks
       --  classically (12 direct + one indirect at J_Ind).
       if Journal then
@@ -272,22 +224,15 @@ package body ESP32S3.Ext4.Mkfs is
             O : constant Natural := (Journal_Ino - 1) * ISz;
          begin
             Put_U16 (B, O + 16#00#, 16#8180#);              --  S_IFREG | 0600
-            Put_U32
-              (B, O + 16#04#, J_Blocks * BS);         --  i_size_lo (log bytes)
+            Put_U32 (B, O + 16#04#, J_Blocks * BS);         --  i_size_lo (log bytes)
             Put_U16 (B, O + 16#1A#, 1);                     --  i_links_count
-            Put_U32
-              (B,
-               O + 16#1C#,
-               (J_Blocks + 1) * (BS / 512));  --  i_blocks (+indirect)
+            Put_U32 (B, O + 16#1C#, (J_Blocks + 1) * (BS / 512));  --  i_blocks (+indirect)
             Put_U16 (B, O + 16#80#, 32);                    --  i_extra_isize
             for K in 0 .. Direct_Ptrs - 1 loop
                --  i_block[0..11]: direct
                Put_U32 (B, O + 16#28# + K * 4, J_First + U32 (K));
             end loop;
-            Put_U32
-              (B,
-               O + 16#28# + Direct_Ptrs * 4,
-               J_Ind);  --  i_block[12]: indirect
+            Put_U32 (B, O + 16#28# + Direct_Ptrs * 4, J_Ind);  --  i_block[12]: indirect
          end;
       end if;
       Write_Block (Dev, ITbl_Blk, B);
@@ -316,12 +261,9 @@ package body ESP32S3.Ext4.Mkfs is
          Put_U32_BE (B, 16#08#, 0);                --  h_sequence
          Put_U32_BE (B, 16#0C#, BS);               --  s_blocksize
          Put_U32_BE (B, 16#10#, J_Blocks);         --  s_maxlen (incl this SB)
-         Put_U32_BE
-           (B, 16#14#, 1);                --  s_first (log starts after SB)
-         Put_U32_BE
-           (B, 16#18#, 1);                --  s_sequence (first expected)
-         Put_U32_BE
-           (B, 16#1C#, 0);                --  s_start = 0 -> empty/clean
+         Put_U32_BE (B, 16#14#, 1);                --  s_first (log starts after SB)
+         Put_U32_BE (B, 16#18#, 1);                --  s_sequence (first expected)
+         Put_U32_BE (B, 16#1C#, 0);                --  s_start = 0 -> empty/clean
          Put_U32_BE (B, 16#40#, 1);                --  s_nr_users
          for K in 0 .. 15 loop
             --  s_uuid = the fs uuid

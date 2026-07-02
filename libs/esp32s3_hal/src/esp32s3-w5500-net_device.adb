@@ -20,8 +20,7 @@ package body ESP32S3.W5500.Net_Device is
    function Dev_Acc (Self : Instance) return WS.Device_Access
    is (WS.Device_Access (Self.Dev));
 
-   procedure Attach (Self : in out Instance; Dev : access ESP32S3.W5500.Device)
-   is
+   procedure Attach (Self : in out Instance; Dev : access ESP32S3.W5500.Device) is
    begin
       Self.Dev := Dev;
    end Attach;
@@ -69,20 +68,10 @@ package body ESP32S3.W5500.Net_Device is
    begin
       case Mode is
          when TCP =>
-            WS.Open_TCP
-              (Dev_Acc (Self),
-               Self.Socks (I),
-               I,
-               WS.Port_Number (Local_Port),
-               St);
+            WS.Open_TCP (Dev_Acc (Self), Self.Socks (I), I, WS.Port_Number (Local_Port), St);
 
          when UDP =>
-            WS.Open_UDP
-              (Dev_Acc (Self),
-               Self.Socks (I),
-               I,
-               WS.Port_Number (Local_Port),
-               St);
+            WS.Open_UDP (Dev_Acc (Self), Self.Socks (I), I, WS.Port_Number (Local_Port), St);
       end case;
       Result := N (St);
    end Open;
@@ -94,9 +83,7 @@ package body ESP32S3.W5500.Net_Device is
    end Close;
 
    overriding
-   procedure Listen
-     (Self : in out Instance; Index : Natural; Result : out Net_Devices.Status)
-   is
+   procedure Listen (Self : in out Instance; Index : Natural; Result : out Net_Devices.Status) is
       St : WS.Status;
    begin
       WS.Listen (Self.Socks (Socket_Id (Index)), St);
@@ -126,8 +113,7 @@ package body ESP32S3.W5500.Net_Device is
       Read (Self.Dev.all, Socket_Regs (I), 16#0C#, P);              --  Sn_DIPR
       Addr := To_N (P);
       Port :=
-        Net_Devices.Port_Number
-          (Read_U16 (Self.Dev.all, Socket_Regs (I), 16#10#));  --  Sn_DPORT
+        Net_Devices.Port_Number (Read_U16 (Self.Dev.all, Socket_Regs (I), 16#10#));  --  Sn_DPORT
    end Peer;
 
    overriding
@@ -140,17 +126,12 @@ package body ESP32S3.W5500.Net_Device is
    is
       St : WS.Status;
    begin
-      WS.Connect
-        (Self.Socks (Socket_Id (Index)),
-         To_W (Host),
-         WS.Port_Number (Port),
-         St);
+      WS.Connect (Self.Socks (Socket_Id (Index)), To_W (Host), WS.Port_Number (Port), St);
       Result := N (St);
    end Connect;
 
    overriding
-   procedure Wait_Data
-     (Self : in out Instance; Index : Natural; Result : out Net_Devices.Status)
+   procedure Wait_Data (Self : in out Instance; Index : Natural; Result : out Net_Devices.Status)
    is
       St : WS.Status;
    begin
@@ -203,12 +184,7 @@ package body ESP32S3.W5500.Net_Device is
       Src : Byte_Array (0 .. Natural (Data'Length) - 1)
       with Import, Address => Data'Address;
    begin
-      WS.Send_To
-        (Self.Socks (Socket_Id (Index)),
-         To_W (Host),
-         WS.Port_Number (Port),
-         Src,
-         St);
+      WS.Send_To (Self.Socks (Socket_Id (Index)), To_W (Host), WS.Port_Number (Port), Src, St);
       Result := N (St);
    end Send_To;
 
@@ -235,8 +211,7 @@ package body ESP32S3.W5500.Net_Device is
    end Receive_From;
 
    overriding
-   procedure Set_Receive_Timeout
-     (Self : in out Instance; Index : Natural; To : Duration) is
+   procedure Set_Receive_Timeout (Self : in out Instance; Index : Natural; To : Duration) is
    begin
       WS.Set_Receive_Timeout (Self.Socks (Socket_Id (Index)), To);
    end Set_Receive_Timeout;

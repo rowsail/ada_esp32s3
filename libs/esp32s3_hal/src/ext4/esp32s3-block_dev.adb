@@ -10,12 +10,10 @@ package body ESP32S3.Block_Dev is
       return Dev.Count (Dev.Ctx);
    end Sector_Count;
 
-   procedure Read_Sector (Dev : Device; LBA : Sector_Index; Data : out Sector)
-   is
+   procedure Read_Sector (Dev : Device; LBA : Sector_Index; Data : out Sector) is
    begin
       if Dev.Read = null then
-         raise Ada.IO_Exceptions.Device_Error
-           with "block device has no read primitive";
+         raise Ada.IO_Exceptions.Device_Error with "block device has no read primitive";
       end if;
       Dev.Read (Dev.Ctx, LBA, Data);
    end Read_Sector;

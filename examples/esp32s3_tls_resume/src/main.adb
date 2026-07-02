@@ -28,9 +28,9 @@ with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
-   Server_IP   : constant String    := "192.168.1.100";
-   Server_Port : constant Port_Type := 4433;
-   Host        : constant String    := "test.example.com";
+   Server_IP         : constant String := "192.168.1.100";
+   Server_Port       : constant Port_Type := 4433;
+   Host              : constant String := "test.example.com";
    Max_Connect_Tries : constant := 20;
    Connect_Retry     : constant Time_Span := Milliseconds (700);
 
@@ -42,7 +42,7 @@ procedure Main is
       Connected := False;
       for Try in 1 .. Max_Connect_Tries loop
          begin
-            Create_Socket  (Sock, Family_Inet, Socket_Stream);
+            Create_Socket (Sock, Family_Inet, Socket_Stream);
             Connect_Socket (Sock, (Family_Inet, Inet_Addr (Server_IP), Server_Port));
             Connected := True;
             return;
@@ -51,7 +51,8 @@ procedure Main is
                begin
                   Close_Socket (Sock);
                exception
-                  when others => null;
+                  when others =>
+                     null;
                end;
                delay until Clock + Connect_Retry;
          end;
@@ -61,10 +62,19 @@ procedure Main is
    --  Send a GET and read until the server closes.  Draining the channel lets
    --  Recv capture any NewSessionTicket the server sends after its Finished.
    procedure Exchange (S : in out TLS_Client.Session; Sock : Socket_Type) is
-      Req : constant String :=
-        "GET / HTTP/1.0" & ASCII.CR & ASCII.LF
-        & "Host: " & Host & ASCII.CR & ASCII.LF
-        & "Connection: close" & ASCII.CR & ASCII.LF & ASCII.CR & ASCII.LF;
+      Req       : constant String :=
+        "GET / HTTP/1.0"
+        & ASCII.CR
+        & ASCII.LF
+        & "Host: "
+        & Host
+        & ASCII.CR
+        & ASCII.LF
+        & "Connection: close"
+        & ASCII.CR
+        & ASCII.LF
+        & ASCII.CR
+        & ASCII.LF;
       Req_Bytes : TLS_Client.Byte_Array (0 .. Req'Length - 1);
       Buf       : TLS_Client.Byte_Array (0 .. 1023);
       Last      : Natural;
@@ -103,29 +113,31 @@ begin
       end loop;
    end if;
    TLS_Client.Hello (S1, Sock1, Host, H1);
-   Put_Line ("[resume] full handshake: "
-             & (if H1 and then TLS_Client.Ready (S1) then "OK" else "FAIL"));
+   Put_Line
+     ("[resume] full handshake: " & (if H1 and then TLS_Client.Ready (S1) then "OK" else "FAIL"));
    if H1 and then TLS_Client.Ready (S1) then
       Exchange (S1, Sock1);
    end if;
    begin
       Close_Socket (Sock1);
    exception
-      when others => null;
+      when others =>
+         null;
    end;
-   Put_Line ("[resume] resumption ticket captured: "
-             & (if TLS_Client.Has_Ticket (S1) then "yes" else "no"));
+   Put_Line
+     ("[resume] resumption ticket captured: "
+      & (if TLS_Client.Has_Ticket (S1) then "yes" else "no"));
 
    --  Connection 2: resume using the ticket from connection 1.
    if TLS_Client.Has_Ticket (S1) then
       Connect (Sock2, C2);
       if C2 then
          TLS_Client.Resume (S2, Sock2, Host, S1, R2, Resumed);
-         Put_Line ("[resume] resumed handshake: "
-                   & (if R2 and then TLS_Client.Ready (S2) then "OK" else "FAIL")
-                   & " (no Certificate flight when resumed)");
-         Put_Line ("[resume] server accepted PSK (resumed): "
-                   & (if Resumed then "yes" else "no"));
+         Put_Line
+           ("[resume] resumed handshake: "
+            & (if R2 and then TLS_Client.Ready (S2) then "OK" else "FAIL")
+            & " (no Certificate flight when resumed)");
+         Put_Line ("[resume] server accepted PSK (resumed): " & (if Resumed then "yes" else "no"));
          if R2 and then TLS_Client.Ready (S2) then
             Exchange (S2, Sock2);
             Put_Line ("[resume] second (resumed) exchange done");
@@ -133,15 +145,17 @@ begin
          begin
             Close_Socket (Sock2);
          exception
-            when others => null;
+            when others =>
+               null;
          end;
       else
          Put_Line ("[resume] could not connect (2)");
       end if;
    end if;
 
-   Put_Line ("[resume] result: "
-             & (if TLS_Client.Has_Ticket (S1) and then Resumed then "PASS" else "FAIL"));
+   Put_Line
+     ("[resume] result: "
+      & (if TLS_Client.Has_Ticket (S1) and then Resumed then "PASS" else "FAIL"));
    loop
       delay until Clock + Seconds (3600);
    end loop;

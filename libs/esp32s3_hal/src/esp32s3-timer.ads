@@ -24,7 +24,7 @@ package ESP32S3.Timer is
    function Is_Valid (T : Timer) return Boolean;
    procedure Release (T : in out Timer);
 
-   --  Configure T to count up at Tick_Hz ticks/second (default 1 MHz = 1 Âµs per
+   --  Configure T to count up at Tick_Hz ticks/second (default 1 MHz = 1 ÃÂµs per
    --  tick; max ~80 MHz / 1, min ~80 MHz / 65536).  The counter is stopped and
    --  reset to 0; call Start.
    procedure Configure (T : in out Timer; Tick_Hz : Positive := 1_000_000);

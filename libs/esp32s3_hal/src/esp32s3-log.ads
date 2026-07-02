@@ -45,7 +45,6 @@ package ESP32S3.Log is
    --  digits, e.g. Put_Fixed (Temp_MilliC, 1000, 2) prints "23.45", and
    --  Put_Fixed (T_CentiC, 100, 2) prints a value given in hundredths.  Handles
    --  the sign and rounds toward zero.
-   procedure Put_Fixed
-     (Numer : Integer; Denom : Positive; Decimals : Natural := 2);
+   procedure Put_Fixed (Numer : Integer; Denom : Positive; Decimals : Natural := 2);
 
 end ESP32S3.Log;

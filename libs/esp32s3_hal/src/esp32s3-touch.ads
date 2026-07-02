@@ -32,8 +32,6 @@ package ESP32S3.Touch is
    --  more than Margin (either direction).  Capture Reference with Read while the
    --  pad is untouched; a finger then moves the count past the margin.  (This is
    --  a software comparison on the live Read value -- simple and deterministic.)
-   function Touched
-     (Ch : Channel; Reference : Natural; Margin : Natural := 20_000)
-      return Boolean;
+   function Touched (Ch : Channel; Reference : Natural; Margin : Natural := 20_000) return Boolean;
 
 end ESP32S3.Touch;

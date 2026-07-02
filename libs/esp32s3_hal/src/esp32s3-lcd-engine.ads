@@ -23,16 +23,14 @@ private package ESP32S3.LCD.Engine is
    function Is_Valid (B : Bus) return Boolean;
 
    --  Route the data bus and pixel clock to physical pads.
-   procedure Configure_Pins
-     (B : Bus; Data : Data_Pins; Pclk : ESP32S3.GPIO.Optional_Pin);
+   procedure Configure_Pins (B : Bus; Data : Data_Pins; Pclk : ESP32S3.GPIO.Optional_Pin);
 
    --  Free-run the pixel clock continuously on Pclk_Pad (no data transaction).
    procedure Enable_Clock_Out (B : Bus; Pclk_Pad : ESP32S3.GPIO.Pin_Id);
 
    --  Stream Length bytes (1 .. 4095) from Tx out the data bus, one per PCLK.
    --  Ok is True once the transfer completes.
-   procedure Transmit
-     (B : Bus; Tx : System.Address; Length : Natural; Ok : out Boolean);
+   procedure Transmit (B : Bus; Tx : System.Address; Length : Natural; Ok : out Boolean);
 
 private
    type Bus is limited record

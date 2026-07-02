@@ -17,11 +17,11 @@
 --  Output:  a banner, one line per test, then "[gdma] done.".  PASS on both the
 --    "mem2mem copy (64 B)" and the "raii:" lines means the run succeeded.
 --  Hardware:  none (self-contained; mem-to-mem DMA, no external wiring).
-with Interfaces;   use Interfaces;
+with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
-with ESP32S3.GDMA;  use ESP32S3.GDMA;
-with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3.GDMA; use ESP32S3.GDMA;
+with ESP32S3.Log;  use ESP32S3.Log;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
 --  elaboration); core 1 just idles -- the test runs on core 0.
@@ -89,10 +89,17 @@ begin
       declare
          C1, C2, C3, C4, C5, Extra : Channel;
       begin
-         Claim (C1, Mem2Mem);  Claim (C2, Mem2Mem);  Claim (C3, Mem2Mem);
-         Claim (C4, Mem2Mem);  Claim (C5, Mem2Mem);
-         Five := Is_Valid (C1) and then Is_Valid (C2) and then Is_Valid (C3)
-                   and then Is_Valid (C4) and then Is_Valid (C5);
+         Claim (C1, Mem2Mem);
+         Claim (C2, Mem2Mem);
+         Claim (C3, Mem2Mem);
+         Claim (C4, Mem2Mem);
+         Claim (C5, Mem2Mem);
+         Five :=
+           Is_Valid (C1)
+           and then Is_Valid (C2)
+           and then Is_Valid (C3)
+           and then Is_Valid (C4)
+           and then Is_Valid (C5);
          Claim (Extra, Mem2Mem);          --  no channel left
          Sixth_Rejected := not Is_Valid (Extra);
       end;                                --  Finalize C1..C5, Extra -> all freed
@@ -104,8 +111,7 @@ begin
          Reclaimed := Is_Valid (C);
       end;
 
-      Raii_Result (Five, Sixth_Rejected, Reclaimed,
-                   Five and Sixth_Rejected and Reclaimed);
+      Raii_Result (Five, Sixth_Rejected, Reclaimed, Five and Sixth_Rejected and Reclaimed);
    end;
 
    Done;

@@ -26,9 +26,9 @@
 --  output straight into the RX input, so no external jumper is needed.
 with Ada.Real_Time; use Ada.Real_Time;
 
-with ESP32S3.RMT;   use ESP32S3.RMT;
+with ESP32S3.RMT; use ESP32S3.RMT;
 with ESP32S3.GPIO;
-with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -36,8 +36,7 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 procedure Main is
    procedure Banner is
    begin
-      Put_Line
-        ("[rmt] bare-metal RMT TX->RX single-pad loopback self-test (no wiring)");
+      Put_Line ("[rmt] bare-metal RMT TX->RX single-pad loopback self-test (no wiring)");
    end Banner;
 
    procedure Result (Sent, Received : Integer; Ok : Boolean) is
@@ -52,8 +51,7 @@ procedure Main is
       Put_Line (if Ok then "PASS" else "FAIL");
    end Result;
 
-   procedure Dump (I : Integer; L0 : Boolean; D0 : Integer;
-                   L1 : Boolean; D1 : Integer) is
+   procedure Dump (I : Integer; L0 : Boolean; D0 : Integer; L1 : Boolean; D1 : Integer) is
    begin
       Put ("[rmt]   got[");
       Put (I);
@@ -93,8 +91,8 @@ procedure Main is
    --  in ticks (= microseconds at Resolution_Hz).  Distinct, monotonically rising
    --  durations make a mismatch easy to spot in the dump.
    Sent : constant Symbol_Array :=
-     ((Level0 => True, Duration0 =>  50, Level1 => False, Duration1 =>  60),
-      (Level0 => True, Duration0 =>  80, Level1 => False, Duration1 =>  90),
+     ((Level0 => True, Duration0 => 50, Level1 => False, Duration1 => 60),
+      (Level0 => True, Duration0 => 80, Level1 => False, Duration1 => 90),
       (Level0 => True, Duration0 => 120, Level1 => False, Duration1 => 130),
       (Level0 => True, Duration0 => 160, Level1 => False, Duration1 => 170));
 
@@ -106,8 +104,8 @@ procedure Main is
    --  A received duration matches a sent one within +/- this many ticks (= us),
    --  absorbing the one-tick rounding the TX/RX dividers can introduce.
    Match_Tolerance_Ticks : constant := 4;
-   function Near (A, B : Tick_Count) return Boolean is
-     (abs (Integer (A) - Integer (B)) <= Match_Tolerance_Ticks);
+   function Near (A, B : Tick_Count) return Boolean
+   is (abs (Integer (A) - Integer (B)) <= Match_Tolerance_Ticks);
 begin
    delay until Clock + Milliseconds (200);
    Banner;
@@ -120,8 +118,8 @@ begin
       Claim (Tx, TX_Channel_Index);
       Claim (Rx, RX_Channel_Index);
       Configure (Tx, Resolution_Hz => Resolution_Hz, Pin => Loopback_Pad);
-      Configure (Rx, Resolution_Hz => Resolution_Hz, Pin => Loopback_Pad,
-                 Idle_Ticks => RX_Idle_Ticks);
+      Configure
+        (Rx, Resolution_Hz => Resolution_Hz, Pin => Loopback_Pad, Idle_Ticks => RX_Idle_Ticks);
 
       Start (Rx);                              --  arm the receiver first
       Transmit (Tx, Sent);                     --  drive the burst onto the pad
@@ -142,8 +140,12 @@ begin
 
       Result (Sent'Length, Count, Ok);
       for I in 0 .. Natural'Min (Count, 8) - 1 loop
-         Dump (I, Got (I).Level0, Integer (Got (I).Duration0),
-               Got (I).Level1, Integer (Got (I).Duration1));
+         Dump
+           (I,
+            Got (I).Level0,
+            Integer (Got (I).Duration0),
+            Got (I).Level1,
+            Integer (Got (I).Duration1));
       end loop;
    end;                                        --  Tx, Rx finalize -> released
 

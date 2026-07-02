@@ -10,10 +10,7 @@ package body ESP32S3.RTC_IO is
    --  (The svd names the fields TOUCH_PADn_HOLD / X32x / PDACx / PADn, but the
    --  bit positions are simply the GPIO number, so treat it as a 22-bit mask.)
    Pad_Hold : UInt32
-   with
-     Volatile,
-     Import,
-     Address => ESP32S3_Registers.RTC_CNTL.RTC_CNTL_Periph.PAD_HOLD'Address;
+   with Volatile, Import, Address => ESP32S3_Registers.RTC_CNTL.RTC_CNTL_Periph.PAD_HOLD'Address;
 
    function Bit (Pin : RTC_Pin) return UInt32
    is (2**Natural (Pin));
@@ -36,10 +33,7 @@ package body ESP32S3.RTC_IO is
    --  (RUE = 27, RDE = 28), so re-impose them as a plain word array.
    type Pad_Array is array (Natural range 0 .. 21) of UInt32 with Volatile;
    Pads : Pad_Array
-   with
-     Volatile,
-     Import,
-     Address => ESP32S3_Registers.RTC_IO.RTC_IO_Periph.TOUCH_PAD0'Address;
+   with Volatile, Import, Address => ESP32S3_Registers.RTC_IO.RTC_IO_Periph.TOUCH_PAD0'Address;
 
    RUE : constant UInt32 := 2**27;    --  pull-up enable
    RDE : constant UInt32 := 2**28;    --  pull-down enable
@@ -60,8 +54,7 @@ package body ESP32S3.RTC_IO is
       Pads (Natural (Pin)) := V;
    end Set_Pull;
 
-   MUX_SEL : constant UInt32 :=
-     2**19;   --  select the RTC function for the pad
+   MUX_SEL : constant UInt32 := 2**19;   --  select the RTC function for the pad
    Fun_IE  : constant UInt32 := 2**13;   --  input-enable in the RTC domain
 
    procedure Enable_RTC_Input (Pin : RTC_Pin) is

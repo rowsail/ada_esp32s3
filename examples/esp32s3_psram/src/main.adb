@@ -23,6 +23,7 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 --
 --  Hardware: needs the in-package octal PSRAM (8 MB on the S3 module).  The
 --  octal-PSRAM bring-up runs in our 2nd-stage bootloader, not the app.
+
 procedure Main is
 
    --  Once Big.Run has reported its result there is nothing left to do, so the

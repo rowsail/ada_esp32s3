@@ -19,8 +19,7 @@ package X509 is
    function Length (S : Slice) return Natural
    is (if S.Last >= S.First then S.Last - S.First + 1 else 0);
 
-   Max_SAN : constant :=
-     8;                       --  dNSNames captured per cert
+   Max_SAN : constant := 8;                       --  dNSNames captured per cert
    type Slice_Array is array (1 .. Max_SAN) of Slice;
 
    --  Public-key algorithm of the certificate's subject key, and the algorithm the
@@ -40,11 +39,8 @@ package X509 is
    --  on the fixed-width fields), the form Valid_At compares against.
    subtype Time_64 is Interfaces.Integer_64;
    use type Interfaces.Integer_64;
-   function Pack_Time
-     (Year, Month, Day, Hour, Minute, Second : Natural) return Time_64
-   is (((((Time_64 (Year) * 100 + Time_64 (Month)) * 100 + Time_64 (Day))
-         * 100
-         + Time_64 (Hour))
+   function Pack_Time (Year, Month, Day, Hour, Minute, Second : Natural) return Time_64
+   is (((((Time_64 (Year) * 100 + Time_64 (Month)) * 100 + Time_64 (Day)) * 100 + Time_64 (Hour))
         * 100
         + Time_64 (Minute))
        * 100
@@ -55,45 +51,35 @@ package X509 is
    --  tbsCertificate), to be hashed when verifying the signature.
    type Certificate is record
       Valid        : Boolean := False;
-      TBS          :
-        Slice;            --  signed bytes (tag..end of tbsCertificate)
+      TBS          : Slice;            --  signed bytes (tag..end of tbsCertificate)
       Serial       : Slice;            --  serialNumber INTEGER content
       Not_Before   : Slice;            --  validity times (ASCII, see *_Tag)
       Not_After    : Slice;
       NB_Tag       : U8 := 0;          --  0x17 UTCTime or 0x18 GeneralizedTime
       NA_Tag       : U8 := 0;
       Sig_Alg_OID  : Slice;            --  signatureAlgorithm OID content
-      Sig_Kind     : Sig_Algorithm :=
-        Sig_Other;  --  classified signatureAlgorithm
-      Signature    :
-        Slice;            --  signatureValue (BIT STRING, unused-bits byte dropped)
-      Key_Kind     : Key_Algorithm :=
-        Key_Other;  --  subject public-key algorithm
-      RSA_Modulus  :
-        Slice;            --  SubjectPublicKeyInfo RSA modulus  (big-endian INTEGER)
+      Sig_Kind     : Sig_Algorithm := Sig_Other;  --  classified signatureAlgorithm
+      Signature    : Slice;            --  signatureValue (BIT STRING, unused-bits byte dropped)
+      Key_Kind     : Key_Algorithm := Key_Other;  --  subject public-key algorithm
+      RSA_Modulus  : Slice;            --  SubjectPublicKeyInfo RSA modulus  (big-endian INTEGER)
       RSA_Exponent : Slice;            --  RSA public exponent
-      EC_X         :
-        Slice;            --  P-256 public-key affine X (32 bytes) when Key_EC_P256
+      EC_X         : Slice;            --  P-256 public-key affine X (32 bytes) when Key_EC_P256
       EC_Y         : Slice;            --  P-256 public-key affine Y (32 bytes)
-      Ed_Pub       :
-        Slice;            --  Ed25519 public key (32 bytes) when Key_Ed25519
+      Ed_Pub       : Slice;            --  Ed25519 public key (32 bytes) when Key_Ed25519
       SAN          : Slice_Array;      --  subjectAltName dNSName entries
       SAN_Count    : Natural := 0;
 
       --  X.509 v3 extension flags the chain validator enforces (RFC 5280
       --  4.2.1.9 basicConstraints, 4.2.1.3 keyUsage, 4.2.1.12 extKeyUsage).
-      BC_Present     : Boolean :=
-        False;  --  basicConstraints extension present
+      BC_Present     : Boolean := False;  --  basicConstraints extension present
       Is_CA          : Boolean := False;  --  basicConstraints cA = TRUE
       Path_Len       : Integer := -1;     --  pathLenConstraint (-1 = absent)
       KU_Present     : Boolean := False;  --  keyUsage extension present
       KU_Cert_Sign   : Boolean := False;  --  keyUsage keyCertSign bit (5)
       KU_Digital_Sig : Boolean := False;  --  keyUsage digitalSignature bit (0)
       EKU_Present    : Boolean := False;  --  extendedKeyUsage present
-      EKU_Server     : Boolean :=
-        False;  --  id-kp-serverAuth (or anyExtendedKeyUsage)
-      EKU_Client     : Boolean :=
-        False;  --  id-kp-clientAuth (or anyExtendedKeyUsage)
+      EKU_Server     : Boolean := False;  --  id-kp-serverAuth (or anyExtendedKeyUsage)
+      EKU_Client     : Boolean := False;  --  id-kp-clientAuth (or anyExtendedKeyUsage)
 
       --  RFC 5280 4.2: an unrecognized extension marked CRITICAL must make the
       --  whole certificate be rejected.  Set while parsing extensions and folded
@@ -108,14 +94,12 @@ package X509 is
 
    --  notBefore <= Now <= notAfter, with Now a Pack_Time value (e.g. derived from
    --  the NTP clock).  False if either validity time fails to parse.
-   function Valid_At
-     (Cert : Byte_Array; C : Certificate; Now : Time_64) return Boolean;
+   function Valid_At (Cert : Byte_Array; C : Certificate; Now : Time_64) return Boolean;
 
    --  Does any subjectAltName dNSName match Host?  Case-insensitive (ASCII), with a
    --  single leftmost "*" wildcard label (RFC 6125: "*.a.b" matches one label and
    --  only where the remainder has at least two labels).  Host carries no trailing
    --  dot.  (The deprecated subject-CN fallback is intentionally not used.)
-   function Host_Matches
-     (Cert : Byte_Array; C : Certificate; Host : String) return Boolean;
+   function Host_Matches (Cert : Byte_Array; C : Certificate; Host : String) return Boolean;
 
 end X509;

@@ -108,8 +108,7 @@ package ESP32S3.ST7789 is
 
    --  Blit a W x H block of pixels (row-major) at (X, Y).  Pixels'Length must be
    --  W * H.
-   procedure Draw_Bitmap
-     (S : Session; X, Y, W, H : Natural; Pixels : Color_Array);
+   procedure Draw_Bitmap (S : Session; X, Y, W, H : Natural; Pixels : Color_Array);
 
 private
    type Device is record

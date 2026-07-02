@@ -59,8 +59,7 @@ package ESP32S3.LCD is
    --  Re-route the data bus and pixel clock to physical pads (a finer change
    --  than Reconfigure, leaving the clock rate untouched).  Raises Not_Owned
    --  unless S holds it.
-   procedure Configure_Pins
-     (S : Session; Data : Data_Pins; Pclk : ESP32S3.GPIO.Optional_Pin);
+   procedure Configure_Pins (S : Session; Data : Data_Pins; Pclk : ESP32S3.GPIO.Optional_Pin);
 
    --  Free-run the pixel clock continuously on Pclk_Pad (no data transaction) --
    --  useful as a bus clock and for verifying the clock on its own.  On the held
@@ -70,8 +69,7 @@ package ESP32S3.LCD is
    --  Stream Length bytes (1 .. 4095) from Tx out the data bus, one per PCLK.
    --  Blocking; Ok is True once the transfer completes.  Buffer in internal SRAM.
    --  Raises Not_Owned unless S holds the controller.
-   procedure Transmit
-     (S : Session; Tx : System.Address; Length : Natural; Ok : out Boolean);
+   procedure Transmit (S : Session; Tx : System.Address; Length : Natural; Ok : out Boolean);
 
    procedure Release (S : in out Session);
 

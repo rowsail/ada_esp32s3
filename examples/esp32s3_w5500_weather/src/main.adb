@@ -42,10 +42,10 @@
 --  RST=GPIO11, INT=GPIO3, at 10 MHz.  The board takes a static IP 192.168.1.50 on
 --  a 192.168.1.0/24 LAN with gateway .254 -- edit those in w5500_dev.adb for your
 --  network.  DNS goes to 8.8.8.8 (Google's public resolver; see below).
-with Ada.Real_Time;       use Ada.Real_Time;
-with Ada.Streams;         use Ada.Streams;
-with GNAT.Sockets;        use GNAT.Sockets;
-with ESP32S3.Log;         use ESP32S3.Log;
+with Ada.Real_Time; use Ada.Real_Time;
+with Ada.Streams;   use Ada.Streams;
+with GNAT.Sockets;  use GNAT.Sockets;
+with ESP32S3.Log;   use ESP32S3.Log;
 with DNS_Client;
 with W5500_Dev;
 
@@ -60,15 +60,15 @@ procedure Main is
 
    --  Open-Meteo's forecast host.  Resolved by name at run time (see DNS below);
    --  also sent verbatim in the HTTP "Host:" header.
-   Host_Name   : constant String         := "api.open-meteo.com";
+   Host_Name : constant String := "api.open-meteo.com";
 
    --  DNS resolver to query for Host_Name's A record.  8.8.8.8 is Google's public
    --  resolver -- reachable from any internet-connected LAN; change it to your own
    --  resolver if 8.8.8.8 is blocked.
-   DNS_Server  : constant Inet_Addr_Type  := Inet_Addr ("8.8.8.8");
+   DNS_Server : constant Inet_Addr_Type := Inet_Addr ("8.8.8.8");
 
    --  TCP port for plain HTTP (the API has no TLS endpoint the W5500 could use).
-   Server_Port : constant Port_Type       := 80;
+   Server_Port : constant Port_Type := 80;
 
    DQ : constant String := (1 => '"');                     --  one double-quote
 
@@ -76,14 +76,14 @@ procedure Main is
    Server_IP : Inet_Addr_Type;          --  Host_Name resolved to an IPv4 address
 
    --  Receive scratch: one read of the socket lands here, up to 512 bytes at a time.
-   Buf       : Stream_Element_Array (1 .. 512);
-   Last      : Stream_Element_Offset;   --  last byte filled by Receive_Socket
-   SLast     : Stream_Element_Offset;   --  last byte accepted by Send_Socket
+   Buf   : Stream_Element_Array (1 .. 512);
+   Last  : Stream_Element_Offset;   --  last byte filled by Receive_Socket
+   SLast : Stream_Element_Offset;   --  last byte accepted by Send_Socket
 
    --  Accumulated HTTP response (headers + JSON body).  4 KB is ample for the
    --  small current_weather reply; bytes past this cap are dropped (see the loop).
-   Resp      : String (1 .. 4096);
-   Resp_Len  : Natural := 0;            --  bytes of Resp actually filled
+   Resp     : String (1 .. 4096);
+   Resp_Len : Natural := 0;            --  bytes of Resp actually filled
 
    function To_SEA (S : String) return Stream_Element_Array is
       R : Stream_Element_Array (1 .. S'Length);
@@ -120,17 +120,17 @@ procedure Main is
          return "";
       end if;
       I := P + Key'Length;
-      if I <= Resp_Len and then Resp (I) = '"' then       --  quoted string value
+      if I <= Resp_Len and then Resp (I) = '"' then
+         --  quoted string value
          I := I + 1;
          Start := I;
          while I <= Resp_Len and then Resp (I) /= '"' loop
             I := I + 1;
          end loop;
-      else                                                --  bare number
+      else
+         --  bare number
          Start := I;
-         while I <= Resp_Len
-           and then Resp (I) /= ',' and then Resp (I) /= '}'
-         loop
+         while I <= Resp_Len and then Resp (I) /= ',' and then Resp (I) /= '}' loop
             I := I + 1;
          end loop;
       end if;
@@ -140,24 +140,38 @@ procedure Main is
    --  WMO weather interpretation code -> a short description.
    function Weather (Code : String) return String is
    begin
-      if    Code = "0"  then return "clear sky";
-      elsif Code = "1"  then return "mainly clear";
-      elsif Code = "2"  then return "partly cloudy";
-      elsif Code = "3"  then return "overcast";
-      elsif Code = "45" or else Code = "48" then return "fog";
+      if Code = "0" then
+         return "clear sky";
+      elsif Code = "1" then
+         return "mainly clear";
+      elsif Code = "2" then
+         return "partly cloudy";
+      elsif Code = "3" then
+         return "overcast";
+      elsif Code = "45" or else Code = "48" then
+         return "fog";
       elsif Code = "51" or else Code = "53" or else Code = "55" then
          return "drizzle";
-      elsif Code = "56" or else Code = "57" then return "freezing drizzle";
-      elsif Code = "61" or else Code = "63" or else Code = "65" then return "rain";
-      elsif Code = "66" or else Code = "67" then return "freezing rain";
-      elsif Code = "71" or else Code = "73" or else Code = "75" then return "snow";
-      elsif Code = "77" then return "snow grains";
+      elsif Code = "56" or else Code = "57" then
+         return "freezing drizzle";
+      elsif Code = "61" or else Code = "63" or else Code = "65" then
+         return "rain";
+      elsif Code = "66" or else Code = "67" then
+         return "freezing rain";
+      elsif Code = "71" or else Code = "73" or else Code = "75" then
+         return "snow";
+      elsif Code = "77" then
+         return "snow grains";
       elsif Code = "80" or else Code = "81" or else Code = "82" then
          return "rain showers";
-      elsif Code = "85" or else Code = "86" then return "snow showers";
-      elsif Code = "95" then return "thunderstorm";
-      elsif Code = "96" or else Code = "99" then return "thunderstorm with hail";
-      else return "code " & Code;
+      elsif Code = "85" or else Code = "86" then
+         return "snow showers";
+      elsif Code = "95" then
+         return "thunderstorm";
+      elsif Code = "96" or else Code = "99" then
+         return "thunderstorm with hail";
+      else
+         return "code " & Code;
       end if;
    end Weather;
 
@@ -165,44 +179,56 @@ procedure Main is
    DNS_Timeout : constant Duration := 5.0;
 
    Request : constant String :=
-     "GET /v1/forecast?latitude=" & Latitude
-       & "&longitude=" & Longitude
-       & "&current_weather=true HTTP/1.0" & ASCII.CR & ASCII.LF
-       & "Host: " & Host_Name & ASCII.CR & ASCII.LF
-       & "Connection: close" & ASCII.CR & ASCII.LF
-       & ASCII.CR & ASCII.LF;
+     "GET /v1/forecast?latitude="
+     & Latitude
+     & "&longitude="
+     & Longitude
+     & "&current_weather=true HTTP/1.0"
+     & ASCII.CR
+     & ASCII.LF
+     & "Host: "
+     & Host_Name
+     & ASCII.CR
+     & ASCII.LF
+     & "Connection: close"
+     & ASCII.CR
+     & ASCII.LF
+     & ASCII.CR
+     & ASCII.LF;
 begin
    --  Let the console / USB-serial settle before the first line so it is not lost.
    delay until Clock + Milliseconds (200);
    Put_Line ("[wx] W5500 weather forecast (Open-Meteo, GNAT.Sockets, TCP)");
    if not W5500_Dev.Bring_Up then
-      loop                                 --  fatal: nothing to do, park forever
+      loop
+         --  fatal: nothing to do, park forever
          delay until Clock + Seconds (3600);
       end loop;
    end if;
 
    --  Resolve the API host by name (portable DNS_Client over GNAT.Sockets).
    Put_Line ("[wx] resolving " & Host_Name & " ...");
-   if not DNS_Client.Resolve (DNS_Server, Host_Name, Server_IP, Timeout => DNS_Timeout)
-   then
+   if not DNS_Client.Resolve (DNS_Server, Host_Name, Server_IP, Timeout => DNS_Timeout) then
       Put_Line ("[wx] DNS resolution failed (no resolver reply)");
-      loop                                 --  fatal: park forever
+      loop
+         --  fatal: park forever
          delay until Clock + Seconds (3600);
       end loop;
    end if;
    Put_Line ("[wx] " & Host_Name & " = " & Image (Server_IP));
 
    --  Fetch the forecast.
-   Create_Socket  (Sock, Family_Inet, Socket_Stream);
+   Create_Socket (Sock, Family_Inet, Socket_Stream);
    Put_Line ("[wx] GET " & Host_Name & " for " & Latitude & ", " & Longitude & " ...");
    Connect_Socket (Sock, (Family_Inet, Server_IP, Server_Port));
-   Send_Socket    (Sock, To_SEA (Request), SLast);
+   Send_Socket (Sock, To_SEA (Request), SLast);
 
    loop
       Receive_Socket (Sock, Buf, Last);
       exit when Last < Buf'First;                --  server closed the connection
       for E of Buf (Buf'First .. Last) loop
-         if Resp_Len < Resp'Last then              --  drop anything past the cap
+         if Resp_Len < Resp'Last then
+            --  drop anything past the cap
             Resp_Len := Resp_Len + 1;
             Resp (Resp_Len) := Character'Val (Integer (E));
          end if;
@@ -213,29 +239,28 @@ begin
    --  Scrape the current_weather object.  Anchor at it first: the JSON also carries
    --  a current_weather_units object whose "temperature" etc. are unit *strings*.
    declare
-      CW : constant Natural := Find (Resp (1 .. Resp_Len),
-                                     DQ & "current_weather" & DQ & ":");
+      CW    : constant Natural := Find (Resp (1 .. Resp_Len), DQ & "current_weather" & DQ & ":");
       At_CW : constant Positive := (if CW = 0 then 1 else CW);
 
-      Temp : constant String := Field (DQ & "temperature"   & DQ & ":", At_CW);
-      Wind : constant String := Field (DQ & "windspeed"     & DQ & ":", At_CW);
+      Temp : constant String := Field (DQ & "temperature" & DQ & ":", At_CW);
+      Wind : constant String := Field (DQ & "windspeed" & DQ & ":", At_CW);
       Dir  : constant String := Field (DQ & "winddirection" & DQ & ":", At_CW);
-      Code : constant String := Field (DQ & "weathercode"   & DQ & ":", At_CW);
-      Tim  : constant String := Field (DQ & "time"          & DQ & ":", At_CW);
+      Code : constant String := Field (DQ & "weathercode" & DQ & ":", At_CW);
+      Tim  : constant String := Field (DQ & "time" & DQ & ":", At_CW);
    begin
       if CW = 0 or else Temp = "" then
          Put_Line ("[wx] could not parse the forecast (response below)");
          Put_Line (Resp (1 .. Resp_Len));
       else
-         Put_Line ("[wx] forecast for " & Latitude & ", " & Longitude
-                   & "  (" & Tim & " UTC)");
+         Put_Line ("[wx] forecast for " & Latitude & ", " & Longitude & "  (" & Tim & " UTC)");
          Put_Line ("[wx]   temperature : " & Temp & " C");
          Put_Line ("[wx]   wind        : " & Wind & " km/h from " & Dir & " deg");
          Put_Line ("[wx]   conditions  : " & Weather (Code));
       end if;
    end;
 
-   loop                                    --  done: park forever
+   loop
+      --  done: park forever
       delay until Clock + Seconds (3600);
    end loop;
 end Main;

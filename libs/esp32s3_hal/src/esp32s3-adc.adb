@@ -10,8 +10,7 @@ with ESP32S3_Registers.SYSTEM;
 
 package body ESP32S3.ADC is
 
-   function Channel_Pin
-     (Unit : ADC_Unit; Ch : Channel_Index) return ESP32S3.GPIO.Pin_Id
+   function Channel_Pin (Unit : ADC_Unit; Ch : Channel_Index) return ESP32S3.GPIO.Pin_Id
    is (case Unit is
          when ADC1 => ESP32S3.GPIO.Pin_Id (1 + Natural (Ch)),
          when ADC2 => ESP32S3.GPIO.Pin_Id (11 + Natural (Ch)));
@@ -23,29 +22,24 @@ package body ESP32S3.ADC is
    --  conversion until they are set.  rom_i2c_writeReg_Mask writes a bit field.
    ---------------------------------------------------------------------------
 
-   type Rom_I2C_Write_Fn is
-     access procedure (Block, Host, Reg, Msb, Lsb, Data : Unsigned_8)
+   type Rom_I2C_Write_Fn is access procedure (Block, Host, Reg, Msb, Lsb, Data : Unsigned_8)
    with Convention => C;
-   function To_Fn is new
-     Ada.Unchecked_Conversion (System.Address, Rom_I2C_Write_Fn);
-   Rom_I2C_Write : constant Rom_I2C_Write_Fn :=
-     To_Fn (System'To_Address (16#4000_5D6C#));
+   function To_Fn is new Ada.Unchecked_Conversion (System.Address, Rom_I2C_Write_Fn);
+   Rom_I2C_Write : constant Rom_I2C_Write_Fn := To_Fn (System'To_Address (16#4000_5D6C#));
 
    ANA_Config  : UInt32
    with Volatile, Import, Address => System'To_Address (16#6000_E044#);
    ANA_Config2 : UInt32
    with Volatile, Import, Address => System'To_Address (16#6000_E048#);
 
-   I2C_SAR_ADC      : constant Unsigned_8 :=
-     16#69#;   --  REGI2C block (SAR ADC)
+   I2C_SAR_ADC      : constant Unsigned_8 := 16#69#;   --  REGI2C block (SAR ADC)
    I2C_SAR_ADC_HOST : constant Unsigned_8 := 1;
 
    --  The SAR self-calibration init code is attenuation-DEPENDENT (each atten has
    --  its own analog gain), so keep one per (unit, attenuation) and program the
    --  matching one before each conversion -- calibrating at a single atten and
    --  reusing that code at the others skews every non-calibrated-atten reading.
-   Cal_Codes : array (ADC_Unit, Attenuation) of Natural :=
-     (others => (others => 0));
+   Cal_Codes : array (ADC_Unit, Attenuation) of Natural := (others => (others => 0));
    Done_Flag : Boolean := False;
 
    procedure I2C (Reg, Msb, Lsb, Data : Unsigned_8) is
@@ -100,14 +94,10 @@ package body ESP32S3.ADC is
    --  Low-level digital one-shot conversion (atten + channel + start + read).
    ---------------------------------------------------------------------------
 
-   function Convert
-     (Unit : ADC_Unit; Ch : Channel_Index; Atten : Attenuation) return Natural
-   is
+   function Convert (Unit : ADC_Unit; Ch : Channel_Index; Atten : Attenuation) return Natural is
       Shift    : constant Natural := Natural (Ch) * 2;
-      One_Hot  : constant Unsigned_16 :=
-        Shift_Left (Unsigned_16 (1), Natural (Ch));
-      A_Val    : constant UInt32 :=
-        Shift_Left (UInt32 (Attenuation'Pos (Atten)), Shift);
+      One_Hot  : constant Unsigned_16 := Shift_Left (Unsigned_16 (1), Natural (Ch));
+      A_Val    : constant UInt32 := Shift_Left (UInt32 (Attenuation'Pos (Atten)), Shift);
       A_Mask   : constant UInt32 := Shift_Left (UInt32 (3), Shift);
       --  Wall-clock bound on the conversion-done poll (a conversion is a few
       --  microseconds).  A real-time deadline stays correct under -O2, where an
@@ -118,10 +108,8 @@ package body ESP32S3.ADC is
    begin
       case Unit is
          when ADC1 =>
-            SENS_Periph.SAR_ATTEN1 :=
-              (SENS_Periph.SAR_ATTEN1 and not A_Mask) or A_Val;
-            SENS_Periph.SAR_MEAS1_CTRL2.SAR1_EN_PAD :=
-              SAR_MEAS1_CTRL2_SAR1_EN_PAD_Field (One_Hot);
+            SENS_Periph.SAR_ATTEN1 := (SENS_Periph.SAR_ATTEN1 and not A_Mask) or A_Val;
+            SENS_Periph.SAR_MEAS1_CTRL2.SAR1_EN_PAD := SAR_MEAS1_CTRL2_SAR1_EN_PAD_Field (One_Hot);
             SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_START_SAR := False;
             SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_START_SAR := True;
             while not SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DONE_SAR
@@ -130,15 +118,11 @@ package body ESP32S3.ADC is
                null;
             end loop;
             Done_Flag := SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DONE_SAR;
-            return
-              Natural
-                (SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DATA_SAR and 16#0FFF#);
+            return Natural (SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DATA_SAR and 16#0FFF#);
 
          when ADC2 =>
-            SENS_Periph.SAR_ATTEN2 :=
-              (SENS_Periph.SAR_ATTEN2 and not A_Mask) or A_Val;
-            SENS_Periph.SAR_MEAS2_CTRL2.SAR2_EN_PAD :=
-              SAR_MEAS2_CTRL2_SAR2_EN_PAD_Field (One_Hot);
+            SENS_Periph.SAR_ATTEN2 := (SENS_Periph.SAR_ATTEN2 and not A_Mask) or A_Val;
+            SENS_Periph.SAR_MEAS2_CTRL2.SAR2_EN_PAD := SAR_MEAS2_CTRL2_SAR2_EN_PAD_Field (One_Hot);
             SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_START_SAR := False;
             SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_START_SAR := True;
             while not SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DONE_SAR
@@ -147,9 +131,7 @@ package body ESP32S3.ADC is
                null;
             end loop;
             Done_Flag := SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DONE_SAR;
-            return
-              Natural
-                (SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DATA_SAR and 16#0FFF#);
+            return Natural (SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DATA_SAR and 16#0FFF#);
       end case;
    end Convert;
 
@@ -177,8 +159,7 @@ package body ESP32S3.ADC is
          Reading := Convert (Unit, 0, Atten);
       end loop;
       Set_Encal_Gnd (Unit, False);
-      Set_Init_Code
-        (Unit, Chk);          --  leave the calibrated code in place
+      Set_Init_Code (Unit, Chk);          --  leave the calibrated code in place
       Cal_Codes (Unit, Atten) := Chk;
    end Calibrate;
 
@@ -288,9 +269,7 @@ package body ESP32S3.ADC is
    function Last_Done return Boolean
    is (Done_Flag);
 
-   function Read
-     (R : Reader; Ch : Channel_Index; Atten : Attenuation := Db_12)
-      return Raw_Value is
+   function Read (R : Reader; Ch : Channel_Index; Atten : Attenuation := Db_12) return Raw_Value is
    begin
       if not R.Held then
          return 0;

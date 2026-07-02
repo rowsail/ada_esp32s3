@@ -29,17 +29,13 @@ package ESP32S3.Ext4.Superblock is
    end record;
 
    --  INCOMPAT feature bits.
-   Incompat_Filetype    : constant U32 :=
-     16#0000_0002#;   --  dir entries carry a type
-   Incompat_Recover     : constant U32 :=
-     16#0000_0004#;   --  journal needs recovery
+   Incompat_Filetype    : constant U32 := 16#0000_0002#;   --  dir entries carry a type
+   Incompat_Recover     : constant U32 := 16#0000_0004#;   --  journal needs recovery
    Incompat_Journal_Dev : constant U32 := 16#0000_0008#;
    Incompat_Meta_BG     : constant U32 := 16#0000_0010#;
-   Incompat_Extents     : constant U32 :=
-     16#0000_0040#;   --  inodes use extent trees
+   Incompat_Extents     : constant U32 := 16#0000_0040#;   --  inodes use extent trees
    Incompat_64Bit       : constant U32 := 16#0000_0080#;
-   Incompat_Flex_BG     : constant U32 :=
-     16#0000_0200#;   --  relocated metadata groups
+   Incompat_Flex_BG     : constant U32 := 16#0000_0200#;   --  relocated metadata groups
    Incompat_Csum_Seed   : constant U32 := 16#0000_2000#;
    Incompat_Inline_Data : constant U32 := 16#0001_0000#;
 

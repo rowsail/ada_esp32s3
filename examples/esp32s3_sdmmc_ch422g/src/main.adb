@@ -29,14 +29,14 @@ with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.CH422G;
 with ESP32S3.SDMMC;
-with ESP32S3.Text_IO;   use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
+with ESP32S3.Text_IO; use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
    package CH422G renames ESP32S3.CH422G;
-   package SDMMC  renames ESP32S3.SDMMC;
+   package SDMMC renames ESP32S3.SDMMC;
    use type CH422G.Status;
    use type SDMMC.Status;
 
@@ -61,10 +61,15 @@ procedure Main is
          Buf (I) := Hex_Digit (Natural (X and 16#F#));
          X := Shift_Right (X, 4);
       end loop;
-      for I in Buf'Range loop        --  find the first non-zero nibble
-         if Buf (I) /= '0' then First := I; exit; end if;
+      for I in Buf'Range loop
+         --  find the first non-zero nibble
+         if Buf (I) /= '0' then
+            First := I;
+            exit;
+         end if;
       end loop;
-      if Buf'Last - First + 1 < Min_Digits then   --  but keep at least Min_Digits
+      if Buf'Last - First + 1 < Min_Digits then
+         --  but keep at least Min_Digits
          First := Buf'Last - Min_Digits + 1;
       end if;
       Put (Buf (First .. Buf'Last));
@@ -93,8 +98,7 @@ procedure Main is
 
    procedure Report_Exio (Ok : Boolean) is
    begin
-      Put_Line ("[sd] CH422G IO bank -> 0x10 (DAT3 high) : "
-                & (if Ok then "OK" else "I2C error"));
+      Put_Line ("[sd] CH422G IO bank -> 0x10 (DAT3 high) : " & (if Ok then "OK" else "I2C error"));
    end Report_Exio;
 
    procedure Report_Init (Status : SDMMC.Status; Kind : SDMMC.Card_Kind) is
@@ -102,66 +106,88 @@ procedure Main is
       Put ("[sd] init: ");
       Put (SDMMC.Status'Image (Status));
       Put ("   card: ");
-      Put_Line (case Kind is
-                   when SDMMC.Unknown => "Unknown",
-                   when SDMMC.SDSC    => "SDSC",
-                   when SDMMC.SDHC    => "SDHC/SDXC");
+      Put_Line
+        (case Kind is
+           when SDMMC.Unknown => "Unknown",
+           when SDMMC.SDSC    => "SDSC",
+           when SDMMC.SDHC    => "SDHC/SDXC");
    end Report_Init;
 
    procedure Report_Id (Id : SDMMC.Card_Id) is
    begin
-      Put ("[sd] CID: mfr=0x");    Put_Hex (Unsigned_64 (Id.Manufacturer));
-      Put ("  oem=");              Put (Clean (Id.OEM));
-      Put ("  name=");             Put (Clean (Id.Product));
-      Put ("  rev ");              Put_Nat (Id.Revision_Major);
-      Put (".");                   Put_Nat (Id.Revision_Minor);
+      Put ("[sd] CID: mfr=0x");
+      Put_Hex (Unsigned_64 (Id.Manufacturer));
+      Put ("  oem=");
+      Put (Clean (Id.OEM));
+      Put ("  name=");
+      Put (Clean (Id.Product));
+      Put ("  rev ");
+      Put_Nat (Id.Revision_Major);
+      Put (".");
+      Put_Nat (Id.Revision_Minor);
       New_Line;
-      Put ("[sd]      serial=0x"); Put_Hex (Unsigned_64 (Id.Serial));
-      Put ("  manufactured ");     Put_Nat (Id.Mfg_Year);
-      Put ("-");                   Put_Nat (Id.Mfg_Month);
+      Put ("[sd]      serial=0x");
+      Put_Hex (Unsigned_64 (Id.Serial));
+      Put ("  manufactured ");
+      Put_Nat (Id.Mfg_Year);
+      Put ("-");
+      Put_Nat (Id.Mfg_Month);
       New_Line;
    end Report_Id;
 
    procedure Report_Cap (Mb : Natural) is
    begin
-      Put ("[sd] capacity: ");  Put_Nat (Mb);
-      Put (" MB  (~");          Put_Nat (Mb / 1024);
-      Put (".");                Put_Nat ((Mb mod 1024) * 10 / 1024);
+      Put ("[sd] capacity: ");
+      Put_Nat (Mb);
+      Put (" MB  (~");
+      Put_Nat (Mb / 1024);
+      Put (".");
+      Put_Nat ((Mb mod 1024) * 10 / 1024);
       Put_Line (" GB)");
    end Report_Cap;
 
    procedure Report_Caps (Caps : SDMMC.Card_Caps) is
    begin
-      Put ("[sd] caps: spec ");  Put_Nat (Caps.Spec_Major);
-      Put (".");                 Put_Nat (Caps.Spec_Minor);
-      Put ("  default-speed max ");  Put_Nat (Caps.Max_Speed_MHz);
-      Put (" MHz  High-Speed ");  Put (if Caps.High_Speed then "yes" else "no");
-      Put ("  4-bit ");           Put (if Caps.Supports_4bit then "yes" else "no");
+      Put ("[sd] caps: spec ");
+      Put_Nat (Caps.Spec_Major);
+      Put (".");
+      Put_Nat (Caps.Spec_Minor);
+      Put ("  default-speed max ");
+      Put_Nat (Caps.Max_Speed_MHz);
+      Put (" MHz  High-Speed ");
+      Put (if Caps.High_Speed then "yes" else "no");
+      Put ("  4-bit ");
+      Put (if Caps.Supports_4bit then "yes" else "no");
       New_Line;
       Put ("[sd]        cmd-classes 0x");
       Put_Hex (Unsigned_64 (Caps.Command_Classes) and 16#FFF#);
-      Put ("  read-block ");     Put_Nat (Caps.Read_Block_Len);
+      Put ("  read-block ");
+      Put_Nat (Caps.Read_Block_Len);
       Put_Line (" B");
    end Report_Caps;
 
    procedure Report_Speed (Active_Mhz : Natural; Hs_Active : Boolean) is
    begin
-      Put ("[sd] running: ");  Put_Nat (Active_Mhz);
-      Put (" MHz  (High Speed ");  Put (if Hs_Active then "ON" else "off");
+      Put ("[sd] running: ");
+      Put_Nat (Active_Mhz);
+      Put (" MHz  (High Speed ");
+      Put (if Hs_Active then "ON" else "off");
       Put_Line (")");
    end Report_Speed;
 
-   procedure Report_Read (Status : SDMMC.Status; B : SDMMC.Block; Sig_OK : Boolean)
-   is
+   procedure Report_Read (Status : SDMMC.Status; B : SDMMC.Block; Sig_OK : Boolean) is
    begin
       if Status /= SDMMC.OK then
          Put_Line ("[sd] read block 0: " & SDMMC.Status'Image (Status));
          return;
       end if;
       Put ("[sd] read block 0: OK   first bytes = ");
-      Put_Hex (Unsigned_64 (B (0)), 2);  Put (" ");
-      Put_Hex (Unsigned_64 (B (1)), 2);  Put (" ");
-      Put_Hex (Unsigned_64 (B (2)), 2);  Put (" ");
+      Put_Hex (Unsigned_64 (B (0)), 2);
+      Put (" ");
+      Put_Hex (Unsigned_64 (B (1)), 2);
+      Put (" ");
+      Put_Hex (Unsigned_64 (B (2)), 2);
+      Put (" ");
       Put_Hex (Unsigned_64 (B (3)), 2);
       Put_Line ("   boot sig 0x55AA: " & (if Sig_OK then "present" else "absent"));
    end Report_Read;
@@ -191,17 +217,26 @@ begin
    CH422G.Acquire (Expander_Session, Expander);
    CH422G.Write_IO (Expander_Session, 16#10#, Expander_Status);   --  IO4 high, rest low
    if Expander_Status = CH422G.OK then
-      CH422G.Configure (Expander_Session,
-                        IO_Dir => CH422G.Outputs, OC_Mode => CH422G.Push_Pull,
-                        Result => Expander_Status);   --  enable outputs -> DAT3 high
+      CH422G.Configure
+        (Expander_Session,
+         IO_Dir  => CH422G.Outputs,
+         OC_Mode => CH422G.Push_Pull,
+         Result  => Expander_Status);   --  enable outputs -> DAT3 high
+
    end if;
    Report_Exio (Expander_Status = CH422G.OK);
 
    --  2) SDMMC: 1-bit bus on CLK=IO12, CMD=IO11, D0=IO13 (D1/D2/D3 not wired).
-   SDMMC.Setup (Card, On => SDMMC.Slot1, Clk => 12, Cmd => 11, D0 => 13,
-                Width => SDMMC.Width_1,
-                Init_Clock_Hz => 400_000, Data_Clock_Hz => 50_000_000,
-                High_Speed => True);   --  negotiate the fastest the card allows
+   SDMMC.Setup
+     (Card,
+      On            => SDMMC.Slot1,
+      Clk           => 12,
+      Cmd           => 11,
+      D0            => 13,
+      Width         => SDMMC.Width_1,
+      Init_Clock_Hz => 400_000,
+      Data_Clock_Hz => 50_000_000,
+      High_Speed    => True);   --  negotiate the fastest the card allows
 
    SDMMC.Initialize (Card, Card_Status);
    Report_Init (Card_Status, SDMMC.Kind (Card));
@@ -216,18 +251,19 @@ begin
          Report_Id (Id);
          Report_Cap (Natural (Cap / 2048));    --  blocks -> MB
          Report_Caps (Caps);
-         Report_Speed (Natural (SDMMC.Active_Clock_Hz (Card) / 1_000_000),
-                       SDMMC.High_Speed_Active (Card));
+         Report_Speed
+           (Natural (SDMMC.Active_Clock_Hz (Card) / 1_000_000), SDMMC.High_Speed_Active (Card));
       end;
    end if;
 
    --  3) Read block 0 and check the boot signature (read-only).
    if Card_Status = SDMMC.OK then
       SDMMC.Read_Block (Card, 0, Block, Card_Status);
-      Report_Read (Card_Status, Block,
-                   Sig_OK => Card_Status = SDMMC.OK
-                             and then Block (510) = 16#55#
-                             and then Block (511) = 16#AA#);
+      Report_Read
+        (Card_Status,
+         Block,
+         Sig_OK =>
+           Card_Status = SDMMC.OK and then Block (510) = 16#55# and then Block (511) = 16#AA#);
    end if;
 
    Done;

@@ -37,7 +37,7 @@ with ESP32S3.SPI;
 with ESP32S3.W25Q;
 with ESP32S3.GPIO;
 with ESP32S3.Log;
-with ESP32S3.Block_Dev;             use ESP32S3.Block_Dev;
+with ESP32S3.Block_Dev; use ESP32S3.Block_Dev;
 with ESP32S3.Block_Dev.W25Q_Source;
 with ESP32S3.Block_Dev.WL;
 
@@ -45,11 +45,11 @@ with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
-   package SPI  renames ESP32S3.SPI;
+   package SPI renames ESP32S3.SPI;
    package W25Q renames ESP32S3.W25Q;
-   package Log  renames ESP32S3.Log;
-   package BDW  renames ESP32S3.Block_Dev.W25Q_Source;
-   package WL   renames ESP32S3.Block_Dev.WL;
+   package Log renames ESP32S3.Log;
+   package BDW renames ESP32S3.Block_Dev.W25Q_Source;
+   package WL renames ESP32S3.Block_Dev.WL;
    use type Sector;
 
    SCLK_Pin : constant := 1;
@@ -60,21 +60,20 @@ procedure Main is
 
    --  Flash device + its own bit clock + single-GPIO chip select on IO21 (the
    --  SPI driver applies the clock and drives CS active-low, held per command).
-   Flash   : W25Q.Flash :=
-     (Host => SPI.SPI2, Clock_Hz => Clock_Hz, CS_Pin => CS_Pin, others => <>);
+   Flash : W25Q.Flash := (Host => SPI.SPI2, Clock_Hz => Clock_Hz, CS_Pin => CS_Pin, others => <>);
 
-   ID       : W25Q.JEDEC_ID;
-   Mode_OK  : Boolean;
-   Chip     : W25Q.Address;    --  flash size in bytes, detected from the JEDEC id
+   ID      : W25Q.JEDEC_ID;
+   Mode_OK : Boolean;
+   Chip    : W25Q.Address;    --  flash size in bytes, detected from the JEDEC id
 
    --  Lower (raw) block device, then the wear-leveling volume over it.
-   Raw      : aliased BDW.Source;
-   Lower    : Device;
-   Vol      : aliased WL.Volume;
-   Dev      : Device;
+   Raw       : aliased BDW.Source;
+   Lower     : Device;
+   Vol       : aliased WL.Volume;
+   Dev       : Device;
    Formatted : Boolean;
 
-   N_Sectors : constant := 32;          --  logical sectors to write/verify
+   N_Sectors   : constant := 32;          --  logical sectors to write/verify
    Update_Rate : constant := 4;         --  a move every 4 writes -> several moves
 
    --  A pattern unique to each logical sector.
@@ -105,14 +104,15 @@ begin
    Log.Put_Line ("[wl] dynamic wear-leveling FTL over W25Q SPI NOR (SPI2, CS=IO21)");
 
    SPI.Setup (SPI.SPI2);
-   SPI.Configure_Pins (SPI.SPI2, Sclk => SCLK_Pin, Mosi => MOSI_Pin,
-                       Miso => MISO_Pin);
+   SPI.Configure_Pins (SPI.SPI2, Sclk => SCLK_Pin, Mosi => MOSI_Pin, Miso => MISO_Pin);
 
    W25Q.Read_Identification (Flash, ID);
    W25Q.Initialize (Flash, Mode_OK);
    Log.Put ("[wl] flash JEDEC ");
-   Log.Put_Hex (Unsigned_32 (ID.Manufacturer), 2); Log.Put (' ');
-   Log.Put_Hex (Unsigned_32 (ID.Memory_Type), 2);  Log.Put (' ');
+   Log.Put_Hex (Unsigned_32 (ID.Manufacturer), 2);
+   Log.Put (' ');
+   Log.Put_Hex (Unsigned_32 (ID.Memory_Type), 2);
+   Log.Put (' ');
    Log.Put_Hex (Unsigned_32 (ID.Capacity), 2);
    Log.Put_Line (", 4-byte mode: " & (if Mode_OK then "OK" else "FAILED"));
 
@@ -141,8 +141,10 @@ begin
       Log.Put_Unsigned (Unsigned_32 (WL.Move_Count (Vol)));
       Log.New_Line;
 
-      Log.Put_Line ((if Verify (Dev) then "[wl] read-back (same volume): PASS"
-                     else "[wl] read-back (same volume): FAIL"));
+      Log.Put_Line
+        ((if Verify (Dev)
+          then "[wl] read-back (same volume): PASS"
+          else "[wl] read-back (same volume): FAIL"));
 
       --  Simulated power cycle: a brand-new volume Mounted from the config alone.
       declare

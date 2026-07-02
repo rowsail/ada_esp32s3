@@ -43,17 +43,17 @@
 --        SDMMC CLK / CMD / D0 = IO12 / IO11 / IO13   (1-bit)
 --        SD DAT3 / CD         = CH422G IO4           (held high)
 --        CH422G I2C           = SDA=IO8  SCL=IO9     (I2C0)
-with Interfaces;   use Interfaces;
-with Ada.Real_Time; use Ada.Real_Time;
+with Interfaces;     use Interfaces;
+with Ada.Real_Time;  use Ada.Real_Time;
 with Ada.Exceptions; use Ada.Exceptions;
 with Ada.Unchecked_Deallocation;
 
-with ESP32S3.Text_IO;  use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
+with ESP32S3.Text_IO; use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
 with ESP32S3.CH422G;
 with ESP32S3.SDMMC;
 with ESP32S3.Block_Dev;
 with ESP32S3.Block_Dev.SDMMC_Source;
-with ESP32S3.Ext4;       use ESP32S3.Ext4;
+with ESP32S3.Ext4;    use ESP32S3.Ext4;
 with ESP32S3.Ext4.FS;
 with ESP32S3.Ext4.Inode;
 with ESP32S3.Ext4.Bitmap;   --  Phantom_Free_Count tripwire
@@ -63,7 +63,7 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
    package CH422G renames ESP32S3.CH422G;
-   package SDMMC  renames ESP32S3.SDMMC;
+   package SDMMC renames ESP32S3.SDMMC;
    use type CH422G.Status;
    use type SDMMC.Status;
 
@@ -73,8 +73,9 @@ procedure Main is
 
    procedure Banner is
    begin
-      Put_Line ("[ext4w] ext4 WRITE battery over SDMMC "
-                & "(mkdir / big file / hardlink / symlink / rename / delete)");
+      Put_Line
+        ("[ext4w] ext4 WRITE battery over SDMMC "
+         & "(mkdir / big file / hardlink / symlink / rename / delete)");
    end Banner;
 
    procedure Card_R (Ok : Boolean) is
@@ -95,8 +96,9 @@ procedure Main is
 
    procedure Done is
    begin
-      Put_Line ("[ext4w] done.  On a host: 'e2fsck -f /dev/sdX' should be clean; "
-                & "verify the tree + readlink + big-file pattern.");
+      Put_Line
+        ("[ext4w] done.  On a host: 'e2fsck -f /dev/sdX' should be clean; "
+         & "verify the tree + readlink + big-file pattern.");
    end Done;
 
    Expander         : CH422G.Device;    --  CH422G that drives the card's DAT3/CD
@@ -115,8 +117,7 @@ procedure Main is
    --  A 1 MiB file exercises the single-indirect block map (>12 direct blocks).
    Big_File_Size : constant := 1024 * 1024;
    type Byte_Array_Ptr is access ESP32S3.Ext4.Byte_Array;
-   procedure Free is new Ada.Unchecked_Deallocation
-     (ESP32S3.Ext4.Byte_Array, Byte_Array_Ptr);
+   procedure Free is new Ada.Unchecked_Deallocation (ESP32S3.Ext4.Byte_Array, Byte_Array_Ptr);
 
    --  The big file is filled with a repeating, position-dependent byte so the
    --  host (and the on-device head/tail check) can verify the contents exactly.
@@ -124,8 +125,8 @@ procedure Main is
    --  with the 4 KiB block size -- no block boundary lines up with a repeat,
    --  catching block-map mistakes that a constant fill would hide.
    Pattern_Period : constant := 251;
-   function Pattern_Byte (Offset : Natural) return U8 is
-     (U8 (Offset mod Pattern_Period));
+   function Pattern_Byte (Offset : Natural) return U8
+   is (U8 (Offset mod Pattern_Period));
 
    --  Printable-ASCII range (space .. tilde); anything outside maps to '.' so a
    --  stray control byte can't corrupt the console line.
@@ -143,7 +144,8 @@ procedure Main is
          begin
             Result (I) :=
               (if Character'Pos (Source_Char) in First_Printable .. Last_Printable
-               then Source_Char else '.');
+               then Source_Char
+               else '.');
          end;
       end loop;
       return Result;
@@ -156,8 +158,7 @@ procedure Main is
 
    procedure Check (Label : String; Ok : Boolean) is
    begin
-      Put_Line ("[ext4w]   [" & (if Ok then "PASS" else "FAIL") & "] "
-                & Clean (Label));
+      Put_Line ("[ext4w]   [" & (if Ok then "PASS" else "FAIL") & "] " & Clean (Label));
    end Check;
 
    procedure Report_Error (Msg_Text : String) is
@@ -184,14 +185,23 @@ begin
    CH422G.Acquire (Expander_Session, Expander);
    CH422G.Write_IO (Expander_Session, CH422G_IO4_High, Expander_Status);
    if Expander_Status = CH422G.OK then
-      CH422G.Configure (Expander_Session, IO_Dir => CH422G.Outputs,
-                        OC_Mode => CH422G.Push_Pull, Result => Expander_Status);
+      CH422G.Configure
+        (Expander_Session,
+         IO_Dir  => CH422G.Outputs,
+         OC_Mode => CH422G.Push_Pull,
+         Result  => Expander_Status);
    end if;
 
    --  SDMMC slot 1, 1-bit bus, High Speed.
-   SDMMC.Setup (Card, On => SDMMC.Slot1, Clk => 12, Cmd => 11, D0 => 13,
-                Width => SDMMC.Width_1, Data_Clock_Hz => SD_High_Speed_Clock_Hz,
-                High_Speed => True);
+   SDMMC.Setup
+     (Card,
+      On            => SDMMC.Slot1,
+      Clk           => 12,
+      Cmd           => 11,
+      D0            => 13,
+      Width         => SDMMC.Width_1,
+      Data_Clock_Hz => SD_High_Speed_Clock_Hz,
+      High_Speed    => True);
    SDMMC.Initialize (Card, Card_Status);
    Card_R (Card_Status = SDMMC.OK);
    if Card_Status /= SDMMC.OK then
@@ -210,8 +220,8 @@ begin
       Cache_Depth_Blocks : constant := 16;
 
       Block_Device : constant ESP32S3.Block_Dev.Device :=
-             ESP32S3.Block_Dev.SDMMC_Source.Make (Card'Access);
-      M  : ESP32S3.Ext4.FS.Mount;   --  the mounted volume
+        ESP32S3.Block_Dev.SDMMC_Source.Make (Card'Access);
+      M            : ESP32S3.Ext4.FS.Mount;   --  the mounted volume
 
       --  True if Path resolves.  These helpers reference M but are only ever
       --  CALLED directly (never 'Access'd), so no nested-subprogram trampoline.
@@ -222,14 +232,16 @@ begin
          Inode_Of_Path := M.Lookup (Path);
          return True;
       exception
-         when Name_Error => return False;
+         when Name_Error =>
+            return False;
       end Exists;
 
       function Inode_Of (Path : String) return ESP32S3.Ext4.Inode_Number is
       begin
          return M.Lookup (Path);
       exception
-         when Name_Error => return 0;
+         when Name_Error =>
+            return 0;
       end Inode_Of;
 
       --  Best-effort removal so the battery is re-runnable without reformat.
@@ -237,18 +249,19 @@ begin
       begin
          M.Unlink (Dir, Name);
       exception
-         when others => null;
+         when others =>
+            null;
       end Try_Unlink;
 
       procedure Try_Rmdir (Dir, Name : String) is
       begin
          M.Rmdir (Dir, Name);
       exception
-         when others => null;
+         when others =>
+            null;
       end Try_Rmdir;
    begin
-      M.Open (Block_Device, Read_Only => False,
-              Cache_Blocks => Cache_Depth_Blocks);
+      M.Open (Block_Device, Read_Only => False, Cache_Blocks => Cache_Depth_Blocks);
       Mount_R (True);
       Bitmap.Reset_Phantom_Free_Count;   --  arm the stale-read / double-free tripwire
 
@@ -268,8 +281,7 @@ begin
       --  1. A small regular file (the hard-link + symlink target).
       Step ("create /ada_write.txt");
       declare
-         Text : constant String :=
-           "Written by ESP32-S3 pure-Ada ext4 over SDMMC!" & ASCII.LF;
+         Text : constant String := "Written by ESP32-S3 pure-Ada ext4 over SDMMC!" & ASCII.LF;
          Data : Byte_Array (0 .. Text'Length - 1);
       begin
          Fill (Data, Text);
@@ -329,8 +341,7 @@ begin
          M.Read_File (Big_Info, U64 (Big_File_Size - Probe_Bytes), Probe, Last);
          Ok := Ok and then Last = Probe'Length;
          for K in 0 .. Last - 1 loop
-            Ok := Ok and then
-              Probe (K) = Pattern_Byte (Big_File_Size - Probe_Bytes + K);
+            Ok := Ok and then Probe (K) = Pattern_Byte (Big_File_Size - Probe_Bytes + K);
          end loop;
          Check ("big file size + head/tail pattern", Ok);
       end;
@@ -342,15 +353,16 @@ begin
          --  A hard link is a second directory entry for the SAME inode, so both
          --  names must resolve to one non-zero inode whose link count is now 2.
          Expected_Link_Count : constant := 2;
-         Original_Inode : constant Inode_Number := Inode_Of ("/ada_write.txt");
-         Linked_Inode   : constant Inode_Number := Inode_Of ("/ada_hard.txt");
-         Link_Info      : Inode.Info;
+         Original_Inode      : constant Inode_Number := Inode_Of ("/ada_write.txt");
+         Linked_Inode        : constant Inode_Number := Inode_Of ("/ada_hard.txt");
+         Link_Info           : Inode.Info;
       begin
          M.Stat (Original_Inode, Link_Info);
-         Check ("hard link (same inode, nlink=2)",
-                Original_Inode /= 0
-                and then Original_Inode = Linked_Inode
-                and then Link_Info.Links = Expected_Link_Count);
+         Check
+           ("hard link (same inode, nlink=2)",
+            Original_Inode /= 0
+            and then Original_Inode = Linked_Inode
+            and then Link_Info.Links = Expected_Link_Count);
       end;
 
       --  5. Symbolic link.  A fast symlink stores the target inline in the inode,
@@ -359,12 +371,12 @@ begin
       M.Symlink ("/", "ada_link", "ada_write.txt");
       declare
          Symlink_Target_Len : constant := 13;   --  "ada_write.txt" is 13 chars
-         Symlink_Info : Inode.Info;
+         Symlink_Info       : Inode.Info;
       begin
          M.Stat (M.Lookup ("/ada_link"), Symlink_Info);
-         Check ("symlink (is a symlink, size=13)",
-                Inode.Is_Symlink (Symlink_Info)
-                and then Symlink_Info.Size = Symlink_Target_Len);
+         Check
+           ("symlink (is a symlink, size=13)",
+            Inode.Is_Symlink (Symlink_Info) and then Symlink_Info.Size = Symlink_Target_Len);
       end;
 
       --  6. Rename / move.
@@ -377,8 +389,9 @@ begin
          M.Write_File (M.Create_File ("/", "ada_tmp.txt"), Data);
       end;
       M.Rename ("/", "ada_tmp.txt", "/", "ada_renamed.txt");
-      Check ("rename (old gone, new present)",
-             not Exists ("/ada_tmp.txt") and then Exists ("/ada_renamed.txt"));
+      Check
+        ("rename (old gone, new present)",
+         not Exists ("/ada_tmp.txt") and then Exists ("/ada_renamed.txt"));
 
       --  7. Delete (unlink).
       Step ("delete /ada_del.txt");
@@ -400,14 +413,12 @@ begin
       --  bitmap on an already-clear bit (a double-free, or a stale/incoherent read
       --  from a flaky card) -- but we surface it rather than mask it.  0 on a
       --  healthy card; >0 means stale cleanup reads (suspect the SD card).
-      Check ("no phantom frees (count consistent with bitmap)",
-             Bitmap.Phantom_Free_Count = 0);
+      Check ("no phantom frees (count consistent with bitmap)", Bitmap.Phantom_Free_Count = 0);
       Commit_OK;
 
    exception
       when ESP32S3.Ext4.Read_Only =>
-         Report_Error
-           ("metadata_csum volume -- reformat: mkfs.ext4 -O ^metadata_csum");
+         Report_Error ("metadata_csum volume -- reformat: mkfs.ext4 -O ^metadata_csum");
       when E : others =>
          Report_Error (Exception_Name (E));
    end;

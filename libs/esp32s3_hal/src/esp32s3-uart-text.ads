@@ -16,8 +16,7 @@ with ESP32S3.Serial;
 
 package ESP32S3.UART.Text is
 
-   function As_Device
-     (S : aliased in out Session) return ESP32S3.Serial.Device;
+   function As_Device (S : aliased in out Session) return ESP32S3.Serial.Device;
 
    --  Adapt the SAME held Session into an input device, so console-style INPUT
    --  (ESP32S3.Text_IO.Get / Get_Line on the console) can be taken from the UART
@@ -28,7 +27,6 @@ package ESP32S3.UART.Text is
    --  Same lifetime rule as As_Device: the Session is captured BY ADDRESS, must
    --  be aliased + Acquire'd, and must outlive the redirection.  The read is
    --  non-blocking (one byte if the RX FIFO has one, else "nothing ready").
-   function As_Input_Device
-     (S : aliased in out Session) return ESP32S3.Serial.In_Device;
+   function As_Input_Device (S : aliased in out Session) return ESP32S3.Serial.In_Device;
 
 end ESP32S3.UART.Text;

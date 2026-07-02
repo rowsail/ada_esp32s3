@@ -37,7 +37,7 @@
 --  simply never armed, so that trampoline executes freely; with that,
 --  dedicated-client + multi-task console output run cleanly.
 
-with Ada.Text_IO;  use Ada.Text_IO;
+with Ada.Text_IO;   use Ada.Text_IO;
 with Ada.Real_Time; use Ada.Real_Time;
 
 procedure Main is
@@ -60,14 +60,24 @@ procedure Main is
          select
             accept Add (X, Y : Integer; R : out Integer) do
                R := X + Y;
-               Put_Line ("    [calc] Add (" & Integer'Image (X) & ","
-                         & Integer'Image (Y) & " ) =>" & Integer'Image (R));
+               Put_Line
+                 ("    [calc] Add ("
+                  & Integer'Image (X)
+                  & ","
+                  & Integer'Image (Y)
+                  & " ) =>"
+                  & Integer'Image (R));
             end Add;
          or
             accept Sub (X, Y : Integer; R : out Integer) do
                R := X - Y;
-               Put_Line ("    [calc] Sub (" & Integer'Image (X) & ","
-                         & Integer'Image (Y) & " ) =>" & Integer'Image (R));
+               Put_Line
+                 ("    [calc] Sub ("
+                  & Integer'Image (X)
+                  & ","
+                  & Integer'Image (Y)
+                  & " ) =>"
+                  & Integer'Image (R));
             end Sub;
          or
             accept Stop do

@@ -54,8 +54,8 @@ begin
       end loop;
    end if;
 
-   MM.Connect (S, Slave_Host, Port => Slave_Port,
-               Configure => Net_Pin.Pin_Eth0'Access, Result => R);
+   MM.Connect
+     (S, Slave_Host, Port => Slave_Port, Configure => Net_Pin.Pin_Eth0'Access, Result => R);
    if R /= MM.OK then
       Put_Line ("[modbus] connect to " & Slave_Host & " failed");
       loop
@@ -68,8 +68,8 @@ begin
    declare
       W : Word_Array (0 .. 4);
    begin
-      MM.Read_Holding_Registers (S, Unit => 1, Addr => 0, Qty => 5,
-                                 Into => W, Result => R, Exc => Exc);
+      MM.Read_Holding_Registers
+        (S, Unit => 1, Addr => 0, Qty => 5, Into => W, Result => R, Exc => Exc);
       if R = MM.OK then
          Put ("[modbus] holding 0..4 =");
          for V of W loop
@@ -77,8 +77,7 @@ begin
          end loop;
          New_Line;
       else
-         Put_Line ("[modbus] read failed (status="
-                   & MM.Status'Image (R) & ")");
+         Put_Line ("[modbus] read failed (status=" & MM.Status'Image (R) & ")");
       end if;
    end;
 
@@ -89,8 +88,7 @@ begin
       --  Previously the read reused R and only its result was tested, so a failed
       --  write was masked by a successful read-back (the old value) and silently
       --  reported as success.
-      Put_Line ("[modbus] write holding[0]=4242 failed (status="
-                & MM.Status'Image (R) & ")");
+      Put_Line ("[modbus] write holding[0]=4242 failed (status=" & MM.Status'Image (R) & ")");
    else
       declare
          W : Word_Array (0 .. 0);
@@ -99,8 +97,7 @@ begin
          if R = MM.OK then
             Put_Line ("[modbus] wrote 4242 -> read back " & Img (Integer (W (0))));
          else
-            Put_Line ("[modbus] read-back failed (status="
-                      & MM.Status'Image (R) & ")");
+            Put_Line ("[modbus] read-back failed (status=" & MM.Status'Image (R) & ")");
          end if;
       end;
    end if;

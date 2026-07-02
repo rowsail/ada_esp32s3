@@ -1,20 +1,22 @@
 package body Lisp.Reader is
 
-   function Is_Space (C : Character) return Boolean is
-     (C = ' ' or else C = ASCII.HT or else C = ASCII.LF or else C = ASCII.CR);
+   function Is_Space (C : Character) return Boolean
+   is (C = ' ' or else C = ASCII.HT or else C = ASCII.LF or else C = ASCII.CR);
 
-   function Is_Delim (C : Character) return Boolean is
-     (Is_Space (C) or else C = '(' or else C = ')'
-      or else C = '''  or else C = ';');
+   function Is_Delim (C : Character) return Boolean
+   is (Is_Space (C) or else C = '(' or else C = ')' or else C = ''' or else C = ';');
 
-   function Is_Hex (C : Character) return Boolean is
-     (C in '0' .. '9' or else C in 'a' .. 'f' or else C in 'A' .. 'F');
+   function Is_Hex (C : Character) return Boolean
+   is (C in '0' .. '9' or else C in 'a' .. 'f' or else C in 'A' .. 'F');
 
    function Hex_Val (C : Character) return Long_Long_Integer is
    begin
-      if    C in '0' .. '9' then return Long_Long_Integer (Character'Pos (C) - Character'Pos ('0'));
-      elsif C in 'a' .. 'f' then return Long_Long_Integer (10 + Character'Pos (C) - Character'Pos ('a'));
-      else                       return Long_Long_Integer (10 + Character'Pos (C) - Character'Pos ('A'));
+      if C in '0' .. '9' then
+         return Long_Long_Integer (Character'Pos (C) - Character'Pos ('0'));
+      elsif C in 'a' .. 'f' then
+         return Long_Long_Integer (10 + Character'Pos (C) - Character'Pos ('a'));
+      else
+         return Long_Long_Integer (10 + Character'Pos (C) - Character'Pos ('A'));
       end if;
    end Hex_Val;
 
@@ -44,8 +46,7 @@ package body Lisp.Reader is
          elsif Source (Pos) = ')' then
             Pos := Pos + 1;
             return Nil;
-         elsif Source (Pos) = '.'
-           and then (Pos = Source'Last or else Is_Delim (Source (Pos + 1)))
+         elsif Source (Pos) = '.' and then (Pos = Source'Last or else Is_Delim (Source (Pos + 1)))
          then
             Pos := Pos + 1;                                 --  dotted tail
             declare
@@ -76,13 +77,18 @@ package body Lisp.Reader is
       begin
          if S = "-" or else S = "+" then
             return Intern (S);                              --  the operator symbol
+
          end if;
-         if S (I) = '-' then Sign := -1; I := I + 1;
-         elsif S (I) = '+' then I := I + 1;
+         if S (I) = '-' then
+            Sign := -1;
+            I := I + 1;
+         elsif S (I) = '+' then
+            I := I + 1;
          end if;
          for J in I .. S'Last loop
             if S (J) not in '0' .. '9' then
                return Intern (S);                           --  not a number
+
             end if;
             V := V * 10 + Long_Long_Integer (Character'Pos (S (J)) - Character'Pos ('0'));
          end loop;
@@ -94,17 +100,21 @@ package body Lisp.Reader is
          Skip_Atmosphere;
          if Pos > Source'Last then
             return null;                                    --  end of input
+
          end if;
          case Source (Pos) is
-            when '(' =>
+            when '('    =>
                Pos := Pos + 1;
                return Read_List;
-            when ')' =>
+
+            when ')'    =>
                raise Lisp_Error with "unexpected )";
-            when ''' =>
+
+            when '''    =>
                Pos := Pos + 1;                              --  'x => (quote x)
                return Cons (Intern ("quote"), Cons (Read_Obj, Nil));
-            when '#' =>
+
+            when '#'    =>
                if Pos < Source'Last
                  and then (Source (Pos + 1) = 't' or else Source (Pos + 1) = 'f')
                then
@@ -127,6 +137,7 @@ package body Lisp.Reader is
                   end;
                end if;
                raise Lisp_Error with "bad # literal";
+
             when others =>
                declare
                   First : constant Natural := Pos;

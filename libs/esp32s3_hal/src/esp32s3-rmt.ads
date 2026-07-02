@@ -54,7 +54,7 @@ package ESP32S3.RMT is
    function Is_Valid (C : TX_Channel) return Boolean;
    procedure Release (C : in out TX_Channel);
 
-   --  Configure C: each tick = 1 / Resolution_Hz seconds (e.g. 1_000_000 â 1 Âµs),
+   --  Configure C: each tick = 1 / Resolution_Hz seconds (e.g. 1_000_000 Ã¢ÂÂ 1 ÃÂµs),
    --  output routed to Pin.  Idle level is low.
    --
    --  Blocks (1 .. 4) gives the channel that many consecutive 48-symbol RAM
@@ -95,8 +95,7 @@ package ESP32S3.RMT is
 
    --  Block until reception ends, then return the captured symbols in Into and
    --  how many were captured in Count (0 if none / timed out).
-   procedure Receive
-     (C : RX_Channel; Into : out Symbol_Array; Count : out Natural);
+   procedure Receive (C : RX_Channel; Into : out Symbol_Array; Count : out Natural);
 
 private
    type TX_Channel is new Ada.Finalization.Limited_Controlled with record

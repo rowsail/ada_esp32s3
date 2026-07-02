@@ -5,6 +5,7 @@ with ESP32S3.W5500.Net_Device;
 --  the GNAT.Sockets registry (Add_Interface), which outlives Main -- so, like the
 --  filesystem mounts, the device and its Net_Device.Instance must live at library
 --  level (a Main-local object would fail the accessibility check).
+
 package NICs is
    Eth1_Dev : aliased ESP32S3.W5500.Device;
    Eth1_If  : aliased ESP32S3.W5500.Net_Device.Instance;

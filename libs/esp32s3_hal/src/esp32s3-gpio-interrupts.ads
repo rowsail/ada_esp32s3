@@ -21,8 +21,7 @@ with Ada.Interrupts.Names;
 package ESP32S3.GPIO.Interrupts is
 
    --  What raises the interrupt on the pin.
-   type Trigger is
-     (Rising_Edge, Falling_Edge, Any_Edge, Low_Level, High_Level);
+   type Trigger is (Rising_Edge, Falling_Edge, Any_Edge, Low_Level, High_Level);
 
    --  Per-pin action, run in interrupt context (see the note above).
    type Callback is access procedure;

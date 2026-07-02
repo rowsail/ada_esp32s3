@@ -90,10 +90,7 @@ package ESP32S3.I2C is
    --  the last, NACK the last), STOP.  Success is True iff the slave ACKed the
    --  address.  Blocking.  Raises Not_Owned unless S currently holds a host.
    procedure Read
-     (S       : Session;
-      Addr    : Slave_Address;
-      Data    : out Byte_Array;
-      Success : out Boolean);
+     (S : Session; Addr : Slave_Address; Data : out Byte_Array; Success : out Boolean);
 
    --  Relinquish ownership (lets a waiting task proceed).  Harmless if already
    --  released.  Always release a Session you Acquired.

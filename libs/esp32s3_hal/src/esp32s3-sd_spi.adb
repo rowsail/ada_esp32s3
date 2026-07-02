@@ -16,8 +16,7 @@ package body ESP32S3.SD_SPI is
    ACMD41 : constant := 41;   --  SD_SEND_OP_COND
 
    R1_Idle    : constant Unsigned_8 := 16#01#;   --  in idle state
-   R1_Illegal : constant Unsigned_8 :=
-     16#04#;   --  illegal command (=> v1 card)
+   R1_Illegal : constant Unsigned_8 := 16#04#;   --  illegal command (=> v1 card)
    Data_Token : constant Unsigned_8 := 16#FE#;   --  single-block start token
 
    --  DMA scratch, one pair per host (the held SPI Session serialises a host's
@@ -34,8 +33,7 @@ package body ESP32S3.SD_SPI is
    --  Shift N bytes from Tx_Buf out, capturing the same count into Rx_Buf.
    procedure Shift (C : Card; S : ESP32S3.SPI.Session; N : Natural) is
    begin
-      ESP32S3.SPI.Transfer
-        (S, Tx_Buf (C.Host)'Address, Rx_Buf (C.Host)'Address, N);
+      ESP32S3.SPI.Transfer (S, Tx_Buf (C.Host)'Address, Rx_Buf (C.Host)'Address, N);
    end Shift;
 
    --  Clock N idle (0xFF) bytes (card sees MOSI high); ignore what comes back.
@@ -46,8 +44,7 @@ package body ESP32S3.SD_SPI is
    end Idle_Clocks;
 
    --  Send one byte, return the byte shifted in alongside it.
-   function Swap
-     (C : Card; S : ESP32S3.SPI.Session; B : Unsigned_8) return Unsigned_8 is
+   function Swap (C : Card; S : ESP32S3.SPI.Session; B : Unsigned_8) return Unsigned_8 is
    begin
       Tx_Buf (C.Host) (0) := B;
       Shift (C, S, 1);
@@ -57,8 +54,7 @@ package body ESP32S3.SD_SPI is
    --  CRC7 of a command frame's first 5 bytes, returned already shifted into the
    --  frame's trailing byte (<<1 | stop bit).  Required for CMD0/CMD8; harmless
    --  (ignored by the card) for the rest, which run with CRC checking off.
-   function CRC7_Frame (Cmd : Unsigned_8; Arg : Unsigned_32) return Unsigned_8
-   is
+   function CRC7_Frame (Cmd : Unsigned_8; Arg : Unsigned_32) return Unsigned_8 is
       Crc : Unsigned_8 := 0;
 
       procedure Add (B : Unsigned_8) is
@@ -91,8 +87,7 @@ package body ESP32S3.SD_SPI is
    --  Issue a 6-byte command and return its R1 response (first byte with bit7=0,
    --  polled for up to 10 bytes).  0xFF means "no response".
    function Command
-     (C : Card; S : ESP32S3.SPI.Session; Cmd : Unsigned_8; Arg : Unsigned_32)
-      return Unsigned_8
+     (C : Card; S : ESP32S3.SPI.Session; Cmd : Unsigned_8; Arg : Unsigned_32) return Unsigned_8
    is
       T : Buf renames Tx_Buf (C.Host);
       R : Unsigned_8 := 16#FF#;
@@ -138,10 +133,8 @@ package body ESP32S3.SD_SPI is
       --  Route clock/data; the SD card's CS is a plain GPIO we drive by hand.
       --  SD is SPI mode 0; the init/data clocks are applied per hold at Acquire.
       ESP32S3.SPI.Setup (Host);
-      ESP32S3.SPI.Configure_Pins
-        (Host, Sclk => Sclk, Mosi => Mosi, Miso => Miso);
-      ESP32S3.GPIO.Configure
-        (Cs, Mode => ESP32S3.GPIO.Output, Pull => ESP32S3.GPIO.Pull_Up);
+      ESP32S3.SPI.Configure_Pins (Host, Sclk => Sclk, Mosi => Mosi, Miso => Miso);
+      ESP32S3.GPIO.Configure (Cs, Mode => ESP32S3.GPIO.Output, Pull => ESP32S3.GPIO.Pull_Up);
       ESP32S3.GPIO.Set (Cs);                 --  deassert (idle high)
    end Setup;
 
@@ -207,9 +200,7 @@ package body ESP32S3.SD_SPI is
       --  never leaves idle if it is sent as zero.  (Matches the SDMMC driver.)
       for Tries in 1 .. 2000 loop
          R := Command (C, S, CMD55, 0);
-         R :=
-           Command
-             (C, S, ACMD41, (if V2 then 16#4030_0000# else 16#0030_0000#));
+         R := Command (C, S, ACMD41, (if V2 then 16#4030_0000# else 16#0030_0000#));
          if R = 0 then
             Done := True;
             exit;
@@ -231,9 +222,7 @@ package body ESP32S3.SD_SPI is
             O1 : Unsigned_8 := Swap (C, S, 16#FF#);
          begin
             O1 := Swap (C, S, 16#FF#);
-            O1 :=
-              Swap
-                (C, S, 16#FF#);                          --  consume OCR[7:0]
+            O1 := Swap (C, S, 16#FF#);                          --  consume OCR[7:0]
             C.Block_Addressed := (O0 and 16#40#) /= 0;          --  CCS
             C.Kind := (if C.Block_Addressed then SD_V2_HC else SD_V2_SC);
          end;
@@ -247,8 +236,7 @@ package body ESP32S3.SD_SPI is
       end if;
 
       ESP32S3.GPIO.Set (C.Cs);
-      R :=
-        Swap (C, S, 16#FF#);                --  trailing clocks to release MISO
+      R := Swap (C, S, 16#FF#);                --  trailing clocks to release MISO
       ESP32S3.SPI.Release (S);
 
       --  Card is ready; subsequent Read_Block/Write_Block acquire at C.Data_Hz.
@@ -264,19 +252,14 @@ package body ESP32S3.SD_SPI is
 
    --  Byte vs block addressing: SDHC uses the LBA directly, SDSC needs *512.
    function Card_Arg (C : Card; LBA : Block_Address) return Unsigned_32
-   is (if C.Block_Addressed
-       then Unsigned_32 (LBA)
-       else Unsigned_32 (LBA) * 512);
+   is (if C.Block_Addressed then Unsigned_32 (LBA) else Unsigned_32 (LBA) * 512);
 
    ----------------
    -- Read_Block --
    ----------------
 
    procedure Read_Block
-     (C      : in out Card;
-      LBA    : Block_Address;
-      Data   : out Block;
-      Result : out Status)
+     (C : in out Card; LBA : Block_Address; Data : out Block; Result : out Status)
    is
       S         : ESP32S3.SPI.Session;
       R         : Unsigned_8;
@@ -332,8 +315,7 @@ package body ESP32S3.SD_SPI is
    -- Write_Block --
    -----------------
 
-   procedure Write_Block
-     (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status)
+   procedure Write_Block (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status)
    is
       S    : ESP32S3.SPI.Session;
       R    : Unsigned_8;
@@ -351,8 +333,7 @@ package body ESP32S3.SD_SPI is
          return;
       end if;
 
-      R :=
-        Swap (C, S, 16#FF#);                --  one gap byte before the token
+      R := Swap (C, S, 16#FF#);                --  one gap byte before the token
       R := Swap (C, S, Data_Token);            --  start-of-block token
 
       Tx_Buf (C.Host) := Buf (Data);           --  512 data bytes

@@ -39,14 +39,14 @@
 --    GPS RXD <- U0TXD = GPIO43  (config commands out to the GPS)
 --    VCC/GND -> 3V3/GND
 with System;
-with Interfaces;   use Interfaces;
+with Interfaces;    use Interfaces;
 use type Interfaces.Integer_32;
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.UART;
 with ESP32S3.GPS;
 with ESP32S3.GPS.L76K;   --  L76K-specific PCAS commands
-with ESP32S3.Log;        use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
 --  elaboration); core 1 just idles -- the demo runs on core 0.
@@ -54,7 +54,7 @@ with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
-   package GPS  renames ESP32S3.GPS;
+   package GPS renames ESP32S3.GPS;
    package L76K renames ESP32S3.GPS.L76K;
    use type GPS.Fix_Quality;
 
@@ -75,13 +75,13 @@ procedure Main is
    Raw_Clip : constant := 52;
 
    --  Live-phase pacing (one loop tick = 1 s).
-   Live_Ticks       : constant := 70;   --  how long the live phase runs (s)
+   Live_Ticks        : constant := 70;   --  how long the live phase runs (s)
    Sat_Dump_Interval : constant := 10;  --  dump the satellite list every N ticks
-   PCAS_Tick        : constant := 5;    --  tick at which the PCAS04 test fires
+   PCAS_Tick         : constant := 5;    --  tick at which the PCAS04 test fires
 
    --  PCAS04 mode number (1 .. 7) for a constellation selection.
-   function Config_Mode (Selection : L76K.Constellation) return Integer is
-     (L76K.Constellation'Pos (Selection) + 1);
+   function Config_Mode (Selection : L76K.Constellation) return Integer
+   is (L76K.Constellation'Pos (Selection) + 1);
 
    --  Two-digit zero-padded field, matching the glue's put2 ((v/10)%10, v%10).
    procedure Put2 (Value : Integer) is
@@ -111,8 +111,8 @@ procedure Main is
 
    --  One self-test check line: "[gps] %-11s : %s" with the name selected by Code.
    procedure Check (Code : Integer; Ok : Boolean) is
-      function Name return String is
-        (case Code is
+      function Name return String
+      is (case Code is
             when 0      => "gga accept",
             when 1      => "position",
             when 2      => "fix info",
@@ -140,9 +140,12 @@ procedure Main is
    end Check;
 
    --  One live status line; see the glue's native_gps_live.
-   procedure Live (Time_Valid : Boolean; HH, MM, SS : Integer;
-                   Pos_Fresh : Boolean; Lat_E7, Lon_E7 : Integer;
-                   In_View, Max_SNR, Fix_Type : Integer) is
+   procedure Live
+     (Time_Valid                 : Boolean;
+      HH, MM, SS                 : Integer;
+      Pos_Fresh                  : Boolean;
+      Lat_E7, Lon_E7             : Integer;
+      In_View, Max_SNR, Fix_Type : Integer) is
    begin
       Put ("[gps] UTC=");
       if Time_Valid then
@@ -167,8 +170,7 @@ procedure Main is
          Put (" snr=");
          Put (Max_SNR);
          Put (" ");
-         Put (if Fix_Type = 2 then "3D"
-              elsif Fix_Type = 1 then "2D" else "no-fix");
+         Put (if Fix_Type = 2 then "3D" elsif Fix_Type = 1 then "2D" else "no-fix");
       end if;
       New_Line;
    end Live;
@@ -177,7 +179,7 @@ procedure Main is
    procedure Raw (Sentence : System.Address; Length : Integer) is
       Clipped : constant Integer := (if Length > Raw_Clip then Raw_Clip else Length);
       Bytes   : array (0 .. Integer'Max (Clipped - 1, 0)) of Character
-        with Import, Address => Sentence;
+      with Import, Address => Sentence;
    begin
       Put ("[gps] raw: ");
       for I in 0 .. Clipped - 1 loop
@@ -192,8 +194,8 @@ procedure Main is
    --  One satellite line; System 0..5 = GP/GL/GA/BD/QZ/Other
    --  (GNSS_System'Pos order: GPS/GLONASS/Galileo/BeiDou/QZSS/Other).
    procedure Sat (GNSS, PRN, Elevation, Azimuth, SNR : Integer) is
-      function Sys_Name return String is
-        (case GNSS is
+      function Sys_Name return String
+      is (case GNSS is
             when 0      => "GP",   --  GPS
             when 1      => "GL",   --  GLONASS
             when 2      => "GA",   --  Galileo
@@ -216,8 +218,8 @@ procedure Main is
 
    --  Announce an L76K PCAS04 constellation change (mode 1..7).
    procedure Cfg (Mode : Integer) is
-      function Mode_Name return String is
-        (case Mode is
+      function Mode_Name return String
+      is (case Mode is
             when 1      => "GPS",
             when 2      => "BeiDou",
             when 3      => "GPS+BeiDou",
@@ -232,10 +234,8 @@ procedure Main is
    end Cfg;
 
    --  Canonical NMEA examples (checksums verified): 48 07.038' N, 011 31.000' E.
-   GGA : constant String :=
-     "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
-   RMC : constant String :=
-     "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+   GGA : constant String := "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
+   RMC : constant String := "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
    ZDA : constant String :=   --  UTC 19:27:39, 22/06/2026 (time + date, no fix)
      "$GNZDA,192739.000,22,06,2026,00,00*4F";
    GLL : constant String :=   --  51 30.000' N, 000 07.500' W
@@ -270,34 +270,42 @@ begin
    Report (0, Ok);
    declare
       Position : constant GPS.Position_Reading := GPS.Current_Position;
-      Fix      : constant GPS.Fix_Reading      := GPS.Current_Fix;
-      Time     : constant GPS.Time_Reading     := GPS.Current_Time;
+      Fix      : constant GPS.Fix_Reading := GPS.Current_Fix;
+      Time     : constant GPS.Time_Reading := GPS.Current_Time;
    begin
-      Report (1, Position.Valid
-                 and then Position.Value.Latitude = 481_173_000
-                 and then Position.Value.Longitude = 115_166_666);
-      Report (2, Fix.Quality = GPS.GPS_Fix
-                 and then Fix.Satellites = 8
-                 and then Fix.Altitude_MM = 545_400);
-      Report (3, Time.Valid
-                 and then Time.Value.Hour = 12
-                 and then Time.Value.Minute = 35
-                 and then Time.Value.Second = 19);
+      Report
+        (1,
+         Position.Valid
+         and then Position.Value.Latitude = 481_173_000
+         and then Position.Value.Longitude = 115_166_666);
+      Report
+        (2,
+         Fix.Quality = GPS.GPS_Fix and then Fix.Satellites = 8 and then Fix.Altitude_MM = 545_400);
+      Report
+        (3,
+         Time.Valid
+         and then Time.Value.Hour = 12
+         and then Time.Value.Minute = 35
+         and then Time.Value.Second = 19);
    end;
 
    GPS.Inject (RMC, Ok);
    Report (4, Ok);
    declare
-      Date     : constant GPS.Date_Reading     := GPS.Current_Date;
+      Date     : constant GPS.Date_Reading := GPS.Current_Date;
       Velocity : constant GPS.Velocity_Reading := GPS.Current_Velocity;
    begin
-      Report (5, Date.Valid
-                 and then Date.Value.Day = 23
-                 and then Date.Value.Month = 3
-                 and then Date.Value.Year = 2094);
-      Report (6, Velocity.Valid
-                 and then Velocity.Speed_MMS = 11_523
-                 and then Velocity.Course_CDeg = 8_440);
+      Report
+        (5,
+         Date.Valid
+         and then Date.Value.Day = 23
+         and then Date.Value.Month = 3
+         and then Date.Value.Year = 2094);
+      Report
+        (6,
+         Velocity.Valid
+         and then Velocity.Speed_MMS = 11_523
+         and then Velocity.Course_CDeg = 8_440);
    end;
 
    --  ZDA: UTC time + date, NOT gated on a fix (updates the clock before lock).
@@ -306,11 +314,17 @@ begin
       Time : constant GPS.Time_Reading := GPS.Current_Time;
       Date : constant GPS.Date_Reading := GPS.Current_Date;
    begin
-      Report (8, Ok
-                 and then Time.Valid and then Time.Value.Hour = 19
-                 and then Time.Value.Minute = 27 and then Time.Value.Second = 39
-                 and then Date.Valid and then Date.Value.Day = 22
-                 and then Date.Value.Month = 6 and then Date.Value.Year = 2026);
+      Report
+        (8,
+         Ok
+         and then Time.Valid
+         and then Time.Value.Hour = 19
+         and then Time.Value.Minute = 27
+         and then Time.Value.Second = 39
+         and then Date.Valid
+         and then Date.Value.Day = 22
+         and then Date.Value.Month = 6
+         and then Date.Value.Year = 2026);
    end;
 
    --  GLL: position (distinct coordinate, so this proves GLL field decoding).
@@ -318,9 +332,12 @@ begin
    declare
       Position : constant GPS.Position_Reading := GPS.Current_Position;
    begin
-      Report (9, Ok and then Position.Valid
-                 and then Position.Value.Latitude = 515_000_000
-                 and then Position.Value.Longitude = -1_250_000);
+      Report
+        (9,
+         Ok
+         and then Position.Valid
+         and then Position.Value.Latitude = 515_000_000
+         and then Position.Value.Longitude = -1_250_000);
    end;
 
    --  VTG: velocity (distinct from RMC's, so this proves VTG field decoding).
@@ -328,9 +345,12 @@ begin
    declare
       Velocity : constant GPS.Velocity_Reading := GPS.Current_Velocity;
    begin
-      Report (10, Ok and then Velocity.Valid
-                  and then Velocity.Speed_MMS = 28_140
-                  and then Velocity.Course_CDeg = 12_340);
+      Report
+        (10,
+         Ok
+         and then Velocity.Valid
+         and then Velocity.Speed_MMS = 28_140
+         and then Velocity.Course_CDeg = 12_340);
    end;
 
    --  GSV: satellites in view + strongest C/N0 (acquisition, no fix needed).
@@ -338,8 +358,8 @@ begin
    declare
       Signal : constant GPS.Signal_Reading := GPS.Current_Signal;
    begin
-      Report (11, Ok and then Signal.Valid
-                  and then Signal.In_View = 11 and then Signal.Max_SNR = 35);
+      Report
+        (11, Ok and then Signal.Valid and then Signal.In_View = 11 and then Signal.Max_SNR = 35);
    end;
 
    --  GSV satellite list: the 4 satellites in that message, decoded into entries.
@@ -349,10 +369,14 @@ begin
       use type GPS.GNSS_System;
    begin
       GPS.Satellites_In_View (Satellites, Sat_Count);
-      Report (13, Sat_Count = 4
-                  and then Satellites (1).System = GPS.GPS
-                  and then Satellites (1).PRN = 4 and then Satellites (1).SNR = 30
-                  and then Satellites (4).PRN = 12 and then Satellites (4).SNR = 35);
+      Report
+        (13,
+         Sat_Count = 4
+         and then Satellites (1).System = GPS.GPS
+         and then Satellites (1).PRN = 4
+         and then Satellites (1).SNR = 30
+         and then Satellites (4).PRN = 12
+         and then Satellites (4).SNR = 35);
    end;
 
    --  GSA: solution mode (3D) + dilution of precision.
@@ -361,9 +385,13 @@ begin
       Signal : constant GPS.Signal_Reading := GPS.Current_Signal;
       use type GPS.Fix_Type;
    begin
-      Report (12, Ok and then Signal.Valid
-                  and then Signal.Mode = GPS.Fix_3D
-                  and then Signal.Used = 5 and then Signal.HDOP_C = 130);
+      Report
+        (12,
+         Ok
+         and then Signal.Valid
+         and then Signal.Mode = GPS.Fix_3D
+         and then Signal.Used = 5
+         and then Signal.HDOP_C = 130);
    end;
 
    GPS.Inject (Bad, Ok);
@@ -374,52 +402,48 @@ begin
    --------------------------------------------------------------------------
    delay until Clock + Fifo_Drain;
    Put_Line ("[gps] live (UART0 @ 9600) -- waiting for sentences...");
-   GPS.Setup (Port => ESP32S3.UART.UART0,
-              Rx   => GPS_Rx_Pin,
-              Tx   => GPS_Tx_Pin,
-              Baud => GPS_Baud);
+   GPS.Setup (Port => ESP32S3.UART.UART0, Rx => GPS_Rx_Pin, Tx => GPS_Tx_Pin, Baud => GPS_Baud);
 
    --  Live phase: Live_Ticks one-second ticks of fix/sat reporting, then idle.
    for Tick in 1 .. Live_Ticks loop
       delay until Clock + Seconds (1);
       declare
-         Position : constant GPS.Position_Reading := GPS.Current_Position;
-         Time     : constant GPS.Time_Reading     := GPS.Current_Time;
-         Signal   : constant GPS.Signal_Reading   := GPS.Current_Signal;
-         Satellites : GPS.Satellite_List (1 .. GPS.Max_Satellites);
-         Sat_Count  : Natural;
+         Position     : constant GPS.Position_Reading := GPS.Current_Position;
+         Time         : constant GPS.Time_Reading := GPS.Current_Time;
+         Signal       : constant GPS.Signal_Reading := GPS.Current_Signal;
+         Satellites   : GPS.Satellite_List (1 .. GPS.Max_Satellites);
+         Sat_Count    : Natural;
          --  A live fix updates ~1 Hz; tolerate a few missed updates before
          --  calling the position stale (and aging the self-test fix out).
          Pos_Stale_S  : constant := 3.0;
          --  UTC arrives via ZDA/RMC even before lock, but less reliably; allow
          --  a bit more slack before declaring the clock stale.
          Time_Stale_S : constant := 5.0;
-         Pos_Fresh : constant Boolean :=
-           Position.Valid
-           and then To_Duration (GPS.Age (Position.Updated_At)) < Pos_Stale_S;
-         Time_Fresh : constant Boolean :=
-           Time.Valid
-           and then To_Duration (GPS.Age (Time.Updated_At)) < Time_Stale_S;
+         Pos_Fresh    : constant Boolean :=
+           Position.Valid and then To_Duration (GPS.Age (Position.Updated_At)) < Pos_Stale_S;
+         Time_Fresh   : constant Boolean :=
+           Time.Valid and then To_Duration (GPS.Age (Time.Updated_At)) < Time_Stale_S;
       begin
          GPS.Satellites_In_View (Satellites, Sat_Count);   --  table count (all systems)
-         Live (Time_Valid => Time_Fresh,
-               HH         => Integer (Time.Value.Hour),
-               MM         => Integer (Time.Value.Minute),
-               SS         => Integer (Time.Value.Second),
-               Pos_Fresh  => Pos_Fresh,
-               Lat_E7     => Integer (Position.Value.Latitude),
-               Lon_E7     => Integer (Position.Value.Longitude),
-               In_View    => Integer (Sat_Count),
-               Max_SNR    => Integer (Signal.Max_SNR),
-               Fix_Type   => GPS.Fix_Type'Pos (Signal.Mode));
+         Live
+           (Time_Valid => Time_Fresh,
+            HH         => Integer (Time.Value.Hour),
+            MM         => Integer (Time.Value.Minute),
+            SS         => Integer (Time.Value.Second),
+            Pos_Fresh  => Pos_Fresh,
+            Lat_E7     => Integer (Position.Value.Latitude),
+            Lon_E7     => Integer (Position.Value.Longitude),
+            In_View    => Integer (Sat_Count),
+            Max_SNR    => Integer (Signal.Max_SNR),
+            Fix_Type   => GPS.Fix_Type'Pos (Signal.Mode));
 
          --  Echo the actual raw sentence (spaced so the FIFO drains; long
          --  sentences are split into two lines to stay under the console FIFO).
          delay until Clock + Fifo_Drain;
          declare
             --  A standard NMEA sentence is at most 82 chars; 90 leaves margin.
-            Sentence : String (1 .. 90);
-            Length   : Natural;
+            Sentence    : String (1 .. 90);
+            Length      : Natural;
             --  Split point: echo the first Split_Point chars, then the rest, so
             --  each printed line stays under the 64-byte console FIFO.
             Split_Point : constant := 45;
@@ -428,8 +452,7 @@ begin
             Raw (Sentence'Address, Natural'Min (Length, Split_Point));
             if Length > Split_Point then
                delay until Clock + Fifo_Drain;
-               Raw (Sentence (Sentence'First + Split_Point)'Address,
-                    Length - Split_Point);
+               Raw (Sentence (Sentence'First + Split_Point)'Address, Length - Split_Point);
             end if;
          end;
 
@@ -442,11 +465,12 @@ begin
             New_Line;
             for I in 1 .. Sat_Count loop
                delay until Clock + Fifo_Drain;
-               Sat (GNSS      => GPS.GNSS_System'Pos (Satellites (I).System),
-                    PRN       => Integer (Satellites (I).PRN),
-                    Elevation => Integer (Satellites (I).Elevation),
-                    Azimuth   => Integer (Satellites (I).Azimuth),
-                    SNR       => Integer (Satellites (I).SNR));
+               Sat
+                 (GNSS      => GPS.GNSS_System'Pos (Satellites (I).System),
+                  PRN       => Integer (Satellites (I).PRN),
+                  Elevation => Integer (Satellites (I).Elevation),
+                  Azimuth   => Integer (Satellites (I).Azimuth),
+                  SNR       => Integer (Satellites (I).SNR));
             end loop;
          end if;
 

@@ -8,6 +8,7 @@ with Interfaces.C;
 --  __bare_heap_end -> the leftover-DRAM or PSRAM region, chosen in bare_build.sh
 --  so this unit is arena-agnostic), and the per-task primary-stack reclamation
 --  hook for the full profile.  Linked only for the heap profiles.
+
 package Bare_Heap is
 
    function Malloc (N : Interfaces.C.size_t) return System.Address;
@@ -16,8 +17,7 @@ package Bare_Heap is
    procedure Free (P : System.Address);
    pragma Export (C, Free, "free");
 
-   function Realloc (P : System.Address; N : Interfaces.C.size_t)
-                     return System.Address;
+   function Realloc (P : System.Address; N : Interfaces.C.size_t) return System.Address;
    pragma Export (C, Realloc, "realloc");
 
    function Calloc (Nmemb, Size : Interfaces.C.size_t) return System.Address;

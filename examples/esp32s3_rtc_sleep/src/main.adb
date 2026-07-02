@@ -21,11 +21,11 @@
 --    counter reached 4 (so it survived the resets) and the last wake was a
 --    deep-sleep timer wake.
 --  Hardware:  none (self-contained; timer wake, no wake-source wiring).
-with Interfaces;   use Interfaces;
+with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.RTC;
-with ESP32S3.Log;  use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -34,8 +34,8 @@ procedure Main is
    --  Human-readable wake-cause name.  Indexed by the integer code: either
    --  Wake_Cause'Pos of a mapped cause (Power_On=0, Deep_Sleep_Timer=1,
    --  Deep_Sleep_GPIO=2, Other_Reset=3), or a raw reject-cause code.
-   function Cause_Name (Cause_Code : Integer) return String is
-     (case Cause_Code is
+   function Cause_Name (Cause_Code : Integer) return String
+   is (case Cause_Code is
          when 0      => "power-on",
          when 1      => "deep-sleep-timer",
          when 2      => "deep-sleep-gpio",
@@ -82,8 +82,7 @@ begin
 
    if Boot_Count < Final_Boot_Count then
       --  Sleep ~2 s and wake via the RTC timer; this does not return on success.
-      Put_Line ("[rtc] entering deep sleep for ~2000 ms "
-                & "(console drops until wake)...");
+      Put_Line ("[rtc] entering deep sleep for ~2000 ms " & "(console drops until wake)...");
       delay until Clock + Milliseconds (50);     --  let the console flush
       Deep_Sleep_For (Sleep_Duration);
       --  Only reached if the sleep was rejected -- report the cause and stop.
@@ -106,8 +105,10 @@ begin
       Put ("  last-wake=");
       Put (Cause_Name (Wake_Cause'Pos (Wake)));
       Put ("  ");
-      Put_Line (if Boot_Count >= Final_Boot_Count and then Wake = Deep_Sleep_Timer
-                then "PASS" else "FAIL");
+      Put_Line
+        (if Boot_Count >= Final_Boot_Count and then Wake = Deep_Sleep_Timer
+         then "PASS"
+         else "FAIL");
       delay until Clock + Seconds (2);
    end loop;
 end Main;

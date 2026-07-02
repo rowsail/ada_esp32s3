@@ -15,6 +15,7 @@ with System;
 --  Library-level + closure-free is mandatory here: the runtime forbids implicit
 --  dynamic code (No_Implicit_Dynamic_Code), so a nested handler -- which would
 --  need a trampoline -- is rejected.
+
 package body Blink is
 
    procedure Clear_L2;
@@ -23,8 +24,8 @@ package body Blink is
    pragma Import (C, Clear_L3, "ada_clear_l3");
 
    --  L2 = Device_L2_0 = CPU_INT 19.
-   protected L2_PO with
-     Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority
+   protected L2_PO
+     with Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority
    is
       function Count return Integer;
    private
@@ -39,12 +40,13 @@ package body Blink is
          Clear_L2;
          Fired := Fired + 1;
       end Handle;
-      function Count return Integer is (Fired);
+      function Count return Integer
+      is (Fired);
    end L2_PO;
 
    --  L3 = Device_L3_0 = CPU_INT 23.
-   protected L3_PO with
-     Interrupt_Priority => Ada.Interrupts.Names.Device_L3_Priority
+   protected L3_PO
+     with Interrupt_Priority => Ada.Interrupts.Names.Device_L3_Priority
    is
       function Count return Integer;
    private
@@ -59,10 +61,13 @@ package body Blink is
          Clear_L3;
          Fired := Fired + 1;
       end Handle;
-      function Count return Integer is (Fired);
+      function Count return Integer
+      is (Fired);
    end L3_PO;
 
-   function L2_Count return Integer is (L2_PO.Count);
-   function L3_Count return Integer is (L3_PO.Count);
+   function L2_Count return Integer
+   is (L2_PO.Count);
+   function L3_Count return Integer
+   is (L3_PO.Count);
 
 end Blink;

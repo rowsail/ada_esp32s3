@@ -9,12 +9,13 @@ with ESP32S3.Ext4;
 --  the glue library-level makes the callback closure-free.
 --
 --  Output goes through the buffered ESP32S3.Text_IO console (was esp_rom_printf).
+
 package FS_Glue is
    procedure Banner;
-   procedure Card_R  (Ok : Boolean);
+   procedure Card_R (Ok : Boolean);
    procedure Mount_R (Ok : Boolean; Block_Size : Natural);
-   procedure File_R  (Ok : Boolean; Size : Natural; Preview : String);
-   procedure Err_R   (Stage : String);
+   procedure File_R (Ok : Boolean; Size : Natural; Preview : String);
+   procedure Err_R (Stage : String);
    procedure Done;
 
    --  Sanitise a string for the console: non-printables -> '.'.
@@ -24,7 +25,5 @@ package FS_Glue is
    --  library-level (here, not nested in Main): 'Access of a nested subprogram
    --  passed to Iterate's anonymous access-to-subprogram parameter would need a
    --  GNAT stack trampoline, which faults on this non-executable stack.
-   procedure Visit (Name      : String;
-                    Ino       : ESP32S3.Ext4.Inode_Number;
-                    File_Type : ESP32S3.Ext4.U8);
+   procedure Visit (Name : String; Ino : ESP32S3.Ext4.Inode_Number; File_Type : ESP32S3.Ext4.U8);
 end FS_Glue;

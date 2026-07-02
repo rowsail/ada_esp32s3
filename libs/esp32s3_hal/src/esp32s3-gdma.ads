@@ -50,8 +50,7 @@ package ESP32S3.GDMA is
    --  Peripherals a channel can be bound to.  Mem2Mem is the internal
    --  memory-to-memory loopback (no external peripheral).  The others match the
    --  GDMA PERI_SEL encoding and are placeholders until their drivers land.
-   type Peripheral is
-     (Mem2Mem, SPI2, SPI3, UHCI0, I2S0, I2S1, LCD_CAM, AES, SHA, ADC_DAC, RMT);
+   type Peripheral is (Mem2Mem, SPI2, SPI3, UHCI0, I2S0, I2S1, LCD_CAM, AES, SHA, ADC_DAC, RMT);
 
    --  An opaque, non-copyable handle to a claimed channel.  Default-initialised
    --  to invalid (check Is_Valid); auto-releases its channel on scope exit.
@@ -82,8 +81,7 @@ package ESP32S3.GDMA is
    --
    --  No-op if C is invalid or Length is 0 / over Max_Transfer.
    procedure Copy (C : Channel; Dst, Src : System.Address; Length : Natural)
-     with Pre => Length = 0
-                 or else (Is_DMA_Capable (Src) and then Is_DMA_Capable (Dst));
+   with Pre => Length = 0 or else (Is_DMA_Capable (Src) and then Is_DMA_Capable (Dst));
 
    ------------------------------------------------------------------------
    --  Peripheral-bound transfers.
@@ -105,9 +103,8 @@ package ESP32S3.GDMA is
    --  the GDMA moves data as the peripheral asserts its DMA request.  Poll Done
    --  or call Wait for completion.  Buffer must be in internal SRAM; Length in
    --  1 .. Max_Transfer.  No-op on an invalid handle or out-of-range Length.
-   procedure Start
-     (C : Channel; Dir : Direction; Buffer : System.Address; Length : Natural)
-     with Pre => Length = 0 or else Is_DMA_Capable (Buffer);
+   procedure Start (C : Channel; Dir : Direction; Buffer : System.Address; Length : Natural)
+   with Pre => Length = 0 or else Is_DMA_Capable (Buffer);
 
    --  Arm a CONTINUOUS (self-looping) transmit on C's OUT path: a single
    --  descriptor whose link points back to itself, so the engine replays
@@ -118,9 +115,8 @@ package ESP32S3.GDMA is
    --  involvement after the kick.  Buffer must be in internal SRAM and should
    --  hold a whole number of wave periods so the wrap is seamless; Length in
    --  1 .. Max_Transfer.  No-op on an invalid handle or out-of-range Length.
-   procedure Start_Loop
-     (C : Channel; Buffer : System.Address; Length : Natural)
-     with Pre => Length = 0 or else Is_DMA_Capable (Buffer);
+   procedure Start_Loop (C : Channel; Buffer : System.Address; Length : Natural)
+   with Pre => Length = 0 or else Is_DMA_Capable (Buffer);
 
    --  True once the Dir transfer has signalled success-EOF (also True for an
    --  invalid handle, so a Wait never hangs on one).

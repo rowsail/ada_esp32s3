@@ -27,6 +27,7 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 --  The environment task just idles; the cross-core Producer/Consumer (package
 --  Comm) do the work on cores 1 and 0.
+
 procedure Main is
 begin
    loop

@@ -30,9 +30,7 @@ package Net_Routes is
    --  Add a route: destinations matching Dest under Mask go out Iface.  Lower
    --  Metric wins among equally-specific routes.
    procedure Add_Route
-     (Dest, Mask : Net_Devices.IPv4_Address;
-      Iface      : Interface_Id;
-      Metric     : Natural := 100);
+     (Dest, Mask : Net_Devices.IPv4_Address; Iface : Interface_Id; Metric : Natural := 100);
 
    --  Shorthand for a 0.0.0.0/0 default route out Iface.
    procedure Set_Default (Iface : Interface_Id; Metric : Natural := 100);
@@ -49,8 +47,6 @@ package Net_Routes is
    --  interface is up, then lowest metric.  Found is False if none qualify (no
    --  matching route, or every matching interface is down).
    procedure Resolve
-     (Dest  : Net_Devices.IPv4_Address;
-      Iface : out Interface_Id;
-      Found : out Boolean);
+     (Dest : Net_Devices.IPv4_Address; Iface : out Interface_Id; Found : out Boolean);
 
 end Net_Routes;

@@ -73,13 +73,11 @@ package body ESP32S3.TLV2556 is
       S    : SPI.Session;
       Rx   : Frame;
       Word : constant Frame :=
-        (Shift_Left (Unsigned_8 (Analog_Input'Pos (Input)), 4) or CFGR1_16bit,
-         16#00#);
+        (Shift_Left (Unsigned_8 (Analog_Input'Pos (Input)), 4) or CFGR1_16bit, 16#00#);
       Raw  : Unsigned_16;
    begin
       Acquire (S, Dev);
-      Cycle
-        (S, Word, Rx);                       --  prime: start converting Input
+      Cycle (S, Word, Rx);                       --  prime: start converting Input
       delay until Clock + Convert_Delay;         --  wait out the conversion
       Cycle (S, Word, Rx);                       --  read Input's result back
       SPI.Release (S);

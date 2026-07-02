@@ -61,21 +61,12 @@ package ESP32S3.Text_IO is
    --  "sync=no" (the default: commit on Close). "" means default; any other form
    --  raises Use_Error. Form (File) returns the form the file was opened with.
    procedure Create
-     (File : in out File_Type;
-      Name : String;
-      Mode : File_Mode := Out_File;
-      Form : String := "");
-   procedure Open
-     (File : in out File_Type;
-      Name : String;
-      Mode : File_Mode;
-      Form : String := "");
+     (File : in out File_Type; Name : String; Mode : File_Mode := Out_File; Form : String := "");
+   procedure Open (File : in out File_Type; Name : String; Mode : File_Mode; Form : String := "");
    procedure Close (File : in out File_Type);
-   procedure Delete
-     (File : in out File_Type);    --  remove the ext4 file, then close
+   procedure Delete (File : in out File_Type);    --  remove the ext4 file, then close
    procedure Reset (File : in out File_Type);
-   procedure Reset
-     (File : in out File_Type; Mode : File_Mode);  --  re-open with Mode
+   procedure Reset (File : in out File_Type; Mode : File_Mode);  --  re-open with Mode
    function Is_Open (File : File_Type) return Boolean;
    function Mode (File : File_Type) return File_Mode;
    function Name (File : File_Type) return String;
@@ -126,14 +117,12 @@ package ESP32S3.Text_IO is
    procedure Put (Item : Character);
    procedure Get (File : File_Type; Item : out Character);
    procedure Get (Item : out Character);
-   procedure Look_Ahead
-     (File : File_Type; Item : out Character; End_Of_Line : out Boolean);
+   procedure Look_Ahead (File : File_Type; Item : out Character; End_Of_Line : out Boolean);
    --  Read the next character without skipping line terminators. The Available
    --  form sets it False (Item undefined) when no character is ready.
    procedure Get_Immediate (File : File_Type; Item : out Character);
    procedure Get_Immediate (Item : out Character);
-   procedure Get_Immediate
-     (File : File_Type; Item : out Character; Available : out Boolean);
+   procedure Get_Immediate (File : File_Type; Item : out Character; Available : out Boolean);
    procedure Get_Immediate (Item : out Character; Available : out Boolean);
 
    --  String / line I/O ---------------------------------------------------------
@@ -141,8 +130,7 @@ package ESP32S3.Text_IO is
    procedure Put (Item : String);
    procedure Put_Line (File : File_Type; Item : String);
    procedure Put_Line (Item : String);
-   procedure Get_Line
-     (File : File_Type; Item : out String; Last : out Natural);
+   procedure Get_Line (File : File_Type; Item : out String; Last : out Natural);
    procedure Get_Line (Item : out String; Last : out Natural);
    --  Function forms: read and return the whole line (heap-allocated; any length).
    function Get_Line (File : File_Type) return String;
@@ -160,13 +148,10 @@ package ESP32S3.Text_IO is
          Width : Field := Default_Width;
          Base  : Number_Base := Default_Base);
       procedure Put
-        (Item  : Num;
-         Width : Field := Default_Width;
-         Base  : Number_Base := Default_Base);
+        (Item : Num; Width : Field := Default_Width; Base : Number_Base := Default_Base);
       procedure Get (File : File_Type; Item : out Num);
       procedure Get (Item : out Num);
-      procedure Put
-        (To : out String; Item : Num; Base : Number_Base := Default_Base);
+      procedure Put (To : out String; Item : Num; Base : Number_Base := Default_Base);
       procedure Get (From : String; Item : out Num; Last : out Positive);
    end Integer_IO;
 
@@ -181,13 +166,10 @@ package ESP32S3.Text_IO is
          Width : Field := Default_Width;
          Base  : Number_Base := Default_Base);
       procedure Put
-        (Item  : Num;
-         Width : Field := Default_Width;
-         Base  : Number_Base := Default_Base);
+        (Item : Num; Width : Field := Default_Width; Base : Number_Base := Default_Base);
       procedure Get (File : File_Type; Item : out Num);
       procedure Get (Item : out Num);
-      procedure Put
-        (To : out String; Item : Num; Base : Number_Base := Default_Base);
+      procedure Put (To : out String; Item : Num; Base : Number_Base := Default_Base);
       procedure Get (From : String; Item : out Num; Last : out Positive);
    end Modular_IO;
 
@@ -211,10 +193,7 @@ package ESP32S3.Text_IO is
       procedure Get (File : File_Type; Item : out Num);
       procedure Get (Item : out Num);
       procedure Put
-        (To   : out String;
-         Item : Num;
-         Aft  : Field := Default_Aft;
-         Exp  : Field := Default_Exp);
+        (To : out String; Item : Num; Aft : Field := Default_Aft; Exp : Field := Default_Exp);
       procedure Get (From : String; Item : out Num; Last : out Positive);
    end Float_IO;
 
@@ -229,9 +208,7 @@ package ESP32S3.Text_IO is
          Width : Field := Default_Width;
          Set   : Type_Set := Default_Setting);
       procedure Put
-        (Item  : Enum;
-         Width : Field := Default_Width;
-         Set   : Type_Set := Default_Setting);
+        (Item : Enum; Width : Field := Default_Width; Set : Type_Set := Default_Setting);
       procedure Get (File : File_Type; Item : out Enum);
       procedure Get (Item : out Enum);
    end Enumeration_IO;
@@ -258,10 +235,7 @@ package ESP32S3.Text_IO is
       procedure Get (File : File_Type; Item : out Num);
       procedure Get (Item : out Num);
       procedure Put
-        (To   : out String;
-         Item : Num;
-         Aft  : Field := Default_Aft;
-         Exp  : Field := Default_Exp);
+        (To : out String; Item : Num; Aft : Field := Default_Aft; Exp : Field := Default_Exp);
       procedure Get (From : String; Item : out Num; Last : out Positive);
    end Fixed_IO;
 
@@ -285,10 +259,7 @@ package ESP32S3.Text_IO is
       procedure Get (File : File_Type; Item : out Num);
       procedure Get (Item : out Num);
       procedure Put
-        (To   : out String;
-         Item : Num;
-         Aft  : Field := Default_Aft;
-         Exp  : Field := Default_Exp);
+        (To : out String; Item : Num; Aft : Field := Default_Aft; Exp : Field := Default_Exp);
       procedure Get (From : String; Item : out Num; Last : out Positive);
    end Decimal_IO;
 

@@ -1,9 +1,9 @@
-with System.Machine_Code;          use System.Machine_Code;
+with System.Machine_Code;               use System.Machine_Code;
 with ESP32S3_Registers.INTERRUPT_CORE0; use ESP32S3_Registers.INTERRUPT_CORE0;
 with ESP32S3_Registers.INTERRUPT_CORE1; use ESP32S3_Registers.INTERRUPT_CORE1;
-with ESP32S3_Registers.RTC_CNTL;  use ESP32S3_Registers.RTC_CNTL;
-with ESP32S3_Registers.SYSTEM;    use ESP32S3_Registers.SYSTEM;
-with ESP32S3_Registers.SYSTIMER;  use ESP32S3_Registers.SYSTIMER;
+with ESP32S3_Registers.RTC_CNTL;        use ESP32S3_Registers.RTC_CNTL;
+with ESP32S3_Registers.SYSTEM;          use ESP32S3_Registers.SYSTEM;
+with ESP32S3_Registers.SYSTIMER;        use ESP32S3_Registers.SYSTIMER;
 
 package body Bare_Boot is
 
@@ -12,11 +12,11 @@ package body Bare_Boot is
 
    --  Vendored Xtensa asm: enable a set of interrupts (was the esp_cpu.h inline).
    procedure Xt_Ints_On (Mask : Unsigned_32)
-     with Import, Convention => C, External_Name => "xt_ints_on";
+   with Import, Convention => C, External_Name => "xt_ints_on";
 
    --  The Ada environment-task entry (bare_glue.c); never returns.
    procedure App_Main
-     with Import, Convention => C, External_Name => "app_main";
+   with Import, Convention => C, External_Name => "app_main";
 
    ---------------------------
    -- Esp_Cpu_Intr_Enable --
@@ -36,8 +36,9 @@ package body Bare_Boot is
    begin
       if Core = 0 then
          return;                                  --  never stall self (PRO_CPU)
+
       end if;
-      RTC_CNTL_Periph.OPTIONS0.SW_STALL_APPCPU_C0     := 2#10#;
+      RTC_CNTL_Periph.OPTIONS0.SW_STALL_APPCPU_C0 := 2#10#;
       RTC_CNTL_Periph.SW_CPU_STALL.SW_STALL_APPCPU_C1 := 16#21#;
    end Esp_Cpu_Stall;
 
@@ -46,7 +47,7 @@ package body Bare_Boot is
       if Core = 0 then
          return;
       end if;
-      RTC_CNTL_Periph.OPTIONS0.SW_STALL_APPCPU_C0     := 0;
+      RTC_CNTL_Periph.OPTIONS0.SW_STALL_APPCPU_C0 := 0;
       RTC_CNTL_Periph.SW_CPU_STALL.SW_STALL_APPCPU_C1 := 0;
    end Esp_Cpu_Unstall;
 
@@ -68,7 +69,8 @@ package body Bare_Boot is
    ---------------------
 
    --  The runtime's Clock_Frequency is a compile-time 240 MHz constant.
-   function Esp_Clk_Cpu_Freq return Integer_32 is (240_000_000);
+   function Esp_Clk_Cpu_Freq return Integer_32
+   is (240_000_000);
 
    -----------------
    -- Esp_Restart --
@@ -94,9 +96,9 @@ package body Bare_Boot is
    procedure Native_Start_Core1 is
    begin
       SYSTEM_Periph.CORE_1_CONTROL_0.CONTROL_CORE_1_CLKGATE_EN := True;
-      SYSTEM_Periph.CORE_1_CONTROL_0.CONTROL_CORE_1_RUNSTALL   := False;
-      SYSTEM_Periph.CORE_1_CONTROL_0.CONTROL_CORE_1_RESETING   := True;
-      SYSTEM_Periph.CORE_1_CONTROL_0.CONTROL_CORE_1_RESETING   := False;
+      SYSTEM_Periph.CORE_1_CONTROL_0.CONTROL_CORE_1_RUNSTALL := False;
+      SYSTEM_Periph.CORE_1_CONTROL_0.CONTROL_CORE_1_RESETING := True;
+      SYSTEM_Periph.CORE_1_CONTROL_0.CONTROL_CORE_1_RESETING := False;
    end Native_Start_Core1;
 
    ---------------------------
@@ -107,8 +109,7 @@ package body Bare_Boot is
    --  enable it (core 0's half of the cross-core IPI poke).
    procedure Native_Setup_Poke_Core0 is
    begin
-      INTERRUPT_CORE0_Periph.CPU_INTR_FROM_CPU_2_MAP.CPU_INTR_FROM_CPU_2_MAP :=
-        POKE_CPU_INT;
+      INTERRUPT_CORE0_Periph.CPU_INTR_FROM_CPU_2_MAP.CPU_INTR_FROM_CPU_2_MAP := POKE_CPU_INT;
       Esp_Cpu_Intr_Enable (Shift_Left (1, POKE_CPU_INT));
    end Native_Setup_Poke_Core0;
 
@@ -120,8 +121,7 @@ package body Bare_Boot is
    --  interrupt (int 16) that drives the GNARL tick on this core.
    procedure Native_Setup_Poke_Core1 is
    begin
-      INTERRUPT_CORE1_Periph.CPU_INTR_FROM_CPU_3_MAP.CPU_INTR_FROM_CPU_3_MAP :=
-        POKE_CPU_INT;
+      INTERRUPT_CORE1_Periph.CPU_INTR_FROM_CPU_3_MAP.CPU_INTR_FROM_CPU_3_MAP := POKE_CPU_INT;
       Esp_Cpu_Intr_Enable (Shift_Left (1, POKE_CPU_INT) or Shift_Left (1, 16));
    end Native_Setup_Poke_Core1;
 
@@ -133,9 +133,7 @@ package body Bare_Boot is
    function Native_Core_Id return Integer_32 is
       P : Unsigned_32;
    begin
-      Asm ("rsr.prid %0",
-           Outputs  => Unsigned_32'Asm_Output ("=r", P),
-           Volatile => True);
+      Asm ("rsr.prid %0", Outputs => Unsigned_32'Asm_Output ("=r", P), Volatile => True);
       return Integer_32 (Shift_Right (P, 13) and 1);
    end Native_Core_Id;
 
@@ -146,9 +144,7 @@ package body Bare_Boot is
    function Native_Get_Ccount return Unsigned_32 is
       C : Unsigned_32;
    begin
-      Asm ("rsr.ccount %0",
-           Outputs  => Unsigned_32'Asm_Output ("=r", C),
-           Volatile => True);
+      Asm ("rsr.ccount %0", Outputs => Unsigned_32'Asm_Output ("=r", C), Volatile => True);
       return C;
    end Native_Get_Ccount;
 
@@ -158,9 +154,10 @@ package body Bare_Boot is
 
    procedure Native_Set_Ccount (Count : Unsigned_32) is
    begin
-      Asm ("wsr.ccount %0" & ASCII.LF & ASCII.HT & "isync",
-           Inputs   => Unsigned_32'Asm_Input ("r", Count),
-           Volatile => True);
+      Asm
+        ("wsr.ccount %0" & ASCII.LF & ASCII.HT & "isync",
+         Inputs   => Unsigned_32'Asm_Input ("r", Count),
+         Volatile => True);
    end Native_Set_Ccount;
 
    -----------------------
@@ -170,9 +167,7 @@ package body Bare_Boot is
    function Native_Get_Vecbase return Unsigned_32 is
       V : Unsigned_32;
    begin
-      Asm ("rsr.vecbase %0",
-           Outputs  => Unsigned_32'Asm_Output ("=r", V),
-           Volatile => True);
+      Asm ("rsr.vecbase %0", Outputs => Unsigned_32'Asm_Output ("=r", V), Volatile => True);
       return V;
    end Native_Get_Vecbase;
 
@@ -186,7 +181,7 @@ package body Bare_Boot is
    procedure Disable_WDTs is
    begin
       RTC_CNTL_Periph.WDTWPROTECT := 16#50D8_3AA1#;        --  unlock RTC WDT
-      RTC_CNTL_Periph.WDTCONFIG0.WDT_EN               := False;
+      RTC_CNTL_Periph.WDTCONFIG0.WDT_EN := False;
       RTC_CNTL_Periph.WDTCONFIG0.WDT_FLASHBOOT_MOD_EN := False;
       RTC_CNTL_Periph.WDTWPROTECT := 0;                    --  relock
 
@@ -205,8 +200,8 @@ package body Bare_Boot is
    --  freeze.  Keep UNIT0 counting while a core is halted.
    procedure Native_Enable_Systimer is
    begin
-      SYSTIMER_Periph.CONF.CLK_EN                     := True;
-      SYSTIMER_Periph.CONF.TIMER_UNIT0_WORK_EN        := True;
+      SYSTIMER_Periph.CONF.CLK_EN := True;
+      SYSTIMER_Periph.CONF.TIMER_UNIT0_WORK_EN := True;
       SYSTIMER_Periph.CONF.TIMER_UNIT0_CORE0_STALL_EN := False;
       SYSTIMER_Periph.CONF.TIMER_UNIT0_CORE1_STALL_EN := False;
    end Native_Enable_Systimer;
@@ -221,10 +216,9 @@ package body Bare_Boot is
       while not SYSTIMER_Periph.UNIT0_OP.TIMER_UNIT0_VALUE_VALID loop
          null;
       end loop;
-      return Shift_Left
-               (Unsigned_64 (SYSTIMER_Periph.UNIT0_VALUE_HI.TIMER_UNIT0_VALUE_HI),
-                32)
-             or Unsigned_64 (SYSTIMER_Periph.UNIT0_VALUE_LO);
+      return
+        Shift_Left (Unsigned_64 (SYSTIMER_Periph.UNIT0_VALUE_HI.TIMER_UNIT0_VALUE_HI), 32)
+        or Unsigned_64 (SYSTIMER_Periph.UNIT0_VALUE_LO);
    end Native_Systimer_Count;
 
    -------------

@@ -49,15 +49,13 @@ package FTP_Client is
    --  Receives a file body (Retrieve) or a directory listing (List) in chunks, in
    --  order; called once per network read, never with an empty Chunk.  Library-
    --  level + closure-free; state via Ctx.
-   type Data_Sink is
-     access procedure (Ctx : System.Address; Chunk : Byte_Array);
+   type Data_Sink is access procedure (Ctx : System.Address; Chunk : Byte_Array);
 
    --  Supplies a file body (Store) in chunks: fill Buf and set Last to the number
    --  of bytes written (Buf'First .. Buf'First + Last - 1).  Last = 0 signals
    --  end-of-file.  Library-level + closure-free; state via Ctx.
    type Data_Source is
-     access procedure
-       (Ctx : System.Address; Buf : out Byte_Array; Last : out Natural);
+     access procedure (Ctx : System.Address; Buf : out Byte_Array; Last : out Natural);
 
    ----------------------------------------------------------------------------
    --  Session
@@ -118,21 +116,15 @@ package FTP_Client is
    --  Simple commands
    ----------------------------------------------------------------------------
 
-   procedure Change_Dir
-     (S : in out Session; Path : String; Result : out Status);
+   procedure Change_Dir (S : in out Session; Path : String; Result : out Status);
    procedure Make_Dir (S : in out Session; Path : String; Result : out Status);
-   procedure Remove_Dir
-     (S : in out Session; Path : String; Result : out Status);
-   procedure Delete_File
-     (S : in out Session; Path : String; Result : out Status);
+   procedure Remove_Dir (S : in out Session; Path : String; Result : out Status);
+   procedure Delete_File (S : in out Session; Path : String; Result : out Status);
 
    --  Size of a remote file in bytes (SIZE; binary mode).  Size is 0 on any
    --  non-OK Result.
    procedure File_Size
-     (S      : in out Session;
-      Path   : String;
-      Size   : out Natural;
-      Result : out Status);
+     (S : in out Session; Path : String; Size : out Natural; Result : out Status);
 
 private
    --  Control-connection input buffer, so Get_Line can hand back one CRLF-

@@ -34,10 +34,8 @@ package ESP32S3.QMI8658C is
 
    --  7-bit I2C address, selected by the SA0 / SDO pin.  SA0 has an internal
    --  200 k pull-up, so a floating pin reads high => 0x6A is the power-on default.
-   Address_SA0_High : constant ESP32S3.I2C.Slave_Address :=
-     16#6A#;   --  SA0 = VDDIO
-   Address_SA0_Low  : constant ESP32S3.I2C.Slave_Address :=
-     16#6B#;   --  SA0 = GND
+   Address_SA0_High : constant ESP32S3.I2C.Slave_Address := 16#6A#;   --  SA0 = VDDIO
+   Address_SA0_Low  : constant ESP32S3.I2C.Slave_Address := 16#6B#;   --  SA0 = GND
 
    --  WHO_AM_I (register 0x00) returns this for every QST QMI8658.
    Who_Am_I_Value : constant Interfaces.Unsigned_8 := 16#05#;
@@ -122,8 +120,7 @@ package ESP32S3.QMI8658C is
 
    --  Read WHO_AM_I (0x00).  Id = Who_Am_I_Value (0x05) confirms a QMI8658 is
    --  present and the address is right.  Works before Configure.
-   procedure Read_Who_Am_I
-     (Dev : Device; Id : out Interfaces.Unsigned_8; Result : out Status);
+   procedure Read_Who_Am_I (Dev : Device; Id : out Interfaces.Unsigned_8; Result : out Status);
 
    --  Soft reset (write 0xB0 to the RESET register): returns every register to
    --  its power-on default.  Wait ~15 ms afterwards, then Configure.
@@ -146,18 +143,15 @@ package ESP32S3.QMI8658C is
    ----------------------------------------------------------------------------
 
    --  Read the three accelerometer / gyroscope axes (raw signed counts).
-   procedure Read_Accelerometer
-     (Dev : Device; A : out Axes; Result : out Status);
+   procedure Read_Accelerometer (Dev : Device; A : out Axes; Result : out Status);
    procedure Read_Gyroscope (Dev : Device; G : out Axes; Result : out Status);
 
    --  Read the on-chip temperature, raw signed (two registers).  Degrees Celsius
    --  = Raw / 256.0.
-   procedure Read_Temperature
-     (Dev : Device; Raw : out Interfaces.Integer_16; Result : out Status);
+   procedure Read_Temperature (Dev : Device; Raw : out Interfaces.Integer_16; Result : out Status);
 
    --  New-data flags from STATUS0 (set since the matching axes were last read).
-   procedure Data_Ready
-     (Dev : Device; Accel, Gyro : out Boolean; Result : out Status);
+   procedure Data_Ready (Dev : Device; Accel, Gyro : out Boolean; Result : out Status);
 
    --  Sensitivity of the configured ranges, used to scale the raw counts:
    --     g   = A.X / Float (Accel_LSB_Per_G (Dev))

@@ -1,5 +1,5 @@
 pragma Warnings (Off);
-with Interfaces.C; use Interfaces.C;
+with Interfaces.C;  use Interfaces.C;
 with Ada.Real_Time; use Ada.Real_Time;
 with Blink;
 
@@ -43,13 +43,17 @@ with Blink;
 --  --------
 --  None.  The L2/L3 interrupts are software-fired through the FROM_CPU
 --  interrupt-matrix sources (see glue.c); the L5 tick is the runtime timer.
+
 procedure Example is
    procedure Log (Marker : Interfaces.C.int);
    pragma Import (C, Log, "ada_log");
-   procedure Setup;   pragma Import (C, Setup,   "ada_setup_l2l3");
-   procedure Fire_L2; pragma Import (C, Fire_L2, "ada_fire_l2");
-   procedure Fire_L3; pragma Import (C, Fire_L3, "ada_fire_l3");
-   function  Get_TP return Interfaces.C.unsigned;
+   procedure Setup;
+   pragma Import (C, Setup, "ada_setup_l2l3");
+   procedure Fire_L2;
+   pragma Import (C, Fire_L2, "ada_fire_l2");
+   procedure Fire_L3;
+   pragma Import (C, Fire_L3, "ada_fire_l3");
+   function Get_TP return Interfaces.C.unsigned;
    pragma Import (C, Get_TP, "ada_get_tp");
    procedure Set_TP (V : Interfaces.C.unsigned);
    pragma Import (C, Set_TP, "ada_set_tp");
@@ -66,8 +70,8 @@ procedure Example is
    Context_Lost      : constant Interfaces.C.int := 911;       --  vector lost ctx
 
    --  Loop count per batch, and how often within it to fire L2 + L3.
-   Batch_Iterations  : constant := 400_000;
-   Fire_Interval     : constant := 100_000;
+   Batch_Iterations : constant := 400_000;
+   Fire_Interval    : constant := 100_000;
 
    --  The accumulator identity: each step multiplies by Loop_Mul * Loop_Inv,
    --  which equals 1.0 exactly in IEEE Float (2.0 * 0.5), so a correctly
@@ -75,8 +79,10 @@ procedure Example is
    --  Volatile cells so the optimizer keeps both factors in F registers and the
    --  loop does NO in-loop memory traffic -- the FP register file is the state a
    --  preempting vector must save/restore.
-   Mul_Cell : Float := 2.0 with Volatile;
-   Inv_Cell : Float := 0.5 with Volatile;
+   Mul_Cell : Float := 2.0
+   with Volatile;
+   Inv_Cell : Float := 0.5
+   with Volatile;
    Loop_Mul : constant Float := Mul_Cell;
    Loop_Inv : constant Float := Inv_Cell;
 
@@ -102,7 +108,9 @@ begin
          end if;
       end loop;
 
-      if Acc_1 /= 1.0 or else Acc_2 /= 2.0 or else Acc_3 /= 3.0
+      if Acc_1 /= 1.0
+        or else Acc_2 /= 2.0
+        or else Acc_3 /= 3.0
         or else Acc_4 /= 4.0
         or else Get_TP /= Sentinel
       then

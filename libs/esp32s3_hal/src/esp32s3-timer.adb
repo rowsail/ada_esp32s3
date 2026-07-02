@@ -90,8 +90,7 @@ package body ESP32S3.Timer is
 
    procedure Configure (T : in out Timer; Tick_Hz : Positive := 1_000_000) is
       R   : constant Periph_Ref := Regs_Of (T.Idx);
-      Div : constant Natural :=
-        Natural'Max (1, Natural'Min (65_535, Src_Hz / Tick_Hz));
+      Div : constant Natural := Natural'Max (1, Natural'Min (65_535, Src_Hz / Tick_Hz));
    begin
       if not T.Held then
          return;
@@ -135,8 +134,7 @@ package body ESP32S3.Timer is
       if T.Held then
          R.TLOADLO0 := 0;
          R.TLOADHI0 := (LOAD_HI => 0, others => <>);
-         R.TLOAD0 :=
-           1;                  --  any write loads TLOADLO/HI -> counter
+         R.TLOAD0 := 1;                  --  any write loads TLOADLO/HI -> counter
 
       end if;
    end Reset;
@@ -152,8 +150,7 @@ package body ESP32S3.Timer is
          return 0;
       end if;
       R.TUPDATE0 := (UPDATE => True, others => <>);   --  latch the live count
-      return
-        Ticks (Unsigned_64 (R.THI0.HI)) * 2**32 + Ticks (Unsigned_64 (R.TLO0));
+      return Ticks (Unsigned_64 (R.THI0.HI)) * 2**32 + Ticks (Unsigned_64 (R.TLO0));
    end Value;
 
    ---------------
@@ -169,9 +166,7 @@ package body ESP32S3.Timer is
       end if;
       R.TALARMLO0 := UInt32 (V and 16#FFFF_FFFF#);
       R.TALARMHI0 :=
-        (ALARM_HI =>
-           TALARMHI_ALARM_HI_Field (Shift_Right (V, 32) and 16#3F_FFFF#),
-         others   => <>);
+        (ALARM_HI => TALARMHI_ALARM_HI_Field (Shift_Right (V, 32) and 16#3F_FFFF#), others => <>);
       R.INT_CLR_TIMERS.T0_INT_CLR := True;            --  clear any stale flag
       R.TCONFIG0.ALARM_EN := True;
    end Set_Alarm;

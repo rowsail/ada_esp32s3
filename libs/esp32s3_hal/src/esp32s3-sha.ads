@@ -16,10 +16,8 @@ package ESP32S3.SHA is
    type Byte_Array is array (Natural range <>) of Interfaces.Unsigned_8;
 
    subtype SHA1_Digest is Byte_Array (0 .. 19);   --  20-byte (160-bit) digest
-   subtype SHA224_Digest is
-     Byte_Array (0 .. 27);   --  28-byte (224-bit) digest
-   subtype SHA256_Digest is
-     Byte_Array (0 .. 31);   --  32-byte (256-bit) digest
+   subtype SHA224_Digest is Byte_Array (0 .. 27);   --  28-byte (224-bit) digest
+   subtype SHA256_Digest is Byte_Array (0 .. 31);   --  32-byte (256-bit) digest
 
    --  Hardware hashes of Data (any length, padded internally).
    function Hash_1 (Data : Byte_Array) return SHA1_Digest;

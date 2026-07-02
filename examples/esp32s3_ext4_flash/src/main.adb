@@ -52,10 +52,10 @@ with ESP32S3.SPI;
 with ESP32S3.W25Q;
 with ESP32S3.GPIO;
 with ESP32S3.Log;
-with ESP32S3.Block_Dev;             use ESP32S3.Block_Dev;
+with ESP32S3.Block_Dev; use ESP32S3.Block_Dev;
 with ESP32S3.Block_Dev.W25Q_Source;
 with ESP32S3.Block_Dev.WL;
-with ESP32S3.Ext4;                  use ESP32S3.Ext4;
+with ESP32S3.Ext4;      use ESP32S3.Ext4;
 with ESP32S3.Ext4.FS;
 with ESP32S3.Ext4.Inode;
 with Flash_Image;
@@ -64,12 +64,12 @@ with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
-   package SPI  renames ESP32S3.SPI;
+   package SPI renames ESP32S3.SPI;
    package W25Q renames ESP32S3.W25Q;
-   package Log  renames ESP32S3.Log;
-   package BDW  renames ESP32S3.Block_Dev.W25Q_Source;
-   package WL   renames ESP32S3.Block_Dev.WL;
-   package FS   renames ESP32S3.Ext4.FS;
+   package Log renames ESP32S3.Log;
+   package BDW renames ESP32S3.Block_Dev.W25Q_Source;
+   package WL renames ESP32S3.Block_Dev.WL;
+   package FS renames ESP32S3.Ext4.FS;
 
    SCLK_Pin : constant := 1;
    MOSI_Pin : constant := 4;
@@ -77,8 +77,7 @@ procedure Main is
    CS_Pin   : constant ESP32S3.GPIO.Pin_Id := 21;
    Clock_Hz : constant := 8_000_000;
 
-   Flash   : W25Q.Flash :=
-     (Host => SPI.SPI2, Clock_Hz => Clock_Hz, CS_Pin => CS_Pin, others => <>);
+   Flash : W25Q.Flash := (Host => SPI.SPI2, Clock_Hz => Clock_Hz, CS_Pin => CS_Pin, others => <>);
 
    ID      : W25Q.JEDEC_ID;
    Mode_OK : Boolean;
@@ -121,7 +120,8 @@ procedure Main is
             else
                N := N + 1;
                Line (N) := (if Character'Pos (C) in 32 .. 126 then C else '.');
-               if N = Line'Last then     --  flush a very long line in pieces
+               if N = Line'Last then
+                  --  flush a very long line in pieces
                   Log.Put (Line);
                   N := 0;
                   Drain;
@@ -162,14 +162,15 @@ begin
    Log.Put_Line ("[ext4f] ext4 on wear-leveled SPI NOR flash (SPI2, CS=IO21)");
 
    SPI.Setup (SPI.SPI2);
-   SPI.Configure_Pins (SPI.SPI2, Sclk => SCLK_Pin, Mosi => MOSI_Pin,
-                       Miso => MISO_Pin);
+   SPI.Configure_Pins (SPI.SPI2, Sclk => SCLK_Pin, Mosi => MOSI_Pin, Miso => MISO_Pin);
 
    W25Q.Read_Identification (Flash, ID);
    W25Q.Initialize (Flash, Mode_OK);
    Log.Put ("[ext4f] flash ");
-   Log.Put_Hex (Unsigned_32 (ID.Manufacturer), 2); Log.Put (' ');
-   Log.Put_Hex (Unsigned_32 (ID.Memory_Type), 2);  Log.Put (' ');
+   Log.Put_Hex (Unsigned_32 (ID.Manufacturer), 2);
+   Log.Put (' ');
+   Log.Put_Hex (Unsigned_32 (ID.Memory_Type), 2);
+   Log.Put (' ');
    Log.Put_Hex (Unsigned_32 (ID.Capacity), 2);
    Log.Put_Line (", 4-byte mode: " & (if Mode_OK then "OK" else "FAILED"));
 
@@ -197,9 +198,7 @@ begin
          Sec  : Sector;
       begin
          for LS in 0 .. Flash_Image.FS_Sectors - 1 loop
-            if Next < Flash_Image.N_Stored
-              and then Flash_Image.Indices (Next) = LS
-            then
+            if Next < Flash_Image.N_Stored and then Flash_Image.Indices (Next) = LS then
                for B in Sec'Range loop
                   Sec (B) := Flash_Image.Blob (Next * 512 + B);
                end loop;
@@ -231,8 +230,7 @@ begin
 
          Note := Mnt.Create_File ("/", "written.txt");
          Mnt.Write_File
-           (Note, To_Bytes ("written on-device, no-journal commit to flash!"
-                            & ASCII.LF));
+           (Note, To_Bytes ("written on-device, no-journal commit to flash!" & ASCII.LF));
 
          --  Regression test for the shrink-Truncate stale-tail fix: write a file
          --  full of 0xAA, shrink it to a non-block-aligned 100 bytes, then grow it
@@ -254,13 +252,16 @@ begin
             Mnt.Read_File (TI, 0, Back, BLast);
             if BLast < 2000 then
                Pass := False;            --  file did not grow back
+
             else
                for I in 100 .. 1999 loop
-                  if Back (I) /= 0 then Pass := False; end if;
+                  if Back (I) /= 0 then
+                     Pass := False;
+                  end if;
                end loop;
             end if;
-            Log.Put_Line ("[ext4f] truncate stale-tail test: "
-                          & (if Pass then "PASS" else "FAIL"));
+            Log.Put_Line
+              ("[ext4f] truncate stale-tail test: " & (if Pass then "PASS" else "FAIL"));
          end;
 
          Mnt.Commit;

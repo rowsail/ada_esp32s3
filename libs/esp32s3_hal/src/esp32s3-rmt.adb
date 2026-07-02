@@ -32,8 +32,7 @@ package body ESP32S3.RMT is
    --  Flat view of the same 8 x 48 = 384-symbol RAM, so a multi-block channel
    --  (and the wrap re-fill) can index across block boundaries: channel n's
    --  symbol J lives at flat slot n*48 + J.
-   type Flat_Mem is array (0 .. 8 * Block_Symbols - 1) of RMT_Symbol
-   with Volatile;
+   type Flat_Mem is array (0 .. 8 * Block_Symbols - 1) of RMT_Symbol with Volatile;
    Mem_Flat : Flat_Mem
    with Import, Volatile, Address => RMTMEM'Address;
 
@@ -58,8 +57,7 @@ package body ESP32S3.RMT is
    is (Byte (Natural'Max (1, Natural'Min (255, Src_Hz / Resolution_Hz))));
 
    procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register :=
-        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
+      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
    begin
       G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
       O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
@@ -74,13 +72,10 @@ package body ESP32S3.RMT is
       P  : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Ix);
    begin
       P.MCU_SEL := 1;          --  pad driven via the GPIO matrix
-      P.FUN_IE :=
-        True;       --  enable the input buffer so RX can read the pad
+      P.FUN_IE := True;       --  enable the input buffer so RX can read the pad
       MX.IO_MUX_Periph.GPIO (Ix) := P;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Sig) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix),
-         SEL    => True,
-         others => <>);
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix), SEL => True, others => <>);
    end Route_In;
 
    --------------------------------------------------------------------------
@@ -286,8 +281,7 @@ package body ESP32S3.RMT is
 
    procedure Transmit (C : TX_Channel; Symbols : Symbol_Array) is
       Blk  : constant Integer := Integer (C.Idx);
-      Base : constant Natural :=
-        Blk * Block_Symbols;     --  flat slot of block
+      Base : constant Natural := Blk * Block_Symbols;     --  flat slot of block
       Cap  : constant Natural := C.Blocks * Block_Symbols - 1;
       N    : constant Natural := Symbols'Length;
       F    : constant Natural := Symbols'First;
@@ -334,8 +328,7 @@ package body ESP32S3.RMT is
       --  final half is padded with {0,0} end markers, which stops the channel.
       declare
          Half   : constant Natural := Block_Symbols / 2;  --  24
-         Cursor : Natural :=
-           F;                           --  next source symbol
+         Cursor : Natural := F;                           --  next source symbol
          Which  : Natural := 0;                           --  half to re-fill
 
          procedure Fill_Half (H : Natural) is
@@ -367,16 +360,14 @@ package body ESP32S3.RMT is
                Guard := Guard - 1;
                if TX_Thr (C.Idx) then
                   Clear_TX_Thr (C.Idx);
-                  Fill_Half
-                    (Which);          --  re-fill the half just consumed
+                  Fill_Half (Which);          --  re-fill the half just consumed
                   Which := 1 - Which;
                end if;
             end loop;
          end;
 
          RMT_Periph.CH_TX_CONF0 (Blk).MEM_TX_WRAP_EN := False;
-         RMT_Periph.CH_TX_CONF0 (Blk).MEM_SIZE :=
-           CH_TX_CONF0_MEM_SIZE_Field (C.Blocks);
+         RMT_Periph.CH_TX_CONF0 (Blk).MEM_SIZE := CH_TX_CONF0_MEM_SIZE_Field (C.Blocks);
          Clear_TX_Done (C.Idx);
          Clear_TX_Thr (C.Idx);
       end;
@@ -456,9 +447,7 @@ package body ESP32S3.RMT is
       RX_Conf (C.Idx).CONF1.CONF_UPDATE := True;
    end Start;
 
-   procedure Receive
-     (C : RX_Channel; Into : out Symbol_Array; Count : out Natural)
-   is
+   procedure Receive (C : RX_Channel; Into : out Symbol_Array; Count : out Natural) is
       Blk : constant Integer := 4 + Integer (C.Idx);
       J   : Natural := 0;
    begin
@@ -489,8 +478,7 @@ package body ESP32S3.RMT is
             exit when S.Duration0 = 0;        --  empty entry: nothing more
             Into (Into'First + J) := S;
             J := J + 1;
-            exit when
-              S.Duration1 = 0;        --  idle truncated this last symbol
+            exit when S.Duration1 = 0;        --  idle truncated this last symbol
          end;
       end loop;
       Count := J;

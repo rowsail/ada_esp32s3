@@ -41,9 +41,9 @@ procedure Main is
    --  The TLS server to reach.  Server_Port matches the openssl s_server
    --  -accept port above; Host is the name sent in SNI and checked against the
    --  certificate, so it must match the server's certificate subject/SAN.
-   Server_IP   : constant String    := "192.168.1.100";
+   Server_IP   : constant String := "192.168.1.100";
    Server_Port : constant Port_Type := 4433;
-   Host        : constant String    := "test.example.com";
+   Host        : constant String := "test.example.com";
 
    --  Bound the TCP connect retries: the W5500 link and the server may not be
    --  ready the instant we boot.
@@ -78,7 +78,7 @@ begin
       Put_Line ("[tls] connecting to " & Server_IP & ":4433 ...");
       for Try in 1 .. Max_Connect_Tries loop
          begin
-            Create_Socket  (Sock, Family_Inet, Socket_Stream);
+            Create_Socket (Sock, Family_Inet, Socket_Stream);
             Connect_Socket (Sock, (Family_Inet, Inet_Addr (Server_IP), Server_Port));
             Connected := True;
             exit;
@@ -89,7 +89,8 @@ begin
                begin
                   Close_Socket (Sock);
                exception
-                  when others => null;
+                  when others =>
+                     null;
                end;
                delay until Clock + Connect_Retry;
          end;
@@ -112,7 +113,7 @@ begin
       declare
          --  Just preview the first few bytes of the 32-byte X25519 share.
          Key_Share_Preview : constant := 8;
-         Key_Share : constant TLS_Client.Byte_Array :=
+         Key_Share         : constant TLS_Client.Byte_Array :=
            TLS_Client.Server_Key_Share (Session);
       begin
          for I in 0 .. Key_Share_Preview - 1 loop
@@ -126,8 +127,7 @@ begin
          --  cross-checked against a reference TLS trace (e.g. Wireshark keylog).
          Put ("[tls] client_random=");
          declare
-            Client_Random : constant TLS_Client.Byte_Array :=
-              TLS_Client.Client_Random (Session);
+            Client_Random : constant TLS_Client.Byte_Array := TLS_Client.Client_Random (Session);
          begin
             for I in Client_Random'Range loop
                Put_Hex (Interfaces.Unsigned_32 (Client_Random (I)), 2);
@@ -158,13 +158,15 @@ begin
 
       if TLS_Client.Flight_OK (Session) then
          Put_Line ("[tls] encrypted handshake decrypted + authenticated (Finished seen)");
-         Put_Line ("[tls] server CertificateVerify (RSA-PSS): "
-                   & (if TLS_Client.Server_Cert_Verify_OK (Session) then "OK" else "FAIL"));
-         Put_Line ("[tls] server Finished verify: "
-                   & (if TLS_Client.Server_Finished_OK (Session) then "OK" else "FAIL"));
+         Put_Line
+           ("[tls] server CertificateVerify (RSA-PSS): "
+            & (if TLS_Client.Server_Cert_Verify_OK (Session) then "OK" else "FAIL"));
+         Put_Line
+           ("[tls] server Finished verify: "
+            & (if TLS_Client.Server_Finished_OK (Session) then "OK" else "FAIL"));
          if TLS_Client.Have_Server_Cert (Session) then
             declare
-               DER : constant TLS_Client.Byte_Array := TLS_Client.Server_Cert (Session);
+               DER        : constant TLS_Client.Byte_Array := TLS_Client.Server_Cert (Session);
                Cert_Bytes : X509.Byte_Array (0 .. DER'Length - 1);
                Cert       : X509.Certificate;
             begin
@@ -176,8 +178,7 @@ begin
                Put ("[tls] server cert" & Natural'Image (DER'Length) & " bytes: ");
                if Cert.Valid then
                   Put ("parsed; host match=");
-                  Put_Line
-                    (if X509.Host_Matches (Cert_Bytes, Cert, Host) then "yes" else "no");
+                  Put_Line (if X509.Host_Matches (Cert_Bytes, Cert, Host) then "yes" else "no");
                else
                   Put_Line ("PARSE FAIL");
                end if;
@@ -190,10 +191,8 @@ begin
          if TLS_Client.Server_Cert_Count (Session) >= 1 then
             declare
                use Chain_Verify;
-               Now          : constant X509.Time_64 :=
-                 X509.Pack_Time (2026, 6, 25, 12, 0, 0);
-               Anchors      : constant Cert_List :=
-                 (1 => (Data => Trust_Anchors.Root_DER'Access));
+               Now          : constant X509.Time_64 := X509.Pack_Time (2026, 6, 25, 12, 0, 0);
+               Anchors      : constant Cert_List := (1 => (Data => Trust_Anchors.Root_DER'Access));
                Chain_Result : Result;
             begin
                Chain_Buffers.Reset;
@@ -201,9 +200,11 @@ begin
                   Chain_Buffers.Add (TLS_Client.Server_Chain_Cert (Session, I));
                end loop;
                Chain_Result := Validate (Chain_Buffers.Chain, Anchors, Host, Now);
-               Put_Line ("[tls] chain validation (pinned root):" & Natural'Image
-                         (TLS_Client.Server_Cert_Count (Session)) & " certs -> "
-                         & Result'Image (Chain_Result));
+               Put_Line
+                 ("[tls] chain validation (pinned root):"
+                  & Natural'Image (TLS_Client.Server_Cert_Count (Session))
+                  & " certs -> "
+                  & Result'Image (Chain_Result));
 
                --  GATE the connection here.  We are inside `if Flight_OK`, so the
                --  encrypted handshake was authenticated (Finished seen); require
@@ -222,8 +223,7 @@ begin
       end if;
 
       Put_Line ("[tls] ready=" & (if TLS_Client.Ready (Session) then "yes" else "no"));
-      Put_Line ("[tls] peer authenticated="
-                & (if Peer_Authenticated then "yes" else "no"));
+      Put_Line ("[tls] peer authenticated=" & (if Peer_Authenticated then "yes" else "no"));
 
       --  Encrypted application data: send the HTTP GET ONLY if the peer is both
       --  Ready AND authenticated.  Ready alone means the TLS handshake completed
@@ -235,9 +235,18 @@ begin
             --  HTTP/1.0 GET; "Connection: close" so the server ends the body
             --  by closing, which is how Recv below sees the end of data.
             Req : constant String :=
-              "GET / HTTP/1.0" & ASCII.CR & ASCII.LF
-              & "Host: " & Host & ASCII.CR & ASCII.LF
-              & "Connection: close" & ASCII.CR & ASCII.LF & ASCII.CR & ASCII.LF;
+              "GET / HTTP/1.0"
+              & ASCII.CR
+              & ASCII.LF
+              & "Host: "
+              & Host
+              & ASCII.CR
+              & ASCII.LF
+              & "Connection: close"
+              & ASCII.CR
+              & ASCII.LF
+              & ASCII.CR
+              & ASCII.LF;
 
             Recv_Buf_Size : constant := 1024;  --  one TLS record's worth of plaintext
 
@@ -248,8 +257,7 @@ begin
          begin
             --  Convert the request text to bytes for the encrypted Send.
             for I in 0 .. Req'Length - 1 loop
-               Req_Bytes (I) :=
-                 Interfaces.Unsigned_8 (Character'Pos (Req (Req'First + I)));
+               Req_Bytes (I) := Interfaces.Unsigned_8 (Character'Pos (Req (Req'First + I)));
             end loop;
             TLS_Client.Send (Session, Sock, Req_Bytes);
             Put_Line ("[tls] sent HTTP GET (encrypted)");
@@ -265,8 +273,9 @@ begin
             end if;
          end;
       elsif TLS_Client.Ready (Session) then
-         Put_Line ("[tls] REFUSING app data: handshake ready but peer NOT "
-                   & "authenticated (cert chain not trusted) -- connection rejected");
+         Put_Line
+           ("[tls] REFUSING app data: handshake ready but peer NOT "
+            & "authenticated (cert chain not trusted) -- connection rejected");
       end if;
    else
       Put_Line ("[tls] handshake opening FAILED");

@@ -8,6 +8,7 @@
 --    (gpio-toggle PIN)    flip an output pin
 --    (gpio-in PIN)        configure PIN as input, return its level (#t / #f)
 --    (adc-read CH)        one ADC1 sample on channel CH (0 .. 9) -> 0 .. 4095
+
 package Lisp_HAL is
    procedure Register;
 end Lisp_HAL;

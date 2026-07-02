@@ -43,16 +43,13 @@ package body ESP32S3.I2C is
    package State is
       procedure Open (Host : I2C_Host; Clock_Hz : Positive);
       procedure Configure_Pins
-        (Host : I2C_Host;
-         Scl  : ESP32S3.GPIO.Pin_Id;
-         Sda  : ESP32S3.GPIO.Pin_Id);
+        (Host : I2C_Host; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id);
       function Ready (Host : I2C_Host) return Boolean;
       function Owned (S : Session) return E.Bus;
    end State;
 
    package body State is
-      Buses     :
-        array (I2C_Host) of E.Bus;   --  raw bus per host, hidden here
+      Buses     : array (I2C_Host) of E.Bus;   --  raw bus per host, hidden here
       Ready_Map : array (I2C_Host) of Boolean := (others => False);
 
       procedure Open (Host : I2C_Host; Clock_Hz : Positive) is
@@ -62,8 +59,7 @@ package body ESP32S3.I2C is
       end Open;
 
       procedure Configure_Pins
-        (Host : I2C_Host; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id)
-      is
+        (Host : I2C_Host; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id) is
       begin
          E.Configure_Pins (Buses (Host), Scl, Sda);
       end Configure_Pins;
@@ -74,8 +70,7 @@ package body ESP32S3.I2C is
       function Owned (S : Session) return E.Bus is
       begin
          if not S.Active then
-            raise Not_Owned
-              with "I2C host used without holding it -- Acquire first";
+            raise Not_Owned with "I2C host used without holding it -- Acquire first";
          end if;
          return Buses (S.Host);
       end Owned;
@@ -90,8 +85,8 @@ package body ESP32S3.I2C is
       State.Open (Host, Clock_Hz);
    end Setup;
 
-   procedure Configure_Pins
-     (Host : I2C_Host; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id) is
+   procedure Configure_Pins (Host : I2C_Host; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id)
+   is
    begin
       State.Configure_Pins (Host, Scl, Sda);
    end Configure_Pins;
@@ -129,11 +124,8 @@ package body ESP32S3.I2C is
    -- Read --
    ----------
 
-   procedure Read
-     (S       : Session;
-      Addr    : Slave_Address;
-      Data    : out Byte_Array;
-      Success : out Boolean) is
+   procedure Read (S : Session; Addr : Slave_Address; Data : out Byte_Array; Success : out Boolean)
+   is
    begin
       E.Read (State.Owned (S), Addr, Data, Success);
    end Read;

@@ -176,11 +176,8 @@ package ESP32S3.I2S is
    procedure Transfer (S : Session; Tx : PCM_16; Rx : out PCM_16)
    with Pre => Configured_Bits (S) = Bits_16 and then Tx'Length = Rx'Length;
    procedure Transfer (S : Session; Tx : PCM_32; Rx : out PCM_32)
-   with
-     Pre =>
-       Configured_Bits (S) in Bits_24 | Bits_32 and then Tx'Length = Rx'Length;
-   procedure Transfer_Raw
-     (S : Session; Tx, Rx : System.Address; Length : Natural);
+   with Pre => Configured_Bits (S) in Bits_24 | Bits_32 and then Tx'Length = Rx'Length;
+   procedure Transfer_Raw (S : Session; Tx, Rx : System.Address; Length : Natural);
 
    --  Start a self-looping DMA that replays the buffer forever with NO
    --  inter-buffer gap and return immediately, leaving the TX clock running --
@@ -193,8 +190,7 @@ package ESP32S3.I2S is
    with Pre => Configured_Bits (S) = Bits_16;
    procedure Start_Continuous (S : Session; Samples : PCM_32)
    with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
-   procedure Start_Continuous_Raw
-     (S : Session; Tx : System.Address; Length : Natural);
+   procedure Start_Continuous_Raw (S : Session; Tx : System.Address; Length : Natural);
 
    --  Stop a continuous transmit started by Start_Continuous (TX clock off).
    --  Raises Not_Owned unless S holds the port.

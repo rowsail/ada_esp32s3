@@ -125,8 +125,7 @@ package body ESP32S3.GPS.NMEA is
    --  is degrees (2 for latitude, 3 for longitude -- handled the same way).
    ---------------------------------------------------------------------------
 
-   function Coord (S : String; Hemi : Character) return Interfaces.Integer_32
-   is
+   function Coord (S : String; Hemi : Character) return Interfaces.Integer_32 is
       Dot     : Integer := 0;
       Degrees : Natural;
       Min_E5  : LLI;        --  minutes in units of 1e-5 minute
@@ -143,14 +142,11 @@ package body ESP32S3.GPS.NMEA is
 
       Degrees := To_Nat (S (S'First .. Dot - 3));
       if Degrees > 180 then
-         return
-           0;          --  implausible (real |lat|<=90, |lon|<=180): reject,
+         return 0;          --  implausible (real |lat|<=90, |lon|<=180): reject,
 
       end if;               --  and keeps Deg_E7 well within Integer_32 below
       Min_E5 :=
-        LLI (To_Nat (S (Dot - 2 .. Dot - 1)))
-        * 100_000
-        + LLI (Frac (S (Dot + 1 .. S'Last), 5));
+        LLI (To_Nat (S (Dot - 2 .. Dot - 1))) * 100_000 + LLI (Frac (S (Dot + 1 .. S'Last), 5));
       --  1e-5 minute = (1e7 / 60) / 1e5 deg_e7 = 5/3 deg_e7.
       Deg_E7 := LLI (Degrees) * 10_000_000 + (Min_E5 * 5) / 3;
 
@@ -197,9 +193,7 @@ package body ESP32S3.GPS.NMEA is
    --  whether it validated.
    ---------------------------------------------------------------------------
 
-   procedure Check
-     (Sentence : String; First, Last : out Integer; Ok : out Boolean)
-   is
+   procedure Check (Sentence : String; First, Last : out Integer; Ok : out Boolean) is
       Star   : Integer := 0;
       Sum    : Interfaces.Unsigned_8 := 0;
       Hi, Lo : Integer;
@@ -308,10 +302,8 @@ package body ESP32S3.GPS.NMEA is
                if Result.Fix_Valid and then La /= "" and then Lo /= "" then
                   Result.Has_Position := True;
                   Result.Pos :=
-                    (Latitude  =>
-                       Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
-                     Longitude =>
-                       Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
+                    (Latitude  => Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
+                     Longitude => Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
                end if;
             end;
 
@@ -341,16 +333,13 @@ package body ESP32S3.GPS.NMEA is
                if Result.Fix_Valid and then La /= "" and then Lo /= "" then
                   Result.Has_Position := True;
                   Result.Pos :=
-                    (Latitude  =>
-                       Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
-                     Longitude =>
-                       Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
+                    (Latitude  => Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
+                     Longitude => Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
                end if;
                if Result.Fix_Valid and then (Spd /= "" or else Cog /= "") then
                   Result.Has_Velocity := True;
                   --  knots -> mm/s : 1 knot = 1852/3600 m/s.  Spd is milli-knots.
-                  Result.Speed_MMS :=
-                    Natural (LLI (Scaled (Spd, 3)) * 1852 / 3600);
+                  Result.Speed_MMS := Natural (LLI (Scaled (Spd, 3)) * 1852 / 3600);
                   Result.Course_CDeg := Scaled (Cog, 2);   --  centi-degrees
 
                end if;
@@ -373,10 +362,7 @@ package body ESP32S3.GPS.NMEA is
                end if;
                if Dd /= "" and then Mm /= "" and then Yy /= "" then
                   Result.Has_Date := True;
-                  Result.Day :=
-                    (Day   => To_Nat (Dd),
-                     Month => To_Nat (Mm),
-                     Year  => To_Nat (Yy));
+                  Result.Day := (Day => To_Nat (Dd), Month => To_Nat (Mm), Year => To_Nat (Yy));
                end if;
             end;
 
@@ -399,10 +385,8 @@ package body ESP32S3.GPS.NMEA is
                if Result.Fix_Valid and then La /= "" and then Lo /= "" then
                   Result.Has_Position := True;
                   Result.Pos :=
-                    (Latitude  =>
-                       Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
-                     Longitude =>
-                       Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
+                    (Latitude  => Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
+                     Longitude => Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
                end if;
             end;
 
@@ -412,15 +396,13 @@ package body ESP32S3.GPS.NMEA is
             --  data is invalid; absent mode is treated as valid.
             Result.Recognised := True;
             declare
-               Cog  : constant String :=
-                 Field (P, 1);   --  true course, degrees
+               Cog  : constant String := Field (P, 1);   --  true course, degrees
                Spd  : constant String := Field (P, 5);   --  knots
                Mode : constant String := Field (P, 9);   --  may be absent
             begin
                if Mode /= "N" and then (Spd /= "" or else Cog /= "") then
                   Result.Has_Velocity := True;
-                  Result.Speed_MMS :=
-                    Natural (LLI (Scaled (Spd, 3)) * 1852 / 3600);
+                  Result.Speed_MMS := Natural (LLI (Scaled (Spd, 3)) * 1852 / 3600);
                   Result.Course_CDeg := Scaled (Cog, 2);
                end if;
             end;
@@ -436,8 +418,7 @@ package body ESP32S3.GPS.NMEA is
                View   : constant String := Field (P, 3);
                In_V   : constant Natural := To_Nat (View);
                Sys    : constant GNSS_System := System_Of (Kind);
-               Before : constant Natural :=
-                 (if Msg_No >= 1 then 4 * (Msg_No - 1) else 0);
+               Before : constant Natural := (if Msg_No >= 1 then 4 * (Msg_No - 1) else 0);
                Here   : constant Natural :=
                  (if In_V > Before then Natural'Min (4, In_V - Before) else 0);
                Best   : Natural := 0;

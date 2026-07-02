@@ -42,8 +42,7 @@ package body ESP32S3.Ext4.Journal is
       Use_64    : Boolean;
 
       procedure RJ (Jrel : U64; Buf : out Byte_Array) is
-         Phys : constant Block_Number :=
-           Block_Map.Logical_To_Physical (V, Jin, Jrel);
+         Phys : constant Block_Number := Block_Map.Logical_To_Physical (V, Jin, Jrel);
       begin
          if Phys = 0 then
             raise Corrupt with "journal block hole";
@@ -55,8 +54,7 @@ package body ESP32S3.Ext4.Journal is
       is (if X >= Maxlen then First + (X - Maxlen) else X);
 
       function Get16BE (B : Byte_Array; Off : Natural) return U32
-      is (Shift_Left (U32 (B (B'First + Off)), 8)
-          or U32 (B (B'First + Off + 1)));
+      is (Shift_Left (U32 (B (B'First + Off)), 8) or U32 (B (B'First + Off + 1)));
 
       Max_Rev : constant := 256;
       type Rev_Rec is record
@@ -134,8 +132,7 @@ package body ESP32S3.Ext4.Journal is
                RJ (Cur, Meta.all);
                exit Scan when
                  Get_U32_BE (Meta.all, 0) /= Magic
-                 or else Get_U32_BE (Meta.all, 8)
-                         /= U32 (Seq and 16#FFFF_FFFF#);
+                 or else Get_U32_BE (Meta.all, 8) /= U32 (Seq and 16#FFFF_FFFF#);
                declare
                   BType : constant U32 := Get_U32_BE (Meta.all, 4);
                begin
@@ -143,8 +140,7 @@ package body ESP32S3.Ext4.Journal is
                      Cur := Wrap (Cur + 1 + U64 (Tag_Count));
                   elsif BType = BT_Revoke then
                      declare
-                        Count : constant Natural :=
-                          Natural (Get_U32_BE (Meta.all, 12));
+                        Count : constant Natural := Natural (Get_U32_BE (Meta.all, 12));
                         Pos   : Natural := 16;
                         RSz   : constant Natural := (if Use_64 then 8 else 4);
                      begin
@@ -153,8 +149,7 @@ package body ESP32S3.Ext4.Journal is
                               B : constant U64 :=
                                 (if Use_64
                                  then
-                                   Shift_Left
-                                     (U64 (Get_U32_BE (Meta.all, Pos)), 32)
+                                   Shift_Left (U64 (Get_U32_BE (Meta.all, Pos)), 32)
                                    or U64 (Get_U32_BE (Meta.all, Pos + 4))
                                  else U64 (Get_U32_BE (Meta.all, Pos)));
                            begin
@@ -192,8 +187,7 @@ package body ESP32S3.Ext4.Journal is
                RJ (Cur, Meta.all);
                exit Rep when
                  Get_U32_BE (Meta.all, 0) /= Magic
-                 or else Get_U32_BE (Meta.all, 8)
-                         /= U32 (Seq and 16#FFFF_FFFF#);
+                 or else Get_U32_BE (Meta.all, 8) /= U32 (Seq and 16#FFFF_FFFF#);
                declare
                   BType : constant U32 := Get_U32_BE (Meta.all, 4);
                begin
@@ -205,10 +199,8 @@ package body ESP32S3.Ext4.Journal is
                      begin
                         while not Last and then Pos + 8 <= BS loop
                            declare
-                              Lo    : constant U32 :=
-                                Get_U32_BE (Meta.all, Pos);
-                              Flags : constant U32 :=
-                                Get16BE (Meta.all, Pos + 6);
+                              Lo    : constant U32 := Get_U32_BE (Meta.all, Pos);
+                              Flags : constant U32 := Get16BE (Meta.all, Pos + 6);
                               Hi    : U32 := 0;
                            begin
                               Pos := Pos + 8;
@@ -220,18 +212,14 @@ package body ESP32S3.Ext4.Journal is
                                  Pos := Pos + 16;
                               end if;
                               declare
-                                 Target : constant U64 :=
-                                   Shift_Left (U64 (Hi), 32) or U64 (Lo);
+                                 Target : constant U64 := Shift_Left (U64 (Hi), 32) or U64 (Lo);
                               begin
                                  RJ (Data_Rel, Data.all);
                                  if (Flags and FL_Escape) /= 0 then
                                     Put_U32_BE (Data.all, 0, Magic);
                                  end if;
                                  if not Revoked (Target, Seq) then
-                                    Block_Cache.Write
-                                      (V.Cache,
-                                       Block_Number (Target),
-                                       Data.all);
+                                    Block_Cache.Write (V.Cache, Block_Number (Target), Data.all);
                                  end if;
                                  Data_Rel := Wrap (Data_Rel + 1);
                               end;
@@ -255,15 +243,11 @@ package body ESP32S3.Ext4.Journal is
 
       --  Reset the journal superblock (empty) and clear the fs RECOVER flag.
       RJ (0, Meta.all);
-      Put_U32_BE
-        (Meta.all, 16#1C#, 0);                                  --  s_start
-      Put_U32_BE
-        (Meta.all, 16#18#, U32 (End_Seq and 16#FFFF_FFFF#));    --  s_sequence
-      Block_Cache.Write
-        (V.Cache, Block_Map.Logical_To_Physical (V, Jin, 0), Meta.all);
+      Put_U32_BE (Meta.all, 16#1C#, 0);                                  --  s_start
+      Put_U32_BE (Meta.all, 16#18#, U32 (End_Seq and 16#FFFF_FFFF#));    --  s_sequence
+      Block_Cache.Write (V.Cache, Block_Map.Logical_To_Physical (V, Jin, 0), Meta.all);
 
-      V.SB.Feature_Incompat :=
-        V.SB.Feature_Incompat and not Superblock.Incompat_Recover;
+      V.SB.Feature_Incompat := V.SB.Feature_Incompat and not Superblock.Incompat_Recover;
 
       Free (Meta);
       Free (Data);
@@ -273,9 +257,7 @@ package body ESP32S3.Ext4.Journal is
    -- Commit --
    ------------
 
-   procedure Commit
-     (V : in out Volume.Context; Targets : Target_Array; New_Data : Byte_Array)
-   is
+   procedure Commit (V : in out Volume.Context; Targets : Target_Array; New_Data : Byte_Array) is
       BS        : constant Natural := V.SB.Block_Size;
       N         : constant Natural := Targets'Length;
       Jin       : Inode.Info;
@@ -337,10 +319,7 @@ package body ESP32S3.Ext4.Journal is
                Pos := Pos + 8;
                if Use_64 then
                   Put_U32_BE
-                    (Blk.all,
-                     Pos,
-                     U32
-                       (Shift_Right (U64 (Targets (Targets'First + I)), 32)));
+                    (Blk.all, Pos, U32 (Shift_Right (U64 (Targets (Targets'First + I)), 32)));
                   Pos := Pos + 4;
                end if;
                if I = 0 then
@@ -380,8 +359,7 @@ package body ESP32S3.Ext4.Journal is
       Block_Cache.Write (V.Cache, Jphys (0), Meta.all);
 
       --  Mark the filesystem as needing recovery (persisted on Close).
-      V.SB.Feature_Incompat :=
-        V.SB.Feature_Incompat or Superblock.Incompat_Recover;
+      V.SB.Feature_Incompat := V.SB.Feature_Incompat or Superblock.Incompat_Recover;
 
       Free (Meta);
       Free (Blk);
@@ -391,16 +369,13 @@ package body ESP32S3.Ext4.Journal is
    -- Transaction_Commit --
    -----------------------
 
-   procedure Transaction_Commit
-     (V : in out Volume.Context; Simulate_Crash : Boolean := False)
-   is
+   procedure Transaction_Commit (V : in out Volume.Context; Simulate_Crash : Boolean := False) is
       BS    : constant Natural := V.SB.Block_Size;
       SPB   : constant Natural := BS / 512;
       Jin   : Inode.Info;
       Jsb   : Bytes_Ptr := new Byte_Array (0 .. BS - 1);
       Blk   : Bytes_Ptr := new Byte_Array (0 .. BS - 1);
-      SBblk : Bytes_Ptr :=
-        new Byte_Array (0 .. BS - 1);   --  journaled SB (recover-set)
+      SBblk : Bytes_Ptr := new Byte_Array (0 .. BS - 1);   --  journaled SB (recover-set)
 
       Max_WS  : constant := 256;
       Targets : array (1 .. Max_WS) of Block_Number;
@@ -426,10 +401,7 @@ package body ESP32S3.Ext4.Journal is
                Sec (I) := Buf (S * 512 + I);
             end loop;
             ESP32S3.Block_Dev.Write_Sector
-              (V.Dev,
-               ESP32S3.Block_Dev.Sector_Index
-                 (U64 (Phys) * U64 (SPB) + U64 (S)),
-               Sec);
+              (V.Dev, ESP32S3.Block_Dev.Sector_Index (U64 (Phys) * U64 (SPB) + U64 (S)), Sec);
          end loop;
       end Dwrite;
 
@@ -438,10 +410,7 @@ package body ESP32S3.Ext4.Journal is
       begin
          for S in 0 .. SPB - 1 loop
             ESP32S3.Block_Dev.Read_Sector
-              (V.Dev,
-               ESP32S3.Block_Dev.Sector_Index
-                 (U64 (Phys) * U64 (SPB) + U64 (S)),
-               Sec);
+              (V.Dev, ESP32S3.Block_Dev.Sector_Index (U64 (Phys) * U64 (SPB) + U64 (S)), Sec);
             for I in 0 .. 511 loop
                Buf (S * 512 + I) := Sec (I);
             end loop;
@@ -456,11 +425,9 @@ package body ESP32S3.Ext4.Journal is
          Sec : ESP32S3.Block_Dev.Sector;
       begin
          if Recover then
-            Tmp.Feature_Incompat :=
-              Tmp.Feature_Incompat or Superblock.Incompat_Recover;
+            Tmp.Feature_Incompat := Tmp.Feature_Incompat or Superblock.Incompat_Recover;
          else
-            Tmp.Feature_Incompat :=
-              Tmp.Feature_Incompat and not Superblock.Incompat_Recover;
+            Tmp.Feature_Incompat := Tmp.Feature_Incompat and not Superblock.Incompat_Recover;
          end if;
          ESP32S3.Block_Dev.Read_Sector (V.Dev, 2, Sec);
          Buf (0 .. 511) := Byte_Array (Sec);
@@ -511,8 +478,7 @@ package body ESP32S3.Ext4.Journal is
       declare
          Tmp : Superblock.Info := V.SB;
       begin
-         Tmp.Feature_Incompat :=
-           Tmp.Feature_Incompat or Superblock.Incompat_Recover;
+         Tmp.Feature_Incompat := Tmp.Feature_Incompat or Superblock.Incompat_Recover;
          Superblock.Encode (Tmp, SBblk.all, SB_Base);
       end;
 
@@ -571,8 +537,7 @@ package body ESP32S3.Ext4.Journal is
                Blk.all (Pos + 7) := U8 (Flags and 16#FF#);
                Pos := Pos + 8;
                if Use_64 then
-                  Put_U32_BE
-                    (Blk.all, Pos, U32 (Shift_Right (U64 (Targets (I)), 32)));
+                  Put_U32_BE (Blk.all, Pos, U32 (Shift_Right (U64 (Targets (I)), 32)));
                   Pos := Pos + 4;
                end if;
                if I = 1 then

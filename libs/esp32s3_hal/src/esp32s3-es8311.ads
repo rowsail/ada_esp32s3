@@ -90,8 +90,7 @@ package ESP32S3.ES8311 is
    --  (in internal SRAM) and should hold a whole number of wave periods so the
    --  wrap is seamless -- e.g. for a steady tone, size the buffer to an integer
    --  number of cycles.  Length 1 .. 4095 bytes.  Stop halts it.
-   procedure Play_Continuous
-     (O : Output; Samples : System.Address; Length : Natural);
+   procedure Play_Continuous (O : Output; Samples : System.Address; Length : Natural);
 
    --  Stop a continuous playback started by Play_Continuous.
    procedure Stop (O : Output);

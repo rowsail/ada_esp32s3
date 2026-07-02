@@ -13,6 +13,7 @@ with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 --  GPIO0 blink demo: the environment task idles; package GPIO drives the pin.
+
 procedure Main is
 begin
    loop

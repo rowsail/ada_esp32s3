@@ -20,11 +20,12 @@
 --    "[sht] no SHT41 found at 0x44 -- check wiring/power.".
 --  Hardware:  one Sensirion SHT41 on I2C0 -- SDA = IO8, SCL = IO7, VDD/VSS to
 --    3V3/GND.  The SHT41-AD1B answers at I2C address 0x44 (the driver default).
-with Interfaces;   use type Interfaces.Unsigned_32;
+with Interfaces;
+use type Interfaces.Unsigned_32;
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.SHT41;
-with ESP32S3.Log;  use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
 --  elaboration); core 1 just idles -- the demo runs on core 0.

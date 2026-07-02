@@ -6,17 +6,32 @@ with ESP32S3.Fonts; use ESP32S3.Fonts;
 with System;
 
 package B612_24 is
-   b612_24_adv  : constant Byte_Array (0 .. 223);  pragma Import (C, b612_24_adv,  "b612_24_adv");
-   b612_24_w    : constant Byte_Array (0 .. 223);  pragma Import (C, b612_24_w,    "b612_24_w");
-   b612_24_h    : constant Byte_Array (0 .. 223);  pragma Import (C, b612_24_h,    "b612_24_h");
-   b612_24_xoff : constant SByte_Array (0 .. 223); pragma Import (C, b612_24_xoff, "b612_24_xoff");
-   b612_24_yoff : constant SByte_Array (0 .. 223); pragma Import (C, b612_24_yoff, "b612_24_yoff");
-   b612_24_off  : constant U16_Array (0 .. 223);   pragma Import (C, b612_24_off,  "b612_24_off");
-   b612_24_bits : constant Byte_Array (0 .. 19485); pragma Import (C, b612_24_bits, "b612_24_bits");
-   Font : constant ESP32S3.Fonts.Font :=
-     (First => 32, Count => 224, Height => 30, Ascent => 24, Bpp => 4,
-      Adv  => b612_24_adv'Address,  W    => b612_24_w'Address,    H    => b612_24_h'Address,
-      XOff => b612_24_xoff'Address, YOff => b612_24_yoff'Address, Off  => b612_24_off'Address,
-      Bits => b612_24_bits'Address);
-   Bytes : constant := 19486;
+   b612_24_adv  : constant Byte_Array (0 .. 223);
+   pragma Import (C, b612_24_adv, "b612_24_adv");
+   b612_24_w    : constant Byte_Array (0 .. 223);
+   pragma Import (C, b612_24_w, "b612_24_w");
+   b612_24_h    : constant Byte_Array (0 .. 223);
+   pragma Import (C, b612_24_h, "b612_24_h");
+   b612_24_xoff : constant SByte_Array (0 .. 223);
+   pragma Import (C, b612_24_xoff, "b612_24_xoff");
+   b612_24_yoff : constant SByte_Array (0 .. 223);
+   pragma Import (C, b612_24_yoff, "b612_24_yoff");
+   b612_24_off  : constant U16_Array (0 .. 223);
+   pragma Import (C, b612_24_off, "b612_24_off");
+   b612_24_bits : constant Byte_Array (0 .. 19485);
+   pragma Import (C, b612_24_bits, "b612_24_bits");
+   Font         : constant ESP32S3.Fonts.Font :=
+     (First  => 32,
+      Count  => 224,
+      Height => 30,
+      Ascent => 24,
+      Bpp    => 4,
+      Adv    => b612_24_adv'Address,
+      W      => b612_24_w'Address,
+      H      => b612_24_h'Address,
+      XOff   => b612_24_xoff'Address,
+      YOff   => b612_24_yoff'Address,
+      Off    => b612_24_off'Address,
+      Bits   => b612_24_bits'Address);
+   Bytes        : constant := 19486;
 end B612_24;

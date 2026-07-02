@@ -6,6 +6,7 @@ with ESP32S3.ST7789;
 --  it as a Color_Array so the example can blit it with ESP32S3.ST7789.Draw_Bitmap.
 --  Importing the C array (vs. an Ada aggregate) keeps the 57 600-element table
 --  out of the Ada source and compiles instantly.
+
 package Ada_Logo is
 
    Width  : constant := 240;

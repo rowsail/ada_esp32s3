@@ -40,28 +40,30 @@ with ESP32S3.GPIO;
 with ESP32S3.ST7789;
 with ESP32S3.Fonts;
 with ESP32S3.ST7789.Fonts;
-with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 --  'with' only the sizes used -- unused ones are never linked.
-with B612_24; with B612_16; with B612_12;
+with B612_24;
+with B612_16;
+with B612_12;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
-   package Display       renames ESP32S3.ST7789;
+   package Display renames ESP32S3.ST7789;
    package Text_Renderer renames ESP32S3.ST7789.Fonts;   --  the panel's text engine
 
    --  SPI2 wiring: clock, data, and the two control lines the driver toggles.
-   Serial_Clock_Pin  : constant ESP32S3.GPIO.Pin_Id := 12;   --  SCLK
-   Data_Out_Pin      : constant ESP32S3.GPIO.Pin_Id := 13;   --  MOSI / SDA
-   Data_Command_Pin  : constant ESP32S3.GPIO.Pin_Id := 16;   --  DC select
-   Chip_Select_Pin   : constant ESP32S3.GPIO.Pin_Id := 10;   --  CS
+   Serial_Clock_Pin : constant ESP32S3.GPIO.Pin_Id := 12;   --  SCLK
+   Data_Out_Pin     : constant ESP32S3.GPIO.Pin_Id := 13;   --  MOSI / SDA
+   Data_Command_Pin : constant ESP32S3.GPIO.Pin_Id := 16;   --  DC select
+   Chip_Select_Pin  : constant ESP32S3.GPIO.Pin_Id := 10;   --  CS
 
    --  Backlight enable -- the example's job, not the driver's.
-   Backlight_Pin     : constant ESP32S3.GPIO.Pin_Id := 6;
+   Backlight_Pin : constant ESP32S3.GPIO.Pin_Id := 6;
 
    --  The known background glyphs are blended against (black here).
-   Text_Background   : constant ESP32S3.Fonts.RGB := (0, 0, 0);
+   Text_Background : constant ESP32S3.Fonts.RGB := (0, 0, 0);
 
    Display_Device  : Display.Device;
    Display_Session : Display.Session;
@@ -85,22 +87,23 @@ procedure Main is
    end Show_Size;
 
    --  Layout of the text rows on the panel.
-   Left_Margin       : constant := 4;   --  x of every line's first glyph
-   First_Baseline_Y  : constant := 2;   --  top of the first line
-   Line_Gap          : constant := 3;   --  blank pixels between lines
+   Left_Margin      : constant := 4;   --  x of every line's first glyph
+   First_Baseline_Y : constant := 2;   --  top of the first line
+   Line_Gap         : constant := 3;   --  blank pixels between lines
 
    --  Running top-of-line cursor; draw one line, advance by the font height.
    Cursor_Y : Integer := First_Baseline_Y;
 
    procedure Put_Line_On_Panel
-     (A_Font     : ESP32S3.Fonts.Font;
-      Text       : String;
-      Foreground : ESP32S3.Fonts.RGB)
-   is
+     (A_Font : ESP32S3.Fonts.Font; Text : String; Foreground : ESP32S3.Fonts.RGB) is
    begin
       Text_Renderer.Draw_Text
-        (Display_Session, A_Font,
-         Left_Margin, Cursor_Y + A_Font.Ascent, Text, Foreground,
+        (Display_Session,
+         A_Font,
+         Left_Margin,
+         Cursor_Y + A_Font.Ascent,
+         Text,
+         Foreground,
          Text_Background);
       Cursor_Y := Cursor_Y + A_Font.Height + Line_Gap;
    end Put_Line_On_Panel;
@@ -130,22 +133,25 @@ begin
    Display.Fill (Display_Session, Display.Black);
 
    --  Anti-aliased B612 at three sizes.
-   Put_Line_On_Panel (B612_24.Font, "B612  24 px",                  Cyan);
-   Put_Line_On_Panel (B612_16.Font, "16 px  The quick brown fox",   White);
-   Put_Line_On_Panel (B612_16.Font, "jumps over the lazy dog.",     White);
-   Put_Line_On_Panel (B612_12.Font, "12 px  The quick brown fox jumps over",
-                      Amber);
-   Put_Line_On_Panel (B612_12.Font, "the lazy dog. 0123456789",     Amber);
+   Put_Line_On_Panel (B612_24.Font, "B612  24 px", Cyan);
+   Put_Line_On_Panel (B612_16.Font, "16 px  The quick brown fox", White);
+   Put_Line_On_Panel (B612_16.Font, "jumps over the lazy dog.", White);
+   Put_Line_On_Panel (B612_12.Font, "12 px  The quick brown fox jumps over", Amber);
+   Put_Line_On_Panel (B612_12.Font, "the lazy dog. 0123456789", Amber);
 
    --  Punctuation + Latin-1 accents (accents built via Character'Val so the
    --  source stays plain ASCII).
-   Put_Line_On_Panel (B612_16.Font, ".,:;!?@#&()[]{}+-=/ AaQqGg",  White);
+   Put_Line_On_Panel (B612_16.Font, ".,:;!?@#&()[]{}+-=/ AaQqGg", White);
    declare
       Accents : constant String :=
-        (Character'Val (16#C0#), Character'Val (16#C9#),   --  A-grave E-acute
-         Character'Val (16#D1#), Character'Val (16#E9#),   --  N-tilde  e-acute
-         Character'Val (16#F1#), Character'Val (16#FC#),   --  n-tilde  u-diaeresis
-         Character'Val (16#DF#), Character'Val (16#E7#));  --  sharp-s  c-cedilla
+        (Character'Val (16#C0#),
+         Character'Val (16#C9#),   --  A-grave E-acute
+         Character'Val (16#D1#),
+         Character'Val (16#E9#),   --  N-tilde  e-acute
+         Character'Val (16#F1#),
+         Character'Val (16#FC#),   --  n-tilde  u-diaeresis
+         Character'Val (16#DF#),
+         Character'Val (16#E7#));  --  sharp-s  c-cedilla
    begin
       Put_Line_On_Panel (B612_16.Font, "Latin-1  " & Accents, Cyan);
    end;

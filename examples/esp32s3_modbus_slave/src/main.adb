@@ -39,8 +39,10 @@ begin
    end if;
 
    Dev.Seed;
-   Put_Line ("[modbus] serving on " & W5500_Dev.Image (Lease.IP)
-             & ":502  (unit 1; holding 0..63 = 1000+r, coils alternate)");
+   Put_Line
+     ("[modbus] serving on "
+      & W5500_Dev.Image (Lease.IP)
+      & ":502  (unit 1; holding 0..63 = 1000+r, coils alternate)");
 
    --  Serves one client at a time, forever.
    Modbus.Slave.Run (Dev, Port => Modbus.Default_Port);

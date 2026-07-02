@@ -36,8 +36,7 @@ package body ESP32S3.Ext4.Bitmap is
             ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Bmp, Byte_Idx, Byte);
             if (Byte (0) and Shift_Left (U8 (1), Bit_In)) = 0 then
                Byte (0) := Byte (0) or Shift_Left (U8 (1), Bit_In);
-               ESP32S3.Ext4.Block_Cache.Write_At
-                 (V.Cache, Bmp, Byte_Idx, Byte);
+               ESP32S3.Ext4.Block_Cache.Write_At (V.Cache, Bmp, Byte_Idx, Byte);
                Bit := U32 (I);
                Found := True;
                return;
@@ -77,9 +76,7 @@ package body ESP32S3.Ext4.Bitmap is
    -- Alloc_Inode --
    -----------------
 
-   function Alloc_Inode
-     (V : in out Volume.Context; As_Dir : Boolean) return Inode_Number
-   is
+   function Alloc_Inode (V : in out Volume.Context; As_Dir : Boolean) return Inode_Number is
       GD    : Group_Desc.Desc;
       Bit   : U32;
       Found : Boolean;
@@ -108,8 +105,7 @@ package body ESP32S3.Ext4.Bitmap is
    --  returns False, so a double/phantom free becomes a no-op rather than a
    --  count corruption.  (Clear_Bit already reads the byte, so the test is free.)
    function Clear_Bit
-     (V : in out Volume.Context; Bmp : Block_Number; Index : Natural)
-      return Boolean
+     (V : in out Volume.Context; Bmp : Block_Number; Index : Natural) return Boolean
    is
       Byte_Idx : constant Natural := Index / 8;
       Bit      : constant Natural := Index mod 8;
@@ -133,8 +129,7 @@ package body ESP32S3.Ext4.Bitmap is
    procedure Free_Block (V : in out Volume.Context; B : Block_Number) is
       Rel   : constant U64 := U64 (B) - U64 (V.SB.First_Data_Block);
       Group : constant U32 := U32 (Rel / U64 (V.SB.Blocks_Per_Group));
-      Index : constant Natural :=
-        Natural (Rel mod U64 (V.SB.Blocks_Per_Group));
+      Index : constant Natural := Natural (Rel mod U64 (V.SB.Blocks_Per_Group));
       GD    : Group_Desc.Desc;
    begin
       Group_Desc.Read (V, Group, GD);
@@ -143,8 +138,7 @@ package body ESP32S3.Ext4.Bitmap is
          Group_Desc.Write (V, Group, GD);
          V.SB.Free_Blocks := V.SB.Free_Blocks + 1;
       else
-         Phantom_Frees :=
-           Phantom_Frees + 1;   --  already free: no drift, but flag it
+         Phantom_Frees := Phantom_Frees + 1;   --  already free: no drift, but flag it
       end if;
    end Free_Block;
 
@@ -152,9 +146,7 @@ package body ESP32S3.Ext4.Bitmap is
    -- Free_Inode --
    ----------------
 
-   procedure Free_Inode
-     (V : in out Volume.Context; N : Inode_Number; Was_Dir : Boolean)
-   is
+   procedure Free_Inode (V : in out Volume.Context; N : Inode_Number; Was_Dir : Boolean) is
       Idx0  : constant U32 := U32 (N) - 1;
       Group : constant U32 := Idx0 / V.SB.Inodes_Per_Group;
       Index : constant Natural := Natural (Idx0 mod V.SB.Inodes_Per_Group);
@@ -169,8 +161,7 @@ package body ESP32S3.Ext4.Bitmap is
          Group_Desc.Write (V, Group, GD);
          V.SB.Free_Inodes := V.SB.Free_Inodes + 1;
       else
-         Phantom_Frees :=
-           Phantom_Frees + 1;   --  already free: no drift, but flag it
+         Phantom_Frees := Phantom_Frees + 1;   --  already free: no drift, but flag it
       end if;
    end Free_Inode;
 

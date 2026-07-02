@@ -165,12 +165,9 @@ private
    type Session is new Ada.Finalization.Limited_Controlled with record
       Host      : SPI_Host := SPI2;
       Active    : Boolean := False;                 --  holds Host's guard
-      CS_Pin    : ESP32S3.GPIO.Optional_Pin :=
-        No_Pin;     --  driver-driven sw CS
-      Select_CB : CS_Select :=
-        null;                  --  app CS hook, null = hw CS0
-      Ctx       : System.Address :=
-        System.Null_Address;   --  per-device context
+      CS_Pin    : ESP32S3.GPIO.Optional_Pin := No_Pin;     --  driver-driven sw CS
+      Select_CB : CS_Select := null;                  --  app CS hook, null = hw CS0
+      Ctx       : System.Address := System.Null_Address;   --  per-device context
       Selected  : Boolean := False;                 --  CS currently asserted?
    end record;
    --  Finalize releases the host AND, if Selected, calls Select_CB (Off) first --

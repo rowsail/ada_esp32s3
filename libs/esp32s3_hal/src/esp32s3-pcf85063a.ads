@@ -56,8 +56,7 @@ package ESP32S3.PCF85063A is
 
    --  Day-of-week is just a free 0..6 counter in the chip; this naming is the
    --  driver's own convention (0 = Sunday) -- the hardware does not interpret it.
-   type Weekday is
-     (Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday);
+   type Weekday is (Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday);
 
    type Time is record
       Year        : Year_Number := 2000;
@@ -109,8 +108,7 @@ package ESP32S3.PCF85063A is
    --  flag is clear -- i.e. the clock has run continuously since the last
    --  Set_Time and the value is trustworthy.  Valid = False means power was lost
    --  (set the time afresh).  On Bus_Error, T is unchanged from its defaults.
-   procedure Get_Time
-     (Dev : Device; T : out Time; Valid : out Boolean; Result : out Status);
+   procedure Get_Time (Dev : Device; T : out Time; Valid : out Boolean; Result : out Status);
 
    --  Load the calendar.  Stops the clock around the write (datasheet 8.1) and
    --  restarts it -- all under one bus session -- and writing the seconds
@@ -152,8 +150,7 @@ package ESP32S3.PCF85063A is
    procedure Set_Alarm (Dev : Device; A : Alarm; Result : out Status);
 
    --  True iff the alarm flag is currently latched (the alarm has fired).
-   procedure Alarm_Triggered
-     (Dev : Device; Fired : out Boolean; Result : out Status);
+   procedure Alarm_Triggered (Dev : Device; Fired : out Boolean; Result : out Status);
 
    --  Clear the latched alarm flag (releases INT) but leave the alarm armed.
    --  Call this from the task woken by the INT interrupt.

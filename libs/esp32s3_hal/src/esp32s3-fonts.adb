@@ -38,17 +38,11 @@ package body ESP32S3.Fonts is
       if F.Bpp = 1 then
          --  1-bit, 8 px/byte, MSB first
          Byte := Bits (Off + Index / 8);
-         return
-           (if (Natural (Byte) / 2**(7 - Index mod 8)) mod 2 = 1
-            then 15
-            else 0);
+         return (if (Natural (Byte) / 2**(7 - Index mod 8)) mod 2 = 1 then 15 else 0);
       else
          --  4-bit, 2 px/byte
          Byte := Bits (Off + Index / 2);
-         return
-           (if Index mod 2 = 0
-            then Natural (Byte) / 16
-            else Natural (Byte) mod 16);
+         return (if Index mod 2 = 0 then Natural (Byte) / 16 else Natural (Byte) mod 16);
       end if;
    end Coverage;
 

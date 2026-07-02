@@ -9,6 +9,7 @@ with ESP32S3.TX1812;
 --
 --  Footprint:  64 * 3 colour bytes  +  1536 * 4 symbol bytes  ~= 6.4 KiB
 --  (plus the small RMT channel handle) -- check it in app.map under `led_panel`.
+
 package LED_Panel is
 
    LED_Count : constant := 64;

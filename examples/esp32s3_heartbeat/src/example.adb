@@ -18,6 +18,7 @@ with ESP32S3.Log;   --  buffered console (was the ada_log esp_rom_printf glue)
 --
 --  Hardware / wiring: none (self-contained); output is over the
 --  USB-Serial-JTAG console.
+
 procedure Example is
    --  How often the environment task emits a heartbeat (1 Hz).
    Heartbeat_Period : constant Time_Span := Seconds (1);

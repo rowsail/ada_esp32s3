@@ -20,13 +20,9 @@ package ESP32S3.Block_Dev is
    type Sector_Index is new Interfaces.Unsigned_64;
 
    type Read_Proc is
-     access procedure
-       (Ctx : System.Address; LBA : Sector_Index; Data : out Sector);
-   type Write_Proc is
-     access procedure
-       (Ctx : System.Address; LBA : Sector_Index; Data : Sector);
-   type Count_Func is
-     access function (Ctx : System.Address) return Sector_Index;
+     access procedure (Ctx : System.Address; LBA : Sector_Index; Data : out Sector);
+   type Write_Proc is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : Sector);
+   type Count_Func is access function (Ctx : System.Address) return Sector_Index;
 
    --  OPTIONAL capability: discard/erase the run of sectors [First, First+Count).
    --  Best-effort -- where the medium has an erase unit (a NOR flash 4 KB
@@ -36,8 +32,7 @@ package ESP32S3.Block_Dev is
    --  before rewriting it whole, so the rewrite programs into erased space (one
    --  erase) instead of a read-modify-write per sector.
    type Erase_Proc is
-     access procedure
-       (Ctx : System.Address; First : Sector_Index; Count : Sector_Index);
+     access procedure (Ctx : System.Address; First : Sector_Index; Count : Sector_Index);
 
    --  A configured backend.  Write = null marks a read-only device; Erase = null
    --  a device with no block-erase capability (the common case).

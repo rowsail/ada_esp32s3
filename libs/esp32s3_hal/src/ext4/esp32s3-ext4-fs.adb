@@ -33,8 +33,7 @@ package body ESP32S3.Ext4.FS is
    begin
       Superblock.Read (Dev, M.V.SB);
       Superblock.Require_Supported (M.V.SB, Handled_Incompat);
-      ESP32S3.Ext4.Block_Cache.Init
-        (M.V.Cache, Dev, M.V.SB.Block_Size, Cache_Blocks);
+      ESP32S3.Ext4.Block_Cache.Init (M.V.Cache, Dev, M.V.SB.Block_Size, Cache_Blocks);
       M.V.Dev := Dev;
       M.V.Read_Only := Read_Only;
       M.Live := True;
@@ -99,11 +98,7 @@ package body ESP32S3.Ext4.FS is
    ---------------
 
    procedure Read_File
-     (M      : in out Mount;
-      I      : Inode.Info;
-      Offset : U64;
-      Into   : out Byte_Array;
-      Last   : out Natural) is
+     (M : in out Mount; I : Inode.Info; Offset : U64; Into : out Byte_Array; Last : out Natural) is
    begin
       File.Read (M.V, I, Offset, Into, Last);
    end Read_File;
@@ -115,9 +110,7 @@ package body ESP32S3.Ext4.FS is
    procedure Iterate
      (M     : in out Mount;
       I     : Inode.Info;
-      Visit :
-        not null access procedure
-          (Name : String; Ino : Inode_Number; File_Type : U8)) is
+      Visit : not null access procedure (Name : String; Ino : Inode_Number; File_Type : U8)) is
    begin
       Dir.Iterate (M.V, I, Visit);
    end Iterate;
@@ -126,8 +119,7 @@ package body ESP32S3.Ext4.FS is
    -- Create_File --
    -----------------
 
-   function Create_File
-     (M : in out Mount; Dir_Path, Name : String) return Inode_Number is
+   function Create_File (M : in out Mount; Dir_Path, Name : String) return Inode_Number is
    begin
       return Writer.Create_File (M.V, Dir_Path, Name);
    end Create_File;
@@ -136,8 +128,7 @@ package body ESP32S3.Ext4.FS is
    -- Write_File --
    ----------------
 
-   procedure Write_File (M : in out Mount; N : Inode_Number; Data : Byte_Array)
-   is
+   procedure Write_File (M : in out Mount; N : Inode_Number; Data : Byte_Array) is
    begin
       Writer.Write_Small (M.V, N, Data);
    end Write_File;
@@ -162,8 +153,7 @@ package body ESP32S3.Ext4.FS is
       Writer.Rmdir (M.V, Dir_Path, Name);
    end Rmdir;
 
-   procedure Rename
-     (M : in out Mount; Old_Dir, Old_Name, New_Dir, New_Name : String) is
+   procedure Rename (M : in out Mount; Old_Dir, Old_Name, New_Dir, New_Name : String) is
    begin
       Writer.Rename (M.V, Old_Dir, Old_Name, New_Dir, New_Name);
    end Rename;
@@ -173,8 +163,7 @@ package body ESP32S3.Ext4.FS is
       Writer.Truncate (M.V, N, New_Size);
    end Truncate;
 
-   procedure Link (M : in out Mount; Target_Path, New_Dir, New_Name : String)
-   is
+   procedure Link (M : in out Mount; Target_Path, New_Dir, New_Name : String) is
    begin
       Writer.Link (M.V, Target_Path, New_Dir, New_Name);
    end Link;
@@ -229,15 +218,13 @@ package body ESP32S3.Ext4.FS is
    function Block_Size (M : Mount) return Natural
    is (M.V.SB.Block_Size);
 
-   function Map_Block
-     (M : in out Mount; I : Inode.Info; L_Block : U64) return Block_Number is
+   function Map_Block (M : in out Mount; I : Inode.Info; L_Block : U64) return Block_Number is
    begin
       return Block_Map.Logical_To_Physical (M.V, I, L_Block);
    end Map_Block;
 
    procedure Journal_Commit
-     (M : in out Mount; Targets : Journal.Target_Array; New_Data : Byte_Array)
-   is
+     (M : in out Mount; Targets : Journal.Target_Array; New_Data : Byte_Array) is
    begin
       Journal.Commit (M.V, Targets, New_Data);
    end Journal_Commit;

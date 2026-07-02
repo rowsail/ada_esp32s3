@@ -51,8 +51,8 @@ with ESP32S3.SPI;
 with ESP32S3.W5500;
 with ESP32S3.W5500.Interrupts;
 with ESP32S3.W5500.Net_Device;
-with GNAT.Sockets;  use GNAT.Sockets;
-with ESP32S3.Log;   use ESP32S3.Log;
+with GNAT.Sockets; use GNAT.Sockets;
+with ESP32S3.Log;  use ESP32S3.Log;
 with W5500_Dev;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
@@ -61,7 +61,7 @@ with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
-   package Net  renames ESP32S3.W5500;
+   package Net renames ESP32S3.W5500;
    package Ints renames ESP32S3.W5500.Interrupts;
    use type Net.Link_State;
 
@@ -69,28 +69,27 @@ procedure Main is
    Ok  : Boolean;
 
    --  ESP32-S3 SPI2 pins routed to the W5500 (see the header for the wiring).
-   Sclk_Pin         : constant := 1;    --  SPI clock          -> W5500 SCLK
-   Mosi_Pin         : constant := 4;    --  master out         -> W5500 MOSI
-   Miso_Pin         : constant := 45;   --  master in          <- W5500 MISO
-   Chip_Select_Pin  : constant := 39;   --  chip select (SCSn), driven per frame
-   Reset_Pin        : constant := 11;   --  RSTn, active-low, externally pulled up
-   Interrupt_Pin    : constant := 3;    --  INTn, active-low, externally pulled up
-   SPI_Clock_Hz     : constant := 10_000_000;   --  10 MHz SPI bus to the W5500
+   Sclk_Pin        : constant := 1;    --  SPI clock          -> W5500 SCLK
+   Mosi_Pin        : constant := 4;    --  master out         -> W5500 MOSI
+   Miso_Pin        : constant := 45;   --  master in          <- W5500 MISO
+   Chip_Select_Pin : constant := 39;   --  chip select (SCSn), driven per frame
+   Reset_Pin       : constant := 11;   --  RSTn, active-low, externally pulled up
+   Interrupt_Pin   : constant := 3;    --  INTn, active-low, externally pulled up
+   SPI_Clock_Hz    : constant := 10_000_000;   --  10 MHz SPI bus to the W5500
 
    --  Static network identity for this node (no DHCP in the echo demo).
-   My_MAC     : constant Net.MAC_Address  := (16#00#, 16#08#, 16#DC#,
-                                              16#01#, 16#02#, 16#03#);
+   My_MAC     : constant Net.MAC_Address := (16#00#, 16#08#, 16#DC#, 16#01#, 16#02#, 16#03#);
    My_IP      : constant Net.IPv4_Address := Net.IPv4 (192, 168, 1, 50);
    My_Subnet  : constant Net.IPv4_Address := Net.IPv4 (255, 255, 255, 0);
    My_Gateway : constant Net.IPv4_Address := Net.IPv4 (192, 168, 1, 1);
 
-   Echo_Port  : constant Port_Type := 5000;   --  TCP port the echo server listens on
+   Echo_Port : constant Port_Type := 5000;   --  TCP port the echo server listens on
 
    --  Bring-up timing.
-   Console_Settle      : constant Time_Span := Milliseconds (200);  --  let UART drain
-   Link_Poll_Attempts  : constant := 20;                  --  PHY auto-neg takes ~secs
-   Link_Poll_Interval  : constant Time_Span := Milliseconds (250); --  between checks
-   Park_Interval       : constant Time_Span := Seconds (3600);  --  idle wait when no chip
+   Console_Settle     : constant Time_Span := Milliseconds (200);  --  let UART drain
+   Link_Poll_Attempts : constant := 20;                  --  PHY auto-neg takes ~secs
+   Link_Poll_Interval : constant Time_Span := Milliseconds (250); --  between checks
+   Park_Interval      : constant Time_Span := Seconds (3600);  --  idle wait when no chip
 
    Server, Client : Socket_Type;
    Peer           : Sock_Addr_Type;
@@ -103,6 +102,7 @@ procedure Main is
          Put (Integer (A (I)));
          if I < A'Last then
             Put (".");                          --  dot between octets, not after the last
+
          end if;
       end loop;
    end Put_IP;
@@ -111,9 +111,16 @@ begin
    Put_Line ("[w5500] WIZnet W5500 GNAT.Sockets echo server");
 
    --  Bring the chip up (this part is W5500-specific).
-   Net.Setup (Dev, Sclk => Sclk_Pin, Mosi => Mosi_Pin, Miso => Miso_Pin,
-              Cs => Chip_Select_Pin, Rst => Reset_Pin, Int => Interrupt_Pin,
-              Host => ESP32S3.SPI.SPI2, Clock_Hz => SPI_Clock_Hz);
+   Net.Setup
+     (Dev,
+      Sclk     => Sclk_Pin,
+      Mosi     => Mosi_Pin,
+      Miso     => Miso_Pin,
+      Cs       => Chip_Select_Pin,
+      Rst      => Reset_Pin,
+      Int      => Interrupt_Pin,
+      Host     => ESP32S3.SPI.SPI2,
+      Clock_Hz => SPI_Clock_Hz);
    Net.Reset (Dev, Ok);
    Put ("[w5500] VERSIONR = 0x");
    Put_Hex (Interfaces.Unsigned_32 (Net.Version (Dev)), 2);
@@ -123,26 +130,25 @@ begin
          delay until Clock + Park_Interval;   --  no chip: park instead of looping hot
       end loop;
    end if;
-   Net.Configure (Dev, MAC => My_MAC, IP => My_IP,
-                  Subnet => My_Subnet, Gateway => My_Gateway);
+   Net.Configure (Dev, MAC => My_MAC, IP => My_IP, Subnet => My_Subnet, Gateway => My_Gateway);
    Put ("[w5500] IP = ");
    Put_IP (Net.Get_IP (Dev));
    New_Line;
 
-   for Try in 1 .. Link_Poll_Attempts loop    --  PHY auto-neg takes ~secs
+   for Try in 1 .. Link_Poll_Attempts loop
+      --  PHY auto-neg takes ~secs
       exit when Net.Link (Dev) = Net.Up;
       delay until Clock + Link_Poll_Interval;
    end loop;
    Put_Line (if Net.Link (Dev) = Net.Up then "[w5500] link up" else "[w5500] link down");
    Ints.Enable (Dev);                         --  sleep on INTn, not poll
-   Put_Line (if Ints.Armed then "[w5500] interrupts armed (INTn=IO3)"
-                           else "[w5500] polling");
+   Put_Line (if Ints.Armed then "[w5500] interrupts armed (INTn=IO3)" else "[w5500] polling");
 
    --  Register the chip as a network interface; from here it is ordinary
    --  GNAT.Sockets code.
    ESP32S3.W5500.Net_Device.Register_Default (Dev'Access);
-   Put_Line ("[w5500] GNAT.Sockets TCP echo on 192.168.1.50:5000"
-             & "  (try:  nc 192.168.1.50 5000)");
+   Put_Line
+     ("[w5500] GNAT.Sockets TCP echo on 192.168.1.50:5000" & "  (try:  nc 192.168.1.50 5000)");
 
    loop
       --  One listening socket per accepted connection: this W5500 GNAT.Sockets
@@ -153,8 +159,7 @@ begin
       --  hardware sockets each connection leaked one and the chip was exhausted
       --  within a few clients.  Closing BOTH sockets each round keeps it bounded.
       Create_Socket (Server, Family_Inet, Socket_Stream);
-      Bind_Socket   (Server, (Family => Family_Inet,
-                              Addr   => Any_Inet_Addr, Port => Echo_Port));
+      Bind_Socket (Server, (Family => Family_Inet, Addr => Any_Inet_Addr, Port => Echo_Port));
       Listen_Socket (Server);
 
       Accept_Socket (Server, Client, Peer);    --  blocks (on INTn) for a client

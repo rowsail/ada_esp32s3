@@ -56,21 +56,19 @@ procedure Main is
    --  The ADC device: SPI2, its own bit clock, and its chip select on IO12.  The
    --  SPI driver applies the clock and drives the CS GPIO (active-low, held across
    --  each conversion) at Acquire -- no callback.
-   Dev     : ADC.Device :=
-     (Host => SPI.SPI2, Clock_Hz => Clock_Hz, CS_Pin => CS_Pin, others => <>);
+   Dev : ADC.Device := (Host => SPI.SPI2, Clock_Hz => Clock_Hz, CS_Pin => CS_Pin, others => <>);
 
    Zero, Half, Full, A0 : ADC.Sample;
 
    --  Allow a couple of LSB of slack on the (analog) self-test conversions.
-   function Near (Got, Want : ADC.Sample; Tol : ADC.Sample) return Boolean is
-     (Got <= Want + Tol and then Got + Tol >= Want);
+   function Near (Got, Want : ADC.Sample; Tol : ADC.Sample) return Boolean
+   is (Got <= Want + Tol and then Got + Tol >= Want);
 begin
    delay until Clock + Milliseconds (200);
    Log.Put_Line ("[tlv2556] TI TLV2556 12-bit ADC bring-up (SPI2, CS=IO12)");
 
    SPI.Setup (SPI.SPI2);
-   SPI.Configure_Pins (SPI.SPI2, Sclk => SCLK_Pin, Mosi => MOSI_Pin,
-                       Miso => MISO_Pin);
+   SPI.Configure_Pins (SPI.SPI2, Sclk => SCLK_Pin, Mosi => MOSI_Pin, Miso => MISO_Pin);
 
    ADC.Initialize (Dev, Ref => ADC.External);
 
@@ -86,7 +84,8 @@ begin
    Log.Put (Natural (Full));
    Log.Put_Line
      ((if Near (Zero, 0, 4) and then Near (Half, 2048, 8) and then Near (Full, 4095, 4)
-       then "   PASS" else "   FAIL"));
+       then "   PASS"
+       else "   FAIL"));
 
    A0 := ADC.Read (Dev, ADC.AIN0);
    Log.Put ("[tlv2556] AIN0 = ");

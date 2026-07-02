@@ -28,15 +28,15 @@
 --    Reading a default mkfs.ext4 card works; WRITES need a NON-metadata_csum
 --    filesystem.  The SD block driver itself is not yet on-card-verified (see
 --    its README), so bring that up first.
-with Interfaces;   use Interfaces;
+with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.SD_SPI;
 with ESP32S3.SPI;
 with ESP32S3.Block_Dev;
 with ESP32S3.Block_Dev.SD_SPI_Source;
-with ESP32S3.Text_IO;        use ESP32S3.Text_IO;   --  buffered console
-with ESP32S3.Ext4;            use ESP32S3.Ext4;
+with ESP32S3.Text_IO; use ESP32S3.Text_IO;   --  buffered console
+with ESP32S3.Ext4;    use ESP32S3.Ext4;
 with ESP32S3.Ext4.FS;
 with ESP32S3.Ext4.Inode;
 
@@ -59,7 +59,10 @@ procedure Main is
          X := Shift_Right (X, 4);
       end loop;
       for I in Buf'Range loop
-         if Buf (I) /= '0' then First := I; exit; end if;
+         if Buf (I) /= '0' then
+            First := I;
+            exit;
+         end if;
       end loop;
       if Buf'Last - First + 1 < Min_Digits then
          First := Buf'Last - Min_Digits + 1;
@@ -69,8 +72,7 @@ procedure Main is
 
    procedure Banner is
    begin
-      Put_Line
-        ("[ext4] bare-metal pure-Ada ext4 over SD-over-SPI (needs a wired ext4 card)");
+      Put_Line ("[ext4] bare-metal pure-Ada ext4 over SD-over-SPI (needs a wired ext4 card)");
    end Banner;
 
    procedure Card_Result (Ok : Boolean) is
@@ -80,8 +82,7 @@ procedure Main is
 
    procedure Mount_Result (Ok : Boolean; Block_Size : Natural) is
    begin
-      Put ("[ext4] mount: " & (if Ok then "OK" else "FAILED")
-           & "   block size = ");
+      Put ("[ext4] mount: " & (if Ok then "OK" else "FAILED") & "   block size = ");
       declare
          package Nat_IO is new Integer_IO (Natural);
       begin
@@ -92,11 +93,13 @@ procedure Main is
 
    procedure Read_Result (Ok : Boolean; B0, B1, B2, B3 : Natural) is
    begin
-      Put ("[ext4] read /hello.txt: " & (if Ok then "OK" else "FAILED")
-           & "   first bytes = ");
-      Put_Hex (Unsigned_64 (B0), 2);  Put (" ");
-      Put_Hex (Unsigned_64 (B1), 2);  Put (" ");
-      Put_Hex (Unsigned_64 (B2), 2);  Put (" ");
+      Put ("[ext4] read /hello.txt: " & (if Ok then "OK" else "FAILED") & "   first bytes = ");
+      Put_Hex (Unsigned_64 (B0), 2);
+      Put (" ");
+      Put_Hex (Unsigned_64 (B1), 2);
+      Put (" ");
+      Put_Hex (Unsigned_64 (B2), 2);
+      Put (" ");
       Put_Hex (Unsigned_64 (B3), 2);
       New_Line;
    end Read_Result;
@@ -120,7 +123,7 @@ procedure Main is
    --  We read the file from its start into a small fixed buffer, and report
    --  only the first few bytes (glue.c prints exactly four: enough to recognise
    --  "hell" = 68 65 6c 6c).
-   File_Start_Offset : constant U64     := 0;
+   File_Start_Offset : constant U64 := 0;
    Read_Buffer_Size  : constant Natural := 16;   --  bytes read in one go
 
    Card        : aliased ESP32S3.SD_SPI.Card;
@@ -144,7 +147,7 @@ begin
       declare
          --  Present the card as a generic block device to the filesystem.
          Device : constant ESP32S3.Block_Dev.Device :=
-                    ESP32S3.Block_Dev.SD_SPI_Source.Make (Card'Access);
+           ESP32S3.Block_Dev.SD_SPI_Source.Make (Card'Access);
          Mount  : ESP32S3.Ext4.FS.Mount;
       begin
          Mount.Open (Device, Read_Only => True);

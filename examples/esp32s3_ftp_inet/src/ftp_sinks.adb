@@ -9,7 +9,8 @@ package body FTP_Sinks is
       Count := 0;
    end Reset_Count;
 
-   function Bytes_Seen return Natural is (Count);
+   function Bytes_Seen return Natural
+   is (Count);
 
    procedure Count_Chunk (Ctx : System.Address; Chunk : FTP_Client.Byte_Array) is
       pragma Unreferenced (Ctx);

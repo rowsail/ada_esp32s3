@@ -43,9 +43,7 @@ package body ESP32S3.PCF85063A is
 
    --  Set the address pointer (1-byte write), then stream Data'Length bytes from
    --  it.  The pointer auto-increments and survives the STOP between the two.
-   procedure Read_Regs
-     (S : Session; Reg : Byte; Data : out Byte_Array; Result : out Status)
-   is
+   procedure Read_Regs (S : Session; Reg : Byte; Data : out Byte_Array; Result : out Status) is
       Acked : Boolean;
    begin
       Write (S, Bus_Address, (1 => Reg), Acked);
@@ -57,9 +55,7 @@ package body ESP32S3.PCF85063A is
 
    --  Write Reg followed by Data in one transaction (the pointer auto-increments
    --  across the data bytes).
-   procedure Write_Regs
-     (S : Session; Reg : Byte; Data : Byte_Array; Result : out Status)
-   is
+   procedure Write_Regs (S : Session; Reg : Byte; Data : Byte_Array; Result : out Status) is
       Acked : Boolean;
       Buf   : Byte_Array (0 .. Data'Length);
    begin
@@ -73,9 +69,7 @@ package body ESP32S3.PCF85063A is
 
    --  Read-modify-write one register: keep the bits outside Mask, set the bits
    --  inside Mask to Bits.
-   procedure Update_Reg
-     (S : Session; Reg, Mask, Bits : Byte; Result : out Status)
-   is
+   procedure Update_Reg (S : Session; Reg, Mask, Bits : Byte; Result : out Status) is
       V : Byte_Array (0 .. 0);
    begin
       Read_Regs (S, Reg, V, Result);
@@ -118,9 +112,7 @@ package body ESP32S3.PCF85063A is
    -- Get_Time --
    --------------
 
-   procedure Get_Time
-     (Dev : Device; T : out Time; Valid : out Boolean; Result : out Status)
-   is
+   procedure Get_Time (Dev : Device; T : out Time; Valid : out Boolean; Result : out Status) is
       S : Session;                 --  released by finalization on return
       R : Byte_Array (0 .. 6);     --  Seconds (0x04) .. Years (0x0A)
 
@@ -269,9 +261,7 @@ package body ESP32S3.PCF85063A is
    -- Alarm_Triggered --
    ---------------------
 
-   procedure Alarm_Triggered
-     (Dev : Device; Fired : out Boolean; Result : out Status)
-   is
+   procedure Alarm_Triggered (Dev : Device; Fired : out Boolean; Result : out Status) is
       S : Session;
       V : Byte_Array (0 .. 0);
    begin
@@ -291,8 +281,7 @@ package body ESP32S3.PCF85063A is
       S : Session;
    begin
       Acquire (S, Dev.Host);
-      Update_Reg
-        (S, Reg_Control_2, Mask => Alarm_Flag, Bits => 0, Result => Result);
+      Update_Reg (S, Reg_Control_2, Mask => Alarm_Flag, Bits => 0, Result => Result);
    end Acknowledge_Alarm;
 
    -----------------
@@ -306,11 +295,7 @@ package body ESP32S3.PCF85063A is
 
       --  Disable the interrupt and clear the flag ...
       Update_Reg
-        (S,
-         Reg_Control_2,
-         Mask   => Alarm_Int_Enable or Alarm_Flag,
-         Bits   => 0,
-         Result => Result);
+        (S, Reg_Control_2, Mask => Alarm_Int_Enable or Alarm_Flag, Bits => 0, Result => Result);
       if Result /= OK then
          return;
       end if;
@@ -318,11 +303,7 @@ package body ESP32S3.PCF85063A is
       Write_Regs
         (S,
          Reg_Second_Alarm,
-         (Alarm_Disable,
-          Alarm_Disable,
-          Alarm_Disable,
-          Alarm_Disable,
-          Alarm_Disable),
+         (Alarm_Disable, Alarm_Disable, Alarm_Disable, Alarm_Disable, Alarm_Disable),
          Result);
    end Clear_Alarm;
 

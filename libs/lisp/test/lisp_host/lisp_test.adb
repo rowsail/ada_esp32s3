@@ -12,7 +12,8 @@ procedure Lisp_Test is
       Got : constant String := Print (Lisp.Reader.Read (Input));
    begin
       if Got = Want then
-         Passed := Passed + 1;  Put_Line ("  ok   " & Input & "  ->  " & Got);
+         Passed := Passed + 1;
+         Put_Line ("  ok   " & Input & "  ->  " & Got);
       else
          Failed := Failed + 1;
          Put_Line ("  FAIL " & Input & "  ->  " & Got & "  (want " & Want & ")");
@@ -24,20 +25,27 @@ procedure Lisp_Test is
       Got : constant String := Print (Lisp.Eval.Eval_Top (Lisp.Reader.Read (Input)));
    begin
       if Got = Want then
-         Passed := Passed + 1;  Put_Line ("  ok   " & Input & "  =>  " & Got);
+         Passed := Passed + 1;
+         Put_Line ("  ok   " & Input & "  =>  " & Got);
       else
          Failed := Failed + 1;
          Put_Line ("  FAIL " & Input & "  =>  " & Got & "  (want " & Want & ")");
       end if;
    exception
       when Lisp_Error =>
-         Failed := Failed + 1;  Put_Line ("  FAIL " & Input & "  => <error>");
+         Failed := Failed + 1;
+         Put_Line ("  FAIL " & Input & "  => <error>");
    end E;
 
    procedure Check (Label : String; Cond : Boolean) is
    begin
-      if Cond then Passed := Passed + 1; Put_Line ("  ok   " & Label);
-      else Failed := Failed + 1; Put_Line ("  FAIL " & Label); end if;
+      if Cond then
+         Passed := Passed + 1;
+         Put_Line ("  ok   " & Label);
+      else
+         Failed := Failed + 1;
+         Put_Line ("  FAIL " & Label);
+      end if;
    end Check;
 begin
    Lisp.Eval.Init;   --  build the global environment
@@ -93,8 +101,7 @@ begin
    E ("(begin (define x 5) (+ x 1))", "6");
    E ("(begin (set! x 42) x)", "42");
    E ("(begin (define (sq n) (* n n)) (sq 9))", "81");
-   E ("(begin (define (adder n) (lambda (k) (+ k n))) (define a5 (adder 5)) (a5 10))",
-      "15");
+   E ("(begin (define (adder n) (lambda (k) (+ k n))) (define a5 (adder 5)) (a5 10))", "15");
    E ("(begin (define (fact n) (if (< n 2) 1 (* n (fact (- n 1))))) (fact 6))", "720");
 
    New_Line;
@@ -103,12 +110,16 @@ begin
       procedure Run (Input : String) is
          R : constant Ref := Lisp.Eval.Eval_Top (Lisp.Reader.Read (Input));
          pragma Unreferenced (R);
-      begin null; end Run;
+      begin
+         null;
+      end Run;
       Before, Reclaimed : Natural;
    begin
       Run ("(define (dbl x) (* x 2))");               --  survives GC (global env)
-      for I in 1 .. 500 loop Run ("(dbl 21)"); end loop;   --  make garbage
-      Before    := Cells_Used;
+      for I in 1 .. 500 loop
+         Run ("(dbl 21)");
+      end loop;   --  make garbage
+      Before := Cells_Used;
       Reclaimed := GC (Lisp.Eval.Global_Env);
       Check ("GC reclaims garbage", Reclaimed > 0);
       Check ("GC shrinks in-use set", Cells_Used < Before);
@@ -122,7 +133,9 @@ begin
       procedure Run (Input : String) is
          R : constant Ref := Lisp.Eval.Eval_Top (Lisp.Reader.Read (Input));
          pragma Unreferenced (R);
-      begin null; end Run;
+      begin
+         null;
+      end Run;
    begin
       Run ("(define (cnt n) (if (= n 0) 'done (cnt (- n 1))))");
       Run ("(define (sm n acc) (if (= n 0) acc (sm (- n 1) (+ acc n))))");
@@ -131,9 +144,14 @@ begin
    end;
 
    New_Line;
-   Put_Line ("Lisp core:" & Natural'Image (Passed) & " passed,"
-             & Natural'Image (Failed) & " failed  (cells used:"
-             & Natural'Image (Cells_Used) & ")");
+   Put_Line
+     ("Lisp core:"
+      & Natural'Image (Passed)
+      & " passed,"
+      & Natural'Image (Failed)
+      & " failed  (cells used:"
+      & Natural'Image (Cells_Used)
+      & ")");
    if Failed > 0 then
       raise Program_Error with "lisp core test failed";
    end if;

@@ -29,8 +29,7 @@ package ESP32S3.RTC is
    --  HAL does not, so the whole region is free here).
    ----------------------------------------------------------------------------
 
-   Slow_Memory      : constant System.Address :=
-     System'To_Address (16#5000_0000#);
+   Slow_Memory      : constant System.Address := System'To_Address (16#5000_0000#);
    Slow_Memory_Size : constant := 8 * 1024;
 
    --  Word-addressed access to the retained region (a bounds-checked alternative
@@ -62,8 +61,7 @@ package ESP32S3.RTC is
    --  Boot / wake cause.
    ----------------------------------------------------------------------------
 
-   type Wake_Cause is
-     (Power_On, Deep_Sleep_Timer, Deep_Sleep_GPIO, Other_Reset);
+   type Wake_Cause is (Power_On, Deep_Sleep_Timer, Deep_Sleep_GPIO, Other_Reset);
 
    --  Why the chip is running now (read from the RTC reset + wake-cause regs).
    function Last_Wake return Wake_Cause;
@@ -92,8 +90,7 @@ package ESP32S3.RTC is
    --  select mask is a 22-bit field, and 2**Pin for Pin > 21 wrapped to 0 -> no
    --  pad selected -> the chip would sleep forever).  Needs an external signal on
    --  the pad; configure the pad as an input first.
-   procedure Deep_Sleep_Until
-     (Pin : ESP32S3.RTC_IO.RTC_Pin; High : Boolean := True);
+   procedure Deep_Sleep_Until (Pin : ESP32S3.RTC_IO.RTC_Pin; High : Boolean := True);
 
    --  Auto-feed (effectively disable) the RTC super-watchdog.  A deep-sleep wake
    --  can leave it armed, so call this if a woken app means to stay awake.

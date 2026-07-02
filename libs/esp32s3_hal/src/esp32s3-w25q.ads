@@ -30,12 +30,9 @@ with ESP32S3.GPIO;
 package ESP32S3.W25Q is
 
    --  Geometry of the Winbond family parts this driver speaks to.
-   Page_Size   : constant :=
-     256;     --  program granularity (one Page-Program)
-   Sector_Size : constant :=
-     4096;    --  smallest erase unit (Sector-Erase 0x20)
-   Block_Size  : constant :=
-     65536;   --  64 KB block geometry (this driver erases
+   Page_Size   : constant := 256;     --  program granularity (one Page-Program)
+   Sector_Size : constant := 4096;    --  smallest erase unit (Sector-Erase 0x20)
+   Block_Size  : constant := 65536;   --  64 KB block geometry (this driver erases
    --  only by 4 KB sector; the FV's 64K block
    --  erase, 0xD8, is not used here)
 

@@ -4,9 +4,7 @@ with ESP32S3.Ext4.Block_Cache;
 package body ESP32S3.Ext4.Block_Map is
 
    --  Read the Index-th 32-bit block pointer from pointer-block Blk.
-   function Ptr_At
-     (V : in out Volume.Context; Blk : Block_Number; Index : U64)
-      return Block_Number
+   function Ptr_At (V : in out Volume.Context; Blk : Block_Number; Index : U64) return Block_Number
    is
       T : Byte_Array (0 .. 3);
    begin
@@ -19,9 +17,7 @@ package body ESP32S3.Ext4.Block_Map is
    end Ptr_At;
 
    --  Classic 12-direct + single/double/triple-indirect mapping.
-   function Indirect
-     (V : in out Volume.Context; I : Inode.Info; L_Block : U64)
-      return Block_Number
+   function Indirect (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number
    is
       PPB : constant U64 := U64 (V.SB.Block_Size) / 4;   --  pointers per block
       L   : U64 := L_Block;
@@ -40,8 +36,7 @@ package body ESP32S3.Ext4.Block_Map is
       if L < PPB * PPB then
          --  double indirect
          declare
-            D1  : constant Block_Number :=
-              Block_Number (Get_U32 (I.I_Block, 13 * 4));
+            D1  : constant Block_Number := Block_Number (Get_U32 (I.I_Block, 13 * 4));
             Mid : constant Block_Number := Ptr_At (V, D1, L / PPB);
          begin
             return Ptr_At (V, Mid, L mod PPB);
@@ -51,8 +46,7 @@ package body ESP32S3.Ext4.Block_Map is
 
       declare
          --  triple indirect
-         T1 : constant Block_Number :=
-           Block_Number (Get_U32 (I.I_Block, 14 * 4));
+         T1 : constant Block_Number := Block_Number (Get_U32 (I.I_Block, 14 * 4));
          A  : constant Block_Number := Ptr_At (V, T1, L / (PPB * PPB));
          B  : constant Block_Number := Ptr_At (V, A, (L / PPB) mod PPB);
       begin
@@ -64,13 +58,10 @@ package body ESP32S3.Ext4.Block_Map is
    --  60-byte i_block; interior/leaf nodes are full blocks read from the cache.
    Extent_Magic : constant U16 := 16#F30A#;
 
-   function Extents
-     (V : in out Volume.Context; I : Inode.Info; L_Block : U64)
-      return Block_Number
+   function Extents (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number
    is
       --  Read Into'Length bytes at Off of the current node (root = inode bytes).
-      procedure Node_Bytes
-        (Node : Block_Number; Off : Natural; Into : out Byte_Array) is
+      procedure Node_Bytes (Node : Block_Number; Off : Natural; Into : out Byte_Array) is
       begin
          if Node = 0 then
             Into := I.I_Block (Off .. Off + Into'Length - 1);
@@ -80,12 +71,10 @@ package body ESP32S3.Ext4.Block_Map is
       end Node_Bytes;
 
       BS         : constant Natural := V.SB.Block_Size;
-      Node       : Block_Number :=
-        0;             --  0 => the inode's i_block root
+      Node       : Block_Number := 0;             --  0 => the inode's i_block root
       Hdr        : Byte_Array (0 .. 11);
       Ent        : Byte_Array (0 .. 11);
-      Prev_Depth : Integer :=
-        -1;           --  depth of the node we descended from
+      Prev_Depth : Integer := -1;           --  depth of the node we descended from
    begin
       loop
          Node_Bytes (Node, 0, Hdr);
@@ -98,8 +87,7 @@ package body ESP32S3.Ext4.Block_Map is
             --  Entry capacity: the root lives in the 60-byte i_block (4 entries
             --  max); an interior/leaf node fills a whole block.  A larger count is
             --  corrupt -- and on the root would overrun the 60-byte i_block slice.
-            Max_Ent : constant Natural :=
-              (if Node = 0 then (60 - 12) / 12 else (BS - 12) / 12);
+            Max_Ent : constant Natural := (if Node = 0 then (60 - 12) / 12 else (BS - 12) / 12);
          begin
             --  ext4 extent trees are at most 5 levels deep, and each descent must
             --  strip exactly one level: this makes the loop provably terminate, so
@@ -118,16 +106,11 @@ package body ESP32S3.Ext4.Block_Map is
                      EE_Block : constant U64 := U64 (Get_U32 (Ent, 0));
                      Len_Raw  : constant U16 := Get_U16 (Ent, 4);
                      Len      : constant U64 :=
-                       U64
-                         (if Len_Raw > 32768
-                          then Len_Raw - 32768
-                          else Len_Raw);
+                       U64 (if Len_Raw > 32768 then Len_Raw - 32768 else Len_Raw);
                      Start    : constant U64 :=
-                       U64 (Get_U32 (Ent, 8))
-                       or Shift_Left (U64 (Get_U16 (Ent, 6)), 32);
+                       U64 (Get_U32 (Ent, 8)) or Shift_Left (U64 (Get_U16 (Ent, 6)), 32);
                   begin
-                     if L_Block >= EE_Block and then L_Block < EE_Block + Len
-                     then
+                     if L_Block >= EE_Block and then L_Block < EE_Block + Len then
                         return Block_Number (Start + (L_Block - EE_Block));
                      end if;
                   end;
@@ -145,8 +128,7 @@ package body ESP32S3.Ext4.Block_Map is
                      declare
                         EI_Block : constant U64 := U64 (Get_U32 (Ent, 0));
                         Leaf     : constant U64 :=
-                          U64 (Get_U32 (Ent, 4))
-                          or Shift_Left (U64 (Get_U16 (Ent, 8)), 32);
+                          U64 (Get_U32 (Ent, 4)) or Shift_Left (U64 (Get_U16 (Ent, 8)), 32);
                      begin
                         if EI_Block <= L_Block then
                            Child := Block_Number (Leaf);
@@ -166,8 +148,7 @@ package body ESP32S3.Ext4.Block_Map is
    end Extents;
 
    function Logical_To_Physical
-     (V : in out Volume.Context; I : Inode.Info; L_Block : U64)
-      return Block_Number is
+     (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number is
    begin
       if Inode.Uses_Extents (I) then
          return Extents (V, I, L_Block);

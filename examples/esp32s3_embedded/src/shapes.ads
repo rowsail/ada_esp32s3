@@ -6,24 +6,29 @@
 --  table built on the (non-executable) DRAM stack and would fault when called
 --  -- see the runtime-profiles note in the repository README.  Declaring
 --  tagged/controlled types at library level (the usual Ada style) avoids that.
+
 package Shapes is
 
    type Shape is abstract tagged null record;
 
-   function Name (S : Shape) return String  is abstract;
+   function Name (S : Shape) return String is abstract;
    function Area (S : Shape) return Integer is abstract;
 
    type Circle is new Shape with record
       Radius : Integer;
    end record;
-   overriding function Name (S : Circle) return String;
-   overriding function Area (S : Circle) return Integer;
+   overriding
+   function Name (S : Circle) return String;
+   overriding
+   function Area (S : Circle) return Integer;
 
    type Rectangle is new Shape with record
       Width  : Integer;
       Height : Integer;
    end record;
-   overriding function Name (S : Rectangle) return String;
-   overriding function Area (S : Rectangle) return Integer;
+   overriding
+   function Name (S : Rectangle) return String;
+   overriding
+   function Area (S : Rectangle) return Integer;
 
 end Shapes;

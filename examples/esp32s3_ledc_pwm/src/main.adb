@@ -28,9 +28,9 @@
 --  back internally; nothing need be connected.
 with Ada.Real_Time; use Ada.Real_Time;
 
-with ESP32S3.LEDC;  use ESP32S3.LEDC;
+with ESP32S3.LEDC; use ESP32S3.LEDC;
 with ESP32S3.GPIO;
-with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3.Log;  use ESP32S3.Log;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
 --  elaboration); core 1 just idles -- the test runs on core 0.
@@ -110,15 +110,15 @@ procedure Main is
 
    --  Sample the (driver-driven) output pad for Window_Ms; return the high-sample
    --  fraction as a duty %, and rising-edges / elapsed-time as a frequency.
-   procedure Measure (Pin : ESP32S3.GPIO.Pin_Id; Window_Ms : Positive;
-                      Duty_Pct, Freq_Hz : out Float)
+   procedure Measure
+     (Pin : ESP32S3.GPIO.Pin_Id; Window_Ms : Positive; Duty_Pct, Freq_Hz : out Float)
    is
-      T0       : constant Time := Clock;
-      Deadline : constant Time := T0 + Milliseconds (Window_Ms);
+      T0                     : constant Time := Clock;
+      Deadline               : constant Time := T0 + Milliseconds (Window_Ms);
       Samples, Highs, Rising : Natural := 0;
-      Cur  : Boolean;
-      Prev : Boolean := False;
-      Secs : Float;
+      Cur                    : Boolean;
+      Prev                   : Boolean := False;
+      Secs                   : Float;
    begin
       loop
          Cur := ESP32S3.GPIO.Read (Pin);
@@ -133,9 +133,8 @@ procedure Main is
          exit when Clock >= Deadline;
       end loop;
       Secs := Float (To_Duration (Clock - T0));
-      Duty_Pct := (if Samples = 0 then 0.0
-                   else Float (Highs) / Float (Samples) * 100.0);
-      Freq_Hz  := (if Secs = 0.0 then 0.0 else Float (Rising) / Secs);
+      Duty_Pct := (if Samples = 0 then 0.0 else Float (Highs) / Float (Samples) * 100.0);
+      Freq_Hz := (if Secs = 0.0 then 0.0 else Float (Rising) / Secs);
    end Measure;
 
    D, F : Float;
@@ -150,20 +149,15 @@ begin
       Ch0 : Channel;
    begin
       Claim (Ch0, 0);                    --  own channel 0
-      Configure (Ch0,
-                 Freq => Frequency_Hz,
-                 Pin  => Output_Pin,
-                 Bits => Duty_Resolution_Bits);
+      Configure (Ch0, Freq => Frequency_Hz, Pin => Output_Pin, Bits => Duty_Resolution_Bits);
       for I in Duties'Range loop
          Set_Duty (Ch0, Duties (I));
          delay until Clock + Milliseconds (Duty_Settle_Ms);
          Measure (Output_Pin, Measure_Window_Ms, D, F);
-         Ok := abs (D - Float (Duties (I))) <= Duty_Tolerance_Pct
-                 and then
-               abs (F - Float (Frequency_Hz))
-                 <= Float (Frequency_Hz) * Freq_Tolerance_Frac;
-         Result (Integer (Float (Duties (I))), Integer (D * 10.0), Integer (F),
-                 Ok);
+         Ok :=
+           abs (D - Float (Duties (I))) <= Duty_Tolerance_Pct
+           and then abs (F - Float (Frequency_Hz)) <= Float (Frequency_Hz) * Freq_Tolerance_Frac;
+         Result (Integer (Float (Duties (I))), Integer (D * 10.0), Integer (F), Ok);
       end loop;
    end;                                  --  Ch0 finalizes -> output stopped, freed
 
@@ -206,8 +200,11 @@ begin
          Reclaimed := Is_Valid (C);
       end;
 
-      Raii_Result (All_Eight_Claimed, Ninth_Rejected, Reclaimed,
-                   All_Eight_Claimed and Ninth_Rejected and Reclaimed);
+      Raii_Result
+        (All_Eight_Claimed,
+         Ninth_Rejected,
+         Reclaimed,
+         All_Eight_Claimed and Ninth_Rejected and Reclaimed);
    end;
 
    Done;

@@ -25,11 +25,7 @@ package ESP32S3.ST7789.Text is
    --  pixels, BG the rest (including the spacing column/row).  Characters
    --  outside printable ASCII (0x20 .. 0x7E) render as a blank cell.
    procedure Draw_Char
-     (S      : Session;
-      X, Y   : Natural;
-      Ch     : Character;
-      FG, BG : Color;
-      Scale  : Positive := 1);
+     (S : Session; X, Y : Natural; Ch : Character; FG, BG : Color; Scale : Positive := 1);
 
    --  Draw a string with its first cell at (X, Y), advancing X by
    --  Cell_Width * Scale per character.  An ASCII LF (Character'Val (10))
@@ -37,10 +33,6 @@ package ESP32S3.ST7789.Text is
    --  No automatic right-edge wrap -- glyphs that would start past the panel are
    --  skipped by the driver's bounds check.
    procedure Draw_Text
-     (S      : Session;
-      X, Y   : Natural;
-      Str    : String;
-      FG, BG : Color;
-      Scale  : Positive := 1);
+     (S : Session; X, Y : Natural; Str : String; FG, BG : Color; Scale : Positive := 1);
 
 end ESP32S3.ST7789.Text;

@@ -26,19 +26,19 @@
 --    to match your board):
 --      SCLK = GPIO12   MOSI = GPIO11   MISO = GPIO13   CS = GPIO10
 --      card VDD = 3V3, VSS = GND, 10k pull-up on MISO recommended.
-with Interfaces;   use Interfaces;
+with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
 with ESP32S3.SD_SPI;
 with ESP32S3.SPI;
-with ESP32S3.Text_IO;   use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
+with ESP32S3.Text_IO; use ESP32S3.Text_IO;   --  buffered console (no rom-printf)
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
    package SD_SPI renames ESP32S3.SD_SPI;
-   package SPI    renames ESP32S3.SPI;
+   package SPI renames ESP32S3.SPI;
    use type SD_SPI.Status;
    use type SD_SPI.Block;
 
@@ -62,7 +62,10 @@ procedure Main is
          X := Shift_Right (X, 4);
       end loop;
       for I in Buf'Range loop
-         if Buf (I) /= '0' then First := I; exit; end if;
+         if Buf (I) /= '0' then
+            First := I;
+            exit;
+         end if;
       end loop;
       if Buf'Last - First + 1 < Min_Digits then
          First := Buf'Last - Min_Digits + 1;
@@ -70,8 +73,8 @@ procedure Main is
       Put (Buf (First .. Buf'Last));
    end Put_Hex;
 
-   function Kind_Name (K : ESP32S3.SD_SPI.Card_Kind) return String is
-     (case K is
+   function Kind_Name (K : ESP32S3.SD_SPI.Card_Kind) return String
+   is (case K is
          when ESP32S3.SD_SPI.Unknown  => "Unknown",
          when ESP32S3.SD_SPI.SD_V1    => "SD v1.x (SDSC)",
          when ESP32S3.SD_SPI.SD_V2_SC => "SD v2 SDSC",
@@ -85,11 +88,12 @@ procedure Main is
       Put_Line ("[sd-spi] bare-metal SD-over-SPI self-test (needs a wired card)");
    end Banner;
 
-   procedure Report_Init (Status : ESP32S3.SD_SPI.Status;
-                          Kind   : ESP32S3.SD_SPI.Card_Kind) is
+   procedure Report_Init (Status : ESP32S3.SD_SPI.Status; Kind : ESP32S3.SD_SPI.Card_Kind) is
    begin
-      Put ("[sd-spi] init: ");  Put (ESP32S3.SD_SPI.Status'Image (Status));
-      Put ("   card: ");        Put_Line (Kind_Name (Kind));
+      Put ("[sd-spi] init: ");
+      Put (ESP32S3.SD_SPI.Status'Image (Status));
+      Put ("   card: ");
+      Put_Line (Kind_Name (Kind));
    end Report_Init;
 
    procedure Report_Write (Status : ESP32S3.SD_SPI.Status) is
@@ -99,8 +103,7 @@ procedure Main is
 
    procedure Report_Verify (Ok : Boolean) is
    begin
-      Put_Line ("[sd-spi] round-trip (re-read == original): "
-                & (if Ok then "PASS" else "FAIL"));
+      Put_Line ("[sd-spi] round-trip (re-read == original): " & (if Ok then "PASS" else "FAIL"));
    end Report_Verify;
 
    procedure Done is
@@ -130,16 +133,19 @@ procedure Main is
    Read_Back   : SD_SPI.Block;     --  the same sector re-read after write-back
 
    --  Report a block read: status + the first four bytes.
-   procedure Report_Read (Which  : Natural;
-                          Status : SD_SPI.Status;
-                          Data   : SD_SPI.Block) is
+   procedure Report_Read (Which : Natural; Status : SD_SPI.Status; Data : SD_SPI.Block) is
    begin
-      Put ("[sd-spi] read#");  Put_Nat (Which);
-      Put (": ");              Put (SD_SPI.Status'Image (Status));
+      Put ("[sd-spi] read#");
+      Put_Nat (Which);
+      Put (": ");
+      Put (SD_SPI.Status'Image (Status));
       Put ("   first bytes = ");
-      Put_Hex (Unsigned_64 (Data (0)), 2);  Put (" ");
-      Put_Hex (Unsigned_64 (Data (1)), 2);  Put (" ");
-      Put_Hex (Unsigned_64 (Data (2)), 2);  Put (" ");
+      Put_Hex (Unsigned_64 (Data (0)), 2);
+      Put (" ");
+      Put_Hex (Unsigned_64 (Data (1)), 2);
+      Put (" ");
+      Put_Hex (Unsigned_64 (Data (2)), 2);
+      Put (" ");
       Put_Hex (Unsigned_64 (Data (3)), 2);
       New_Line;
    end Report_Read;
@@ -148,9 +154,14 @@ begin
    Banner;
 
    SD_SPI.Setup
-     (Card_Device, Host => SPI.SPI2,
-      Sclk => SCLK_Pin, Mosi => MOSI_Pin, Miso => MISO_Pin, Cs => CS_Pin,
-      Init_Clock_Hz => Init_Clock_Hz, Data_Clock_Hz => Data_Clock_Hz);
+     (Card_Device,
+      Host          => SPI.SPI2,
+      Sclk          => SCLK_Pin,
+      Mosi          => MOSI_Pin,
+      Miso          => MISO_Pin,
+      Cs            => CS_Pin,
+      Init_Clock_Hz => Init_Clock_Hz,
+      Data_Clock_Hz => Data_Clock_Hz);
 
    SD_SPI.Initialize (Card_Device, Card_Status);
    Report_Init (Card_Status, SD_SPI.Kind (Card_Device));
@@ -167,8 +178,7 @@ begin
          if Card_Status = SD_SPI.OK then
             SD_SPI.Read_Block (Card_Device, Test_LBA, Read_Back, Card_Status);
             Report_Read (2, Card_Status, Read_Back);
-            Report_Verify (Card_Status = SD_SPI.OK
-                           and then Original = Read_Back);
+            Report_Verify (Card_Status = SD_SPI.OK and then Original = Read_Back);
          end if;
       end if;
    end if;

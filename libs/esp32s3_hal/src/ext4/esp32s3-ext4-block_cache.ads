@@ -32,17 +32,10 @@ package ESP32S3.Ext4.Block_Cache is
    --  (Block_Off + Into'Length must be <= Block_Size).  Lets callers read just
    --  the field/entry/chunk they need without a block-sized stack buffer.
    procedure Read_At
-     (C         : in out Cache;
-      B         : Block_Number;
-      Block_Off : Natural;
-      Into      : out Byte_Array);
+     (C : in out Cache; B : Block_Number; Block_Off : Natural; Into : out Byte_Array);
 
    --  Replace Into'Length bytes at offset Block_Off of block B (and mark dirty).
-   procedure Write_At
-     (C         : in out Cache;
-      B         : Block_Number;
-      Block_Off : Natural;
-      From      : Byte_Array);
+   procedure Write_At (C : in out Cache; B : Block_Number; Block_Off : Natural; From : Byte_Array);
 
    --  Replace cached block B with From (length = Block_Size) and mark it dirty;
    --  written back on eviction or Flush.
@@ -62,8 +55,7 @@ package ESP32S3.Ext4.Block_Cache is
    --  targets whose stacks are non-executable, where 'Access of a nested
    --  collector passed to For_Each_Dirty would need an unavailable trampoline.
    type Block_List is array (Positive range <>) of Block_Number;
-   procedure Dirty_Tags
-     (C : in out Cache; Into : out Block_List; Count : out Natural);
+   procedure Dirty_Tags (C : in out Cache; Into : out Block_List; Count : out Natural);
 
    --  Flush, then release all heap storage (cache unusable until re-Init).
    procedure Done (C : in out Cache);

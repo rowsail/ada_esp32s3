@@ -15,14 +15,65 @@ package body Cert_Verify is
    --  DigestInfo prefixes (DER of the digest algorithm + the OCTET STRING header)
    --  that precede the hash in a PKCS#1 v1.5 block -- one per SHA variant.
    DI_SHA256 : constant Byte_Array :=
-     (16#30#, 16#31#, 16#30#, 16#0D#, 16#06#, 16#09#, 16#60#, 16#86#, 16#48#,
-      16#01#, 16#65#, 16#03#, 16#04#, 16#02#, 16#01#, 16#05#, 16#00#, 16#04#, 16#20#);
+     (16#30#,
+      16#31#,
+      16#30#,
+      16#0D#,
+      16#06#,
+      16#09#,
+      16#60#,
+      16#86#,
+      16#48#,
+      16#01#,
+      16#65#,
+      16#03#,
+      16#04#,
+      16#02#,
+      16#01#,
+      16#05#,
+      16#00#,
+      16#04#,
+      16#20#);
    DI_SHA384 : constant Byte_Array :=
-     (16#30#, 16#41#, 16#30#, 16#0D#, 16#06#, 16#09#, 16#60#, 16#86#, 16#48#,
-      16#01#, 16#65#, 16#03#, 16#04#, 16#02#, 16#02#, 16#05#, 16#00#, 16#04#, 16#30#);
+     (16#30#,
+      16#41#,
+      16#30#,
+      16#0D#,
+      16#06#,
+      16#09#,
+      16#60#,
+      16#86#,
+      16#48#,
+      16#01#,
+      16#65#,
+      16#03#,
+      16#04#,
+      16#02#,
+      16#02#,
+      16#05#,
+      16#00#,
+      16#04#,
+      16#30#);
    DI_SHA512 : constant Byte_Array :=
-     (16#30#, 16#51#, 16#30#, 16#0D#, 16#06#, 16#09#, 16#60#, 16#86#, 16#48#,
-      16#01#, 16#65#, 16#03#, 16#04#, 16#02#, 16#03#, 16#05#, 16#00#, 16#04#, 16#40#);
+     (16#30#,
+      16#51#,
+      16#30#,
+      16#0D#,
+      16#06#,
+      16#09#,
+      16#60#,
+      16#86#,
+      16#48#,
+      16#01#,
+      16#65#,
+      16#03#,
+      16#04#,
+      16#02#,
+      16#03#,
+      16#05#,
+      16#00#,
+      16#04#,
+      16#40#);
 
    --  Big-endian bytes -> little-endian 32-bit words (word 0 least significant).
    --  W may hold more words than B fills; the high words are zeroed.
@@ -34,10 +85,18 @@ package body Cert_Verify is
             P   : constant Integer := Integer (B'Last) - 4 * J;   --  LSB of word J
             Acc : Word := 0;
          begin
-            if P     >= Integer (B'First) then Acc := Acc + Word (B (P)); end if;
-            if P - 1 >= Integer (B'First) then Acc := Acc + Word (B (P - 1)) * 16#100#; end if;
-            if P - 2 >= Integer (B'First) then Acc := Acc + Word (B (P - 2)) * 16#1_0000#; end if;
-            if P - 3 >= Integer (B'First) then Acc := Acc + Word (B (P - 3)) * 16#100_0000#; end if;
+            if P >= Integer (B'First) then
+               Acc := Acc + Word (B (P));
+            end if;
+            if P - 1 >= Integer (B'First) then
+               Acc := Acc + Word (B (P - 1)) * 16#100#;
+            end if;
+            if P - 2 >= Integer (B'First) then
+               Acc := Acc + Word (B (P - 2)) * 16#1_0000#;
+            end if;
+            if P - 3 >= Integer (B'First) then
+               Acc := Acc + Word (B (P - 3)) * 16#100_0000#;
+            end if;
             W (W'First + J) := Acc;
          end;
       end loop;
@@ -49,12 +108,12 @@ package body Cert_Verify is
    begin
       for J in 0 .. W'Length - 1 loop
          declare
-            Wd : constant Word    := W (W'First + J);
+            Wd : constant Word := W (W'First + J);
             P  : constant Natural := EM'Last - 4 * J;             --  LSB of word J
          begin
-            EM (P)     := U8 (Wd mod 16#100#);
-            EM (P - 1) := U8 ((Wd / 16#100#)     mod 16#100#);
-            EM (P - 2) := U8 ((Wd / 16#1_0000#)  mod 16#100#);
+            EM (P) := U8 (Wd mod 16#100#);
+            EM (P - 1) := U8 ((Wd / 16#100#) mod 16#100#);
+            EM (P - 2) := U8 ((Wd / 16#1_0000#) mod 16#100#);
             EM (P - 3) := U8 ((Wd / 16#100_0000#) mod 16#100#);
          end;
       end loop;
@@ -109,9 +168,7 @@ package body Cert_Verify is
    --  RSASSA-PKCS1-v1.5 verify with a precomputed digest Hash and its matching
    --  DigestInfo prefix DI: recover EM = Signature^Exponent mod Modulus and
    --  constant-time compare it to 00 01 FF..FF 00 || DI || Hash.
-   function RSA_PKCS1_Core
-     (Hash, DI, Signature, Modulus, Exponent : Byte_Array) return Boolean
-   is
+   function RSA_PKCS1_Core (Hash, DI, Signature, Modulus, Exponent : Byte_Array) return Boolean is
       M_First : Natural := Modulus'First;
    begin
       --  Drop a single leading 0x00 (DER positive-sign byte) from the modulus.
@@ -124,7 +181,9 @@ package body Cert_Verify is
       begin
          --  k a whole number of words, RSA-sized, and big enough for the block
          --  (00 01 || >=8 FF || 00 || DigestInfo || hash).
-         if K = 0 or else K mod 4 /= 0 or else K > 512
+         if K = 0
+           or else K mod 4 /= 0
+           or else K > 512
            or else Signature'Length /= K
            or else K < 11 + DI'Length + Hash'Length
          then
@@ -167,7 +226,8 @@ package body Cert_Verify is
                Pos := Pos + 1;
             end loop;
 
-            for I in EM'Range loop                --  constant-time compare
+            for I in EM'Range loop
+               --  constant-time compare
                Diff := Diff or (EM (I) xor Want (I));
             end loop;
             return Diff = 0;
@@ -175,17 +235,14 @@ package body Cert_Verify is
       end;
    end RSA_PKCS1_Core;
 
-   function RSA_PKCS1_SHA256 (TBS, Signature, Modulus, Exponent : Byte_Array)
-      return Boolean is
-     (RSA_PKCS1_Core (SHA256_BA (TBS), DI_SHA256, Signature, Modulus, Exponent));
+   function RSA_PKCS1_SHA256 (TBS, Signature, Modulus, Exponent : Byte_Array) return Boolean
+   is (RSA_PKCS1_Core (SHA256_BA (TBS), DI_SHA256, Signature, Modulus, Exponent));
 
-   function RSA_PKCS1_SHA384 (TBS, Signature, Modulus, Exponent : Byte_Array)
-      return Boolean is
-     (RSA_PKCS1_Core (SHA384_BA (TBS), DI_SHA384, Signature, Modulus, Exponent));
+   function RSA_PKCS1_SHA384 (TBS, Signature, Modulus, Exponent : Byte_Array) return Boolean
+   is (RSA_PKCS1_Core (SHA384_BA (TBS), DI_SHA384, Signature, Modulus, Exponent));
 
-   function RSA_PKCS1_SHA512 (TBS, Signature, Modulus, Exponent : Byte_Array)
-      return Boolean is
-     (RSA_PKCS1_Core (SHA512_BA (TBS), DI_SHA512, Signature, Modulus, Exponent));
+   function RSA_PKCS1_SHA512 (TBS, Signature, Modulus, Exponent : Byte_Array) return Boolean
+   is (RSA_PKCS1_Core (SHA512_BA (TBS), DI_SHA512, Signature, Modulus, Exponent));
 
    ---------------------------------------------------------------------------
    --  RSASSA-PSS (MGF1-SHA-256, salt length 32).  SHA256_BA is defined above.
@@ -205,13 +262,15 @@ package body Cert_Verify is
             for I in 0 .. Seed'Length - 1 loop
                In_Buf (I) := Seed (Seed'First + I);
             end loop;
-            In_Buf (Seed'Length)     := U8 ((Cnt / 16#100_0000#) mod 256);
+            In_Buf (Seed'Length) := U8 ((Cnt / 16#100_0000#) mod 256);
             In_Buf (Seed'Length + 1) := U8 ((Cnt / 16#1_0000#) mod 256);
             In_Buf (Seed'Length + 2) := U8 ((Cnt / 16#100#) mod 256);
             In_Buf (Seed'Length + 3) := U8 (Cnt mod 256);
             H := SHA256_BA (In_Buf);
             for I in 0 .. 31 loop
-               if Pos + I < Mask_Len then R (Pos + I) := H (I); end if;
+               if Pos + I < Mask_Len then
+                  R (Pos + I) := H (I);
+               end if;
             end loop;
             Pos := Pos + 32;
             Cnt := Cnt + 1;
@@ -220,9 +279,7 @@ package body Cert_Verify is
       return R;
    end MGF1;
 
-   function RSA_PSS_SHA256 (Message, Signature, Modulus, Exponent : Byte_Array)
-      return Boolean
-   is
+   function RSA_PSS_SHA256 (Message, Signature, Modulus, Exponent : Byte_Array) return Boolean is
       M_First : Natural := Modulus'First;
    begin
       if Modulus'Length >= 1 and then Modulus (Modulus'First) = 0 then
@@ -232,9 +289,7 @@ package body Cert_Verify is
          K : constant Natural :=
            (if Modulus'Last >= M_First then Modulus'Last - M_First + 1 else 0);
       begin
-         if K = 0 or else K mod 4 /= 0 or else K > 512
-           or else Signature'Length /= K
-         then
+         if K = 0 or else K mod 4 /= 0 or else K > 512 or else Signature'Length /= K then
             return False;
          end if;
          declare
@@ -256,7 +311,10 @@ package body Cert_Verify is
                return False;
             end if;
             Words_To_BE (Z, EMb);
-            while Tt /= 0 loop Topb := Topb + 1; Tt := Tt / 2; end loop;
+            while Tt /= 0 loop
+               Topb := Topb + 1;
+               Tt := Tt / 2;
+            end loop;
             declare
                ModBits  : constant Natural := (K - 1) * 8 + Topb;
                EmBits   : constant Natural := ModBits - 1;
@@ -271,11 +329,11 @@ package body Cert_Verify is
                if EmLen < hLen + sLen + 2 or else EM_Off + EmLen /= K then
                   return False;
                end if;
-               if EMb (EM_Off + EmLen - 1) /= 16#BC# then         --  trailer
+               if EMb (EM_Off + EmLen - 1) /= 16#BC# then
+                  --  trailer
                   return False;
                end if;
-               if LeadBits > 0
-                 and then (EMb (EM_Off) and U8 (16#100# - 2 ** (8 - LeadBits))) /= 0
+               if LeadBits > 0 and then (EMb (EM_Off) and U8 (16#100# - 2**(8 - LeadBits))) /= 0
                then
                   return False;
                end if;
@@ -294,12 +352,15 @@ package body Cert_Verify is
                      DB (I) := EMb (EM_Off + I) xor DBMask (I);
                   end loop;
                   if LeadBits > 0 then
-                     DB (0) := DB (0) and U8 (2 ** (8 - LeadBits) - 1);
+                     DB (0) := DB (0) and U8 (2**(8 - LeadBits) - 1);
                   end if;
                   for I in 0 .. ZeroN - 1 loop
-                     if DB (I) /= 0 then Good := False; end if;
+                     if DB (I) /= 0 then
+                        Good := False;
+                     end if;
                   end loop;
-                  if DB (ZeroN) /= 16#01# then            --  PS || 0x01 || salt
+                  if DB (ZeroN) /= 16#01# then
+                     --  PS || 0x01 || salt
                      Good := False;
                   end if;
                   if not Good then
@@ -309,8 +370,12 @@ package body Cert_Verify is
                      Salt (I) := DB (DBLen - sLen + I);
                   end loop;
                   --  M' = (0x00)*8 || mHash || salt ; H' = SHA-256(M')
-                  for I in 0 .. hLen - 1 loop Mp (8 + I) := mHash (I); end loop;
-                  for I in 0 .. sLen - 1 loop Mp (8 + hLen + I) := Salt (I); end loop;
+                  for I in 0 .. hLen - 1 loop
+                     Mp (8 + I) := mHash (I);
+                  end loop;
+                  for I in 0 .. sLen - 1 loop
+                     Mp (8 + hLen + I) := Salt (I);
+                  end loop;
                   Hp := SHA256_BA (Mp);
                   for I in 0 .. hLen - 1 loop
                      if Hp (I) /= H (I) then
@@ -356,25 +421,36 @@ package body Cert_Verify is
 
    --  Read a DER INTEGER at Pos (tag 0x02), big-endian, into a 32-byte right-aligned
    --  value (leading zero sign byte dropped, short values left-padded).  Advances Pos.
-   procedure DER_Int (Buf : Byte_Array; Pos : in out Natural; Last : Natural;
-                      Out32 : out P256.Bytes_32; Ok : in out Boolean) is
+   procedure DER_Int
+     (Buf   : Byte_Array;
+      Pos   : in out Natural;
+      Last  : Natural;
+      Out32 : out P256.Bytes_32;
+      Ok    : in out Boolean)
+   is
       Len, First, Vlen : Natural;
    begin
       Out32 := (others => 0);
       if not Ok or else Pos + 1 > Last or else Buf (Pos) /= 16#02# then
-         Ok := False;  return;
+         Ok := False;
+         return;
       end if;
       Len := Natural (Buf (Pos + 1));               --  r, s < 128 bytes => short form
       Pos := Pos + 2;
       if Len = 0 or else Pos + Len - 1 > Last then
-         Ok := False;  return;
+         Ok := False;
+         return;
       end if;
-      First := Pos;  Vlen := Len;
-      while Vlen > 0 and then Buf (First) = 0 loop   --  drop leading zero bytes
-         First := First + 1;  Vlen := Vlen - 1;
+      First := Pos;
+      Vlen := Len;
+      while Vlen > 0 and then Buf (First) = 0 loop
+         --  drop leading zero bytes
+         First := First + 1;
+         Vlen := Vlen - 1;
       end loop;
       if Vlen > 32 then
-         Ok := False;  return;
+         Ok := False;
+         return;
       end if;
       for I in 0 .. Vlen - 1 loop
          Out32 (32 - Vlen + I) := P256.Byte (Buf (First + I));
@@ -384,14 +460,14 @@ package body Cert_Verify is
 
    --  Verify ECDSA(SHA-256/384)/P-256 of Hash32 with signature Sig_DER under
    --  (Pub_X, Pub_Y).  Sig_DER = SEQUENCE { r INTEGER, s INTEGER }.
-   function ECDSA_Core (Hash32 : Byte_Array; Sig_DER, Pub_X, Pub_Y : Byte_Array)
-                        return Boolean
-   is
-      Pos    : Natural;
-      Ok     : Boolean := True;
+   function ECDSA_Core (Hash32 : Byte_Array; Sig_DER, Pub_X, Pub_Y : Byte_Array) return Boolean is
+      Pos      : Natural;
+      Ok       : Boolean := True;
       R32, S32 : P256.Bytes_32;
    begin
-      if Sig_DER'Length < 8 or else Pub_X'Length /= 32 or else Pub_Y'Length /= 32
+      if Sig_DER'Length < 8
+        or else Pub_X'Length /= 32
+        or else Pub_Y'Length /= 32
         or else Sig_DER (Sig_DER'First) /= 16#30#
       then
          return False;
@@ -405,13 +481,11 @@ package body Cert_Verify is
       return P256.Verify (To_P256 (Pub_X), To_P256 (Pub_Y), To_P256 (Hash32), R32, S32);
    end ECDSA_Core;
 
-   function ECDSA_P256_SHA256
-     (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean is
-     (ECDSA_Core (SHA256_BA (Message), Sig_DER, Pub_X, Pub_Y));
+   function ECDSA_P256_SHA256 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean
+   is (ECDSA_Core (SHA256_BA (Message), Sig_DER, Pub_X, Pub_Y));
 
-   function ECDSA_P256_SHA384
-     (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean is
-     (ECDSA_Core (SHA384_BA_32 (Message), Sig_DER, Pub_X, Pub_Y));
+   function ECDSA_P256_SHA384 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean
+   is (ECDSA_Core (SHA384_BA_32 (Message), Sig_DER, Pub_X, Pub_Y));
 
    ---------------------------------------------------------------------------
    --  Ed25519 (RFC 8032)
@@ -420,17 +494,13 @@ package body Cert_Verify is
    --  Detached verify: NaCl exposes the combined form (signature || message), so
    --  reconstruct SM = Signature || Message, run Open (which cryptographically
    --  verifies), and confirm it recovered exactly Message.
-   function Ed25519_Verify (Message, Signature, Pub_Key : X509.Byte_Array)
-                            return Boolean
-   is
+   function Ed25519_Verify (Message, Signature, Pub_Key : X509.Byte_Array) return Boolean is
       use type SPARKNaCl.I32;
       use type SPARKNaCl.Byte;
       PKB : SPARKNaCl.Bytes_32;
       PK  : SPARKNaCl.Sign.Signing_PK;
    begin
-      if Signature'Length /= 64 or else Pub_Key'Length /= 32
-        or else Message'Length = 0
-      then
+      if Signature'Length /= 64 or else Pub_Key'Length /= 32 or else Message'Length = 0 then
          return False;
       end if;
       for I in 0 .. 31 loop
@@ -449,16 +519,14 @@ package body Cert_Verify is
             SM (SPARKNaCl.N32 (I)) := SPARKNaCl.Byte (Signature (Signature'First + I));
          end loop;
          for I in 0 .. Message'Length - 1 loop
-            SM (SPARKNaCl.N32 (64 + I)) :=
-              SPARKNaCl.Byte (Message (Message'First + I));
+            SM (SPARKNaCl.N32 (64 + I)) := SPARKNaCl.Byte (Message (Message'First + I));
          end loop;
          SPARKNaCl.Sign.Open (M, Status, MLen, SM, PK);
          if not Status or else MLen /= SPARKNaCl.I32 (Message'Length) then
             return False;
          end if;
          for I in 0 .. Message'Length - 1 loop
-            if M (SPARKNaCl.N32 (I)) /= SPARKNaCl.Byte (Message (Message'First + I))
-            then
+            if M (SPARKNaCl.N32 (I)) /= SPARKNaCl.Byte (Message (Message'First + I)) then
                return False;
             end if;
          end loop;

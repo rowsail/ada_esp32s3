@@ -134,12 +134,8 @@ package ESP32S3.SDMMC is
 
    --  Read / write one 512-byte block at logical address LBA.
    procedure Read_Block
-     (C      : in out Card;
-      LBA    : Block_Address;
-      Data   : out Block;
-      Result : out Status);
-   procedure Write_Block
-     (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status);
+     (C : in out Card; LBA : Block_Address; Data : out Block; Result : out Status);
+   procedure Write_Block (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status);
 
 private
    --  A 128-bit register response, word 0 = bits [31:0] .. word 3 = bits [127:96].
@@ -151,8 +147,7 @@ private
       Init_Hz         : Positive := 400_000;
       Data_Hz         : Positive := 20_000_000;
       Kind            : Card_Kind := Unknown;
-      RCA             : Interfaces.Unsigned_16 :=
-        0;   --  relative card address
+      RCA             : Interfaces.Unsigned_16 := 0;   --  relative card address
       Block_Addressed : Boolean := False;           --  True for SDHC/SDXC
       CID             : Reg128 := (others => 0);   --  CMD2 card identification
       CSD             : Reg128 := (others => 0);   --  CMD9 card-specific data

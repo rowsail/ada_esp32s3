@@ -16,8 +16,7 @@ package ESP32S3.Ext4.Inode is
       Flags      : U32 := 0;
       Links      : U16 := 0;
       Blocks_512 : U64 := 0;          --  i_blocks, in 512-byte units
-      I_Block    : Byte_Array (0 .. 59) :=
-        [others => 0];  --  raw map / extent root
+      I_Block    : Byte_Array (0 .. 59) := [others => 0];  --  raw map / extent root
    end record;
 
    EXTENTS_FL     : constant U32 := 16#0008_0000#;
@@ -43,10 +42,7 @@ package ESP32S3.Ext4.Inode is
    --  otherwise the unmodelled fields are preserved.  Recomputes the checksum
    --  when metadata_csum is in effect.
    procedure Write
-     (V     : in out Volume.Context;
-      N     : Inode_Number;
-      I     : Info;
-      Fresh : Boolean := False);
+     (V : in out Volume.Context; N : Inode_Number; I : Info; Fresh : Boolean := False);
 
    --  Mark inode N as deleted on disk (links_count := 0, dtime := nonzero) so
    --  e2fsck treats the now-free inode as a clean deletion.

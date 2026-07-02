@@ -6,10 +6,12 @@
 --  stay short and must not touch the I2C bus.  So the ISR here only sets an
 --  Atomic flag; the main task notices it, then does the slow I2C work (reading
 --  status, acknowledging the alarm) at task level.
+
 package Alarm_IRQ is
 
    --  Set by Handler when the INT line falls; cleared by the main task.
-   Fired : Boolean := False with Atomic, Volatile;
+   Fired : Boolean := False
+   with Atomic, Volatile;
 
    --  The interrupt action handed to ESP32S3.PCF85063A.Interrupts.Attach.
    procedure Handler;

@@ -38,8 +38,7 @@ package body ESP32S3.SPI.Engine is
 
    procedure Drive_Out (Pad : ESP32S3.GPIO.Pin_Id; Signal : Natural) is
       Ix : constant Natural := Natural (Pad);
-      O  : GR.FUNC_OUT_SEL_CFG_Register :=
-        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
+      O  : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
    begin
       ESP32S3.GPIO.Configure
         (Pad, Mode => ESP32S3.GPIO.Output, Drive => ESP32S3.GPIO.Drive_Strong);
@@ -47,8 +46,7 @@ package body ESP32S3.SPI.Engine is
       GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix) := O;
    end Drive_Out;
 
-   procedure Route_In
-     (Signal : Natural; Pad : ESP32S3.GPIO.Pin_Id; As_Input : Boolean) is
+   procedure Route_In (Signal : Natural; Pad : ESP32S3.GPIO.Pin_Id; As_Input : Boolean) is
    begin
       if As_Input then
          ESP32S3.GPIO.Configure (Pad, Mode => ESP32S3.GPIO.Input);
@@ -95,16 +93,13 @@ package body ESP32S3.SPI.Engine is
    -- Open --
    ----------
 
-   procedure Open
-     (B : in out Bus; Host : SPI_Host; Mode : SPI_Mode; Clock_Hz : Positive)
-   is
+   procedure Open (B : in out Bus; Host : SPI_Host; Mode : SPI_Mode; Clock_Hz : Positive) is
       use ESP32S3_Registers.SYSTEM;
       Regs      : constant Periph_Ref :=
         (case Host is
            when SPI2 => SPI2_Periph'Access,
            when SPI3 => SPI3_Periph'Access);
-      Out_Edge  : constant Boolean :=
-        (Mode = 1 or else Mode = 2);  --  CPHA map
+      Out_Edge  : constant Boolean := (Mode = 1 or else Mode = 2);  --  CPHA map
       Idle_Edge : constant Boolean := (Mode >= 2);                  --  CPOL
    begin
       case Host is
@@ -121,11 +116,7 @@ package body ESP32S3.SPI.Engine is
             SYSTEM_Periph.PERIP_RST_EN0.SPI3_DMA_RST := False;
       end case;
 
-      Regs.CLK_GATE :=
-        (CLK_EN         => True,
-         MST_CLK_ACTIVE => True,
-         MST_CLK_SEL    => True,
-         others         => <>);
+      Regs.CLK_GATE := (CLK_EN => True, MST_CLK_ACTIVE => True, MST_CLK_SEL => True, others => <>);
       Set_Clock (Regs, Clock_Hz);
 
       Regs.SLAVE.MODE := False;
@@ -168,8 +159,7 @@ package body ESP32S3.SPI.Engine is
    end Set_Clock;
 
    procedure Set_Mode (B : Bus; Mode : SPI_Mode) is
-      Out_Edge  : constant Boolean :=
-        (Mode = 1 or else Mode = 2);  --  CPHA map
+      Out_Edge  : constant Boolean := (Mode = 1 or else Mode = 2);  --  CPHA map
       Idle_Edge : constant Boolean := (Mode >= 2);                  --  CPOL
    begin
       if B.Regs /= null then
@@ -227,8 +217,7 @@ package body ESP32S3.SPI.Engine is
          B.Regs.MISC.CS0_DIS := not Enabled;   --  CS0_DIS = 1 suppresses CS0
          B.Regs.CMD.UPDATE := True;            --  latch into the shifter
          declare
-            Guard : Natural :=
-              100_000;        --  config latch: completes in cycles
+            Guard : Natural := 100_000;        --  config latch: completes in cycles
          begin
             while B.Regs.CMD.UPDATE and then Guard > 0 loop
                Guard := Guard - 1;
@@ -251,12 +240,10 @@ package body ESP32S3.SPI.Engine is
       GD.Start (B.Chan, GD.Mem_To_Periph, Tx, Length);
       GD.Start (B.Chan, GD.Periph_To_Mem, Rx, Length);
 
-      B.Regs.MS_DLEN.MS_DATA_BITLEN :=
-        MS_DLEN_MS_DATA_BITLEN_Field (Length * 8 - 1);
+      B.Regs.MS_DLEN.MS_DATA_BITLEN := MS_DLEN_MS_DATA_BITLEN_Field (Length * 8 - 1);
       B.Regs.CMD.UPDATE := True;
       declare
-         Guard : Natural :=
-           100_000;          --  config latch: completes in cycles
+         Guard : Natural := 100_000;          --  config latch: completes in cycles
       begin
          while B.Regs.CMD.UPDATE and then Guard > 0 loop
             Guard := Guard - 1;

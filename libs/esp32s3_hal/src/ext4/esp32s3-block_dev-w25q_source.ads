@@ -26,8 +26,7 @@ with ESP32S3.W25Q;
 package ESP32S3.Block_Dev.W25Q_Source is
 
    --  512-byte block-device sectors per 4 KB flash erase sector.
-   Sectors_Per_Erase : constant :=
-     ESP32S3.W25Q.Sector_Size / Sector'Length;  -- 8
+   Sectors_Per_Erase : constant := ESP32S3.W25Q.Sector_Size / Sector'Length;  -- 8
 
    --  Backing state for one flash-backed block device: the flash handle, the
    --  usable sector count, and a 4 KB scratch block for read-modify-write.
@@ -43,9 +42,7 @@ package ESP32S3.Block_Dev.W25Q_Source is
    --  fitted.  Raises Unknown_Capacity if the chip's density code is not
    --  recognised (absent / mis-wired / non-standard part).
    procedure Configure
-     (Src            : in out Source;
-      Flash          : ESP32S3.W25Q.Flash;
-      Capacity_Bytes : ESP32S3.W25Q.Address := 0);
+     (Src : in out Source; Flash : ESP32S3.W25Q.Flash; Capacity_Bytes : ESP32S3.W25Q.Address := 0);
 
    --  Auto-detect could not determine the chip size.
    Unknown_Capacity : exception;
@@ -54,13 +51,11 @@ package ESP32S3.Block_Dev.W25Q_Source is
    function Make (Src : not null access Source) return Device;
 
 private
-   subtype Block_Buffer is
-     ESP32S3.W25Q.Byte_Array (0 .. ESP32S3.W25Q.Sector_Size - 1);
+   subtype Block_Buffer is ESP32S3.W25Q.Byte_Array (0 .. ESP32S3.W25Q.Sector_Size - 1);
 
    type Source is limited record
       Flash : ESP32S3.W25Q.Flash;
       Count : Sector_Index := 0;                     --  total 512-byte sectors
-      Buf   : Block_Buffer :=
-        (others => 16#FF#);    --  4 KB read-modify-write scratch
+      Buf   : Block_Buffer := (others => 16#FF#);    --  4 KB read-modify-write scratch
    end record;
 end ESP32S3.Block_Dev.W25Q_Source;

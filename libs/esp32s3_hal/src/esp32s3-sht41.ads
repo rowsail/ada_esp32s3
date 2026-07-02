@@ -25,7 +25,7 @@ with ESP32S3.GPIO;
 --     begin
 --        ESP32S3.SHT41.Setup (Sensor, Sda => 8, Scl => 7);   --  state the wiring
 --        ESP32S3.SHT41.Measure (Sensor, M, St);              --  one reading
---        --  M.Temperature in mÂ°C, M.Humidity in m%RH (St = OK).
+--        --  M.Temperature in mÃÂ°C, M.Humidity in m%RH (St = OK).
 --     end;
 
 package ESP32S3.SHT41 is
@@ -35,7 +35,7 @@ package ESP32S3.SHT41 is
    Default_Address : constant ESP32S3.I2C.Slave_Address := 16#44#;
 
    --  One reading, in integer milli-units (so no float library is needed):
-   --     Temperature 23_456  =  23.456 Â°C
+   --     Temperature 23_456  =  23.456 ÃÂ°C
    --     Humidity    45_678  =  45.678 %RH  (clamped to 0 .. 100_000)
    type Measurement is record
       Temperature : Integer := 0;   --  milli-degrees Celsius

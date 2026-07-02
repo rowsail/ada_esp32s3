@@ -74,8 +74,7 @@ package Modbus.Slave is
    --  interface's address to pin the slave).  Run blocks forever, one client at a
    --  time.  Needs the embedded/full profile.
    ---------------------------------------------------------------------------
-   type Socket_Hook is
-     access procedure (Socket : in out GNAT.Sockets.Socket_Type);
+   type Socket_Hook is access procedure (Socket : in out GNAT.Sockets.Socket_Type);
 
    procedure Run
      (Self      : in out Server'Class;

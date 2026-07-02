@@ -39,8 +39,7 @@ package ESP32S3.W5500.Sockets is
       Error);
 
    --  The chip's socket status (Sn_SR), for polling a TCP connection's progress.
-   type Socket_State is
-     (Closed, Init, Listening, Established, Close_Wait, Udp, Other);
+   type Socket_State is (Closed, Init, Listening, Established, Close_Wait, Udp, Other);
 
    --  Interrupt integration (optional).  By default the blocking operations
    --  POLL.  An ESP32S3.W5500.Interrupts child can register a waiter here so the
@@ -120,20 +119,13 @@ package ESP32S3.W5500.Sockets is
 
    --  Send up to Data'Length bytes; Sent = how many were transmitted (may be less
    --  than Data'Length if the TX buffer was partly full).
-   procedure Send
-     (S      : in out Socket;
-      Data   : Byte_Array;
-      Sent   : out Natural;
-      Result : out Status);
+   procedure Send (S : in out Socket; Data : Byte_Array; Sent : out Natural; Result : out Status);
 
    --  Receive up to Into'Length bytes; Count = how many were read (0 if none
    --  waiting).  Result = Closed_By_Peer once the peer has half-closed and the
    --  buffer is drained.
    procedure Receive
-     (S      : in out Socket;
-      Into   : out Byte_Array;
-      Count  : out Natural;
-      Result : out Status);
+     (S : in out Socket; Into : out Byte_Array; Count : out Natural; Result : out Status);
 
    ---------------------------------------------------------------------------
    --  UDP datagrams

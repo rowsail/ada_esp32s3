@@ -26,12 +26,12 @@
 --    timing alone verify the data path and clock divider.  WR/RD/DC/CS/RST,
 --    the backlight, and a real panel + its geometry are not exercised by this
 --    8-bit-transmit self-test.
-with Interfaces;   use Interfaces;
+with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
-with ESP32S3.LCD;  use ESP32S3.LCD;
+with ESP32S3.LCD; use ESP32S3.LCD;
 with ESP32S3.GPIO;
-with ESP32S3.Log;  use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -68,8 +68,7 @@ procedure Main is
    Idle_Interval  : constant Time_Span := Seconds (3600);
 begin
    delay until Clock + Console_Settle;
-   Put_Line ("[lcd] bare-metal LCD i80 8-bit parallel DMA-TX self-test "
-             & "(no wiring)");
+   Put_Line ("[lcd] bare-metal LCD i80 8-bit parallel DMA-TX self-test " & "(no wiring)");
 
    for I in Buffer'Range loop
       Buf (I) := Unsigned_8 ((I * Ramp_Step + Ramp_Start) mod Byte_Modulus);
@@ -82,8 +81,11 @@ begin
       Secs : Float;
       Meas : Integer;
    begin
-      Acquire (S, Pclk_Hz => Set_Khz * Hz_Per_Khz,
-               Data => D_Pins, Pclk => Pclk_Pin);     --  own + configure
+      Acquire
+        (S,
+         Pclk_Hz => Set_Khz * Hz_Per_Khz,
+         Data    => D_Pins,
+         Pclk    => Pclk_Pin);     --  own + configure
       Ok := True;
       T0 := Clock;
       for R in 1 .. Reps loop
@@ -102,16 +104,14 @@ begin
       Put ("  ");
       Put_Line (if Ok then "PASS" else "FAIL");
 
-      Meas := (if Secs = 0.0 then 0
-               else Integer (Float (Buffer'Length * Reps) / Secs / 1000.0));
+      Meas := (if Secs = 0.0 then 0 else Integer (Float (Buffer'Length * Reps) / Secs / 1000.0));
       Put ("[lcd] pclk: set=");
       Put (Set_Khz);
       Put (" kHz measured=");
       Put (Meas);
       Put (" kHz  ");
       --  +/-5 %: the wall-clock timing has some jitter at MHz rates.
-      Put_Line (if Ok and then abs (Meas - Set_Khz) <= Set_Khz / 20 then "PASS"
-                else "FAIL");
+      Put_Line (if Ok and then abs (Meas - Set_Khz) <= Set_Khz / 20 then "PASS" else "FAIL");
    end;
 
    Put_Line ("[lcd] done.");

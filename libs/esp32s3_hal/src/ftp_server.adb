@@ -78,8 +78,7 @@ package body FTP_Server is
 
    procedure Reply (Code, Text : String) is
    begin
-      Send_Str
-        (Ctrl, Code & " " & Text & Character'Val (13) & Character'Val (10));
+      Send_Str (Ctrl, Code & " " & Text & Character'Val (13) & Character'Val (10));
    end Reply;
 
    --  Read one CRLF-terminated control line (CR/LF stripped).  False on close.
@@ -223,15 +222,13 @@ package body FTP_Server is
          end if;
       end loop;
       Name_Len := Path'Last - Slash;
-      Name (Name'First .. Name'First + Name_Len - 1) :=
-        Path (Slash + 1 .. Path'Last);
+      Name (Name'First .. Name'First + Name_Len - 1) := Path (Slash + 1 .. Path'Last);
       if Slash = Path'First then
          Dir_Len := 1;
          Dir (Dir'First) := '/';
       else
          Dir_Len := Slash - Path'First;
-         Dir (Dir'First .. Dir'First + Dir_Len - 1) :=
-           Path (Path'First .. Slash - 1);
+         Dir (Dir'First .. Dir'First + Dir_Len - 1) := Path (Path'First .. Slash - 1);
       end if;
    end Split;
 
@@ -271,9 +268,7 @@ package body FTP_Server is
          end;
       end if;
       Create_Socket (Data_Sock, Family_Inet, Socket_Stream);
-      Bind_Socket
-        (Data_Sock,
-         (Family => Family_Inet, Addr => Any_Inet_Addr, Port => DPort));
+      Bind_Socket (Data_Sock, (Family => Family_Inet, Addr => Any_Inet_Addr, Port => DPort));
       Listen_Socket (Data_Sock);
       Have_Pasv := True;
       --  227 wants the IP with commas: a.b.c.d -> a,b,c,d
@@ -282,15 +277,7 @@ package body FTP_Server is
             H (I) := ',';
          end if;
       end loop;
-      Reply
-        ("227",
-         "Entering Passive Mode ("
-         & H
-         & ","
-         & Img (P1)
-         & ","
-         & Img (P2)
-         & ")");
+      Reply ("227", "Entering Passive Mode (" & H & "," & Img (P1) & "," & Img (P2) & ")");
    end Do_Pasv;
 
    --  Accept the pending data connection (the listener becomes the connection).
@@ -336,9 +323,7 @@ package body FTP_Server is
    Entries     : array (1 .. Max_Entries) of Entry_Rec;
    N_Entries   : Natural := 0;
 
-   procedure Record_Entry
-     (Name : String; Ino : E4.Inode_Number; File_Type : E4.U8)
-   is
+   procedure Record_Entry (Name : String; Ino : E4.Inode_Number; File_Type : E4.U8) is
       pragma Unreferenced (File_Type);
    begin
       if Name = "." or else Name = ".." then
@@ -354,8 +339,7 @@ package body FTP_Server is
    end Record_Entry;
 
    --  Send one listing line ("<name>\r\n", or an "ls -l"-style line when Long).
-   procedure Send_Entry
-     (Conn : Socket_Type; Nm : String; Long, Is_Dir : Boolean; Size : Natural)
+   procedure Send_Entry (Conn : Socket_Type; Nm : String; Long, Is_Dir : Boolean; Size : Natural)
    is
       Line : String (1 .. 320);
       L    : Natural := 0;
@@ -430,8 +414,7 @@ package body FTP_Server is
             Info : E4.Inode.Info;
          begin
             FSP.Stat (Active_M.all, Entries (K).Ino, Info);
-            Send_Entry
-              (Conn, Nm, Long, E4.Inode.Is_Dir (Info), Natural (Info.Size));
+            Send_Entry (Conn, Nm, Long, E4.Inode.Is_Dir (Info), Natural (Info.Size));
          end;
       end loop;
       Close_Data (Conn);
@@ -525,9 +508,7 @@ package body FTP_Server is
          FSP.Truncate (Active_M.all, Ino, 0);
       exception
          when others =>
-            Ino :=
-              FSP.Create_File
-                (Active_M.all, Dir (1 .. Dir_Len), Name (1 .. Name_Len));
+            Ino := FSP.Create_File (Active_M.all, Dir (1 .. Dir_Len), Name (1 .. Name_Len));
       end;
       if not Accept_Data (Conn) then
          return;
@@ -637,8 +618,7 @@ package body FTP_Server is
             FSP.Rmdir (Active_M.all, Dir (1 .. Dir_Len), Name (1 .. Name_Len));
 
          when others =>
-            FSP.Unlink
-              (Active_M.all, Dir (1 .. Dir_Len), Name (1 .. Name_Len));
+            FSP.Unlink (Active_M.all, Dir (1 .. Dir_Len), Name (1 .. Name_Len));
       end case;
       FSP.Commit (Active_M.all);
       if Op = 'M' then
@@ -678,10 +658,8 @@ package body FTP_Server is
                end if;
             end loop;
             declare
-               Cmd : constant String :=
-                 Upper (if Sp = 0 then L else L (L'First .. Sp - 1));
-               Arg : constant String :=
-                 (if Sp = 0 then "" else L (Sp + 1 .. L'Last));
+               Cmd : constant String := Upper (if Sp = 0 then L else L (L'First .. Sp - 1));
+               Arg : constant String := (if Sp = 0 then "" else L (Sp + 1 .. L'Last));
             begin
                if Cmd = "USER" then
                   Reply ("331", "send any password");
@@ -766,20 +744,16 @@ package body FTP_Server is
       RO := Read_Only;
       DPort := Data_Port;
       Name_Len := Natural'Min (Server_Name'Length, 64);
-      Name (1 .. Name_Len) :=
-        Server_Name (Server_Name'First .. Server_Name'First + Name_Len - 1);
+      Name (1 .. Name_Len) := Server_Name (Server_Name'First .. Server_Name'First + Name_Len - 1);
       if not Derive then
          Set_Host (Local_IP);
       end if;
 
       loop
          Create_Socket (Listener, Family_Inet, Socket_Stream);
-         Bind_Socket
-           (Listener,
-            (Family => Family_Inet, Addr => Any_Inet_Addr, Port => Port));
+         Bind_Socket (Listener, (Family => Family_Inet, Addr => Any_Inet_Addr, Port => Port));
          Listen_Socket (Listener);
-         Accept_Socket
-           (Listener, Ctrl, Peer);     --  Ctrl becomes the connection
+         Accept_Socket (Listener, Ctrl, Peer);     --  Ctrl becomes the connection
          --  No IP given: PASV advertises the address the client reached us on.
          if Derive then
             Set_Host (Image (Get_Socket_Name (Ctrl).Addr));

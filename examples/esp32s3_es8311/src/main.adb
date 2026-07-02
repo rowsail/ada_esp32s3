@@ -40,7 +40,7 @@ with ESP32S3.GPIO;
 with ESP32S3.I2C;
 with ESP32S3.I2S;
 with ESP32S3.ES8311;
-with ESP32S3.Log;       use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -83,17 +83,17 @@ procedure Main is
    begin
       for K in 0 .. Half - 1 loop
          declare
-            Parabola : constant Integer := K * (Half - K);
+            Parabola    : constant Integer := K * (Half - K);
             --  64-bit intermediate: Amplitude*16*Parabola reaches ~5.2e9 at
             --  full scale.
-            Numerator : constant Long_Long_Integer :=
+            Numerator   : constant Long_Long_Integer :=
               Long_Long_Integer (Amplitude) * 16 * Long_Long_Integer (Parabola);
             Denominator : constant Long_Long_Integer :=
               Long_Long_Integer (5 * Half * Half - 4 * Parabola);
          begin
             Value := Integer (Numerator / Denominator);
          end;
-         Cycle (K)        :=  Sample (Value);
+         Cycle (K) := Sample (Value);
          Cycle (K + Half) := -Sample (Value);
       end loop;
    end Build_Cycle;
@@ -107,7 +107,7 @@ procedure Main is
    Capture_Frames : constant := 800;                  --  50 ms = ~22 cycles of 440 Hz
    Capture_Bytes  : constant := Capture_Frames * 4;   --  3200 bytes (<= 4095)
    type Capture_Buffer is array (0 .. Capture_Frames - 1) of Frame;
-   Capture_Buf : Capture_Buffer;
+   Capture_Buf    : Capture_Buffer;
 
    Quiet_Peak : constant := 200;               --  captured peak below this = silence
 
@@ -125,12 +125,12 @@ procedure Main is
    Analysed_Frames : constant := Capture_Frames - Skip_Frames;
 
    procedure Analyse (Peak : out Integer; Frequency_Hz : out Integer) is
-      Sum           : Long_Long_Integer := 0;
-      Mean          : Integer;
-      Mean_Abs_Dev  : Integer;
-      Threshold     : Integer;
-      State         : Integer := 0;   --  +1 above +Threshold, -1 below -Threshold, 0 unknown
-      Flips         : Natural := 0;
+      Sum          : Long_Long_Integer := 0;
+      Mean         : Integer;
+      Mean_Abs_Dev : Integer;
+      Threshold    : Integer;
+      State        : Integer := 0;   --  +1 above +Threshold, -1 below -Threshold, 0 unknown
+      Flips        : Natural := 0;
    begin
       for I in First .. Capture_Buf'Last loop
          Sum := Sum + Long_Long_Integer (Capture_Buf (I).L);
@@ -142,8 +142,8 @@ procedure Main is
          Sum := Sum + Long_Long_Integer (abs (Integer (Capture_Buf (I).L) - Mean));
       end loop;
       Mean_Abs_Dev := Integer (Sum / Analysed_Frames);
-      Peak         := (Mean_Abs_Dev * 157) / 100;          --  ~ sine peak, for display
-      Threshold    := Integer'Max (Mean_Abs_Dev / 2, 1);   --  safely below peak, above noise
+      Peak := (Mean_Abs_Dev * 157) / 100;          --  ~ sine peak, for display
+      Threshold := Integer'Max (Mean_Abs_Dev / 2, 1);   --  safely below peak, above noise
 
       for I in First .. Capture_Buf'Last loop
          declare
@@ -167,8 +167,8 @@ procedure Main is
 
 begin
    delay until Clock + Milliseconds (200);
-   Put_Line ("[es8311] ES8311 codec: 440 Hz test tone on the DAC output "
-             & "(I2C control + I2S audio)");
+   Put_Line
+     ("[es8311] ES8311 codec: 440 Hz test tone on the DAC output " & "(I2C control + I2S audio)");
    Build_Cycle;
 
    --  Frame i is at phase Cycles*i cycles: index the unit circle at
@@ -188,11 +188,15 @@ begin
       Estimated_Tone : Integer;   --  estimated captured frequency (Hz)
    begin
       ESP32S3.ES8311.Setup
-        (I2C_Bus => ESP32S3.I2C.I2C0,
-         Sda     => 8,  Scl   => 7,
-         Port    => ESP32S3.I2S.I2S0,
-         Mclk    => 1,  Sclk  => 2,  Lrck => 4,  Dsdin => 5,
-         Asdout  => 3,                        --  codec ADC out -> our data in
+        (I2C_Bus     => ESP32S3.I2C.I2C0,
+         Sda         => 8,
+         Scl         => 7,
+         Port        => ESP32S3.I2S.I2S0,
+         Mclk        => 1,
+         Sclk        => 2,
+         Lrck        => 4,
+         Dsdin       => 5,
+         Asdout      => 3,                        --  codec ADC out -> our data in
          Sample_Rate => Sample_Rate,
          Volume      => Dac_Volume,
          Mic_Gain_Db => Mic_Gain,
@@ -206,8 +210,8 @@ begin
          end loop;
       end if;
 
-      Put_Line ("[es8311] playing 440 Hz... (connect a speaker/headphone to "
-                & "the codec output)");
+      Put_Line
+        ("[es8311] playing 440 Hz... (connect a speaker/headphone to " & "the codec output)");
       ESP32S3.ES8311.Acquire (Audio);          --  hold the audio port
       --  Kick the gapless loop; the DMA replays Buf forever, click-free, and
       --  keeps the I2S master clock running for capture.

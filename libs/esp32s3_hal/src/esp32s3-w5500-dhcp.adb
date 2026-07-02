@@ -39,8 +39,7 @@ package body ESP32S3.W5500.DHCP is
    Off_Options : constant := 240;
 
    Boot_Reply    : constant Byte := 2;
-   Flag_Bcast_Hi : constant Byte :=
-     16#80#;   --  high byte of the BOOTP flags word
+   Flag_Bcast_Hi : constant Byte := 16#80#;   --  high byte of the BOOTP flags word
 
    --  The fixed transaction id we use for our single-client exchange, and the
    --  DHCP magic cookie (RFC 2131: 99, 130, 83, 99).  Off_Xid is where the xid
@@ -81,10 +80,8 @@ package body ESP32S3.W5500.DHCP is
          TX (Off_Flags) := Flag_Bcast_Hi;
       end if;
       TX (Off_Ciaddr .. Off_Ciaddr + 3) := Ciaddr;
-      TX (Off_Chaddr .. Off_Chaddr + 5) :=
-        MAC;                  --  chaddr = MAC
-      TX (Off_Cookie .. Off_Cookie + 3) :=
-        Cookie;               --  magic cookie
+      TX (Off_Chaddr .. Off_Chaddr + 5) := MAC;                  --  chaddr = MAC
+      TX (Off_Cookie .. Off_Cookie + 3) := Cookie;               --  magic cookie
       P := Off_Options;
       TX (P) := Opt_Msg_Type;
       TX (P + 1) := 1;
@@ -134,8 +131,7 @@ package body ESP32S3.W5500.DHCP is
       Yiaddr := Zero_IP;
       loop
          WS.Receive_From (S, FA, FP, RX, Count, Rst);
-         Count :=
-           Natural'Min (Count, RX'Length);   --  never index past RX(299)
+         Count := Natural'Min (Count, RX'Length);   --  never index past RX(299)
          --  Only trust a datagram that is a BOOTREPLY (op=2) for OUR exchange
          --  (matching xid) carrying the DHCP magic cookie; otherwise it is a
          --  stray/rogue packet on UDP/68 and is ignored.
@@ -155,11 +151,9 @@ package body ESP32S3.W5500.DHCP is
                if Code = Opt_Pad then
                   P := P + 1;
                else
-                  exit when
-                    P + 1 > Count - 1;        --  length byte must exist
+                  exit when P + 1 > Count - 1;        --  length byte must exist
                   Len := Natural (RX (P + 1));
-                  exit when
-                    P + 1 + Len > Count - 1;  --  whole option body must exist
+                  exit when P + 1 + Len > Count - 1;  --  whole option body must exist
                   case Code is
                      when Opt_Msg_Type  =>
                         if Len >= 1 then
@@ -231,8 +225,7 @@ package body ESP32S3.W5500.DHCP is
    begin
       Lease := (others => <>);
       Server := Zero_IP;
-      Configure
-        (Dev.all, MAC, Zero_IP, Zero_IP, Zero_IP);    --  0.0.0.0 for DORA
+      Configure (Dev.all, MAC, Zero_IP, Zero_IP, Zero_IP);    --  0.0.0.0 for DORA
       WS.Open_UDP (Dev, S, Socket, Client_Port, St);
       if St /= WS.OK then
          return False;
@@ -240,15 +233,11 @@ package body ESP32S3.W5500.DHCP is
       for Attempt in 1 .. Tries loop
          TX_Len := Build (Discover, MAC, Zero_IP, True, Zero_IP, Zero_IP);
          WS.Send_To (S, Bcast, Server_Port, TX (0 .. TX_Len - 1), St);
-         if St = WS.OK
-           and then Wait_Reply
-                      (S, Offer, Clock + Seconds (2), Lease, SId, Offered)
+         if St = WS.OK and then Wait_Reply (S, Offer, Clock + Seconds (2), Lease, SId, Offered)
          then
             TX_Len := Build (Request, MAC, Zero_IP, True, Offered, SId);
             WS.Send_To (S, Bcast, Server_Port, TX (0 .. TX_Len - 1), St);
-            if St = WS.OK
-              and then Wait_Reply
-                         (S, Ack, Clock + Seconds (2), Lease, SId, Offered)
+            if St = WS.OK and then Wait_Reply (S, Ack, Clock + Seconds (2), Lease, SId, Offered)
             then
                Lease.IP := Offered;
                Server := SId;
@@ -287,9 +276,7 @@ package body ESP32S3.W5500.DHCP is
       else
          WS.Send_To (S, Server, Server_Port, TX (0 .. TX_Len - 1), St);
       end if;
-      if St = WS.OK
-        and then Wait_Reply (S, Ack, Clock + Seconds (2), Lease, SId, Yi)
-      then
+      if St = WS.OK and then Wait_Reply (S, Ack, Clock + Seconds (2), Lease, SId, Yi) then
          if Yi /= Zero_IP then
             Lease.IP := Yi;
          end if;
@@ -323,14 +310,7 @@ package body ESP32S3.W5500.DHCP is
       Lease  : in out Lease_Info;
       Socket : Socket_Id := 0) return Boolean is
    begin
-      return
-        Do_Renew
-          (Dev,
-           MAC,
-           Socket,
-           Broadcast => True,
-           Server    => Zero_IP,
-           Lease     => Lease);
+      return Do_Renew (Dev, MAC, Socket, Broadcast => True, Server => Zero_IP, Lease => Lease);
    end Renew_Lease;
 
    ---------------------------------------------------------------------------
@@ -371,8 +351,7 @@ package body ESP32S3.W5500.DHCP is
       Bound_At : Time;
       Renewed  : Boolean;
    begin
-      Suspend_Until_True
-        (Go);                       --  wait until Maintain arms us
+      Suspend_Until_True (Go);                       --  wait until Maintain arms us
       loop
          --  Acquire (retrying) -- the chip ends up at 0.0.0.0 until this succeeds.
          while not Do_Acquire (M_Dev, M_MAC, M_Socket, 4, M_Lease, Server) loop
@@ -389,20 +368,16 @@ package body ESP32S3.W5500.DHCP is
             declare
                L  : constant Natural :=
                  Natural
-                   (Unsigned_32'Max
-                      (60,
-                       Unsigned_32'Min (M_Lease.Lease_Seconds, 1_000_000)));
+                   (Unsigned_32'Max (60, Unsigned_32'Min (M_Lease.Lease_Seconds, 1_000_000)));
                T1 : constant Time := Bound_At + Seconds (L / 2);
                T2 : constant Time := Bound_At + Seconds (L * 7 / 8);
                Ex : constant Time := Bound_At + Seconds (L);
             begin
                delay until T1;
-               Renewed :=
-                 Do_Renew (M_Dev, M_MAC, M_Socket, False, Server, M_Lease);
+               Renewed := Do_Renew (M_Dev, M_MAC, M_Socket, False, Server, M_Lease);
                if not Renewed then
                   delay until T2;
-                  Renewed :=
-                    Do_Renew (M_Dev, M_MAC, M_Socket, True, Server, M_Lease);
+                  Renewed := Do_Renew (M_Dev, M_MAC, M_Socket, True, Server, M_Lease);
                end if;
                if Renewed then
                   Bound_At := Clock;

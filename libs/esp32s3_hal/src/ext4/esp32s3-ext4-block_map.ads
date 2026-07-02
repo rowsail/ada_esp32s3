@@ -9,7 +9,6 @@ with ESP32S3.Ext4.Inode;
 package ESP32S3.Ext4.Block_Map is
 
    function Logical_To_Physical
-     (V : in out Volume.Context; I : Inode.Info; L_Block : U64)
-      return Block_Number;
+     (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number;
 
 end ESP32S3.Ext4.Block_Map;

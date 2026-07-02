@@ -1,5 +1,5 @@
 with Ada.Unchecked_Conversion;
-with Interfaces;  use Interfaces;
+with Interfaces; use Interfaces;
 
 package body Tlsf_Core is
 
@@ -10,9 +10,9 @@ package body Tlsf_Core is
    ---------------------------------------------------------------------------
    Align       : constant Storage_Count := 16;
    SL_Log2     : constant := 5;
-   SL_Count    : constant := 2 ** SL_Log2;       --  32 second-level lists
+   SL_Count    : constant := 2**SL_Log2;       --  32 second-level lists
    FL_Shift    : constant := SL_Log2 + 4;         --  align-log2 = 4
-   Small_Block : constant Storage_Count := 2 ** FL_Shift;   --  512
+   Small_Block : constant Storage_Count := 2**FL_Shift;   --  512
    FL_Count    : constant := 25;                  --  first-level classes
 
    ---------------------------------------------------------------------------
@@ -35,8 +35,8 @@ package body Tlsf_Core is
    type Links_Acc is access all Links;
    function To_Links is new Ada.Unchecked_Conversion (System.Address, Links_Acc);
 
-   function Round_Up (X : Storage_Count) return Storage_Count is
-     (((X + (Align - 1)) / Align) * Align);
+   function Round_Up (X : Storage_Count) return Storage_Count
+   is (((X + (Align - 1)) / Align) * Align);
 
    --  Header size -- MUST be a compile-time static (a record-Object_Size based
    --  value is elaborated into .bss and, with no adainit in this ZFP boot, never
@@ -46,10 +46,9 @@ package body Tlsf_Core is
    --  Two word-sized fields (Prev_Phys + Size) + a flag byte.  Use Address_Size
    --  for both (Storage_Count'Size is the SUBTYPE's minimal bit count, e.g. 63 on
    --  a 64-bit host -> too small); rounded to Align this is >= Hdr'Object_Size.
-   Hdr_Bytes : constant :=
+   Hdr_Bytes   : constant :=
      (2 * Standard'Address_Size + System.Storage_Unit) / System.Storage_Unit;
-   Hdr_Sz : constant Storage_Count :=
-     ((Storage_Count (Hdr_Bytes) + 15) / 16) * 16;
+   Hdr_Sz      : constant Storage_Count := ((Storage_Count (Hdr_Bytes) + 15) / 16) * 16;
    Min_Payload : constant Storage_Count := Align;   --  holds the two links
 
    ---------------------------------------------------------------------------
@@ -60,37 +59,47 @@ package body Tlsf_Core is
    --  boot having no adainit.  (The header SIZE, by contrast, had to be made a
    --  compile-time static above: a record-Object_Size constant would have been
    --  elaborated, which never runs here.)
-   Heads      : array (0 .. FL_Count - 1, 0 .. SL_Count - 1) of System.Address :=
+   Heads     : array (0 .. FL_Count - 1, 0 .. SL_Count - 1) of System.Address :=
      (others => (others => System.Null_Address));
-   FL_Bitmap  : Unsigned_32 := 0;
-   SL_Bitmap  : array (0 .. FL_Count - 1) of Unsigned_32 := (others => 0);
-   Pool_Lo    : System.Address := System.Null_Address;
-   Sentinel   : System.Address := System.Null_Address;
-   Inited     : Boolean := False;
+   FL_Bitmap : Unsigned_32 := 0;
+   SL_Bitmap : array (0 .. FL_Count - 1) of Unsigned_32 := (others => 0);
+   Pool_Lo   : System.Address := System.Null_Address;
+   Sentinel  : System.Address := System.Null_Address;
+   Inited    : Boolean := False;
 
    ---------------------------------------------------------------------------
    --  Block accessors
    ---------------------------------------------------------------------------
-   function Size_Of (B : System.Address) return Storage_Count is (To_Hdr (B).Size);
-   function Is_Free (B : System.Address) return Boolean is (To_Hdr (B).Free);
+   function Size_Of (B : System.Address) return Storage_Count
+   is (To_Hdr (B).Size);
+   function Is_Free (B : System.Address) return Boolean
+   is (To_Hdr (B).Free);
    procedure Set_Free (B : System.Address; F : Boolean) is
-   begin To_Hdr (B).Free := F; end Set_Free;
+   begin
+      To_Hdr (B).Free := F;
+   end Set_Free;
    procedure Set_Size (B : System.Address; S : Storage_Count) is
-   begin To_Hdr (B).Size := S; end Set_Size;
-   function Prev_Phys (B : System.Address) return System.Address is
-     (To_Hdr (B).Prev_Phys);
+   begin
+      To_Hdr (B).Size := S;
+   end Set_Size;
+   function Prev_Phys (B : System.Address) return System.Address
+   is (To_Hdr (B).Prev_Phys);
    procedure Set_Prev_Phys (B, P : System.Address) is
-   begin To_Hdr (B).Prev_Phys := P; end Set_Prev_Phys;
+   begin
+      To_Hdr (B).Prev_Phys := P;
+   end Set_Prev_Phys;
 
-   function Payload  (B : System.Address) return System.Address is (B + Hdr_Sz);
-   function Block_Of (P : System.Address) return System.Address is (P - Hdr_Sz);
-   function Next_Phys (B : System.Address) return System.Address is
-     (B + (Hdr_Sz + To_Hdr (B).Size));
+   function Payload (B : System.Address) return System.Address
+   is (B + Hdr_Sz);
+   function Block_Of (P : System.Address) return System.Address
+   is (P - Hdr_Sz);
+   function Next_Phys (B : System.Address) return System.Address
+   is (B + (Hdr_Sz + To_Hdr (B).Size));
 
-   function Next_Free (B : System.Address) return System.Address is
-     (To_Links (Payload (B)).Next_Free);
-   function Prev_Free (B : System.Address) return System.Address is
-     (To_Links (Payload (B)).Prev_Free);
+   function Next_Free (B : System.Address) return System.Address
+   is (To_Links (Payload (B)).Next_Free);
+   function Prev_Free (B : System.Address) return System.Address
+   is (To_Links (Payload (B)).Prev_Free);
 
    ---------------------------------------------------------------------------
    --  Bit scans (bounded loops -> O(1))
@@ -133,8 +142,7 @@ package body Tlsf_Core is
          declare
             F : constant Integer := FLS (S);
          begin
-            SL := Integer (Shift_Right (S, F - SL_Log2)
-                           and Unsigned_64 (SL_Count - 1));
+            SL := Integer (Shift_Right (S, F - SL_Log2) and Unsigned_64 (SL_Count - 1));
             FL := F - FL_Shift + 1;
          end;
       end if;
@@ -155,20 +163,18 @@ package body Tlsf_Core is
       Mapping (Size, FL, SL);
    end Mapping_Search;
 
-   function Find_Suitable (FL0, SL0 : Integer; FL, SL : out Integer)
-                           return Boolean is
-      Sl_Map : Unsigned_32 :=
-        SL_Bitmap (FL0) and Shift_Left (Unsigned_32'Last, SL0);
-      F : Integer := FL0;
+   function Find_Suitable (FL0, SL0 : Integer; FL, SL : out Integer) return Boolean is
+      Sl_Map : Unsigned_32 := SL_Bitmap (FL0) and Shift_Left (Unsigned_32'Last, SL0);
+      F      : Integer := FL0;
    begin
       if Sl_Map = 0 then
          declare
             Fl_Map : constant Unsigned_32 :=
-              (if F + 1 >= 32 then 0
-               else FL_Bitmap and Shift_Left (Unsigned_32'Last, F + 1));
+              (if F + 1 >= 32 then 0 else FL_Bitmap and Shift_Left (Unsigned_32'Last, F + 1));
          begin
             if Fl_Map = 0 then
                return False;                    --  out of memory
+
             end if;
             F := FFS (Fl_Map);
             Sl_Map := SL_Bitmap (F);
@@ -223,10 +229,10 @@ package body Tlsf_Core is
    ---------------------------------------------------------------------------
    --  helpers
    ---------------------------------------------------------------------------
-   function Align_Down (A : Integer_Address) return Integer_Address is
-     (A / Integer_Address (Align) * Integer_Address (Align));
-   function Align_Up (A : Integer_Address) return Integer_Address is
-     (Align_Down (A + Integer_Address (Align) - 1));
+   function Align_Down (A : Integer_Address) return Integer_Address
+   is (A / Integer_Address (Align) * Integer_Address (Align));
+   function Align_Up (A : Integer_Address) return Integer_Address
+   is (Align_Down (A + Integer_Address (Align) - 1));
 
    --  Split B so it keeps Want payload; the remainder becomes a free block.
    procedure Split (B : System.Address; Want : Storage_Count) is
@@ -245,7 +251,8 @@ package body Tlsf_Core is
    -- Ready --
    -----------
 
-   function Ready return Boolean is (Inited);
+   function Ready return Boolean
+   is (Inited);
 
    ----------
    -- Init --
@@ -270,9 +277,9 @@ package body Tlsf_Core is
       Set_Size (Sn, 0);
       Set_Free (Sn, False);
 
-      Pool_Lo  := Lo;
+      Pool_Lo := Lo;
       Sentinel := Sn;
-      Inited   := True;
+      Inited := True;
       Insert_Free (B0);
    end Init;
 
@@ -281,11 +288,11 @@ package body Tlsf_Core is
    --------------
 
    function Allocate (N : Storage_Count) return System.Address is
-      Adj    : constant Storage_Count :=
+      Adj              : constant Storage_Count :=
         (if Round_Up (N) < Min_Payload then Min_Payload else Round_Up (N));
-      Sz     : Storage_Count := Adj;
+      Sz               : Storage_Count := Adj;
       FL0, SL0, FL, SL : Integer;
-      B      : System.Address;
+      B                : System.Address;
    begin
       if N = 0 or else not Inited then
          return System.Null_Address;
@@ -293,6 +300,7 @@ package body Tlsf_Core is
       Mapping_Search (Sz, FL0, SL0);
       if not Find_Suitable (FL0, SL0, FL, SL) then
          return System.Null_Address;            --  OOM
+
       end if;
       B := Heads (FL, SL);
       Remove_Free (B);
@@ -319,7 +327,8 @@ package body Tlsf_Core is
       Set_Free (B, True);
 
       Nx := Next_Phys (B);                       --  coalesce forward
-      if Is_Free (Nx) then                       --  sentinel is used, so safe
+      if Is_Free (Nx) then
+         --  sentinel is used, so safe
          Remove_Free (Nx);
          Set_Size (B, Size_Of (B) + Hdr_Sz + Size_Of (Nx));
          Set_Prev_Phys (Next_Phys (B), B);
@@ -340,8 +349,7 @@ package body Tlsf_Core is
    -- Reallocate --
    ----------------
 
-   function Reallocate (P : System.Address; N : Storage_Count)
-                        return System.Address is
+   function Reallocate (P : System.Address; N : Storage_Count) return System.Address is
       B  : System.Address;
       Np : System.Address;
    begin
@@ -359,8 +367,10 @@ package body Tlsf_Core is
       Np := Allocate (N);
       if Np /= System.Null_Address then
          declare
-            Src : Storage_Array (1 .. Size_Of (B)) with Import, Address => P;
-            Dst : Storage_Array (1 .. Size_Of (B)) with Import, Address => Np;
+            Src : Storage_Array (1 .. Size_Of (B))
+            with Import, Address => P;
+            Dst : Storage_Array (1 .. Size_Of (B))
+            with Import, Address => Np;
          begin
             Dst := Src;
          end;
@@ -374,9 +384,9 @@ package body Tlsf_Core is
    ---------------------
 
    function Invariants_Hold return Boolean is
-      B     : System.Address := Pool_Lo;
-      Prev  : System.Address := System.Null_Address;
-      Nx    : System.Address;
+      B    : System.Address := Pool_Lo;
+      Prev : System.Address := System.Null_Address;
+      Nx   : System.Address;
    begin
       if not Inited then
          return False;
@@ -395,11 +405,13 @@ package body Tlsf_Core is
          end if;
          if Is_Free (B) and then Nx /= Sentinel and then Is_Free (Nx) then
             return False;                         --  adjacent free => not coalesced
+
          end if;
          Prev := B;
          B := Nx;
       end loop;
-      return Prev_Phys (Sentinel) = Prev
+      return
+        Prev_Phys (Sentinel) = Prev
         and then Size_Of (Sentinel) = 0
         and then not Is_Free (Sentinel);
    end Invariants_Hold;

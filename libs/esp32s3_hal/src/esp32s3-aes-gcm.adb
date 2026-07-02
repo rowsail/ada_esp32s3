@@ -20,8 +20,7 @@ package body ESP32S3.AES.GCM is
    begin
       for I in 0 .. 127 loop
          --  bit i of X, most-significant bit first
-         if (X (I / 8) and Interfaces.Shift_Right (U8'(16#80#), I mod 8)) /= 0
-         then
+         if (X (I / 8) and Interfaces.Shift_Right (U8'(16#80#), I mod 8)) /= 0 then
             for J in Blk'Range loop
                Z (J) := Z (J) xor V (J);
             end loop;
@@ -30,8 +29,7 @@ package body ESP32S3.AES.GCM is
          Lsb := V (15) and 1;
          for J in reverse 1 .. 15 loop
             V (J) :=
-              Interfaces.Shift_Right (V (J), 1)
-              or Interfaces.Shift_Left (V (J - 1) and 1, 7);
+              Interfaces.Shift_Right (V (J), 1) or Interfaces.Shift_Left (V (J - 1) and 1, 7);
          end loop;
          V (0) := Interfaces.Shift_Right (V (0), 1);
          if Lsb = 1 then
@@ -66,13 +64,10 @@ package body ESP32S3.AES.GCM is
    end GHASH_Bytes;
 
    --  The trailing length block: bit-lengths of AAD and ciphertext, 64-bit BE each.
-   procedure GHASH_Lengths (Y : in out Blk; AAD_Len, C_Len : Natural; H : Blk)
-   is
+   procedure GHASH_Lengths (Y : in out Blk; AAD_Len, C_Len : Natural; H : Blk) is
       L      : Blk := (others => 0);
-      A_Bits : constant Interfaces.Unsigned_64 :=
-        Interfaces.Unsigned_64 (AAD_Len) * 8;
-      C_Bits : constant Interfaces.Unsigned_64 :=
-        Interfaces.Unsigned_64 (C_Len) * 8;
+      A_Bits : constant Interfaces.Unsigned_64 := Interfaces.Unsigned_64 (AAD_Len) * 8;
+      C_Bits : constant Interfaces.Unsigned_64 := Interfaces.Unsigned_64 (C_Len) * 8;
    begin
       for J in 0 .. 7 loop
          L (7 - J) := U8 (Interfaces.Shift_Right (A_Bits, 8 * J) and 16#FF#);
@@ -95,9 +90,7 @@ package body ESP32S3.AES.GCM is
    end Inc32;
 
    --  Cipher := Plain xor AES-CTR keystream starting at inc32 (J0).
-   procedure CTR
-     (Key : Key_Bytes; J0 : Blk; Src : Byte_Array; Dst : out Byte_Array)
-   is
+   procedure CTR (Key : Key_Bytes; J0 : Blk; Src : Byte_Array; Dst : out Byte_Array) is
       CB  : Blk := J0;
       KS  : Blk;
       Off : Natural := 0;

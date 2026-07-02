@@ -63,7 +63,8 @@ begin
    --  caught in the same block.
    Put_Line ("[1] local handling:");
    declare
-      Zero : Integer := 0 with Volatile;   --  Volatile -> read (and checked) at
+      Zero : Integer := 0
+      with Volatile;   --  Volatile -> read (and checked) at
       X    : Positive;                      --  run time, not folded away
    begin
       X := Zero;                            --  0 is not in Positive -> raises
@@ -80,8 +81,8 @@ begin
       Put_Line ("    unreachable");
    exception
       when E : Sensor_Fault =>
-         Put_Line ("    caught from Inner: " & Exception_Name (E)
-                   & " (" & Exception_Message (E) & ")");
+         Put_Line
+           ("    caught from Inner: " & Exception_Name (E) & " (" & Exception_Message (E) & ")");
    end;
 
    --  [3] RE-RAISE: an inner handler does local cleanup, then `raise;` passes

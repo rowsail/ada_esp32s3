@@ -7,10 +7,8 @@ package body ESP32S3.MAC is
 
    function Base return MAC_Address is
       --  BLOCK1: low 32 bits in RD_MAC_SPI_SYS_0, high 16 bits in *_1.MAC_1.
-      M0 : constant Unsigned_32 :=
-        Unsigned_32 (EF.EFUSE_Periph.RD_MAC_SPI_SYS_0);
-      M1 : constant Unsigned_32 :=
-        Unsigned_32 (EF.EFUSE_Periph.RD_MAC_SPI_SYS_1.MAC_1);
+      M0 : constant Unsigned_32 := Unsigned_32 (EF.EFUSE_Periph.RD_MAC_SPI_SYS_0);
+      M1 : constant Unsigned_32 := Unsigned_32 (EF.EFUSE_Periph.RD_MAC_SPI_SYS_1.MAC_1);
    begin
       return
         (0 => Unsigned_8 (Shift_Right (M1, 8) and 16#FF#),
@@ -24,8 +22,7 @@ package body ESP32S3.MAC is
    function Derived (Offset : Interfaces.Unsigned_8) return MAC_Address is
       A : MAC_Address := Base;
    begin
-      A (5) :=
-        A (5) + Offset;   --  byte-wise: the factory block reserves low bits
+      A (5) := A (5) + Offset;   --  byte-wise: the factory block reserves low bits
       return A;
    end Derived;
 

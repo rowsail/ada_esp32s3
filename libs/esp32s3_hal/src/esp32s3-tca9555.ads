@@ -107,37 +107,25 @@ package ESP32S3.TCA9555 is
 
    --  Pin direction.  In Inputs, a 1 bit makes that pin an input (the chip's
    --  power-on default), a 0 bit an output.  One transaction.
-   procedure Set_Directions
-     (S : Session; Inputs : Port_Value; Result : out Status);
-   procedure Set_Direction
-     (S : Session; Pin : Pin_Number; Dir : Direction; Result : out Status);
+   procedure Set_Directions (S : Session; Inputs : Port_Value; Result : out Status);
+   procedure Set_Direction (S : Session; Pin : Pin_Number; Dir : Direction; Result : out Status);
 
    --  Drive the output register.  Write_Pin is a read-modify-write (two bus
    --  transactions, safe because the Session is held).
    procedure Write_Port (S : Session; Value : Port_Value; Result : out Status);
-   procedure Write_Pin
-     (S : Session; Pin : Pin_Number; State : Pin_State; Result : out Status);
+   procedure Write_Pin (S : Session; Pin : Pin_Number; State : Pin_State; Result : out Status);
 
    --  Read back the direction (config) and output registers (what was last set).
-   procedure Read_Directions
-     (S : Session; Inputs : out Port_Value; Result : out Status);
-   procedure Read_Outputs
-     (S : Session; Value : out Port_Value; Result : out Status);
-   procedure Read_Polarity
-     (S : Session; Inverted : out Port_Value; Result : out Status);
+   procedure Read_Directions (S : Session; Inputs : out Port_Value; Result : out Status);
+   procedure Read_Outputs (S : Session; Value : out Port_Value; Result : out Status);
+   procedure Read_Polarity (S : Session; Inverted : out Port_Value; Result : out Status);
 
    --  Sample the input register (the actual pin levels, including driven outputs).
-   procedure Read_Port
-     (S : Session; Value : out Port_Value; Result : out Status);
-   procedure Read_Pin
-     (S      : Session;
-      Pin    : Pin_Number;
-      State  : out Pin_State;
-      Result : out Status);
+   procedure Read_Port (S : Session; Value : out Port_Value; Result : out Status);
+   procedure Read_Pin (S : Session; Pin : Pin_Number; State : out Pin_State; Result : out Status);
 
    --  Input polarity inversion: a 1 bit inverts that input's reported level.
-   procedure Set_Polarity
-     (S : Session; Inverted : Port_Value; Result : out Status);
+   procedure Set_Polarity (S : Session; Inverted : Port_Value; Result : out Status);
 
 private
    type Device is record

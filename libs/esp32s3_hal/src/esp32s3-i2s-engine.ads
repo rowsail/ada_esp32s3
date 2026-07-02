@@ -42,8 +42,7 @@ private package ESP32S3.I2S.Engine is
    --  leave it running: the buffer is replayed forever with no inter-buffer
    --  gap (gapless).  Returns immediately; Stop halts it.  Tx in internal SRAM,
    --  Length 1 .. 4095, and Tx should hold a whole number of wave periods.
-   procedure Start_Continuous
-     (B : in out Bus; Tx : System.Address; Length : Natural);
+   procedure Start_Continuous (B : in out Bus; Tx : System.Address; Length : Natural);
 
    --  Stop a continuous transmit (TX clock off) and release its held channel.
    procedure Stop (B : in out Bus);

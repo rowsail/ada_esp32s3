@@ -34,8 +34,7 @@ package body ESP32S3.ST7789 is
    --  dump that any host may share).  Each DMA Transfer is <= 4095 bytes.
    ---------------------------------------------------------------------------
 
-   Chunk  : constant :=
-     4092;             --  <= 4095, even (whole RGB565 pixels)
+   Chunk  : constant := 4092;             --  <= 4095, even (whole RGB565 pixels)
    type Buffer is array (0 .. Chunk - 1) of Byte;
    Tx_Buf : array (ESP32S3.SPI.SPI_Host) of Buffer;
    Rx_Buf : Buffer;
@@ -71,14 +70,12 @@ package body ESP32S3.ST7789 is
    procedure Check_Owned (S : Session) is
    begin
       if not S.Active then
-         raise Not_Owned
-           with "ST7789 used without holding it -- Acquire first";
+         raise Not_Owned with "ST7789 used without holding it -- Acquire first";
       end if;
    end Check_Owned;
 
    --  Shift N bytes of Tx_Buf out (MISO captured into the ignored Rx_Buf).
-   procedure Send
-     (Bus : ESP32S3.SPI.Session; Host : ESP32S3.SPI.SPI_Host; N : Natural) is
+   procedure Send (Bus : ESP32S3.SPI.Session; Host : ESP32S3.SPI.SPI_Host; N : Natural) is
    begin
       if N > 0 then
          ESP32S3.SPI.Transfer (Bus, Tx_Buf (Host)'Address, Rx_Buf'Address, N);
@@ -110,8 +107,7 @@ package body ESP32S3.ST7789 is
    procedure Command (S : Session; C : Byte; Params : Bytes := No_Params) is
       Bus : ESP32S3.SPI.Session;
    begin
-      ESP32S3.SPI.Acquire
-        (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
+      ESP32S3.SPI.Acquire (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
       ESP32S3.GPIO.Clear (S.CS);
       Cmd1 (Bus, S, C);
       Dat (Bus, S, Params);
@@ -119,30 +115,16 @@ package body ESP32S3.ST7789 is
    end Command;                              --  Bus released here
 
    --  Set the address window (with the panel offsets applied).
-   procedure Window
-     (Bus : ESP32S3.SPI.Session; S : Session; X0, Y0, X1, Y1 : Natural)
-   is
+   procedure Window (Bus : ESP32S3.SPI.Session; S : Session; X0, Y0, X1, Y1 : Natural) is
       AX0 : constant Natural := X0 + S.X_Off;
       AX1 : constant Natural := X1 + S.X_Off;
       AY0 : constant Natural := Y0 + S.Y_Off;
       AY1 : constant Natural := Y1 + S.Y_Off;
    begin
       Cmd1 (Bus, S, Cmd_CASET);
-      Dat
-        (Bus,
-         S,
-         (Byte (AX0 / 256),
-          Byte (AX0 mod 256),
-          Byte (AX1 / 256),
-          Byte (AX1 mod 256)));
+      Dat (Bus, S, (Byte (AX0 / 256), Byte (AX0 mod 256), Byte (AX1 / 256), Byte (AX1 mod 256)));
       Cmd1 (Bus, S, Cmd_RASET);
-      Dat
-        (Bus,
-         S,
-         (Byte (AY0 / 256),
-          Byte (AY0 mod 256),
-          Byte (AY1 / 256),
-          Byte (AY1 mod 256)));
+      Dat (Bus, S, (Byte (AY0 / 256), Byte (AY0 mod 256), Byte (AY1 / 256), Byte (AY1 mod 256)));
    end Window;
 
    -----------
@@ -178,16 +160,14 @@ package body ESP32S3.ST7789 is
       ESP32S3.GPIO.Configure (CS, Mode => ESP32S3.GPIO.Output);
       ESP32S3.GPIO.Set (CS);
       if RST /= ESP32S3.GPIO.No_Pin then
-         ESP32S3.GPIO.Configure
-           (ESP32S3.GPIO.Pin_Id (RST), Mode => ESP32S3.GPIO.Output);
+         ESP32S3.GPIO.Configure (ESP32S3.GPIO.Pin_Id (RST), Mode => ESP32S3.GPIO.Output);
          ESP32S3.GPIO.Set (ESP32S3.GPIO.Pin_Id (RST));
       end if;
 
       --  SPI host: route SCLK/MOSI only (CS/DC driven above, MISO unused).
       --  Mode and clock are this display's; applied per hold at Acquire.
       ESP32S3.SPI.Setup (Host);
-      ESP32S3.SPI.Configure_Pins
-        (Host, Sclk => Sclk, Mosi => Mosi, Miso => ESP32S3.SPI.No_Pin);
+      ESP32S3.SPI.Configure_Pins (Host, Sclk => Sclk, Mosi => Mosi, Miso => ESP32S3.SPI.No_Pin);
    end Setup;
 
    -------------------------
@@ -199,8 +179,7 @@ package body ESP32S3.ST7789 is
       if not Dev.Configured then
          raise Not_Initialized with "ST7789 acquired before Setup";
       end if;
-      Guards (Natural (Dev.CS))
-        .Acquire;     --  suspends until this display free
+      Guards (Natural (Dev.CS)).Acquire;     --  suspends until this display free
       S.Active := True;
       S.Host := Dev.Host;
       S.Mode := Dev.Mode;
@@ -324,8 +303,7 @@ package body ESP32S3.ST7789 is
          return;
       end if;
 
-      ESP32S3.SPI.Acquire
-        (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
+      ESP32S3.SPI.Acquire (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
       ESP32S3.GPIO.Clear (S.CS);
       Window (Bus, S, X, Y, X + RW - 1, Y + RH - 1);
       Cmd1 (Bus, S, Cmd_RAMWR);
@@ -375,9 +353,7 @@ package body ESP32S3.ST7789 is
    -- Draw_Bitmap --
    -----------------
 
-   procedure Draw_Bitmap
-     (S : Session; X, Y, W, H : Natural; Pixels : Color_Array)
-   is
+   procedure Draw_Bitmap (S : Session; X, Y, W, H : Natural; Pixels : Color_Array) is
       Bus : ESP32S3.SPI.Session;
       PPC : constant Natural := Chunk / 2;
       --  Clip to the panel and draw ONLY the visible sub-rectangle.  The source
@@ -385,18 +361,15 @@ package body ESP32S3.ST7789 is
       --  the off-panel tail of every row: streaming Pixels linearly into an
       --  oversized window (X+W-1 past the right edge) would wrap the controller's
       --  RAMWR auto-increment and corrupt GRAM (the panel is only S.W columns).
-      VW  : constant Natural :=
-        (if X >= S.W then 0 else Natural'Min (W, S.W - X));
-      VH  : constant Natural :=
-        (if Y >= S.H then 0 else Natural'Min (H, S.H - Y));
+      VW  : constant Natural := (if X >= S.W then 0 else Natural'Min (W, S.W - X));
+      VH  : constant Natural := (if Y >= S.H then 0 else Natural'Min (H, S.H - Y));
    begin
       Check_Owned (S);
       if W = 0 or else H = 0 or else VW = 0 or else VH = 0 then
          return;
       end if;
 
-      ESP32S3.SPI.Acquire
-        (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
+      ESP32S3.SPI.Acquire (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
       ESP32S3.GPIO.Clear (S.CS);
       Window (Bus, S, X, Y, X + VW - 1, Y + VH - 1);   --  visible rect only
       Cmd1 (Bus, S, Cmd_RAMWR);
@@ -409,21 +382,16 @@ package body ESP32S3.ST7789 is
             Row_Start : constant Natural := Pixels'First + Row * W;
             Col       : Natural := 0;
          begin
-            exit when
-              Row_Start > Pixels'Last;        --  short array: stop cleanly
+            exit when Row_Start > Pixels'Last;        --  short array: stop cleanly
             while Col < VW loop
                declare
                   N : constant Natural :=
-                    Natural'Min
-                      (Natural'Min (VW - Col, PPC),
-                       Pixels'Last - (Row_Start + Col) + 1);
+                    Natural'Min (Natural'Min (VW - Col, PPC), Pixels'Last - (Row_Start + Col) + 1);
                begin
                   exit when N = 0;
                   for K in 0 .. N - 1 loop
-                     Tx_Buf (S.Host) (2 * K) :=
-                       Byte (Pixels (Row_Start + Col + K) / 256);
-                     Tx_Buf (S.Host) (2 * K + 1) :=
-                       Byte (Pixels (Row_Start + Col + K) mod 256);
+                     Tx_Buf (S.Host) (2 * K) := Byte (Pixels (Row_Start + Col + K) / 256);
+                     Tx_Buf (S.Host) (2 * K + 1) := Byte (Pixels (Row_Start + Col + K) mod 256);
                   end loop;
                   Send (Bus, S.Host, N * 2);
                   Col := Col + N;
