@@ -76,9 +76,9 @@ procedure Main is
    Lease      : ESP32S3.W5500.DHCP.Lease_Info;
    DNS_Server : Inet_Addr_Type;
    Server_IP  : Inet_Addr_Type;
-   S          : FTP_Client.Session;
-   St         : FTP_Client.Status;
-   Sz         : Natural;
+   Session    : FTP_Client.Session;
+   Result     : FTP_Client.Status;
+   Size       : Natural;
 begin
    delay until Clock + Milliseconds (200);
    Put_Line ("[ftp] real-world FTP client -> " & Host & " (anonymous)");
@@ -106,16 +106,16 @@ begin
    Put_Line ("[ftp] " & Host & " = " & Image (Server_IP));
 
    FTP_Client.Connect
-     (S,
+     (Session,
       Host     => Server_IP,
       User     => User,
       Password => Pass,
-      Result   => St,
+      Result   => Result,
       Port     => FTP_Port,
       Timeout  => Op_Timeout);
-   if St /= FTP_Client.OK then
+   if Result /= FTP_Client.OK then
       Put ("[ftp] connect/login failed: ");
-      Put_Line (St'Image);
+      Put_Line (Result'Image);
       loop
          delay until Clock + Park;
       end loop;
@@ -123,28 +123,29 @@ begin
    Put_Line ("[ftp] logged in.");
 
    --  SIZE + download a file, counting bytes (compare to SIZE for a sanity check).
-   FTP_Client.File_Size (S, Get_Path, Sz, St);
-   if St = FTP_Client.OK then
+   FTP_Client.File_Size (Session, Get_Path, Size, Result);
+   if Result = FTP_Client.OK then
       Put ("[ftp] SIZE " & Get_Path & " = ");
-      Put (Sz);
+      Put (Size);
       Put_Line (" bytes");
    end if;
 
    FTP_Sinks.Reset_Count;
-   FTP_Client.Retrieve (S, Get_Path, FTP_Sinks.Count_Chunk'Access, System.Null_Address, St);
+   FTP_Client.Retrieve
+     (Session, Get_Path, FTP_Sinks.Count_Chunk'Access, System.Null_Address, Result);
    Put ("[ftp] RETR " & Get_Path & ": ");
    Put (FTP_Sinks.Bytes_Seen);
    Put (" bytes received, result ");
-   Put_Line (St'Image);
+   Put_Line (Result'Image);
 
    --  List the root directory.
    Put_Line ("[ftp] --- NLST / ---");
-   FTP_Client.List (S, FTP_Sinks.Put_Chunk'Access, System.Null_Address, St, Path => "/");
+   FTP_Client.List (Session, FTP_Sinks.Put_Chunk'Access, System.Null_Address, Result, Path => "/");
    New_Line;
    Put ("[ftp] list result: ");
-   Put_Line (St'Image);
+   Put_Line (Result'Image);
 
-   FTP_Client.Quit (S);
+   FTP_Client.Quit (Session);
    Put_Line ("[ftp] done.");
 
    loop

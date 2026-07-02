@@ -318,8 +318,8 @@ procedure Main is
 
    Y_Exp : constant Word_Array (0 .. 63) := (0 => Public_Exponent_F4, others => 0);
 
-   Z  : Word_Array (0 .. 63);
-   Ok : Boolean;
+   Result : Word_Array (0 .. 63);
+   Ok     : Boolean;
 
    function Eq (A, B : Word_Array) return Boolean is
    begin
@@ -337,19 +337,19 @@ begin
    Put_Line ("[rsa] ESP32-S3 RSA accelerator KAT (X^65537 mod M, 2048-bit)");
 
    --  (1) HW modexp with a host-precomputed Montgomery constant R^2.
-   Mod_Exp (X => X_Base, Y => Y_Exp, M => M_Mod, R2 => R2, Z => Z, Ok => Ok);
+   Mod_Exp (X => X_Base, Y => Y_Exp, M => M_Mod, R2 => R2, Z => Result, Ok => Ok);
    if not Ok then
       Put_Line ("[rsa] host-R2 : hardware did not complete (timeout)");
    else
-      Put_Line ("[rsa] host-R2 : " & (if Eq (Z, Z_Want) then "PASS" else "FAIL"));
+      Put_Line ("[rsa] host-R2 : " & (if Eq (Result, Z_Want) then "PASS" else "FAIL"));
    end if;
 
    --  (2) Same, but R^2 computed in software -- works on any modulus (e.g. a cert).
-   Mod_Exp (X => X_Base, Y => Y_Exp, M => M_Mod, Z => Z, Ok => Ok);
+   Mod_Exp (X => X_Base, Y => Y_Exp, M => M_Mod, Z => Result, Ok => Ok);
    if not Ok then
       Put_Line ("[rsa] soft-R2 : hardware did not complete (timeout)");
    else
-      Put_Line ("[rsa] soft-R2 : " & (if Eq (Z, Z_Want) then "PASS" else "FAIL"));
+      Put_Line ("[rsa] soft-R2 : " & (if Eq (Result, Z_Want) then "PASS" else "FAIL"));
    end if;
    Put_Line ("[rsa] done");
 

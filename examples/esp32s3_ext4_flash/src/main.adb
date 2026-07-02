@@ -99,13 +99,13 @@ procedure Main is
    end Drain;
 
    procedure Print_Text (Buf : Byte_Array; Last : Natural) is
-      Line : String (1 .. 60);
-      N    : Natural := 0;
+      Line  : String (1 .. 60);
+      Count : Natural := 0;
       procedure End_Line is
       begin
-         if N > 0 then
-            Log.Put (Line (1 .. N));
-            N := 0;
+         if Count > 0 then
+            Log.Put (Line (1 .. Count));
+            Count := 0;
          end if;
          Log.New_Line;
          Drain;
@@ -113,35 +113,35 @@ procedure Main is
    begin
       for I in 0 .. Last - 1 loop
          declare
-            C : constant Character := Character'Val (Natural (Buf (I)));
+            Ch : constant Character := Character'Val (Natural (Buf (I)));
          begin
-            if C = ASCII.LF then
+            if Ch = ASCII.LF then
                End_Line;
             else
-               N := N + 1;
-               Line (N) := (if Character'Pos (C) in 32 .. 126 then C else '.');
-               if N = Line'Last then
+               Count := Count + 1;
+               Line (Count) := (if Character'Pos (Ch) in 32 .. 126 then Ch else '.');
+               if Count = Line'Last then
                   --  flush a very long line in pieces
                   Log.Put (Line);
-                  N := 0;
+                  Count := 0;
                   Drain;
                end if;
             end if;
          end;
       end loop;
-      if N > 0 then
+      if Count > 0 then
          End_Line;
       end if;
    end Print_Text;
 
    --  A Byte_Array holding the bytes of Str (for Write_File).
    function To_Bytes (Str : String) return Byte_Array is
-      B : Byte_Array (0 .. Str'Length - 1);
+      Bytes : Byte_Array (0 .. Str'Length - 1);
    begin
-      for I in B'Range loop
-         B (I) := Interfaces.Unsigned_8 (Character'Pos (Str (Str'First + I)));
+      for I in Bytes'Range loop
+         Bytes (I) := Interfaces.Unsigned_8 (Character'Pos (Str (Str'First + I)));
       end loop;
-      return B;
+      return Bytes;
    end To_Bytes;
 
    --  Read one file by path and print its contents.
@@ -237,19 +237,19 @@ begin
          --  back to 2000, and confirm the re-exposed gap [100 .. 2000) reads as
          --  zeros (POSIX) rather than the stale 0xAA the old code left behind.
          declare
-            TN    : ESP32S3.Ext4.Inode_Number;
-            TI    : ESP32S3.Ext4.Inode.Info;
-            Big   : constant Byte_Array (0 .. 4999) := (others => 16#AA#);
-            Back  : Byte_Array (0 .. 1999);
-            BLast : Natural;
-            Pass  : Boolean := True;
+            Trunc_Inode : ESP32S3.Ext4.Inode_Number;
+            Trunc_Info  : ESP32S3.Ext4.Inode.Info;
+            Big         : constant Byte_Array (0 .. 4999) := (others => 16#AA#);
+            Back        : Byte_Array (0 .. 1999);
+            BLast       : Natural;
+            Pass        : Boolean := True;
          begin
-            TN := Mnt.Create_File ("/", "trunc.bin");
-            Mnt.Write_File (TN, Big);
-            Mnt.Truncate (TN, 100);      --  shrink into block 0 (non-aligned)
-            Mnt.Truncate (TN, 2000);     --  re-extend, still within block 0
-            Mnt.Stat (TN, TI);
-            Mnt.Read_File (TI, 0, Back, BLast);
+            Trunc_Inode := Mnt.Create_File ("/", "trunc.bin");
+            Mnt.Write_File (Trunc_Inode, Big);
+            Mnt.Truncate (Trunc_Inode, 100);      --  shrink into block 0 (non-aligned)
+            Mnt.Truncate (Trunc_Inode, 2000);     --  re-extend, still within block 0
+            Mnt.Stat (Trunc_Inode, Trunc_Info);
+            Mnt.Read_File (Trunc_Info, 0, Back, BLast);
             if BLast < 2000 then
                Pass := False;            --  file did not grow back
 

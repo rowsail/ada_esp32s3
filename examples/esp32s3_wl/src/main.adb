@@ -78,12 +78,12 @@ procedure Main is
 
    --  A pattern unique to each logical sector.
    function Pattern (LBA : Sector_Index) return Sector is
-      S : Sector;
+      Result : Sector;
    begin
-      for I in S'Range loop
-         S (I) := Unsigned_8 ((Natural (LBA) * 7 + I * 3 + 16#5A#) mod 256);
+      for I in Result'Range loop
+         Result (I) := Unsigned_8 ((Natural (LBA) * 7 + I * 3 + 16#5A#) mod 256);
       end loop;
-      return S;
+      return Result;
    end Pattern;
 
    --  Read LBA 0 .. N_Sectors-1 from Target and check each against Pattern.

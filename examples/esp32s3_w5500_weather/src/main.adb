@@ -70,7 +70,7 @@ procedure Main is
    --  TCP port for plain HTTP (the API has no TLS endpoint the W5500 could use).
    Server_Port : constant Port_Type := 80;
 
-   DQ : constant String := (1 => '"');                     --  one double-quote
+   Quote : constant String := (1 => '"');                     --  one double-quote
 
    Sock      : Socket_Type;             --  the client TCP socket
    Server_IP : Inet_Addr_Type;          --  Host_Name resolved to an IPv4 address
@@ -86,12 +86,12 @@ procedure Main is
    Resp_Len : Natural := 0;            --  bytes of Resp actually filled
 
    function To_SEA (S : String) return Stream_Element_Array is
-      R : Stream_Element_Array (1 .. S'Length);
+      Result : Stream_Element_Array (1 .. S'Length);
    begin
       for I in S'Range loop
-         R (Stream_Element_Offset (I - S'First) + 1) := Character'Pos (S (I));
+         Result (Stream_Element_Offset (I - S'First) + 1) := Character'Pos (S (I));
       end loop;
-      return R;
+      return Result;
    end To_SEA;
 
    --  Plain substring search (independent of the runtime's Ada.Strings).  Returns
@@ -113,28 +113,28 @@ procedure Main is
    --  the response from From.  Numbers are returned verbatim; a quoted string is
    --  returned without its quotes.  "" if the key is not found.
    function Field (Key : String; From : Positive) return String is
-      P, I, Start : Natural;
+      Pos, Index, Start : Natural;
    begin
-      P := Find (Resp (1 .. Resp_Len), Key, From);
-      if P = 0 then
+      Pos := Find (Resp (1 .. Resp_Len), Key, From);
+      if Pos = 0 then
          return "";
       end if;
-      I := P + Key'Length;
-      if I <= Resp_Len and then Resp (I) = '"' then
+      Index := Pos + Key'Length;
+      if Index <= Resp_Len and then Resp (Index) = '"' then
          --  quoted string value
-         I := I + 1;
-         Start := I;
-         while I <= Resp_Len and then Resp (I) /= '"' loop
-            I := I + 1;
+         Index := Index + 1;
+         Start := Index;
+         while Index <= Resp_Len and then Resp (Index) /= '"' loop
+            Index := Index + 1;
          end loop;
       else
          --  bare number
-         Start := I;
-         while I <= Resp_Len and then Resp (I) /= ',' and then Resp (I) /= '}' loop
-            I := I + 1;
+         Start := Index;
+         while Index <= Resp_Len and then Resp (Index) /= ',' and then Resp (Index) /= '}' loop
+            Index := Index + 1;
          end loop;
       end if;
-      return Resp (Start .. I - 1);
+      return Resp (Start .. Index - 1);
    end Field;
 
    --  WMO weather interpretation code -> a short description.
@@ -239,16 +239,17 @@ begin
    --  Scrape the current_weather object.  Anchor at it first: the JSON also carries
    --  a current_weather_units object whose "temperature" etc. are unit *strings*.
    declare
-      CW    : constant Natural := Find (Resp (1 .. Resp_Len), DQ & "current_weather" & DQ & ":");
-      At_CW : constant Positive := (if CW = 0 then 1 else CW);
+      Weather_Pos : constant Natural :=
+        Find (Resp (1 .. Resp_Len), Quote & "current_weather" & Quote & ":");
+      Anchor      : constant Positive := (if Weather_Pos = 0 then 1 else Weather_Pos);
 
-      Temp : constant String := Field (DQ & "temperature" & DQ & ":", At_CW);
-      Wind : constant String := Field (DQ & "windspeed" & DQ & ":", At_CW);
-      Dir  : constant String := Field (DQ & "winddirection" & DQ & ":", At_CW);
-      Code : constant String := Field (DQ & "weathercode" & DQ & ":", At_CW);
-      Tim  : constant String := Field (DQ & "time" & DQ & ":", At_CW);
+      Temp : constant String := Field (Quote & "temperature" & Quote & ":", Anchor);
+      Wind : constant String := Field (Quote & "windspeed" & Quote & ":", Anchor);
+      Dir  : constant String := Field (Quote & "winddirection" & Quote & ":", Anchor);
+      Code : constant String := Field (Quote & "weathercode" & Quote & ":", Anchor);
+      Tim  : constant String := Field (Quote & "time" & Quote & ":", Anchor);
    begin
-      if CW = 0 or else Temp = "" then
+      if Weather_Pos = 0 or else Temp = "" then
          Put_Line ("[wx] could not parse the forecast (response below)");
          Put_Line (Resp (1 .. Resp_Len));
       else

@@ -17,7 +17,7 @@
 --    authenticated and recovered P; any mismatch prints FAIL on that line.
 --
 --  Hardware
---    None (self-contained) â vectors are baked in; no external parts or wiring.
+--    None (self-contained) Ã¢ÂÂ vectors are baked in; no external parts or wiring.
 --
 --  Vector legend (per case N): KN=key, IVN=nonce, AN=AAD (authenticated, not
 --    encrypted), PN=plaintext, CN=expected ciphertext, TN=expected auth tag.
@@ -346,21 +346,21 @@ procedure Main is
    procedure Case_AEAD
      (Name : String; Key : Key_Bytes; IV : Nonce; AAD, P, C_Want, T_Want : Byte_Array)
    is
-      C     : Byte_Array (0 .. P'Length - 1);   --  ciphertext produced by Encrypt
-      P_Got : Byte_Array (0 .. P'Length - 1);   --  plaintext recovered by Decrypt
-      T     : Auth_Tag;                          --  tag produced by Encrypt
-      Ok    : Boolean;                           --  Decrypt's tag-authentication result
+      Cipher : Byte_Array (0 .. P'Length - 1);   --  ciphertext produced by Encrypt
+      P_Got  : Byte_Array (0 .. P'Length - 1);   --  plaintext recovered by Decrypt
+      Tag    : Auth_Tag;                          --  tag produced by Encrypt
+      Ok     : Boolean;                           --  Decrypt's tag-authentication result
    begin
       --  Encrypt our P and check it reproduces the expected C/T; separately decrypt
       --  the expected C_Want/T_Want so the decrypt path is tested against the vector
       --  (not merely round-tripped against our own Encrypt output).
-      Encrypt (Key, IV, AAD, P, C, T);
+      Encrypt (Key, IV, AAD, P, Cipher, Tag);
       Decrypt (Key, IV, AAD, C_Want, T_Want, P_Got, Ok);
       Put_Line
         ("[gcm] "
          & Name
          & " : "
-         & (if Eq (C, C_Want) and then Eq (T, T_Want) and then Ok and then Eq (P_Got, P)
+         & (if Eq (Cipher, C_Want) and then Eq (Tag, T_Want) and then Ok and then Eq (P_Got, P)
             then "PASS"
             else "FAIL"));
    end Case_AEAD;

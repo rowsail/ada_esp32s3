@@ -81,37 +81,37 @@ package body Lisp_HAL is
    --  (spi-xfer HANDLE BYTES): full-duplex transfer; BYTES is a list of 0..255,
    --  returns the received bytes as a list.
    function Prim_Spi_Xfer (Args : Ref) return Ref is
-      Id  : constant Natural := Natural (Int_Value (Car (Args)));
-      Lst : constant Ref := Car (Cdr (Args));
-      N   : Natural := 0;
-      P   : Ref := Lst;
+      Id    : constant Natural := Natural (Int_Value (Car (Args)));
+      List  : constant Ref := Car (Cdr (Args));
+      Count : Natural := 0;
+      Scan  : Ref := List;
    begin
       if Id not in 1 .. N_SPI then
          raise Lisp_Error with "bad SPI handle";
       end if;
-      while Is_Cons (P) loop
-         N := N + 1;
-         P := Cdr (P);
+      while Is_Cons (Scan) loop
+         Count := Count + 1;
+         Scan := Cdr (Scan);
       end loop;
-      if N = 0 then
+      if Count = 0 then
          return Nil;
       end if;
       declare
-         Tx     : array (0 .. N - 1) of Unsigned_8;          --  stack = internal SRAM (DMA)
-         Rx     : array (0 .. N - 1) of Unsigned_8 := (others => 0);
-         I      : Natural := 0;
-         Q      : Ref := Lst;
+         Tx     : array (0 .. Count - 1) of Unsigned_8;      --  stack = internal SRAM (DMA)
+         Rx     : array (0 .. Count - 1) of Unsigned_8 := (others => 0);
+         Index  : Natural := 0;
+         Cell   : Ref := List;
          Result : Ref := Nil;
       begin
-         while Is_Cons (Q) loop
-            Tx (I) := Unsigned_8 (Int_Value (Car (Q)) mod 256);
-            I := I + 1;
-            Q := Cdr (Q);
+         while Is_Cons (Cell) loop
+            Tx (Index) := Unsigned_8 (Int_Value (Car (Cell)) mod 256);
+            Index := Index + 1;
+            Cell := Cdr (Cell);
          end loop;
          SPI.Select_Device (Sessions (Id), True);
-         SPI.Transfer (Sessions (Id), Tx'Address, Rx'Address, N);
+         SPI.Transfer (Sessions (Id), Tx'Address, Rx'Address, Count);
          SPI.Select_Device (Sessions (Id), False);
-         for J in reverse 0 .. N - 1 loop
+         for J in reverse 0 .. Count - 1 loop
             Result := Cons (Make_Int (Long_Long_Integer (Rx (J))), Result);
          end loop;
          return Result;

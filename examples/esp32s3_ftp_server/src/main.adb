@@ -60,22 +60,22 @@ procedure Main is
    Mode_OK : Boolean;
 
    --  The flash stack lives in Flash_FS (library level -- see that package).
-   Raw : ESP32S3.Block_Dev.W25Q_Source.Source renames Flash_FS.Raw;
-   Vol : ESP32S3.Block_Dev.WL.Volume renames Flash_FS.Vol;
-   Dev : Device renames Flash_FS.Dev;
-   M   : FS.Mount renames Flash_FS.M;
-   N   : Inode_Number;
+   Raw  : ESP32S3.Block_Dev.W25Q_Source.Source renames Flash_FS.Raw;
+   Vol  : ESP32S3.Block_Dev.WL.Volume renames Flash_FS.Vol;
+   Dev  : Device renames Flash_FS.Dev;
+   Mnt  : FS.Mount renames Flash_FS.M;
+   Node : Inode_Number;
 
    Lease : ESP32S3.W5500.DHCP.Lease_Info;
    Park  : constant Time_Span := Seconds (3600);
 
    function To_Bytes (S : String) return Byte_Array is
-      B : Byte_Array (0 .. S'Length - 1);
+      Bytes : Byte_Array (0 .. S'Length - 1);
    begin
-      for I in B'Range loop
-         B (I) := Unsigned_8 (Character'Pos (S (S'First + I)));
+      for I in Bytes'Range loop
+         Bytes (I) := Unsigned_8 (Character'Pos (S (S'First + I)));
       end loop;
-      return B;
+      return Bytes;
    end To_Bytes;
 begin
    delay until Clock + Milliseconds (200);
@@ -105,20 +105,21 @@ begin
    WL.Format (Vol);
    Dev := WL.Make (Vol'Access);
    Mkfs.Format (Dev, Volume_Label => "ESP32FLASH", Journal => False);
-   M.Open (Dev, Read_Only => False);
+   Mnt.Open (Dev, Read_Only => False);
 
    --  3. Seed a little content so the first listing is not empty.
-   N := M.Create_File ("/", "readme.txt");
-   M.Write_File (N, To_Bytes ("Files on the ESP32-S3 ext4 flash, served over FTP." & ASCII.LF));
-   M.Mkdir ("/", "uploads");
-   M.Commit;
+   Node := Mnt.Create_File ("/", "readme.txt");
+   Mnt.Write_File
+     (Node, To_Bytes ("Files on the ESP32-S3 ext4 flash, served over FTP." & ASCII.LF));
+   Mnt.Mkdir ("/", "uploads");
+   Mnt.Commit;
 
    --  4. Mount the flash at "/flash" in the FTP server's namespace.  To expose a
    --  second device later (e.g. an SD card on Block_Dev.SDMMC_Source), bring it up
    --  the same way and add one line: ESP32S3.Ext4.VFS.Add ("sd", SD_M'Access);
    --  -- the mount objects must be library-level (Flash_FS), so their access can
    --  be stored in the VFS table that outlives this procedure.
-   ESP32S3.Ext4.VFS.Add ("flash", M'Access);
+   ESP32S3.Ext4.VFS.Add ("flash", Mnt'Access);
 
    Put_Line
      ("[ftpd] serving on "
