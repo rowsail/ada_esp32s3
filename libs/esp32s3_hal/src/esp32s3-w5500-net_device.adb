@@ -38,10 +38,10 @@ package body ESP32S3.W5500.Net_Device is
 
    overriding
    function Subnet_Mask (Self : Instance) return Net_Devices.IPv4_Address is
-      Tmp : IPv4_Address;
+      Subnet : IPv4_Address;
    begin
-      Read (Self.Dev.all, Common_Regs, 16#05#, Tmp);     --  SUBR
-      return To_N (Tmp);
+      Read (Self.Dev.all, Common_Regs, 16#05#, Subnet);     --  SUBR
+      return To_N (Subnet);
    end Subnet_Mask;
 
    --  Usable now = a chip is attached, the PHY link is up, and an address is set.
@@ -63,15 +63,15 @@ package body ESP32S3.W5500.Net_Device is
       Result     : out Net_Devices.Status)
    is
       use all type Net_Devices.Transport;
-      I  : constant Socket_Id := Socket_Id (Index);
-      St : WS.Status;
+      Sock : constant Socket_Id := Socket_Id (Index);
+      St   : WS.Status;
    begin
       case Mode is
          when TCP =>
-            WS.Open_TCP (Dev_Acc (Self), Self.Socks (I), I, WS.Port_Number (Local_Port), St);
+            WS.Open_TCP (Dev_Acc (Self), Self.Socks (Sock), Sock, WS.Port_Number (Local_Port), St);
 
          when UDP =>
-            WS.Open_UDP (Dev_Acc (Self), Self.Socks (I), I, WS.Port_Number (Local_Port), St);
+            WS.Open_UDP (Dev_Acc (Self), Self.Socks (Sock), Sock, WS.Port_Number (Local_Port), St);
       end case;
       Result := N (St);
    end Open;
@@ -107,13 +107,14 @@ package body ESP32S3.W5500.Net_Device is
       Addr  : out Net_Devices.IPv4_Address;
       Port  : out Net_Devices.Port_Number)
    is
-      I : constant Socket_Id := Socket_Id (Index);
-      P : IPv4_Address;
+      Sock    : constant Socket_Id := Socket_Id (Index);
+      Peer_IP : IPv4_Address;
    begin
-      Read (Self.Dev.all, Socket_Regs (I), 16#0C#, P);              --  Sn_DIPR
-      Addr := To_N (P);
+      Read (Self.Dev.all, Socket_Regs (Sock), 16#0C#, Peer_IP);        --  Sn_DIPR
+      Addr := To_N (Peer_IP);
       Port :=
-        Net_Devices.Port_Number (Read_U16 (Self.Dev.all, Socket_Regs (I), 16#10#));  --  Sn_DPORT
+        Net_Devices.Port_Number
+          (Read_U16 (Self.Dev.all, Socket_Regs (Sock), 16#10#));  --  Sn_DPORT
    end Peer;
 
    overriding
@@ -198,15 +199,15 @@ package body ESP32S3.W5500.Net_Device is
       Count     : out Natural;
       Result    : out Net_Devices.Status)
    is
-      St  : WS.Status;
-      FA  : IPv4_Address;
-      FP  : WS.Port_Number;
-      Dst : Byte_Array (0 .. Natural (Into'Length) - 1)
+      St        : WS.Status;
+      Peer_Addr : IPv4_Address;
+      Peer_Port : WS.Port_Number;
+      Dst       : Byte_Array (0 .. Natural (Into'Length) - 1)
       with Import, Address => Into'Address;
    begin
-      WS.Receive_From (Self.Socks (Socket_Id (Index)), FA, FP, Dst, Count, St);
-      From := To_N (FA);
-      From_Port := Net_Devices.Port_Number (FP);
+      WS.Receive_From (Self.Socks (Socket_Id (Index)), Peer_Addr, Peer_Port, Dst, Count, St);
+      From := To_N (Peer_Addr);
+      From_Port := Net_Devices.Port_Number (Peer_Port);
       Result := N (St);
    end Receive_From;
 

@@ -60,20 +60,20 @@ package body GNAT.Sockets is
    end Initialize;
 
    --  Which interface a socket lives on / its socket index / its device.
-   function If_Of (S : Socket_Type) return Interface_Id is
+   function If_Of (Socket : Socket_Type) return Interface_Id is
    begin
-      if not S.Bound or else Registry (S.Iface) = null then
+      if not Socket.Bound or else Registry (Socket.Iface) = null then
          raise Socket_Error;
       end if;
-      return S.Iface;
+      return Socket.Iface;
    end If_Of;
 
-   function Ix_Of (S : Socket_Type) return Sock_Index is
+   function Ix_Of (Socket : Socket_Type) return Sock_Index is
    begin
-      if not S.Bound or else S.Index not in Sock_Index then
+      if not Socket.Bound or else Socket.Index not in Sock_Index then
          raise Socket_Error;
       end if;
-      return S.Index;
+      return Socket.Index;
    end Ix_Of;
 
    --  Pick the interface a new socket binds to.  Routing per destination is not
@@ -215,10 +215,10 @@ package body GNAT.Sockets is
    end Inet_Addr;
 
    function Image (Value : Inet_Addr_Type) return String is
-      function Img (B : Net_Devices.Octet) return String is
-         S : constant String := Integer'Image (Integer (B));
+      function Img (Octet : Net_Devices.Octet) return String is
+         Image_Str : constant String := Integer'Image (Integer (Octet));
       begin
-         return S (S'First + 1 .. S'Last);     --  drop the leading space
+         return Image_Str (Image_Str'First + 1 .. Image_Str'Last);   --  drop the leading space
       end Img;
    begin
       return
@@ -424,11 +424,12 @@ package body GNAT.Sockets is
       end if;
       if From /= null then
          declare
-            FA : Net_Devices.IPv4_Address;
-            FP : Net_Devices.Port_Number;
+            Peer_Addr : Net_Devices.IPv4_Address;
+            Peer_Port : Net_Devices.Port_Number;
          begin
-            Registry (Id).Receive_From (J, FA, FP, Item, Count, St);
-            From.all := (Family => Family_Inet, Addr => (B => FA), Port => Port_Type (FP));
+            Registry (Id).Receive_From (J, Peer_Addr, Peer_Port, Item, Count, St);
+            From.all :=
+              (Family => Family_Inet, Addr => (B => Peer_Addr), Port => Port_Type (Peer_Port));
          end;
       else
          Registry (Id).Receive (J, Item, Count, St);
