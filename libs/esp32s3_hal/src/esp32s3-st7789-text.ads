@@ -12,6 +12,7 @@
 --
 --     ESP32S3.ST7789.Text.Draw_Text
 --       (S, X => 8, Y => 8, Str => "Hello", FG => White, BG => Black);
+
 package ESP32S3.ST7789.Text is
 
    --  Cell geometry at Scale = 1: a 5x7 glyph in a 6x8 cell.  At Scale = N each

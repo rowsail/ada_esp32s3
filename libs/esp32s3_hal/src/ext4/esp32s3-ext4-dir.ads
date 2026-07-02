@@ -5,6 +5,7 @@ with ESP32S3.Ext4.Inode;
 --  and read inode / rec_len / name_len / file_type / name.  HTree-indexed
 --  directories still hold a valid linear layout, so this reads them too; the
 --  HTree fast-path (Phase 2) is only an optimisation.
+
 package ESP32S3.Ext4.Dir is
 
    --  ext file_type values (with the FILETYPE feature).
@@ -15,7 +16,8 @@ package ESP32S3.Ext4.Dir is
 
    --  Look up Name directly in directory Dir; return its inode number, or 0 if
    --  not present.
-   function Lookup (V : in out Volume.Context; Dir : Inode.Info; Name : String)
+   function Lookup
+     (V : in out Volume.Context; Dir : Inode.Info; Name : String)
       return Inode_Number;
 
    --  Call Visit for every real entry (skips unused slots).  "." and ".." are
@@ -23,8 +25,9 @@ package ESP32S3.Ext4.Dir is
    procedure Iterate
      (V     : in out Volume.Context;
       Dir   : Inode.Info;
-      Visit : not null access procedure
-                (Name : String; Ino : Inode_Number; File_Type : U8));
+      Visit :
+        not null access procedure
+          (Name : String; Ino : Inode_Number; File_Type : U8));
 
    --  Add Name -> Child (with File_Type) to directory Dir by splitting slack in
    --  one of its existing data blocks.  Raises No_Space if no block has room
@@ -46,11 +49,14 @@ package ESP32S3.Ext4.Dir is
       return Inode_Number;
 
    --  True if Dir contains only "." and ".." (i.e. is empty).
-   function Is_Empty (V : in out Volume.Context; Dir : Inode.Info) return Boolean;
+   function Is_Empty
+     (V : in out Volume.Context; Dir : Inode.Info) return Boolean;
 
    --  Repoint entry Name in Dir at inode New_Ino.  Returns True if found.
    function Set_Entry_Inode
-     (V : in out Volume.Context; Dir : Inode.Info; Name : String;
+     (V       : in out Volume.Context;
+      Dir     : Inode.Info;
+      Name    : String;
       New_Ino : Inode_Number) return Boolean;
 
 end ESP32S3.Ext4.Dir;

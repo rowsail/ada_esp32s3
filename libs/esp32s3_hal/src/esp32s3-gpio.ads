@@ -15,6 +15,7 @@
 --  SPI flash / octal PSRAM, are excluded by the Pin_Id subtype below: driving
 --  them would hang the chip, so naming one is a compile-time error for a static
 --  value and a predicate check at run time.
+
 package ESP32S3.GPIO is
    --  GPIO pad numbers as the silicon numbers them (0 .. 48); -1 is the "no pin"
    --  sentinel that drivers use for an optional line left unrouted (Optional_Pin).
@@ -37,18 +38,19 @@ package ESP32S3.GPIO is
    --  by the subtype's predicate at RUN time wherever assertion/predicate checks
    --  are enabled (-gnata).  (No Predicate_Failure message: it would pull in
    --  Ada.Exceptions, which the light-tasking runtime does not provide.)
-   subtype Pin_Id is Pad_Number range 0 .. 48 with
-     Static_Predicate => Pin_Id in 0 .. 21 | 38 .. 48;
+   subtype Pin_Id is Pad_Number range 0 .. 48
+   with Static_Predicate => Pin_Id in 0 .. 21 | 38 .. 48;
 
    --  A pin argument that may be omitted: a real Pin_Id, or No_Pin (-1).
-   subtype Optional_Pin is Pad_Number with
-     Static_Predicate => Optional_Pin in -1 | 0 .. 21 | 38 .. 48;
+   subtype Optional_Pin is Pad_Number
+   with Static_Predicate => Optional_Pin in -1 | 0 .. 21 | 38 .. 48;
 
-   type Pin_Mode  is (Input, Output);
+   type Pin_Mode is (Input, Output);
    type Pull_Mode is (Floating, Pull_Up, Pull_Down);
 
    --  IO_MUX FUN_DRV field (0 .. 3), roughly 5 / 10 / 20 / 40 mA.
-   type Drive_Strength is (Drive_Weak, Drive_Medium, Drive_Strong, Drive_Strongest);
+   type Drive_Strength is
+     (Drive_Weak, Drive_Medium, Drive_Strong, Drive_Strongest);
 
    --  Configure a pad as a plain GPIO: direction + pull + drive. The pad is
    --  always routed through the GPIO matrix as a software-controlled GPIO
@@ -59,13 +61,14 @@ package ESP32S3.GPIO is
    procedure Configure
      (Pin   : Pin_Id;
       Mode  : Pin_Mode;
-      Pull  : Pull_Mode      := Floating;
+      Pull  : Pull_Mode := Floating;
       Drive : Drive_Strength := Drive_Medium);
 
-   procedure Set    (Pin : Pin_Id);              --  drive high  (atomic W1TS)
-   procedure Clear  (Pin : Pin_Id);              --  drive low   (atomic W1TC)
-   procedure Toggle (Pin : Pin_Id);              --  flip the current output level
-   procedure Write  (Pin : Pin_Id; On : Boolean);
-   function  Read   (Pin : Pin_Id) return Boolean;  --  sample the input level
+   procedure Set (Pin : Pin_Id);              --  drive high  (atomic W1TS)
+   procedure Clear (Pin : Pin_Id);              --  drive low   (atomic W1TC)
+   procedure Toggle
+     (Pin : Pin_Id);              --  flip the current output level
+   procedure Write (Pin : Pin_Id; On : Boolean);
+   function Read (Pin : Pin_Id) return Boolean;  --  sample the input level
 
 end ESP32S3.GPIO;

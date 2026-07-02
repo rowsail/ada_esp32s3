@@ -38,6 +38,7 @@ with ESP32S3.GPIO;
 --        ESP32S3.TCA9555.Write_Port (S, 16#00A5#, St);      --  bus free between
 --        ESP32S3.TCA9555.Read_Port  (S, V, St);             --  these two
 --     end;                                                  --  Session auto-released
+
 package ESP32S3.TCA9555 is
 
    --  Base address and the A2/A1/A0 strap value (0 .. 7) -> 0x20 .. 0x27.
@@ -48,7 +49,7 @@ package ESP32S3.TCA9555 is
    type Pin_Number is range 0 .. 15;
 
    --  A whole-expander value: bit i corresponds to Pin_Number i.
-   type Port_Value is mod 2 ** 16;
+   type Port_Value is mod 2**16;
 
    type Direction is (Output, Input);
    type Pin_State is (Low, High);
@@ -66,7 +67,7 @@ package ESP32S3.TCA9555 is
    --  Raised by Acquire if the Device was never Setup.
    Not_Initialized : exception;
    --  Raised by an operation whose Session does not currently hold a device.
-   Not_Owned : exception;
+   Not_Owned       : exception;
 
    ----------------------------------------------------------------------------
    --  One-time configuration -- call once per device at startup.
@@ -82,8 +83,8 @@ package ESP32S3.TCA9555 is
       Sda      : ESP32S3.GPIO.Pin_Id;
       Scl      : ESP32S3.GPIO.Pin_Id;
       Int_Pin  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Host     : ESP32S3.I2C.I2C_Host      := ESP32S3.I2C.I2C0;
-      Clock_Hz : Positive                  := 400_000);
+      Host     : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
+      Clock_Hz : Positive := 400_000);
 
    --  The INT pin Dev was set up with (No_Pin if none).
    function Interrupt_Pin (Dev : Device) return ESP32S3.GPIO.Optional_Pin;
@@ -126,9 +127,13 @@ package ESP32S3.TCA9555 is
      (S : Session; Inverted : out Port_Value; Result : out Status);
 
    --  Sample the input register (the actual pin levels, including driven outputs).
-   procedure Read_Port (S : Session; Value : out Port_Value; Result : out Status);
+   procedure Read_Port
+     (S : Session; Value : out Port_Value; Result : out Status);
    procedure Read_Pin
-     (S : Session; Pin : Pin_Number; State : out Pin_State; Result : out Status);
+     (S      : Session;
+      Pin    : Pin_Number;
+      State  : out Pin_State;
+      Result : out Status);
 
    --  Input polarity inversion: a 1 bit inverts that input's reported level.
    procedure Set_Polarity
@@ -136,18 +141,19 @@ package ESP32S3.TCA9555 is
 
 private
    type Device is record
-      Host       : ESP32S3.I2C.I2C_Host      := ESP32S3.I2C.I2C0;
-      Addr       : Hardware_Address          := 0;
+      Host       : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
+      Addr       : Hardware_Address := 0;
       Address    : ESP32S3.I2C.Slave_Address := Base_Address;
       Int_Pin    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Configured : Boolean                   := False;
+      Configured : Boolean := False;
    end record;
 
    type Session is new Ada.Finalization.Limited_Controlled with record
-      Active  : Boolean                   := False;
-      Host    : ESP32S3.I2C.I2C_Host      := ESP32S3.I2C.I2C0;
-      Addr    : Hardware_Address          := 0;
+      Active  : Boolean := False;
+      Host    : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
+      Addr    : Hardware_Address := 0;
       Address : ESP32S3.I2C.Slave_Address := Base_Address;
    end record;
-   overriding procedure Finalize (S : in out Session);  --  auto-release the device
+   overriding
+   procedure Finalize (S : in out Session);  --  auto-release the device
 end ESP32S3.TCA9555;

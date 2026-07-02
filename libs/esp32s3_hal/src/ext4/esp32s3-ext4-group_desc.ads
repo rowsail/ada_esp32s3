@@ -4,6 +4,7 @@ with ESP32S3.Ext4.Volume;
 --  block bitmap, inode bitmap and inode table.  32 bytes (ext2/3) or 64 bytes
 --  (the ext4 "64bit" feature).  The table starts in the block right after the
 --  superblock block (First_Data_Block + 1).
+
 package ESP32S3.Ext4.Group_Desc is
 
    type Desc is record
@@ -23,7 +24,7 @@ package ESP32S3.Ext4.Group_Desc is
    procedure Write (V : in out Volume.Context; Group : U32; D : Desc);
 
    --  Block number at which the group-descriptor table starts.
-   function Table_Start (V : Volume.Context) return Block_Number is
-     (Block_Number (V.SB.First_Data_Block) + 1);
+   function Table_Start (V : Volume.Context) return Block_Number
+   is (Block_Number (V.SB.First_Data_Block) + 1);
 
 end ESP32S3.Ext4.Group_Desc;

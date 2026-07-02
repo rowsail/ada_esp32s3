@@ -25,6 +25,7 @@ with ESP32S3.RMT;
 --  LED (Count => 1).  Driving a longer string needs RMT wrap/refill support,
 --  which is a later step; the API is already shaped for it (Count, per-pixel
 --  Set), so only Show's transport changes.
+
 package ESP32S3.TX1812 is
 
    --  A pixel colour (8 bits per channel; the wire order is handled internally).
@@ -49,10 +50,11 @@ package ESP32S3.TX1812 is
    --  out in one shot without the wrap re-fill (it borrows the higher TX
    --  channels' RAM -- see ESP32S3.RMT.Configure).  Longer strings stream via
    --  wrap regardless, so the default of 1 is fine for any length.
-   procedure Acquire (S       : in out Strip;
-                      Pin     : ESP32S3.GPIO.Pin_Id;
-                      Channel : ESP32S3.RMT.TX_Index := 0;
-                      Blocks  : Positive := 1);
+   procedure Acquire
+     (S       : in out Strip;
+      Pin     : ESP32S3.GPIO.Pin_Id;
+      Channel : ESP32S3.RMT.TX_Index := 0;
+      Blocks  : Positive := 1);
 
    --  True once Acquire has successfully claimed + configured the channel.
    function Is_Valid (S : Strip) return Boolean;
@@ -71,7 +73,8 @@ package ESP32S3.TX1812 is
    procedure Show (S : in out Strip);
 
 private
-   Symbols_Per_LED : constant := 24;                    --  24-bit GRB, 1 sym/bit
+   Symbols_Per_LED : constant :=
+     24;                    --  24-bit GRB, 1 sym/bit
 
    type Pixel_Array is array (Positive range <>) of Color;
 
@@ -82,7 +85,8 @@ private
    type Frame_Array is array (Positive range <>) of LED_Symbols;
 
    type Strip (Count : Positive) is limited record
-      Chan   : ESP32S3.RMT.TX_Channel;                 --  auto-released on final.
+      Chan   :
+        ESP32S3.RMT.TX_Channel;                 --  auto-released on final.
       Pixels : Pixel_Array (1 .. Count) := (others => Off);
       Frame  : Frame_Array (1 .. Count);               --  pre-encoded, static
       Ready  : Boolean := False;

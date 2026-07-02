@@ -12,6 +12,7 @@
 --  glyph cell is blitted opaque -- no framebuffer read-back.  Glyphs whose origin
 --  would fall left of / above the surface (negative X/Y) are skipped (the Blit
 --  contract takes Natural coordinates).
+
 generic
    type Color is private;
    type Color_Array is array (Natural range <>) of Color;
@@ -19,8 +20,8 @@ generic
    --  Build a pixel from 8-bit-per-channel RGB (each 0 .. 255).
    with function To_Color (R, G, B : Natural) return Color;
    --  Blit a W x H block of pixels (row-major) at (X, Y) on the surface.
-   with procedure Blit
-     (S : Surface; X, Y, W, H : Natural; Pixels : Color_Array);
+   with
+     procedure Blit (S : Surface; X, Y, W, H : Natural; Pixels : Color_Array);
 package ESP32S3.Fonts.Render is
 
    --  Draw one character with its baseline left corner at (X, Baseline).

@@ -9,7 +9,7 @@ package body ESP32S3.TWAI is
    --------------------------------------------------------------------------
 
    protected Guard is
-      entry    Acquire;
+      entry Acquire;
       procedure Release;
    private
       Held : Boolean := False;
@@ -39,7 +39,7 @@ package body ESP32S3.TWAI is
 
    package State is
       procedure Bring_Up (S : Session; Mode : Bus_Mode; Bit_Rate : Positive);
-      function  Owned (S : Session) return E.Bus;
+      function Owned (S : Session) return E.Bus;
    end State;
 
    package body State is
@@ -48,7 +48,8 @@ package body ESP32S3.TWAI is
       procedure Bring_Up (S : Session; Mode : Bus_Mode; Bit_Rate : Positive) is
       begin
          if not S.Active then
-            raise Not_Owned with "TWAI used without holding it -- Acquire first";
+            raise Not_Owned
+              with "TWAI used without holding it -- Acquire first";
          end if;
          The_Bus := E.Open (Mode, Bit_Rate);
       end Bring_Up;
@@ -56,7 +57,8 @@ package body ESP32S3.TWAI is
       function Owned (S : Session) return E.Bus is
       begin
          if not S.Active then
-            raise Not_Owned with "TWAI used without holding it -- Acquire first";
+            raise Not_Owned
+              with "TWAI used without holding it -- Acquire first";
          end if;
          return The_Bus;
       end Owned;
@@ -66,22 +68,24 @@ package body ESP32S3.TWAI is
    -- Acquire --
    -------------
 
-   procedure Acquire (S        : in out Session;
-                      Mode     : Bus_Mode := Normal;
-                      Bit_Rate : Positive  := 125_000) is
+   procedure Acquire
+     (S        : in out Session;
+      Mode     : Bus_Mode := Normal;
+      Bit_Rate : Positive := 125_000) is
    begin
       Guard.Acquire;
       S.Active := True;
-      Reconfigure (S, Mode, Bit_Rate);   --  bring it up through the held Session
+      Reconfigure
+        (S, Mode, Bit_Rate);   --  bring it up through the held Session
    end Acquire;
 
    -----------------
    -- Reconfigure --
    -----------------
 
-   procedure Reconfigure (S        : Session;
-                          Mode     : Bus_Mode := Normal;
-                          Bit_Rate : Positive  := 125_000) is
+   procedure Reconfigure
+     (S : Session; Mode : Bus_Mode := Normal; Bit_Rate : Positive := 125_000)
+   is
    begin
       State.Bring_Up (S, Mode, Bit_Rate);
    end Reconfigure;
@@ -90,9 +94,10 @@ package body ESP32S3.TWAI is
    -- Configure_Pins --
    --------------------
 
-   procedure Configure_Pins (S  : Session;
-                             Tx : ESP32S3.GPIO.Optional_Pin;
-                             Rx : ESP32S3.GPIO.Optional_Pin) is
+   procedure Configure_Pins
+     (S  : Session;
+      Tx : ESP32S3.GPIO.Optional_Pin;
+      Rx : ESP32S3.GPIO.Optional_Pin) is
    begin
       E.Configure_Pins (State.Owned (S), Tx, Rx);
    end Configure_Pins;
@@ -112,54 +117,82 @@ package body ESP32S3.TWAI is
 
    procedure Send (S : Session; F : Standard_Frame) is
    begin
-      E.Send (State.Owned (S), Extended => False, Remote => F.Remote,
-              Id => F.Id, Length => F.Length, Data => F.Data);
+      E.Send
+        (State.Owned (S),
+         Extended => False,
+         Remote   => F.Remote,
+         Id       => F.Id,
+         Length   => F.Length,
+         Data     => F.Data);
    end Send;
 
    procedure Send (S : Session; F : Extended_Frame) is
    begin
-      E.Send (State.Owned (S), Extended => True, Remote => F.Remote,
-              Id => F.Id, Length => F.Length, Data => F.Data);
+      E.Send
+        (State.Owned (S),
+         Extended => True,
+         Remote   => F.Remote,
+         Id       => F.Id,
+         Length   => F.Length,
+         Data     => F.Data);
    end Send;
 
    ---------------
    -- Available --
    ---------------
 
-   function Available (S : Session) return Boolean is
-     (E.RX_Pending (State.Owned (S)));
+   function Available (S : Session) return Boolean
+   is (E.RX_Pending (State.Owned (S)));
 
-   function Is_Extended (S : Session) return Boolean is
-     (E.RX_Extended (State.Owned (S)));
+   function Is_Extended (S : Session) return Boolean
+   is (E.RX_Extended (State.Owned (S)));
 
    -------------
    -- Receive --
    -------------
 
-   procedure Receive (S : Session; F : out Standard_Frame; Got : out Boolean) is
+   procedure Receive (S : Session; F : out Standard_Frame; Got : out Boolean)
+   is
       Id  : Interfaces.Unsigned_32;
       Rmt : Boolean;
       Len : Data_Length;
       Dat : Data_Bytes;
    begin
-      E.Receive (State.Owned (S), Want_Extended => False,
-                 Id => Id, Remote => Rmt, Length => Len, Data => Dat, Got => Got);
-      F := (if Got
-            then (Id => Standard_Id (Id), Remote => Rmt, Length => Len, Data => Dat)
-            else (others => <>));
+      E.Receive
+        (State.Owned (S),
+         Want_Extended => False,
+         Id            => Id,
+         Remote        => Rmt,
+         Length        => Len,
+         Data          => Dat,
+         Got           => Got);
+      F :=
+        (if Got
+         then
+           (Id => Standard_Id (Id), Remote => Rmt, Length => Len, Data => Dat)
+         else (others => <>));
    end Receive;
 
-   procedure Receive (S : Session; F : out Extended_Frame; Got : out Boolean) is
+   procedure Receive (S : Session; F : out Extended_Frame; Got : out Boolean)
+   is
       Id  : Interfaces.Unsigned_32;
       Rmt : Boolean;
       Len : Data_Length;
       Dat : Data_Bytes;
    begin
-      E.Receive (State.Owned (S), Want_Extended => True,
-                 Id => Id, Remote => Rmt, Length => Len, Data => Dat, Got => Got);
-      F := (if Got
-            then (Id => Extended_Id (Id), Remote => Rmt, Length => Len, Data => Dat)
-            else (others => <>));
+      E.Receive
+        (State.Owned (S),
+         Want_Extended => True,
+         Id            => Id,
+         Remote        => Rmt,
+         Length        => Len,
+         Data          => Dat,
+         Got           => Got);
+      F :=
+        (if Got
+         then
+           (Id => Extended_Id (Id), Remote => Rmt, Length => Len, Data => Dat)
+         else (others => <>));
    end Receive;
 
    -------------
@@ -174,7 +207,8 @@ package body ESP32S3.TWAI is
       end if;
    end Release;
 
-   overriding procedure Finalize (S : in out Session) is
+   overriding
+   procedure Finalize (S : in out Session) is
    begin
       Release (S);
    end Finalize;

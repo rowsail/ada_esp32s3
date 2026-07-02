@@ -5,8 +5,8 @@ package body ESP32S3.AES.GCM is
 
    subtype Blk is ESP32S3.AES.Block;            --  16-byte block
 
-   function AES_E (Key : Key_Bytes; B : Blk) return Blk is
-     (ESP32S3.AES.Encrypt_ECB (Key, B));
+   function AES_E (Key : Key_Bytes; B : Blk) return Blk
+   is (ESP32S3.AES.Encrypt_ECB (Key, B));
 
    ---------------------------------------------------------------------------
    --  GHASH: multiplication in GF(2^128), reduction poly x^128+x^7+x^2+x+1
@@ -20,7 +20,8 @@ package body ESP32S3.AES.GCM is
    begin
       for I in 0 .. 127 loop
          --  bit i of X, most-significant bit first
-         if (X (I / 8) and Interfaces.Shift_Right (U8'(16#80#), I mod 8)) /= 0 then
+         if (X (I / 8) and Interfaces.Shift_Right (U8'(16#80#), I mod 8)) /= 0
+         then
             for J in Blk'Range loop
                Z (J) := Z (J) xor V (J);
             end loop;
@@ -28,8 +29,9 @@ package body ESP32S3.AES.GCM is
          --  V := V >> 1 (across the 16 bytes, big-endian), then reduce if a 1 fell out
          Lsb := V (15) and 1;
          for J in reverse 1 .. 15 loop
-            V (J) := Interfaces.Shift_Right (V (J), 1)
-                     or Interfaces.Shift_Left (V (J - 1) and 1, 7);
+            V (J) :=
+              Interfaces.Shift_Right (V (J), 1)
+              or Interfaces.Shift_Left (V (J - 1) and 1, 7);
          end loop;
          V (0) := Interfaces.Shift_Right (V (0), 1);
          if Lsb = 1 then
@@ -64,13 +66,16 @@ package body ESP32S3.AES.GCM is
    end GHASH_Bytes;
 
    --  The trailing length block: bit-lengths of AAD and ciphertext, 64-bit BE each.
-   procedure GHASH_Lengths (Y : in out Blk; AAD_Len, C_Len : Natural; H : Blk) is
+   procedure GHASH_Lengths (Y : in out Blk; AAD_Len, C_Len : Natural; H : Blk)
+   is
       L      : Blk := (others => 0);
-      A_Bits : constant Interfaces.Unsigned_64 := Interfaces.Unsigned_64 (AAD_Len) * 8;
-      C_Bits : constant Interfaces.Unsigned_64 := Interfaces.Unsigned_64 (C_Len)   * 8;
+      A_Bits : constant Interfaces.Unsigned_64 :=
+        Interfaces.Unsigned_64 (AAD_Len) * 8;
+      C_Bits : constant Interfaces.Unsigned_64 :=
+        Interfaces.Unsigned_64 (C_Len) * 8;
    begin
       for J in 0 .. 7 loop
-         L (7 - J)  := U8 (Interfaces.Shift_Right (A_Bits, 8 * J) and 16#FF#);
+         L (7 - J) := U8 (Interfaces.Shift_Right (A_Bits, 8 * J) and 16#FF#);
          L (15 - J) := U8 (Interfaces.Shift_Right (C_Bits, 8 * J) and 16#FF#);
       end loop;
       GHASH_Block (Y, L, H);
@@ -90,7 +95,9 @@ package body ESP32S3.AES.GCM is
    end Inc32;
 
    --  Cipher := Plain xor AES-CTR keystream starting at inc32 (J0).
-   procedure CTR (Key : Key_Bytes; J0 : Blk; Src : Byte_Array; Dst : out Byte_Array) is
+   procedure CTR
+     (Key : Key_Bytes; J0 : Blk; Src : Byte_Array; Dst : out Byte_Array)
+   is
       CB  : Blk := J0;
       KS  : Blk;
       Off : Natural := 0;
@@ -108,7 +115,7 @@ package body ESP32S3.AES.GCM is
    --  Build the GCM hash subkey H and pre-counter J0 (96-bit IV => IV||0^31||1).
    procedure Setup (Key : Key_Bytes; IV : Nonce; H, J0, E_J0 : out Blk) is
    begin
-      H  := AES_E (Key, Blk'(others => 0));
+      H := AES_E (Key, Blk'(others => 0));
       J0 := (others => 0);
       for J in 0 .. 11 loop
          J0 (J) := IV (IV'First + J);
@@ -121,44 +128,47 @@ package body ESP32S3.AES.GCM is
    --  Public AEAD
    ---------------------------------------------------------------------------
 
-   procedure Encrypt (Key    : Key_Bytes;
-                      IV     : Nonce;
-                      AAD    : Byte_Array;
-                      Plain  : Byte_Array;
-                      Cipher : out Byte_Array;
-                      Tag    : out Auth_Tag)
+   procedure Encrypt
+     (Key    : Key_Bytes;
+      IV     : Nonce;
+      AAD    : Byte_Array;
+      Plain  : Byte_Array;
+      Cipher : out Byte_Array;
+      Tag    : out Auth_Tag)
    is
       H, J0, E_J0 : Blk;
-      Y : Blk := (others => 0);
+      Y           : Blk := (others => 0);
    begin
       Setup (Key, IV, H, J0, E_J0);
       CTR (Key, J0, Plain, Cipher);
-      GHASH_Bytes   (Y, AAD, H);
-      GHASH_Bytes   (Y, Cipher, H);
+      GHASH_Bytes (Y, AAD, H);
+      GHASH_Bytes (Y, Cipher, H);
       GHASH_Lengths (Y, AAD'Length, Plain'Length, H);
       for J in Blk'Range loop
          Tag (Tag'First + J) := Y (J) xor E_J0 (J);
       end loop;
    end Encrypt;
 
-   procedure Decrypt (Key    : Key_Bytes;
-                      IV     : Nonce;
-                      AAD    : Byte_Array;
-                      Cipher : Byte_Array;
-                      Tag    : Auth_Tag;
-                      Plain  : out Byte_Array;
-                      Ok     : out Boolean)
+   procedure Decrypt
+     (Key    : Key_Bytes;
+      IV     : Nonce;
+      AAD    : Byte_Array;
+      Cipher : Byte_Array;
+      Tag    : Auth_Tag;
+      Plain  : out Byte_Array;
+      Ok     : out Boolean)
    is
       H, J0, E_J0 : Blk;
-      Y    : Blk := (others => 0);
-      Diff : U8  := 0;
+      Y           : Blk := (others => 0);
+      Diff        : U8 := 0;
    begin
       Plain := (others => 0);
       Setup (Key, IV, H, J0, E_J0);
-      GHASH_Bytes   (Y, AAD, H);
-      GHASH_Bytes   (Y, Cipher, H);
+      GHASH_Bytes (Y, AAD, H);
+      GHASH_Bytes (Y, Cipher, H);
       GHASH_Lengths (Y, AAD'Length, Cipher'Length, H);
-      for J in Blk'Range loop                         --  constant-time tag compare
+      for J in Blk'Range loop
+         --  constant-time tag compare
          Diff := Diff or ((Y (J) xor E_J0 (J)) xor Tag (Tag'First + J));
       end loop;
       Ok := Diff = 0;

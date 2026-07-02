@@ -13,9 +13,11 @@ with ESP32S3.Fonts.Render;
 --  ESP32S3.Fonts.Font and so are shared unchanged with any other panel's
 --  instantiation.  Distinct from ESP32S3.ST7789.Text, which is the built-in 5x7
 --  bitmap font.
-package ESP32S3.ST7789.Fonts is new ESP32S3.Fonts.Render
-  (Color       => ESP32S3.ST7789.Color,
-   Color_Array => ESP32S3.ST7789.Color_Array,
-   Surface     => ESP32S3.ST7789.Session,
-   To_Color    => ESP32S3.ST7789.RGB,
-   Blit        => ESP32S3.ST7789.Draw_Bitmap);
+
+package ESP32S3.ST7789.Fonts is new
+  ESP32S3.Fonts.Render
+    (Color       => ESP32S3.ST7789.Color,
+     Color_Array => ESP32S3.ST7789.Color_Array,
+     Surface     => ESP32S3.ST7789.Session,
+     To_Color    => ESP32S3.ST7789.RGB,
+     Blit        => ESP32S3.ST7789.Draw_Bitmap);

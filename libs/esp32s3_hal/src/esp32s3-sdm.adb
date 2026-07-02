@@ -1,22 +1,22 @@
 with ESP32S3.GPIO;
 with ESP32S3.GPIO_Signals;
-with ESP32S3_Registers;          use ESP32S3_Registers;
-with ESP32S3_Registers.GPIOSD;   use ESP32S3_Registers.GPIOSD;
+with ESP32S3_Registers;        use ESP32S3_Registers;
+with ESP32S3_Registers.GPIOSD; use ESP32S3_Registers.GPIOSD;
 with ESP32S3_Registers.GPIO;
 
 package body ESP32S3.SDM is
 
    package GR renames ESP32S3_Registers.GPIO;
-   package G    renames ESP32S3.GPIO;
+   package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
 
    --  Output matrix signal for a channel (GPIO_SD0_OUT .. SD7_OUT).
-   function Out_Signal (Idx : Channel_Index) return Natural is
-     (Sigs.GPIO_SD0_OUT + Natural (Idx));
+   function Out_Signal (Idx : Channel_Index) return Natural
+   is (Sigs.GPIO_SD0_OUT + Natural (Idx));
 
    procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
       O : GR.FUNC_OUT_SEL_CFG_Register :=
-            GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
+        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
    begin
       G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
       O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
@@ -55,7 +55,7 @@ package body ESP32S3.SDM is
       procedure Claim (Index : Channel_Index; Ok : out Boolean) is
       begin
          if not Inited then
-            GPIO_SD_Periph.SIGMADELTA_CG.CLK_EN          := True;
+            GPIO_SD_Periph.SIGMADELTA_CG.CLK_EN := True;
             GPIO_SD_Periph.SIGMADELTA_MISC.FUNCTION_CLK_EN := True;
             Inited := True;
          end if;
@@ -81,22 +81,26 @@ package body ESP32S3.SDM is
       Release (C);
       Pool.Claim (Index, Ok);
       if Ok then
-         C.Idx := Index;  C.Held := True;
+         C.Idx := Index;
+         C.Held := True;
       end if;
    end Claim;
 
-   function Is_Valid (C : Channel) return Boolean is (C.Held);
+   function Is_Valid (C : Channel) return Boolean
+   is (C.Held);
 
    procedure Release (C : in out Channel) is
    begin
       if C.Held then
-         GPIO_SD_Periph.SIGMADELTA (Integer (C.Idx)).SD_IN := 128;  --  0% (output low)
+         GPIO_SD_Periph.SIGMADELTA (Integer (C.Idx)).SD_IN :=
+           128;  --  0% (output low)
          Pool.Release (C.Idx);
          C.Held := False;
       end if;
    end Release;
 
-   overriding procedure Finalize (C : in out Channel) is
+   overriding
+   procedure Finalize (C : in out Channel) is
    begin
       Release (C);
    end Finalize;
@@ -105,22 +109,27 @@ package body ESP32S3.SDM is
    -- Configure --
    ---------------
 
-   procedure Configure (C          : in out Channel;
-                        Pin        : ESP32S3.GPIO.Pin_Id;
-                        Carrier_Hz : Positive := 1_000_000) is
-      APB_Hz : constant := 80_000_000;                      --  modulator source clock
+   procedure Configure
+     (C          : in out Channel;
+      Pin        : ESP32S3.GPIO.Pin_Id;
+      Carrier_Hz : Positive := 1_000_000)
+   is
+      APB_Hz : constant :=
+        80_000_000;                      --  modulator source clock
       --  Nearest integer divider N in 1 .. 256 for the requested carrier; the
       --  register field holds N-1 (the hardware divides APB by field+1).
       Div    : constant Natural :=
-        Natural'Max (1, Natural'Min (256, (APB_Hz + Carrier_Hz / 2) / Carrier_Hz));
+        Natural'Max
+          (1, Natural'Min (256, (APB_Hz + Carrier_Hz / 2) / Carrier_Hz));
    begin
       if not C.Held then
          return;
       end if;
       GPIO_SD_Periph.SIGMADELTA (Integer (C.Idx)) :=
-        (SD_IN       => 128,                                  --  0 % (= -128 signed)
+        (SD_IN       => 128,
+         --  0 % (= -128 signed)
          SD_PRESCALE => SIGMADELTA_SD_PRESCALE_Field (Div - 1),
-         others => <>);
+         others      => <>);
       Drive_Out (Pin, Out_Signal (C.Idx));
    end Configure;
 
@@ -131,7 +140,8 @@ package body ESP32S3.SDM is
    procedure Set_Density (C : Channel; Percent : Density_Percent) is
    begin
       if C.Held then
-         GPIO_SD_Periph.SIGMADELTA (Integer (C.Idx)).SD_IN := Duty_Byte (Percent);
+         GPIO_SD_Periph.SIGMADELTA (Integer (C.Idx)).SD_IN :=
+           Duty_Byte (Percent);
       end if;
    end Set_Density;
 

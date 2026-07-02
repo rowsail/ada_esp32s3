@@ -29,26 +29,31 @@ with ESP32S3.GPIO;
 --
 --  This first layer is POLLING-based.  INTn (if wired) is configured as a pulled-up
 --  input for a later ESP32S3.W5500.Interrupts child; it is not used here.
+
 package ESP32S3.W5500 is
 
-   type Byte       is new Interfaces.Unsigned_8;
+   type Byte is new Interfaces.Unsigned_8;
    type Byte_Array is array (Natural range <>) of Byte;
 
    --  A 6-byte MAC and a 4-byte IPv4 address, most-significant byte first (the
    --  order the W5500 registers use).
-   subtype MAC_Address  is Byte_Array (0 .. 5);
+   subtype MAC_Address is Byte_Array (0 .. 5);
    subtype IPv4_Address is Byte_Array (0 .. 3);
-   function IPv4 (A, B, C, D : Byte) return IPv4_Address is ((A, B, C, D));
+   function IPv4 (A, B, C, D : Byte) return IPv4_Address
+   is ((A, B, C, D));
 
    subtype Socket_Id is Natural range 0 .. 7;
 
    --  The 5-bit Block-Select (BSB) field of a frame's control byte.  The transport
    --  is exposed so the socket layer can reach a socket's register / TX / RX block.
-   type Block is mod 2 ** 5;
+   type Block is mod 2**5;
    Common_Regs : constant Block := 2#00000#;
-   function Socket_Regs (S : Socket_Id) return Block is (Block (S * 4 + 1));
-   function Socket_TX    (S : Socket_Id) return Block is (Block (S * 4 + 2));
-   function Socket_RX    (S : Socket_Id) return Block is (Block (S * 4 + 3));
+   function Socket_Regs (S : Socket_Id) return Block
+   is (Block (S * 4 + 1));
+   function Socket_TX (S : Socket_Id) return Block
+   is (Block (S * 4 + 2));
+   function Socket_RX (S : Socket_Id) return Block
+   is (Block (S * 4 + 3));
 
    type Device is limited private;
 
@@ -66,8 +71,8 @@ package ESP32S3.W5500 is
       Sclk, Mosi, Miso, Cs : ESP32S3.GPIO.Pin_Id;
       Rst                  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Int                  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Host                 : ESP32S3.SPI.SPI_Host      := ESP32S3.SPI.SPI2;
-      Clock_Hz             : Positive                  := 10_000_000);
+      Host                 : ESP32S3.SPI.SPI_Host := ESP32S3.SPI.SPI2;
+      Clock_Hz             : Positive := 10_000_000);
 
    ---------------------------------------------------------------------------
    --  Reset + identity
@@ -88,22 +93,22 @@ package ESP32S3.W5500 is
       IP, Subnet, Gateway : IPv4_Address);
 
    function Get_MAC (Dev : Device) return MAC_Address;
-   function Get_IP  (Dev : Device) return IPv4_Address;
+   function Get_IP (Dev : Device) return IPv4_Address;
 
    ---------------------------------------------------------------------------
    --  PHY / link status (read from PHYCFGR)
    ---------------------------------------------------------------------------
-   type Link_State  is (Down, Up);
-   type Phy_Speed   is (Mbps_10, Mbps_100);
-   type Phy_Duplex  is (Half, Full);
-   type Phy_Status  is record
+   type Link_State is (Down, Up);
+   type Phy_Speed is (Mbps_10, Mbps_100);
+   type Phy_Duplex is (Half, Full);
+   type Phy_Status is record
       Link   : Link_State := Down;
-      Speed  : Phy_Speed  := Mbps_10;
+      Speed  : Phy_Speed := Mbps_10;
       Duplex : Phy_Duplex := Half;
    end record;
 
    function Link (Dev : Device) return Link_State;
-   function Phy  (Dev : Device) return Phy_Status;
+   function Phy (Dev : Device) return Phy_Status;
 
    ---------------------------------------------------------------------------
    --  Low-level transport -- one VDM frame per call, the SPI host serialised for
@@ -111,27 +116,37 @@ package ESP32S3.W5500 is
    --  offset within the selected Block and auto-increments across the data.
    --  Scalars are big-endian on the wire (the W5500 register convention).
    ---------------------------------------------------------------------------
-   procedure Write (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16;
-                    Data : Byte_Array);
-   procedure Read  (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16;
-                    Data : out Byte_Array);
+   procedure Write
+     (Dev  : Device;
+      Blk  : Block;
+      Addr : Interfaces.Unsigned_16;
+      Data : Byte_Array);
+   procedure Read
+     (Dev  : Device;
+      Blk  : Block;
+      Addr : Interfaces.Unsigned_16;
+      Data : out Byte_Array);
 
-   procedure Write_U8  (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16;
-                        V : Byte);
-   function  Read_U8   (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16)
-                        return Byte;
-   procedure Write_U16 (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16;
-                        V : Interfaces.Unsigned_16);
-   function  Read_U16  (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16)
-                        return Interfaces.Unsigned_16;
+   procedure Write_U8
+     (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16; V : Byte);
+   function Read_U8
+     (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16) return Byte;
+   procedure Write_U16
+     (Dev  : Device;
+      Blk  : Block;
+      Addr : Interfaces.Unsigned_16;
+      V    : Interfaces.Unsigned_16);
+   function Read_U16
+     (Dev : Device; Blk : Block; Addr : Interfaces.Unsigned_16)
+      return Interfaces.Unsigned_16;
 
 private
    type Device is record
-      Host       : ESP32S3.SPI.SPI_Host      := ESP32S3.SPI.SPI2;
-      Clock_Hz   : Positive                  := 10_000_000;   --  this device's clock
-      Cs         : ESP32S3.GPIO.Pin_Id        := 0;
+      Host       : ESP32S3.SPI.SPI_Host := ESP32S3.SPI.SPI2;
+      Clock_Hz   : Positive := 10_000_000;   --  this device's clock
+      Cs         : ESP32S3.GPIO.Pin_Id := 0;
       Rst        : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Int        : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Configured : Boolean                   := False;
+      Configured : Boolean := False;
    end record;
 end ESP32S3.W5500;

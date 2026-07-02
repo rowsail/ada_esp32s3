@@ -1,6 +1,6 @@
-with Interfaces;               use Interfaces;
-with System.Machine_Code;      use System.Machine_Code;
-with ESP32S3_Registers;        use ESP32S3_Registers;
+with Interfaces;                   use Interfaces;
+with System.Machine_Code;          use System.Machine_Code;
+with ESP32S3_Registers;            use ESP32S3_Registers;
 with ESP32S3_Registers.USB_DEVICE; use ESP32S3_Registers.USB_DEVICE;
 
 package body ESP32S3.Console is
@@ -45,14 +45,16 @@ package body ESP32S3.Console is
    function CCOUNT return Unsigned_32 is
       R : Unsigned_32;
    begin
-      Asm ("rsr.ccount %0",
-           Outputs  => Unsigned_32'Asm_Output ("=a", R),
-           Volatile => True);
+      Asm
+        ("rsr.ccount %0",
+         Outputs  => Unsigned_32'Asm_Output ("=a", R),
+         Volatile => True);
       return R;
    end CCOUNT;
 
-   function Endpoint_Ready return Boolean is
-     (USB_DEVICE_Periph.EP1_CONF.SERIAL_IN_EP_DATA_FREE) with Inline;
+   function Endpoint_Ready return Boolean
+   is (USB_DEVICE_Periph.EP1_CONF.SERIAL_IN_EP_DATA_FREE)
+   with Inline;
 
    --  Wait until the endpoint can accept a new packet.  False => no host drained
    --  it within Timeout_Cycles (host absent / not reading).
@@ -96,7 +98,7 @@ package body ESP32S3.Console is
    --  handler that writes to the console: its own dropped bytes are still tallied
    --  but must not re-enter the hook.
    Drop_Cb : Drop_Handler := null;
-   In_Hook : Boolean      := False;
+   In_Hook : Boolean := False;
 
    procedure Add_Dropped (Count : Natural) is
    begin
@@ -127,11 +129,13 @@ package body ESP32S3.Console is
             if not Host_Seen then
                return S'Last - I + 1;   --  no host confirmed: drop, never wait
             elsif not Wait_Ready then
-               Host_Seen := False;      --  confirmed host went away: stop blocking
+               Host_Seen :=
+                 False;      --  confirmed host went away: stop blocking
                return S'Last - I + 1;
             end if;
          elsif Pending then
-            Host_Seen := True;      --  drained since our last write => host present
+            Host_Seen :=
+              True;      --  drained since our last write => host present
          end if;
 
          --  Endpoint is free: write up to one 64-byte packet and send it.
@@ -172,7 +176,8 @@ package body ESP32S3.Console is
          return;
       end if;
       Lit ("[console: ");
-      declare                          --  decimal of Dropped
+      declare
+         --  decimal of Dropped
          V : Unsigned_32 := Dropped;
          D : String (1 .. 10);
          F : Natural := D'Last + 1;
@@ -187,7 +192,8 @@ package body ESP32S3.Console is
       end;
       Lit (" bytes dropped]" & ASCII.LF);
 
-      if Emit (Note (1 .. L)) = 0 then  --  announced only if it reached the host
+      if Emit (Note (1 .. L)) = 0 then
+         --  announced only if it reached the host
          Dropped := 0;
       end if;
    end Announce_Drops;
@@ -216,12 +222,14 @@ package body ESP32S3.Console is
 
    procedure Put (C : Character) is
    begin
-      if Len = Buf_Size then     --  buffer full: make room first
+      if Len = Buf_Size then
+         --  buffer full: make room first
          Flush;
       end if;
       Len := Len + 1;
       Buf (Len) := C;
-      if C = ASCII.LF then       --  flush whole lines as they complete
+      if C = ASCII.LF then
+         --  flush whole lines as they complete
          Flush;
       end if;
    end Put;
@@ -241,7 +249,8 @@ package body ESP32S3.Console is
    -- Dropped_Bytes --
    -------------------
 
-   function Dropped_Bytes return Interfaces.Unsigned_32 is (Dropped);
+   function Dropped_Bytes return Interfaces.Unsigned_32
+   is (Dropped);
 
    -------------------
    -- Clear_Dropped --
@@ -274,10 +283,10 @@ package body ESP32S3.Console is
    procedure Read (C : out Character; Available : out Boolean) is
    begin
       if USB_DEVICE_Periph.EP1_CONF.SERIAL_OUT_EP_DATA_AVAIL then
-         C         := Character'Val (Natural (USB_DEVICE_Periph.EP1.RDWR_BYTE));
+         C := Character'Val (Natural (USB_DEVICE_Periph.EP1.RDWR_BYTE));
          Available := True;
       else
-         C         := ASCII.NUL;
+         C := ASCII.NUL;
          Available := False;
       end if;
    end Read;

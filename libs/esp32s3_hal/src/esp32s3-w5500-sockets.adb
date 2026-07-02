@@ -49,16 +49,16 @@ package body ESP32S3.W5500.Sockets is
    --  Register helpers (one socket's register block)
    ---------------------------------------------------------------------------
 
-   function R8 (S : Socket; A : Unsigned_16) return Byte is
-     (Read_U8 (S.Dev.all, Socket_Regs (S.Index), A));
+   function R8 (S : Socket; A : Unsigned_16) return Byte
+   is (Read_U8 (S.Dev.all, Socket_Regs (S.Index), A));
 
    procedure W8 (S : Socket; A : Unsigned_16; V : Byte) is
    begin
       Write_U8 (S.Dev.all, Socket_Regs (S.Index), A, V);
    end W8;
 
-   function R16 (S : Socket; A : Unsigned_16) return Unsigned_16 is
-     (Read_U16 (S.Dev.all, Socket_Regs (S.Index), A));
+   function R16 (S : Socket; A : Unsigned_16) return Unsigned_16
+   is (Read_U16 (S.Dev.all, Socket_Regs (S.Index), A));
 
    procedure W16 (S : Socket; A : Unsigned_16; V : Unsigned_16) is
    begin
@@ -112,37 +112,47 @@ package body ESP32S3.W5500.Sockets is
    --  Open / close
    ---------------------------------------------------------------------------
 
-   procedure Open_TCP (Dev        : Device_Access;
-                       S          : in out Socket;
-                       Index      : Socket_Id;
-                       Local_Port : Port_Number;
-                       Result     : out Status) is
+   procedure Open_TCP
+     (Dev        : Device_Access;
+      S          : in out Socket;
+      Index      : Socket_Id;
+      Local_Port : Port_Number;
+      Result     : out Status) is
    begin
-      S.Dev := Dev;  S.Index := Index;  S.Proto := TCP_Proto;  S.Is_Open := False;
+      S.Dev := Dev;
+      S.Index := Index;
+      S.Proto := TCP_Proto;
+      S.Is_Open := False;
       Issue (S, Cmd_Close);
-      W8  (S, Sn_MR, MR_TCP);
+      W8 (S, Sn_MR, MR_TCP);
       W16 (S, Sn_PORT, Local_Port);
       Issue (S, Cmd_Open);
       if R8 (S, Sn_SR) = SR_INIT then
-         S.Is_Open := True;  Result := OK;
+         S.Is_Open := True;
+         Result := OK;
       else
          Result := Error;
       end if;
    end Open_TCP;
 
-   procedure Open_UDP (Dev        : Device_Access;
-                       S          : in out Socket;
-                       Index      : Socket_Id;
-                       Local_Port : Port_Number;
-                       Result     : out Status) is
+   procedure Open_UDP
+     (Dev        : Device_Access;
+      S          : in out Socket;
+      Index      : Socket_Id;
+      Local_Port : Port_Number;
+      Result     : out Status) is
    begin
-      S.Dev := Dev;  S.Index := Index;  S.Proto := UDP_Proto;  S.Is_Open := False;
+      S.Dev := Dev;
+      S.Index := Index;
+      S.Proto := UDP_Proto;
+      S.Is_Open := False;
       Issue (S, Cmd_Close);
-      W8  (S, Sn_MR, MR_UDP);
+      W8 (S, Sn_MR, MR_UDP);
       W16 (S, Sn_PORT, Local_Port);
       Issue (S, Cmd_Open);
       if R8 (S, Sn_SR) = SR_UDP then
-         S.Is_Open := True;  Result := OK;
+         S.Is_Open := True;
+         Result := OK;
       else
          Result := Error;
       end if;
@@ -157,14 +167,16 @@ package body ESP32S3.W5500.Sockets is
          --  peer to block until its own timeout.  Then force-free the socket.
          if S.Proto = TCP_Proto then
             Issue (S, Cmd_Discon);
-            for Tries in 1 .. 1000 loop                --  best effort; ~1 RTT
+            for Tries in 1 .. 1000 loop
+               --  best effort; ~1 RTT
                exit when R8 (S, Sn_SR) = SR_CLOSED;
                Wait_Event (S);
             end loop;
          end if;
          Issue (S, Cmd_Close);
       end if;
-      S.Is_Open := False;  S.Proto := None;
+      S.Is_Open := False;
+      S.Proto := None;
    end Close;
 
    ---------------------------------------------------------------------------
@@ -174,38 +186,44 @@ package body ESP32S3.W5500.Sockets is
    procedure Listen (S : in out Socket; Result : out Status) is
    begin
       if not S.Is_Open then
-         Result := Not_Open;  return;
+         Result := Not_Open;
+         return;
       end if;
       Issue (S, Cmd_Listen);
       Result := (if R8 (S, Sn_SR) = SR_LISTEN then OK else Error);
    end Listen;
 
-   procedure Connect (S       : in out Socket;
-                      Host    : IPv4_Address;
-                      Port    : Port_Number;
-                      Result  : out Status;
-                      Timeout : Duration := 10.0) is
+   procedure Connect
+     (S       : in out Socket;
+      Host    : IPv4_Address;
+      Port    : Port_Number;
+      Result  : out Status;
+      Timeout : Duration := 10.0)
+   is
       Deadline : constant Time := Clock + To_Time_Span (Timeout);
    begin
       if not S.Is_Open then
-         Result := Not_Open;  return;
+         Result := Not_Open;
+         return;
       end if;
       Write (S.Dev.all, Socket_Regs (S.Index), Sn_DIPR, Host);
       W16 (S, Sn_DPORT, Port);
-      W8  (S, Sn_IR, IR_CON or IR_DISCON or IR_TIMEOUT);   --  clear stale flags
+      W8 (S, Sn_IR, IR_CON or IR_DISCON or IR_TIMEOUT);   --  clear stale flags
       Issue (S, Cmd_Connect);
       loop
          declare
             SR : constant Byte := R8 (S, Sn_SR);
          begin
             if SR = SR_ESTABLISHED then
-               Result := OK;  return;
+               Result := OK;
+               return;
             elsif SR = SR_CLOSED then
                declare
                   IR : constant Byte := R8 (S, Sn_IR);
                begin
                   W8 (S, Sn_IR, IR);                        --  clear
-                  Result := (if (IR and IR_TIMEOUT) /= 0 then Timed_Out else Refused);
+                  Result :=
+                    (if (IR and IR_TIMEOUT) /= 0 then Timed_Out else Refused);
                   return;
                end;
             end if;
@@ -226,31 +244,51 @@ package body ESP32S3.W5500.Sockets is
    function State (S : Socket) return Socket_State is
    begin
       case R8 (S, Sn_SR) is
-         when SR_CLOSED      => return Closed;
-         when SR_INIT        => return Init;
-         when SR_LISTEN      => return Listening;
-         when SR_ESTABLISHED => return Established;
-         when SR_CLOSE_WAIT  => return Close_Wait;
-         when SR_UDP         => return Udp;
-         when others         => return Other;
+         when SR_CLOSED      =>
+            return Closed;
+
+         when SR_INIT        =>
+            return Init;
+
+         when SR_LISTEN      =>
+            return Listening;
+
+         when SR_ESTABLISHED =>
+            return Established;
+
+         when SR_CLOSE_WAIT  =>
+            return Close_Wait;
+
+         when SR_UDP         =>
+            return Udp;
+
+         when others         =>
+            return Other;
       end case;
    end State;
 
-   function Is_Established (S : Socket) return Boolean is
-     (R8 (S, Sn_SR) = SR_ESTABLISHED);
+   function Is_Established (S : Socket) return Boolean
+   is (R8 (S, Sn_SR) = SR_ESTABLISHED);
 
    procedure Wait_Connected (S : in out Socket; Result : out Status) is
    begin
       if not S.Is_Open then
-         Result := Not_Open;  return;
+         Result := Not_Open;
+         return;
       end if;
       loop
          case State (S) is
             when Established =>
                W8 (S, Sn_IR, IR_CON);    --  clear CON so INTn re-arms for data
-               Result := OK;  return;
-            when Closed      => Result := Error;  return;   --  listen ended
-            when others      => Wait_Event (S);             --  Listening/transient
+               Result := OK;
+               return;
+
+            when Closed      =>
+               Result := Error;
+               return;   --  listen ended
+
+            when others      =>
+               Wait_Event (S);             --  Listening/transient
          end case;
       end loop;
    end Wait_Connected;
@@ -265,23 +303,30 @@ package body ESP32S3.W5500.Sockets is
       Deadline : Time;
    begin
       if not S.Is_Open then
-         Result := Not_Open;  return;
+         Result := Not_Open;
+         return;
       end if;
       if Timed then
          Deadline := Clock + To_Time_Span (S.Recv_Timeout);
       end if;
       loop
          if R16_Stable (S, Sn_RX_RSR) > 0 then
-            Result := OK;  return;
+            Result := OK;
+            return;
          end if;
          case State (S) is
-            when Close_Wait | Closed => Result := Closed_By_Peer;  return;
-            when others              => null;
+            when Close_Wait | Closed =>
+               Result := Closed_By_Peer;
+               return;
+
+            when others              =>
+               null;
          end case;
          --  The INTn heartbeat re-signals every ~50 ms, so a Wait_Event sleeping
          --  on the interrupt still wakes in time to honour the deadline.
          if Timed and then Clock >= Deadline then
-            Result := Timed_Out;  return;
+            Result := Timed_Out;
+            return;
          end if;
          Wait_Event (S);
       end loop;
@@ -291,51 +336,62 @@ package body ESP32S3.W5500.Sockets is
    begin
       if S.Is_Open and then S.Proto = TCP_Proto then
          Issue (S, Cmd_Discon);
-         for Tries in 1 .. 1000 loop                       --  best-effort wait
+         for Tries in 1 .. 1000 loop
+            --  best-effort wait
             exit when R8 (S, Sn_SR) = SR_CLOSED;
             Wait_Event (S);
          end loop;
       end if;
-      S.Is_Open := False;  S.Proto := None;
+      S.Is_Open := False;
+      S.Proto := None;
    end Disconnect;
 
    ---------------------------------------------------------------------------
    --  TCP data transfer
    ---------------------------------------------------------------------------
 
-   function Available (S : Socket) return Natural is
-     (Natural (R16_Stable (S, Sn_RX_RSR)));
+   function Available (S : Socket) return Natural
+   is (Natural (R16_Stable (S, Sn_RX_RSR)));
 
    --  Issue SEND and wait for SEND_OK (or TIMEOUT).  Returns False on timeout.
    function Flush_Send (S : Socket) return Boolean is
    begin
-      W8 (S, Sn_IR, IR_SEND_OK);                            --  clear stale SEND_OK
+      W8
+        (S,
+         Sn_IR,
+         IR_SEND_OK);                            --  clear stale SEND_OK
       Issue (S, Cmd_Send);
       loop
          declare
             IR : constant Byte := R8 (S, Sn_IR);
          begin
             if (IR and IR_SEND_OK) /= 0 then
-               W8 (S, Sn_IR, IR_SEND_OK);  return True;
+               W8 (S, Sn_IR, IR_SEND_OK);
+               return True;
             elsif (IR and IR_TIMEOUT) /= 0 then
-               W8 (S, Sn_IR, IR_TIMEOUT);  return False;
+               W8 (S, Sn_IR, IR_TIMEOUT);
+               return False;
             end if;
          end;
          Wait_Event (S);
       end loop;
    end Flush_Send;
 
-   procedure Send (S      : in out Socket;
-                   Data   : Byte_Array;
-                   Sent   : out Natural;
-                   Result : out Status) is
+   procedure Send
+     (S      : in out Socket;
+      Data   : Byte_Array;
+      Sent   : out Natural;
+      Result : out Status)
+   is
       Free     : Unsigned_16;
       WR       : Unsigned_16;
       N        : Natural;
       Deadline : constant Time := Clock + Milliseconds (10_000);
    begin
       if not S.Is_Open then
-         Sent := 0;  Result := Not_Open;  return;
+         Sent := 0;
+         Result := Not_Open;
+         return;
       end if;
       --  Wait for room in the TX buffer rather than giving up: on a SUSTAINED
       --  send the 2 KB socket buffer fills until the peer ACKs (and the peer
@@ -347,74 +403,103 @@ package body ESP32S3.W5500.Sockets is
          Free := R16_Stable (S, Sn_TX_FSR);
          exit when Free > 0;
          case State (S) is
-            when Established | Close_Wait => null;        --  still connected
-            when others => Sent := 0;  Result := Closed_By_Peer;  return;
+            when Established | Close_Wait =>
+               null;        --  still connected
+
+            when others                   =>
+               Sent := 0;
+               Result := Closed_By_Peer;
+               return;
          end case;
          if Clock >= Deadline then
-            Sent := 0;  Result := Timed_Out;  return;
+            Sent := 0;
+            Result := Timed_Out;
+            return;
          end if;
          Wait_Event (S);
       end loop;
-      N  := Natural'Min (Data'Length, Natural (Free));
+      N := Natural'Min (Data'Length, Natural (Free));
       WR := R16 (S, Sn_TX_WR);
-      Write (S.Dev.all, Socket_TX (S.Index), WR,
-             Data (Data'First .. Data'First + N - 1));
+      Write
+        (S.Dev.all,
+         Socket_TX (S.Index),
+         WR,
+         Data (Data'First .. Data'First + N - 1));
       W16 (S, Sn_TX_WR, WR + Unsigned_16 (N));
       if Flush_Send (S) then
-         Sent := N;  Result := OK;
+         Sent := N;
+         Result := OK;
       else
          --  SEND was issued and Sn_TX_WR already advanced, so the N bytes are
          --  committed to the chip (in flight) even though completion did not
          --  confirm in time -- report them consumed so a retry can't double-send.
-         Sent := N;  Result := Timed_Out;
+         Sent := N;
+         Result := Timed_Out;
       end if;
    end Send;
 
-   procedure Receive (S      : in out Socket;
-                      Into   : out Byte_Array;
-                      Count  : out Natural;
-                      Result : out Status) is
+   procedure Receive
+     (S      : in out Socket;
+      Into   : out Byte_Array;
+      Count  : out Natural;
+      Result : out Status)
+   is
       RSR : Unsigned_16;
       RD  : Unsigned_16;
       N   : Natural;
    begin
       if not S.Is_Open then
-         Count := 0;  Result := Not_Open;  return;
+         Count := 0;
+         Result := Not_Open;
+         return;
       end if;
       RSR := R16_Stable (S, Sn_RX_RSR);
       if RSR = 0 then
-         Count  := 0;
-         Result := (if R8 (S, Sn_SR) = SR_CLOSE_WAIT then Closed_By_Peer else OK);
+         Count := 0;
+         Result :=
+           (if R8 (S, Sn_SR) = SR_CLOSE_WAIT then Closed_By_Peer else OK);
          return;
       end if;
-      N  := Natural'Min (Into'Length, Natural (RSR));
+      N := Natural'Min (Into'Length, Natural (RSR));
       RD := R16 (S, Sn_RX_RD);
-      Read (S.Dev.all, Socket_RX (S.Index), RD,
-            Into (Into'First .. Into'First + N - 1));
+      Read
+        (S.Dev.all,
+         Socket_RX (S.Index),
+         RD,
+         Into (Into'First .. Into'First + N - 1));
       W16 (S, Sn_RX_RD, RD + Unsigned_16 (N));
       Issue (S, Cmd_Recv);
-      W8 (S, Sn_IR, IR_RECV);     --  clear RECV so INTn re-arms for the next data
-      Count := N;  Result := OK;
+      W8
+        (S,
+         Sn_IR,
+         IR_RECV);     --  clear RECV so INTn re-arms for the next data
+      Count := N;
+      Result := OK;
    end Receive;
 
    ---------------------------------------------------------------------------
    --  UDP datagrams
    ---------------------------------------------------------------------------
 
-   procedure Send_To (S      : in out Socket;
-                      Host   : IPv4_Address;
-                      Port   : Port_Number;
-                      Data   : Byte_Array;
-                      Result : out Status) is
+   procedure Send_To
+     (S      : in out Socket;
+      Host   : IPv4_Address;
+      Port   : Port_Number;
+      Data   : Byte_Array;
+      Result : out Status)
+   is
       Free : Unsigned_16;
       WR   : Unsigned_16;
    begin
       if not S.Is_Open then
-         Result := Not_Open;  return;
+         Result := Not_Open;
+         return;
       end if;
       Free := R16_Stable (S, Sn_TX_FSR);
-      if Natural (Free) < Data'Length then           --  a datagram is all-or-nothing
-         Result := No_Space;  return;
+      if Natural (Free) < Data'Length then
+         --  a datagram is all-or-nothing
+         Result := No_Space;
+         return;
       end if;
       Write (S.Dev.all, Socket_Regs (S.Index), Sn_DIPR, Host);
       W16 (S, Sn_DPORT, Port);
@@ -424,42 +509,58 @@ package body ESP32S3.W5500.Sockets is
       Result := (if Flush_Send (S) then OK else Timed_Out);
    end Send_To;
 
-   procedure Receive_From (S         : in out Socket;
-                           From      : out IPv4_Address;
-                           From_Port : out Port_Number;
-                           Into      : out Byte_Array;
-                           Count     : out Natural;
-                           Result    : out Status) is
+   procedure Receive_From
+     (S         : in out Socket;
+      From      : out IPv4_Address;
+      From_Port : out Port_Number;
+      Into      : out Byte_Array;
+      Count     : out Natural;
+      Result    : out Status)
+   is
       RSR  : Unsigned_16;
       RD   : Unsigned_16;
       Hdr  : Byte_Array (0 .. 7);
       Plen : Natural;
       N    : Natural;
    begin
-      From := (0, 0, 0, 0);  From_Port := 0;  Count := 0;
+      From := (0, 0, 0, 0);
+      From_Port := 0;
+      Count := 0;
       if not S.Is_Open then
-         Result := Not_Open;  return;
+         Result := Not_Open;
+         return;
       end if;
       RSR := R16_Stable (S, Sn_RX_RSR);
-      if RSR < 8 then                                --  no complete packet header
-         Result := OK;  return;
+      if RSR < 8 then
+         --  no complete packet header
+         Result := OK;
+         return;
       end if;
       RD := R16 (S, Sn_RX_RD);
-      Read (S.Dev.all, Socket_RX (S.Index), RD, Hdr);    --  IP(4) port(2) len(2)
-      From      := (Hdr (0), Hdr (1), Hdr (2), Hdr (3));
-      From_Port := ESP32S3.Endian.Join_BE16 (Unsigned_8 (Hdr (4)), Unsigned_8 (Hdr (5)));
-      Plen      := Natural (ESP32S3.Endian.Join_BE16 (Unsigned_8 (Hdr (6)),
-                                              Unsigned_8 (Hdr (7))));
+      Read
+        (S.Dev.all, Socket_RX (S.Index), RD, Hdr);    --  IP(4) port(2) len(2)
+      From := (Hdr (0), Hdr (1), Hdr (2), Hdr (3));
+      From_Port :=
+        ESP32S3.Endian.Join_BE16 (Unsigned_8 (Hdr (4)), Unsigned_8 (Hdr (5)));
+      Plen :=
+        Natural
+          (ESP32S3.Endian.Join_BE16
+             (Unsigned_8 (Hdr (6)), Unsigned_8 (Hdr (7))));
       RD := RD + 8;
-      N  := Natural'Min (Into'Length, Plen);
+      N := Natural'Min (Into'Length, Plen);
       if N > 0 then
-         Read (S.Dev.all, Socket_RX (S.Index), RD,
-               Into (Into'First .. Into'First + N - 1));
+         Read
+           (S.Dev.all,
+            Socket_RX (S.Index),
+            RD,
+            Into (Into'First .. Into'First + N - 1));
       end if;
-      RD := RD + Unsigned_16 (Plen);                 --  skip the whole datagram
+      RD :=
+        RD + Unsigned_16 (Plen);                 --  skip the whole datagram
       W16 (S, Sn_RX_RD, RD);
       Issue (S, Cmd_Recv);
-      Count := N;  Result := OK;
+      Count := N;
+      Result := OK;
    end Receive_From;
 
 end ESP32S3.W5500.Sockets;

@@ -9,6 +9,7 @@ with ESP32S3.W5500.Sockets;
 --
 --  Acquire_Lease is one-shot (no automatic renewal yet); call it again before the
 --  lease expires to renew.  Requires the embedded or full profile.
+
 package ESP32S3.W5500.DHCP is
 
    type Lease_Info is record
@@ -25,7 +26,7 @@ package ESP32S3.W5500.DHCP is
       MAC    : MAC_Address;
       Lease  : out Lease_Info;
       Socket : Socket_Id := 0;
-      Tries  : Positive  := 4) return Boolean;
+      Tries  : Positive := 4) return Boolean;
 
    --  Renew an existing lease once: a REQUEST that keeps the current IP up
    --  (ciaddr = the leased address), broadcast so any server can answer.  True on
@@ -55,7 +56,7 @@ package ESP32S3.W5500.DHCP is
       Socket   : Socket_Id := 0;
       On_Bound : Bound_Callback := null);
 
-   function Is_Bound      return Boolean;       --  a lease is currently held
+   function Is_Bound return Boolean;       --  a lease is currently held
    function Current_Lease return Lease_Info;
 
 end ESP32S3.W5500.DHCP;

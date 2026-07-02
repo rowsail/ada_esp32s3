@@ -24,15 +24,17 @@ with ESP32S3_Registers;
 --  only the caller's buffer; there is no shared mutable driver state, so
 --  concurrent readers simply get independent random words.  No protected object
 --  is needed (and none is added, so RNG stays usable in a ZFP context too).
+
 package ESP32S3.RNG
   with Preelaborate
 is
    subtype Word is ESP32S3_Registers.UInt32;        --  a 32-bit value
 
    --  One fresh 32-bit random word straight from the hardware RNG.
-   function Read return Word with Inline;
+   function Read return Word
+   with Inline;
 
-   type Byte is mod 2 ** 8 with Size => 8;
+   type Byte is mod 2**8 with Size => 8;
    type Byte_Array is array (Natural range <>) of Byte with Pack;
 
    --  Fill Buffer with random bytes (a word at a time; the last, possibly

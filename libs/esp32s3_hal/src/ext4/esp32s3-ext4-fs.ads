@@ -8,16 +8,18 @@ with ESP32S3.Ext4.Journal;
 --  handle: it flushes and releases the block cache automatically when it leaves
 --  scope (including on exception unwind), so there is no silently-unflushed
 --  state.  Errors are raised (see ESP32S3.Ext4).
+
 package ESP32S3.Ext4.FS is
 
    type Mount is tagged limited private;
 
    --  Mount Dev: read + feature-gate the superblock, bring up the cache.
    --  Cache_Blocks is the number of filesystem blocks the LRU cache holds.
-   procedure Open (M            : in out Mount;
-                   Dev          : ESP32S3.Block_Dev.Device;
-                   Read_Only    : Boolean  := True;
-                   Cache_Blocks : Positive := 32);
+   procedure Open
+     (M            : in out Mount;
+      Dev          : ESP32S3.Block_Dev.Device;
+      Read_Only    : Boolean := True;
+      Cache_Blocks : Positive := 32);
 
    --  Flush + release (also done by finalization; idempotent).
    procedure Close (M : in out Mount);
@@ -29,27 +31,30 @@ package ESP32S3.Ext4.FS is
    procedure Stat (M : in out Mount; N : Inode_Number; I : out Inode.Info);
 
    --  Read up to Into'Length bytes of file I from byte Offset; Last = count read.
-   procedure Read_File (M      : in out Mount;
-                        I      : Inode.Info;
-                        Offset : U64;
-                        Into   : out Byte_Array;
-                        Last   : out Natural);
+   procedure Read_File
+     (M      : in out Mount;
+      I      : Inode.Info;
+      Offset : U64;
+      Into   : out Byte_Array;
+      Last   : out Natural);
 
    --  Iterate directory I's entries.
    procedure Iterate
      (M     : in out Mount;
       I     : Inode.Info;
-      Visit : not null access procedure
-                (Name : String; Ino : Inode_Number; File_Type : U8));
+      Visit :
+        not null access procedure
+          (Name : String; Ino : Inode_Number; File_Type : U8));
 
    --  Create a regular file Name in directory Dir_Path; return its inode number.
    --  (Requires a writable, non-metadata_csum volume.)
-   function Create_File (M : in out Mount; Dir_Path, Name : String)
-      return Inode_Number;
+   function Create_File
+     (M : in out Mount; Dir_Path, Name : String) return Inode_Number;
 
    --  Set the entire contents of (empty) file inode N from one in-memory buffer
    --  (up to ~4 MiB at 4 KiB blocks: 12 direct + one single-indirect block).
-   procedure Write_File (M : in out Mount; N : Inode_Number; Data : Byte_Array);
+   procedure Write_File
+     (M : in out Mount; N : Inode_Number; Data : Byte_Array);
 
    --  Append Data to the end of regular file inode N.  Streaming: call it
    --  repeatedly with small chunks to grow a file WITHOUT holding the whole
@@ -58,13 +63,13 @@ package ESP32S3.Ext4.FS is
    procedure Append (M : in out Mount; N : Inode_Number; Data : Byte_Array);
 
    --  Create a subdirectory / remove a regular file / remove an empty directory.
-   procedure Mkdir  (M : in out Mount; Dir_Path, Name : String);
+   procedure Mkdir (M : in out Mount; Dir_Path, Name : String);
    procedure Unlink (M : in out Mount; Dir_Path, Name : String);
-   procedure Rmdir  (M : in out Mount; Dir_Path, Name : String);
+   procedure Rmdir (M : in out Mount; Dir_Path, Name : String);
 
    --  Rename Old_Name in Old_Dir to New_Name in New_Dir.
-   procedure Rename (M : in out Mount;
-                     Old_Dir, Old_Name, New_Dir, New_Name : String);
+   procedure Rename
+     (M : in out Mount; Old_Dir, Old_Name, New_Dir, New_Name : String);
 
    --  Truncate file inode N to New_Size; hard-link an existing file.
    procedure Truncate (M : in out Mount; N : Inode_Number; New_Size : U64);
@@ -93,15 +98,14 @@ package ESP32S3.Ext4.FS is
 
    --  Physical block holding logical block L_Block of file I (0 => hole).
    --  (Exposed mainly for tests.)
-   function Map_Block (M : in out Mount; I : Inode.Info; L_Block : U64)
-      return Block_Number;
+   function Map_Block
+     (M : in out Mount; I : Inode.Info; L_Block : U64) return Block_Number;
 
    --  Write one committed journal transaction logging New_Data for Targets and
    --  set the RECOVER flag (does not checkpoint).  Exposed for the crash-safety
    --  test; the recovery path then applies it.
-   procedure Journal_Commit (M        : in out Mount;
-                             Targets  : Journal.Target_Array;
-                             New_Data : Byte_Array);
+   procedure Journal_Commit
+     (M : in out Mount; Targets : Journal.Target_Array; New_Data : Byte_Array);
 
 private
 
@@ -110,6 +114,7 @@ private
       Live : Boolean := False;
    end record;
 
-   overriding procedure Finalize (M : in out Mount);
+   overriding
+   procedure Finalize (M : in out Mount);
 
 end ESP32S3.Ext4.FS;

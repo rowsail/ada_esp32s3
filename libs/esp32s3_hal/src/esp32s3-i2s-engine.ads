@@ -6,6 +6,7 @@ with ESP32S3_Registers.I2S;
 --  RAW I2S0/I2S1 register driver -- the ZFP-safe *mechanism* with NO mutual
 --  exclusion.  PRIVATE child: only the ESP32S3.I2S subtree may use it.  See the
 --  parent (ESP32S3.I2S) for the design rationale.
+
 private package ESP32S3.I2S.Engine is
 
    --  A configured port.  No GDMA channel is held while idle: a one-shot
@@ -14,33 +15,35 @@ private package ESP32S3.I2S.Engine is
    --  Chan is a (limited, controlled) GDMA Channel.
    type Bus is limited private;
 
-   procedure Open (B           : in out Bus;
-                   Port        : I2S_Port;
-                   Sample_Rate : Positive;
-                   Bits        : Sample_Bits;
-                   Mode        : I2S_Mode);
+   procedure Open
+     (B           : in out Bus;
+      Port        : I2S_Port;
+      Sample_Rate : Positive;
+      Bits        : Sample_Bits;
+      Mode        : I2S_Mode);
 
    function Is_Open (B : Bus) return Boolean;
 
-   procedure Configure_Pins (B : Bus;
-                             Bclk : ESP32S3.GPIO.Optional_Pin;
-                             Ws   : ESP32S3.GPIO.Optional_Pin;
-                             Dout : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                             Din  : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                             Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin);
+   procedure Configure_Pins
+     (B    : Bus;
+      Bclk : ESP32S3.GPIO.Optional_Pin;
+      Ws   : ESP32S3.GPIO.Optional_Pin;
+      Dout : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Din  : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
    procedure Enable_Loopback (B : Bus; Pad : ESP32S3.GPIO.Pin_Id);
 
-   procedure Write    (B : Bus; Tx : System.Address; Length : Natural);
-   procedure Read     (B : Bus; Rx : System.Address; Length : Natural);
+   procedure Write (B : Bus; Tx : System.Address; Length : Natural);
+   procedure Read (B : Bus; Rx : System.Address; Length : Natural);
    procedure Transfer (B : Bus; Tx, Rx : System.Address; Length : Natural);
 
    --  Start the TX path streaming Tx (Length bytes) on a SELF-LOOPING DMA and
    --  leave it running: the buffer is replayed forever with no inter-buffer
    --  gap (gapless).  Returns immediately; Stop halts it.  Tx in internal SRAM,
    --  Length 1 .. 4095, and Tx should hold a whole number of wave periods.
-   procedure Start_Continuous (B : in out Bus; Tx : System.Address;
-                               Length : Natural);
+   procedure Start_Continuous
+     (B : in out Bus; Tx : System.Address; Length : Natural);
 
    --  Stop a continuous transmit (TX clock off) and release its held channel.
    procedure Stop (B : in out Bus);
@@ -60,8 +63,8 @@ private
    type Bus is record
       Regs      : Periph_Ref := null;
       Chan      : ESP32S3.GDMA.Channel;   --  held only while Streaming
-      Port      : I2S_Port   := I2S0;
-      Valid     : Boolean    := False;     --  port configured by Open
-      Streaming : Boolean    := False;     --  a continuous transmit holds Chan
+      Port      : I2S_Port := I2S0;
+      Valid     : Boolean := False;     --  port configured by Open
+      Streaming : Boolean := False;     --  a continuous transmit holds Chan
    end record;
 end ESP32S3.I2S.Engine;

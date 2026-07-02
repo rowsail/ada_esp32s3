@@ -23,8 +23,10 @@ package body ESP32S3.Serial is
 
    Current : Device := The_Console;
 
-   function Console_Device return Device is (The_Console);
-   function Output         return Device is (Current);
+   function Console_Device return Device
+   is (The_Console);
+   function Output return Device
+   is (Current);
 
    procedure Set_Output (D : Device) is
    begin
@@ -53,8 +55,9 @@ package body ESP32S3.Serial is
 
    --  Input side of the mux.  Symmetric with the output side above: a default
    --  device bound to the USB Serial/JTAG console, redirectable with Set_Input.
-   procedure Console_Read (Ctx : System.Address; C : out Character;
-                           Available : out Boolean) is
+   procedure Console_Read
+     (Ctx : System.Address; C : out Character; Available : out Boolean)
+   is
       pragma Unreferenced (Ctx);
    begin
       ESP32S3.Console.Read (C, Available);
@@ -65,8 +68,10 @@ package body ESP32S3.Serial is
 
    Current_In : In_Device := The_Console_In;
 
-   function Console_In_Device return In_Device is (The_Console_In);
-   function Input             return In_Device is (Current_In);
+   function Console_In_Device return In_Device
+   is (The_Console_In);
+   function Input return In_Device
+   is (Current_In);
 
    procedure Set_Input (D : In_Device) is
    begin
@@ -78,7 +83,8 @@ package body ESP32S3.Serial is
       if Current_In.Read /= null then
          Current_In.Read (Current_In.Ctx, C, Available);
       else
-         C := ASCII.NUL; Available := False;
+         C := ASCII.NUL;
+         Available := False;
       end if;
    end Get;
 
@@ -91,10 +97,13 @@ package body ESP32S3.Serial is
    pragma Convention (C, Console_Hook);
 
    procedure Install_Console_Hook (H : Console_Hook)
-     with Import, Convention => C,
-          External_Name => "__esp32s3_install_console_hook";
+   with
+     Import,
+     Convention    => C,
+     External_Name => "__esp32s3_install_console_hook";
 
-   procedure Text_IO_Sink (C : Character) with Convention => C;
+   procedure Text_IO_Sink (C : Character)
+   with Convention => C;
    procedure Text_IO_Sink (C : Character) is
    begin
       Put (C);   --  -> the currently selected device

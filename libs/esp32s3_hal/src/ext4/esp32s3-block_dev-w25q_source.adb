@@ -1,5 +1,5 @@
 with System;
-with Interfaces;            use Interfaces;
+with Interfaces; use Interfaces;
 with Ada.Unchecked_Conversion;
 with Ada.IO_Exceptions;
 
@@ -12,18 +12,20 @@ package body ESP32S3.Block_Dev.W25Q_Source is
    Sector_Bytes : constant := Sector'Length;   --  512
 
    type Source_Access is access all Source;
-   function To_Source is
-     new Ada.Unchecked_Conversion (System.Address, Source_Access);
+   function To_Source is new
+     Ada.Unchecked_Conversion (System.Address, Source_Access);
 
    ----------------------------------------------------------------------------
    --  Helpers
    ----------------------------------------------------------------------------
 
    --  Byte address of LBA, with a range check against the configured size.
-   function Sector_Address (S : Source; LBA : Sector_Index) return W25Q.Address is
+   function Sector_Address (S : Source; LBA : Sector_Index) return W25Q.Address
+   is
    begin
       if LBA >= S.Count then
-         raise Ada.IO_Exceptions.Device_Error with "W25Q block LBA out of range";
+         raise Ada.IO_Exceptions.Device_Error
+           with "W25Q block LBA out of range";
       end if;
       return W25Q.Address (LBA) * Sector_Bytes;
    end Sector_Address;
@@ -33,11 +35,10 @@ package body ESP32S3.Block_Dev.W25Q_Source is
    --  Data'Length is a multiple of the 256-byte page), so no write crosses a page
    --  boundary.  Assumes the target only needs 1->0 bit changes (erased, or a
    --  superset of the new bits) -- the caller guarantees that.
-   procedure Program_Pages (Flash : W25Q.Flash;
-                            Addr  : W25Q.Address;
-                            Data  : W25Q.Byte_Array)
+   procedure Program_Pages
+     (Flash : W25Q.Flash; Addr : W25Q.Address; Data : W25Q.Byte_Array)
    is
-      Pos : Natural      := Data'First;
+      Pos : Natural := Data'First;
       A   : W25Q.Address := Addr;
    begin
       while Pos <= Data'Last loop
@@ -47,7 +48,7 @@ package body ESP32S3.Block_Dev.W25Q_Source is
          begin
             W25Q.Program_Page (Flash, A, Data (Pos .. Pos + N - 1));
             Pos := Pos + N;
-            A   := A + W25Q.Address (N);
+            A := A + W25Q.Address (N);
          end;
       end loop;
    end Program_Pages;
@@ -69,35 +70,38 @@ package body ESP32S3.Block_Dev.W25Q_Source is
    --  Block_Dev vtable
    ----------------------------------------------------------------------------
 
-   procedure Do_Read (Ctx : System.Address; LBA : Sector_Index; Data : out Sector)
+   procedure Do_Read
+     (Ctx : System.Address; LBA : Sector_Index; Data : out Sector)
    is
       S    : constant Source_Access := To_Source (Ctx);
-      Addr : constant W25Q.Address  := Sector_Address (S.all, LBA);
+      Addr : constant W25Q.Address := Sector_Address (S.all, LBA);
       B    : W25Q.Byte_Array (0 .. Sector_Bytes - 1);
    begin
       W25Q.Read (S.Flash, Addr, B);
       Data := Sector (B);
    end Do_Read;
 
-   procedure Do_Write (Ctx : System.Address; LBA : Sector_Index; Data : Sector) is
-      S       : constant Source_Access := To_Source (Ctx);
-      Addr    : constant W25Q.Address  := Sector_Address (S.all, LBA);
-      New_B   : constant W25Q.Byte_Array (0 .. Sector_Bytes - 1) :=
-                  W25Q.Byte_Array (Data);
-      Old_B   : W25Q.Byte_Array (0 .. Sector_Bytes - 1);
+   procedure Do_Write (Ctx : System.Address; LBA : Sector_Index; Data : Sector)
+   is
+      S     : constant Source_Access := To_Source (Ctx);
+      Addr  : constant W25Q.Address := Sector_Address (S.all, LBA);
+      New_B : constant W25Q.Byte_Array (0 .. Sector_Bytes - 1) :=
+        W25Q.Byte_Array (Data);
+      Old_B : W25Q.Byte_Array (0 .. Sector_Bytes - 1);
    begin
       W25Q.Read (S.Flash, Addr, Old_B);
 
       if Old_B = New_B then
          return;                         --  already on the medium -- nothing to do
       elsif Clear_Only (Old_B, New_B) then
-         Program_Pages (S.Flash, Addr, New_B);     --  program in place, no erase
+         Program_Pages
+           (S.Flash, Addr, New_B);     --  program in place, no erase
       else
          --  Read-modify-write the whole 4 KB erase block: a 0->1 bit somewhere
          --  forces an erase, which clears all Sectors_Per_Erase sectors in it.
          declare
             Base   : constant W25Q.Address :=
-                       Addr - (Addr mod W25Q.Sector_Size);
+              Addr - (Addr mod W25Q.Sector_Size);
             Offset : constant Natural := Natural (Addr - Base);
          begin
             W25Q.Read (S.Flash, Base, S.Buf);
@@ -118,14 +122,14 @@ package body ESP32S3.Block_Dev.W25Q_Source is
    --  (one erase op each).  A subsequent write into the erased space is a
    --  clear-only program, so a caller that rewrites the whole block pays one
    --  erase instead of a read-modify-write per 512-byte sector.
-   procedure Do_Erase (Ctx   : System.Address;
-                       First : Sector_Index;
-                       Count : Sector_Index)
+   procedure Do_Erase
+     (Ctx : System.Address; First : Sector_Index; Count : Sector_Index)
    is
-      S          : constant Source_Access := To_Source (Ctx);
-      Per_Erase  : constant Sector_Index := W25Q.Sector_Size / Sector_Bytes;  --  8
-      First_Blk  : constant Sector_Index := First / Per_Erase;
-      Last_Blk   : constant Sector_Index := (First + Count - 1) / Per_Erase;
+      S         : constant Source_Access := To_Source (Ctx);
+      Per_Erase : constant Sector_Index :=
+        W25Q.Sector_Size / Sector_Bytes;  --  8
+      First_Blk : constant Sector_Index := First / Per_Erase;
+      Last_Blk  : constant Sector_Index := (First + Count - 1) / Per_Erase;
    begin
       if Count = 0 then
          return;
@@ -142,14 +146,16 @@ package body ESP32S3.Block_Dev.W25Q_Source is
    --  Construction
    ----------------------------------------------------------------------------
 
-   procedure Configure (Src            : in out Source;
-                        Flash          : ESP32S3.W25Q.Flash;
-                        Capacity_Bytes : ESP32S3.W25Q.Address := 0)
+   procedure Configure
+     (Src            : in out Source;
+      Flash          : ESP32S3.W25Q.Flash;
+      Capacity_Bytes : ESP32S3.W25Q.Address := 0)
    is
       Cap : W25Q.Address := Capacity_Bytes;
       ID  : W25Q.JEDEC_ID;
    begin
-      if Cap = 0 then                       --  auto-detect from the JEDEC id
+      if Cap = 0 then
+         --  auto-detect from the JEDEC id
          W25Q.Read_Identification (Flash, ID);
          Cap := W25Q.Capacity_Bytes (ID);
          if Cap = 0 then
@@ -159,16 +165,17 @@ package body ESP32S3.Block_Dev.W25Q_Source is
       end if;
       Src.Flash := Flash;
       Src.Count := Sector_Index (Cap / Sector_Bytes);
-      Src.Buf   := (others => 16#FF#);
+      Src.Buf := (others => 16#FF#);
    end Configure;
 
    function Make (Src : not null access Source) return Device is
    begin
-      return (Ctx   => Src.all'Address,
-              Read  => Do_Read'Access,
-              Write => Do_Write'Access,
-              Count => Do_Count'Access,
-              Erase => Do_Erase'Access);
+      return
+        (Ctx   => Src.all'Address,
+         Read  => Do_Read'Access,
+         Write => Do_Write'Access,
+         Count => Do_Count'Access,
+         Erase => Do_Erase'Access);
    end Make;
 
 end ESP32S3.Block_Dev.W25Q_Source;

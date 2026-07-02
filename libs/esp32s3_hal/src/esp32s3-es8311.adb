@@ -13,17 +13,21 @@ package body ESP32S3.ES8311 is
    Cfg_Ready : Boolean := False;
 
    --  DAC volume register value for a 0..100 % level (ref: vol*256/100 - 1).
-   function Vol_Reg (Percent : Natural) return Byte is
-     (if Percent = 0 then 0
-      else Byte (Integer'Min (255, (Integer'Min (100, Percent) * 256) / 100 - 1)));
+   function Vol_Reg (Percent : Natural) return Byte
+   is (if Percent = 0
+       then 0
+       else
+         Byte
+           (Integer'Min (255, (Integer'Min (100, Percent) * 256) / 100 - 1)));
 
    ---------------------------------------------------------------------------
    --  Small I2C register helpers (all carry an Ok accumulator so a failed ACK
    --  aborts the rest of the sequence).
    ---------------------------------------------------------------------------
 
-   procedure Write_Reg (S : ESP32S3.I2C.Session; Reg, Val : Byte;
-                        Ok : in out Boolean) is
+   procedure Write_Reg
+     (S : ESP32S3.I2C.Session; Reg, Val : Byte; Ok : in out Boolean)
+   is
       Success : Boolean;
    begin
       if Ok then
@@ -32,14 +36,16 @@ package body ESP32S3.ES8311 is
       end if;
    end Write_Reg;
 
-   procedure Read_Reg (S : ESP32S3.I2C.Session; Reg : Byte; Val : out Byte;
-                       Ok : in out Boolean) is
+   procedure Read_Reg
+     (S : ESP32S3.I2C.Session; Reg : Byte; Val : out Byte; Ok : in out Boolean)
+   is
       D       : ESP32S3.I2C.Byte_Array (0 .. 0);
       Success : Boolean;
    begin
       Val := 0;
       if Ok then
-         ESP32S3.I2C.Write (S, Cfg_Addr, (0 => Reg), Success);  --  set reg pointer
+         ESP32S3.I2C.Write
+           (S, Cfg_Addr, (0 => Reg), Success);  --  set reg pointer
          if Success then
             ESP32S3.I2C.Read (S, Cfg_Addr, D, Success);
             Val := D (0);
@@ -49,8 +55,9 @@ package body ESP32S3.ES8311 is
    end Read_Reg;
 
    --  Read-modify-write: new = (old and Keep) or Bits.
-   procedure Modify_Reg (S : ESP32S3.I2C.Session; Reg, Keep, Bits : Byte;
-                         Ok : in out Boolean) is
+   procedure Modify_Reg
+     (S : ESP32S3.I2C.Session; Reg, Keep, Bits : Byte; Ok : in out Boolean)
+   is
       Cur : Byte;
    begin
       Read_Reg (S, Reg, Cur, Ok);
@@ -72,20 +79,19 @@ package body ESP32S3.ES8311 is
       Dsdin        : ESP32S3.GPIO.Pin_Id;
       Asdout       : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Sample_Rate  : Positive := 16_000;
-      Volume       : Natural  := 70;
-      Mic_Gain_Db  : Natural  := 24;
+      Volume       : Natural := 70;
+      Mic_Gain_Db  : Natural := 24;
       I2C_Clock_Hz : Positive := 100_000;
-      Addr         : Address  := Default_Address;
+      Addr         : Address := Default_Address;
       Ok           : out Boolean)
    is
       use ESP32S3.GPIO;
       use type ESP32S3.GPIO.Pad_Number;
       Capture_In : constant Boolean := Asdout /= ESP32S3.GPIO.No_Pin;
       --  ADC PGA gain register (reg 0x16) = gain in 6 dB steps, 0 .. 7.
-      Mic_Step   : constant Byte :=
-        Byte (Natural'Min (7, Mic_Gain_Db / 6));
+      Mic_Step   : constant Byte := Byte (Natural'Min (7, Mic_Gain_Db / 6));
    begin
-      Cfg_I2C  := I2C_Bus;
+      Cfg_I2C := I2C_Bus;
       Cfg_Port := Port;
       Cfg_Addr := Addr;
       Cfg_Ready := False;
@@ -107,15 +113,17 @@ package body ESP32S3.ES8311 is
          S        : ESP32S3.I2C.Session;
       begin
          ESP32S3.I2S.Acquire
-           (I2S_Hold, Port,
+           (I2S_Hold,
+            Port,
             Sample_Rate => Sample_Rate,
-            Bits => ESP32S3.I2S.Bits_16,
-            Mode => ESP32S3.I2S.Standard,
-            Bclk => Optional_Pin (Sclk),
-            Ws   => Optional_Pin (Lrck),
-            Dout => Optional_Pin (Dsdin),
-            Din  => (if Capture_In then Asdout else ESP32S3.GPIO.No_Pin),
-            Mclk => Optional_Pin (Mclk));
+            Bits        => ESP32S3.I2S.Bits_16,
+            Mode        => ESP32S3.I2S.Standard,
+            Bclk        => Optional_Pin (Sclk),
+            Ws          => Optional_Pin (Lrck),
+            Dout        => Optional_Pin (Dsdin),
+            Din         =>
+              (if Capture_In then Asdout else ESP32S3.GPIO.No_Pin),
+            Mclk        => Optional_Pin (Mclk));
 
          --  2. I2C control: run the codec register-init sequence.
          ESP32S3.I2C.Acquire (S, I2C_Bus);
@@ -130,13 +138,37 @@ package body ESP32S3.ES8311 is
          --  (bit 7 = 0).  Then the sample-frequency coefficients for MCLK =
          --  256 x fs, 16-bit (rate-independent divider values).
          Write_Reg (S, 16#01#, 16#3F#, Ok);
-         Modify_Reg (S, 16#02#, Keep => 16#07#, Bits => 16#00#, Ok => Ok);  --  pre_div 1, pre_multi 1
-         Write_Reg (S, 16#03#, 16#10#, Ok);                                 --  fs_mode 0, adc_osr 0x10
-         Write_Reg (S, 16#04#, 16#10#, Ok);                                 --  dac_osr 0x10
-         Write_Reg (S, 16#05#, 16#00#, Ok);                                 --  adc_div/dac_div 1
-         Modify_Reg (S, 16#06#, Keep => 16#E0#, Bits => 16#03#, Ok => Ok);  --  bclk_div 4 -> 4-1
-         Modify_Reg (S, 16#07#, Keep => 16#C0#, Bits => 16#00#, Ok => Ok);  --  lrck_h
-         Write_Reg (S, 16#08#, 16#FF#, Ok);                                 --  lrck_l
+         Modify_Reg
+           (S,
+            16#02#,
+            Keep => 16#07#,
+            Bits => 16#00#,
+            Ok   => Ok);  --  pre_div 1, pre_multi 1
+         Write_Reg
+           (S,
+            16#03#,
+            16#10#,
+            Ok);                                 --  fs_mode 0, adc_osr 0x10
+         Write_Reg
+           (S,
+            16#04#,
+            16#10#,
+            Ok);                                 --  dac_osr 0x10
+         Write_Reg
+           (S,
+            16#05#,
+            16#00#,
+            Ok);                                 --  adc_div/dac_div 1
+         Modify_Reg
+           (S,
+            16#06#,
+            Keep => 16#E0#,
+            Bits => 16#03#,
+            Ok   => Ok);  --  bclk_div 4 -> 4-1
+         Modify_Reg
+           (S, 16#07#, Keep => 16#C0#, Bits => 16#00#, Ok => Ok);  --  lrck_h
+         Write_Reg
+           (S, 16#08#, 16#FF#, Ok);                                 --  lrck_l
 
          --  Serial data port: 16-bit I2S (Philips), in and out.
          Write_Reg (S, 16#09#, 16#0C#, Ok);
@@ -147,7 +179,8 @@ package body ESP32S3.ES8311 is
          Write_Reg (S, 16#0E#, 16#02#, Ok);
          Write_Reg (S, 16#12#, 16#00#, Ok);
          Write_Reg (S, 16#13#, 16#10#, Ok);
-         Write_Reg (S, 16#1C#, 16#6A#, Ok);   --  ADC settings (harmless for TX-only)
+         Write_Reg
+           (S, 16#1C#, 16#6A#, Ok);   --  ADC settings (harmless for TX-only)
          Write_Reg (S, 16#37#, 16#08#, Ok);   --  bypass DAC equalizer
 
          --  DAC volume.
@@ -159,8 +192,10 @@ package body ESP32S3.ES8311 is
          --  input + PGA and set the ADC gain.
          if Capture_In then
             Write_Reg (S, 16#14#, 16#1A#, Ok);      --  analog MIC on + PGA
-            Write_Reg (S, 16#16#, Mic_Step, Ok);    --  ADC PGA gain (6 dB steps)
+            Write_Reg
+              (S, 16#16#, Mic_Step, Ok);    --  ADC PGA gain (6 dB steps)
             Write_Reg (S, 16#17#, 16#C8#, Ok);      --  ADC volume
+
          end if;
 
          ESP32S3.I2C.Release (S);
@@ -210,8 +245,8 @@ package body ESP32S3.ES8311 is
    -- Play_Continuous --
    ---------------------
 
-   procedure Play_Continuous (O : Output; Samples : System.Address;
-                              Length : Natural) is
+   procedure Play_Continuous
+     (O : Output; Samples : System.Address; Length : Natural) is
    begin
       ESP32S3.I2S.Start_Continuous_Raw (O.Audio, Samples, Length);
    end Play_Continuous;
@@ -229,7 +264,8 @@ package body ESP32S3.ES8311 is
    -- Capture --
    -------------
 
-   procedure Capture (O : Output; Samples : System.Address; Length : Natural) is
+   procedure Capture (O : Output; Samples : System.Address; Length : Natural)
+   is
    begin
       ESP32S3.I2S.Capture_Raw (O.Audio, Samples, Length);
    end Capture;

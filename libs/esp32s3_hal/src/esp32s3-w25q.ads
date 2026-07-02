@@ -1,5 +1,5 @@
 with System;
-with Interfaces;   use Interfaces;
+with Interfaces; use Interfaces;
 with ESP32S3.SPI;
 with ESP32S3.GPIO;
 
@@ -26,14 +26,18 @@ with ESP32S3.GPIO;
 --  Release around one command group), so it cooperates with other owners of a
 --  shared bus rather than holding it for the flash's whole lifetime.  Requires a
 --  tasking runtime (the SPI Session is controlled) -- embedded/full profile.
+
 package ESP32S3.W25Q is
 
    --  Geometry of the Winbond family parts this driver speaks to.
-   Page_Size   : constant := 256;     --  program granularity (one Page-Program)
-   Sector_Size : constant := 4096;    --  smallest erase unit (Sector-Erase 0x20)
-   Block_Size  : constant := 65536;   --  64 KB block geometry (this driver erases
-                                       --  only by 4 KB sector; the FV's 64K block
-                                       --  erase, 0xD8, is not used here)
+   Page_Size   : constant :=
+     256;     --  program granularity (one Page-Program)
+   Sector_Size : constant :=
+     4096;    --  smallest erase unit (Sector-Erase 0x20)
+   Block_Size  : constant :=
+     65536;   --  64 KB block geometry (this driver erases
+   --  only by 4 KB sector; the FV's 64K block
+   --  erase, 0xD8, is not used here)
 
    --  Flat byte address into the array (0 .. chip_size-1).  The W25Q256FV is
    --  32 MB, so a 32-bit address covers it with room to spare.
@@ -61,13 +65,13 @@ package ESP32S3.W25Q is
    --  always SPI mode 0.
    type Flash is record
       Host     : ESP32S3.SPI.SPI_Host;
-      Clock_Hz : Positive                  := 8_000_000;   --  Read uses 0x03, whose
-                                                           --  ceiling is ~50 MHz on
-                                                           --  the W25Q256FV (not the
-                                                           --  133 MHz fast-read max)
+      Clock_Hz : Positive := 8_000_000;   --  Read uses 0x03, whose
+      --  ceiling is ~50 MHz on
+      --  the W25Q256FV (not the
+      --  133 MHz fast-read max)
       CS_Pin   : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      CS_CB    : ESP32S3.SPI.CS_Select     := null;
-      Ctx      : System.Address            := System.Null_Address;
+      CS_CB    : ESP32S3.SPI.CS_Select := null;
+      Ctx      : System.Address := System.Null_Address;
    end record;
 
    ----------------------------------------------------------------------------
@@ -107,7 +111,9 @@ package ESP32S3.W25Q is
    --  the page rule: Data must be 1 .. Page_Size bytes and must not straddle a
    --  256-byte page boundary (rather than silently wrapping).
    procedure Program_Page (Dev : Flash; Addr : Address; Data : Byte_Array)
-     with Pre => Data'Length in 1 .. Page_Size
-                 and then Natural (Addr mod Page_Size) + Data'Length <= Page_Size;
+   with
+     Pre =>
+       Data'Length in 1 .. Page_Size
+       and then Natural (Addr mod Page_Size) + Data'Length <= Page_Size;
 
 end ESP32S3.W25Q;

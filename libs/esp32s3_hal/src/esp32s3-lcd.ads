@@ -13,6 +13,7 @@ with ESP32S3.GPIO;
 --  The single controller is guarded by a protected object; Acquire hands out a
 --  limited, controlled Session that owns it exclusively and releases on scope
 --  exit.  Uses finalization, so it targets the embedded/full profile.
+
 package ESP32S3.LCD is
 
    No_Pin : constant ESP32S3.GPIO.Pad_Number := ESP32S3.GPIO.No_Pin;
@@ -41,23 +42,25 @@ package ESP32S3.LCD is
    --  MHz / Pclk_Hz)), routing the eight data lines and the pixel clock to pads.
    --  Each pin is optional (No_Pin = unrouted).  Every Acquire re-applies the
    --  clock and pin routing.
-   procedure Acquire (S       : in out Session;
-                      Pclk_Hz : Positive   := 1_000_000;
-                      Data    : Data_Pins  := (others => No_Pin);
-                      Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin);
+   procedure Acquire
+     (S       : in out Session;
+      Pclk_Hz : Positive := 1_000_000;
+      Data    : Data_Pins := (others => No_Pin);
+      Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
    --  Re-apply the pixel clock and pin routing on the held controller.  Raises
    --  Not_Owned unless S holds it.
-   procedure Reconfigure (S       : Session;
-                          Pclk_Hz : Positive   := 1_000_000;
-                          Data    : Data_Pins  := (others => No_Pin);
-                          Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin);
+   procedure Reconfigure
+     (S       : Session;
+      Pclk_Hz : Positive := 1_000_000;
+      Data    : Data_Pins := (others => No_Pin);
+      Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
    --  Re-route the data bus and pixel clock to physical pads (a finer change
    --  than Reconfigure, leaving the clock rate untouched).  Raises Not_Owned
    --  unless S holds it.
-   procedure Configure_Pins (S : Session; Data : Data_Pins;
-                             Pclk : ESP32S3.GPIO.Optional_Pin);
+   procedure Configure_Pins
+     (S : Session; Data : Data_Pins; Pclk : ESP32S3.GPIO.Optional_Pin);
 
    --  Free-run the pixel clock continuously on Pclk_Pad (no data transaction) --
    --  useful as a bus clock and for verifying the clock on its own.  On the held
@@ -67,8 +70,8 @@ package ESP32S3.LCD is
    --  Stream Length bytes (1 .. 4095) from Tx out the data bus, one per PCLK.
    --  Blocking; Ok is True once the transfer completes.  Buffer in internal SRAM.
    --  Raises Not_Owned unless S holds the controller.
-   procedure Transmit (S : Session; Tx : System.Address; Length : Natural;
-                       Ok : out Boolean);
+   procedure Transmit
+     (S : Session; Tx : System.Address; Length : Natural; Ok : out Boolean);
 
    procedure Release (S : in out Session);
 
@@ -76,5 +79,6 @@ private
    type Session is new Ada.Finalization.Limited_Controlled with record
       Active : Boolean := False;
    end record;
-   overriding procedure Finalize (S : in out Session);
+   overriding
+   procedure Finalize (S : in out Session);
 end ESP32S3.LCD;

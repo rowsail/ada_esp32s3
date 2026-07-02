@@ -1,4 +1,5 @@
-with Interfaces; use type Interfaces.Unsigned_8;
+with Interfaces;
+use type Interfaces.Unsigned_8;
 
 package body ESP32S3.GPS.NMEA is
 
@@ -10,8 +11,8 @@ package body ESP32S3.GPS.NMEA is
    ---------------------------------------------------------------------------
 
    --  Hex value of one ASCII nibble, or -1 if not a hex digit.
-   function Hex_Val (C : Character) return Integer is
-     (case C is
+   function Hex_Val (C : Character) return Integer
+   is (case C is
          when '0' .. '9' => Character'Pos (C) - Character'Pos ('0'),
          when 'A' .. 'F' => Character'Pos (C) - Character'Pos ('A') + 10,
          when 'a' .. 'f' => Character'Pos (C) - Character'Pos ('a') + 10,
@@ -103,9 +104,11 @@ package body ESP32S3.GPS.NMEA is
          --  To_Nat * 10**Places can still exceed Integer on garbage input.
          Whole : constant LLI :=
            (if Dot = 0
-            then LLI (To_Nat (S)) * 10 ** Places
-            else LLI (To_Nat (S (S'First .. Dot - 1))) * 10 ** Places
-                 + LLI (Frac (S (Dot + 1 .. S'Last), Places)));
+            then LLI (To_Nat (S)) * 10**Places
+            else
+              LLI (To_Nat (S (S'First .. Dot - 1)))
+              * 10**Places
+              + LLI (Frac (S (Dot + 1 .. S'Last), Places)));
       begin
          if Whole > LLI (Integer'Last) then
             return Integer'Last;
@@ -122,7 +125,8 @@ package body ESP32S3.GPS.NMEA is
    --  is degrees (2 for latitude, 3 for longitude -- handled the same way).
    ---------------------------------------------------------------------------
 
-   function Coord (S : String; Hemi : Character) return Interfaces.Integer_32 is
+   function Coord (S : String; Hemi : Character) return Interfaces.Integer_32
+   is
       Dot     : Integer := 0;
       Degrees : Natural;
       Min_E5  : LLI;        --  minutes in units of 1e-5 minute
@@ -134,14 +138,19 @@ package body ESP32S3.GPS.NMEA is
       Dot := Last_Dot (S);
       if Dot < S'First + 3 then
          return 0;          --  too short to hold dd + mm.
+
       end if;
 
       Degrees := To_Nat (S (S'First .. Dot - 3));
       if Degrees > 180 then
-         return 0;          --  implausible (real |lat|<=90, |lon|<=180): reject,
+         return
+           0;          --  implausible (real |lat|<=90, |lon|<=180): reject,
+
       end if;               --  and keeps Deg_E7 well within Integer_32 below
-      Min_E5  := LLI (To_Nat (S (Dot - 2 .. Dot - 1))) * 100_000
-                 + LLI (Frac (S (Dot + 1 .. S'Last), 5));
+      Min_E5 :=
+        LLI (To_Nat (S (Dot - 2 .. Dot - 1)))
+        * 100_000
+        + LLI (Frac (S (Dot + 1 .. S'Last), 5));
       --  1e-5 minute = (1e7 / 60) / 1e5 deg_e7 = 5/3 deg_e7.
       Deg_E7 := LLI (Degrees) * 10_000_000 + (Min_E5 * 5) / 3;
 
@@ -159,7 +168,7 @@ package body ESP32S3.GPS.NMEA is
       if S'Length < 6 then
          return T;
       end if;
-      T.Hour   := To_Nat (S (S'First     .. S'First + 1));
+      T.Hour := To_Nat (S (S'First .. S'First + 1));
       T.Minute := To_Nat (S (S'First + 2 .. S'First + 3));
       T.Second := To_Nat (S (S'First + 4 .. S'First + 5));
       Dot := Last_Dot (S);
@@ -176,9 +185,9 @@ package body ESP32S3.GPS.NMEA is
       if S'Length < 6 then
          return D;
       end if;
-      D.Day   := To_Nat (S (S'First     .. S'First + 1));
+      D.Day := To_Nat (S (S'First .. S'First + 1));
       D.Month := To_Nat (S (S'First + 2 .. S'First + 3));
-      D.Year  := 2000 + To_Nat (S (S'First + 4 .. S'First + 5));
+      D.Year := 2000 + To_Nat (S (S'First + 4 .. S'First + 5));
       return D;
    end To_Date;
 
@@ -191,11 +200,13 @@ package body ESP32S3.GPS.NMEA is
    procedure Check
      (Sentence : String; First, Last : out Integer; Ok : out Boolean)
    is
-      Star : Integer := 0;
-      Sum  : Interfaces.Unsigned_8 := 0;
+      Star   : Integer := 0;
+      Sum    : Interfaces.Unsigned_8 := 0;
       Hi, Lo : Integer;
    begin
-      First := 0; Last := -1; Ok := False;
+      First := 0;
+      Last := -1;
+      Ok := False;
       if Sentence'Length < 4 or else Sentence (Sentence'First) /= '$' then
          return;
       end if;
@@ -208,6 +219,7 @@ package body ESP32S3.GPS.NMEA is
       end loop;
       if Star = 0 or else Star + 2 > Sentence'Last then
          return;   --  no '*HH'
+
       end if;
       Hi := Hex_Val (Sentence (Star + 1));
       Lo := Hex_Val (Sentence (Star + 2));
@@ -215,25 +227,31 @@ package body ESP32S3.GPS.NMEA is
          return;
       end if;
       First := Sentence'First + 1;
-      Last  := Star - 1;
-      Ok    := Interfaces.Unsigned_8 (Hi * 16 + Lo) = Sum;
+      Last := Star - 1;
+      Ok := Interfaces.Unsigned_8 (Hi * 16 + Lo) = Sum;
    end Check;
 
    --  Does talker+type field T end with the 3-letter sentence type Kind?
-   function Is_Type (T : String; Kind : String) return Boolean is
-     (T'Length >= 3 and then T (T'Last - 2 .. T'Last) = Kind);
+   function Is_Type (T : String; Kind : String) return Boolean
+   is (T'Length >= 3 and then T (T'Last - 2 .. T'Last) = Kind);
 
    --  Constellation from a sentence's two-letter talker prefix.
    function System_Of (Kind : String) return GNSS_System is
       T : constant String :=
         (if Kind'Length >= 2 then Kind (Kind'First .. Kind'First + 1) else "");
    begin
-      if    T = "GP" then return GPS;
-      elsif T = "GL" then return GLONASS;
-      elsif T = "GA" then return Galileo;
-      elsif T = "GB" or else T = "BD" then return BeiDou;
-      elsif T = "GQ" then return QZSS;
-      else  return Other;
+      if T = "GP" then
+         return GPS;
+      elsif T = "GL" then
+         return GLONASS;
+      elsif T = "GA" then
+         return Galileo;
+      elsif T = "GB" or else T = "BD" then
+         return BeiDou;
+      elsif T = "GQ" then
+         return QZSS;
+      else
+         return Other;
       end if;
    end System_Of;
 
@@ -275,9 +293,9 @@ package body ESP32S3.GPS.NMEA is
                Result.Has_Quality := True;
                Result.Quality :=
                  (case Q is
-                     when 1      => GPS_Fix,
-                     when 2      => DGPS_Fix,
-                     when others => No_Fix);
+                    when 1      => GPS_Fix,
+                    when 2      => DGPS_Fix,
+                    when others => No_Fix);
                Result.Fix_Valid := Q > 0;
                if Sats /= "" then
                   Result.Has_Sats := True;
@@ -289,10 +307,11 @@ package body ESP32S3.GPS.NMEA is
                end if;
                if Result.Fix_Valid and then La /= "" and then Lo /= "" then
                   Result.Has_Position := True;
-                  Result.Pos := (Latitude  => Coord (La, (if Ns = "" then 'N'
-                                                          else Ns (Ns'First))),
-                                 Longitude => Coord (Lo, (if Ew = "" then 'E'
-                                                          else Ew (Ew'First))));
+                  Result.Pos :=
+                    (Latitude  =>
+                       Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
+                     Longitude =>
+                       Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
                end if;
             end;
 
@@ -321,10 +340,11 @@ package body ESP32S3.GPS.NMEA is
                end if;
                if Result.Fix_Valid and then La /= "" and then Lo /= "" then
                   Result.Has_Position := True;
-                  Result.Pos := (Latitude  => Coord (La, (if Ns = "" then 'N'
-                                                          else Ns (Ns'First))),
-                                 Longitude => Coord (Lo, (if Ew = "" then 'E'
-                                                          else Ew (Ew'First))));
+                  Result.Pos :=
+                    (Latitude  =>
+                       Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
+                     Longitude =>
+                       Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
                end if;
                if Result.Fix_Valid and then (Spd /= "" or else Cog /= "") then
                   Result.Has_Velocity := True;
@@ -332,6 +352,7 @@ package body ESP32S3.GPS.NMEA is
                   Result.Speed_MMS :=
                     Natural (LLI (Scaled (Spd, 3)) * 1852 / 3600);
                   Result.Course_CDeg := Scaled (Cog, 2);   --  centi-degrees
+
                end if;
             end;
 
@@ -352,9 +373,10 @@ package body ESP32S3.GPS.NMEA is
                end if;
                if Dd /= "" and then Mm /= "" and then Yy /= "" then
                   Result.Has_Date := True;
-                  Result.Day := (Day   => To_Nat (Dd),
-                                 Month => To_Nat (Mm),
-                                 Year  => To_Nat (Yy));
+                  Result.Day :=
+                    (Day   => To_Nat (Dd),
+                     Month => To_Nat (Mm),
+                     Year  => To_Nat (Yy));
                end if;
             end;
 
@@ -376,10 +398,11 @@ package body ESP32S3.GPS.NMEA is
                end if;
                if Result.Fix_Valid and then La /= "" and then Lo /= "" then
                   Result.Has_Position := True;
-                  Result.Pos := (Latitude  => Coord (La, (if Ns = "" then 'N'
-                                                          else Ns (Ns'First))),
-                                 Longitude => Coord (Lo, (if Ew = "" then 'E'
-                                                          else Ew (Ew'First))));
+                  Result.Pos :=
+                    (Latitude  =>
+                       Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
+                     Longitude =>
+                       Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
                end if;
             end;
 
@@ -389,7 +412,8 @@ package body ESP32S3.GPS.NMEA is
             --  data is invalid; absent mode is treated as valid.
             Result.Recognised := True;
             declare
-               Cog  : constant String := Field (P, 1);   --  true course, degrees
+               Cog  : constant String :=
+                 Field (P, 1);   --  true course, degrees
                Spd  : constant String := Field (P, 5);   --  knots
                Mode : constant String := Field (P, 9);   --  may be absent
             begin
@@ -431,11 +455,12 @@ package body ESP32S3.GPS.NMEA is
                   begin
                      if Prn /= "" then
                         N := N + 1;
-                        Result.Sats (N) := (System    => Sys,
-                                            PRN       => To_Nat (Prn),
-                                            Elevation => To_Nat (Elv),
-                                            Azimuth   => To_Nat (Azm),
-                                            SNR       => To_Nat (Snr));
+                        Result.Sats (N) :=
+                          (System    => Sys,
+                           PRN       => To_Nat (Prn),
+                           Elevation => To_Nat (Elv),
+                           Azimuth   => To_Nat (Azm),
+                           SNR       => To_Nat (Snr));
                         if Snr /= "" then
                            Best := Natural'Max (Best, To_Nat (Snr));
                         end if;
@@ -455,16 +480,17 @@ package body ESP32S3.GPS.NMEA is
                N  : Natural := 0;
             begin
                Result.Has_DOP := True;
-               Result.Mode := (case FT is
-                                  when 2      => Fix_2D,
-                                  when 3      => Fix_3D,
-                                  when others => Fix_None);
+               Result.Mode :=
+                 (case FT is
+                    when 2      => Fix_2D,
+                    when 3      => Fix_3D,
+                    when others => Fix_None);
                for K in 3 .. 14 loop
                   if Field (P, K) /= "" then
                      N := N + 1;
                   end if;
                end loop;
-               Result.Used   := N;
+               Result.Used := N;
                Result.PDOP_C := Scaled (Field (P, 15), 2);
                Result.HDOP_C := Scaled (Field (P, 16), 2);
                Result.VDOP_C := Scaled (Field (P, 17), 2);

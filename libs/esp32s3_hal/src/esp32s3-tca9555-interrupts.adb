@@ -12,6 +12,7 @@ package body ESP32S3.TCA9555.Interrupts is
    begin
       if Dev.Int_Pin = ESP32S3.GPIO.No_Pin then
          return;   --  no INT line wired -- nothing to arm
+
       end if;
 
       declare

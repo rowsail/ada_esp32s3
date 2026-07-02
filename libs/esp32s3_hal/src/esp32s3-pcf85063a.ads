@@ -36,6 +36,7 @@ with ESP32S3.GPIO;
 --           Hour => 14, Minute => 30, Second => 0), St);
 --        ESP32S3.PCF85063A.Get_Time (RTC, T, Ok, St);   --  Ok = clock integrity
 --     end;
+
 package ESP32S3.PCF85063A is
 
    --  The PCF85063A has ONE fixed 7-bit bus address (no address pins).
@@ -46,10 +47,10 @@ package ESP32S3.PCF85063A is
    ----------------------------------------------------------------------------
 
    --  The chip keeps a 2-digit year (00..99); this driver anchors it to 2000.
-   subtype Year_Number   is Natural range 2000 .. 2099;
-   subtype Month_Number  is Natural range 1 .. 12;
-   subtype Day_Number    is Natural range 1 .. 31;
-   subtype Hour_Number   is Natural range 0 .. 23;   --  24-hour mode only
+   subtype Year_Number is Natural range 2000 .. 2099;
+   subtype Month_Number is Natural range 1 .. 12;
+   subtype Day_Number is Natural range 1 .. 31;
+   subtype Hour_Number is Natural range 0 .. 23;   --  24-hour mode only
    subtype Minute_Number is Natural range 0 .. 59;
    subtype Second_Number is Natural range 0 .. 59;
 
@@ -59,11 +60,11 @@ package ESP32S3.PCF85063A is
      (Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday);
 
    type Time is record
-      Year        : Year_Number   := 2000;
-      Month       : Month_Number  := 1;
-      Day         : Day_Number    := 1;
-      Day_Of_Week : Weekday       := Sunday;
-      Hour        : Hour_Number   := 0;
+      Year        : Year_Number := 2000;
+      Month       : Month_Number := 1;
+      Day         : Day_Number := 1;
+      Day_Of_Week : Weekday := Sunday;
+      Hour        : Hour_Number := 0;
       Minute      : Minute_Number := 0;
       Second      : Second_Number := 0;
    end record;
@@ -94,8 +95,8 @@ package ESP32S3.PCF85063A is
       Sda      : ESP32S3.GPIO.Pin_Id;
       Scl      : ESP32S3.GPIO.Pin_Id;
       Int_Pin  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Host     : ESP32S3.I2C.I2C_Host      := ESP32S3.I2C.I2C0;
-      Clock_Hz : Positive                  := 400_000);
+      Host     : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
+      Clock_Hz : Positive := 400_000);
 
    --  The INT pin Dev was set up with (No_Pin if none).
    function Interrupt_Pin (Dev : Device) return ESP32S3.GPIO.Optional_Pin;
@@ -123,7 +124,7 @@ package ESP32S3.PCF85063A is
 
    --  Halt / resume the time counters (the Control_1 STOP bit) without changing
    --  the loaded value.  Set_Time already brackets its write with these.
-   procedure Stop_Clock  (Dev : Device; Result : out Status);
+   procedure Stop_Clock (Dev : Device; Result : out Status);
    procedure Start_Clock (Dev : Device; Result : out Status);
 
    ----------------------------------------------------------------------------
@@ -134,16 +135,16 @@ package ESP32S3.PCF85063A is
    ----------------------------------------------------------------------------
 
    type Alarm is record
-      Use_Second  : Boolean       := False;
+      Use_Second  : Boolean := False;
       Second      : Second_Number := 0;
-      Use_Minute  : Boolean       := False;
+      Use_Minute  : Boolean := False;
       Minute      : Minute_Number := 0;
-      Use_Hour    : Boolean       := False;
-      Hour        : Hour_Number   := 0;
-      Use_Day     : Boolean       := False;
-      Day         : Day_Number    := 1;
-      Use_Weekday : Boolean       := False;
-      Day_Of_Week : Weekday       := Sunday;
+      Use_Hour    : Boolean := False;
+      Hour        : Hour_Number := 0;
+      Use_Day     : Boolean := False;
+      Day         : Day_Number := 1;
+      Use_Weekday : Boolean := False;
+      Day_Of_Week : Weekday := Sunday;
    end record;
 
    --  Program the alarm match, enable the alarm interrupt (so INT asserts on a
@@ -164,7 +165,7 @@ package ESP32S3.PCF85063A is
 
 private
    type Device is record
-      Host    : ESP32S3.I2C.I2C_Host      := ESP32S3.I2C.I2C0;
+      Host    : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
       Sda     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Scl     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Int_Pin : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;

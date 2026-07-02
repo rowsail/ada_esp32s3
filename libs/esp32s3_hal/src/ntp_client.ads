@@ -9,6 +9,7 @@ with GNAT.Sockets;
 --
 --  Use it with one `with NTP_Client;`.  GNAT.Sockets must already be usable (on the
 --  W5500, call GNAT.Sockets.Initialize (Device) once during bring-up).
+
 package NTP_Client is
 
    --  Query the NTP server at Server (UDP port 123) for the current UTC time.
@@ -20,7 +21,7 @@ package NTP_Client is
    function Query
      (Server     : GNAT.Sockets.Inet_Addr_Type;
       Unix_Time  : out Interfaces.Integer_64;
-      Timeout    : Duration               := 0.0;
+      Timeout    : Duration := 0.0;
       Local_Port : GNAT.Sockets.Port_Type := 12_300) return Boolean;
 
    --  Break a Unix time (seconds since 1970-01-01 UTC) into UTC calendar fields

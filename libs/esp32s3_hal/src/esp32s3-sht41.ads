@@ -25,8 +25,9 @@ with ESP32S3.GPIO;
 --     begin
 --        ESP32S3.SHT41.Setup (Sensor, Sda => 8, Scl => 7);   --  state the wiring
 --        ESP32S3.SHT41.Measure (Sensor, M, St);              --  one reading
---        --  M.Temperature in m°C, M.Humidity in m%RH (St = OK).
+--        --  M.Temperature in mÂ°C, M.Humidity in m%RH (St = OK).
 --     end;
+
 package ESP32S3.SHT41 is
 
    --  7-bit I2C address.  The SHT41-AD1B answers at 0x44; other SHT4x variants
@@ -34,7 +35,7 @@ package ESP32S3.SHT41 is
    Default_Address : constant ESP32S3.I2C.Slave_Address := 16#44#;
 
    --  One reading, in integer milli-units (so no float library is needed):
-   --     Temperature 23_456  =  23.456 °C
+   --     Temperature 23_456  =  23.456 Â°C
    --     Humidity    45_678  =  45.678 %RH  (clamped to 0 .. 100_000)
    type Measurement is record
       Temperature : Integer := 0;   --  milli-degrees Celsius
@@ -65,8 +66,8 @@ package ESP32S3.SHT41 is
       Sda      : ESP32S3.GPIO.Pin_Id;
       Scl      : ESP32S3.GPIO.Pin_Id;
       Address  : ESP32S3.I2C.Slave_Address := Default_Address;
-      Host     : ESP32S3.I2C.I2C_Host      := ESP32S3.I2C.I2C0;
-      Clock_Hz : Positive                  := 400_000);
+      Host     : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
+      Clock_Hz : Positive := 400_000);
 
    ----------------------------------------------------------------------------
    --  Operations.
@@ -91,7 +92,7 @@ package ESP32S3.SHT41 is
 
 private
    type Device is record
-      Host    : ESP32S3.I2C.I2C_Host      := ESP32S3.I2C.I2C0;
+      Host    : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
       Address : ESP32S3.I2C.Slave_Address := Default_Address;
    end record;
 end ESP32S3.SHT41;

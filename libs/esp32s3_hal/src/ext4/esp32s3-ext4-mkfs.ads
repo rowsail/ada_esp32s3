@@ -19,6 +19,7 @@ with ESP32S3.Block_Dev;
 --  Format a BLANK device (or one whose old contents you do not mind losing):
 --  it writes only the metadata + the two directory blocks, leaving data blocks
 --  untouched (the FS initialises each as it is allocated).
+
 package ESP32S3.Ext4.Mkfs is
 
    --  Format Dev.  Total_Blocks is the filesystem size in 4 KiB blocks; 0 means
@@ -30,10 +31,11 @@ package ESP32S3.Ext4.Mkfs is
    --  the journal (crash-safe) instead of the direct flush.  It needs ~4.2 MiB
    --  of headroom, so it raises Too_Small on a small device; leave it False
    --  (the default) for a no-journal volume (best for small SPI flash).
-   procedure Format (Dev          : ESP32S3.Block_Dev.Device;
-                     Total_Blocks : U32     := 0;
-                     Volume_Label : String  := "";
-                     Journal      : Boolean := False);
+   procedure Format
+     (Dev          : ESP32S3.Block_Dev.Device;
+      Total_Blocks : U32 := 0;
+      Volume_Label : String := "";
+      Journal      : Boolean := False);
 
    --  Device too small to hold the metadata + a root directory.
    Too_Small : exception;

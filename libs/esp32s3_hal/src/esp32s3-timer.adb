@@ -1,6 +1,6 @@
-with Interfaces;                 use Interfaces;
-with ESP32S3_Registers;          use ESP32S3_Registers;
-with ESP32S3_Registers.TIMG;     use ESP32S3_Registers.TIMG;
+with Interfaces;             use Interfaces;
+with ESP32S3_Registers;      use ESP32S3_Registers;
+with ESP32S3_Registers.TIMG; use ESP32S3_Registers.TIMG;
 with ESP32S3_Registers.SYSTEM;
 
 package body ESP32S3.Timer is
@@ -9,8 +9,10 @@ package body ESP32S3.Timer is
 
    type Periph_Ref is access all TIMG_Peripheral;
 
-   function Regs_Of (Idx : Timer_Index) return Periph_Ref is
-     (case Idx is when 0 => TIMG0_Periph'Access, when 1 => TIMG1_Periph'Access);
+   function Regs_Of (Idx : Timer_Index) return Periph_Ref
+   is (case Idx is
+         when 0 => TIMG0_Periph'Access,
+         when 1 => TIMG1_Periph'Access);
 
    --------------------------------------------------------------------------
    --  Timer-ownership pool (ensures the group clocks are on).
@@ -33,7 +35,7 @@ package body ESP32S3.Timer is
          if not Inited then
             --  Both timer-group clocks default on; make sure (don't reset the
             --  group -- that would disturb the watchdogs).
-            SYSTEM_Periph.PERIP_CLK_EN0.TIMERGROUP_CLK_EN  := True;
+            SYSTEM_Periph.PERIP_CLK_EN0.TIMERGROUP_CLK_EN := True;
             SYSTEM_Periph.PERIP_CLK_EN0.TIMERGROUP1_CLK_EN := True;
             Inited := True;
          end if;
@@ -59,11 +61,13 @@ package body ESP32S3.Timer is
       Release (T);
       Pool.Claim (Index, Ok);
       if Ok then
-         T.Idx := Index;  T.Held := True;
+         T.Idx := Index;
+         T.Held := True;
       end if;
    end Claim;
 
-   function Is_Valid (T : Timer) return Boolean is (T.Held);
+   function Is_Valid (T : Timer) return Boolean
+   is (T.Held);
 
    procedure Release (T : in out Timer) is
    begin
@@ -74,7 +78,8 @@ package body ESP32S3.Timer is
       end if;
    end Release;
 
-   overriding procedure Finalize (T : in out Timer) is
+   overriding
+   procedure Finalize (T : in out Timer) is
    begin
       Release (T);
    end Finalize;
@@ -91,9 +96,14 @@ package body ESP32S3.Timer is
       if not T.Held then
          return;
       end if;
-      R.TCONFIG0 := (EN => False, INCREASE => True, AUTORELOAD => False,
-                     USE_XTAL => False, ALARM_EN => False,
-                     DIVIDER => TCONFIG_DIVIDER_Field (Div), others => <>);
+      R.TCONFIG0 :=
+        (EN         => False,
+         INCREASE   => True,
+         AUTORELOAD => False,
+         USE_XTAL   => False,
+         ALARM_EN   => False,
+         DIVIDER    => TCONFIG_DIVIDER_Field (Div),
+         others     => <>);
       Reset (T);
    end Configure;
 
@@ -125,7 +135,9 @@ package body ESP32S3.Timer is
       if T.Held then
          R.TLOADLO0 := 0;
          R.TLOADHI0 := (LOAD_HI => 0, others => <>);
-         R.TLOAD0   := 1;                  --  any write loads TLOADLO/HI -> counter
+         R.TLOAD0 :=
+           1;                  --  any write loads TLOADLO/HI -> counter
+
       end if;
    end Reset;
 
@@ -140,8 +152,8 @@ package body ESP32S3.Timer is
          return 0;
       end if;
       R.TUPDATE0 := (UPDATE => True, others => <>);   --  latch the live count
-      return Ticks (Unsigned_64 (R.THI0.HI)) * 2 ** 32
-               + Ticks (Unsigned_64 (R.TLO0));
+      return
+        Ticks (Unsigned_64 (R.THI0.HI)) * 2**32 + Ticks (Unsigned_64 (R.TLO0));
    end Value;
 
    ---------------
@@ -156,9 +168,10 @@ package body ESP32S3.Timer is
          return;
       end if;
       R.TALARMLO0 := UInt32 (V and 16#FFFF_FFFF#);
-      R.TALARMHI0 := (ALARM_HI => TALARMHI_ALARM_HI_Field
-                                    (Shift_Right (V, 32) and 16#3F_FFFF#),
-                      others => <>);
+      R.TALARMHI0 :=
+        (ALARM_HI =>
+           TALARMHI_ALARM_HI_Field (Shift_Right (V, 32) and 16#3F_FFFF#),
+         others   => <>);
       R.INT_CLR_TIMERS.T0_INT_CLR := True;            --  clear any stale flag
       R.TCONFIG0.ALARM_EN := True;
    end Set_Alarm;

@@ -15,6 +15,7 @@ with Interfaces;
 --  ESP32S3.W5500.Interrupts child will later replace those spins with a
 --  Suspension_Object wait on INTn (the wait is funnelled through one private hook
 --  so that change is localised).  Uses Ada.Real_Time => embedded / full only.
+
 package ESP32S3.W5500.Sockets is
 
    subtype Port_Number is Interfaces.Unsigned_16;
@@ -54,18 +55,20 @@ package ESP32S3.W5500.Sockets is
 
    --  Open a TCP socket bound to Local_Port (=> SOCK_INIT); then Listen (server)
    --  or Connect (client).
-   procedure Open_TCP (Dev        : Device_Access;
-                       S          : in out Socket;
-                       Index      : Socket_Id;
-                       Local_Port : Port_Number;
-                       Result     : out Status);
+   procedure Open_TCP
+     (Dev        : Device_Access;
+      S          : in out Socket;
+      Index      : Socket_Id;
+      Local_Port : Port_Number;
+      Result     : out Status);
 
    --  Open a connectionless UDP socket bound to Local_Port (=> SOCK_UDP).
-   procedure Open_UDP (Dev        : Device_Access;
-                       S          : in out Socket;
-                       Index      : Socket_Id;
-                       Local_Port : Port_Number;
-                       Result     : out Status);
+   procedure Open_UDP
+     (Dev        : Device_Access;
+      S          : in out Socket;
+      Index      : Socket_Id;
+      Local_Port : Port_Number;
+      Result     : out Status);
 
    --  Close immediately (no TCP disconnect handshake).
    procedure Close (S : in out Socket);
@@ -80,13 +83,14 @@ package ESP32S3.W5500.Sockets is
 
    --  Client: connect to Host:Port.  Blocks (polls) until established or it fails
    --  (Timed_Out / Refused), up to Timeout.
-   procedure Connect (S       : in out Socket;
-                      Host    : IPv4_Address;
-                      Port    : Port_Number;
-                      Result  : out Status;
-                      Timeout : Duration := 10.0);
+   procedure Connect
+     (S       : in out Socket;
+      Host    : IPv4_Address;
+      Port    : Port_Number;
+      Result  : out Status;
+      Timeout : Duration := 10.0);
 
-   function State         (S : Socket) return Socket_State;
+   function State (S : Socket) return Socket_State;
    function Is_Established (S : Socket) return Boolean;
 
    --  Server: block until a client connects (=> Established) or the socket
@@ -116,45 +120,49 @@ package ESP32S3.W5500.Sockets is
 
    --  Send up to Data'Length bytes; Sent = how many were transmitted (may be less
    --  than Data'Length if the TX buffer was partly full).
-   procedure Send (S      : in out Socket;
-                   Data   : Byte_Array;
-                   Sent   : out Natural;
-                   Result : out Status);
+   procedure Send
+     (S      : in out Socket;
+      Data   : Byte_Array;
+      Sent   : out Natural;
+      Result : out Status);
 
    --  Receive up to Into'Length bytes; Count = how many were read (0 if none
    --  waiting).  Result = Closed_By_Peer once the peer has half-closed and the
    --  buffer is drained.
-   procedure Receive (S      : in out Socket;
-                      Into   : out Byte_Array;
-                      Count  : out Natural;
-                      Result : out Status);
+   procedure Receive
+     (S      : in out Socket;
+      Into   : out Byte_Array;
+      Count  : out Natural;
+      Result : out Status);
 
    ---------------------------------------------------------------------------
    --  UDP datagrams
    ---------------------------------------------------------------------------
 
-   procedure Send_To (S      : in out Socket;
-                      Host   : IPv4_Address;
-                      Port   : Port_Number;
-                      Data   : Byte_Array;
-                      Result : out Status);
+   procedure Send_To
+     (S      : in out Socket;
+      Host   : IPv4_Address;
+      Port   : Port_Number;
+      Data   : Byte_Array;
+      Result : out Status);
 
    --  Receive one datagram.  From / From_Port identify the sender; Count = payload
    --  bytes copied (0 if none waiting; a datagram longer than Into is truncated).
-   procedure Receive_From (S         : in out Socket;
-                           From      : out IPv4_Address;
-                           From_Port : out Port_Number;
-                           Into      : out Byte_Array;
-                           Count     : out Natural;
-                           Result    : out Status);
+   procedure Receive_From
+     (S         : in out Socket;
+      From      : out IPv4_Address;
+      From_Port : out Port_Number;
+      Into      : out Byte_Array;
+      Count     : out Natural;
+      Result    : out Status);
 
 private
    type Protocol is (None, TCP_Proto, UDP_Proto);
    type Socket is limited record
-      Dev   : Device_Access := null;
-      Index : Socket_Id     := 0;
-      Proto : Protocol      := None;
-      Is_Open : Boolean     := False;
+      Dev          : Device_Access := null;
+      Index        : Socket_Id := 0;
+      Proto        : Protocol := None;
+      Is_Open      : Boolean := False;
       Recv_Timeout : Duration := 0.0;   --  0 => Wait_Data blocks forever
    end record;
 end ESP32S3.W5500.Sockets;

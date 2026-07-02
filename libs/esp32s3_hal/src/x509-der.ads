@@ -1,12 +1,15 @@
 --  DER (ASN.1 distinguished encoding) TLV reader.  One call parses one element;
 --  the caller walks structures by entering an element's content range and reading
 --  the children.  Strictly bounds-checked.
+
 package X509.DER is
 
    type TLV is record
       Tag       : U8 := 0;
-      Content   : Slice;          --  the value's index range (empty if no content)
-      Elem_Last : Natural := 0;   --  last index of the whole element (tag+len+value)
+      Content   :
+        Slice;          --  the value's index range (empty if no content)
+      Elem_Last : Natural :=
+        0;   --  last index of the whole element (tag+len+value)
       Valid     : Boolean := False;
    end record;
 

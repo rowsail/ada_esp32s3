@@ -1,9 +1,10 @@
 with Ada.Real_Time; use Ada.Real_Time;
-with Interfaces;     use Interfaces;
+with Interfaces;    use Interfaces;
 
 package body ESP32S3.SHT41 is
 
-   use ESP32S3.I2C;   --  Byte, Byte_Array, Session, Slave_Address, Acquire/Write/Read
+   use ESP32S3
+         .I2C;   --  Byte, Byte_Array, Session, Slave_Address, Acquire/Write/Read
 
    subtype LLI is Long_Long_Integer;
 
@@ -46,11 +47,11 @@ package body ESP32S3.SHT41 is
    --  Conversions (datasheet: T = -45 + 175*S/65535 ; RH = -6 + 125*S/65535).
    ---------------------------------------------------------------------------
 
-   function Ticks (Hi, Lo : Byte) return LLI is
-     (LLI (Hi) * 256 + LLI (Lo));
+   function Ticks (Hi, Lo : Byte) return LLI
+   is (LLI (Hi) * 256 + LLI (Lo));
 
-   function To_Temp_MC (Hi, Lo : Byte) return Integer is
-     (Integer (-45_000 + (175_000 * Ticks (Hi, Lo)) / 65_535));
+   function To_Temp_MC (Hi, Lo : Byte) return Integer
+   is (Integer (-45_000 + (175_000 * Ticks (Hi, Lo)) / 65_535));
 
    function To_Hum_MRH (Hi, Lo : Byte) return Integer is
       V : LLI := -6_000 + (125_000 * Ticks (Hi, Lo)) / 65_535;
@@ -111,8 +112,8 @@ package body ESP32S3.SHT41 is
       Sda      : ESP32S3.GPIO.Pin_Id;
       Scl      : ESP32S3.GPIO.Pin_Id;
       Address  : ESP32S3.I2C.Slave_Address := Default_Address;
-      Host     : ESP32S3.I2C.I2C_Host      := ESP32S3.I2C.I2C0;
-      Clock_Hz : Positive                  := 400_000) is
+      Host     : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
+      Clock_Hz : Positive := 400_000) is
    begin
       Dev := (Host => Host, Address => Address);
       ESP32S3.I2C.Setup (Host, Clock_Hz => Clock_Hz);
@@ -131,15 +132,15 @@ package body ESP32S3.SHT41 is
    is
       Cmd  : constant Byte :=
         (case Repeatability is
-            when High   => Cmd_Measure_High,
-            when Medium => Cmd_Measure_Med,
-            when Low    => Cmd_Measure_Low);
+           when High   => Cmd_Measure_High,
+           when Medium => Cmd_Measure_Med,
+           when Low    => Cmd_Measure_Low);
       Wait : constant Time_Span :=
         (case Repeatability is
-            when High   => Milliseconds (10),
-            when Medium => Milliseconds (5),
-            when Low    => Milliseconds (2));
-      R : Byte_Array (0 .. 5);   --  T_hi T_lo T_crc  RH_hi RH_lo RH_crc
+           when High   => Milliseconds (10),
+           when Medium => Milliseconds (5),
+           when Low    => Milliseconds (2));
+      R    : Byte_Array (0 .. 5);   --  T_hi T_lo T_crc  RH_hi RH_lo RH_crc
    begin
       Value := (others => <>);
       Transact (Dev, Cmd, Wait, R, Result);
@@ -151,7 +152,7 @@ package body ESP32S3.SHT41 is
          return;
       end if;
       Value.Temperature := To_Temp_MC (R (0), R (1));
-      Value.Humidity    := To_Hum_MRH (R (3), R (4));
+      Value.Humidity := To_Hum_MRH (R (3), R (4));
    end Measure;
 
    ------------------------
@@ -172,8 +173,12 @@ package body ESP32S3.SHT41 is
          Result := CRC_Error;
          return;
       end if;
-      Serial := Unsigned_32 (R (0)) * 2 ** 24 + Unsigned_32 (R (1)) * 2 ** 16
-              + Unsigned_32 (R (3)) * 2 ** 8  + Unsigned_32 (R (4));
+      Serial :=
+        Unsigned_32 (R (0))
+        * 2**24
+        + Unsigned_32 (R (1)) * 2**16
+        + Unsigned_32 (R (3)) * 2**8
+        + Unsigned_32 (R (4));
    end Read_Serial_Number;
 
    -----------

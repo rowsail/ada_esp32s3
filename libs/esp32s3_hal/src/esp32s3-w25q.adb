@@ -18,12 +18,16 @@ package body ESP32S3.W25Q is
    Cmd_Read_Status3 : constant := 16#15#;   --  status register 3; ADS = bit 0
    Cmd_Enter_4Byte  : constant := 16#B7#;   --  enter 4-byte address mode
    Cmd_JEDEC_ID     : constant := 16#9F#;
-   Cmd_Read         : constant := 16#03#;   --  read data (4 addr bytes in 4B mode)
-   Cmd_Page_Program : constant := 16#02#;   --  page program  ("    "    "    "   )
-   Cmd_Sector_Erase : constant := 16#20#;   --  4 KB sector erase ("  "    "    " )
+   Cmd_Read         : constant :=
+     16#03#;   --  read data (4 addr bytes in 4B mode)
+   Cmd_Page_Program : constant :=
+     16#02#;   --  page program  ("    "    "    "   )
+   Cmd_Sector_Erase : constant :=
+     16#20#;   --  4 KB sector erase ("  "    "    " )
 
    Status_Busy : constant Unsigned_8 := 16#01#;   --  SR1 bit 0
-   Status3_ADS : constant Unsigned_8 := 16#01#;   --  SR3 bit 0: 4-byte mode active
+   Status3_ADS : constant Unsigned_8 :=
+     16#01#;   --  SR3 bit 0: 4-byte mode active
 
    --  Largest single transfer we build: opcode + 4 address bytes + a full page.
    Header_Len : constant := 5;
@@ -44,13 +48,13 @@ package body ESP32S3.W25Q is
    begin
       Buf (Buf'First + 1) := Unsigned_8 (Shift_Right (Addr, 24) and 16#FF#);
       Buf (Buf'First + 2) := Unsigned_8 (Shift_Right (Addr, 16) and 16#FF#);
-      Buf (Buf'First + 3) := Unsigned_8 (Shift_Right (Addr,  8) and 16#FF#);
+      Buf (Buf'First + 3) := Unsigned_8 (Shift_Right (Addr, 8) and 16#FF#);
       Buf (Buf'First + 4) := Unsigned_8 (Addr and 16#FF#);
    end Put_Address;
 
    --  One full-duplex command: assert CS, shift Len bytes, deassert CS.
-   procedure Command (S : in out SPI.Session; Tx, Rx : System.Address;
-                      Len : Natural) is
+   procedure Command
+     (S : in out SPI.Session; Tx, Rx : System.Address; Len : Natural) is
    begin
       SPI.Select_Device (S, On => True);
       SPI.Transfer (S, Tx, Rx, Len);
@@ -66,14 +70,16 @@ package body ESP32S3.W25Q is
    end Write_Enable;
 
    --  Read a one-byte status register (opcode then one clocked-in status byte).
-   function Read_Register (S : in out SPI.Session; Opcode : Unsigned_8)
-      return Unsigned_8
+   function Read_Register
+     (S : in out SPI.Session; Opcode : Unsigned_8) return Unsigned_8
    is
       Cmd : aliased Byte_Array := (Opcode, 16#00#);
       Rsp : aliased Byte_Array (0 .. 1);
    begin
       Command (S, Cmd'Address, Rsp'Address, 2);
-      return Rsp (1);                 --  Rsp(1): the byte clocked in after the opcode
+      return
+        Rsp
+          (1);                 --  Rsp(1): the byte clocked in after the opcode
    end Read_Register;
 
    --  Poll status register 1 until BUSY clears (erase/program complete).  Bound
@@ -100,8 +106,14 @@ package body ESP32S3.W25Q is
    --  a custom callback).
    procedure Acquire (S : in out SPI.Session; Dev : Flash) is
    begin
-      SPI.Acquire (S, Dev.Host, Mode => 0, Clock_Hz => Dev.Clock_Hz,
-                   CS_Pin => Dev.CS_Pin, Select_CB => Dev.CS_CB, Ctx => Dev.Ctx);
+      SPI.Acquire
+        (S,
+         Dev.Host,
+         Mode      => 0,
+         Clock_Hz  => Dev.Clock_Hz,
+         CS_Pin    => Dev.CS_Pin,
+         Select_CB => Dev.CS_CB,
+         Ctx       => Dev.Ctx);
    end Acquire;
 
    ----------------------------------------------------------------------------
@@ -114,7 +126,8 @@ package body ESP32S3.W25Q is
       Rsp : aliased Byte_Array (0 .. 0);
    begin
       Acquire (S, Dev);
-      Command (S, Cmd'Address, Rsp'Address, 1);                --  enter 4-byte mode
+      Command
+        (S, Cmd'Address, Rsp'Address, 1);                --  enter 4-byte mode
       OK := (Read_Register (S, Cmd_Read_Status3) and Status3_ADS) /= 0;
       SPI.Release (S);
    end Initialize;
@@ -128,9 +141,8 @@ package body ESP32S3.W25Q is
       Command (S, Cmd'Address, Rsp'Address, 4);
       SPI.Release (S);
       --  Rsp(0) is shifted in while the opcode goes out; the ID follows.
-      ID := (Manufacturer => Rsp (1),
-             Memory_Type  => Rsp (2),
-             Capacity     => Rsp (3));
+      ID :=
+        (Manufacturer => Rsp (1), Memory_Type => Rsp (2), Capacity => Rsp (3));
    end Read_Identification;
 
    function Capacity_Bytes (ID : JEDEC_ID) return Address is

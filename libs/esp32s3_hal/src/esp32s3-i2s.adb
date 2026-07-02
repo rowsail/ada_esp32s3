@@ -7,7 +7,7 @@ package body ESP32S3.I2S is
    --  One protected guard per port -- arbitrates exclusive ownership.  The
    --  guarded section is tiny (flip a flag); the actual transfer runs outside.
    protected type Port_Guard is
-      entry    Acquire;
+      entry Acquire;
       procedure Release;
    private
       Held : Boolean := False;
@@ -42,35 +42,48 @@ package body ESP32S3.I2S is
    package State is
       --  First-use bring-up: open the port (and route its pins) once if it has
       --  not been opened yet; requires the caller to hold it.
-      procedure Ensure (S : Session; Sample_Rate : Positive; Bits : Sample_Bits;
-                        Mode : I2S_Mode;
-                        Bclk, Ws, Dout, Din, Mclk : ESP32S3.GPIO.Optional_Pin);
+      procedure Ensure
+        (S                         : Session;
+         Sample_Rate               : Positive;
+         Bits                      : Sample_Bits;
+         Mode                      : I2S_Mode;
+         Bclk, Ws, Dout, Din, Mclk : ESP32S3.GPIO.Optional_Pin);
       --  Force a re-open of the held port's audio format (Reconfigure).
-      procedure Reopen (S : Session; Sample_Rate : Positive; Bits : Sample_Bits;
-                        Mode : I2S_Mode);
-      function  Owned (S : Session) return access E.Bus;
+      procedure Reopen
+        (S           : Session;
+         Sample_Rate : Positive;
+         Bits        : Sample_Bits;
+         Mode        : I2S_Mode);
+      function Owned (S : Session) return access E.Bus;
       --  The sample width the held port was last opened at (requires ownership).
-      function  Width (S : Session) return Sample_Bits;
+      function Width (S : Session) return Sample_Bits;
    end State;
 
    package body State is
-      Buses     : array (I2S_Port) of aliased E.Bus;  --  raw port instance, hidden
+      Buses     :
+        array (I2S_Port) of aliased E.Bus;  --  raw port instance, hidden
       Ready_Map : array (I2S_Port) of Boolean := (others => False);
       --  The Bits each port was last opened at -- the source of Configured_Bits,
       --  which the typed transfers' preconditions check the buffer width against.
       Width_Map : array (I2S_Port) of Sample_Bits := (others => Bits_16);
 
-      procedure Open_Now (Port : I2S_Port; Sample_Rate : Positive;
-                          Bits : Sample_Bits; Mode : I2S_Mode) is
+      procedure Open_Now
+        (Port        : I2S_Port;
+         Sample_Rate : Positive;
+         Bits        : Sample_Bits;
+         Mode        : I2S_Mode) is
       begin
          E.Open (Buses (Port), Port, Sample_Rate, Bits, Mode);
          Width_Map (Port) := Bits;
          Ready_Map (Port) := True;
       end Open_Now;
 
-      procedure Ensure (S : Session; Sample_Rate : Positive; Bits : Sample_Bits;
-                        Mode : I2S_Mode;
-                        Bclk, Ws, Dout, Din, Mclk : ESP32S3.GPIO.Optional_Pin) is
+      procedure Ensure
+        (S                         : Session;
+         Sample_Rate               : Positive;
+         Bits                      : Sample_Bits;
+         Mode                      : I2S_Mode;
+         Bclk, Ws, Dout, Din, Mclk : ESP32S3.GPIO.Optional_Pin) is
       begin
          if not S.Active then
             raise Not_Owned
@@ -84,8 +97,11 @@ package body ESP32S3.I2S is
          end if;
       end Ensure;
 
-      procedure Reopen (S : Session; Sample_Rate : Positive; Bits : Sample_Bits;
-                        Mode : I2S_Mode) is
+      procedure Reopen
+        (S           : Session;
+         Sample_Rate : Positive;
+         Bits        : Sample_Bits;
+         Mode        : I2S_Mode) is
       begin
          if not S.Active then
             raise Not_Owned
@@ -117,19 +133,20 @@ package body ESP32S3.I2S is
    -- Acquire --
    -------------
 
-   procedure Acquire (S           : in out Session;
-                      Port        : I2S_Port;
-                      Sample_Rate : Positive    := 16_000;
-                      Bits        : Sample_Bits := Bits_16;
-                      Mode        : I2S_Mode    := Standard;
-                      Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin) is
+   procedure Acquire
+     (S           : in out Session;
+      Port        : I2S_Port;
+      Sample_Rate : Positive := 16_000;
+      Bits        : Sample_Bits := Bits_16;
+      Mode        : I2S_Mode := Standard;
+      Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin) is
    begin
       Guards (Port).Acquire;          --  suspends here until the port is free
-      S.Port   := Port;
+      S.Port := Port;
       S.Active := True;
       State.Ensure (S, Sample_Rate, Bits, Mode, Bclk, Ws, Dout, Din, Mclk);
    end Acquire;
@@ -138,15 +155,16 @@ package body ESP32S3.I2S is
    -- Reconfigure --
    -----------------
 
-   procedure Reconfigure (S           : Session;
-                          Sample_Rate : Positive    := 16_000;
-                          Bits        : Sample_Bits := Bits_16;
-                          Mode        : I2S_Mode    := Standard;
-                          Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                          Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                          Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                          Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                          Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin) is
+   procedure Reconfigure
+     (S           : Session;
+      Sample_Rate : Positive := 16_000;
+      Bits        : Sample_Bits := Bits_16;
+      Mode        : I2S_Mode := Standard;
+      Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin) is
    begin
       State.Reopen (S, Sample_Rate, Bits, Mode);
       E.Configure_Pins (State.Owned (S).all, Bclk, Ws, Dout, Din, Mclk);
@@ -156,12 +174,13 @@ package body ESP32S3.I2S is
    -- Configure_Pins --
    --------------------
 
-   procedure Configure_Pins (S    : Session;
-                             Bclk : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                             Ws   : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                             Dout : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                             Din  : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                             Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin) is
+   procedure Configure_Pins
+     (S    : Session;
+      Bclk : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Ws   : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Dout : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Din  : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin) is
    begin
       E.Configure_Pins (State.Owned (S).all, Bclk, Ws, Dout, Din, Mclk);
    end Configure_Pins;
@@ -241,8 +260,8 @@ package body ESP32S3.I2S is
    -- Transfer --
    --------------
 
-   procedure Transfer_Raw (S : Session; Tx, Rx : System.Address; Length : Natural)
-   is
+   procedure Transfer_Raw
+     (S : Session; Tx, Rx : System.Address; Length : Natural) is
    begin
       E.Transfer (State.Owned (S).all, Tx, Rx, Length);
    end Transfer_Raw;
@@ -300,7 +319,8 @@ package body ESP32S3.I2S is
    -- Capture --
    -------------
 
-   procedure Capture_Raw (S : Session; Rx : System.Address; Length : Natural) is
+   procedure Capture_Raw (S : Session; Rx : System.Address; Length : Natural)
+   is
    begin
       E.Capture (State.Owned (S).all, Rx, Length);
    end Capture_Raw;
@@ -333,7 +353,8 @@ package body ESP32S3.I2S is
    end Release;
 
    --  Scope-exit / exception-unwind cleanup: hand the port back if still held.
-   overriding procedure Finalize (S : in out Session) is
+   overriding
+   procedure Finalize (S : in out Session) is
    begin
       Release (S);
    end Finalize;

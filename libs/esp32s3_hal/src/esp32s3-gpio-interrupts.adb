@@ -1,19 +1,19 @@
-with ESP32S3_Registers;                  use ESP32S3_Registers;
+with ESP32S3_Registers; use ESP32S3_Registers;
 with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.INTERRUPT_CORE0;
 
 package body ESP32S3.GPIO.Interrupts is
 
    package Reg renames ESP32S3_Registers.GPIO;
-   package IC  renames ESP32S3_Registers.INTERRUPT_CORE0;
+   package IC renames ESP32S3_Registers.INTERRUPT_CORE0;
 
    --  CPU interrupt the GPIO source is routed to (= Device_L3_0).  The runtime's
    --  custom level-3 vector (__gnat_level3_vector) dispatches CPU_INT 23 to the
    --  GNARL wrapper, which runs the handler attached below.
    GPIO_CPU_Int : constant := 23;
 
-   function Int_Type (T : Trigger) return Reg.PIN_INT_TYPE_Field is
-     (case T is
+   function Int_Type (T : Trigger) return Reg.PIN_INT_TYPE_Field
+   is (case T is
          when Rising_Edge  => 1,
          when Falling_Edge => 2,
          when Any_Edge     => 3,
@@ -36,7 +36,7 @@ package body ESP32S3.GPIO.Interrupts is
       procedure Remove (Pin : Pin_Id);
    private
       procedure Handler
-        with Attach_Handler => Ada.Interrupts.Names.Device_L3_0;
+      with Attach_Handler => Ada.Interrupts.Names.Device_L3_0;
       Actions : Callback_Map := (others => null);
       Routed  : Boolean := False;
    end Ctrl;
@@ -49,13 +49,16 @@ package body ESP32S3.GPIO.Interrupts is
          if not Routed then
             --  Route the GPIO source to CPU_INT 23 (Attach_Handler already
             --  enabled it; the custom L3 vector handles the dispatch).
-            IC.INTERRUPT_CORE0_Periph.GPIO_INTERRUPT_PRO_MAP
-              .GPIO_INTERRUPT_PRO_MAP := GPIO_CPU_Int;
+            IC
+              .INTERRUPT_CORE0_Periph
+              .GPIO_INTERRUPT_PRO_MAP
+              .GPIO_INTERRUPT_PRO_MAP :=
+              GPIO_CPU_Int;
             Routed := True;
          end if;
          Actions (Pin) := Action;
          R.INT_TYPE := Int_Type (On);
-         R.INT_ENA  := 1;                 --  bit 0: deliver to PRO (core 0) CPU
+         R.INT_ENA := 1;                 --  bit 0: deliver to PRO (core 0) CPU
          Reg.GPIO_Periph.PIN (Natural (Pin)) := R;
       end Configure;
 
@@ -68,8 +71,10 @@ package body ESP32S3.GPIO.Interrupts is
       end Remove;
 
       procedure Handler is
-         Lo : constant UInt32 := Reg.GPIO_Periph.STATUS;                  --  0..31
-         Hi : constant UInt32 := UInt32 (Reg.GPIO_Periph.STATUS1.INTERRUPT); -- 32..48
+         Lo : constant UInt32 :=
+           Reg.GPIO_Periph.STATUS;                  --  0..31
+         Hi : constant UInt32 :=
+           UInt32 (Reg.GPIO_Periph.STATUS1.INTERRUPT); -- 32..48
       begin
          --  Clear the latched status first so the level-3 source deasserts.
          Reg.GPIO_Periph.STATUS_W1TC := Lo;
@@ -81,8 +86,8 @@ package body ESP32S3.GPIO.Interrupts is
             declare
                Fired : constant Boolean :=
                  (if P <= 31
-                  then (Lo and UInt32'(2) ** Natural (P)) /= 0
-                  else (Hi and UInt32'(2) ** (Natural (P) - 32)) /= 0);
+                  then (Lo and UInt32'(2)**Natural (P)) /= 0
+                  else (Hi and UInt32'(2)**(Natural (P) - 32)) /= 0);
             begin
                if Fired and then Actions (P) /= null then
                   Actions (P).all;

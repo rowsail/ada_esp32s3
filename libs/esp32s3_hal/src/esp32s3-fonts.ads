@@ -16,12 +16,13 @@ with Interfaces;
 --  by the generic ESP32S3.Fonts.Render, instantiated per panel (e.g.
 --  ESP32S3.ST7789.Fonts).  The atlas data and Font values are therefore reusable
 --  across panels unchanged.
+
 package ESP32S3.Fonts is
 
    --  Atlas array element types (the generated atlas packages import these).
-   type Byte_Array  is array (Natural range <>) of Interfaces.Unsigned_8;
+   type Byte_Array is array (Natural range <>) of Interfaces.Unsigned_8;
    type SByte_Array is array (Natural range <>) of Interfaces.Integer_8;
-   type U16_Array   is array (Natural range <>) of Interfaces.Unsigned_16;
+   type U16_Array is array (Natural range <>) of Interfaces.Unsigned_16;
 
    --  An 8-bit-per-channel colour the renderer blends in; the panel instance
    --  maps it to its own pixel format via its To_Color formal.
@@ -39,18 +40,19 @@ package ESP32S3.Fonts is
       Bpp            : Natural;             --  1 or 4
       Adv, W, H      : System.Address;
       XOff, YOff     : System.Address;
-      Off            : System.Address;      --  U16 byte offset into Bits per glyph
+      Off            :
+        System.Address;      --  U16 byte offset into Bits per glyph
       Bits           : System.Address;
    end record;
 
    --  True if Code has a glyph in F.
-   function Has_Glyph (F : Font; Code : Natural) return Boolean is
-     (Code in F.First .. F.First + F.Count - 1);
+   function Has_Glyph (F : Font; Code : Natural) return Boolean
+   is (Code in F.First .. F.First + F.Count - 1);
 
    --  Per-glyph metrics (G is a glyph index, 0 .. Count-1).
-   function Glyph_Adv  (F : Font; G : Natural) return Natural;
-   function Glyph_W    (F : Font; G : Natural) return Natural;
-   function Glyph_H    (F : Font; G : Natural) return Natural;
+   function Glyph_Adv (F : Font; G : Natural) return Natural;
+   function Glyph_W (F : Font; G : Natural) return Natural;
+   function Glyph_H (F : Font; G : Natural) return Natural;
    function Glyph_XOff (F : Font; G : Natural) return Integer;
    function Glyph_YOff (F : Font; G : Natural) return Integer;
 

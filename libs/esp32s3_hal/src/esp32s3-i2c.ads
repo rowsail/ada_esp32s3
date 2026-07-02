@@ -19,6 +19,7 @@ with ESP32S3.GPIO;
 --  complete START..STOP transaction.  Read takes up to 32 data bytes (the RX
 --  FIFO depth); Write takes up to 31, because the address byte shares the 32-deep
 --  TX FIFO with the payload.  Requires a tasking runtime (Jorvik or richer).
+
 package ESP32S3.I2C is
 
    --  The two general-purpose I2C controllers.
@@ -78,19 +79,21 @@ package ESP32S3.I2C is
    --  iff the slave ACKed the address and every byte.  Data length 0 sends an
    --  address-only probe (useful for bus scanning).  Blocking.  Raises
    --  Not_Owned unless S currently holds a host.
-   procedure Write (S        : Session;
-                    Addr      : Slave_Address;
-                    Data      : Byte_Array;
-                    Success   : out Boolean;
-                    Check_Ack : Boolean := True);
+   procedure Write
+     (S         : Session;
+      Addr      : Slave_Address;
+      Data      : Byte_Array;
+      Success   : out Boolean;
+      Check_Ack : Boolean := True);
 
    --  Master read: START, (Addr<<1 | R), read Data'Length bytes (ACK all but
    --  the last, NACK the last), STOP.  Success is True iff the slave ACKed the
    --  address.  Blocking.  Raises Not_Owned unless S currently holds a host.
-   procedure Read (S       : Session;
-                   Addr     : Slave_Address;
-                   Data     : out Byte_Array;
-                   Success  : out Boolean);
+   procedure Read
+     (S       : Session;
+      Addr    : Slave_Address;
+      Data    : out Byte_Array;
+      Success : out Boolean);
 
    --  Relinquish ownership (lets a waiting task proceed).  Harmless if already
    --  released.  Always release a Session you Acquired.
@@ -99,7 +102,8 @@ package ESP32S3.I2C is
 private
    type Session is new Ada.Finalization.Limited_Controlled with record
       Host   : I2C_Host := I2C0;
-      Active : Boolean  := False;   --  holds Host's guard
+      Active : Boolean := False;   --  holds Host's guard
    end record;
-   overriding procedure Finalize (S : in out Session);   --  auto-release on scope exit
+   overriding
+   procedure Finalize (S : in out Session);   --  auto-release on scope exit
 end ESP32S3.I2C;

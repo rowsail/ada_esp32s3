@@ -7,7 +7,7 @@ package body ESP32S3.UART is
    --  One protected guard per port -- arbitrates exclusive ownership.  The
    --  guarded section is tiny (flip a flag); Write / Read run outside.
    protected type Port_Guard is
-      entry    Acquire;
+      entry Acquire;
       procedure Release;
    private
       Held : Boolean := False;
@@ -50,7 +50,8 @@ package body ESP32S3.UART is
    end State;
 
    package body State is
-      Buses : array (UART_Port) of E.Bus;       --  raw bus per port, hidden here
+      Buses :
+        array (UART_Port) of E.Bus;       --  raw bus per port, hidden here
       Made  : array (UART_Port) of Boolean := (others => False);
 
       procedure Ensure (Port : UART_Port) is
@@ -78,26 +79,26 @@ package body ESP32S3.UART is
    -------------
 
    procedure Acquire
-     (S      : in out Session;
-      Port   : UART_Port;
-      Baud   : Baud_Rate   := 115_200;
-      Bits   : Data_Bits   := 8;
-      Parity : Parity_Mode := None;
-      Stop   : Stop_Bits   := One;
-      Tx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Cts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+     (S                 : in out Session;
+      Port              : UART_Port;
+      Baud              : Baud_Rate := 115_200;
+      Bits              : Data_Bits := 8;
+      Parity            : Parity_Mode := None;
+      Stop              : Stop_Bits := One;
+      Tx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Cts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Rx_Flow_Threshold : Natural := 100) is
    begin
       Guards (Port).Acquire;          --  suspends here until the port is free
       State.Ensure (Port);            --  first acquirer creates the controller
-      S.Port   := Port;
+      S.Port := Port;
       S.Active := True;
       --  Now that S holds the port, apply the requested settings through the
       --  same ownership-checked path every other configuration call uses.
-      Reconfigure (S, Baud, Bits, Parity, Stop,
-                   Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
+      Reconfigure
+        (S, Baud, Bits, Parity, Stop, Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
    end Acquire;
 
    -----------------
@@ -105,22 +106,23 @@ package body ESP32S3.UART is
    -----------------
 
    procedure Reconfigure
-     (S      : Session;
-      Baud   : Baud_Rate   := 115_200;
-      Bits   : Data_Bits   := 8;
-      Parity : Parity_Mode := None;
-      Stop   : Stop_Bits   := One;
-      Tx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Cts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+     (S                 : Session;
+      Baud              : Baud_Rate := 115_200;
+      Bits              : Data_Bits := 8;
+      Parity            : Parity_Mode := None;
+      Stop              : Stop_Bits := One;
+      Tx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Cts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Rx_Flow_Threshold : Natural := 100)
    is
-      B : constant E.Bus := State.Owned (S);  --  raises unless we hold the port
+      B : constant E.Bus :=
+        State.Owned (S);  --  raises unless we hold the port
    begin
-      E.Set_Baud      (B, Baud);
+      E.Set_Baud (B, Baud);
       E.Set_Data_Bits (B, Bits);
-      E.Set_Parity    (B, Parity);
+      E.Set_Parity (B, Parity);
       E.Set_Stop_Bits (B, Stop);
       E.Configure_Pins (B, Tx, Rx, Rts, Cts, Rx_Flow_Threshold);
    end Reconfigure;
@@ -153,16 +155,16 @@ package body ESP32S3.UART is
    end Set_Stop_Bits;
 
    procedure Configure_Pins
-     (S    : Session;
-      Tx   : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rx   : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rts  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Cts  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+     (S                 : Session;
+      Tx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Cts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Rx_Flow_Threshold : Natural := 100;
-      Tx_Invert  : Boolean := False;
-      Rx_Invert  : Boolean := False;
-      Rts_Invert : Boolean := False;
-      Cts_Invert : Boolean := False)
+      Tx_Invert         : Boolean := False;
+      Rx_Invert         : Boolean := False;
+      Rts_Invert        : Boolean := False;
+      Cts_Invert        : Boolean := False)
    is
       B : constant E.Bus := State.Owned (S);
    begin
@@ -171,11 +173,11 @@ package body ESP32S3.UART is
    end Configure_Pins;
 
    procedure Set_Inversion
-     (S    : Session;
-      Tx   : Boolean := False;
-      Rx   : Boolean := False;
-      Rts  : Boolean := False;
-      Cts  : Boolean := False) is
+     (S   : Session;
+      Tx  : Boolean := False;
+      Rx  : Boolean := False;
+      Rts : Boolean := False;
+      Cts : Boolean := False) is
    begin
       E.Set_Inversion (State.Owned (S), Tx, Rx, Rts, Cts);
    end Set_Inversion;
@@ -191,7 +193,8 @@ package body ESP32S3.UART is
 
    procedure Write (S : Session; Data : Byte_Array) is
    begin
-      E.Write (State.Owned (S), Data);   --  Owned raises unless we hold the port
+      E.Write
+        (State.Owned (S), Data);   --  Owned raises unless we hold the port
    end Write;
 
    ----------
@@ -207,8 +210,8 @@ package body ESP32S3.UART is
    -- Available --
    ---------------
 
-   function Available (S : Session) return Natural is
-     (E.Rx_Available (State.Owned (S)));
+   function Available (S : Session) return Natural
+   is (E.Rx_Available (State.Owned (S)));
 
    -------------
    -- Release --
@@ -223,7 +226,8 @@ package body ESP32S3.UART is
    end Release;
 
    --  Scope-exit / exception-unwind cleanup: hand the port back if still held.
-   overriding procedure Finalize (S : in out Session) is
+   overriding
+   procedure Finalize (S : in out Session) is
    begin
       Release (S);
    end Finalize;

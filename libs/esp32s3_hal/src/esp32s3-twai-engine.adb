@@ -1,9 +1,9 @@
-with Interfaces;                 use Interfaces;
+with Interfaces;             use Interfaces;
 with Ada.Unchecked_Conversion;
 with ESP32S3.GPIO;
 with ESP32S3.GPIO_Signals;
-with ESP32S3_Registers;          use ESP32S3_Registers;
-with ESP32S3_Registers.TWAI;     use ESP32S3_Registers.TWAI;
+with ESP32S3_Registers;      use ESP32S3_Registers;
+with ESP32S3_Registers.TWAI; use ESP32S3_Registers.TWAI;
 with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.IO_MUX;
 with ESP32S3_Registers.SYSTEM;
@@ -14,27 +14,28 @@ package body ESP32S3.TWAI.Engine is
    --  is named and compiler-placed rather than hand-masked.  Reserved (bits 4..5)
    --  is defined so no undefined padding leaks onto the wire.  (Both directions
    --  are verified against the previous arithmetic in test/repclause_host.)
-   type DLC_Field is mod 2 ** 4;
-   type Rsvd_2    is mod 2 ** 2;
+   type DLC_Field is mod 2**4;
+   type Rsvd_2 is mod 2**2;
    type Frame_Info is record
       Length   : DLC_Field;   --  DLC: 0..8 used (9..15 legal on the wire = 8)
       Reserved : Rsvd_2;      --  bits 4..5, always 0
       Remote   : Boolean;     --  RTR
       Extended : Boolean;     --  FF (extended id)
    end record;
-   for Frame_Info use record
-      Length   at 0 range 0 .. 3;
-      Reserved at 0 range 4 .. 5;
-      Remote   at 0 range 6 .. 6;
-      Extended at 0 range 7 .. 7;
-   end record;
+   for Frame_Info use
+     record
+       Length at 0 range 0 .. 3;
+       Reserved at 0 range 4 .. 5;
+       Remote at 0 range 6 .. 6;
+       Extended at 0 range 7 .. 7;
+     end record;
    for Frame_Info'Size use 8;
    function To_Byte is new Ada.Unchecked_Conversion (Frame_Info, Unsigned_8);
    function To_Info is new Ada.Unchecked_Conversion (Unsigned_8, Frame_Info);
 
    package GR renames ESP32S3_Registers.GPIO;
    package MX renames ESP32S3_Registers.IO_MUX;
-   package G    renames ESP32S3.GPIO;
+   package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
 
    Src_Hz : constant := 80_000_000;             --  APB clock feeds the TWAI
@@ -43,19 +44,19 @@ package body ESP32S3.TWAI.Engine is
    --  array (each register exposes the byte in its low 8 bits).
    type Data_Array is array (0 .. 12) of DATA_0_Register with Volatile;
    Buf : Data_Array
-     with Import, Volatile, Address => TWAI0_Periph.DATA_0'Address;
+   with Import, Volatile, Address => TWAI0_Periph.DATA_0'Address;
 
    procedure Put (N : Natural; V : Unsigned_8) is
    begin
       Buf (N) := (TX_BYTE_0 => DATA_0_TX_BYTE_0_Field (V), others => <>);
    end Put;
 
-   function Get (N : Natural) return Unsigned_8 is
-     (Unsigned_8 (Buf (N).TX_BYTE_0));
+   function Get (N : Natural) return Unsigned_8
+   is (Unsigned_8 (Buf (N).TX_BYTE_0));
 
    procedure Drive_Out (Pad : G.Pin_Id; Sig : Natural) is
       O : GR.FUNC_OUT_SEL_CFG_Register :=
-            GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
+        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
    begin
       G.Configure (Pad, Mode => G.Output, Drive => G.Drive_Strong);
       O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
@@ -70,10 +71,12 @@ package body ESP32S3.TWAI.Engine is
       P  : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Ix);
    begin
       P.MCU_SEL := 1;
-      P.FUN_IE  := True;
+      P.FUN_IE := True;
       MX.IO_MUX_Periph.GPIO (Ix) := P;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Sig) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix), SEL => True, others => <>);
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix),
+         SEL    => True,
+         others => <>);
    end Route_In;
 
    ----------
@@ -90,7 +93,7 @@ package body ESP32S3.TWAI.Engine is
       --  ODD BRP=5 for 1 Mbit, which the even-rounding turned into 1.25 Mbit/s, a
       --  25% error that will not communicate on a real bus.)
       Tq_Per_Bit : constant := 20;
-      BRP : Integer :=
+      BRP        : Integer :=
         Integer (Src_Hz / (Bit_Rate * Tq_Per_Bit));   --  ~ even prescaler
    begin
       if BRP < 2 then
@@ -101,8 +104,8 @@ package body ESP32S3.TWAI.Engine is
       BRP := (BRP / 2) * 2;                            --  make it even
 
       SYSTEM_Periph.PERIP_CLK_EN0.TWAI_CLK_EN := True;
-      SYSTEM_Periph.PERIP_RST_EN0.TWAI_RST    := True;
-      SYSTEM_Periph.PERIP_RST_EN0.TWAI_RST    := False;
+      SYSTEM_Periph.PERIP_RST_EN0.TWAI_RST := True;
+      SYSTEM_Periph.PERIP_RST_EN0.TWAI_RST := False;
 
       --  Enter reset mode to configure.
       TWAI0_Periph.MODE := (RESET_MODE => True, others => <>);
@@ -110,11 +113,13 @@ package body ESP32S3.TWAI.Engine is
       --  Bit timing: BAUD_PRESC=BRP/2-1, SJW=3, TSEG1=16, TSEG2=3 (1+16+3 = 20 Tq;
       --  sample point 17/20 = 85%).  Register fields hold length-1.
       TWAI0_Periph.BUS_TIMING_0 :=
-        (BAUD_PRESC => BUS_TIMING_0_BAUD_PRESC_Field (BRP / 2 - 1),
-         SYNC_JUMP_WIDTH => 2, others => <>);
+        (BAUD_PRESC      => BUS_TIMING_0_BAUD_PRESC_Field (BRP / 2 - 1),
+         SYNC_JUMP_WIDTH => 2,
+         others          => <>);
       TWAI0_Periph.BUS_TIMING_1 :=
         (TIME_SEG1 => 15, TIME_SEG2 => 2, TIME_SAMP => False, others => <>);
-      TWAI0_Periph.CLOCK_DIVIDER := (CD => 0, CLOCK_OFF => False, others => <>);
+      TWAI0_Periph.CLOCK_DIVIDER :=
+        (CD => 0, CLOCK_OFF => False, others => <>);
 
       --  Acceptance filter: accept everything (mask = all "don't care").  In
       --  reset mode the data registers are the ACR (0..3) / AMR (4..7) filter.
@@ -130,7 +135,7 @@ package body ESP32S3.TWAI.Engine is
         (RESET_MODE       => False,
          LISTEN_ONLY_MODE => (Mode = Listen_Only),
          SELF_TEST_MODE   => (Mode = Self_Test),
-         others => <>);
+         others           => <>);
 
       return (Self_Mode => (Mode = Self_Test), Valid => True);
    end Open;
@@ -139,9 +144,8 @@ package body ESP32S3.TWAI.Engine is
    -- Configure_Pins --
    --------------------
 
-   procedure Configure_Pins (B  : Bus;
-                             Tx : ESP32S3.GPIO.Optional_Pin;
-                             Rx : ESP32S3.GPIO.Optional_Pin)
+   procedure Configure_Pins
+     (B : Bus; Tx : ESP32S3.GPIO.Optional_Pin; Rx : ESP32S3.GPIO.Optional_Pin)
    is
       use type ESP32S3.GPIO.Pad_Number;
    begin
@@ -174,14 +178,22 @@ package body ESP32S3.TWAI.Engine is
    -- Send --
    ----------
 
-   procedure Send (B : Bus; Extended, Remote : Boolean; Id : Unsigned_32;
-                   Length : Data_Length; Data : Data_Bytes)
+   procedure Send
+     (B                : Bus;
+      Extended, Remote : Boolean;
+      Id               : Unsigned_32;
+      Length           : Data_Length;
+      Data             : Data_Bytes)
    is
       --  frame-info byte: FF (bit 7) = extended, RTR (bit 6) = remote, DLC = low 4.
       Info : constant Unsigned_8 :=
-        To_Byte ((Length   => DLC_Field (Length), Reserved => 0,
-                  Remote   => Remote,             Extended => Extended));
-      Off  : Natural;                   --  first data byte (after the id bytes)
+        To_Byte
+          ((Length   => DLC_Field (Length),
+            Reserved => 0,
+            Remote   => Remote,
+            Extended => Extended));
+      Off  :
+        Natural;                   --  first data byte (after the id bytes)
    begin
       if not B.Valid then
          return;
@@ -191,13 +203,13 @@ package body ESP32S3.TWAI.Engine is
          --  29-bit id, big-endian across bytes 1..4 (low 5 bits in byte4[7:3]).
          Put (1, Unsigned_8 (Shift_Right (Id, 21) and 16#FF#));
          Put (2, Unsigned_8 (Shift_Right (Id, 13) and 16#FF#));
-         Put (3, Unsigned_8 (Shift_Right (Id,  5) and 16#FF#));
-         Put (4, Unsigned_8 (Shift_Left  (Id and 16#1F#, 3)));
+         Put (3, Unsigned_8 (Shift_Right (Id, 5) and 16#FF#));
+         Put (4, Unsigned_8 (Shift_Left (Id and 16#1F#, 3)));
          Off := 5;
       else
          --  11-bit id in byte1[7:0] + byte2[7:5].
          Put (1, Unsigned_8 (Shift_Right (Id, 3) and 16#FF#));
-         Put (2, Unsigned_8 (Shift_Left  (Id and 16#7#, 5)));
+         Put (2, Unsigned_8 (Shift_Left (Id and 16#7#, 5)));
          Off := 3;
       end if;
       --  A remote frame carries DLC but NO data field on the wire.
@@ -255,19 +267,23 @@ package body ESP32S3.TWAI.Engine is
    -- Receive --
    -------------
 
-   procedure Receive (B : Bus; Want_Extended : Boolean;
-                      Id : out Unsigned_32; Remote : out Boolean;
-                      Length : out Data_Length; Data : out Data_Bytes;
-                      Got : out Boolean)
+   procedure Receive
+     (B             : Bus;
+      Want_Extended : Boolean;
+      Id            : out Unsigned_32;
+      Remote        : out Boolean;
+      Length        : out Data_Length;
+      Data          : out Data_Bytes;
+      Got           : out Boolean)
    is
       Wait : Natural := 5_000_000;
       Off  : Natural;
    begin
-      Id     := 0;
+      Id := 0;
       Remote := False;
       Length := 0;
-      Data   := (others => 0);
-      Got    := False;
+      Data := (others => 0);
+      Got := False;
       if not B.Valid then
          return;
       end if;
@@ -276,6 +292,7 @@ package body ESP32S3.TWAI.Engine is
       end loop;
       if not TWAI0_Periph.STATUS.RX_BUF_ST then
          return;                        --  nothing arrived
+
       end if;
 
       declare
@@ -283,6 +300,7 @@ package body ESP32S3.TWAI.Engine is
       begin
          if FI.Extended /= Want_Extended then
             return;                     --  other width: leave it for the matching
+
          end if;                        --  overload, Got stays False
 
          Remote := FI.Remote;           --  RTR bit
@@ -292,14 +310,16 @@ package body ESP32S3.TWAI.Engine is
          Length := Data_Length (Natural'Min (8, Natural (FI.Length)));
       end;
       if Want_Extended then
-         Id := Shift_Left (Unsigned_32 (Get (1)), 21)
-                 or Shift_Left (Unsigned_32 (Get (2)), 13)
-                 or Shift_Left (Unsigned_32 (Get (3)),  5)
-                 or Shift_Right (Unsigned_32 (Get (4)), 3);
+         Id :=
+           Shift_Left (Unsigned_32 (Get (1)), 21)
+           or Shift_Left (Unsigned_32 (Get (2)), 13)
+           or Shift_Left (Unsigned_32 (Get (3)), 5)
+           or Shift_Right (Unsigned_32 (Get (4)), 3);
          Off := 5;
       else
-         Id := Shift_Left (Unsigned_32 (Get (1)), 3)
-                 or Shift_Right (Unsigned_32 (Get (2)), 5);
+         Id :=
+           Shift_Left (Unsigned_32 (Get (1)), 3)
+           or Shift_Right (Unsigned_32 (Get (2)), 5);
          Off := 3;
       end if;
       --  A remote frame has no data field; leave Data zeroed.

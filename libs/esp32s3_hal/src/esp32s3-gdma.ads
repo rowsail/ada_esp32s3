@@ -30,6 +30,7 @@ with Ada.Finalization;
 --  and the channel's end-of-transfer interrupt wakes it.  This driver OWNS the
 --  Device_L2_0 interrupt (CPU_INT 19) for that -- an application must not also
 --  attach a handler to it.
+
 package ESP32S3.GDMA is
    --  The five GDMA channel pairs.
    type Channel_Id is mod 5;
@@ -90,8 +91,8 @@ package ESP32S3.GDMA is
    --  the GDMA moves data as the peripheral asserts its DMA request.  Poll Done
    --  or call Wait for completion.  Buffer must be in internal SRAM; Length in
    --  1 .. Max_Transfer.  No-op on an invalid handle or out-of-range Length.
-   procedure Start (C : Channel; Dir : Direction;
-                    Buffer : System.Address; Length : Natural);
+   procedure Start
+     (C : Channel; Dir : Direction; Buffer : System.Address; Length : Natural);
 
    --  Arm a CONTINUOUS (self-looping) transmit on C's OUT path: a single
    --  descriptor whose link points back to itself, so the engine replays
@@ -102,7 +103,8 @@ package ESP32S3.GDMA is
    --  involvement after the kick.  Buffer must be in internal SRAM and should
    --  hold a whole number of wave periods so the wrap is seamless; Length in
    --  1 .. Max_Transfer.  No-op on an invalid handle or out-of-range Length.
-   procedure Start_Loop (C : Channel; Buffer : System.Address; Length : Natural);
+   procedure Start_Loop
+     (C : Channel; Buffer : System.Address; Length : Natural);
 
    --  True once the Dir transfer has signalled success-EOF (also True for an
    --  invalid handle, so a Wait never hangs on one).
@@ -118,7 +120,8 @@ package ESP32S3.GDMA is
 private
    type Channel is new Ada.Finalization.Limited_Controlled with record
       Id    : Channel_Id := 0;
-      Valid : Boolean    := False;
+      Valid : Boolean := False;
    end record;
-   overriding procedure Finalize (C : in out Channel);   --  auto-release on scope exit
+   overriding
+   procedure Finalize (C : in out Channel);   --  auto-release on scope exit
 end ESP32S3.GDMA;

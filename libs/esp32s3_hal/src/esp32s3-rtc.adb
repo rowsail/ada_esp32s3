@@ -12,17 +12,20 @@ package body ESP32S3.RTC is
    Wake_Ext1  : constant Unsigned_32 := 2;
    Wake_Timer : constant := 8;
 
-   Deepsleep_Reset : constant := 5;       --  RESET_CAUSE_PROCPU for a deep-sleep wake
+   Deepsleep_Reset : constant :=
+     5;       --  RESET_CAUSE_PROCPU for a deep-sleep wake
 
    --------------------
    -- Word accessors --
    --------------------
 
-   type Word_Array is array (Word_Index) of Interfaces.Unsigned_32 with Volatile;
-   Words : Word_Array with Import, Volatile, Address => Slow_Memory;
+   type Word_Array is array (Word_Index) of Interfaces.Unsigned_32
+   with Volatile;
+   Words : Word_Array
+   with Import, Volatile, Address => Slow_Memory;
 
-   function Read (Index : Word_Index) return Interfaces.Unsigned_32 is
-     (Words (Index));
+   function Read (Index : Word_Index) return Interfaces.Unsigned_32
+   is (Words (Index));
 
    procedure Write (Index : Word_Index; Value : Interfaces.Unsigned_32) is
    begin
@@ -33,14 +36,14 @@ package body ESP32S3.RTC is
    -- Boot/wake cause --
    ---------------------
 
-   function Raw_Reset_Cause return Natural is
-     (Natural (RTC_CNTL_Periph.RESET_STATE.RESET_CAUSE_PROCPU));
+   function Raw_Reset_Cause return Natural
+   is (Natural (RTC_CNTL_Periph.RESET_STATE.RESET_CAUSE_PROCPU));
 
-   function Raw_Wake_Cause return Natural is
-     (Natural (RTC_CNTL_Periph.SLP_WAKEUP_CAUSE.WAKEUP_CAUSE));
+   function Raw_Wake_Cause return Natural
+   is (Natural (RTC_CNTL_Periph.SLP_WAKEUP_CAUSE.WAKEUP_CAUSE));
 
-   function Raw_Reject_Cause return Natural is
-     (Natural (RTC_CNTL_Periph.SLP_REJECT_CAUSE.REJECT_CAUSE));
+   function Raw_Reject_Cause return Natural
+   is (Natural (RTC_CNTL_Periph.SLP_REJECT_CAUSE.REJECT_CAUSE));
 
    function Last_Wake return Wake_Cause is
       Reset : constant Natural := Raw_Reset_Cause;
@@ -71,8 +74,10 @@ package body ESP32S3.RTC is
    --  never returns; it returns only if the FSM REJECTED the sleep.
    procedure Enter_Deep_Sleep (Wake_Mask : Natural) is
    begin
-      RTC_CNTL_Periph.WAKEUP_STATE.WAKEUP_ENA := WAKEUP_STATE_WAKEUP_ENA_Field (Wake_Mask);
-      RTC_CNTL_Periph.DIG_PWC.DG_WRAP_PD_EN   := True;     --  deep sleep: digital off
+      RTC_CNTL_Periph.WAKEUP_STATE.WAKEUP_ENA :=
+        WAKEUP_STATE_WAKEUP_ENA_Field (Wake_Mask);
+      RTC_CNTL_Periph.DIG_PWC.DG_WRAP_PD_EN :=
+        True;     --  deep sleep: digital off
       RTC_CNTL_Periph.SLP_REJECT_CONF.SLEEP_REJECT_ENA := 0;
       RTC_CNTL_Periph.INT_CLR_RTC :=
         (SLP_WAKEUP_INT_CLR => True, SLP_REJECT_INT_CLR => True, others => <>);
@@ -92,12 +97,14 @@ package body ESP32S3.RTC is
    function Now return Unsigned_64 is
    begin
       RTC_CNTL_Periph.TIME_UPDATE.TIME_UPDATE := True;
-      for I in 1 .. 10_000 loop            --  let the latch settle (~a few RTC ticks)
+      for I in 1 .. 10_000 loop
+         --  let the latch settle (~a few RTC ticks)
          null;
       end loop;
-      return Shift_Left
-               (Unsigned_64 (RTC_CNTL_Periph.TIME_HIGH0.TIMER_VALUE0_HIGH), 32)
-               or Unsigned_64 (RTC_CNTL_Periph.TIME_LOW0);
+      return
+        Shift_Left
+          (Unsigned_64 (RTC_CNTL_Periph.TIME_HIGH0.TIMER_VALUE0_HIGH), 32)
+        or Unsigned_64 (RTC_CNTL_Periph.TIME_LOW0);
    end Now;
 
    -------------------
@@ -111,8 +118,10 @@ package body ESP32S3.RTC is
    begin
       RTC_CNTL_Periph.SLP_TIMER0 := UInt32 (Target and 16#FFFF_FFFF#);
       RTC_CNTL_Periph.SLP_TIMER1 :=
-        (SLP_VAL_HI => SLP_TIMER1_SLP_VAL_HI_Field (Shift_Right (Target, 32) and 16#FFFF#),
-         MAIN_TIMER_ALARM_EN => True, others => <>);
+        (SLP_VAL_HI          =>
+           SLP_TIMER1_SLP_VAL_HI_Field (Shift_Right (Target, 32) and 16#FFFF#),
+         MAIN_TIMER_ALARM_EN => True,
+         others              => <>);
       Enter_Deep_Sleep (Wake_Timer);
    end Deep_Sleep_For;
 
@@ -123,11 +132,12 @@ package body ESP32S3.RTC is
    procedure Deep_Sleep_Until
      (Pin : ESP32S3.RTC_IO.RTC_Pin; High : Boolean := True)
    is
-      Sel : constant UInt22 := 2 ** Natural (Pin);   --  Pin <= 21, no wrap
+      Sel : constant UInt22 := 2**Natural (Pin);   --  Pin <= 21, no wrap
    begin
       --  EXT1: wake when any selected RTC pad reaches the chosen level.
       RTC_CNTL_Periph.EXT_WAKEUP1 :=
-        (EXT_WAKEUP1_SEL => EXT_WAKEUP1_EXT_WAKEUP1_SEL_Field (Sel), others => <>);
+        (EXT_WAKEUP1_SEL => EXT_WAKEUP1_EXT_WAKEUP1_SEL_Field (Sel),
+         others          => <>);
       RTC_CNTL_Periph.EXT_WAKEUP_CONF.EXT_WAKEUP1_LV := High;
       Enter_Deep_Sleep (2);              --  EXT1 wake bit
    end Deep_Sleep_Until;

@@ -1,19 +1,20 @@
-with Interfaces;                 use Interfaces;
+with Interfaces;             use Interfaces;
 with System;
 with Ada.Real_Time;
 with Ada.Unchecked_Conversion;
 with ESP32S3.GPIO;
-with ESP32S3_Registers;          use ESP32S3_Registers;
-with ESP32S3_Registers.SENS;     use ESP32S3_Registers.SENS;
+with ESP32S3_Registers;      use ESP32S3_Registers;
+with ESP32S3_Registers.SENS; use ESP32S3_Registers.SENS;
 with ESP32S3_Registers.APB_SARADC;
 with ESP32S3_Registers.SYSTEM;
 
 package body ESP32S3.ADC is
 
-   function Channel_Pin (Unit : ADC_Unit; Ch : Channel_Index)
-                         return ESP32S3.GPIO.Pin_Id is
-     (case Unit is when ADC1 => ESP32S3.GPIO.Pin_Id (1 + Natural (Ch)),
-                   when ADC2 => ESP32S3.GPIO.Pin_Id (11 + Natural (Ch)));
+   function Channel_Pin
+     (Unit : ADC_Unit; Ch : Channel_Index) return ESP32S3.GPIO.Pin_Id
+   is (case Unit is
+         when ADC1 => ESP32S3.GPIO.Pin_Id (1 + Natural (Ch)),
+         when ADC2 => ESP32S3.GPIO.Pin_Id (11 + Natural (Ch)));
 
    ---------------------------------------------------------------------------
    --  REGI2C (analog trim) access via the boot ROM, exactly as the temperature
@@ -22,19 +23,21 @@ package body ESP32S3.ADC is
    --  conversion until they are set.  rom_i2c_writeReg_Mask writes a bit field.
    ---------------------------------------------------------------------------
 
-   type Rom_I2C_Write_Fn is access procedure
-     (Block, Host, Reg, Msb, Lsb, Data : Unsigned_8) with Convention => C;
-   function To_Fn is
-     new Ada.Unchecked_Conversion (System.Address, Rom_I2C_Write_Fn);
+   type Rom_I2C_Write_Fn is
+     access procedure (Block, Host, Reg, Msb, Lsb, Data : Unsigned_8)
+   with Convention => C;
+   function To_Fn is new
+     Ada.Unchecked_Conversion (System.Address, Rom_I2C_Write_Fn);
    Rom_I2C_Write : constant Rom_I2C_Write_Fn :=
      To_Fn (System'To_Address (16#4000_5D6C#));
 
    ANA_Config  : UInt32
-     with Volatile, Import, Address => System'To_Address (16#6000_E044#);
+   with Volatile, Import, Address => System'To_Address (16#6000_E044#);
    ANA_Config2 : UInt32
-     with Volatile, Import, Address => System'To_Address (16#6000_E048#);
+   with Volatile, Import, Address => System'To_Address (16#6000_E048#);
 
-   I2C_SAR_ADC      : constant Unsigned_8 := 16#69#;   --  REGI2C block (SAR ADC)
+   I2C_SAR_ADC      : constant Unsigned_8 :=
+     16#69#;   --  REGI2C block (SAR ADC)
    I2C_SAR_ADC_HOST : constant Unsigned_8 := 1;
 
    --  The SAR self-calibration init code is attenuation-DEPENDENT (each atten has
@@ -54,8 +57,12 @@ package body ESP32S3.ADC is
    procedure Set_Bias (Unit : ADC_Unit) is
    begin
       case Unit is
-         when ADC1 => I2C (16#2#, 6, 4, 4);  I2C (16#2#, 2, 0, 2);  --  DREF, sample
-         when ADC2 => I2C (16#5#, 6, 4, 4);
+         when ADC1 =>
+            I2C (16#2#, 6, 4, 4);
+            I2C (16#2#, 2, 0, 2);  --  DREF, sample
+
+         when ADC2 =>
+            I2C (16#5#, 6, 4, 4);
       end case;
    end Set_Bias;
 
@@ -66,8 +73,13 @@ package body ESP32S3.ADC is
       Lsb : constant Unsigned_8 := Unsigned_8 (W and 16#FF#);
    begin
       case Unit is
-         when ADC1 => I2C (16#1#, 3, 0, Msb);  I2C (16#0#, 7, 0, Lsb);
-         when ADC2 => I2C (16#4#, 3, 0, Msb);  I2C (16#3#, 7, 0, Lsb);
+         when ADC1 =>
+            I2C (16#1#, 3, 0, Msb);
+            I2C (16#0#, 7, 0, Lsb);
+
+         when ADC2 =>
+            I2C (16#4#, 3, 0, Msb);
+            I2C (16#3#, 7, 0, Lsb);
       end case;
    end Set_Init_Code;
 
@@ -76,8 +88,11 @@ package body ESP32S3.ADC is
       D : constant Unsigned_8 := (if On then 1 else 0);
    begin
       case Unit is
-         when ADC1 => I2C (16#7#, 5, 5, D);
-         when ADC2 => I2C (16#7#, 7, 7, D);
+         when ADC1 =>
+            I2C (16#7#, 5, 5, D);
+
+         when ADC2 =>
+            I2C (16#7#, 7, 7, D);
       end case;
    end Set_Encal_Gnd;
 
@@ -85,14 +100,15 @@ package body ESP32S3.ADC is
    --  Low-level digital one-shot conversion (atten + channel + start + read).
    ---------------------------------------------------------------------------
 
-   function Convert (Unit : ADC_Unit; Ch : Channel_Index; Atten : Attenuation)
-                     return Natural
+   function Convert
+     (Unit : ADC_Unit; Ch : Channel_Index; Atten : Attenuation) return Natural
    is
-      Shift   : constant Natural := Natural (Ch) * 2;
-      One_Hot : constant Unsigned_16 := Shift_Left (Unsigned_16 (1), Natural (Ch));
-      A_Val   : constant UInt32 := Shift_Left (UInt32 (Attenuation'Pos (Atten)),
-                                               Shift);
-      A_Mask  : constant UInt32 := Shift_Left (UInt32 (3), Shift);
+      Shift    : constant Natural := Natural (Ch) * 2;
+      One_Hot  : constant Unsigned_16 :=
+        Shift_Left (Unsigned_16 (1), Natural (Ch));
+      A_Val    : constant UInt32 :=
+        Shift_Left (UInt32 (Attenuation'Pos (Atten)), Shift);
+      A_Mask   : constant UInt32 := Shift_Left (UInt32 (3), Shift);
       --  Wall-clock bound on the conversion-done poll (a conversion is a few
       --  microseconds).  A real-time deadline stays correct under -O2, where an
       --  iteration count would expire long before DONE could assert.
@@ -104,7 +120,7 @@ package body ESP32S3.ADC is
          when ADC1 =>
             SENS_Periph.SAR_ATTEN1 :=
               (SENS_Periph.SAR_ATTEN1 and not A_Mask) or A_Val;
-            SENS_Periph.SAR_MEAS1_CTRL2.SAR1_EN_PAD     :=
+            SENS_Periph.SAR_MEAS1_CTRL2.SAR1_EN_PAD :=
               SAR_MEAS1_CTRL2_SAR1_EN_PAD_Field (One_Hot);
             SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_START_SAR := False;
             SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_START_SAR := True;
@@ -114,11 +130,14 @@ package body ESP32S3.ADC is
                null;
             end loop;
             Done_Flag := SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DONE_SAR;
-            return Natural (SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DATA_SAR and 16#0FFF#);
+            return
+              Natural
+                (SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DATA_SAR and 16#0FFF#);
+
          when ADC2 =>
             SENS_Periph.SAR_ATTEN2 :=
               (SENS_Periph.SAR_ATTEN2 and not A_Mask) or A_Val;
-            SENS_Periph.SAR_MEAS2_CTRL2.SAR2_EN_PAD     :=
+            SENS_Periph.SAR_MEAS2_CTRL2.SAR2_EN_PAD :=
               SAR_MEAS2_CTRL2_SAR2_EN_PAD_Field (One_Hot);
             SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_START_SAR := False;
             SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_START_SAR := True;
@@ -128,7 +147,9 @@ package body ESP32S3.ADC is
                null;
             end loop;
             Done_Flag := SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DONE_SAR;
-            return Natural (SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DATA_SAR and 16#0FFF#);
+            return
+              Natural
+                (SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DATA_SAR and 16#0FFF#);
       end case;
    end Convert;
 
@@ -136,9 +157,9 @@ package body ESP32S3.ADC is
    --  binary-search the initial code for the value that just reads zero, and
    --  leave that code programmed (esp-idf adc_hal_self_calibration, single pass).
    procedure Calibrate (Unit : ADC_Unit; Atten : Attenuation) is
-      Code_H : Natural := 4096;
-      Code_L : Natural := 0;
-      Chk    : Natural := 2048;
+      Code_H  : Natural := 4096;
+      Code_L  : Natural := 0;
+      Chk     : Natural := 2048;
       Reading : Natural;
    begin
       Set_Bias (Unit);
@@ -156,7 +177,8 @@ package body ESP32S3.ADC is
          Reading := Convert (Unit, 0, Atten);
       end loop;
       Set_Encal_Gnd (Unit, False);
-      Set_Init_Code (Unit, Chk);          --  leave the calibrated code in place
+      Set_Init_Code
+        (Unit, Chk);          --  leave the calibrated code in place
       Cal_Codes (Unit, Atten) := Chk;
    end Calibrate;
 
@@ -191,20 +213,20 @@ package body ESP32S3.ADC is
             --  Enable the SARADC clock module (APB source) -- without it the SAR
             --  reader has no clock and a conversion never completes.
             APB_SARADC_Periph.CLKM_CONF.CLK_SEL := 2;        --  APB clock
-            APB_SARADC_Periph.CLKM_CONF.CLK_EN  := True;
+            APB_SARADC_Periph.CLKM_CONF.CLK_EN := True;
             SENS_Periph.SAR_READER1_CTRL.SAR_SAR1_CLK_DIV := 2;
             SENS_Periph.SAR_READER2_CTRL.SAR_SAR2_CLK_DIV := 2;
             --  Software (RTC) control of both units: SW start + SW bit-map.
-            SENS_Periph.SAR_MEAS1_MUX.SAR1_DIG_FORCE      := False;
+            SENS_Periph.SAR_MEAS1_MUX.SAR1_DIG_FORCE := False;
             SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_START_FORCE := True;
             SENS_Periph.SAR_MEAS1_CTRL2.SAR1_EN_PAD_FORCE := True;
             SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_START_FORCE := True;
             SENS_Periph.SAR_MEAS2_CTRL2.SAR2_EN_PAD_FORCE := True;
             --  Open the REGI2C bus to the SAR-ADC analog block, then calibrate
             --  both units at full range (the init code makes conversions valid).
-            ANA_Config  := ANA_Config or 16#3FF00#;
-            ANA_Config  := ANA_Config and not (UInt32'(2) ** 18);
-            ANA_Config2 := ANA_Config2 or (UInt32'(2) ** 16);
+            ANA_Config := ANA_Config or 16#3FF00#;
+            ANA_Config := ANA_Config and not (UInt32'(2)**18);
+            ANA_Config2 := ANA_Config2 or (UInt32'(2)**16);
             --  Calibrate BOTH units at EVERY attenuation (one-time), so a Read at
             --  any atten programs a code that was actually measured for it.
             for A in Attenuation loop
@@ -235,11 +257,13 @@ package body ESP32S3.ADC is
       Release (R);
       Pool.Claim (Unit, Ok);
       if Ok then
-         R.Unit := Unit;  R.Held := True;
+         R.Unit := Unit;
+         R.Held := True;
       end if;
    end Claim;
 
-   function Is_Valid (R : Reader) return Boolean is (R.Held);
+   function Is_Valid (R : Reader) return Boolean
+   is (R.Held);
 
    procedure Release (R : in out Reader) is
    begin
@@ -249,7 +273,8 @@ package body ESP32S3.ADC is
       end if;
    end Release;
 
-   overriding procedure Finalize (R : in out Reader) is
+   overriding
+   procedure Finalize (R : in out Reader) is
    begin
       Release (R);
    end Finalize;
@@ -258,11 +283,14 @@ package body ESP32S3.ADC is
    -- Read --
    ----------
 
-   function Cal_Code (Unit : ADC_Unit) return Natural is (Cal_Codes (Unit, Db_12));
-   function Last_Done return Boolean is (Done_Flag);
+   function Cal_Code (Unit : ADC_Unit) return Natural
+   is (Cal_Codes (Unit, Db_12));
+   function Last_Done return Boolean
+   is (Done_Flag);
 
-   function Read (R : Reader; Ch : Channel_Index;
-                  Atten : Attenuation := Db_12) return Raw_Value is
+   function Read
+     (R : Reader; Ch : Channel_Index; Atten : Attenuation := Db_12)
+      return Raw_Value is
    begin
       if not R.Held then
          return 0;

@@ -2,7 +2,8 @@ with Ada.Unchecked_Conversion;
 
 package body ESP32S3.QMI8658C is
 
-   use ESP32S3.I2C;   --  Byte, Byte_Array, Session, Slave_Address, Acquire/Write/Read
+   use ESP32S3
+         .I2C;   --  Byte, Byte_Array, Session, Slave_Address, Acquire/Write/Read
    use type Interfaces.Unsigned_16;   --  "*" / "+" on the byte-pair combine
 
    ---------------------------------------------------------------------------
@@ -10,7 +11,8 @@ package body ESP32S3.QMI8658C is
    ---------------------------------------------------------------------------
 
    Reg_Who_Am_I  : constant Byte := 16#00#;
-   Reg_Ctrl1     : constant Byte := 16#02#;   --  serial interface + sensor disable
+   Reg_Ctrl1     : constant Byte :=
+     16#02#;   --  serial interface + sensor disable
    Reg_Ctrl2     : constant Byte := 16#03#;   --  accel: aST / aFS / aODR
    Reg_Ctrl3     : constant Byte := 16#04#;   --  gyro:  gST / gFS / gODR
    Reg_Ctrl7     : constant Byte := 16#08#;   --  enable: aEN / gEN
@@ -22,10 +24,10 @@ package body ESP32S3.QMI8658C is
 
    --  CTRL1: ADDR_AI (bit6) auto-increments the register pointer on burst reads;
    --  BE (bit5) left 0 => little-endian.  Both sensors run off the 2 MHz osc.
-   Ctrl1_Init    : constant Byte := 16#40#;   --  ADDR_AI = 1, BE = 0
+   Ctrl1_Init : constant Byte := 16#40#;   --  ADDR_AI = 1, BE = 0
 
    --  CTRL7: enable accelerometer (aEN, bit0) + gyroscope (gEN, bit1) = 6DOF.
-   Ctrl7_Enable  : constant Byte := 16#03#;
+   Ctrl7_Enable : constant Byte := 16#03#;
 
    --  RESET register command that triggers the soft reset.
    Reset_Command : constant Byte := 16#B0#;
@@ -38,11 +40,12 @@ package body ESP32S3.QMI8658C is
    --  Little-endian byte pair -> 16-bit signed (two's complement).
    ---------------------------------------------------------------------------
 
-   function To_I16 is
-     new Ada.Unchecked_Conversion (Interfaces.Unsigned_16, Interfaces.Integer_16);
+   function To_I16 is new
+     Ada.Unchecked_Conversion (Interfaces.Unsigned_16, Interfaces.Integer_16);
 
-   function Signed (Lo, Hi : Byte) return Interfaces.Integer_16 is
-     (To_I16 (Interfaces.Unsigned_16 (Hi) * 256 + Interfaces.Unsigned_16 (Lo)));
+   function Signed (Lo, Hi : Byte) return Interfaces.Integer_16
+   is (To_I16
+         (Interfaces.Unsigned_16 (Hi) * 256 + Interfaces.Unsigned_16 (Lo)));
 
    ---------------------------------------------------------------------------
    --  Register access on an already-acquired Session (Addr = the device's I2C
@@ -52,8 +55,11 @@ package body ESP32S3.QMI8658C is
    --  Set the address pointer (1-byte write), then stream Data'Length bytes from
    --  it (CTRL1.ADDR_AI auto-increments the pointer across the read).
    procedure Read_Regs
-     (S : Session; Addr : Slave_Address; Reg : Byte;
-      Data : out Byte_Array; Result : out Status)
+     (S      : Session;
+      Addr   : Slave_Address;
+      Reg    : Byte;
+      Data   : out Byte_Array;
+      Result : out Status)
    is
       Acked : Boolean;
    begin
@@ -66,8 +72,11 @@ package body ESP32S3.QMI8658C is
 
    --  Write Reg followed by Data in one transaction.
    procedure Write_Regs
-     (S : Session; Addr : Slave_Address; Reg : Byte;
-      Data : Byte_Array; Result : out Status)
+     (S      : Session;
+      Addr   : Slave_Address;
+      Reg    : Byte;
+      Data   : Byte_Array;
+      Result : out Status)
    is
       Acked : Boolean;
       Buf   : Byte_Array (0 .. Data'Length);
@@ -107,11 +116,16 @@ package body ESP32S3.QMI8658C is
       Scl      : ESP32S3.GPIO.Pin_Id;
       Int_Pin  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Address  : ESP32S3.I2C.Slave_Address := Address_SA0_Low;
-      Host     : ESP32S3.I2C.I2C_Host      := ESP32S3.I2C.I2C0;
-      Clock_Hz : Positive                  := 400_000) is
+      Host     : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
+      Clock_Hz : Positive := 400_000) is
    begin
-      Dev := (Host => Host, Address => Address, Sda => Sda, Scl => Scl,
-              Int_Pin => Int_Pin, others => <>);
+      Dev :=
+        (Host    => Host,
+         Address => Address,
+         Sda     => Sda,
+         Scl     => Scl,
+         Int_Pin => Int_Pin,
+         others  => <>);
       ESP32S3.I2C.Setup (Host, Clock_Hz => Clock_Hz);
       ESP32S3.I2C.Configure_Pins (Host, Scl => Scl, Sda => Sda);
    end Setup;
@@ -120,8 +134,8 @@ package body ESP32S3.QMI8658C is
    -- Interrupt_Pin --
    -------------------
 
-   function Interrupt_Pin (Dev : Device) return ESP32S3.GPIO.Optional_Pin is
-     (Dev.Int_Pin);
+   function Interrupt_Pin (Dev : Device) return ESP32S3.GPIO.Optional_Pin
+   is (Dev.Int_Pin);
 
    ------------------
    -- Read_Who_Am_I --
@@ -159,7 +173,7 @@ package body ESP32S3.QMI8658C is
    procedure Configure
      (Dev    : in out Device;
       Accel  : Accel_Range := Range_8G;
-      Gyro   : Gyro_Range  := Range_512DPS;
+      Gyro   : Gyro_Range := Range_512DPS;
       Rate   : Output_Rate := ODR_235_Hz;
       Result : out Status)
    is
@@ -167,7 +181,7 @@ package body ESP32S3.QMI8658C is
       ODR : constant Byte := Byte (Output_Rate'Pos (Rate));
    begin
       Dev.Accel_Rng := Accel;
-      Dev.Gyro_Rng  := Gyro;
+      Dev.Gyro_Rng := Gyro;
 
       Acquire (S, Dev.Host);
 
@@ -178,15 +192,23 @@ package body ESP32S3.QMI8658C is
       end if;
 
       --  Accelerometer full scale (aFS<6:4>) + output rate (aODR<3:0>).
-      Write_Regs (S, Dev.Address, Reg_Ctrl2,
-                  (1 => Byte (Accel_Range'Pos (Accel)) * 16 or ODR), Result);
+      Write_Regs
+        (S,
+         Dev.Address,
+         Reg_Ctrl2,
+         (1 => Byte (Accel_Range'Pos (Accel)) * 16 or ODR),
+         Result);
       if Result /= OK then
          return;
       end if;
 
       --  Gyroscope full scale (gFS<6:4>) + output rate (gODR<3:0>).
-      Write_Regs (S, Dev.Address, Reg_Ctrl3,
-                  (1 => Byte (Gyro_Range'Pos (Gyro)) * 16 or ODR), Result);
+      Write_Regs
+        (S,
+         Dev.Address,
+         Reg_Ctrl3,
+         (1 => Byte (Gyro_Range'Pos (Gyro)) * 16 or ODR),
+         Result);
       if Result /= OK then
          return;
       end if;
@@ -209,8 +231,8 @@ package body ESP32S3.QMI8658C is
    -- Read_Gyroscope --
    --------------------
 
-   procedure Read_Gyroscope
-     (Dev : Device; G : out Axes; Result : out Status) is
+   procedure Read_Gyroscope (Dev : Device; G : out Axes; Result : out Status)
+   is
    begin
       Read_Axes (Dev, Reg_Gyro_X_L, G, Result);
    end Read_Gyroscope;
@@ -244,12 +266,12 @@ package body ESP32S3.QMI8658C is
       V : Byte_Array (0 .. 0);
    begin
       Accel := False;
-      Gyro  := False;
+      Gyro := False;
       Acquire (S, Dev.Host);
       Read_Regs (S, Dev.Address, Reg_Status0, V, Result);
       if Result = OK then
          Accel := (V (0) and Status_Accel_Ready) /= 0;
-         Gyro  := (V (0) and Status_Gyro_Ready)  /= 0;
+         Gyro := (V (0) and Status_Gyro_Ready) /= 0;
       end if;
    end Data_Ready;
 
@@ -258,11 +280,11 @@ package body ESP32S3.QMI8658C is
    ---------------------------------
 
    --  Accel: 16384 / 8192 / 4096 / 2048 LSB/g for 2 / 4 / 8 / 16 g.
-   function Accel_LSB_Per_G (Dev : Device) return Positive is
-     (2 ** (14 - Accel_Range'Pos (Dev.Accel_Rng)));
+   function Accel_LSB_Per_G (Dev : Device) return Positive
+   is (2**(14 - Accel_Range'Pos (Dev.Accel_Rng)));
 
    --  Gyro: 2048 .. 16 LSB/dps for 16 .. 2048 dps.
-   function Gyro_LSB_Per_DPS (Dev : Device) return Positive is
-     (2 ** (11 - Gyro_Range'Pos (Dev.Gyro_Rng)));
+   function Gyro_LSB_Per_DPS (Dev : Device) return Positive
+   is (2**(11 - Gyro_Range'Pos (Dev.Gyro_Rng)));
 
 end ESP32S3.QMI8658C;

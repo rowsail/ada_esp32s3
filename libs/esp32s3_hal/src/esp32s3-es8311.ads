@@ -21,6 +21,7 @@ with ESP32S3.I2S;
 --
 --  Register sequence + clock coefficients ported from Espressif's es8311 driver
 --  (esp-bsp); see the example README for the source links.
+
 package ESP32S3.ES8311 is
 
    --  I2C 7-bit address: 0x18 with CE/AD0 low (default), 0x19 with CE high.
@@ -52,10 +53,12 @@ package ESP32S3.ES8311 is
       Dsdin        : ESP32S3.GPIO.Pin_Id;
       Asdout       : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Sample_Rate  : Positive := 16_000;
-      Volume       : Natural  := 70;          --  DAC volume, 0 .. 100 %
-      Mic_Gain_Db  : Natural  := 24;          --  ADC PGA gain, 0 .. 42 dB
+      Volume       : Natural := 70;
+      --  DAC volume, 0 .. 100 %
+      Mic_Gain_Db  : Natural := 24;
+      --  ADC PGA gain, 0 .. 42 dB
       I2C_Clock_Hz : Positive := 100_000;
-      Addr         : Address  := Default_Address;
+      Addr         : Address := Default_Address;
       Ok           : out Boolean);
 
    --  Set the DAC output volume (0 .. 100 %).  Setup must have run.
@@ -87,8 +90,8 @@ package ESP32S3.ES8311 is
    --  (in internal SRAM) and should hold a whole number of wave periods so the
    --  wrap is seamless -- e.g. for a steady tone, size the buffer to an integer
    --  number of cycles.  Length 1 .. 4095 bytes.  Stop halts it.
-   procedure Play_Continuous (O : Output; Samples : System.Address;
-                              Length : Natural);
+   procedure Play_Continuous
+     (O : Output; Samples : System.Address; Length : Natural);
 
    --  Stop a continuous playback started by Play_Continuous.
    procedure Stop (O : Output);

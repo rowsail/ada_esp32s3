@@ -15,6 +15,7 @@ with ESP32S3.GPIO;
 --  automatically on scope exit, including on an exception).  TX and RX channels
 --  are distinct handle types so the two can't be confused.  Uses finalization,
 --  so it targets the embedded/full profile.
+
 package ESP32S3.RMT is
 
    type TX_Index is range 0 .. 3;             --  the four transmit channels
@@ -25,17 +26,18 @@ package ESP32S3.RMT is
 
    --  One RMT symbol: two consecutive pulses (a level held for a duration).
    type RMT_Symbol is record
-      Level0    : Boolean    := False;
+      Level0    : Boolean := False;
       Duration0 : Tick_Count := 0;
-      Level1    : Boolean    := False;
+      Level1    : Boolean := False;
       Duration1 : Tick_Count := 0;
    end record;
-   for RMT_Symbol use record
-      Duration0 at 0 range  0 .. 14;
-      Level0    at 0 range 15 .. 15;
-      Duration1 at 0 range 16 .. 30;
-      Level1    at 0 range 31 .. 31;
-   end record;
+   for RMT_Symbol use
+     record
+       Duration0 at 0 range 0 .. 14;
+       Level0 at 0 range 15 .. 15;
+       Duration1 at 0 range 16 .. 30;
+       Level1 at 0 range 31 .. 31;
+     end record;
    for RMT_Symbol'Size use 32;
 
    type Symbol_Array is array (Natural range <>) of RMT_Symbol;
@@ -52,17 +54,18 @@ package ESP32S3.RMT is
    function Is_Valid (C : TX_Channel) return Boolean;
    procedure Release (C : in out TX_Channel);
 
-   --  Configure C: each tick = 1 / Resolution_Hz seconds (e.g. 1_000_000 → 1 µs),
+   --  Configure C: each tick = 1 / Resolution_Hz seconds (e.g. 1_000_000 â 1 Âµs),
    --  output routed to Pin.  Idle level is low.
    --
    --  Blocks (1 .. 4) gives the channel that many consecutive 48-symbol RAM
    --  blocks (Phase 1, "multi-block"), raising the one-shot Transmit ceiling to
    --  Blocks*48-1 symbols.  Blocks > 1 BORROWS the RAM of the higher-numbered TX
    --  channels (channel Index .. Index+Blocks-1), so don't also Claim those.
-   procedure Configure (C : in out TX_Channel;
-                        Resolution_Hz : Positive;
-                        Pin    : ESP32S3.GPIO.Pin_Id;
-                        Blocks : Positive := 1);
+   procedure Configure
+     (C             : in out TX_Channel;
+      Resolution_Hz : Positive;
+      Pin           : ESP32S3.GPIO.Pin_Id;
+      Blocks        : Positive := 1);
 
    --  Transmit Symbols and block until the channel finishes.  A burst up to the
    --  channel's RAM (Blocks*48-1 symbols) is loaded and sent in one shot; a
@@ -81,29 +84,33 @@ package ESP32S3.RMT is
 
    --  Configure C at the given tick resolution, input from Pin.  Reception ends
    --  once the line stays idle for Idle_Ticks ticks.
-   procedure Configure (C : in out RX_Channel;
-                        Resolution_Hz : Positive;
-                        Pin : ESP32S3.GPIO.Pin_Id;
-                        Idle_Ticks : Tick_Count := 2_000);
+   procedure Configure
+     (C             : in out RX_Channel;
+      Resolution_Hz : Positive;
+      Pin           : ESP32S3.GPIO.Pin_Id;
+      Idle_Ticks    : Tick_Count := 2_000);
 
    --  Arm the receiver (call just before the incoming burst).
    procedure Start (C : RX_Channel);
 
    --  Block until reception ends, then return the captured symbols in Into and
    --  how many were captured in Count (0 if none / timed out).
-   procedure Receive (C : RX_Channel; Into : out Symbol_Array; Count : out Natural);
+   procedure Receive
+     (C : RX_Channel; Into : out Symbol_Array; Count : out Natural);
 
 private
    type TX_Channel is new Ada.Finalization.Limited_Controlled with record
       Idx    : TX_Index := 0;
-      Held   : Boolean  := False;
+      Held   : Boolean := False;
       Blocks : Positive := 1;        --  RAM blocks claimed (set by Configure)
    end record;
-   overriding procedure Finalize (C : in out TX_Channel);
+   overriding
+   procedure Finalize (C : in out TX_Channel);
 
    type RX_Channel is new Ada.Finalization.Limited_Controlled with record
       Idx  : RX_Index := 0;
-      Held : Boolean  := False;
+      Held : Boolean := False;
    end record;
-   overriding procedure Finalize (C : in out RX_Channel);
+   overriding
+   procedure Finalize (C : in out RX_Channel);
 end ESP32S3.RMT;

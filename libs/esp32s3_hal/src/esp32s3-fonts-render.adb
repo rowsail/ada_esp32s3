@@ -7,17 +7,22 @@ package body ESP32S3.Fonts.Render is
       R : Ramp16;
    begin
       for K in Ramp16'Range loop
-         R (K) := To_Color (BG.R + (FG.R - BG.R) * K / 15,
-                            BG.G + (FG.G - BG.G) * K / 15,
-                            BG.B + (FG.B - BG.B) * K / 15);
+         R (K) :=
+           To_Color
+             (BG.R + (FG.R - BG.R) * K / 15,
+              BG.G + (FG.G - BG.G) * K / 15,
+              BG.B + (FG.B - BG.B) * K / 15);
       end loop;
       return R;
    end Make_Ramp;
 
    --  Rasterise glyph G (its inked box top-left at (X0, Y0)) and blit it.
    procedure Emit
-     (S : Surface; F : ESP32S3.Fonts.Font; G : Natural; X0, Y0 : Integer;
-      Ramp : Ramp16)
+     (S      : Surface;
+      F      : ESP32S3.Fonts.Font;
+      G      : Natural;
+      X0, Y0 : Integer;
+      Ramp   : Ramp16)
    is
       W : constant Natural := ESP32S3.Fonts.Glyph_W (F, G);
       H : constant Natural := ESP32S3.Fonts.Glyph_H (F, G);
@@ -53,10 +58,13 @@ package body ESP32S3.Fonts.Render is
          declare
             G : constant Natural := Code - F.First;
          begin
-            Emit (S, F, G,
-                  X + ESP32S3.Fonts.Glyph_XOff (F, G),
-                  Baseline + ESP32S3.Fonts.Glyph_YOff (F, G),
-                  Make_Ramp (FG, BG));
+            Emit
+              (S,
+               F,
+               G,
+               X + ESP32S3.Fonts.Glyph_XOff (F, G),
+               Baseline + ESP32S3.Fonts.Glyph_YOff (F, G),
+               Make_Ramp (FG, BG));
          end;
       end if;
    end Draw_Char;
@@ -84,9 +92,13 @@ package body ESP32S3.Fonts.Render is
                declare
                   G : constant Natural := Code - F.First;
                begin
-                  Emit (S, F, G,
-                        Pen + ESP32S3.Fonts.Glyph_XOff (F, G),
-                        Baseline + ESP32S3.Fonts.Glyph_YOff (F, G), Ramp);
+                  Emit
+                    (S,
+                     F,
+                     G,
+                     Pen + ESP32S3.Fonts.Glyph_XOff (F, G),
+                     Baseline + ESP32S3.Fonts.Glyph_YOff (F, G),
+                     Ramp);
                   Pen := Pen + ESP32S3.Fonts.Glyph_Adv (F, G);
                end;
             end if;

@@ -10,6 +10,7 @@ with ESP32S3.GDMA;
 --  channel.
 --
 --  (Data_Pins is declared in the parent and used here by child visibility.)
+
 private package ESP32S3.LCD.Engine is
 
    --  A configured controller.  No GDMA channel is held while idle: Transmit
@@ -19,20 +20,19 @@ private package ESP32S3.LCD.Engine is
    --  Bring the LCD up in 8-bit mode at (about) Pclk_Hz.  No DMA channel is
    --  claimed here.  Is_Valid is True once the controller is configured.
    procedure Open (B : in out Bus; Pclk_Hz : Positive);
-   function  Is_Valid (B : Bus) return Boolean;
+   function Is_Valid (B : Bus) return Boolean;
 
    --  Route the data bus and pixel clock to physical pads.
-   procedure Configure_Pins (B    : Bus;
-                             Data : Data_Pins;
-                             Pclk : ESP32S3.GPIO.Optional_Pin);
+   procedure Configure_Pins
+     (B : Bus; Data : Data_Pins; Pclk : ESP32S3.GPIO.Optional_Pin);
 
    --  Free-run the pixel clock continuously on Pclk_Pad (no data transaction).
    procedure Enable_Clock_Out (B : Bus; Pclk_Pad : ESP32S3.GPIO.Pin_Id);
 
    --  Stream Length bytes (1 .. 4095) from Tx out the data bus, one per PCLK.
    --  Ok is True once the transfer completes.
-   procedure Transmit (B : Bus; Tx : System.Address; Length : Natural;
-                       Ok : out Boolean);
+   procedure Transmit
+     (B : Bus; Tx : System.Address; Length : Natural; Ok : out Boolean);
 
 private
    type Bus is limited record

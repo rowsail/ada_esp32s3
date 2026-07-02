@@ -3,9 +3,11 @@ with Interfaces; use Interfaces;
 package body Net_Routes is
 
    --  Pack a dotted address into a 32-bit value for masking/compare.
-   function U32 (A : Net_Devices.IPv4_Address) return Unsigned_32 is
-     (Shift_Left (Unsigned_32 (A (0)), 24) or Shift_Left (Unsigned_32 (A (1)), 16)
-      or Shift_Left (Unsigned_32 (A (2)), 8) or Unsigned_32 (A (3)));
+   function U32 (A : Net_Devices.IPv4_Address) return Unsigned_32
+   is (Shift_Left (Unsigned_32 (A (0)), 24)
+       or Shift_Left (Unsigned_32 (A (1)), 16)
+       or Shift_Left (Unsigned_32 (A (2)), 8)
+       or Unsigned_32 (A (3)));
 
    --  Prefix length = number of set bits in the mask (works for any mask, /0..32).
    function Prefix_Len (Mask : Unsigned_32) return Natural is
@@ -20,10 +22,10 @@ package body Net_Routes is
    end Prefix_Len;
 
    type Route is record
-      Dest, Mask : Unsigned_32  := 0;
+      Dest, Mask : Unsigned_32 := 0;
       Iface      : Interface_Id := 0;
-      Metric     : Natural      := 0;
-      Valid      : Boolean      := False;
+      Metric     : Natural := 0;
+      Valid      : Boolean := False;
    end record;
 
    Max_Routes : constant := 16;
@@ -41,16 +43,22 @@ package body Net_Routes is
       N_Routes := 0;
    end Clear;
 
-   function Has_Routes return Boolean is (N_Routes > 0);
+   function Has_Routes return Boolean
+   is (N_Routes > 0);
 
-   procedure Add_Route (Dest, Mask : Net_Devices.IPv4_Address;
-                        Iface : Interface_Id; Metric : Natural := 100) is
+   procedure Add_Route
+     (Dest, Mask : Net_Devices.IPv4_Address;
+      Iface      : Interface_Id;
+      Metric     : Natural := 100) is
    begin
       if N_Routes < Max_Routes then
          N_Routes := N_Routes + 1;
          Table (N_Routes) :=
-           (Dest => U32 (Dest), Mask => U32 (Mask),
-            Iface => Iface, Metric => Metric, Valid => True);
+           (Dest   => U32 (Dest),
+            Mask   => U32 (Mask),
+            Iface  => Iface,
+            Metric => Metric,
+            Valid  => True);
       end if;
    end Add_Route;
 
@@ -59,9 +67,10 @@ package body Net_Routes is
       Add_Route ((0, 0, 0, 0), (0, 0, 0, 0), Iface, Metric);
    end Set_Default;
 
-   procedure Resolve (Dest  : Net_Devices.IPv4_Address;
-                     Iface : out Interface_Id;
-                     Found : out Boolean)
+   procedure Resolve
+     (Dest  : Net_Devices.IPv4_Address;
+      Iface : out Interface_Id;
+      Found : out Boolean)
    is
       D           : constant Unsigned_32 := U32 (Dest);
       Best_Len    : Integer := -1;          --  so the first match always wins
@@ -75,7 +84,8 @@ package body Net_Routes is
          begin
             if R.Valid
               and then (D and R.Mask) = (R.Dest and R.Mask)        --  matches
-              and then (Up = null or else Up (R.Iface))            --  interface up
+              and then (Up = null
+                        or else Up (R.Iface))            --  interface up
             then
                declare
                   Len : constant Natural := Prefix_Len (R.Mask);
@@ -83,10 +93,10 @@ package body Net_Routes is
                   if Len > Best_Len
                     or else (Len = Best_Len and then R.Metric < Best_Metric)
                   then
-                     Best_Len    := Len;
+                     Best_Len := Len;
                      Best_Metric := R.Metric;
-                     Iface       := R.Iface;
-                     Found       := True;
+                     Iface := R.Iface;
+                     Found := True;
                   end if;
                end;
             end if;

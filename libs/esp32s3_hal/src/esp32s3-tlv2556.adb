@@ -18,8 +18,8 @@ package body ESP32S3.TLV2556 is
 
    --  CFGR2 low nibble for each reference: D[3:2] reference, D1=0 (pin 19 = EOC),
    --  D0=0 (normal mode -- CFGR1 is programmed by Read, not the default mode).
-   function CFGR2_Nibble (Ref : Reference) return Unsigned_8 is
-     (case Ref is
+   function CFGR2_Nibble (Ref : Reference) return Unsigned_8
+   is (case Ref is
          when Internal_4096mV => 16#00#,    --  00: internal 4.096 V
          when Internal_2048mV => 16#04#,    --  01: internal 2.048 V
          when External        => 16#0C#);   --  11: external reference
@@ -32,8 +32,14 @@ package body ESP32S3.TLV2556 is
    --  custom callback).
    procedure Acquire (S : in out SPI.Session; Dev : Device) is
    begin
-      SPI.Acquire (S, Dev.Host, Mode => 0, Clock_Hz => Dev.Clock_Hz,
-                   CS_Pin => Dev.CS_Pin, Select_CB => Dev.CS_CB, Ctx => Dev.Ctx);
+      SPI.Acquire
+        (S,
+         Dev.Host,
+         Mode      => 0,
+         Clock_Hz  => Dev.Clock_Hz,
+         CS_Pin    => Dev.CS_Pin,
+         Select_CB => Dev.CS_CB,
+         Ctx       => Dev.Ctx);
    end Acquire;
 
    ----------------------------------------------------------------------------
@@ -72,7 +78,8 @@ package body ESP32S3.TLV2556 is
       Raw  : Unsigned_16;
    begin
       Acquire (S, Dev);
-      Cycle (S, Word, Rx);                       --  prime: start converting Input
+      Cycle
+        (S, Word, Rx);                       --  prime: start converting Input
       delay until Clock + Convert_Delay;         --  wait out the conversion
       Cycle (S, Word, Rx);                       --  read Input's result back
       SPI.Release (S);
@@ -82,8 +89,8 @@ package body ESP32S3.TLV2556 is
       return Sample (Shift_Right (Raw, 4) and 16#0FFF#);
    end Read;
 
-   function Millivolts (S : Sample; Ref : Reference) return Natural is
-     (case Ref is
+   function Millivolts (S : Sample; Ref : Reference) return Natural
+   is (case Ref is
          when Internal_4096mV => Natural (S),            --  1 LSB = 1 mV
          when Internal_2048mV => Natural (S) * 2048 / 4096,
          when External        => 0);                     --  scale unknown here

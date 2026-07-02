@@ -12,6 +12,7 @@ package body ESP32S3.QMI8658C.Interrupts is
    begin
       if Dev.Int_Pin = ESP32S3.GPIO.No_Pin then
          return;   --  no INT line wired -- nothing to arm
+
       end if;
 
       --  Dev.Int_Pin is a real pin here; convert away the No_Pin possibility

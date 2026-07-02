@@ -13,6 +13,7 @@ with Interfaces;
 --  silently fall back to AES-128 on the first 16 key bytes).  192-bit keys exist
 --  only on the original ESP32.  The Supported_Key precondition below makes any
 --  unsupported key length a contract violation instead of a silent fallback.
+
 package ESP32S3.AES is
 
    type Block is array (0 .. 15) of Interfaces.Unsigned_8;   --  128-bit block
@@ -27,14 +28,14 @@ package ESP32S3.AES is
    --  "AES-192" key, which the hardware cannot do) is rejected rather than
    --  silently degraded.  Callers that pass the Key_128 / Key_256 subtypes
    --  satisfy it statically, so there is no run-time cost for correct code.
-   function Supported_Key (Key : Key_Bytes) return Boolean is
-     (Key'Length = 16 or else Key'Length = 32);
+   function Supported_Key (Key : Key_Bytes) return Boolean
+   is (Key'Length = 16 or else Key'Length = 32);
 
    --  Key length selects the cipher: 16 bytes => AES-128, 32 => AES-256 (use the
    --  Key_128 / Key_256 subtypes).
-   function Encrypt_ECB (Key : Key_Bytes; Plain  : Block) return Block
-     with Pre => Supported_Key (Key);
+   function Encrypt_ECB (Key : Key_Bytes; Plain : Block) return Block
+   with Pre => Supported_Key (Key);
    function Decrypt_ECB (Key : Key_Bytes; Cipher : Block) return Block
-     with Pre => Supported_Key (Key);
+   with Pre => Supported_Key (Key);
 
 end ESP32S3.AES;

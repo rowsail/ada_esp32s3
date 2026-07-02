@@ -5,6 +5,7 @@ with ESP32S3.Ext4.Superblock;
 --  The mounted-volume context shared by the operation packages (Inode, Dir,
 --  Block_Map, Path, File).  Kept low in the dependency graph so those packages
 --  can `with` it without a cycle through the FS facade.
+
 package ESP32S3.Ext4.Volume is
 
    type Context is limited record
@@ -15,6 +16,7 @@ package ESP32S3.Ext4.Volume is
    end record;
 
    --  Block size of the mounted volume, in bytes.
-   function Block_Size (V : Context) return Natural is (V.SB.Block_Size);
+   function Block_Size (V : Context) return Natural
+   is (V.SB.Block_Size);
 
 end ESP32S3.Ext4.Volume;

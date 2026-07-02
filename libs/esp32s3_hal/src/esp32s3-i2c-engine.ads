@@ -8,6 +8,7 @@ with ESP32S3_Registers.I2C;
 --
 --  (I2C_Host / Slave_Address / Byte / Byte_Array are declared in the parent and
 --  used here by child visibility.)
+
 private package ESP32S3.I2C.Engine is
 
    --  A configured master controller.
@@ -23,18 +24,20 @@ private package ESP32S3.I2C.Engine is
 
    --  One START..STOP master write transaction.  Success := slave ACKed addr +
    --  every data byte (when Check_Ack).  Data length 0 is an address-only probe.
-   procedure Write (B       : Bus;
-                    Addr     : Slave_Address;
-                    Data     : Byte_Array;
-                    Success  : out Boolean;
-                    Check_Ack : Boolean := True);
+   procedure Write
+     (B         : Bus;
+      Addr      : Slave_Address;
+      Data      : Byte_Array;
+      Success   : out Boolean;
+      Check_Ack : Boolean := True);
 
    --  One START..STOP master read transaction (ACK all but last byte).
    --  Success := slave ACKed the address.
-   procedure Read (B       : Bus;
-                   Addr     : Slave_Address;
-                   Data     : out Byte_Array;
-                   Success  : out Boolean);
+   procedure Read
+     (B       : Bus;
+      Addr    : Slave_Address;
+      Data    : out Byte_Array;
+      Success : out Boolean);
 
    procedure Close (B : in out Bus);
 
@@ -44,7 +47,7 @@ private
 
    type Bus is record
       Regs  : Periph_Ref := null;
-      Host  : I2C_Host   := I2C0;
-      Valid : Boolean    := False;
+      Host  : I2C_Host := I2C0;
+      Valid : Boolean := False;
    end record;
 end ESP32S3.I2C.Engine;

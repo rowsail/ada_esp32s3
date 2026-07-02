@@ -15,7 +15,8 @@ package body ESP32S3.W5500.Interrupts is
 
    --  One per hardware socket; the owning task suspends on its own object.
    Events   : array (Socket_Id) of Suspension_Object;
-   Is_Armed : Boolean := False with Volatile;
+   Is_Armed : Boolean := False
+   with Volatile;
 
    procedure Signal_All is
    begin
@@ -39,10 +40,11 @@ package body ESP32S3.W5500.Interrupts is
 
    --  Safety heartbeat (see the spec): bounds the worst-case wait if an edge is
    --  ever missed.  Idle unless armed.
-   task Heartbeat with Priority => System.Priority'First + 1;
+   task Heartbeat
+     with Priority => System.Priority'First + 1;
    task body Heartbeat is
       Period : constant Time_Span := Milliseconds (50);
-      Next   : Time               := Clock;
+      Next   : Time := Clock;
    begin
       loop
          Next := Next + Period;
@@ -57,6 +59,7 @@ package body ESP32S3.W5500.Interrupts is
    begin
       if Dev.Int = ESP32S3.GPIO.No_Pin then
          return;                       --  no INT line wired: keep polling
+
       end if;
       --  Enable socket interrupts on the chip: all sockets, all events.
       Write_U8 (Dev, Common_Regs, SIMR, 16#FF#);
@@ -81,6 +84,7 @@ package body ESP32S3.W5500.Interrupts is
       end if;
    end Disable;
 
-   function Armed return Boolean is (Is_Armed);
+   function Armed return Boolean
+   is (Is_Armed);
 
 end ESP32S3.W5500.Interrupts;

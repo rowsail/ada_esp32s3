@@ -22,6 +22,7 @@ with ESP32S3.GPIO;
 --  Task-safe: every operation takes the SPI host's Session for the whole
 --  transaction, so concurrent callers serialise.  Uses finalization (via the SPI
 --  Session) -> embedded / full profiles only.
+
 package ESP32S3.SD_SPI is
 
    --  A 512-byte logical block (the SD sector size in SPI mode).
@@ -57,11 +58,12 @@ package ESP32S3.SD_SPI is
    --  as a GPIO.  Init_Clock_Hz must be <= 400 kHz per the SD spec; Data_Clock_Hz
    --  is what Initialize switches to once the card is ready (<= 25 MHz for the
    --  default-speed SPI mode; clamp to what your wiring tolerates).
-   procedure Setup (C             : out Card;
-                    Host          : ESP32S3.SPI.SPI_Host;
-                    Sclk, Mosi, Miso, Cs : ESP32S3.GPIO.Pin_Id;
-                    Init_Clock_Hz : Positive := 400_000;
-                    Data_Clock_Hz : Positive := 8_000_000);
+   procedure Setup
+     (C                    : out Card;
+      Host                 : ESP32S3.SPI.SPI_Host;
+      Sclk, Mosi, Miso, Cs : ESP32S3.GPIO.Pin_Id;
+      Init_Clock_Hz        : Positive := 400_000;
+      Data_Clock_Hz        : Positive := 8_000_000);
 
    ----------------------------------------------------------------------------
    --  Operation.
@@ -75,18 +77,21 @@ package ESP32S3.SD_SPI is
    function Kind (C : Card) return Card_Kind;
 
    --  Read / write one 512-byte block at logical address LBA.
-   procedure Read_Block  (C : in out Card; LBA : Block_Address;
-                          Data : out Block; Result : out Status);
-   procedure Write_Block (C : in out Card; LBA : Block_Address;
-                          Data : Block; Result : out Status);
+   procedure Read_Block
+     (C      : in out Card;
+      LBA    : Block_Address;
+      Data   : out Block;
+      Result : out Status);
+   procedure Write_Block
+     (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status);
 
 private
    type Card is limited record
-      Host   : ESP32S3.SPI.SPI_Host := ESP32S3.SPI.SPI2;
-      Cs     : ESP32S3.GPIO.Pin_Id  := 0;
-      Kind   : Card_Kind            := Unknown;
-      Block_Addressed : Boolean     := False;   --  True for SDHC/SDXC
-      Init_Hz : Positive            := 400_000;    --  init handshake clock
-      Data_Hz : Positive            := 8_000_000;  --  post-init data clock
+      Host            : ESP32S3.SPI.SPI_Host := ESP32S3.SPI.SPI2;
+      Cs              : ESP32S3.GPIO.Pin_Id := 0;
+      Kind            : Card_Kind := Unknown;
+      Block_Addressed : Boolean := False;   --  True for SDHC/SDXC
+      Init_Hz         : Positive := 400_000;    --  init handshake clock
+      Data_Hz         : Positive := 8_000_000;  --  post-init data clock
    end record;
 end ESP32S3.SD_SPI;

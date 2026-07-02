@@ -20,6 +20,7 @@ with ESP32S3.GPIO;
 --  finalization, so it targets the embedded/full profile.
 --
 --  Requires a tasking runtime (Jorvik light-tasking or richer).
+
 package ESP32S3.I2S is
 
    --  The two I2S controllers.
@@ -35,7 +36,7 @@ package ESP32S3.I2S is
    --  as PCM is.  A PCM_32 buffer carries 24- or 32-bit samples (both occupy a
    --  32-bit slot).  For raw, already-framed bytes (a foreign/DMA buffer built
    --  elsewhere, an opaque bit-pattern self-test) use the *_Raw primitives.
-   type PCM_8  is array (Natural range <>) of Interfaces.Integer_8;
+   type PCM_8 is array (Natural range <>) of Interfaces.Integer_8;
    type PCM_16 is array (Natural range <>) of Interfaces.Integer_16;
    type PCM_32 is array (Natural range <>) of Interfaces.Integer_32;
 
@@ -88,39 +89,42 @@ package ESP32S3.I2S is
    --  unrouted), so a link routes only what it uses (e.g. Din for a TX-only DAC,
    --  Dout for an RX-only mic).  Mclk routes the master clock out (a codec's
    --  MCLK input); only on I2S0.  Leave No_Pin for codecs that clock from BCLK.
-   procedure Acquire (S           : in out Session;
-                      Port        : I2S_Port;
-                      Sample_Rate : Positive    := 16_000;
-                      Bits        : Sample_Bits := Bits_16;
-                      Mode        : I2S_Mode    := Standard;
-                      Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin);
+   procedure Acquire
+     (S           : in out Session;
+      Port        : I2S_Port;
+      Sample_Rate : Positive := 16_000;
+      Bits        : Sample_Bits := Bits_16;
+      Mode        : I2S_Mode := Standard;
+      Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
    --  Re-open the held port at a new audio format and pin routing (re-claims the
    --  GDMA channel).  Use this to change sample rate / width / mode on a port
    --  you already hold.  Raises Not_Owned unless S holds the port.
-   procedure Reconfigure (S           : Session;
-                          Sample_Rate : Positive    := 16_000;
-                          Bits        : Sample_Bits := Bits_16;
-                          Mode        : I2S_Mode    := Standard;
-                          Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                          Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                          Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                          Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                          Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin);
+   procedure Reconfigure
+     (S           : Session;
+      Sample_Rate : Positive := 16_000;
+      Bits        : Sample_Bits := Bits_16;
+      Mode        : I2S_Mode := Standard;
+      Bclk        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
    --  Re-route the held port's signals to physical pads (a finer change than
    --  Reconfigure, leaving the audio format untouched).  Raises Not_Owned unless
    --  S holds the port.
-   procedure Configure_Pins (S    : Session;
-                             Bclk : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                             Ws   : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                             Dout : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                             Din  : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                             Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin);
+   procedure Configure_Pins
+     (S    : Session;
+      Bclk : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Ws   : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Dout : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Din  : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
    --  Internal data-line loopback through one GPIO pad (self-test; no wiring):
    --  TX and RX share WS+BCK internally (the hardware SIG_LOOPBACK bit) and the
@@ -150,31 +154,33 @@ package ESP32S3.I2S is
 
    --  Shift a buffer out on the data-out line.  Blocking.
    procedure Write (S : Session; Samples : PCM_8)
-     with Pre => Configured_Bits (S) = Bits_8;
+   with Pre => Configured_Bits (S) = Bits_8;
    procedure Write (S : Session; Samples : PCM_16)
-     with Pre => Configured_Bits (S) = Bits_16;
+   with Pre => Configured_Bits (S) = Bits_16;
    procedure Write (S : Session; Samples : PCM_32)
-     with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
+   with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
    procedure Write_Raw (S : Session; Tx : System.Address; Length : Natural);
 
    --  Capture from the data-in line into a buffer.  Blocking.
    procedure Read (S : Session; Samples : out PCM_8)
-     with Pre => Configured_Bits (S) = Bits_8;
+   with Pre => Configured_Bits (S) = Bits_8;
    procedure Read (S : Session; Samples : out PCM_16)
-     with Pre => Configured_Bits (S) = Bits_16;
+   with Pre => Configured_Bits (S) = Bits_16;
    procedure Read (S : Session; Samples : out PCM_32)
-     with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
+   with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
    procedure Read_Raw (S : Session; Rx : System.Address; Length : Natural);
 
    --  Full-duplex: shift Tx out and capture Rx in simultaneously (same length).
-   procedure Transfer (S : Session; Tx : PCM_8;  Rx : out PCM_8)
-     with Pre => Configured_Bits (S) = Bits_8 and then Tx'Length = Rx'Length;
+   procedure Transfer (S : Session; Tx : PCM_8; Rx : out PCM_8)
+   with Pre => Configured_Bits (S) = Bits_8 and then Tx'Length = Rx'Length;
    procedure Transfer (S : Session; Tx : PCM_16; Rx : out PCM_16)
-     with Pre => Configured_Bits (S) = Bits_16 and then Tx'Length = Rx'Length;
+   with Pre => Configured_Bits (S) = Bits_16 and then Tx'Length = Rx'Length;
    procedure Transfer (S : Session; Tx : PCM_32; Rx : out PCM_32)
-     with Pre => Configured_Bits (S) in Bits_24 | Bits_32
-                 and then Tx'Length = Rx'Length;
-   procedure Transfer_Raw (S : Session; Tx, Rx : System.Address; Length : Natural);
+   with
+     Pre =>
+       Configured_Bits (S) in Bits_24 | Bits_32 and then Tx'Length = Rx'Length;
+   procedure Transfer_Raw
+     (S : Session; Tx, Rx : System.Address; Length : Natural);
 
    --  Start a self-looping DMA that replays the buffer forever with NO
    --  inter-buffer gap and return immediately, leaving the TX clock running --
@@ -182,12 +188,13 @@ package ESP32S3.I2S is
    --  The buffer must stay valid (internal SRAM) and should hold a whole number
    --  of wave periods so the wrap is seamless.  Stop halts it.
    procedure Start_Continuous (S : Session; Samples : PCM_8)
-     with Pre => Configured_Bits (S) = Bits_8;
+   with Pre => Configured_Bits (S) = Bits_8;
    procedure Start_Continuous (S : Session; Samples : PCM_16)
-     with Pre => Configured_Bits (S) = Bits_16;
+   with Pre => Configured_Bits (S) = Bits_16;
    procedure Start_Continuous (S : Session; Samples : PCM_32)
-     with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
-   procedure Start_Continuous_Raw (S : Session; Tx : System.Address; Length : Natural);
+   with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
+   procedure Start_Continuous_Raw
+     (S : Session; Tx : System.Address; Length : Natural);
 
    --  Stop a continuous transmit started by Start_Continuous (TX clock off).
    --  Raises Not_Owned unless S holds the port.
@@ -197,11 +204,11 @@ package ESP32S3.I2S is
    --  concurrently with a continuous transmit (Start_Continuous), which supplies
    --  the shared master clock.  Blocking.
    procedure Capture (S : Session; Samples : out PCM_8)
-     with Pre => Configured_Bits (S) = Bits_8;
+   with Pre => Configured_Bits (S) = Bits_8;
    procedure Capture (S : Session; Samples : out PCM_16)
-     with Pre => Configured_Bits (S) = Bits_16;
+   with Pre => Configured_Bits (S) = Bits_16;
    procedure Capture (S : Session; Samples : out PCM_32)
-     with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
+   with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
    procedure Capture_Raw (S : Session; Rx : System.Address; Length : Natural);
 
    --  Relinquish ownership (lets a waiting task proceed).  Idempotent.
@@ -210,7 +217,8 @@ package ESP32S3.I2S is
 private
    type Session is new Ada.Finalization.Limited_Controlled with record
       Port   : I2S_Port := I2S0;
-      Active : Boolean  := False;   --  holds Port's guard
+      Active : Boolean := False;   --  holds Port's guard
    end record;
-   overriding procedure Finalize (S : in out Session);   --  auto-release on scope exit
+   overriding
+   procedure Finalize (S : in out Session);   --  auto-release on scope exit
 end ESP32S3.I2S;

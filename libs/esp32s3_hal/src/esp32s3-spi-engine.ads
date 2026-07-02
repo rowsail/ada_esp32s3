@@ -10,16 +10,15 @@ with ESP32S3_Registers.SPI2;
 --
 --  (SPI_Host / SPI_Mode / No_Pin are declared in the parent and used here by
 --  child visibility.)
+
 private package ESP32S3.SPI.Engine is
 
    --  A configured host plus its Claimed GDMA channel.  Limited because it holds
    --  a (limited, controlled) GDMA Channel; built in place by Open.
    type Bus is limited private;
 
-   procedure Open (B        : in out Bus;
-                   Host     : SPI_Host;
-                   Mode     : SPI_Mode;
-                   Clock_Hz : Positive);
+   procedure Open
+     (B : in out Bus; Host : SPI_Host; Mode : SPI_Mode; Clock_Hz : Positive);
 
    function Is_Open (B : Bus) return Boolean;
 
@@ -30,11 +29,12 @@ private package ESP32S3.SPI.Engine is
    --  device at Acquire, so two devices on one host can run different modes.
    procedure Set_Mode (B : Bus; Mode : SPI_Mode);
 
-   procedure Configure_Pins (B : Bus;
-                             Sclk : ESP32S3.GPIO.Optional_Pin;
-                             Mosi : ESP32S3.GPIO.Optional_Pin;
-                             Miso : ESP32S3.GPIO.Optional_Pin;
-                             Cs   : ESP32S3.GPIO.Optional_Pin := No_Pin);
+   procedure Configure_Pins
+     (B    : Bus;
+      Sclk : ESP32S3.GPIO.Optional_Pin;
+      Mosi : ESP32S3.GPIO.Optional_Pin;
+      Miso : ESP32S3.GPIO.Optional_Pin;
+      Cs   : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
    procedure Enable_Loopback (B : Bus; Pad : ESP32S3.GPIO.Pin_Id);
 
@@ -55,7 +55,7 @@ private
    type Bus is record
       Regs  : Periph_Ref := null;
       Chan  : ESP32S3.GDMA.Channel;
-      Host  : SPI_Host   := SPI2;
-      Valid : Boolean    := False;
+      Host  : SPI_Host := SPI2;
+      Valid : Boolean := False;
    end record;
 end ESP32S3.SPI.Engine;

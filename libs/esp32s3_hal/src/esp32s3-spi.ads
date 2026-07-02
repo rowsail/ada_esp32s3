@@ -16,6 +16,7 @@ with ESP32S3.GPIO;
 --  automatically when it goes out of scope.
 --
 --  Requires a tasking runtime (Jorvik light-tasking or richer).
+
 package ESP32S3.SPI is
 
    --  The two general-purpose hosts (SPI0/SPI1 are the flash/PSRAM controllers
@@ -70,11 +71,12 @@ package ESP32S3.SPI is
    --  compile or run time); pass No_Pin to leave it unrouted.  Call once after
    --  Setup.  A device wired to a DIFFERENT set of pads on the same controller
    --  overrides these per-hold via Acquire's Sclk/Mosi/Miso (the rare case).
-   procedure Configure_Pins (Host : SPI_Host;
-                             Sclk : ESP32S3.GPIO.Optional_Pin;
-                             Mosi : ESP32S3.GPIO.Optional_Pin;
-                             Miso : ESP32S3.GPIO.Optional_Pin;
-                             Cs   : ESP32S3.GPIO.Optional_Pin := No_Pin);
+   procedure Configure_Pins
+     (Host : SPI_Host;
+      Sclk : ESP32S3.GPIO.Optional_Pin;
+      Mosi : ESP32S3.GPIO.Optional_Pin;
+      Miso : ESP32S3.GPIO.Optional_Pin;
+      Cs   : ESP32S3.GPIO.Optional_Pin := No_Pin);
 
    --  Change just the bit clock of a Setup host (Hz, clamped to ~80 kHz .. 80
    --  MHz) mid-hold, with no GDMA re-Claim.  Acquire already applies each
@@ -125,16 +127,17 @@ package ESP32S3.SPI is
    --      Configure_Pins, is used exactly as before (it toggles per Transfer).
    --  With CS_Pin or Select_CB, the hardware CS0 is suppressed for this hold so it
    --  cannot disturb another device sharing the bus.
-   procedure Acquire (S         : in out Session;
-                      Host      : SPI_Host;
-                      Mode      : SPI_Mode := 0;
-                      Clock_Hz  : Positive := 1_000_000;
-                      Sclk      : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      Mosi      : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      Miso      : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      CS_Pin    : ESP32S3.GPIO.Optional_Pin := No_Pin;
-                      Select_CB : CS_Select      := null;
-                      Ctx       : System.Address  := System.Null_Address);
+   procedure Acquire
+     (S         : in out Session;
+      Host      : SPI_Host;
+      Mode      : SPI_Mode := 0;
+      Clock_Hz  : Positive := 1_000_000;
+      Sclk      : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Mosi      : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Miso      : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      CS_Pin    : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Select_CB : CS_Select := null;
+      Ctx       : System.Address := System.Null_Address);
 
    --  Assert (On => True) / deassert (On => False) this device's chip select --
    --  its CS_Pin or its callback, whichever was given at Acquire.  Bracket a
@@ -152,7 +155,7 @@ package ESP32S3.SPI is
    --  DMA descriptor) -- the precondition catches an out-of-range length, which
    --  the engine would otherwise drop silently.
    procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural)
-     with Pre => Length in 1 .. 4095;
+   with Pre => Length in 1 .. 4095;
 
    --  Relinquish ownership (lets a waiting task proceed).  Harmless if already
    --  released.  Always release a Session you Acquired.
@@ -160,14 +163,18 @@ package ESP32S3.SPI is
 
 private
    type Session is new Ada.Finalization.Limited_Controlled with record
-      Host      : SPI_Host       := SPI2;
-      Active    : Boolean        := False;                 --  holds Host's guard
-      CS_Pin    : ESP32S3.GPIO.Optional_Pin := No_Pin;     --  driver-driven sw CS
-      Select_CB : CS_Select      := null;                  --  app CS hook, null = hw CS0
-      Ctx       : System.Address := System.Null_Address;   --  per-device context
-      Selected  : Boolean        := False;                 --  CS currently asserted?
+      Host      : SPI_Host := SPI2;
+      Active    : Boolean := False;                 --  holds Host's guard
+      CS_Pin    : ESP32S3.GPIO.Optional_Pin :=
+        No_Pin;     --  driver-driven sw CS
+      Select_CB : CS_Select :=
+        null;                  --  app CS hook, null = hw CS0
+      Ctx       : System.Address :=
+        System.Null_Address;   --  per-device context
+      Selected  : Boolean := False;                 --  CS currently asserted?
    end record;
    --  Finalize releases the host AND, if Selected, calls Select_CB (Off) first --
    --  so a fault between select and deselect can never leave a device asserted.
-   overriding procedure Finalize (S : in out Session);   --  auto-release on scope exit
+   overriding
+   procedure Finalize (S : in out Session);   --  auto-release on scope exit
 end ESP32S3.SPI;

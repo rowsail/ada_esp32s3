@@ -18,6 +18,7 @@ with ESP32S3.GPIO;
 --  with other devices.  This driver always uses 16-clock (2-byte) transfers and
 --  unipolar, MSB-first output.  Requires a tasking runtime (the controlled SPI
 --  Session) -- embedded/full profile.
+
 package ESP32S3.TLV2556 is
 
    --  A 12-bit unipolar conversion result (0 = REF-, 4095 = full scale at REF+).
@@ -30,8 +31,20 @@ package ESP32S3.TLV2556 is
    --    Test_Zero -> 0, Test_Half -> 2048, Test_Full -> 4095.
    --  (The enumeration order matches the chip's command nibbles 0 .. 13.)
    type Analog_Input is
-     (AIN0, AIN1, AIN2, AIN3, AIN4, AIN5, AIN6, AIN7, AIN8, AIN9, AIN10,
-      Test_Half, Test_Zero, Test_Full);
+     (AIN0,
+      AIN1,
+      AIN2,
+      AIN3,
+      AIN4,
+      AIN5,
+      AIN6,
+      AIN7,
+      AIN8,
+      AIN9,
+      AIN10,
+      Test_Half,
+      Test_Zero,
+      Test_Full);
 
    --  Reference source, chosen at Initialize: the internal 4.096-V or 2.048-V
    --  reference, or an external reference on REF+/REF- (the chip's power-on
@@ -45,10 +58,10 @@ package ESP32S3.TLV2556 is
    --  CS_CB + Ctx (see ESP32S3.SPI.CS_Select for the callback contract).
    type Device is record
       Host     : ESP32S3.SPI.SPI_Host;
-      Clock_Hz : Positive                  := 8_000_000;   --  TLV2556 I/O <=10 MHz
+      Clock_Hz : Positive := 8_000_000;   --  TLV2556 I/O <=10 MHz
       CS_Pin   : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      CS_CB    : ESP32S3.SPI.CS_Select     := null;
-      Ctx      : System.Address            := System.Null_Address;
+      CS_CB    : ESP32S3.SPI.CS_Select := null;
+      Ctx      : System.Address := System.Null_Address;
    end record;
 
    --  Program configuration register 2 (reference source, pin-19 = EOC, normal

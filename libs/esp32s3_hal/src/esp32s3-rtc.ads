@@ -15,6 +15,7 @@ with ESP32S3.RTC_IO;
 --  No tasking is required; the operations are simple register pokes.  It still
 --  lives with the embedded/full drivers (it has no certifiable-profile barrier,
 --  but is grouped with the rest of the HAL).
+
 package ESP32S3.RTC is
 
    ----------------------------------------------------------------------------
@@ -28,7 +29,8 @@ package ESP32S3.RTC is
    --  HAL does not, so the whole region is free here).
    ----------------------------------------------------------------------------
 
-   Slow_Memory      : constant System.Address := System'To_Address (16#5000_0000#);
+   Slow_Memory      : constant System.Address :=
+     System'To_Address (16#5000_0000#);
    Slow_Memory_Size : constant := 8 * 1024;
 
    --  Word-addressed access to the retained region (a bounds-checked alternative
@@ -36,7 +38,7 @@ package ESP32S3.RTC is
    --  index, 0 .. 2047.
    subtype Word_Index is Natural range 0 .. Slow_Memory_Size / 4 - 1;
 
-   function  Read  (Index : Word_Index) return Interfaces.Unsigned_32;
+   function Read (Index : Word_Index) return Interfaces.Unsigned_32;
    procedure Write (Index : Word_Index; Value : Interfaces.Unsigned_32);
 
    --  Typed retained object: instantiate once per stored item, giving a distinct
@@ -48,17 +50,20 @@ package ESP32S3.RTC is
       Offset : Natural := 0;          --  byte offset into Slow_Memory
    package Retained is
       Object : Item
-        with Import, Volatile,
-             Address => System.Storage_Elements."+"
-                          (Slow_Memory,
-                           System.Storage_Elements.Storage_Offset (Offset));
+      with
+        Import,
+        Volatile,
+        Address =>
+          System.Storage_Elements."+"
+            (Slow_Memory, System.Storage_Elements.Storage_Offset (Offset));
    end Retained;
 
    ----------------------------------------------------------------------------
    --  Boot / wake cause.
    ----------------------------------------------------------------------------
 
-   type Wake_Cause is (Power_On, Deep_Sleep_Timer, Deep_Sleep_GPIO, Other_Reset);
+   type Wake_Cause is
+     (Power_On, Deep_Sleep_Timer, Deep_Sleep_GPIO, Other_Reset);
 
    --  Why the chip is running now (read from the RTC reset + wake-cause regs).
    function Last_Wake return Wake_Cause;
@@ -66,7 +71,7 @@ package ESP32S3.RTC is
    --  Raw RTC reset-cause code (5 = deep-sleep wake) and wake-source bits, for
    --  callers that want the unmapped values.
    function Raw_Reset_Cause return Natural;
-   function Raw_Wake_Cause  return Natural;
+   function Raw_Wake_Cause return Natural;
 
    --  If a deep-sleep call returns instead of sleeping, the FSM rejected it;
    --  this gives the reject-cause bits.

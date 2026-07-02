@@ -15,6 +15,7 @@ with Net_Devices;
 --
 --  Liveness is injected (Configure) rather than wired to a specific stack, so the
 --  table is pure logic and host-testable with a mock up-state.
+
 package Net_Routes is
 
    subtype Interface_Id is Net_Devices.Interface_Id;
@@ -28,8 +29,10 @@ package Net_Routes is
 
    --  Add a route: destinations matching Dest under Mask go out Iface.  Lower
    --  Metric wins among equally-specific routes.
-   procedure Add_Route (Dest, Mask : Net_Devices.IPv4_Address;
-                        Iface : Interface_Id; Metric : Natural := 100);
+   procedure Add_Route
+     (Dest, Mask : Net_Devices.IPv4_Address;
+      Iface      : Interface_Id;
+      Metric     : Natural := 100);
 
    --  Shorthand for a 0.0.0.0/0 default route out Iface.
    procedure Set_Default (Iface : Interface_Id; Metric : Natural := 100);
@@ -45,8 +48,9 @@ package Net_Routes is
    --  Choose the interface for Dest: longest-prefix match among routes whose
    --  interface is up, then lowest metric.  Found is False if none qualify (no
    --  matching route, or every matching interface is down).
-   procedure Resolve (Dest  : Net_Devices.IPv4_Address;
-                     Iface : out Interface_Id;
-                     Found : out Boolean);
+   procedure Resolve
+     (Dest  : Net_Devices.IPv4_Address;
+      Iface : out Interface_Id;
+      Found : out Boolean);
 
 end Net_Routes;

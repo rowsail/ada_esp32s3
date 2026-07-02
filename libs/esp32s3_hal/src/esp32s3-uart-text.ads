@@ -13,9 +13,11 @@ with ESP32S3.Serial;
 --  The Session is captured BY ADDRESS, so it must be aliased, must already hold
 --  the port (Acquire'd), and must outlive the redirection (typically a
 --  library-level object) -- otherwise the device points at a finalized Session.
+
 package ESP32S3.UART.Text is
 
-   function As_Device (S : aliased in out Session) return ESP32S3.Serial.Device;
+   function As_Device
+     (S : aliased in out Session) return ESP32S3.Serial.Device;
 
    --  Adapt the SAME held Session into an input device, so console-style INPUT
    --  (ESP32S3.Text_IO.Get / Get_Line on the console) can be taken from the UART

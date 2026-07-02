@@ -16,6 +16,7 @@ with ESP32S3.GPIO;
 --
 --  Like the other HAL drivers this targets the embedded profile (full
 --  exceptions); see the library README.  Requires a tasking runtime.
+
 package ESP32S3.UART is
 
    --  The three general-purpose UART controllers.  (UART0 is the ROM console on
@@ -24,9 +25,9 @@ package ESP32S3.UART is
    type UART_Port is (UART0, UART1, UART2);
 
    subtype Baud_Rate is Positive range 300 .. 5_000_000;
-   type Data_Bits   is range 5 .. 8;
+   type Data_Bits is range 5 .. 8;
    type Parity_Mode is (None, Even, Odd);
-   type Stop_Bits   is (One, Two);
+   type Stop_Bits is (One, Two);
 
    type Byte is new Interfaces.Unsigned_8;
    type Byte_Array is array (Natural range <>) of Byte;
@@ -73,16 +74,16 @@ package ESP32S3.UART is
    --  line reads high.  Re-route pins or change one attribute later with
    --  Reconfigure or the finer calls below.
    procedure Acquire
-     (S      : in out Session;
-      Port   : UART_Port;
-      Baud   : Baud_Rate   := 115_200;
-      Bits   : Data_Bits   := 8;
-      Parity : Parity_Mode := None;
-      Stop   : Stop_Bits   := One;
-      Tx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Cts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+     (S                 : in out Session;
+      Port              : UART_Port;
+      Baud              : Baud_Rate := 115_200;
+      Bits              : Data_Bits := 8;
+      Parity            : Parity_Mode := None;
+      Stop              : Stop_Bits := One;
+      Tx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Cts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Rx_Flow_Threshold : Natural := 100);
 
    --  Re-apply the whole baud + frame format + pin routing on the port S
@@ -92,15 +93,15 @@ package ESP32S3.UART is
    --  its default.  Raises Not_Owned unless S currently holds a port.  (To
    --  change ONE attribute and leave the rest, use the finer setters below.)
    procedure Reconfigure
-     (S      : Session;
-      Baud   : Baud_Rate   := 115_200;
-      Bits   : Data_Bits   := 8;
-      Parity : Parity_Mode := None;
-      Stop   : Stop_Bits   := One;
-      Tx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rx     : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Cts    : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+     (S                 : Session;
+      Baud              : Baud_Rate := 115_200;
+      Bits              : Data_Bits := 8;
+      Parity            : Parity_Mode := None;
+      Stop              : Stop_Bits := One;
+      Tx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Cts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Rx_Flow_Threshold : Natural := 100);
 
    --  Push Data to the TX FIFO, waiting for room.  Returns once every byte is
@@ -126,10 +127,10 @@ package ESP32S3.UART is
    --  Re-program one frame attribute independently, leaving the others (and the
    --  pin routing) untouched.  Each is a read-modify-write of just that
    --  attribute and takes effect immediately.
-   procedure Set_Baud      (S : Session; Baud   : Baud_Rate);
-   procedure Set_Data_Bits (S : Session; Bits   : Data_Bits);
-   procedure Set_Parity    (S : Session; Parity : Parity_Mode);
-   procedure Set_Stop_Bits (S : Session; Stop   : Stop_Bits);
+   procedure Set_Baud (S : Session; Baud : Baud_Rate);
+   procedure Set_Data_Bits (S : Session; Bits : Data_Bits);
+   procedure Set_Parity (S : Session; Parity : Parity_Mode);
+   procedure Set_Stop_Bits (S : Session; Stop : Stop_Bits);
 
    --  Re-route the held port's lines to physical pads (same semantics as
    --  Configure's pin parameters; sets the FULL flow-control + inversion state,
@@ -138,25 +139,25 @@ package ESP32S3.UART is
    --  The *_Invert flags set each line's polarity (see Set_Inversion); default
    --  False = active-high / standard idle-high UART.
    procedure Configure_Pins
-     (S    : Session;
-      Tx   : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rx   : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rts  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Cts  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+     (S                 : Session;
+      Tx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Rts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
+      Cts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Rx_Flow_Threshold : Natural := 100;
-      Tx_Invert  : Boolean := False;
-      Rx_Invert  : Boolean := False;
-      Rts_Invert : Boolean := False;
-      Cts_Invert : Boolean := False);
+      Tx_Invert         : Boolean := False;
+      Rx_Invert         : Boolean := False;
+      Rts_Invert        : Boolean := False;
+      Cts_Invert        : Boolean := False);
 
    --  Independently invert (or un-invert) each line's polarity on the held port.
    --  Sets the full state of all four lines; default False clears inversion.
    procedure Set_Inversion
-     (S    : Session;
-      Tx   : Boolean := False;
-      Rx   : Boolean := False;
-      Rts  : Boolean := False;
-      Cts  : Boolean := False);
+     (S   : Session;
+      Tx  : Boolean := False;
+      Rx  : Boolean := False;
+      Rts : Boolean := False;
+      Cts : Boolean := False);
 
    --  Controller-level internal TX->RX loopback on the held port (a self-test
    --  that needs NO pins and no wiring -- UART is push-pull, so unlike I2C this
@@ -170,7 +171,8 @@ package ESP32S3.UART is
 private
    type Session is new Ada.Finalization.Limited_Controlled with record
       Port   : UART_Port := UART0;
-      Active : Boolean   := False;
+      Active : Boolean := False;
    end record;
-   overriding procedure Finalize (S : in out Session);   --  auto-release on scope exit
+   overriding
+   procedure Finalize (S : in out Session);   --  auto-release on scope exit
 end ESP32S3.UART;

@@ -1,7 +1,7 @@
 with ESP32S3.GPIO;
 with ESP32S3.GPIO_Signals;
-with ESP32S3_Registers;         use ESP32S3_Registers;
-with ESP32S3_Registers.SPI2;    use ESP32S3_Registers.SPI2;
+with ESP32S3_Registers;      use ESP32S3_Registers;
+with ESP32S3_Registers.SPI2; use ESP32S3_Registers.SPI2;
 with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.SYSTEM;
 
@@ -18,34 +18,45 @@ package body ESP32S3.SPI.Engine is
       Clk, Mosi_Out, Miso_In, Cs : Natural;
    end record;
 
-   function Signals (Host : SPI_Host) return Sig is
-     (case Host is
-         when SPI2 => (Clk => Sigs.FSPICLK_OUT, Mosi_Out => Sigs.FSPID_OUT, Miso_In => Sigs.FSPIQ_IN, Cs => Sigs.FSPICS0_OUT),
-         when SPI3 => (Clk => Sigs.SPI3_CLK_OUT, Mosi_Out => Sigs.SPI3_D_OUT, Miso_In => Sigs.SPI3_Q_IN, Cs => Sigs.SPI3_CS0_OUT));
+   function Signals (Host : SPI_Host) return Sig
+   is (case Host is
+         when SPI2 =>
+           (Clk      => Sigs.FSPICLK_OUT,
+            Mosi_Out => Sigs.FSPID_OUT,
+            Miso_In  => Sigs.FSPIQ_IN,
+            Cs       => Sigs.FSPICS0_OUT),
+         when SPI3 =>
+           (Clk      => Sigs.SPI3_CLK_OUT,
+            Mosi_Out => Sigs.SPI3_D_OUT,
+            Miso_In  => Sigs.SPI3_Q_IN,
+            Cs       => Sigs.SPI3_CS0_OUT));
 
-   function GDMA_Periph (Host : SPI_Host) return GD.Peripheral is
-     (case Host is when SPI2 => GD.SPI2, when SPI3 => GD.SPI3);
+   function GDMA_Periph (Host : SPI_Host) return GD.Peripheral
+   is (case Host is
+         when SPI2 => GD.SPI2,
+         when SPI3 => GD.SPI3);
 
    procedure Drive_Out (Pad : ESP32S3.GPIO.Pin_Id; Signal : Natural) is
       Ix : constant Natural := Natural (Pad);
-      O  : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
+      O  : GR.FUNC_OUT_SEL_CFG_Register :=
+        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
    begin
-      ESP32S3.GPIO.Configure (Pad,
-                              Mode => ESP32S3.GPIO.Output,
-                              Drive => ESP32S3.GPIO.Drive_Strong);
+      ESP32S3.GPIO.Configure
+        (Pad, Mode => ESP32S3.GPIO.Output, Drive => ESP32S3.GPIO.Drive_Strong);
       O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Signal);
       GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix) := O;
    end Drive_Out;
 
-   procedure Route_In (Signal : Natural; Pad : ESP32S3.GPIO.Pin_Id;
-                       As_Input : Boolean) is
+   procedure Route_In
+     (Signal : Natural; Pad : ESP32S3.GPIO.Pin_Id; As_Input : Boolean) is
    begin
       if As_Input then
          ESP32S3.GPIO.Configure (Pad, Mode => ESP32S3.GPIO.Input);
       end if;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Signal) :=
         (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Natural (Pad)),
-         SEL    => True,                                   --  use the matrix
+         SEL    => True,
+         --  use the matrix
          others => <>);
    end Route_In;
 
@@ -70,12 +81,13 @@ package body ESP32S3.SPI.Engine is
          if H > 0 then
             H := H - 1;
          end if;
-         Regs.CLOCK := (CLK_EQU_SYSCLK => False,
-                        CLKDIV_PRE => CLOCK_CLKDIV_PRE_Field (Pre),
-                        CLKCNT_N   => CLOCK_CLKCNT_N_Field (N),
-                        CLKCNT_H   => CLOCK_CLKCNT_H_Field (H),
-                        CLKCNT_L   => CLOCK_CLKCNT_L_Field (N),
-                        others     => <>);
+         Regs.CLOCK :=
+           (CLK_EQU_SYSCLK => False,
+            CLKDIV_PRE     => CLOCK_CLKDIV_PRE_Field (Pre),
+            CLKCNT_N       => CLOCK_CLKCNT_N_Field (N),
+            CLKCNT_H       => CLOCK_CLKCNT_H_Field (H),
+            CLKCNT_L       => CLOCK_CLKCNT_L_Field (N),
+            others         => <>);
       end;
    end Set_Clock;
 
@@ -83,42 +95,47 @@ package body ESP32S3.SPI.Engine is
    -- Open --
    ----------
 
-   procedure Open (B        : in out Bus;
-                   Host     : SPI_Host;
-                   Mode     : SPI_Mode;
-                   Clock_Hz : Positive)
+   procedure Open
+     (B : in out Bus; Host : SPI_Host; Mode : SPI_Mode; Clock_Hz : Positive)
    is
       use ESP32S3_Registers.SYSTEM;
-      Regs : constant Periph_Ref :=
-        (case Host is when SPI2 => SPI2_Periph'Access,
-                      when SPI3 => SPI3_Periph'Access);
-      Out_Edge  : constant Boolean := (Mode = 1 or else Mode = 2);  --  CPHA map
+      Regs      : constant Periph_Ref :=
+        (case Host is
+           when SPI2 => SPI2_Periph'Access,
+           when SPI3 => SPI3_Periph'Access);
+      Out_Edge  : constant Boolean :=
+        (Mode = 1 or else Mode = 2);  --  CPHA map
       Idle_Edge : constant Boolean := (Mode >= 2);                  --  CPOL
    begin
       case Host is
          when SPI2 =>
-            SYSTEM_Periph.PERIP_CLK_EN0.SPI2_CLK_EN     := True;
+            SYSTEM_Periph.PERIP_CLK_EN0.SPI2_CLK_EN := True;
             SYSTEM_Periph.PERIP_CLK_EN0.SPI2_DMA_CLK_EN := True;
-            SYSTEM_Periph.PERIP_RST_EN0.SPI2_RST        := False;
-            SYSTEM_Periph.PERIP_RST_EN0.SPI2_DMA_RST    := False;
+            SYSTEM_Periph.PERIP_RST_EN0.SPI2_RST := False;
+            SYSTEM_Periph.PERIP_RST_EN0.SPI2_DMA_RST := False;
+
          when SPI3 =>
-            SYSTEM_Periph.PERIP_CLK_EN0.SPI3_CLK_EN     := True;
+            SYSTEM_Periph.PERIP_CLK_EN0.SPI3_CLK_EN := True;
             SYSTEM_Periph.PERIP_CLK_EN0.SPI3_DMA_CLK_EN := True;
-            SYSTEM_Periph.PERIP_RST_EN0.SPI3_RST        := False;
-            SYSTEM_Periph.PERIP_RST_EN0.SPI3_DMA_RST    := False;
+            SYSTEM_Periph.PERIP_RST_EN0.SPI3_RST := False;
+            SYSTEM_Periph.PERIP_RST_EN0.SPI3_DMA_RST := False;
       end case;
 
-      Regs.CLK_GATE := (CLK_EN => True, MST_CLK_ACTIVE => True,
-                        MST_CLK_SEL => True, others => <>);
+      Regs.CLK_GATE :=
+        (CLK_EN         => True,
+         MST_CLK_ACTIVE => True,
+         MST_CLK_SEL    => True,
+         others         => <>);
       Set_Clock (Regs, Clock_Hz);
 
       Regs.SLAVE.MODE := False;
-      Regs.USER := (DOUTDIN     => True,
-                    USR_MOSI    => True,
-                    USR_MISO    => True,
-                    CK_OUT_EDGE => Out_Edge,
-                    USR_COMMAND => False,
-                    others      => <>);
+      Regs.USER :=
+        (DOUTDIN     => True,
+         USR_MOSI    => True,
+         USR_MISO    => True,
+         CK_OUT_EDGE => Out_Edge,
+         USR_COMMAND => False,
+         others      => <>);
       Regs.MISC.CK_IDLE_EDGE := Idle_Edge;
 
       Regs.DMA_CONF.DMA_TX_ENA := True;
@@ -127,41 +144,50 @@ package body ESP32S3.SPI.Engine is
       GD.Claim (B.Chan, GDMA_Periph (Host));   --  claim into the Bus in place
 
       Regs.CMD.UPDATE := True;
-      while Regs.CMD.UPDATE loop null; end loop;
+      while Regs.CMD.UPDATE loop
+         null;
+      end loop;
 
-      B.Regs  := Regs;
-      B.Host  := Host;
+      B.Regs := Regs;
+      B.Host := Host;
       B.Valid := GD.Is_Valid (B.Chan);
    end Open;
 
-   function Is_Open (B : Bus) return Boolean is (B.Valid);
+   function Is_Open (B : Bus) return Boolean
+   is (B.Valid);
 
    procedure Set_Clock (B : Bus; Hz : Positive) is
    begin
       if B.Regs /= null then
          Set_Clock (B.Regs, Hz);              --  recompute the divider
          B.Regs.CMD.UPDATE := True;           --  latch into the shifter
-         while B.Regs.CMD.UPDATE loop null; end loop;
+         while B.Regs.CMD.UPDATE loop
+            null;
+         end loop;
       end if;
    end Set_Clock;
 
    procedure Set_Mode (B : Bus; Mode : SPI_Mode) is
-      Out_Edge  : constant Boolean := (Mode = 1 or else Mode = 2);  --  CPHA map
+      Out_Edge  : constant Boolean :=
+        (Mode = 1 or else Mode = 2);  --  CPHA map
       Idle_Edge : constant Boolean := (Mode >= 2);                  --  CPOL
    begin
       if B.Regs /= null then
-         B.Regs.USER.CK_OUT_EDGE  := Out_Edge;
+         B.Regs.USER.CK_OUT_EDGE := Out_Edge;
          B.Regs.MISC.CK_IDLE_EDGE := Idle_Edge;
          B.Regs.CMD.UPDATE := True;           --  latch into the shifter
-         while B.Regs.CMD.UPDATE loop null; end loop;
+         while B.Regs.CMD.UPDATE loop
+            null;
+         end loop;
       end if;
    end Set_Mode;
 
-   procedure Configure_Pins (B : Bus;
-                             Sclk : ESP32S3.GPIO.Optional_Pin;
-                             Mosi : ESP32S3.GPIO.Optional_Pin;
-                             Miso : ESP32S3.GPIO.Optional_Pin;
-                             Cs   : ESP32S3.GPIO.Optional_Pin := No_Pin)
+   procedure Configure_Pins
+     (B    : Bus;
+      Sclk : ESP32S3.GPIO.Optional_Pin;
+      Mosi : ESP32S3.GPIO.Optional_Pin;
+      Miso : ESP32S3.GPIO.Optional_Pin;
+      Cs   : ESP32S3.GPIO.Optional_Pin := No_Pin)
    is
       use type ESP32S3.GPIO.Pad_Number;
       S : constant Sig := Signals (B.Host);
@@ -201,7 +227,8 @@ package body ESP32S3.SPI.Engine is
          B.Regs.MISC.CS0_DIS := not Enabled;   --  CS0_DIS = 1 suppresses CS0
          B.Regs.CMD.UPDATE := True;            --  latch into the shifter
          declare
-            Guard : Natural := 100_000;        --  config latch: completes in cycles
+            Guard : Natural :=
+              100_000;        --  config latch: completes in cycles
          begin
             while B.Regs.CMD.UPDATE and then Guard > 0 loop
                Guard := Guard - 1;
@@ -218,8 +245,8 @@ package body ESP32S3.SPI.Engine is
 
       B.Regs.DMA_CONF.DMA_AFIFO_RST := True;
       B.Regs.DMA_CONF.DMA_AFIFO_RST := False;
-      B.Regs.DMA_CONF.RX_AFIFO_RST  := True;
-      B.Regs.DMA_CONF.RX_AFIFO_RST  := False;
+      B.Regs.DMA_CONF.RX_AFIFO_RST := True;
+      B.Regs.DMA_CONF.RX_AFIFO_RST := False;
 
       GD.Start (B.Chan, GD.Mem_To_Periph, Tx, Length);
       GD.Start (B.Chan, GD.Periph_To_Mem, Rx, Length);
@@ -228,7 +255,8 @@ package body ESP32S3.SPI.Engine is
         MS_DLEN_MS_DATA_BITLEN_Field (Length * 8 - 1);
       B.Regs.CMD.UPDATE := True;
       declare
-         Guard : Natural := 100_000;          --  config latch: completes in cycles
+         Guard : Natural :=
+           100_000;          --  config latch: completes in cycles
       begin
          while B.Regs.CMD.UPDATE and then Guard > 0 loop
             Guard := Guard - 1;

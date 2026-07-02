@@ -1,16 +1,17 @@
 with System;
-with Interfaces;               use Interfaces;
+with Interfaces; use Interfaces;
 with Ada.Unchecked_Conversion;
 with Ada.IO_Exceptions;
 
 package body ESP32S3.Block_Dev.WL is
 
-   SPB : constant := Sectors_Per_Block;        --  512-byte sectors per 4 KB block
+   SPB        : constant :=
+     Sectors_Per_Block;        --  512-byte sectors per 4 KB block
    Cfg_Blocks : constant := 2;                 --  ping-pong config blocks
 
    --  Config record layout inside a 512-byte sector (little-endian).
-   Magic   : constant Unsigned_32 := 16#57_4C_42_31#;   --  "WLB1"
-   Version : constant Unsigned_16 := 1;
+   Magic        : constant Unsigned_32 := 16#57_4C_42_31#;   --  "WLB1"
+   Version      : constant Unsigned_16 := 1;
    Off_Magic    : constant := 0;
    Off_Version  : constant := 4;
    Off_SPB      : constant := 6;
@@ -23,8 +24,8 @@ package body ESP32S3.Block_Dev.WL is
    Off_CRC      : constant := 40;               --  CRC over bytes 0 .. 39
 
    type Volume_Access is access all Volume;
-   function To_Volume is
-     new Ada.Unchecked_Conversion (System.Address, Volume_Access);
+   function To_Volume is new
+     Ada.Unchecked_Conversion (System.Address, Volume_Access);
 
    ----------------------------------------------------------------------------
    --  Little-endian field access + CRC-32 over a config sector
@@ -32,7 +33,7 @@ package body ESP32S3.Block_Dev.WL is
 
    procedure Put_U16 (S : in out Sector; Off : Natural; V : Unsigned_16) is
    begin
-      S (Off)     := Unsigned_8 (V and 16#FF#);
+      S (Off) := Unsigned_8 (V and 16#FF#);
       S (Off + 1) := Unsigned_8 (Shift_Right (V, 8) and 16#FF#);
    end Put_U16;
 
@@ -50,8 +51,8 @@ package body ESP32S3.Block_Dev.WL is
       end loop;
    end Put_U64;
 
-   function Get_U16 (S : Sector; Off : Natural) return Unsigned_16 is
-     (Unsigned_16 (S (Off)) or Shift_Left (Unsigned_16 (S (Off + 1)), 8));
+   function Get_U16 (S : Sector; Off : Natural) return Unsigned_16
+   is (Unsigned_16 (S (Off)) or Shift_Left (Unsigned_16 (S (Off + 1)), 8));
 
    function Get_U32 (S : Sector; Off : Natural) return Unsigned_32 is
       R : Unsigned_32 := 0;
@@ -94,18 +95,18 @@ package body ESP32S3.Block_Dev.WL is
 
    --  Physical 512-byte sector of config copy Slot (0 or 1): sector 0 of the
    --  config block just past the data+spare region.
-   function Cfg_Sector (V : Volume; Slot : Natural) return Sector_Index is
-     (Sector_Index (V.Data_Blocks + Slot) * SPB);
+   function Cfg_Sector (V : Volume; Slot : Natural) return Sector_Index
+   is (Sector_Index (V.Data_Blocks + Slot) * SPB);
 
    --  Map a logical 4 KB block (0 .. L-1) to its physical block (0 .. D-1):
    --     phys = (t + ((lb - t) mod L)) mod D
    --  computed with non-negative modular steps.  Never returns the hole.
    function Phys_Block (V : Volume; LB : Natural) return Natural is
-      D     : constant Unsigned_64 := Unsigned_64 (V.Data_Blocks);
-      L     : constant Unsigned_64 := Unsigned_64 (V.Logical);
-      T_L   : constant Unsigned_64 := V.Move_Steps mod L;
-      T_D   : constant Unsigned_64 := V.Move_Steps mod D;
-      K     : constant Unsigned_64 := (Unsigned_64 (LB) + L - T_L) mod L;
+      D   : constant Unsigned_64 := Unsigned_64 (V.Data_Blocks);
+      L   : constant Unsigned_64 := Unsigned_64 (V.Logical);
+      T_L : constant Unsigned_64 := V.Move_Steps mod L;
+      T_D : constant Unsigned_64 := V.Move_Steps mod D;
+      K   : constant Unsigned_64 := (Unsigned_64 (LB) + L - T_L) mod L;
    begin
       return Natural ((T_D + K) mod D);
    end Phys_Block;
@@ -129,23 +130,23 @@ package body ESP32S3.Block_Dev.WL is
    begin
       V.Sequence := V.Sequence + 1;
       Slot := Natural (V.Sequence mod 2);
-      Put_U32 (Rec, Off_Magic,    Magic);
-      Put_U16 (Rec, Off_Version,  Version);
-      Put_U16 (Rec, Off_SPB,      Unsigned_16 (SPB));
-      Put_U32 (Rec, Off_Rate,     Unsigned_32 (V.Update_Rate));
-      Put_U32 (Rec, Off_D,        Unsigned_32 (V.Data_Blocks));
-      Put_U32 (Rec, Off_L,        Unsigned_32 (V.Logical));
-      Put_U64 (Rec, Off_Move,     V.Move_Steps);
-      Put_U32 (Rec, Off_Access,   Unsigned_32 (V.Access_Count));
+      Put_U32 (Rec, Off_Magic, Magic);
+      Put_U16 (Rec, Off_Version, Version);
+      Put_U16 (Rec, Off_SPB, Unsigned_16 (SPB));
+      Put_U32 (Rec, Off_Rate, Unsigned_32 (V.Update_Rate));
+      Put_U32 (Rec, Off_D, Unsigned_32 (V.Data_Blocks));
+      Put_U32 (Rec, Off_L, Unsigned_32 (V.Logical));
+      Put_U64 (Rec, Off_Move, V.Move_Steps);
+      Put_U32 (Rec, Off_Access, Unsigned_32 (V.Access_Count));
       Put_U64 (Rec, Off_Sequence, V.Sequence);
-      Put_U32 (Rec, Off_CRC,      CRC32 (Rec, Off_CRC));
+      Put_U32 (Rec, Off_CRC, CRC32 (Rec, Off_CRC));
       Write_Sector (V.Lower, Cfg_Sector (V, Slot), Rec);
    end Persist;
 
    --  Parse a config sector for THIS volume's geometry.  Returns its sequence in
    --  Seq and True if it is a valid record matching the attached geometry.
-   function Parse (V : Volume; Rec : Sector; Seq : out Unsigned_64) return Boolean
-   is
+   function Parse
+     (V : Volume; Rec : Sector; Seq : out Unsigned_64) return Boolean is
    begin
       Seq := 0;
       if Get_U32 (Rec, Off_Magic) /= Magic
@@ -170,11 +171,11 @@ package body ESP32S3.Block_Dev.WL is
    --  config commit, so an interrupted move is redone from the older config (see
    --  the package comment).
    procedure Do_Move (V : in out Volume) is
-      D    : constant Unsigned_64 := Unsigned_64 (V.Data_Blocks);
-      T    : constant Unsigned_64 := V.Move_Steps;
-      Src  : constant Sector_Index := Sector_Index (T mod D) * SPB;
-      Dst  : constant Sector_Index := Sector_Index ((T + D - 1) mod D) * SPB;
-      Buf  : Sector;
+      D   : constant Unsigned_64 := Unsigned_64 (V.Data_Blocks);
+      T   : constant Unsigned_64 := V.Move_Steps;
+      Src : constant Sector_Index := Sector_Index (T mod D) * SPB;
+      Dst : constant Sector_Index := Sector_Index ((T + D - 1) mod D) * SPB;
+      Buf : Sector;
    begin
       --  Clear the destination (the hole) in one erase so the sector writes
       --  below program into erased space (no read-modify-write per sector).  A
@@ -183,7 +184,7 @@ package body ESP32S3.Block_Dev.WL is
       --  the source is untouched until the config commit that follows.
       Erase_Sectors (V.Lower, Dst, SPB);
       for Off in Sector_Index range 0 .. SPB - 1 loop
-         Read_Sector  (V.Lower, Src + Off, Buf);
+         Read_Sector (V.Lower, Src + Off, Buf);
          Write_Sector (V.Lower, Dst + Off, Buf);
       end loop;
       V.Move_Steps := T + 1;          --  committed by the Persist that follows
@@ -193,7 +194,8 @@ package body ESP32S3.Block_Dev.WL is
    --  Block_Dev vtable
    ----------------------------------------------------------------------------
 
-   procedure Do_Read (Ctx : System.Address; LBA : Sector_Index; Data : out Sector)
+   procedure Do_Read
+     (Ctx : System.Address; LBA : Sector_Index; Data : out Sector)
    is
       V : constant Volume_Access := To_Volume (Ctx);
    begin
@@ -203,11 +205,13 @@ package body ESP32S3.Block_Dev.WL is
       Read_Sector (V.Lower, Phys_Sector (V.all, LBA), Data);
    end Do_Read;
 
-   procedure Do_Write (Ctx : System.Address; LBA : Sector_Index; Data : Sector) is
+   procedure Do_Write (Ctx : System.Address; LBA : Sector_Index; Data : Sector)
+   is
       V : constant Volume_Access := To_Volume (Ctx);
    begin
       if LBA >= Logical_Sectors (V.all) then
-         raise Ada.IO_Exceptions.Device_Error with "WL: write LBA out of range";
+         raise Ada.IO_Exceptions.Device_Error
+           with "WL: write LBA out of range";
       end if;
       Write_Sector (V.Lower, Phys_Sector (V.all, LBA), Data);
 
@@ -215,20 +219,21 @@ package body ESP32S3.Block_Dev.WL is
       if V.Access_Count >= V.Update_Rate then
          Do_Move (V.all);
          V.Access_Count := 0;
-         Persist (V.all);             --  commits the move (highest valid seq wins)
+         Persist
+           (V.all);             --  commits the move (highest valid seq wins)
+
       end if;
    end Do_Write;
 
-   function Do_Count (Ctx : System.Address) return Sector_Index is
-     (Logical_Sectors (To_Volume (Ctx).all));
+   function Do_Count (Ctx : System.Address) return Sector_Index
+   is (Logical_Sectors (To_Volume (Ctx).all));
 
    ----------------------------------------------------------------------------
    --  Public operations
    ----------------------------------------------------------------------------
 
-   procedure Attach (V           : in out Volume;
-                     Lower       : Device;
-                     Update_Rate : Positive := 16)
+   procedure Attach
+     (V : in out Volume; Lower : Device; Update_Rate : Positive := 16)
    is
       Phys_Blocks : constant Sector_Index := Sector_Count (Lower) / SPB;
    begin
@@ -236,14 +241,14 @@ package body ESP32S3.Block_Dev.WL is
          raise Constraint_Error
            with "WL: medium too small (need >= 4 erase blocks)";
       end if;
-      V.Lower        := Lower;
-      V.Data_Blocks  := Natural (Phys_Blocks) - Cfg_Blocks;   --  D
-      V.Logical      := V.Data_Blocks - 1;                    --  L = D - 1
-      V.Update_Rate  := Update_Rate;
-      V.Move_Steps   := 0;
+      V.Lower := Lower;
+      V.Data_Blocks := Natural (Phys_Blocks) - Cfg_Blocks;   --  D
+      V.Logical := V.Data_Blocks - 1;                    --  L = D - 1
+      V.Update_Rate := Update_Rate;
+      V.Move_Steps := 0;
       V.Access_Count := 0;
-      V.Sequence     := 0;
-      V.Mounted      := False;
+      V.Sequence := 0;
+      V.Mounted := False;
    end Attach;
 
    procedure Mount (V : in out Volume; Formatted : out Boolean) is
@@ -255,11 +260,11 @@ package body ESP32S3.Block_Dev.WL is
       for Slot in 0 .. 1 loop
          Read_Sector (V.Lower, Cfg_Sector (V, Slot), Rec);
          if Parse (V, Rec, Seq) and then (not Got or else Seq > Best) then
-            Best           := Seq;
-            V.Move_Steps   := Get_U64 (Rec, Off_Move);
+            Best := Seq;
+            V.Move_Steps := Get_U64 (Rec, Off_Move);
             V.Access_Count := Natural (Get_U32 (Rec, Off_Access));
-            V.Sequence     := Seq;
-            Got            := True;
+            V.Sequence := Seq;
+            Got := True;
          end if;
       end loop;
       V.Mounted := Got;
@@ -269,9 +274,9 @@ package body ESP32S3.Block_Dev.WL is
    procedure Format (V : in out Volume) is
       Blank : constant Sector := (others => 0);
    begin
-      V.Move_Steps   := 0;
+      V.Move_Steps := 0;
       V.Access_Count := 0;
-      V.Sequence     := 0;
+      V.Sequence := 0;
       --  Invalidate BOTH ping-pong config slots before writing the fresh record.
       --  A previously-used volume can hold a config in the other slot whose
       --  sequence is HIGHER than the one we write here (Persist advances to 1);
@@ -285,18 +290,20 @@ package body ESP32S3.Block_Dev.WL is
       V.Mounted := True;
    end Format;
 
-   function Logical_Sectors (V : Volume) return Sector_Index is
-     (Sector_Index (V.Logical) * SPB);
+   function Logical_Sectors (V : Volume) return Sector_Index
+   is (Sector_Index (V.Logical) * SPB);
 
-   function Move_Count (V : Volume) return Unsigned_64 is (V.Move_Steps);
+   function Move_Count (V : Volume) return Unsigned_64
+   is (V.Move_Steps);
 
    function Make (V : not null access Volume) return Device is
    begin
-      return (Ctx   => V.all'Address,
-              Read  => Do_Read'Access,
-              Write => (if V.Lower.Write /= null then Do_Write'Access else null),
-              Count => Do_Count'Access,
-              Erase => null);   --  the FS above does not erase logical ranges
+      return
+        (Ctx   => V.all'Address,
+         Read  => Do_Read'Access,
+         Write => (if V.Lower.Write /= null then Do_Write'Access else null),
+         Count => Do_Count'Access,
+         Erase => null);   --  the FS above does not erase logical ranges
    end Make;
 
 end ESP32S3.Block_Dev.WL;

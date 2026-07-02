@@ -13,6 +13,7 @@ with ESP32S3.GPIO.Interrupts;
 --  The Action runs in interrupt context (see ESP32S3.GPIO.Interrupts): keep it
 --  short -- set a Suspension_Object or bump an Atomic flag, then do the I2C work
 --  (reading the samples / status) in a normal task.
+
 package ESP32S3.QMI8658C.Interrupts is
 
    --  The per-pin handler type (see ESP32S3.GPIO.Interrupts).

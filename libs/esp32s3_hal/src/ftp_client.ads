@@ -20,6 +20,7 @@ with GNAT.Sockets;
 --
 --  Requires the embedded or full profile (GNAT.Sockets uses controlled handles +
 --  Ada.Real_Time).
+
 package FTP_Client is
 
    type Byte_Array is array (Natural range <>) of Interfaces.Unsigned_8;
@@ -48,13 +49,15 @@ package FTP_Client is
    --  Receives a file body (Retrieve) or a directory listing (List) in chunks, in
    --  order; called once per network read, never with an empty Chunk.  Library-
    --  level + closure-free; state via Ctx.
-   type Data_Sink is access procedure (Ctx : System.Address; Chunk : Byte_Array);
+   type Data_Sink is
+     access procedure (Ctx : System.Address; Chunk : Byte_Array);
 
    --  Supplies a file body (Store) in chunks: fill Buf and set Last to the number
    --  of bytes written (Buf'First .. Buf'First + Last - 1).  Last = 0 signals
    --  end-of-file.  Library-level + closure-free; state via Ctx.
-   type Data_Source is access
-     procedure (Ctx : System.Address; Buf : out Byte_Array; Last : out Natural);
+   type Data_Source is
+     access procedure
+       (Ctx : System.Address; Buf : out Byte_Array; Last : out Natural);
 
    ----------------------------------------------------------------------------
    --  Session
@@ -64,13 +67,14 @@ package FTP_Client is
    --  User/Password (PASS is skipped if the server accepts USER outright), and set
    --  binary type.  Timeout caps each reply wait (0.0 = block indefinitely) and is
    --  remembered for every later operation on S.
-   procedure Connect (S        : in out Session;
-                      Host     : GNAT.Sockets.Inet_Addr_Type;
-                      User     : String;
-                      Password : String;
-                      Result   : out Status;
-                      Port     : GNAT.Sockets.Port_Type := 21;
-                      Timeout  : Duration               := 0.0);
+   procedure Connect
+     (S        : in out Session;
+      Host     : GNAT.Sockets.Inet_Addr_Type;
+      User     : String;
+      Password : String;
+      Result   : out Status;
+      Port     : GNAT.Sockets.Port_Type := 21;
+      Timeout  : Duration := 0.0);
 
    --  Send QUIT (best effort) and close the control connection.  Idempotent.
    procedure Quit (S : in out Session);
@@ -85,43 +89,50 @@ package FTP_Client is
    ----------------------------------------------------------------------------
 
    --  Download Path, streaming its bytes to Sink (Ctx) until end of file.
-   procedure Retrieve (S      : in out Session;
-                       Path   : String;
-                       Sink   : Data_Sink;
-                       Ctx    : System.Address;
-                       Result : out Status);
+   procedure Retrieve
+     (S      : in out Session;
+      Path   : String;
+      Sink   : Data_Sink;
+      Ctx    : System.Address;
+      Result : out Status);
 
    --  Upload to Path, pulling its bytes from Source (Ctx) until Source reports
    --  Last = 0.  Creates or overwrites the remote file.
-   procedure Store (S      : in out Session;
-                    Path   : String;
-                    Source : Data_Source;
-                    Ctx    : System.Address;
-                    Result : out Status);
+   procedure Store
+     (S      : in out Session;
+      Path   : String;
+      Source : Data_Source;
+      Ctx    : System.Address;
+      Result : out Status);
 
    --  List a directory (NLST: bare names, one per line, CRLF-separated), streamed
    --  to Sink (Ctx).  Path empty = the current directory.
-   procedure List (S      : in out Session;
-                   Sink   : Data_Sink;
-                   Ctx    : System.Address;
-                   Result : out Status;
-                   Path   : String := "");
+   procedure List
+     (S      : in out Session;
+      Sink   : Data_Sink;
+      Ctx    : System.Address;
+      Result : out Status;
+      Path   : String := "");
 
    ----------------------------------------------------------------------------
    --  Simple commands
    ----------------------------------------------------------------------------
 
-   procedure Change_Dir  (S : in out Session; Path : String; Result : out Status);
-   procedure Make_Dir    (S : in out Session; Path : String; Result : out Status);
-   procedure Remove_Dir  (S : in out Session; Path : String; Result : out Status);
-   procedure Delete_File (S : in out Session; Path : String; Result : out Status);
+   procedure Change_Dir
+     (S : in out Session; Path : String; Result : out Status);
+   procedure Make_Dir (S : in out Session; Path : String; Result : out Status);
+   procedure Remove_Dir
+     (S : in out Session; Path : String; Result : out Status);
+   procedure Delete_File
+     (S : in out Session; Path : String; Result : out Status);
 
    --  Size of a remote file in bytes (SIZE; binary mode).  Size is 0 on any
    --  non-OK Result.
-   procedure File_Size (S      : in out Session;
-                        Path   : String;
-                        Size   : out Natural;
-                        Result : out Status);
+   procedure File_Size
+     (S      : in out Session;
+      Path   : String;
+      Size   : out Natural;
+      Result : out Status);
 
 private
    --  Control-connection input buffer, so Get_Line can hand back one CRLF-
@@ -129,13 +140,13 @@ private
    In_Buf_Last : constant := 511;
 
    type Session is limited record
-      Control  : GNAT.Sockets.Socket_Type;
-      Host     : GNAT.Sockets.Inet_Addr_Type;   --  control IP; reused for data
-      Open     : Boolean  := False;
-      Timeout  : Duration := 0.0;
+      Control : GNAT.Sockets.Socket_Type;
+      Host    : GNAT.Sockets.Inet_Addr_Type;   --  control IP; reused for data
+      Open    : Boolean := False;
+      Timeout : Duration := 0.0;
       --  Pending bytes read from Control but not yet consumed as a line.
-      Buf      : Byte_Array (0 .. In_Buf_Last);
-      Head     : Natural  := 0;     --  next unread index
-      Tail     : Natural  := 0;     --  one past the last valid index
+      Buf     : Byte_Array (0 .. In_Buf_Last);
+      Head    : Natural := 0;     --  next unread index
+      Tail    : Natural := 0;     --  one past the last valid index
    end record;
 end FTP_Client;

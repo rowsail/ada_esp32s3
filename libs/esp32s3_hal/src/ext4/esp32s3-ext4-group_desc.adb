@@ -6,9 +6,9 @@ package body ESP32S3.Ext4.Group_Desc is
    procedure Read (V : in out Volume.Context; Group : U32; D : out Desc) is
       BS   : constant Natural := V.SB.Block_Size;
       DSz  : constant Natural := V.SB.Desc_Size;
-      Byte : constant U64     := U64 (Group) * U64 (DSz);
+      Byte : constant U64 := U64 (Group) * U64 (DSz);
       Blk  : constant Block_Number :=
-               Table_Start (V) + Block_Number (Byte / U64 (BS));
+        Table_Start (V) + Block_Number (Byte / U64 (BS));
       Off  : constant Natural := Natural (Byte mod U64 (BS));
       Raw  : Byte_Array (0 .. 63);
 
@@ -37,17 +37,21 @@ package body ESP32S3.Ext4.Group_Desc is
 
       D.Block_Bitmap := Ptr (16#00#, 16#20#);
       D.Inode_Bitmap := Ptr (16#04#, 16#24#);
-      D.Inode_Table  := Ptr (16#08#, 16#28#);
-      D.Free_Blocks  := Cnt (16#0C#, 16#2C#);
-      D.Free_Inodes  := Cnt (16#0E#, 16#2E#);
-      D.Used_Dirs    := Cnt (16#10#, 16#30#);
+      D.Inode_Table := Ptr (16#08#, 16#28#);
+      D.Free_Blocks := Cnt (16#0C#, 16#2C#);
+      D.Free_Inodes := Cnt (16#0E#, 16#2E#);
+      D.Used_Dirs := Cnt (16#10#, 16#30#);
    end Read;
 
    --  Geometry of group G's descriptor (block + offset within it).
-   procedure Locate (V : Volume.Context; Group : U32;
-                     Blk : out Block_Number; Off : out Natural) is
+   procedure Locate
+     (V     : Volume.Context;
+      Group : U32;
+      Blk   : out Block_Number;
+      Off   : out Natural)
+   is
       BS   : constant Natural := V.SB.Block_Size;
-      Byte : constant U64     := U64 (Group) * U64 (V.SB.Desc_Size);
+      Byte : constant U64 := U64 (Group) * U64 (V.SB.Desc_Size);
    begin
       Blk := Table_Start (V) + Block_Number (Byte / U64 (BS));
       Off := Natural (Byte mod U64 (BS));
@@ -64,14 +68,18 @@ package body ESP32S3.Ext4.Group_Desc is
 
       Put_U16 (Raw, 16#0C#, U16 (D.Free_Blocks and 16#FFFF#));
       Put_U16 (Raw, 16#0E#, U16 (D.Free_Inodes and 16#FFFF#));
-      Put_U16 (Raw, 16#10#, U16 (D.Used_Dirs   and 16#FFFF#));
+      Put_U16 (Raw, 16#10#, U16 (D.Used_Dirs and 16#FFFF#));
       if DSz >= 64 then
-         Put_U16 (Raw, 16#2C#, U16 (Shift_Right (D.Free_Blocks, 16) and 16#FFFF#));
-         Put_U16 (Raw, 16#2E#, U16 (Shift_Right (D.Free_Inodes, 16) and 16#FFFF#));
-         Put_U16 (Raw, 16#30#, U16 (Shift_Right (D.Used_Dirs,   16) and 16#FFFF#));
+         Put_U16
+           (Raw, 16#2C#, U16 (Shift_Right (D.Free_Blocks, 16) and 16#FFFF#));
+         Put_U16
+           (Raw, 16#2E#, U16 (Shift_Right (D.Free_Inodes, 16) and 16#FFFF#));
+         Put_U16
+           (Raw, 16#30#, U16 (Shift_Right (D.Used_Dirs, 16) and 16#FFFF#));
       end if;
 
-      ESP32S3.Ext4.Block_Cache.Write_At (V.Cache, Blk, Off, Raw (0 .. DSz - 1));
+      ESP32S3.Ext4.Block_Cache.Write_At
+        (V.Cache, Blk, Off, Raw (0 .. DSz - 1));
    end Write;
 
 end ESP32S3.Ext4.Group_Desc;

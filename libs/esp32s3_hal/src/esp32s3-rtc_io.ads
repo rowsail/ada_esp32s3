@@ -10,6 +10,7 @@ with ESP32S3.GPIO;
 --
 --  A held pad ignores ordinary GPIO writes until you Release it.  No tasking is
 --  required (register pokes); RTC-IO works under every runtime profile.
+
 package ESP32S3.RTC_IO is
 
    --  The RTC-capable pads.

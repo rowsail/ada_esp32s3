@@ -39,7 +39,8 @@ package body ESP32S3.W5500.DHCP is
    Off_Options : constant := 240;
 
    Boot_Reply    : constant Byte := 2;
-   Flag_Bcast_Hi : constant Byte := 16#80#;   --  high byte of the BOOTP flags word
+   Flag_Bcast_Hi : constant Byte :=
+     16#80#;   --  high byte of the BOOTP flags word
 
    --  The fixed transaction id we use for our single-client exchange, and the
    --  DHCP magic cookie (RFC 2131: 99, 130, 83, 99).  Off_Xid is where the xid
@@ -61,52 +62,80 @@ package body ESP32S3.W5500.DHCP is
    --  Build a BOOTP/DHCP frame into TX; return its length.  Ciaddr is the
    --  client's current IP (0 during DORA, the leased IP when renewing).  Req_IP
    --  and Server_Id, when non-zero, add options 50 / 54 (the SELECTING request).
-   function Build (Msg : Byte; MAC : MAC_Address; Ciaddr : IPv4_Address;
-                   Broadcast : Boolean; Req_IP, Server_Id : IPv4_Address)
-                   return Natural is
+   function Build
+     (Msg               : Byte;
+      MAC               : MAC_Address;
+      Ciaddr            : IPv4_Address;
+      Broadcast         : Boolean;
+      Req_IP, Server_Id : IPv4_Address) return Natural
+   is
       P : Natural;
    begin
       TX := (others => 0);
-      TX (0) := 1;  TX (1) := 1;  TX (2) := 6;  TX (3) := 0;     --  op/htype/hlen/hops
+      TX (0) := 1;
+      TX (1) := 1;
+      TX (2) := 6;
+      TX (3) := 0;     --  op/htype/hlen/hops
       TX (Off_Xid .. Off_Xid + 3) := Xid;
-      if Broadcast then TX (Off_Flags) := Flag_Bcast_Hi; end if;
+      if Broadcast then
+         TX (Off_Flags) := Flag_Bcast_Hi;
+      end if;
       TX (Off_Ciaddr .. Off_Ciaddr + 3) := Ciaddr;
-      TX (Off_Chaddr .. Off_Chaddr + 5) := MAC;                  --  chaddr = MAC
-      TX (Off_Cookie .. Off_Cookie + 3) := Cookie;               --  magic cookie
+      TX (Off_Chaddr .. Off_Chaddr + 5) :=
+        MAC;                  --  chaddr = MAC
+      TX (Off_Cookie .. Off_Cookie + 3) :=
+        Cookie;               --  magic cookie
       P := Off_Options;
-      TX (P) := Opt_Msg_Type; TX (P + 1) := 1; TX (P + 2) := Msg;  P := P + 3;
+      TX (P) := Opt_Msg_Type;
+      TX (P + 1) := 1;
+      TX (P + 2) := Msg;
+      P := P + 3;
       if Req_IP /= Zero_IP then
-         TX (P) := Opt_Req_IP; TX (P + 1) := 4;
-         TX (P + 2 .. P + 5) := Req_IP;  P := P + 6;
+         TX (P) := Opt_Req_IP;
+         TX (P + 1) := 4;
+         TX (P + 2 .. P + 5) := Req_IP;
+         P := P + 6;
       end if;
       if Server_Id /= Zero_IP then
-         TX (P) := Opt_Server_Id; TX (P + 1) := 4;
-         TX (P + 2 .. P + 5) := Server_Id;  P := P + 6;
+         TX (P) := Opt_Server_Id;
+         TX (P + 1) := 4;
+         TX (P + 2 .. P + 5) := Server_Id;
+         P := P + 6;
       end if;
-      TX (P) := Opt_Param_List; TX (P + 1) := 4;                 --  param request list
-      TX (P + 2) := Opt_Subnet; TX (P + 3) := Opt_Router;
-      TX (P + 4) := Opt_DNS;    TX (P + 5) := Opt_Lease;  P := P + 6;
+      TX (P) := Opt_Param_List;
+      TX (P + 1) := 4;                 --  param request list
+      TX (P + 2) := Opt_Subnet;
+      TX (P + 3) := Opt_Router;
+      TX (P + 4) := Opt_DNS;
+      TX (P + 5) := Opt_Lease;
+      P := P + 6;
       TX (P) := Opt_End;
       return P + 1;
    end Build;
 
    --  Poll S for a reply of type Want until Deadline; parse its options into
    --  Lease, and report the server id and the assigned address (yiaddr).
-   function Wait_Reply (S : in out WS.Socket; Want : Byte; Deadline : Time;
-                        Lease : in out Lease_Info;
-                        Server_Id, Yiaddr : out IPv4_Address) return Boolean is
-      FA           : IPv4_Address;
-      FP           : WS.Port_Number;
-      Count        : Natural;
-      Rst          : WS.Status;
-      P, Len       : Natural;
-      Code         : Byte;
-      Msg          : Byte;
+   function Wait_Reply
+     (S                 : in out WS.Socket;
+      Want              : Byte;
+      Deadline          : Time;
+      Lease             : in out Lease_Info;
+      Server_Id, Yiaddr : out IPv4_Address) return Boolean
+   is
+      FA     : IPv4_Address;
+      FP     : WS.Port_Number;
+      Count  : Natural;
+      Rst    : WS.Status;
+      P, Len : Natural;
+      Code   : Byte;
+      Msg    : Byte;
    begin
-      Server_Id := Zero_IP;  Yiaddr := Zero_IP;
+      Server_Id := Zero_IP;
+      Yiaddr := Zero_IP;
       loop
          WS.Receive_From (S, FA, FP, RX, Count, Rst);
-         Count := Natural'Min (Count, RX'Length);   --  never index past RX(299)
+         Count :=
+           Natural'Min (Count, RX'Length);   --  never index past RX(299)
          --  Only trust a datagram that is a BOOTREPLY (op=2) for OUR exchange
          --  (matching xid) carrying the DHCP magic cookie; otherwise it is a
          --  stray/rogue packet on UDP/68 and is ignored.
@@ -115,7 +144,8 @@ package body ESP32S3.W5500.DHCP is
            and then RX (Off_Xid .. Off_Xid + 3) = Xid
            and then RX (Off_Cookie .. Off_Cookie + 3) = Cookie
          then
-            Msg := 0;  P := Off_Options;
+            Msg := 0;
+            P := Off_Options;
             --  Walk the option block, never reading past the received bytes: a
             --  truncated header or a length that runs off the end ends the walk,
             --  and each fixed-width option is taken only when its Len delivers it.
@@ -125,24 +155,48 @@ package body ESP32S3.W5500.DHCP is
                if Code = Opt_Pad then
                   P := P + 1;
                else
-                  exit when P + 1 > Count - 1;        --  length byte must exist
+                  exit when
+                    P + 1 > Count - 1;        --  length byte must exist
                   Len := Natural (RX (P + 1));
-                  exit when P + 1 + Len > Count - 1;  --  whole option body must exist
+                  exit when
+                    P + 1 + Len > Count - 1;  --  whole option body must exist
                   case Code is
-                     when Opt_Msg_Type  => if Len >= 1 then Msg := RX (P + 2); end if;
-                     when Opt_Server_Id => if Len >= 4 then Server_Id     := RX (P + 2 .. P + 5); end if;
-                     when Opt_Subnet    => if Len >= 4 then Lease.Subnet  := RX (P + 2 .. P + 5); end if;
-                     when Opt_Router    => if Len >= 4 then Lease.Gateway := RX (P + 2 .. P + 5); end if;
-                     when Opt_DNS       => if Len >= 4 then Lease.DNS     := RX (P + 2 .. P + 5); end if;
-                     when Opt_Lease =>
+                     when Opt_Msg_Type  =>
+                        if Len >= 1 then
+                           Msg := RX (P + 2);
+                        end if;
+
+                     when Opt_Server_Id =>
+                        if Len >= 4 then
+                           Server_Id := RX (P + 2 .. P + 5);
+                        end if;
+
+                     when Opt_Subnet    =>
+                        if Len >= 4 then
+                           Lease.Subnet := RX (P + 2 .. P + 5);
+                        end if;
+
+                     when Opt_Router    =>
+                        if Len >= 4 then
+                           Lease.Gateway := RX (P + 2 .. P + 5);
+                        end if;
+
+                     when Opt_DNS       =>
+                        if Len >= 4 then
+                           Lease.DNS := RX (P + 2 .. P + 5);
+                        end if;
+
+                     when Opt_Lease     =>
                         if Len >= 4 then
                            Lease.Lease_Seconds :=
-                             Shift_Left (Unsigned_32 (RX (P + 2)), 24) or
-                             Shift_Left (Unsigned_32 (RX (P + 3)), 16) or
-                             Shift_Left (Unsigned_32 (RX (P + 4)), 8)  or
-                                         Unsigned_32 (RX (P + 5));
+                             Shift_Left (Unsigned_32 (RX (P + 2)), 24)
+                             or Shift_Left (Unsigned_32 (RX (P + 3)), 16)
+                             or Shift_Left (Unsigned_32 (RX (P + 4)), 8)
+                             or Unsigned_32 (RX (P + 5));
                         end if;
-                     when others => null;
+
+                     when others        =>
+                        null;
                   end case;
                   P := P + 2 + Len;
                end if;
@@ -162,51 +216,71 @@ package body ESP32S3.W5500.DHCP is
    --  Acquire (DORA) and renew, sharing the above
    ---------------------------------------------------------------------------
 
-   function Do_Acquire (Dev : WS.Device_Access; MAC : MAC_Address;
-                        Socket : Socket_Id; Tries : Positive;
-                        Lease : out Lease_Info; Server : out IPv4_Address)
-                        return Boolean is
-      S       : WS.Socket;
-      St      : WS.Status;
-      TX_Len  : Natural;
+   function Do_Acquire
+     (Dev    : WS.Device_Access;
+      MAC    : MAC_Address;
+      Socket : Socket_Id;
+      Tries  : Positive;
+      Lease  : out Lease_Info;
+      Server : out IPv4_Address) return Boolean
+   is
+      S            : WS.Socket;
+      St           : WS.Status;
+      TX_Len       : Natural;
       Offered, SId : IPv4_Address;
    begin
-      Lease := (others => <>);  Server := Zero_IP;
-      Configure (Dev.all, MAC, Zero_IP, Zero_IP, Zero_IP);    --  0.0.0.0 for DORA
+      Lease := (others => <>);
+      Server := Zero_IP;
+      Configure
+        (Dev.all, MAC, Zero_IP, Zero_IP, Zero_IP);    --  0.0.0.0 for DORA
       WS.Open_UDP (Dev, S, Socket, Client_Port, St);
-      if St /= WS.OK then return False; end if;
+      if St /= WS.OK then
+         return False;
+      end if;
       for Attempt in 1 .. Tries loop
          TX_Len := Build (Discover, MAC, Zero_IP, True, Zero_IP, Zero_IP);
          WS.Send_To (S, Bcast, Server_Port, TX (0 .. TX_Len - 1), St);
          if St = WS.OK
-           and then Wait_Reply (S, Offer, Clock + Seconds (2), Lease, SId, Offered)
+           and then Wait_Reply
+                      (S, Offer, Clock + Seconds (2), Lease, SId, Offered)
          then
             TX_Len := Build (Request, MAC, Zero_IP, True, Offered, SId);
             WS.Send_To (S, Bcast, Server_Port, TX (0 .. TX_Len - 1), St);
             if St = WS.OK
-              and then Wait_Reply (S, Ack, Clock + Seconds (2), Lease, SId, Offered)
+              and then Wait_Reply
+                         (S, Ack, Clock + Seconds (2), Lease, SId, Offered)
             then
-               Lease.IP := Offered;  Server := SId;  WS.Close (S);
+               Lease.IP := Offered;
+               Server := SId;
+               WS.Close (S);
                Configure (Dev.all, MAC, Lease.IP, Lease.Subnet, Lease.Gateway);
                return True;
             end if;
          end if;
       end loop;
-      WS.Close (S);  return False;
+      WS.Close (S);
+      return False;
    end Do_Acquire;
 
    --  Renew (Broadcast=False => unicast to Server) or rebind (Broadcast=True).
    --  ciaddr carries the current IP, so the address stays up across the exchange.
-   function Do_Renew (Dev : WS.Device_Access; MAC : MAC_Address;
-                      Socket : Socket_Id; Broadcast : Boolean; Server : IPv4_Address;
-                      Lease : in out Lease_Info) return Boolean is
-      S      : WS.Socket;
-      St     : WS.Status;
-      TX_Len : Natural;
+   function Do_Renew
+     (Dev       : WS.Device_Access;
+      MAC       : MAC_Address;
+      Socket    : Socket_Id;
+      Broadcast : Boolean;
+      Server    : IPv4_Address;
+      Lease     : in out Lease_Info) return Boolean
+   is
+      S       : WS.Socket;
+      St      : WS.Status;
+      TX_Len  : Natural;
       SId, Yi : IPv4_Address;
    begin
       WS.Open_UDP (Dev, S, Socket, Client_Port, St);
-      if St /= WS.OK then return False; end if;
+      if St /= WS.OK then
+         return False;
+      end if;
       TX_Len := Build (Request, MAC, Lease.IP, Broadcast, Zero_IP, Zero_IP);
       if Broadcast then
          WS.Send_To (S, Bcast, Server_Port, TX (0 .. TX_Len - 1), St);
@@ -216,12 +290,15 @@ package body ESP32S3.W5500.DHCP is
       if St = WS.OK
         and then Wait_Reply (S, Ack, Clock + Seconds (2), Lease, SId, Yi)
       then
-         if Yi /= Zero_IP then Lease.IP := Yi; end if;
+         if Yi /= Zero_IP then
+            Lease.IP := Yi;
+         end if;
          WS.Close (S);
          Configure (Dev.all, MAC, Lease.IP, Lease.Subnet, Lease.Gateway);
          return True;
       end if;
-      WS.Close (S);  return False;
+      WS.Close (S);
+      return False;
    end Do_Renew;
 
    ---------------------------------------------------------------------------
@@ -229,8 +306,11 @@ package body ESP32S3.W5500.DHCP is
    ---------------------------------------------------------------------------
 
    function Acquire_Lease
-     (Dev : WS.Device_Access; MAC : MAC_Address; Lease : out Lease_Info;
-      Socket : Socket_Id := 0; Tries : Positive := 4) return Boolean
+     (Dev    : WS.Device_Access;
+      MAC    : MAC_Address;
+      Lease  : out Lease_Info;
+      Socket : Socket_Id := 0;
+      Tries  : Positive := 4) return Boolean
    is
       Server : IPv4_Address;
    begin
@@ -238,11 +318,19 @@ package body ESP32S3.W5500.DHCP is
    end Acquire_Lease;
 
    function Renew_Lease
-     (Dev : WS.Device_Access; MAC : MAC_Address; Lease : in out Lease_Info;
+     (Dev    : WS.Device_Access;
+      MAC    : MAC_Address;
+      Lease  : in out Lease_Info;
       Socket : Socket_Id := 0) return Boolean is
    begin
-      return Do_Renew (Dev, MAC, Socket, Broadcast => True,
-                       Server => Zero_IP, Lease => Lease);
+      return
+        Do_Renew
+          (Dev,
+           MAC,
+           Socket,
+           Broadcast => True,
+           Server    => Zero_IP,
+           Lease     => Lease);
    end Renew_Lease;
 
    ---------------------------------------------------------------------------
@@ -254,55 +342,73 @@ package body ESP32S3.W5500.DHCP is
    M_MAC    : MAC_Address;
    M_Socket : Socket_Id := 0;
    M_Cb     : Bound_Callback := null;
-   M_Bound  : Boolean := False with Volatile;
+   M_Bound  : Boolean := False
+   with Volatile;
    M_Lease  : Lease_Info;
 
    procedure Maintain
-     (Dev : WS.Device_Access; MAC : MAC_Address;
-      Socket : Socket_Id := 0; On_Bound : Bound_Callback := null) is
+     (Dev      : WS.Device_Access;
+      MAC      : MAC_Address;
+      Socket   : Socket_Id := 0;
+      On_Bound : Bound_Callback := null) is
    begin
-      M_Dev := Dev;  M_MAC := MAC;  M_Socket := Socket;  M_Cb := On_Bound;
+      M_Dev := Dev;
+      M_MAC := MAC;
+      M_Socket := Socket;
+      M_Cb := On_Bound;
       Set_True (Go);
    end Maintain;
 
-   function Is_Bound      return Boolean    is (M_Bound);
-   function Current_Lease return Lease_Info is (M_Lease);
+   function Is_Bound return Boolean
+   is (M_Bound);
+   function Current_Lease return Lease_Info
+   is (M_Lease);
 
-   task Lease_Task with Priority => System.Priority'First + 1;
+   task Lease_Task
+     with Priority => System.Priority'First + 1;
    task body Lease_Task is
       Server   : IPv4_Address;
       Bound_At : Time;
       Renewed  : Boolean;
    begin
-      Suspend_Until_True (Go);                       --  wait until Maintain arms us
+      Suspend_Until_True
+        (Go);                       --  wait until Maintain arms us
       loop
          --  Acquire (retrying) -- the chip ends up at 0.0.0.0 until this succeeds.
          while not Do_Acquire (M_Dev, M_MAC, M_Socket, 4, M_Lease, Server) loop
             delay until Clock + Seconds (10);
          end loop;
          M_Bound := True;
-         if M_Cb /= null then M_Cb (M_Lease); end if;
+         if M_Cb /= null then
+            M_Cb (M_Lease);
+         end if;
 
          --  Hold the lease: renew at T1, rebind at T2, drop at expiry.
          Bound_At := Clock;
          loop
             declare
-               L  : constant Natural := Natural
-                      (Unsigned_32'Max (60, Unsigned_32'Min (M_Lease.Lease_Seconds,
-                                                             1_000_000)));
+               L  : constant Natural :=
+                 Natural
+                   (Unsigned_32'Max
+                      (60,
+                       Unsigned_32'Min (M_Lease.Lease_Seconds, 1_000_000)));
                T1 : constant Time := Bound_At + Seconds (L / 2);
                T2 : constant Time := Bound_At + Seconds (L * 7 / 8);
                Ex : constant Time := Bound_At + Seconds (L);
             begin
                delay until T1;
-               Renewed := Do_Renew (M_Dev, M_MAC, M_Socket, False, Server, M_Lease);
+               Renewed :=
+                 Do_Renew (M_Dev, M_MAC, M_Socket, False, Server, M_Lease);
                if not Renewed then
                   delay until T2;
-                  Renewed := Do_Renew (M_Dev, M_MAC, M_Socket, True, Server, M_Lease);
+                  Renewed :=
+                    Do_Renew (M_Dev, M_MAC, M_Socket, True, Server, M_Lease);
                end if;
                if Renewed then
                   Bound_At := Clock;
-                  if M_Cb /= null then M_Cb (M_Lease); end if;
+                  if M_Cb /= null then
+                     M_Cb (M_Lease);
+                  end if;
                else
                   delay until Ex;
                   exit;                              --  expired -> re-acquire

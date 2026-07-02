@@ -14,6 +14,7 @@ with ESP32S3.GPIO;
 --  the output and releases the channel automatically on scope exit, including on
 --  an exception).  Because you exclusively own a claimed channel, Set_Duty needs
 --  no lock.  Uses finalization, so it targets the embedded/full profile.
+
 package ESP32S3.LEDC is
 
    type Channel_Index is range 0 .. 7;        --  the eight LEDC channels
@@ -41,10 +42,11 @@ package ESP32S3.LEDC is
    --  whose indices differ by 4 (e.g. 0 and 4) share a timer and therefore one
    --  frequency/resolution -- use channels 0 .. 3 for four independent frequencies.
    --  The achievable frequency depends on Bits: freq_max = 80 MHz / 2**Bits.
-   procedure Configure (C    : in out Channel;
-                        Freq : Positive;
-                        Pin  : ESP32S3.GPIO.Pin_Id;
-                        Bits : Resolution := 10);
+   procedure Configure
+     (C    : in out Channel;
+      Freq : Positive;
+      Pin  : ESP32S3.GPIO.Pin_Id;
+      Bits : Resolution := 10);
 
    --  Set C's duty cycle (0 .. 100 %).  Takes effect at the next period; safe
    --  without a lock because you exclusively own C.
@@ -56,8 +58,9 @@ package ESP32S3.LEDC is
 private
    type Channel is new Ada.Finalization.Limited_Controlled with record
       Idx  : Channel_Index := 0;
-      Bits : Resolution    := 10;   --  remembered for Set_Duty's scaling
-      Held : Boolean       := False;
+      Bits : Resolution := 10;   --  remembered for Set_Duty's scaling
+      Held : Boolean := False;
    end record;
-   overriding procedure Finalize (C : in out Channel);   --  stop + release on scope exit
+   overriding
+   procedure Finalize (C : in out Channel);   --  stop + release on scope exit
 end ESP32S3.LEDC;

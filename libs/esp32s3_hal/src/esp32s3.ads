@@ -6,6 +6,7 @@
 --  ESP32S3.GDMA, ESP32S3.SPI (and, later, ESP32S3.UART, ESP32S3.I2S, ...).
 --  Consumers `with "esp32s3_hal.gpr";` (by name, or by relative path in-repo) then
 --  `with ESP32S3.<Peripheral>;`. See ../README.md.
+
 package ESP32S3 is
    pragma Pure;
 end ESP32S3;

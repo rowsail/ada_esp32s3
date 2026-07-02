@@ -11,6 +11,7 @@ with System;
 --  pristine, so the scan stops at the FIRST overwritten word from the bottom and
 --  thus never UNDER-reports the peak (it can only be conservative).  Use a real
 --  workload, then read the figure as "at least this much was used."
+
 package ESP32S3.Stack_Usage is
 
    --  Paint the unused portion of the ENVIRONMENT task's stack (the one Main runs
@@ -22,8 +23,8 @@ package ESP32S3.Stack_Usage is
 
    --  Peak bytes of the env stack ever used since Paint_Env_Stack (the high-water
    --  mark), the bytes still pristine, and the total reserved size.
-   function Env_Used  return Natural;
-   function Env_Free  return Natural;
+   function Env_Used return Natural;
+   function Env_Free return Natural;
    function Env_Total return Natural;
 
    --  Print a one-line report via ESP32S3.Log, e.g.
@@ -37,6 +38,6 @@ package ESP32S3.Stack_Usage is
    --  lowest address of the region, High the one-past-the-top (stacks grow down
    --  from High towards Low).
    procedure Paint (Low, High : System.Address);
-   function  High_Water (Low, High : System.Address) return Natural;
+   function High_Water (Low, High : System.Address) return Natural;
 
 end ESP32S3.Stack_Usage;

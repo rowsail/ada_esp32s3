@@ -21,29 +21,31 @@ package body ESP32S3.Temperature is
       Offset : Integer;      --  whole-degree offset in the formula above
    end record;
 
-   function Attr_Of (Span : Measure_Range) return Range_Attr is
-     (case Span is
-         when Range_Minus10_80 => (DAC => 15, Offset =>  0),
-         when Range_20_100     => (DAC =>  7, Offset => -1),
-         when Range_50_125     => (DAC =>  5, Offset => -2),
-         when Range_Minus30_50 => (DAC => 11, Offset =>  1),
-         when Range_Minus40_20 => (DAC => 10, Offset =>  2));
+   function Attr_Of (Span : Measure_Range) return Range_Attr
+   is (case Span is
+         when Range_Minus10_80 => (DAC => 15, Offset => 0),
+         when Range_20_100     => (DAC => 7, Offset => -1),
+         when Range_50_125     => (DAC => 5, Offset => -2),
+         when Range_Minus30_50 => (DAC => 11, Offset => 1),
+         when Range_Minus40_20 => (DAC => 10, Offset => 2));
 
    --  ESP32-S3 boot ROM: rom_i2c_writeReg_Mask -- writes a bit-field of an
    --  analog register over the internal REGI2C bus (sets the sensor's DAC
    --  range).  Args: block, host_id, reg, msb, lsb, data.
-   type Rom_I2C_Write_Fn is access procedure
-     (Block, Host, Reg, Msb, Lsb, Data : Unsigned_8) with Convention => C;
-   function To_Fn is
-     new Ada.Unchecked_Conversion (System.Address, Rom_I2C_Write_Fn);
+   type Rom_I2C_Write_Fn is
+     access procedure (Block, Host, Reg, Msb, Lsb, Data : Unsigned_8)
+   with Convention => C;
+   function To_Fn is new
+     Ada.Unchecked_Conversion (System.Address, Rom_I2C_Write_Fn);
 
    --  REGI2C SAR-ADC analog config (esp-idf regi2c_defs.h / regi2c_ctrl_ll.h).
    ANA_Config  : UInt32
-     with Volatile, Import, Address => System'To_Address (16#6000_E044#);
+   with Volatile, Import, Address => System'To_Address (16#6000_E044#);
    ANA_Config2 : UInt32
-     with Volatile, Import, Address => System'To_Address (16#6000_E048#);
+   with Volatile, Import, Address => System'To_Address (16#6000_E048#);
 
-   I2C_SAR_ADC      : constant Unsigned_8 := 16#69#;  --  REGI2C block (SAR ADC)
+   I2C_SAR_ADC      : constant Unsigned_8 :=
+     16#69#;  --  REGI2C block (SAR ADC)
    I2C_SAR_ADC_HOST : constant Unsigned_8 := 1;
    TSENS_DAC_Reg    : constant Unsigned_8 := 16#6#;   --  reg=6, bits [3..0]
    TSENS_DAC_Msb    : constant Unsigned_8 := 3;
@@ -93,18 +95,23 @@ package body ESP32S3.Temperature is
          SENS_Periph.SAR_PERI_RESET_CONF.SAR_TSENS_RESET := True;
          SENS_Periph.SAR_PERI_RESET_CONF.SAR_TSENS_RESET := False;
          --  3. Open the REGI2C internal bus to the SAR-ADC block.
-         ANA_Config  := ANA_Config or 16#3FF00#;
-         ANA_Config  := ANA_Config and not (UInt32'(2) ** 18);
-         ANA_Config2 := ANA_Config2 or (UInt32'(2) ** 16);
+         ANA_Config := ANA_Config or 16#3FF00#;
+         ANA_Config := ANA_Config and not (UInt32'(2)**18);
+         ANA_Config2 := ANA_Config2 or (UInt32'(2)**16);
          --  4. Program the DAC range over REGI2C.
-         Rom_I2C_Write (I2C_SAR_ADC, I2C_SAR_ADC_HOST,
-                        TSENS_DAC_Reg, TSENS_DAC_Msb, TSENS_DAC_Lsb, Attr.DAC);
+         Rom_I2C_Write
+           (I2C_SAR_ADC,
+            I2C_SAR_ADC_HOST,
+            TSENS_DAC_Reg,
+            TSENS_DAC_Msb,
+            TSENS_DAC_Lsb,
+            Attr.DAC);
          Offset := Attr.Offset;
          --  5. Power the sensor up under software control.
          SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_POWER_UP_FORCE := True;
-         SENS_Periph.SAR_TSENS_CTRL2.SAR_TSENS_XPD_FORCE     := 1;
-         SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_CLK_DIV        := 6;
-         SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_POWER_UP       := True;
+         SENS_Periph.SAR_TSENS_CTRL2.SAR_TSENS_XPD_FORCE := 1;
+         SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_CLK_DIV := 6;
+         SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_POWER_UP := True;
          Settle;
          Inited := True;
       end Configure;
@@ -113,6 +120,7 @@ package body ESP32S3.Temperature is
       begin
          if not Inited then
             Configure (Range_Minus10_80);     --  auto bring-up, default range
+
          end if;
          --  Latch a fresh conversion: dump_out=1, wait ready, dump_out=0.
          SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_DUMP_OUT := True;
@@ -130,10 +138,10 @@ package body ESP32S3.Temperature is
             end loop;
          end;
          SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_DUMP_OUT := False;
-         Raw   := SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_OUT;
-         Centi := (ADC_Factor * Integer (Raw)
-                   - DAC_Factor * Offset
-                   - Offset_Factor) / 100;
+         Raw := SENS_Periph.SAR_TSENS_CTRL.SAR_TSENS_OUT;
+         Centi :=
+           (ADC_Factor * Integer (Raw) - DAC_Factor * Offset - Offset_Factor)
+           / 100;
       end Sample;
 
    end Sensor;

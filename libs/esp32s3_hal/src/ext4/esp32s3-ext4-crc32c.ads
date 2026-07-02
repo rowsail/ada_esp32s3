@@ -5,6 +5,7 @@
 --  `Update` is the raw building block (continue from a seed); ext4 callers seed
 --  it with feature-specific values.  `Checksum` is the standard one-shot form
 --  (init ~0, final xor ~0) -- self-test: Checksum ("123456789") = 16#E306_9283#.
+
 package ESP32S3.Ext4.CRC32C is
 
    --  Continue a CRC32C over Data starting from Seed; returns the running CRC.

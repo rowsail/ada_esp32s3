@@ -12,28 +12,28 @@ package body ESP32S3.PCF85063A is
    Reg_Second_Alarm : constant Byte := 16#0B#;   --  .. 16#0F# = Weekday_Alarm
 
    --  Control_1 bits.
-   Stop_Bit         : constant Byte := 16#20#;   --  1 = time counters halted
-   Software_Reset   : constant Byte := 16#58#;   --  datasheet reset code
+   Stop_Bit       : constant Byte := 16#20#;   --  1 = time counters halted
+   Software_Reset : constant Byte := 16#58#;   --  datasheet reset code
 
    --  Control_2 bits.
    Alarm_Int_Enable : constant Byte := 16#80#;   --  AIE
    Alarm_Flag       : constant Byte := 16#40#;   --  AF (write 0 to clear)
 
    --  Seconds register bit 7 = OS (oscillator stopped since last set).
-   OS_Flag          : constant Byte := 16#80#;
+   OS_Flag : constant Byte := 16#80#;
 
    --  Alarm registers bit 7 = AEN_x: 1 disables that field's match.
-   Alarm_Disable    : constant Byte := 16#80#;
+   Alarm_Disable : constant Byte := 16#80#;
 
    ---------------------------------------------------------------------------
    --  BCD <-> binary (the chip stores two packed decimal digits per byte).
    ---------------------------------------------------------------------------
 
-   function To_BCD (V : Natural) return Byte is
-     (Byte ((V / 10) * 16 + (V mod 10)));
+   function To_BCD (V : Natural) return Byte
+   is (Byte ((V / 10) * 16 + (V mod 10)));
 
-   function From_BCD (B : Byte) return Natural is
-     (Natural (B / 16) * 10 + Natural (B mod 16));
+   function From_BCD (B : Byte) return Natural
+   is (Natural (B / 16) * 10 + Natural (B mod 16));
 
    ---------------------------------------------------------------------------
    --  Register access on an already-acquired Session.  The public operations
@@ -87,8 +87,8 @@ package body ESP32S3.PCF85063A is
    end Update_Reg;
 
    --  An alarm register byte: the BCD value, or the "disabled" sentinel.
-   function Alarm_Field (Use_It : Boolean; Value : Byte) return Byte is
-     (if Use_It then Value else Alarm_Disable);
+   function Alarm_Field (Use_It : Boolean; Value : Byte) return Byte
+   is (if Use_It then Value else Alarm_Disable);
 
    -----------
    -- Setup --
@@ -99,8 +99,8 @@ package body ESP32S3.PCF85063A is
       Sda      : ESP32S3.GPIO.Pin_Id;
       Scl      : ESP32S3.GPIO.Pin_Id;
       Int_Pin  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Host     : ESP32S3.I2C.I2C_Host      := ESP32S3.I2C.I2C0;
-      Clock_Hz : Positive                  := 400_000) is
+      Host     : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
+      Clock_Hz : Positive := 400_000) is
    begin
       Dev := (Host => Host, Sda => Sda, Scl => Scl, Int_Pin => Int_Pin);
       ESP32S3.I2C.Setup (Host, Clock_Hz => Clock_Hz);
@@ -111,8 +111,8 @@ package body ESP32S3.PCF85063A is
    -- Interrupt_Pin --
    -------------------
 
-   function Interrupt_Pin (Dev : Device) return ESP32S3.GPIO.Optional_Pin is
-     (Dev.Int_Pin);
+   function Interrupt_Pin (Dev : Device) return ESP32S3.GPIO.Optional_Pin
+   is (Dev.Int_Pin);
 
    --------------
    -- Get_Time --
@@ -138,6 +138,7 @@ package body ESP32S3.PCF85063A is
       Read_Regs (S, Reg_Seconds, R, Result);
       if Result /= OK then
          return;   --  T keeps its default value
+
       end if;
 
       Se := From_BCD (R (0) and 16#7F#);
@@ -152,18 +153,22 @@ package body ESP32S3.PCF85063A is
       --  assignment is safe); otherwise leave T at its defaults.  A bus read
       --  that returns garbage is never trustworthy, so Valid stays False --
       --  Result stays OK because the transaction itself succeeded.
-      if Se in Second_Number and then Mi in Minute_Number
-        and then Ho in Hour_Number and then Da in Day_Number
+      if Se in Second_Number
+        and then Mi in Minute_Number
+        and then Ho in Hour_Number
+        and then Da in Day_Number
         and then Wd <= Weekday'Pos (Weekday'Last)
-        and then Mo in Month_Number and then Yr in Year_Number
+        and then Mo in Month_Number
+        and then Yr in Year_Number
       then
-         T := (Year        => Yr,
-               Month       => Mo,
-               Day         => Da,
-               Day_Of_Week => Weekday'Val (Wd),
-               Hour        => Ho,
-               Minute      => Mi,
-               Second      => Se);
+         T :=
+           (Year        => Yr,
+            Month       => Mo,
+            Day         => Da,
+            Day_Of_Week => Weekday'Val (Wd),
+            Hour        => Ho,
+            Minute      => Mi,
+            Second      => Se);
          --  Trust it only if the oscillator never stopped since the last set.
          Valid := (R (0) and OS_Flag) = 0;
       end if;
@@ -241,10 +246,10 @@ package body ESP32S3.PCF85063A is
    begin
       Acquire (S, Dev.Host);
 
-      R (0) := Alarm_Field (A.Use_Second,  To_BCD (A.Second));
-      R (1) := Alarm_Field (A.Use_Minute,  To_BCD (A.Minute));
-      R (2) := Alarm_Field (A.Use_Hour,    To_BCD (A.Hour));
-      R (3) := Alarm_Field (A.Use_Day,     To_BCD (A.Day));
+      R (0) := Alarm_Field (A.Use_Second, To_BCD (A.Second));
+      R (1) := Alarm_Field (A.Use_Minute, To_BCD (A.Minute));
+      R (2) := Alarm_Field (A.Use_Hour, To_BCD (A.Hour));
+      R (3) := Alarm_Field (A.Use_Day, To_BCD (A.Day));
       R (4) := Alarm_Field (A.Use_Weekday, Byte (Weekday'Pos (A.Day_Of_Week)));
       Write_Regs (S, Reg_Second_Alarm, R, Result);
       if Result /= OK then
@@ -252,10 +257,12 @@ package body ESP32S3.PCF85063A is
       end if;
 
       --  Enable the alarm interrupt and clear any stale flag in one write.
-      Update_Reg (S, Reg_Control_2,
-                  Mask => Alarm_Int_Enable or Alarm_Flag,
-                  Bits => Alarm_Int_Enable,
-                  Result => Result);
+      Update_Reg
+        (S,
+         Reg_Control_2,
+         Mask   => Alarm_Int_Enable or Alarm_Flag,
+         Bits   => Alarm_Int_Enable,
+         Result => Result);
    end Set_Alarm;
 
    ---------------------
@@ -284,8 +291,8 @@ package body ESP32S3.PCF85063A is
       S : Session;
    begin
       Acquire (S, Dev.Host);
-      Update_Reg (S, Reg_Control_2, Mask => Alarm_Flag, Bits => 0,
-                  Result => Result);
+      Update_Reg
+        (S, Reg_Control_2, Mask => Alarm_Flag, Bits => 0, Result => Result);
    end Acknowledge_Alarm;
 
    -----------------
@@ -298,17 +305,25 @@ package body ESP32S3.PCF85063A is
       Acquire (S, Dev.Host);
 
       --  Disable the interrupt and clear the flag ...
-      Update_Reg (S, Reg_Control_2,
-                  Mask => Alarm_Int_Enable or Alarm_Flag, Bits => 0,
-                  Result => Result);
+      Update_Reg
+        (S,
+         Reg_Control_2,
+         Mask   => Alarm_Int_Enable or Alarm_Flag,
+         Bits   => 0,
+         Result => Result);
       if Result /= OK then
          return;
       end if;
       --  ... then disable every match field.
-      Write_Regs (S, Reg_Second_Alarm,
-                  (Alarm_Disable, Alarm_Disable, Alarm_Disable,
-                   Alarm_Disable, Alarm_Disable),
-                  Result);
+      Write_Regs
+        (S,
+         Reg_Second_Alarm,
+         (Alarm_Disable,
+          Alarm_Disable,
+          Alarm_Disable,
+          Alarm_Disable,
+          Alarm_Disable),
+         Result);
    end Clear_Alarm;
 
 end ESP32S3.PCF85063A;

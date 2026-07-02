@@ -21,18 +21,22 @@ package body X509.DER is
       if (E.Tag and 16#1F#) = 16#1F# then
          return;
       end if;
-      if P >= Limit then                    --  no room for a length byte
+      if P >= Limit then
+         --  no room for a length byte
          return;
       end if;
       P := P + 1;
 
       --  Length.
       LB := Buf (P);
-      if LB < 16#80# then                    --  short form
+      if LB < 16#80# then
+         --  short form
          Len := Natural (LB);
-      elsif LB = 16#80# then                 --  indefinite: not allowed in DER
+      elsif LB = 16#80# then
+         --  indefinite: not allowed in DER
          return;
-      else                                   --  long form: LB-0x80 length octets
+      else
+         --  long form: LB-0x80 length octets
          NBytes := Natural (LB and 16#7F#);
          if NBytes > 4 or else NBytes > Limit - P then
             return;
@@ -58,14 +62,14 @@ package body X509.DER is
 
       --  Content range: starts just after the length field.
       if Len = 0 then
-         E.Content   := (First => P + 1, Last => P);   --  empty
+         E.Content := (First => P + 1, Last => P);   --  empty
          E.Elem_Last := P;
       else
          --  Need P + Len <= Limit (overflow-safe form).
          if Len > Limit - P then
             return;
          end if;
-         E.Content   := (First => P + 1, Last => P + Len);
+         E.Content := (First => P + 1, Last => P + Len);
          E.Elem_Last := P + Len;
       end if;
       E.Valid := True;

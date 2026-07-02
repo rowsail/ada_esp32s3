@@ -36,6 +36,7 @@
 --  Flush prepends an in-band notice -- "[console: <n> bytes dropped]" -- so a gap
 --  in the stream is both visible to a reader and queryable by the program.
 with Interfaces;
+
 package ESP32S3.Console is
 
    --  Append a string to the console buffer (flushed on newline / when full).

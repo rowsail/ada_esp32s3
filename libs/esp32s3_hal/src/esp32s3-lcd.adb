@@ -9,7 +9,7 @@ package body ESP32S3.LCD is
    --------------------------------------------------------------------------
 
    protected Guard is
-      entry    Acquire;
+      entry Acquire;
       procedure Release;
    private
       Held : Boolean := False;
@@ -41,7 +41,7 @@ package body ESP32S3.LCD is
 
    package State is
       procedure Bring_Up (S : Session; Pclk_Hz : Positive);
-      function  Owned (S : Session) return access E.Bus;
+      function Owned (S : Session) return access E.Bus;
    end State;
 
    package body State is
@@ -50,7 +50,8 @@ package body ESP32S3.LCD is
       procedure Bring_Up (S : Session; Pclk_Hz : Positive) is
       begin
          if not S.Active then
-            raise Not_Owned with "LCD used without holding it -- Acquire first";
+            raise Not_Owned
+              with "LCD used without holding it -- Acquire first";
          end if;
          E.Open (The_Bus, Pclk_Hz);
       end Bring_Up;
@@ -58,7 +59,8 @@ package body ESP32S3.LCD is
       function Owned (S : Session) return access E.Bus is
       begin
          if not S.Active then
-            raise Not_Owned with "LCD used without holding it -- Acquire first";
+            raise Not_Owned
+              with "LCD used without holding it -- Acquire first";
          end if;
          return The_Bus'Access;
       end Owned;
@@ -68,10 +70,11 @@ package body ESP32S3.LCD is
    -- Acquire --
    -------------
 
-   procedure Acquire (S       : in out Session;
-                      Pclk_Hz : Positive   := 1_000_000;
-                      Data    : Data_Pins  := (others => No_Pin);
-                      Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin) is
+   procedure Acquire
+     (S       : in out Session;
+      Pclk_Hz : Positive := 1_000_000;
+      Data    : Data_Pins := (others => No_Pin);
+      Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin) is
    begin
       Guard.Acquire;
       S.Active := True;
@@ -82,10 +85,11 @@ package body ESP32S3.LCD is
    -- Reconfigure --
    -----------------
 
-   procedure Reconfigure (S       : Session;
-                          Pclk_Hz : Positive   := 1_000_000;
-                          Data    : Data_Pins  := (others => No_Pin);
-                          Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin) is
+   procedure Reconfigure
+     (S       : Session;
+      Pclk_Hz : Positive := 1_000_000;
+      Data    : Data_Pins := (others => No_Pin);
+      Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin) is
    begin
       State.Bring_Up (S, Pclk_Hz);
       E.Configure_Pins (State.Owned (S).all, Data, Pclk);
@@ -95,8 +99,8 @@ package body ESP32S3.LCD is
    -- Configure_Pins --
    --------------------
 
-   procedure Configure_Pins (S : Session; Data : Data_Pins;
-                             Pclk : ESP32S3.GPIO.Optional_Pin) is
+   procedure Configure_Pins
+     (S : Session; Data : Data_Pins; Pclk : ESP32S3.GPIO.Optional_Pin) is
    begin
       E.Configure_Pins (State.Owned (S).all, Data, Pclk);
    end Configure_Pins;
@@ -114,8 +118,8 @@ package body ESP32S3.LCD is
    -- Transmit --
    --------------
 
-   procedure Transmit (S : Session; Tx : System.Address; Length : Natural;
-                       Ok : out Boolean) is
+   procedure Transmit
+     (S : Session; Tx : System.Address; Length : Natural; Ok : out Boolean) is
    begin
       E.Transmit (State.Owned (S).all, Tx, Length, Ok);
    end Transmit;
@@ -132,7 +136,8 @@ package body ESP32S3.LCD is
       end if;
    end Release;
 
-   overriding procedure Finalize (S : in out Session) is
+   overriding
+   procedure Finalize (S : in out Session) is
    begin
       Release (S);
    end Finalize;

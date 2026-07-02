@@ -22,11 +22,12 @@ with ESP32S3.GPIO;
 --    * The chip has NO interrupt output -> no .Interrupts child.
 --
 --  Uses a controlled Session (finalization) => embedded / full profiles only.
+
 package ESP32S3.CH422G is
 
    --  IO0..IO7 as one byte (bit i = IOi); OC0..OC3 as the low nibble.
-   type IO_Value is mod 2 ** 8;
-   type OC_Value is mod 2 ** 4;
+   type IO_Value is mod 2**8;
+   type OC_Value is mod 2**4;
 
    type IO_Pin is range 0 .. 7;
    type OC_Pin is range 0 .. 3;
@@ -35,12 +36,12 @@ package ESP32S3.CH422G is
 
    --  GLOBAL settings (the chip has no per-pin direction / drive).
    type IO_Direction is (Inputs, Outputs);     --  all of IO0..IO7
-   type OC_Drive     is (Push_Pull, Open_Drain);  --  all of OC0..OC3
+   type OC_Drive is (Push_Pull, Open_Drain);  --  all of OC0..OC3
 
    --  Bus_Error: the chip did not ACK (absent / wrong bus / stuck).
    type Status is (OK, Bus_Error);
 
-   type Device  is limited private;
+   type Device is limited private;
    type Session is limited private;
 
    --  Raised by Acquire on an un-Setup Device; by an operation whose Session
@@ -59,7 +60,7 @@ package ESP32S3.CH422G is
       Sda      : ESP32S3.GPIO.Pin_Id;
       Scl      : ESP32S3.GPIO.Pin_Id;
       Host     : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
-      Clock_Hz : Positive             := 400_000);
+      Clock_Hz : Positive := 400_000);
 
    ----------------------------------------------------------------------------
    --  Take / release exclusive ownership of the device.
@@ -81,7 +82,7 @@ package ESP32S3.CH422G is
    procedure Configure
      (S       : Session;
       IO_Dir  : IO_Direction := Inputs;
-      OC_Mode : OC_Drive     := Push_Pull;
+      OC_Mode : OC_Drive := Push_Pull;
       Result  : out Status);
 
    --  Low-power sleep (woken by an IO level change or the next command).
@@ -106,12 +107,13 @@ package ESP32S3.CH422G is
 private
    type Device is record
       Host       : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
-      Configured : Boolean              := False;
+      Configured : Boolean := False;
    end record;
 
    type Session is new Ada.Finalization.Limited_Controlled with record
-      Active : Boolean              := False;
+      Active : Boolean := False;
       Host   : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
    end record;
-   overriding procedure Finalize (S : in out Session);  --  auto-release
+   overriding
+   procedure Finalize (S : in out Session);  --  auto-release
 end ESP32S3.CH422G;

@@ -12,6 +12,7 @@ with ESP32S3.GPIO;
 --  Ownership: a unit is a shared resource handed out as a CLAIMED handle, LIMITED
 --  (non-copyable) and CONTROLLED (released automatically on scope exit).  Uses
 --  finalization, so it targets the embedded/full profile.
+
 package ESP32S3.PCNT is
 
    type Unit_Index is range 0 .. 3;           --  the four counter units
@@ -26,9 +27,10 @@ package ESP32S3.PCNT is
    --  Route Pin to U's input and start counting.  By default each rising edge
    --  increments; set Both_Edges to count rising and falling edges.  The counter
    --  is cleared to 0.
-   procedure Configure (U : in out Unit;
-                        Pin : ESP32S3.GPIO.Pin_Id;
-                        Both_Edges : Boolean := False);
+   procedure Configure
+     (U          : in out Unit;
+      Pin        : ESP32S3.GPIO.Pin_Id;
+      Both_Edges : Boolean := False);
 
    --  Current counter value (signed; wraps at +/- 32768).
    function Count (U : Unit) return Integer;
@@ -37,13 +39,14 @@ package ESP32S3.PCNT is
    procedure Clear (U : Unit);
 
    --  Pause / resume counting (the count is retained while paused).
-   procedure Pause  (U : Unit);
+   procedure Pause (U : Unit);
    procedure Resume (U : Unit);
 
 private
    type Unit is new Ada.Finalization.Limited_Controlled with record
       Idx  : Unit_Index := 0;
-      Held : Boolean    := False;
+      Held : Boolean := False;
    end record;
-   overriding procedure Finalize (U : in out Unit);
+   overriding
+   procedure Finalize (U : in out Unit);
 end ESP32S3.PCNT;

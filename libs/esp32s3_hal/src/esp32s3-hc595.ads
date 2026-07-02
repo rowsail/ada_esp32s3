@@ -18,6 +18,7 @@ with ESP32S3.SPI;
 --  (the 595 needs only SCLK + MOSI -- it is write-only).  This driver Acquires
 --  the host per Update with NO chip select asserted, so other devices on the bus
 --  are undisturbed.  Targets embedded/full (the SPI Session is a controlled type).
+
 package ESP32S3.HC595 is
 
    subtype Byte is Interfaces.Unsigned_8;
@@ -37,7 +38,7 @@ package ESP32S3.HC595 is
       RCLK     : ESP32S3.GPIO.Pin_Id;
       OE       : ESP32S3.GPIO.Pin_Id;
       Clock_Hz : Positive := 10_000_000;
-      Enable   : Boolean  := True);
+      Enable   : Boolean := True);
 
    --  Total parallel outputs (Chips * 8).
    function Output_Count (C : Controller) return Natural;
@@ -46,29 +47,30 @@ package ESP32S3.HC595 is
    --  0 .. Output_Count-1: chip Index/8 (chip 0 is the one nearest the ESP), and
    --  that chip's output Q(Index mod 8).
    procedure Set_Output (C : in out Controller; Index : Natural; On : Boolean)
-     with Pre => Index < Output_Count (C);
+   with Pre => Index < Output_Count (C);
 
    function Get_Output (C : Controller; Index : Natural) return Boolean
-     with Pre => Index < Output_Count (C);
+   with Pre => Index < Output_Count (C);
 
    --  Set one chip's eight outputs at once: bit n -> Qn.  Chip 0 nearest the ESP.
    procedure Set_Byte (C : in out Controller; Chip : Natural; Value : Byte)
-     with Pre => Chip < C.Chips;
+   with Pre => Chip < C.Chips;
 
    --  Shift the shadow out through the whole string and latch it (RCLK pulse).
    procedure Update (C : in out Controller);
 
    --  Set_Output then Update.
-   procedure Write_Output (C : in out Controller; Index : Natural; On : Boolean)
-     with Pre => Index < Output_Count (C);
+   procedure Write_Output
+     (C : in out Controller; Index : Natural; On : Boolean)
+   with Pre => Index < Output_Count (C);
 
    --  Drive all outputs low / high (sets the shadow and latches).
    procedure Clear_All (C : in out Controller);
-   procedure Set_All   (C : in out Controller);
+   procedure Set_All (C : in out Controller);
 
    --  Drive /OE: Enable_Outputs drives it low (outputs active); Disable_Outputs
    --  drives it high (outputs high-impedance).  Does not change the shadow.
-   procedure Enable_Outputs  (C : in out Controller);
+   procedure Enable_Outputs (C : in out Controller);
    procedure Disable_Outputs (C : in out Controller);
 
 private
@@ -79,13 +81,13 @@ private
    type State_Array is array (Positive range <>) of Byte;
 
    type Controller (Chips : Positive) is limited record
-      Host  : ESP32S3.SPI.SPI_Host := ESP32S3.SPI.SPI2;
-      Clock : Positive             := 10_000_000;
-      RCLK  : ESP32S3.GPIO.Pin_Id  := 0;
-      OE    : ESP32S3.GPIO.Pin_Id  := 0;
+      Host        : ESP32S3.SPI.SPI_Host := ESP32S3.SPI.SPI2;
+      Clock       : Positive := 10_000_000;
+      RCLK        : ESP32S3.GPIO.Pin_Id := 0;
+      OE          : ESP32S3.GPIO.Pin_Id := 0;
       Auto_Enable : Boolean := True;    --  drop /OE on the first Update
       Live        : Boolean := False;   --  have the outputs been enabled yet?
-      State : State_Array (1 .. Chips) := (others => 0);
+      State       : State_Array (1 .. Chips) := (others => 0);
    end record;
 
 end ESP32S3.HC595;

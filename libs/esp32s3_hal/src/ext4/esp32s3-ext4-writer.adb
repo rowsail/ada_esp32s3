@@ -18,7 +18,8 @@ package body ESP32S3.Ext4.Writer is
          raise Read_Only with "volume mounted read-only";
       end if;
       if V.SB.Has_Csum then
-         raise Read_Only with "write to a metadata_csum filesystem not supported";
+         raise Read_Only
+           with "write to a metadata_csum filesystem not supported";
       end if;
    end Guard;
 
@@ -29,8 +30,8 @@ package body ESP32S3.Ext4.Writer is
    -- Create_File --
    -----------------
 
-   function Create_File (V : in out Volume.Context; Dir_Path, Name : String)
-      return Inode_Number
+   function Create_File
+     (V : in out Volume.Context; Dir_Path, Name : String) return Inode_Number
    is
       Dir_I : Inode.Info;
       Child : Inode_Number;
@@ -48,12 +49,15 @@ package body ESP32S3.Ext4.Writer is
       end if;
 
       Child := Bitmap.Alloc_Inode (V, As_Dir => False);
-      CI := (Mode       => 16#8180#,        --  S_IFREG | 0644
-             Size       => 0,
-             Flags      => 0,               --  indirect-mapped (no EXTENTS_FL)
-             Links      => 1,
-             Blocks_512 => 0,
-             I_Block    => [others => 0]);
+      CI :=
+        (Mode       => 16#8180#,
+         --  S_IFREG | 0644
+         Size       => 0,
+         Flags      => 0,
+         --  indirect-mapped (no EXTENTS_FL)
+         Links      => 1,
+         Blocks_512 => 0,
+         I_Block    => [others => 0]);
       Inode.Write (V, Child, CI, Fresh => True);
 
       Dir.Add_Entry (V, Dir_I, Name, Child, Dir.FT_Reg);
@@ -64,16 +68,19 @@ package body ESP32S3.Ext4.Writer is
    -- Write_Small --
    -----------------
 
-   procedure Write_Small (V : in out Volume.Context; N : Inode_Number;
-                          Data : Byte_Array)
+   procedure Write_Small
+     (V : in out Volume.Context; N : Inode_Number; Data : Byte_Array)
    is
       BS    : constant Natural := V.SB.Block_Size;
-      PPB   : constant Natural := BS / 4;                  --  pointers per block
+      PPB   : constant Natural :=
+        BS / 4;                  --  pointers per block
       N_Blk : constant Natural := (Data'Length + BS - 1) / BS;
       I     : Inode.Info;
       Buf   : Bytes_Ptr := new Byte_Array (0 .. BS - 1);
-      Ind   : Block_Number := 0;                           --  single-indirect block
-      Meta  : Natural := 0;                                --  indirect metadata blocks
+      Ind   : Block_Number :=
+        0;                           --  single-indirect block
+      Meta  : Natural :=
+        0;                                --  indirect metadata blocks
       Ptr   : Byte_Array (0 .. 3);
    begin
       Guard (V);
@@ -90,26 +97,29 @@ package body ESP32S3.Ext4.Writer is
             Cnt  : constant Natural := Natural'Min (BS, Data'Length - Lo);
          begin
             Buf.all := [others => 0];
-            Buf (0 .. Cnt - 1) := Data (Data'First + Lo .. Data'First + Lo + Cnt - 1);
+            Buf (0 .. Cnt - 1) :=
+              Data (Data'First + Lo .. Data'First + Lo + Cnt - 1);
             ESP32S3.Ext4.Block_Cache.Write (V.Cache, Phys, Buf.all);
 
             if B < 12 then
                Put_U32 (I.I_Block, B * 4, U32 (Phys));
             else
-               if Ind = 0 then                             --  first indirect ref
-                  Ind  := Bitmap.Alloc_Block (V);
+               if Ind = 0 then
+                  --  first indirect ref
+                  Ind := Bitmap.Alloc_Block (V);
                   Meta := Meta + 1;
                   Buf.all := [others => 0];
                   ESP32S3.Ext4.Block_Cache.Write (V.Cache, Ind, Buf.all);
                   Put_U32 (I.I_Block, 12 * 4, U32 (Ind));
                end if;
                Put_U32 (Ptr, 0, U32 (Phys));
-               ESP32S3.Ext4.Block_Cache.Write_At (V.Cache, Ind, (B - 12) * 4, Ptr);
+               ESP32S3.Ext4.Block_Cache.Write_At
+                 (V.Cache, Ind, (B - 12) * 4, Ptr);
             end if;
          end;
       end loop;
 
-      I.Size       := U64 (Data'Length);
+      I.Size := U64 (Data'Length);
       I.Blocks_512 := U64 (N_Blk + Meta) * U64 (BS / 512);
       Inode.Write (V, N, I, Fresh => False);
       Free (Buf);
@@ -128,10 +138,11 @@ package body ESP32S3.Ext4.Writer is
 
    --  Read the data-block pointer at slot Slot of indirect block Ind, allocating
    --  the data block (Fresh => True) when the slot is empty.
-   function Slot_Block (V     : in out Volume.Context;
-                        Ind   : Block_Number;
-                        Slot  : Natural;
-                        Fresh : out Boolean) return Block_Number
+   function Slot_Block
+     (V     : in out Volume.Context;
+      Ind   : Block_Number;
+      Slot  : Natural;
+      Fresh : out Boolean) return Block_Number
    is
       Ptr  : Byte_Array (0 .. 3);
       Phys : Block_Number;
@@ -154,10 +165,11 @@ package body ESP32S3.Ext4.Writer is
    --  single + double indirect (up to 12 + PPB + PPB**2 blocks); triple indirect
    --  is not supported -- the same reach as the free/truncate path, so nothing
    --  un-freeable is ever created.
-   function Map_Or_Alloc (V       : in out Volume.Context;
-                          I       : in out Inode.Info;
-                          L_Block : Natural;
-                          Fresh   : out Boolean) return Block_Number
+   function Map_Or_Alloc
+     (V       : in out Volume.Context;
+      I       : in out Inode.Info;
+      L_Block : Natural;
+      Fresh   : out Boolean) return Block_Number
    is
       PPB : constant Natural := V.SB.Block_Size / 4;
 
@@ -175,8 +187,8 @@ package body ESP32S3.Ext4.Writer is
       end Inode_Indirect;
 
       --  As Inode_Indirect but for slot Slot inside another indirect block.
-      function Child_Indirect (Parent : Block_Number; Slot : Natural)
-         return Block_Number
+      function Child_Indirect
+        (Parent : Block_Number; Slot : Natural) return Block_Number
       is
          Ptr : Byte_Array (0 .. 3);
          B   : Block_Number;
@@ -204,10 +216,12 @@ package body ESP32S3.Ext4.Writer is
          end if;
          return Phys;
 
-      elsif L_Block < 12 + PPB then                       --  single indirect
+      elsif L_Block < 12 + PPB then
+         --  single indirect
          return Slot_Block (V, Inode_Indirect (48), L_Block - 12, Fresh);
 
-      elsif L_Block < 12 + PPB + PPB * PPB then            --  double indirect
+      elsif L_Block < 12 + PPB + PPB * PPB then
+         --  double indirect
          declare
             Rel : constant Natural := L_Block - 12 - PPB;
             Dbl : constant Block_Number := Inode_Indirect (52);
@@ -221,8 +235,8 @@ package body ESP32S3.Ext4.Writer is
       end if;
    end Map_Or_Alloc;
 
-   procedure Append (V : in out Volume.Context; N : Inode_Number;
-                     Data : Byte_Array)
+   procedure Append
+     (V : in out Volume.Context; N : Inode_Number; Data : Byte_Array)
    is
       BS  : constant Natural := V.SB.Block_Size;
       PPB : constant Natural := BS / 4;
@@ -235,7 +249,8 @@ package body ESP32S3.Ext4.Writer is
       --  metadata (the single-indirect block, and for the double-indirect range
       --  the double-indirect block + one single-indirect child per PPB blocks).
       function I_Blocks (Size : U64) return U64 is
-         Total : constant Natural := Natural ((Size + U64 (BS) - 1) / U64 (BS));
+         Total : constant Natural :=
+           Natural ((Size + U64 (BS) - 1) / U64 (BS));
          Meta  : Natural := 0;
       begin
          if Total > 12 then
@@ -262,7 +277,7 @@ package body ESP32S3.Ext4.Writer is
 
       --  Reject an over-large final size up front, before allocating anything.
       if Natural ((Pos + U64 (Data'Length) + U64 (BS) - 1) / U64 (BS))
-           > 12 + PPB + PPB * PPB
+        > 12 + PPB + PPB * PPB
       then
          Free (Buf);
          raise Use_Error with "file too large (double-indirect maximum)";
@@ -278,7 +293,7 @@ package body ESP32S3.Ext4.Writer is
                Chunk   : constant Natural := Natural'Min (BS - Off, Left);
                Fresh   : Boolean;
                Phys    : constant Block_Number :=
-                           Map_Or_Alloc (V, I, L_Block, Fresh);
+                 Map_Or_Alloc (V, I, L_Block, Fresh);
             begin
                if Off = 0 and then Chunk = BS then
                   Buf.all := Data (Src .. Src + BS - 1);
@@ -288,7 +303,8 @@ package body ESP32S3.Ext4.Writer is
                   else
                      ESP32S3.Ext4.Block_Cache.Read (V.Cache, Phys, Buf.all);
                   end if;
-                  Buf (Off .. Off + Chunk - 1) := Data (Src .. Src + Chunk - 1);
+                  Buf (Off .. Off + Chunk - 1) :=
+                    Data (Src .. Src + Chunk - 1);
                end if;
                ESP32S3.Ext4.Block_Cache.Write (V.Cache, Phys, Buf.all);
                Pos := Pos + U64 (Chunk);
@@ -297,15 +313,16 @@ package body ESP32S3.Ext4.Writer is
             end;
          end loop;
       exception
-         when others =>          --  e.g. No_Space: commit what was written
-            I.Size       := Pos;
+         when others =>
+            --  e.g. No_Space: commit what was written
+            I.Size := Pos;
             I.Blocks_512 := I_Blocks (Pos);
             Inode.Write (V, N, I, Fresh => False);
             Free (Buf);
             raise;
       end;
 
-      I.Size       := Pos;
+      I.Size := Pos;
       I.Blocks_512 := I_Blocks (Pos);
       Inode.Write (V, N, I, Fresh => False);
       Free (Buf);
@@ -339,30 +356,33 @@ package body ESP32S3.Ext4.Writer is
       end if;
 
       New_N := Bitmap.Alloc_Inode (V, As_Dir => True);
-      Blk   := Bitmap.Alloc_Block (V);
+      Blk := Bitmap.Alloc_Block (V);
 
       --  Lay down "." (-> self) and ".." (-> parent), ".." spanning the block.
       Buf.all := [others => 0];
       Put_U32 (Buf.all, 0, U32 (New_N));
       Put_U16 (Buf.all, 4, 12);
-      Put_U8  (Buf.all, 6, 1);
-      Put_U8  (Buf.all, 7, Dir.FT_Dir);
+      Put_U8 (Buf.all, 6, 1);
+      Put_U8 (Buf.all, 7, Dir.FT_Dir);
       Buf (8) := Character'Pos ('.');
       Put_U32 (Buf.all, 12, U32 (Parent_N));
       Put_U16 (Buf.all, 16, U16 (BS - 12));
-      Put_U8  (Buf.all, 18, 2);
-      Put_U8  (Buf.all, 19, Dir.FT_Dir);
+      Put_U8 (Buf.all, 18, 2);
+      Put_U8 (Buf.all, 19, Dir.FT_Dir);
       Buf (20) := Character'Pos ('.');
       Buf (21) := Character'Pos ('.');
       ESP32S3.Ext4.Block_Cache.Write (V.Cache, Blk, Buf.all);
       Free (Buf);
 
-      DI := (Mode       => 16#41ED#,          --  S_IFDIR | 0755
-             Size       => U64 (BS),
-             Flags      => 0,
-             Links      => 2,                  --  "." + the parent's entry
-             Blocks_512 => U64 (BS / 512),
-             I_Block    => [others => 0]);
+      DI :=
+        (Mode       => 16#41ED#,
+         --  S_IFDIR | 0755
+         Size       => U64 (BS),
+         Flags      => 0,
+         Links      => 2,
+         --  "." + the parent's entry
+         Blocks_512 => U64 (BS / 512),
+         I_Block    => [others => 0]);
       Put_U32 (DI.I_Block, 0, U32 (Blk));
       Inode.Write (V, New_N, DI, Fresh => True);
 
@@ -414,14 +434,17 @@ package body ESP32S3.Ext4.Writer is
    end Unlink;
 
    --  ext file_type byte for an inode.
-   function FType_Of (CI : Inode.Info) return U8 is
-     (if Inode.Is_Dir (CI) then Dir.FT_Dir
-      elsif Inode.Is_Symlink (CI) then Dir.FT_Symlink
-      else Dir.FT_Reg);
+   function FType_Of (CI : Inode.Info) return U8
+   is (if Inode.Is_Dir (CI)
+       then Dir.FT_Dir
+       elsif Inode.Is_Symlink (CI)
+       then Dir.FT_Symlink
+       else Dir.FT_Reg);
 
    --  Free the first Count data-block pointers of single-indirect block Sng,
    --  then Sng itself.
-   procedure Free_Single (V : in out Volume.Context; Sng : U32; Count : Natural)
+   procedure Free_Single
+     (V : in out Volume.Context; Sng : U32; Count : Natural)
    is
       Ptr : Byte_Array (0 .. 3);
    begin
@@ -429,7 +452,8 @@ package body ESP32S3.Ext4.Writer is
          return;
       end if;
       for K in 0 .. Count - 1 loop
-         ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Block_Number (Sng), K * 4, Ptr);
+         ESP32S3.Ext4.Block_Cache.Read_At
+           (V.Cache, Block_Number (Sng), K * 4, Ptr);
          declare
             P : constant U32 := Get_U32 (Ptr, 0);
          begin
@@ -443,8 +467,8 @@ package body ESP32S3.Ext4.Writer is
 
    --  Free a double-indirect block Dbl mapping Data_Count data blocks: every
    --  data block, each single-indirect child, then Dbl itself.
-   procedure Free_Double (V : in out Volume.Context; Dbl : U32;
-                          Data_Count : Natural)
+   procedure Free_Double
+     (V : in out Volume.Context; Dbl : U32; Data_Count : Natural)
    is
       PPB  : constant Natural := V.SB.Block_Size / 4;
       Ptr  : Byte_Array (0 .. 3);
@@ -467,8 +491,8 @@ package body ESP32S3.Ext4.Writer is
    --  Shrink a double-indirect region: free its data blocks [Keep, Old) and the
    --  single-indirect children that become empty, keeping the first Keep blocks
    --  (Keep > 0; for Keep = 0 use Free_Double, which also frees the double block).
-   procedure Free_Double_Tail (V : in out Volume.Context; Dbl : U32;
-                               Keep, Old : Natural)
+   procedure Free_Double_Tail
+     (V : in out Volume.Context; Dbl : U32; Keep, Old : Natural)
    is
       PPB : constant Natural := V.SB.Block_Size / 4;
       Ptr : Byte_Array (0 .. 3);
@@ -483,14 +507,17 @@ package body ESP32S3.Ext4.Writer is
             Sng       : constant U32 := Get_U32 (Ptr, 0);
             Keep_In   : constant Natural :=
               (if Child = Keep / PPB then Keep mod PPB else 0);
-            Child_Old : constant Natural := Natural'Min (PPB, Old - Child * PPB);
+            Child_Old : constant Natural :=
+              Natural'Min (PPB, Old - Child * PPB);
          begin
-            if Keep_In = 0 then                  --  this child is fully freed
+            if Keep_In = 0 then
+               --  this child is fully freed
                Free_Single (V, Sng, Child_Old);
                Put_U32 (Ptr, 0, 0);
                ESP32S3.Ext4.Block_Cache.Write_At
                  (V.Cache, Block_Number (Dbl), Child * 4, Ptr);
-            elsif Sng /= 0 then                  --  straddling child: free its tail
+            elsif Sng /= 0 then
+               --  straddling child: free its tail
                for S in Keep_In .. Child_Old - 1 loop
                   declare
                      SPtr : Byte_Array (0 .. 3);
@@ -519,13 +546,15 @@ package body ESP32S3.Ext4.Writer is
    procedure Free_Inode_Blocks (V : in out Volume.Context; CI : Inode.Info) is
       BS    : constant Natural := V.SB.Block_Size;
       PPB   : constant Natural := BS / 4;
-      N_Blk : constant Natural := Natural ((CI.Size + U64 (BS) - 1) / U64 (BS));
+      N_Blk : constant Natural :=
+        Natural ((CI.Size + U64 (BS) - 1) / U64 (BS));
    begin
       --  A symlink's i_block holds either inline target text (fast symlink, no
       --  data blocks) or a single block pointer (slow symlink) -- never the
       --  classic block map, so it must not run through the loops below.
       if Inode.Is_Symlink (CI) then
-         if CI.Blocks_512 /= 0 then               --  slow symlink: one block
+         if CI.Blocks_512 /= 0 then
+            --  slow symlink: one block
             declare
                P : constant U32 := Get_U32 (CI.I_Block, 0);
             begin
@@ -555,8 +584,8 @@ package body ESP32S3.Ext4.Writer is
       end loop;
 
       if N_Blk > 12 then
-         Free_Single (V, Get_U32 (CI.I_Block, 48),
-                      Natural'Min (N_Blk - 12, PPB));
+         Free_Single
+           (V, Get_U32 (CI.I_Block, 48), Natural'Min (N_Blk - 12, PPB));
       end if;
       if N_Blk > 12 + PPB then
          Free_Double (V, Get_U32 (CI.I_Block, 52), N_Blk - 12 - PPB);
@@ -610,14 +639,14 @@ package body ESP32S3.Ext4.Writer is
    -- Rename --
    ------------
 
-   procedure Rename (V : in out Volume.Context;
-                     Old_Dir, Old_Name, New_Dir, New_Name : String)
+   procedure Rename
+     (V : in out Volume.Context; Old_Dir, Old_Name, New_Dir, New_Name : String)
    is
-      ON, NN  : Inode_Number;
-      Old_DI  : Inode.Info;
-      New_DI  : Inode.Info;
-      Child   : Inode_Number;
-      CI      : Inode.Info;
+      ON, NN : Inode_Number;
+      Old_DI : Inode.Info;
+      New_DI : Inode.Info;
+      Child  : Inode_Number;
+      CI     : Inode.Info;
    begin
       Guard (V);
       ON := Path.Resolve (V, Old_Dir);
@@ -672,7 +701,9 @@ package body ESP32S3.Ext4.Writer is
    -- Truncate --
    --------------
 
-   procedure Truncate (V : in out Volume.Context; N : Inode_Number; New_Size : U64) is
+   procedure Truncate
+     (V : in out Volume.Context; N : Inode_Number; New_Size : U64)
+   is
       I   : Inode.Info;
       BS  : constant Natural := V.SB.Block_Size;
       PPB : constant Natural := BS / 4;
@@ -686,12 +717,15 @@ package body ESP32S3.Ext4.Writer is
       if Inode.Uses_Extents (I)
         or else Get_U32 (I.I_Block, 56) /= 0          --  triple indirect
       then
-         raise Unsupported_Feature with "truncate of triple-indirect / extent file";
+         raise Unsupported_Feature
+           with "truncate of triple-indirect / extent file";
       end if;
 
       declare
-         Old_NB : constant Natural := Natural ((I.Size   + U64 (BS) - 1) / U64 (BS));
-         New_NB : constant Natural := Natural ((New_Size + U64 (BS) - 1) / U64 (BS));
+         Old_NB : constant Natural :=
+           Natural ((I.Size + U64 (BS) - 1) / U64 (BS));
+         New_NB : constant Natural :=
+           Natural ((New_Size + U64 (BS) - 1) / U64 (BS));
       begin
          if New_NB < Old_NB then
             --  Direct region [0 .. 12).
@@ -711,9 +745,11 @@ package body ESP32S3.Ext4.Writer is
             --  Single-indirect region [12 .. 12+PPB).
             if Old_NB > 12 then
                declare
-                  Keep : constant Natural := (if New_NB > 12 then New_NB - 12 else 0);
-                  Old_Single : constant Natural := Natural'Min (Old_NB - 12, PPB);
-                  Sng  : constant U32 := Get_U32 (I.I_Block, 48);
+                  Keep       : constant Natural :=
+                    (if New_NB > 12 then New_NB - 12 else 0);
+                  Old_Single : constant Natural :=
+                    Natural'Min (Old_NB - 12, PPB);
+                  Sng        : constant U32 := Get_U32 (I.I_Block, 48);
                begin
                   if Keep < Old_Single then
                      if Keep = 0 then
@@ -742,10 +778,10 @@ package body ESP32S3.Ext4.Writer is
             --  Double-indirect region [12+PPB .. 12+PPB+PPB**2).
             if Old_NB > 12 + PPB then
                declare
-                  Keep : constant Natural :=
+                  Keep       : constant Natural :=
                     (if New_NB > 12 + PPB then New_NB - 12 - PPB else 0);
                   Old_Double : constant Natural := Old_NB - 12 - PPB;
-                  Dbl  : constant U32 := Get_U32 (I.I_Block, 52);
+                  Dbl        : constant U32 := Get_U32 (I.I_Block, 52);
                begin
                   if Keep = 0 then
                      Free_Double (V, Dbl, Old_Double);
@@ -782,10 +818,9 @@ package body ESP32S3.Ext4.Writer is
                if Tail_Off /= 0 then
                   declare
                      Phys : constant Block_Number :=
-                              Block_Map.Logical_To_Physical
-                                (V, I, U64 (New_NB - 1));
+                       Block_Map.Logical_To_Physical (V, I, U64 (New_NB - 1));
                      Tail : constant Byte_Array (Tail_Off .. BS - 1) :=
-                              (others => 0);
+                       (others => 0);
                   begin
                      if Phys /= 0 then
                         ESP32S3.Ext4.Block_Cache.Write_At
@@ -805,8 +840,8 @@ package body ESP32S3.Ext4.Writer is
    -- Link --
    ----------
 
-   procedure Link (V : in out Volume.Context;
-                   Target_Path, New_Dir, New_Name : String)
+   procedure Link
+     (V : in out Volume.Context; Target_Path, New_Dir, New_Name : String)
    is
       TN  : constant Inode_Number := Path.Resolve (V, Target_Path);
       TI  : Inode.Info;
@@ -833,8 +868,8 @@ package body ESP32S3.Ext4.Writer is
    -- Make_Symlink --
    ------------------
 
-   procedure Make_Symlink (V : in out Volume.Context;
-                           Dir_Path, Name, Target : String)
+   procedure Make_Symlink
+     (V : in out Volume.Context; Dir_Path, Name, Target : String)
    is
       BS    : constant Natural := V.SB.Block_Size;
       Dir_I : Inode.Info;
@@ -858,12 +893,14 @@ package body ESP32S3.Ext4.Writer is
       end if;
 
       Child := Bitmap.Alloc_Inode (V, As_Dir => False);
-      CI := (Mode       => 16#A1FF#,         --  S_IFLNK | 0777
-             Size       => U64 (Target'Length),
-             Flags      => 0,
-             Links      => 1,
-             Blocks_512 => 0,
-             I_Block    => [others => 0]);
+      CI :=
+        (Mode       => 16#A1FF#,
+         --  S_IFLNK | 0777
+         Size       => U64 (Target'Length),
+         Flags      => 0,
+         Links      => 1,
+         Blocks_512 => 0,
+         I_Block    => [others => 0]);
 
       if Target'Length < 60 then
          --  Fast symlink: the link text lives inline in the 60-byte i_block.

@@ -9,6 +9,7 @@ with ESP32S3.GPIO;
 --
 --  (Frame / Data_Length / Data_Bytes / Bus_Mode are declared in the parent and
 --  used here by child visibility.)
+
 private package ESP32S3.TWAI.Engine is
 
    --  A configured controller.  (The TWAI block is a singleton, so this carries
@@ -21,9 +22,8 @@ private package ESP32S3.TWAI.Engine is
    function Open (Mode : Bus_Mode; Bit_Rate : Positive) return Bus;
 
    --  Route TWAI TX/RX to physical pads (for a real transceiver).
-   procedure Configure_Pins (B  : Bus;
-                             Tx : ESP32S3.GPIO.Optional_Pin;
-                             Rx : ESP32S3.GPIO.Optional_Pin);
+   procedure Configure_Pins
+     (B : Bus; Tx : ESP32S3.GPIO.Optional_Pin; Rx : ESP32S3.GPIO.Optional_Pin);
 
    --  Loop TX back to RX through one pad (wiring-free self-test).
    procedure Enable_Loopback (B : Bus; Pad : ESP32S3.GPIO.Pin_Id);
@@ -32,23 +32,30 @@ private package ESP32S3.TWAI.Engine is
    --  self-RX).  Extended selects the 29-bit on-wire format; Remote sends an RTR
    --  request (Length only, no Data on the wire); Id carries 11 or 29 significant
    --  bits accordingly.
-   procedure Send (B : Bus; Extended, Remote : Boolean;
-                   Id : Interfaces.Unsigned_32;
-                   Length : Data_Length; Data : Data_Bytes);
+   procedure Send
+     (B                : Bus;
+      Extended, Remote : Boolean;
+      Id               : Interfaces.Unsigned_32;
+      Length           : Data_Length;
+      Data             : Data_Bytes);
 
    --  Is a received frame waiting (RX buffer non-empty)?  RX_Extended reports the
    --  waiting frame's width (the frame-info FF bit, valid only when RX_Pending).
-   function RX_Pending  (B : Bus) return Boolean;
+   function RX_Pending (B : Bus) return Boolean;
    function RX_Extended (B : Bus) return Boolean;
 
    --  Read the waiting frame if its width matches Want_Extended: decode Id/Remote/
    --  Length/Data, release the buffer, Got => True.  (An RTR frame has no Data.)
    --  Got => False (buffer left intact) if the waiting frame is the other width,
    --  or none arrived within a short timeout.
-   procedure Receive (B : Bus; Want_Extended : Boolean;
-                      Id : out Interfaces.Unsigned_32; Remote : out Boolean;
-                      Length : out Data_Length; Data : out Data_Bytes;
-                      Got : out Boolean);
+   procedure Receive
+     (B             : Bus;
+      Want_Extended : Boolean;
+      Id            : out Interfaces.Unsigned_32;
+      Remote        : out Boolean;
+      Length        : out Data_Length;
+      Data          : out Data_Bytes;
+      Got           : out Boolean);
 
 private
    type Bus is record

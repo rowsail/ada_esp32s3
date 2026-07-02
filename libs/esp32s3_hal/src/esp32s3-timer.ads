@@ -10,6 +10,7 @@ with Ada.Finalization;
 --  Ownership: a timer is a shared resource handed out as a CLAIMED handle,
 --  LIMITED (non-copyable) and CONTROLLED (released automatically on scope exit).
 --  Uses finalization, so it targets the embedded/full profile.
+
 package ESP32S3.Timer is
 
    type Timer_Index is range 0 .. 1;          --  0 = TIMG0, 1 = TIMG1
@@ -23,13 +24,13 @@ package ESP32S3.Timer is
    function Is_Valid (T : Timer) return Boolean;
    procedure Release (T : in out Timer);
 
-   --  Configure T to count up at Tick_Hz ticks/second (default 1 MHz = 1 µs per
+   --  Configure T to count up at Tick_Hz ticks/second (default 1 MHz = 1 Âµs per
    --  tick; max ~80 MHz / 1, min ~80 MHz / 65536).  The counter is stopped and
    --  reset to 0; call Start.
    procedure Configure (T : in out Timer; Tick_Hz : Positive := 1_000_000);
 
    procedure Start (T : Timer);
-   procedure Stop  (T : Timer);
+   procedure Stop (T : Timer);
 
    --  Reload the counter to 0 (whether running or stopped).
    procedure Reset (T : Timer);
@@ -48,7 +49,8 @@ package ESP32S3.Timer is
 private
    type Timer is new Ada.Finalization.Limited_Controlled with record
       Idx  : Timer_Index := 0;
-      Held : Boolean     := False;
+      Held : Boolean := False;
    end record;
-   overriding procedure Finalize (T : in out Timer);
+   overriding
+   procedure Finalize (T : in out Timer);
 end ESP32S3.Timer;

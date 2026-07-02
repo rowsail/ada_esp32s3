@@ -11,6 +11,7 @@ with ESP32S3.GPIO;
 --  Ownership: a channel is a shared resource handed out as a CLAIMED handle,
 --  LIMITED (non-copyable) and CONTROLLED (released automatically on scope exit).
 --  Uses finalization, so it targets the embedded/full profile.
+
 package ESP32S3.SDM is
 
    type Channel_Index is range 0 .. 7;        --  the eight SDM channels
@@ -30,9 +31,10 @@ package ESP32S3.SDM is
    --  is the nearest APB/N -- roughly 312_500 Hz .. 80_000_000 Hz.  A higher
    --  carrier is easier to smooth with an RC low-pass; the exact value rarely
    --  matters, so it is rounded to the nearest available divider.
-   procedure Configure (C          : in out Channel;
-                        Pin        : ESP32S3.GPIO.Pin_Id;
-                        Carrier_Hz : Positive := 1_000_000);
+   procedure Configure
+     (C          : in out Channel;
+      Pin        : ESP32S3.GPIO.Pin_Id;
+      Carrier_Hz : Positive := 1_000_000);
 
    --  Set the average output density (0 .. 100 %).  Single register write.
    procedure Set_Density (C : Channel; Percent : Density_Percent);
@@ -40,7 +42,8 @@ package ESP32S3.SDM is
 private
    type Channel is new Ada.Finalization.Limited_Controlled with record
       Idx  : Channel_Index := 0;
-      Held : Boolean       := False;
+      Held : Boolean := False;
    end record;
-   overriding procedure Finalize (C : in out Channel);
+   overriding
+   procedure Finalize (C : in out Channel);
 end ESP32S3.SDM;

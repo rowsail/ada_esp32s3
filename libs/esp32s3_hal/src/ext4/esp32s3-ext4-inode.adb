@@ -6,14 +6,17 @@ with ESP32S3.Ext4.CRC32C;
 package body ESP32S3.Ext4.Inode is
 
    --  Block + offset of inode N within its group's inode table.
-   procedure Locate (V : in out Volume.Context; N : Inode_Number;
-                     Blk : out Block_Number; Off : out Natural)
+   procedure Locate
+     (V   : in out Volume.Context;
+      N   : Inode_Number;
+      Blk : out Block_Number;
+      Off : out Natural)
    is
       BS     : constant Natural := V.SB.Block_Size;
       ISz    : constant Natural := V.SB.Inode_Size;
-      Idx0   : constant U32     := U32 (N) - 1;
-      Group  : constant U32     := Idx0 / V.SB.Inodes_Per_Group;
-      In_Grp : constant U32     := Idx0 mod V.SB.Inodes_Per_Group;
+      Idx0   : constant U32 := U32 (N) - 1;
+      Group  : constant U32 := Idx0 / V.SB.Inodes_Per_Group;
+      In_Grp : constant U32 := Idx0 mod V.SB.Inodes_Per_Group;
       GD     : Group_Desc.Desc;
       By_Off : U64;
    begin
@@ -22,16 +25,18 @@ package body ESP32S3.Ext4.Inode is
       end if;
       Group_Desc.Read (V, Group, GD);
       By_Off := U64 (In_Grp) * U64 (ISz);
-      Blk    := GD.Inode_Table + Block_Number (By_Off / U64 (BS));
-      Off    := Natural (By_Off mod U64 (BS));
+      Blk := GD.Inode_Table + Block_Number (By_Off / U64 (BS));
+      Off := Natural (By_Off mod U64 (BS));
    end Locate;
 
    --  metadata_csum over inode N's raw bytes: crc32c(fs_seed, le32(num),
    --  le32(generation), inode-with-csum-fields-zeroed).  Returns the 32-bit CRC.
-   function Compute_Csum (V : Volume.Context; N : Inode_Number;
-                          Raw : Byte_Array; ISz : Natural) return U32
+   function Compute_Csum
+     (V : Volume.Context; N : Inode_Number; Raw : Byte_Array; ISz : Natural)
+      return U32
    is
-      Tmp : Byte_Array (0 .. ISz - 1) := Raw (Raw'First .. Raw'First + ISz - 1);
+      Tmp : Byte_Array (0 .. ISz - 1) :=
+        Raw (Raw'First .. Raw'First + ISz - 1);
       Nb  : Byte_Array (0 .. 3);
       Gb  : Byte_Array (0 .. 3);
       Crc : U32;
@@ -48,11 +53,11 @@ package body ESP32S3.Ext4.Inode is
       return Crc;
    end Compute_Csum;
 
-   function Has_Csum_Hi (ISz : Natural; Raw : Byte_Array) return Boolean is
-     (ISz > 128 and then Get_U16 (Raw, 16#80#) >= 4);
+   function Has_Csum_Hi (ISz : Natural; Raw : Byte_Array) return Boolean
+   is (ISz > 128 and then Get_U16 (Raw, 16#80#) >= 4);
 
-   procedure Verify_Csum (V : Volume.Context; N : Inode_Number;
-                          Raw : Byte_Array; ISz : Natural)
+   procedure Verify_Csum
+     (V : Volume.Context; N : Inode_Number; Raw : Byte_Array; ISz : Natural)
    is
       Crc    : constant U32 := Compute_Csum (V, N, Raw, ISz);
       Stored : U32 := U32 (Get_U16 (Raw, 16#7C#));
@@ -71,20 +76,23 @@ package body ESP32S3.Ext4.Inode is
    -- Read --
    ----------
 
-   procedure Read (V : in out Volume.Context; N : Inode_Number; I : out Info) is
+   procedure Read (V : in out Volume.Context; N : Inode_Number; I : out Info)
+   is
       ISz : constant Natural := V.SB.Inode_Size;
       Blk : Block_Number;
       Off : Natural;
-      Raw : Byte_Array (0 .. ISz - 1);   --  size to the actual inode (128..1024),
-   begin                                 --  matching Write/Mark_Deleted
+      Raw :
+        Byte_Array (0 .. ISz - 1);   --  size to the actual inode (128..1024),
+   begin
+      --  matching Write/Mark_Deleted
       Locate (V, N, Blk, Off);
       ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Blk, Off, Raw);
 
-      I.Mode       := Get_U16 (Raw, 16#00#);
-      I.Links      := Get_U16 (Raw, 16#1A#);
+      I.Mode := Get_U16 (Raw, 16#00#);
+      I.Links := Get_U16 (Raw, 16#1A#);
       I.Blocks_512 := U64 (Get_U32 (Raw, 16#1C#));
-      I.Flags      := Get_U32 (Raw, 16#20#);
-      I.I_Block    := Raw (16#28# .. 16#28# + 59);
+      I.Flags := Get_U32 (Raw, 16#20#);
+      I.I_Block := Raw (16#28# .. 16#28# + 59);
 
       I.Size := U64 (Get_U32 (Raw, 16#04#));
       if (I.Mode and 16#F000#) = 16#8000# then
@@ -100,10 +108,11 @@ package body ESP32S3.Ext4.Inode is
    -- Write --
    -----------
 
-   procedure Write (V     : in out Volume.Context;
-                    N     : Inode_Number;
-                    I     : Info;
-                    Fresh : Boolean := False)
+   procedure Write
+     (V     : in out Volume.Context;
+      N     : Inode_Number;
+      I     : Info;
+      Fresh : Boolean := False)
    is
       ISz : constant Natural := V.SB.Inode_Size;
       Blk : Block_Number;
@@ -116,6 +125,7 @@ package body ESP32S3.Ext4.Inode is
          Raw := [others => 0];
          if ISz > 128 then
             Put_U16 (Raw, 16#80#, 32);          --  i_extra_isize
+
          end if;
       else
          ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Blk, Off, Raw);

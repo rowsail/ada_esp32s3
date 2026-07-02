@@ -9,6 +9,7 @@ with ESP32S3.Ext4.Volume;
 --  Handles the classic (non-checksummed) journal format used by ext3 and by
 --  ext4 with ^metadata_csum.  A checksummed journal (CSUM_V2/V3) raises
 --  Unsupported_Feature for now.
+
 package ESP32S3.Ext4.Journal is
 
    --  Does the volume's superblock ask for journal recovery?
@@ -28,9 +29,10 @@ package ESP32S3.Ext4.Journal is
    --  Replay) applies the logged blocks to their targets.  This is the commit half
    --  of the journal: a crash after Commit recovers forward, before it has no
    --  effect.  Non-checksummed journals only.
-   procedure Commit (V        : in out Volume.Context;
-                     Targets  : Target_Array;
-                     New_Data : Byte_Array);
+   procedure Commit
+     (V        : in out Volume.Context;
+      Targets  : Target_Array;
+      New_Data : Byte_Array);
 
    --  Commit the cache's dirty metadata blocks AND the superblock as one
    --  journaled transaction: log them + write the journal commit (durable), set
@@ -41,7 +43,7 @@ package ESP32S3.Ext4.Journal is
    --
    --  Simulate_Crash stops right after the barrier (journal committed, RECOVER
    --  set, metadata NOT yet checkpointed) -- for the crash-recovery tests.
-   procedure Transaction_Commit (V              : in out Volume.Context;
-                                 Simulate_Crash : Boolean := False);
+   procedure Transaction_Commit
+     (V : in out Volume.Context; Simulate_Crash : Boolean := False);
 
 end ESP32S3.Ext4.Journal;

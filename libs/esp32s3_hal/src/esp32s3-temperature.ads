@@ -18,6 +18,7 @@ with ESP32S3_Registers;
 --  microseconds for the conversion under that lock).  Initialize is optional --
 --  the first Read brings the sensor up with the default range if you skip it.
 --  (Holding a protected object, this package requires a tasking runtime.)
+
 package ESP32S3.Temperature is
    --  Hardware measurement ranges (TRM "temperature_sensor_attributes").  The
    --  sensor is most accurate near the middle of the chosen range; pick the one

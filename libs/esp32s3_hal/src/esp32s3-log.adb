@@ -1,4 +1,4 @@
-with Interfaces;     use Interfaces;
+with Interfaces; use Interfaces;
 with ESP32S3.Serial;
 
 package body ESP32S3.Log is
@@ -52,9 +52,12 @@ package body ESP32S3.Log is
       U          : Long_Long_Integer := Long_Long_Integer (N);
    begin
       if Neg then
-         U := -U;                                --  in 64-bit: safe for Integer'First
+         U :=
+           -U;                                --  in 64-bit: safe for Integer'First
+
       end if;
-      loop                                       --  digits, least-significant first
+      loop
+         --  digits, least-significant first
          D_First := D_First - 1;
          Digits_Buf (D_First) :=
            Character'Val (Character'Pos ('0') + Integer (U mod 10));
@@ -63,7 +66,7 @@ package body ESP32S3.Log is
       end loop;
 
       declare
-         Digs     : constant String  := Digits_Buf (D_First .. Digits_Buf'Last);
+         Digs     : constant String := Digits_Buf (D_First .. Digits_Buf'Last);
          Sign_Len : constant Natural := (if Neg then 1 else 0);
          Body_Len : constant Natural := Sign_Len + Digs'Length;
          Pad_Len  : constant Natural :=
@@ -72,11 +75,23 @@ package body ESP32S3.Log is
          P        : Natural := 0;
       begin
          if Pad = '0' then
-            if Neg then P := P + 1; Out_Buf (P) := '-'; end if;
-            for I in 1 .. Pad_Len loop P := P + 1; Out_Buf (P) := '0'; end loop;
+            if Neg then
+               P := P + 1;
+               Out_Buf (P) := '-';
+            end if;
+            for I in 1 .. Pad_Len loop
+               P := P + 1;
+               Out_Buf (P) := '0';
+            end loop;
          else
-            for I in 1 .. Pad_Len loop P := P + 1; Out_Buf (P) := Pad; end loop;
-            if Neg then P := P + 1; Out_Buf (P) := '-'; end if;
+            for I in 1 .. Pad_Len loop
+               P := P + 1;
+               Out_Buf (P) := Pad;
+            end loop;
+            if Neg then
+               P := P + 1;
+               Out_Buf (P) := '-';
+            end if;
          end if;
          Out_Buf (P + 1 .. P + Digs'Length) := Digs;
          P := P + Digs'Length;
@@ -121,7 +136,7 @@ package body ESP32S3.Log is
       end loop;
 
       declare
-         Digs    : constant String  := Digits_Buf (D_First .. Digits_Buf'Last);
+         Digs    : constant String := Digits_Buf (D_First .. Digits_Buf'Last);
          Pad_Len : constant Natural :=
            (if Width > Digs'Length then Width - Digs'Length else 0);
          Out_Buf : String (1 .. Digs'Length + Pad_Len);
@@ -148,16 +163,18 @@ package body ESP32S3.Log is
    begin
       loop
          First := First - 1;
-         Buf (First) := Character'Val (Character'Pos ('0') + Integer (U mod 10));
+         Buf (First) :=
+           Character'Val (Character'Pos ('0') + Integer (U mod 10));
          U := U / 10;
          exit when U = 0;
       end loop;
       Put (Buf (First .. Buf'Last));
    end Put_Nonneg;
 
-   procedure Put_Fixed (Numer : Integer; Denom : Positive; Decimals : Natural := 2)
+   procedure Put_Fixed
+     (Numer : Integer; Denom : Positive; Decimals : Natural := 2)
    is
-      Neg   : constant Boolean           := Numer < 0;
+      Neg   : constant Boolean := Numer < 0;
       M     : constant Long_Long_Integer := abs (Long_Long_Integer (Numer));
       D     : constant Long_Long_Integer := Long_Long_Integer (Denom);
       Whole : constant Long_Long_Integer := M / D;
@@ -170,7 +187,8 @@ package body ESP32S3.Log is
       if Neg then
          Put ("-");
       end if;
-      Put_Nonneg (Whole);              --  LLI: avoids the Integer (Whole) overflow
+      Put_Nonneg
+        (Whole);              --  LLI: avoids the Integer (Whole) overflow
       if Decimals > 0 then
          Put (".");
          Put (Integer ((Rem_M * Scale) / D), Width => Decimals, Pad => '0');

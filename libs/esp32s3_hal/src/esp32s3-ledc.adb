@@ -1,23 +1,24 @@
 with ESP32S3.GPIO;
 with ESP32S3.GPIO_Signals;
-with ESP32S3_Registers;          use ESP32S3_Registers;
-with ESP32S3_Registers.LEDC;     use ESP32S3_Registers.LEDC;
+with ESP32S3_Registers;      use ESP32S3_Registers;
+with ESP32S3_Registers.LEDC; use ESP32S3_Registers.LEDC;
 with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.SYSTEM;
 
 package body ESP32S3.LEDC is
 
    package GR renames ESP32S3_Registers.GPIO;   --  GPIO matrix register layer
-   package G    renames ESP32S3.GPIO;
+   package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
 
-   Src_Hz : constant := 80_000_000;             --  APB clock feeds the LEDC timers
+   Src_Hz : constant :=
+     80_000_000;             --  APB clock feeds the LEDC timers
 
    type Timer_Index is range 0 .. 3;
 
    --  Channel uses timer (Index mod 4).
-   function Timer_Of (Idx : Channel_Index) return Timer_Index is
-     (Timer_Index (Natural (Idx) mod 4));
+   function Timer_Of (Idx : Channel_Index) return Timer_Index
+   is (Timer_Index (Natural (Idx) mod 4));
 
    ---------------------------------------------------------------------------
    --  Register overlays.  svd2ada flattened the eight identical channel blocks
@@ -32,43 +33,47 @@ package body ESP32S3.LEDC is
       DUTY   : CH_DUTY_Register;
       CONF1  : CH_CONF_Register_1;
       DUTY_R : CH_DUTY_R_Register;
-   end record with Volatile;
-   for Chan_Regs use record
-      CONF0  at 16#00# range 0 .. 31;
-      HPOINT at 16#04# range 0 .. 31;
-      DUTY   at 16#08# range 0 .. 31;
-      CONF1  at 16#0C# range 0 .. 31;
-      DUTY_R at 16#10# range 0 .. 31;
-   end record;
+   end record
+   with Volatile;
+   for Chan_Regs use
+     record
+       CONF0 at 16#00# range 0 .. 31;
+       HPOINT at 16#04# range 0 .. 31;
+       DUTY at 16#08# range 0 .. 31;
+       CONF1 at 16#0C# range 0 .. 31;
+       DUTY_R at 16#10# range 0 .. 31;
+     end record;
    for Chan_Regs'Size use 16#14# * 8;
    for Chan_Regs'Object_Size use 16#14# * 8;
 
    type Chan_Array is array (Channel_Index) of Chan_Regs;
    Channels : Chan_Array
-     with Import, Volatile, Address => LEDC_Periph.CH_CONF00'Address;
+   with Import, Volatile, Address => LEDC_Periph.CH_CONF00'Address;
 
    type Timer_Regs is record
       CONF  : TIMER_CONF_Register;
       VALUE : TIMER_VALUE_Register;
-   end record with Volatile;
-   for Timer_Regs use record
-      CONF  at 16#0# range 0 .. 31;
-      VALUE at 16#4# range 0 .. 31;
-   end record;
+   end record
+   with Volatile;
+   for Timer_Regs use
+     record
+       CONF at 16#0# range 0 .. 31;
+       VALUE at 16#4# range 0 .. 31;
+     end record;
    for Timer_Regs'Size use 16#8# * 8;
    for Timer_Regs'Object_Size use 16#8# * 8;
 
    type Timer_Array is array (Timer_Index) of Timer_Regs;
    Timers : Timer_Array
-     with Import, Volatile, Address => LEDC_Periph.TIMER_CONF0'Address;
+   with Import, Volatile, Address => LEDC_Periph.TIMER_CONF0'Address;
 
    --  GPIO-matrix output signal for a channel (LEDC_LS_SIG_OUT0 .. OUT7).
-   function Out_Signal (Idx : Channel_Index) return Natural is
-     (Sigs.LEDC_LS_SIG_OUT0 + Natural (Idx));
+   function Out_Signal (Idx : Channel_Index) return Natural
+   is (Sigs.LEDC_LS_SIG_OUT0 + Natural (Idx));
 
    procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
       O : GR.FUNC_OUT_SEL_CFG_Register :=
-            GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
+        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
    begin
       G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
       O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
@@ -97,10 +102,11 @@ package body ESP32S3.LEDC is
       begin
          if not Inited then
             SYSTEM_Periph.PERIP_CLK_EN0.LEDC_CLK_EN := True;
-            SYSTEM_Periph.PERIP_RST_EN0.LEDC_RST    := True;
-            SYSTEM_Periph.PERIP_RST_EN0.LEDC_RST    := False;
+            SYSTEM_Periph.PERIP_RST_EN0.LEDC_RST := True;
+            SYSTEM_Periph.PERIP_RST_EN0.LEDC_RST := False;
             --  Global slow clock = APB (80 MHz), module clock gate on.
-            LEDC_Periph.CONF := (APB_CLK_SEL => 1, CLK_EN => True, others => <>);
+            LEDC_Periph.CONF :=
+              (APB_CLK_SEL => 1, CLK_EN => True, others => <>);
             Inited := True;
          end if;
 
@@ -127,7 +133,7 @@ package body ESP32S3.LEDC is
       Release (C);
       Pool.Claim (Index, Ok);
       if Ok then
-         C.Idx  := Index;
+         C.Idx := Index;
          C.Held := True;
       end if;
    end Claim;
@@ -136,7 +142,8 @@ package body ESP32S3.LEDC is
    -- Is_Valid --
    --------------
 
-   function Is_Valid (C : Channel) return Boolean is (C.Held);
+   function Is_Valid (C : Channel) return Boolean
+   is (C.Held);
 
    ----------
    -- Stop --
@@ -146,7 +153,8 @@ package body ESP32S3.LEDC is
    begin
       if C.Held then
          Channels (C.Idx).CONF0.SIG_OUT_EN := False;
-         Channels (C.Idx).CONF0.PARA_UP    := True;   --  commit
+         Channels (C.Idx).CONF0.PARA_UP := True;   --  commit
+
       end if;
    end Stop;
 
@@ -163,7 +171,8 @@ package body ESP32S3.LEDC is
       end if;
    end Release;
 
-   overriding procedure Finalize (C : in out Channel) is
+   overriding
+   procedure Finalize (C : in out Channel) is
    begin
       Release (C);
    end Finalize;
@@ -172,42 +181,57 @@ package body ESP32S3.LEDC is
    -- Configure --
    ---------------
 
-   procedure Configure (C    : in out Channel;
-                        Freq : Positive;
-                        Pin  : ESP32S3.GPIO.Pin_Id;
-                        Bits : Resolution := 10)
+   procedure Configure
+     (C    : in out Channel;
+      Freq : Positive;
+      Pin  : ESP32S3.GPIO.Pin_Id;
+      Bits : Resolution := 10)
    is
       T   : constant Timer_Index := Timer_Of (C.Idx);
-      Max : constant Natural := 2 ** Bits;
+      Max : constant Natural := 2**Bits;
       --  CLK_DIV is Q10.8: div = Src / (Freq * 2**Bits), in 1/256ths.  Clamp to
       --  the field range [1.0 .. 2**18-1/256].
       Div : constant Natural :=
-        Natural'Max (256,
-          Natural'Min (2 ** 18 - 1,
-            Natural ((Long_Long_Integer (Src_Hz) * 256) /
-                     (Long_Long_Integer (Freq) * Long_Long_Integer (Max)))));
+        Natural'Max
+          (256,
+           Natural'Min
+             (2**18 - 1,
+              Natural
+                ((Long_Long_Integer (Src_Hz) * 256)
+                 / (Long_Long_Integer (Freq) * Long_Long_Integer (Max)))));
    begin
       if not C.Held then
          return;
       end if;
-      C.Bits := Bits;                        --  remembered for Set_Duty's scaling
+      C.Bits :=
+        Bits;                        --  remembered for Set_Duty's scaling
 
       --  Timer: set divider + resolution, commit, then pulse reset to start it.
-      Timers (T).CONF := (DUTY_RES => TIMER_CONF_DUTY_RES_Field (Bits),
-                          CLK_DIV  => TIMER_CONF_CLK_DIV_Field (Div),
-                          TICK_SEL => False, PAUSE => False, RST => True,
-                          PARA_UP  => True, others => <>);
+      Timers (T).CONF :=
+        (DUTY_RES => TIMER_CONF_DUTY_RES_Field (Bits),
+         CLK_DIV  => TIMER_CONF_CLK_DIV_Field (Div),
+         TICK_SEL => False,
+         PAUSE    => False,
+         RST      => True,
+         PARA_UP  => True,
+         others   => <>);
       Timers (T).CONF.RST := False;          --  release reset -> counter runs
 
       --  Channel: hpoint 0, duty 0, bound to the timer, output enabled.
       Channels (C.Idx).HPOINT.HPOINT := 0;
-      Channels (C.Idx).DUTY.DUTY     := 0;
-      Channels (C.Idx).CONF0 := (TIMER_SEL  => CH_CONF_TIMER_SEL_Field (T),
-                                 SIG_OUT_EN => True, PARA_UP => True,
-                                 others => <>);
-      Channels (C.Idx).CONF1 := (DUTY_START => True, DUTY_INC => True,
-                                 DUTY_NUM => 0, DUTY_CYCLE => 1, DUTY_SCALE => 0,
-                                 others => <>);
+      Channels (C.Idx).DUTY.DUTY := 0;
+      Channels (C.Idx).CONF0 :=
+        (TIMER_SEL  => CH_CONF_TIMER_SEL_Field (T),
+         SIG_OUT_EN => True,
+         PARA_UP    => True,
+         others     => <>);
+      Channels (C.Idx).CONF1 :=
+        (DUTY_START => True,
+         DUTY_INC   => True,
+         DUTY_NUM   => 0,
+         DUTY_CYCLE => 1,
+         DUTY_SCALE => 0,
+         others     => <>);
 
       Drive_Out (Pin, Out_Signal (C.Idx));
    end Configure;
@@ -217,7 +241,7 @@ package body ESP32S3.LEDC is
    --------------
 
    procedure Set_Duty (C : Channel; Percent : Duty_Percent) is
-      Max : constant Natural := 2 ** C.Bits;
+      Max : constant Natural := 2**C.Bits;
       Cnt : constant Natural :=
         Natural'Min (Max, Natural (Float (Max) * Percent / 100.0));
    begin
@@ -226,9 +250,13 @@ package body ESP32S3.LEDC is
       end if;
       --  Duty register holds the count in its high bits (4 fractional bits).
       Channels (C.Idx).DUTY.DUTY := CH_DUTY_DUTY_Field (Cnt * 16);
-      Channels (C.Idx).CONF1 := (DUTY_START => True, DUTY_INC => True,
-                                 DUTY_NUM => 0, DUTY_CYCLE => 1, DUTY_SCALE => 0,
-                                 others => <>);
+      Channels (C.Idx).CONF1 :=
+        (DUTY_START => True,
+         DUTY_INC   => True,
+         DUTY_NUM   => 0,
+         DUTY_CYCLE => 1,
+         DUTY_SCALE => 0,
+         others     => <>);
       Channels (C.Idx).CONF0.PARA_UP := True;   --  latch the new duty
    end Set_Duty;
 

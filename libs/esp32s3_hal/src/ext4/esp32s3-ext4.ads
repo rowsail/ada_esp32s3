@@ -13,10 +13,11 @@ with Ada.IO_Exceptions;
 --  Targets the ESP32-S3 embedded/full runtimes (exceptions, finalization,
 --  secondary stack, heap); it also compiles host-native (x86 GNAT) for testing,
 --  since it is pure logic over the ESP32S3.Block_Dev block interface.
+
 package ESP32S3.Ext4 is
 
    --  Unsigned scalar aliases used throughout the on-disk structures.
-   subtype U8  is Interfaces.Unsigned_8;
+   subtype U8 is Interfaces.Unsigned_8;
    subtype U16 is Interfaces.Unsigned_16;
    subtype U32 is Interfaces.Unsigned_32;
    subtype U64 is Interfaces.Unsigned_64;
@@ -64,12 +65,12 @@ package ESP32S3.Ext4 is
    --  0-based byte offset from B'First.
    ---------------------------------------------------------------------------
 
-   function Get_U8  (B : Byte_Array; Off : Natural) return U8;
+   function Get_U8 (B : Byte_Array; Off : Natural) return U8;
    function Get_U16 (B : Byte_Array; Off : Natural) return U16;
    function Get_U32 (B : Byte_Array; Off : Natural) return U32;
    function Get_U64 (B : Byte_Array; Off : Natural) return U64;
 
-   procedure Put_U8  (B : in out Byte_Array; Off : Natural; V : U8);
+   procedure Put_U8 (B : in out Byte_Array; Off : Natural; V : U8);
    procedure Put_U16 (B : in out Byte_Array; Off : Natural; V : U16);
    procedure Put_U32 (B : in out Byte_Array; Off : Natural; V : U32);
    procedure Put_U64 (B : in out Byte_Array; Off : Natural; V : U64);

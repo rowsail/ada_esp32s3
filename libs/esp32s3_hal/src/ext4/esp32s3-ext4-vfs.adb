@@ -24,10 +24,11 @@ package body ESP32S3.Ext4.VFS is
       end if;
    end Add;
 
-   function Count return Natural is (N);
+   function Count return Natural
+   is (N);
 
-   function Name (I : Positive) return String is
-     (Table (I).Name (1 .. Table (I).Len));
+   function Name (I : Positive) return String
+   is (Table (I).Name (1 .. Table (I).Len));
 
    -------------
    -- Resolve --
@@ -43,11 +44,11 @@ package body ESP32S3.Ext4.VFS is
    is
       First, Last : Natural;   --  bounds of the leading path component
    begin
-      FS        := null;
-      Found     := False;
-      Is_Root   := False;
+      FS := null;
+      Found := False;
+      Is_Root := False;
       Sub_First := Path'First;
-      Sub_Last  := Path'First - 1;        --  empty by default
+      Sub_Last := Path'First - 1;        --  empty by default
 
       if Path'Length = 0 or else Path = "/" then
          Is_Root := True;
@@ -68,10 +69,10 @@ package body ESP32S3.Ext4.VFS is
 
       for I in 1 .. N loop
          if Path (First .. Last - 1) = Table (I).Name (1 .. Table (I).Len) then
-            FS        := Table (I).FS;
-            Found     := True;
+            FS := Table (I).FS;
+            Found := True;
             Sub_First := Last;
-            Sub_Last  := Path'Last;
+            Sub_Last := Path'Last;
             return;
          end if;
       end loop;

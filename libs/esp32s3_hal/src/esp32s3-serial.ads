@@ -11,6 +11,7 @@ with System;
 --  serve many instances.  ZFP-safe (no tasking/exceptions/heap).  The vtable
 --  procedures must be LIBRARY-LEVEL (No_Implicit_Dynamic_Code bars 'Access of a
 --  nested one -- no trampolines).
+
 package ESP32S3.Serial is
 
    type Write_Proc is access procedure (Ctx : System.Address; S : String);
@@ -18,8 +19,8 @@ package ESP32S3.Serial is
 
    --  A character-output device.  Ctx is handed back to Write/Flush.
    type Device is record
-      Write : Write_Proc     := null;
-      Flush : Flush_Proc     := null;
+      Write : Write_Proc := null;
+      Flush : Flush_Proc := null;
       Ctx   : System.Address := System.Null_Address;
    end record;
 
@@ -27,12 +28,13 @@ package ESP32S3.Serial is
    --  WITHOUT blocking: Available is True and C holds the byte when one was ready,
    --  False (C = NUL) when none is.  The vtable procedure must be LIBRARY-LEVEL
    --  (No_Implicit_Dynamic_Code bars 'Access of a nested one).
-   type Read_Proc is access procedure
-     (Ctx : System.Address; C : out Character; Available : out Boolean);
+   type Read_Proc is
+     access procedure
+       (Ctx : System.Address; C : out Character; Available : out Boolean);
 
    --  A character-input device.  Ctx is handed back to Read.
    type In_Device is record
-      Read : Read_Proc      := null;
+      Read : Read_Proc := null;
       Ctx  : System.Address := System.Null_Address;
    end record;
 

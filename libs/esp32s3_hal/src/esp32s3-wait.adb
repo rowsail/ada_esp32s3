@@ -9,8 +9,7 @@ package body ESP32S3.Wait is
    function Until_True
      (Ready   : access function return Boolean;
       Timeout : Time_Span;
-      Poll    : Time_Span := Milliseconds (1))
-      return Boolean
+      Poll    : Time_Span := Milliseconds (1)) return Boolean
    is
       Deadline : constant Time := Clock + Timeout;
    begin

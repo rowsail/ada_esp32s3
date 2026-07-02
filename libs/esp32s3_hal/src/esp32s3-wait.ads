@@ -9,6 +9,7 @@ with Ada.Real_Time;
 --  For a long or power-sensitive wait, prefer blocking on an interrupt
 --  (a Suspension_Object or a protected entry) over polling; see the book's
 --  "Waiting for an event" section.
+
 package ESP32S3.Wait is
 
    --  Call Ready repeatedly until it returns True or Timeout elapses; return

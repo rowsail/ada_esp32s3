@@ -8,7 +8,7 @@ package body ESP32S3.I2C is
    --  guarded section is tiny (flip a flag); the actual transaction runs
    --  outside.
    protected type Host_Guard is
-      entry    Acquire;
+      entry Acquire;
       procedure Release;
    private
       Held : Boolean := False;
@@ -43,13 +43,16 @@ package body ESP32S3.I2C is
    package State is
       procedure Open (Host : I2C_Host; Clock_Hz : Positive);
       procedure Configure_Pins
-        (Host : I2C_Host; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id);
-      function  Ready (Host : I2C_Host) return Boolean;
-      function  Owned (S : Session) return E.Bus;
+        (Host : I2C_Host;
+         Scl  : ESP32S3.GPIO.Pin_Id;
+         Sda  : ESP32S3.GPIO.Pin_Id);
+      function Ready (Host : I2C_Host) return Boolean;
+      function Owned (S : Session) return E.Bus;
    end State;
 
    package body State is
-      Buses     : array (I2C_Host) of E.Bus;   --  raw bus per host, hidden here
+      Buses     :
+        array (I2C_Host) of E.Bus;   --  raw bus per host, hidden here
       Ready_Map : array (I2C_Host) of Boolean := (others => False);
 
       procedure Open (Host : I2C_Host; Clock_Hz : Positive) is
@@ -59,12 +62,14 @@ package body ESP32S3.I2C is
       end Open;
 
       procedure Configure_Pins
-        (Host : I2C_Host; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id) is
+        (Host : I2C_Host; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id)
+      is
       begin
          E.Configure_Pins (Buses (Host), Scl, Sda);
       end Configure_Pins;
 
-      function Ready (Host : I2C_Host) return Boolean is (Ready_Map (Host));
+      function Ready (Host : I2C_Host) return Boolean
+      is (Ready_Map (Host));
 
       function Owned (S : Session) return E.Bus is
       begin
@@ -101,7 +106,7 @@ package body ESP32S3.I2C is
          raise Not_Initialized with "I2C host acquired before Setup";
       end if;
       Guards (Host).Acquire;          --  suspends here until the host is free
-      S.Host   := Host;
+      S.Host := Host;
       S.Active := True;
    end Acquire;
 
@@ -109,11 +114,12 @@ package body ESP32S3.I2C is
    -- Write --
    -----------
 
-   procedure Write (S        : Session;
-                    Addr      : Slave_Address;
-                    Data      : Byte_Array;
-                    Success   : out Boolean;
-                    Check_Ack : Boolean := True) is
+   procedure Write
+     (S         : Session;
+      Addr      : Slave_Address;
+      Data      : Byte_Array;
+      Success   : out Boolean;
+      Check_Ack : Boolean := True) is
    begin
       --  Owned raises unless we hold the host; runs OUTSIDE the guard.
       E.Write (State.Owned (S), Addr, Data, Success, Check_Ack);
@@ -123,10 +129,11 @@ package body ESP32S3.I2C is
    -- Read --
    ----------
 
-   procedure Read (S       : Session;
-                   Addr     : Slave_Address;
-                   Data     : out Byte_Array;
-                   Success  : out Boolean) is
+   procedure Read
+     (S       : Session;
+      Addr    : Slave_Address;
+      Data    : out Byte_Array;
+      Success : out Boolean) is
    begin
       E.Read (State.Owned (S), Addr, Data, Success);
    end Read;
@@ -144,7 +151,8 @@ package body ESP32S3.I2C is
    end Release;
 
    --  Scope-exit / exception-unwind cleanup: hand the host back if still held.
-   overriding procedure Finalize (S : in out Session) is
+   overriding
+   procedure Finalize (S : in out Session) is
    begin
       Release (S);
    end Finalize;

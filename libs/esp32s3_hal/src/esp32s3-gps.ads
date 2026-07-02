@@ -29,6 +29,7 @@ with ESP32S3.GPIO;
 --  Uses the controlled UART Session + a task + protected objects => embedded /
 --  full profiles only (excluded from light-tasking, like the other Session
 --  drivers).  Call Setup once at startup.
+
 package ESP32S3.GPS is
 
    ----------------------------------------------------------------------------
@@ -112,7 +113,8 @@ package ESP32S3.GPS is
 
    type Velocity_Reading is record
       Speed_MMS   : Natural := 0;        --  ground speed, millimetres / second
-      Course_CDeg : Natural := 0;        --  course over ground, centi-degrees true
+      Course_CDeg : Natural :=
+        0;        --  course over ground, centi-degrees true
       Updated_At  : Ada.Real_Time.Time := Ada.Real_Time.Time_First;
       Valid       : Boolean := False;
    end record;
@@ -134,9 +136,9 @@ package ESP32S3.GPS is
    end record;
 
    type PPS_Reading is record
-      Last       : Ada.Real_Time.Time := Ada.Real_Time.Time_First;  --  edge time
-      Count      : Natural := 0;         --  pulses seen since startup
-      Valid      : Boolean := False;
+      Last  : Ada.Real_Time.Time := Ada.Real_Time.Time_First;  --  edge time
+      Count : Natural := 0;         --  pulses seen since startup
+      Valid : Boolean := False;
    end record;
 
    ----------------------------------------------------------------------------
@@ -151,19 +153,19 @@ package ESP32S3.GPS is
       Rx   : ESP32S3.GPIO.Optional_Pin;
       Tx   : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Pps  : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Baud : ESP32S3.UART.Baud_Rate    := 9600);
+      Baud : ESP32S3.UART.Baud_Rate := 9600);
 
    ----------------------------------------------------------------------------
    --  Read the latest published values (each a consistent snapshot).
    ----------------------------------------------------------------------------
 
    function Current_Position return Position_Reading;
-   function Current_Fix      return Fix_Reading;
-   function Current_Time     return Time_Reading;
-   function Current_Date     return Date_Reading;
+   function Current_Fix return Fix_Reading;
+   function Current_Time return Time_Reading;
+   function Current_Date return Date_Reading;
    function Current_Velocity return Velocity_Reading;
-   function Current_Signal   return Signal_Reading;
-   function Current_PPS      return PPS_Reading;
+   function Current_Signal return Signal_Reading;
+   function Current_PPS return PPS_Reading;
 
    --  Copy the satellites currently in view (seen via GSV within Max_Age) into
    --  List; Count is how many were written, clipped to List'Length.  Satellites
@@ -176,7 +178,8 @@ package ESP32S3.GPS is
 
    --  Time elapsed since a reading's Updated_At -- compare against your tolerance
    --  to decide whether the value is stale.
-   function Age (Updated_At : Ada.Real_Time.Time) return Ada.Real_Time.Time_Span;
+   function Age
+     (Updated_At : Ada.Real_Time.Time) return Ada.Real_Time.Time_Span;
 
    --  Send a raw command string to the receiver (e.g. a vendor configuration
    --  sentence).  The bytes are sent VERBATIM -- the caller frames and checksums

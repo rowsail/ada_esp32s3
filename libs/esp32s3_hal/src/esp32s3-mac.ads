@@ -9,6 +9,7 @@ with Interfaces;
 --
 --  Reads the eFuse shadow registers directly (latched at reset); no clock or driver
 --  state needed, so every routine is a pure read.
+
 package ESP32S3.MAC is
 
    --  Six bytes, most-significant first: MAC (0) is the OUI's first byte -- the
@@ -20,9 +21,9 @@ package ESP32S3.MAC is
 
    --  The four universal per-interface MACs derived from the base.
    function Wi_Fi_Station return MAC_Address;   --  base + 0  (= Base)
-   function Wi_Fi_SoftAP  return MAC_Address;   --  base + 1
-   function Bluetooth     return MAC_Address;   --  base + 2
-   function Ethernet      return MAC_Address;   --  base + 3
+   function Wi_Fi_SoftAP return MAC_Address;   --  base + 1
+   function Bluetooth return MAC_Address;   --  base + 2
+   function Ethernet return MAC_Address;   --  base + 3
 
    --  Base with Offset added to its last byte.  Offsets 0 .. 3 are the universal
    --  MACs above.  A larger offset (e.g. for a SECOND Ethernet NIC) is no longer a

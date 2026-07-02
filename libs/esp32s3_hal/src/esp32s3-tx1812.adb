@@ -7,24 +7,32 @@ package body ESP32S3.TX1812 is
    --  a short high then long low, a '1' the reverse, ~1.2 us per bit).  Tune here
    --  if a particular part is fussy.
    Resolution_Hz : constant := 10_000_000;            --  100 ns / tick
-   T0H : constant ESP32S3.RMT.Tick_Count := 3;        --  '0' high  300 ns
-   T0L : constant ESP32S3.RMT.Tick_Count := 9;        --  '0' low   900 ns
-   T1H : constant ESP32S3.RMT.Tick_Count := 7;        --  '1' high  700 ns
-   T1L : constant ESP32S3.RMT.Tick_Count := 6;        --  '1' low   600 ns
+   T0H           : constant ESP32S3.RMT.Tick_Count :=
+     3;        --  '0' high  300 ns
+   T0L           : constant ESP32S3.RMT.Tick_Count :=
+     9;        --  '0' low   900 ns
+   T1H           : constant ESP32S3.RMT.Tick_Count :=
+     7;        --  '1' high  700 ns
+   T1L           : constant ESP32S3.RMT.Tick_Count :=
+     6;        --  '1' low   600 ns
 
    -------------
    -- Acquire --
    -------------
 
-   procedure Acquire (S       : in out Strip;
-                      Pin     : ESP32S3.GPIO.Pin_Id;
-                      Channel : ESP32S3.RMT.TX_Index := 0;
-                      Blocks  : Positive := 1) is
+   procedure Acquire
+     (S       : in out Strip;
+      Pin     : ESP32S3.GPIO.Pin_Id;
+      Channel : ESP32S3.RMT.TX_Index := 0;
+      Blocks  : Positive := 1) is
    begin
       ESP32S3.RMT.Claim (S.Chan, Channel);
       if ESP32S3.RMT.Is_Valid (S.Chan) then
-         ESP32S3.RMT.Configure (S.Chan, Resolution_Hz => Resolution_Hz,
-                                Pin => Pin, Blocks => Blocks);
+         ESP32S3.RMT.Configure
+           (S.Chan,
+            Resolution_Hz => Resolution_Hz,
+            Pin           => Pin,
+            Blocks        => Blocks);
          S.Ready := True;
       end if;
    end Acquire;
@@ -33,8 +41,8 @@ package body ESP32S3.TX1812 is
    -- Is_Valid --
    --------------
 
-   function Is_Valid (S : Strip) return Boolean is
-     (S.Ready and then ESP32S3.RMT.Is_Valid (S.Chan));
+   function Is_Valid (S : Strip) return Boolean
+   is (S.Ready and then ESP32S3.RMT.Is_Valid (S.Chan));
 
    -------------
    -- Release --
@@ -74,19 +82,25 @@ package body ESP32S3.TX1812 is
       --  Flat view over the Strip's Count*24-symbol frame buffer (encode here,
       --  then transmit it -- one contiguous Symbol_Array).
       Flat : ESP32S3.RMT.Symbol_Array (0 .. S.Count * Symbols_Per_LED - 1)
-        with Import, Address => S.Frame'Address;
-      K : Natural := 0;
+      with Import, Address => S.Frame'Address;
+      K    : Natural := 0;
 
       --  Append byte B's 8 bits, MSB first.
       procedure Emit (B : Unsigned_8) is
       begin
          for I in reverse 0 .. 7 loop
             if (B and Shift_Left (Unsigned_8 (1), I)) /= 0 then
-               Flat (K) := (Level0 => True, Duration0 => T1H,
-                            Level1 => False, Duration1 => T1L);
+               Flat (K) :=
+                 (Level0    => True,
+                  Duration0 => T1H,
+                  Level1    => False,
+                  Duration1 => T1L);
             else
-               Flat (K) := (Level0 => True, Duration0 => T0H,
-                            Level1 => False, Duration1 => T0L);
+               Flat (K) :=
+                 (Level0    => True,
+                  Duration0 => T0H,
+                  Level1    => False,
+                  Duration1 => T0L);
             end if;
             K := K + 1;
          end loop;

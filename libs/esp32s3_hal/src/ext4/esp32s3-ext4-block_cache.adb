@@ -11,11 +11,12 @@ package body ESP32S3.Ext4.Block_Cache is
    procedure Free is new Ada.Unchecked_Deallocation (Byte_Array, Bytes_Ptr);
 
    --  Byte range of entry E within the pool.
-   function Lo (C : Cache; E : Natural) return Natural is (E * C.BS);
+   function Lo (C : Cache; E : Natural) return Natural
+   is (E * C.BS);
 
    --  First 512-byte sector of filesystem block B.
-   function Base_Sector (C : Cache; B : Block_Number)
-      return ESP32S3.Block_Dev.Sector_Index
+   function Base_Sector
+     (C : Cache; B : Block_Number) return ESP32S3.Block_Dev.Sector_Index
    is (ESP32S3.Block_Dev.Sector_Index (B)
        * ESP32S3.Block_Dev.Sector_Index (C.Spb));
 
@@ -23,28 +24,31 @@ package body ESP32S3.Ext4.Block_Cache is
    -- Init --
    ----------
 
-   procedure Init (C          : in out Cache;
-                   Dev        : ESP32S3.Block_Dev.Device;
-                   Block_Size : Positive;
-                   Entries    : Positive := 32) is
+   procedure Init
+     (C          : in out Cache;
+      Dev        : ESP32S3.Block_Dev.Device;
+      Block_Size : Positive;
+      Entries    : Positive := 32) is
    begin
       if Block_Size mod 512 /= 0 then
-         raise Ada.IO_Exceptions.Use_Error with "block size not a multiple of 512";
+         raise Ada.IO_Exceptions.Use_Error
+           with "block size not a multiple of 512";
       end if;
-      C.Dev   := Dev;
-      C.BS    := Block_Size;
-      C.Spb   := Block_Size / 512;
+      C.Dev := Dev;
+      C.BS := Block_Size;
+      C.Spb := Block_Size / 512;
       C.Count := Entries;
       C.Clock := 0;
-      C.Meta  := new Meta_Array (0 .. Entries - 1);
-      C.Pool  := new Byte_Array (0 .. Entries * Block_Size - 1);
+      C.Meta := new Meta_Array (0 .. Entries - 1);
+      C.Pool := new Byte_Array (0 .. Entries * Block_Size - 1);
    end Init;
 
    ----------------
    -- Block_Size --
    ----------------
 
-   function Block_Size (C : Cache) return Natural is (C.BS);
+   function Block_Size (C : Cache) return Natural
+   is (C.BS);
 
    --------------------
    -- Internal moves --
@@ -52,7 +56,8 @@ package body ESP32S3.Ext4.Block_Cache is
 
    --  Pull filesystem block Meta(E).Tag from the device into entry E's pool slot.
    procedure Load (C : in out Cache; E : Natural) is
-      Base : constant ESP32S3.Block_Dev.Sector_Index := Base_Sector (C, C.Meta (E).Tag);
+      Base : constant ESP32S3.Block_Dev.Sector_Index :=
+        Base_Sector (C, C.Meta (E).Tag);
       Sec  : ESP32S3.Block_Dev.Sector;
       Dst  : Natural := Lo (C, E);
    begin
@@ -66,7 +71,8 @@ package body ESP32S3.Ext4.Block_Cache is
 
    --  Push entry E's pool slot back to the device.
    procedure Store (C : in out Cache; E : Natural) is
-      Base : constant ESP32S3.Block_Dev.Sector_Index := Base_Sector (C, C.Meta (E).Tag);
+      Base : constant ESP32S3.Block_Dev.Sector_Index :=
+        Base_Sector (C, C.Meta (E).Tag);
       Sec  : ESP32S3.Block_Dev.Sector;
       Src  : Natural := Lo (C, E);
    begin
@@ -107,7 +113,8 @@ package body ESP32S3.Ext4.Block_Cache is
          Store (C, Victim);
       end if;
 
-      C.Meta (Victim) := (Tag => B, Valid => True, Dirty => False, Used => C.Clock);
+      C.Meta (Victim) :=
+        (Tag => B, Valid => True, Dirty => False, Used => C.Clock);
       Load (C, Victim);
       return Victim;
    end Acquire;
@@ -116,8 +123,9 @@ package body ESP32S3.Ext4.Block_Cache is
    -- Read --
    ----------
 
-   procedure Read (C : in out Cache; B : Block_Number; Into : out Byte_Array) is
-      E  : constant Natural := Acquire (C, B);
+   procedure Read (C : in out Cache; B : Block_Number; Into : out Byte_Array)
+   is
+      E   : constant Natural := Acquire (C, B);
       Lo0 : constant Natural := Lo (C, E);
    begin
       Into := C.Pool (Lo0 .. Lo0 + C.BS - 1);
@@ -127,11 +135,11 @@ package body ESP32S3.Ext4.Block_Cache is
    -- Read_At --
    -------------
 
-   procedure Read_At (C         : in out Cache;
-                      B         : Block_Number;
-                      Block_Off : Natural;
-                      Into      : out Byte_Array)
-   is
+   procedure Read_At
+     (C         : in out Cache;
+      B         : Block_Number;
+      Block_Off : Natural;
+      Into      : out Byte_Array) is
    begin
       --  Enforce the contract here (overflow-safely, before computing the pool
       --  index): the pool is one contiguous array, so an offset/length that
@@ -152,11 +160,11 @@ package body ESP32S3.Ext4.Block_Cache is
    -- Write_At --
    --------------
 
-   procedure Write_At (C         : in out Cache;
-                       B         : Block_Number;
-                       Block_Off : Natural;
-                       From      : Byte_Array)
-   is
+   procedure Write_At
+     (C         : in out Cache;
+      B         : Block_Number;
+      Block_Off : Natural;
+      From      : Byte_Array) is
    begin
       if Block_Off > C.BS or else From'Length > C.BS - Block_Off then
          raise Corrupt with "ext4 block_cache: write past block boundary";
@@ -201,8 +209,8 @@ package body ESP32S3.Ext4.Block_Cache is
    --------------------
 
    procedure For_Each_Dirty
-     (C     : in out Cache;
-      Visit : not null access procedure (B : Block_Number)) is
+     (C : in out Cache; Visit : not null access procedure (B : Block_Number))
+   is
    begin
       for E in 0 .. C.Count - 1 loop
          if C.Meta (E).Valid and then C.Meta (E).Dirty then
@@ -237,8 +245,8 @@ package body ESP32S3.Ext4.Block_Cache is
       Free (C.Meta);
       Free (C.Pool);
       C.Count := 0;
-      C.BS    := 0;
-      C.Spb   := 0;
+      C.BS := 0;
+      C.Spb := 0;
    end Drop;
 
    ----------

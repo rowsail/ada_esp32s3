@@ -1,6 +1,6 @@
 with System;
-with Interfaces;     use Interfaces;
-with Ada.Real_Time;  use Ada.Real_Time;
+with Interfaces;    use Interfaces;
+with Ada.Real_Time; use Ada.Real_Time;
 
 package body ESP32S3.ST7789 is
 
@@ -34,7 +34,8 @@ package body ESP32S3.ST7789 is
    --  dump that any host may share).  Each DMA Transfer is <= 4095 bytes.
    ---------------------------------------------------------------------------
 
-   Chunk : constant := 4092;             --  <= 4095, even (whole RGB565 pixels)
+   Chunk  : constant :=
+     4092;             --  <= 4095, even (whole RGB565 pixels)
    type Buffer is array (0 .. Chunk - 1) of Byte;
    Tx_Buf : array (ESP32S3.SPI.SPI_Host) of Buffer;
    Rx_Buf : Buffer;
@@ -44,7 +45,7 @@ package body ESP32S3.ST7789 is
    ---------------------------------------------------------------------------
 
    protected type Disp_Guard is
-      entry    Acquire;
+      entry Acquire;
       procedure Release;
    private
       Held : Boolean := False;
@@ -70,13 +71,14 @@ package body ESP32S3.ST7789 is
    procedure Check_Owned (S : Session) is
    begin
       if not S.Active then
-         raise Not_Owned with "ST7789 used without holding it -- Acquire first";
+         raise Not_Owned
+           with "ST7789 used without holding it -- Acquire first";
       end if;
    end Check_Owned;
 
    --  Shift N bytes of Tx_Buf out (MISO captured into the ignored Rx_Buf).
-   procedure Send (Bus : ESP32S3.SPI.Session; Host : ESP32S3.SPI.SPI_Host;
-                   N : Natural) is
+   procedure Send
+     (Bus : ESP32S3.SPI.Session; Host : ESP32S3.SPI.SPI_Host; N : Natural) is
    begin
       if N > 0 then
          ESP32S3.SPI.Transfer (Bus, Tx_Buf (Host)'Address, Rx_Buf'Address, N);
@@ -108,7 +110,8 @@ package body ESP32S3.ST7789 is
    procedure Command (S : Session; C : Byte; Params : Bytes := No_Params) is
       Bus : ESP32S3.SPI.Session;
    begin
-      ESP32S3.SPI.Acquire (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
+      ESP32S3.SPI.Acquire
+        (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
       ESP32S3.GPIO.Clear (S.CS);
       Cmd1 (Bus, S, C);
       Dat (Bus, S, Params);
@@ -125,11 +128,21 @@ package body ESP32S3.ST7789 is
       AY1 : constant Natural := Y1 + S.Y_Off;
    begin
       Cmd1 (Bus, S, Cmd_CASET);
-      Dat (Bus, S, (Byte (AX0 / 256), Byte (AX0 mod 256),
-                    Byte (AX1 / 256), Byte (AX1 mod 256)));
+      Dat
+        (Bus,
+         S,
+         (Byte (AX0 / 256),
+          Byte (AX0 mod 256),
+          Byte (AX1 / 256),
+          Byte (AX1 mod 256)));
       Cmd1 (Bus, S, Cmd_RASET);
-      Dat (Bus, S, (Byte (AY0 / 256), Byte (AY0 mod 256),
-                    Byte (AY1 / 256), Byte (AY1 mod 256)));
+      Dat
+        (Bus,
+         S,
+         (Byte (AY0 / 256),
+          Byte (AY0 mod 256),
+          Byte (AY1 / 256),
+          Byte (AY1 mod 256)));
    end Window;
 
    -----------
@@ -137,20 +150,28 @@ package body ESP32S3.ST7789 is
    -----------
 
    procedure Setup
-     (Dev               : out Device;
+     (Dev                : out Device;
       Sclk, Mosi, DC, CS : ESP32S3.GPIO.Pin_Id;
-      Width             : Positive                   := 240;
-      Height            : Positive                   := 240;
+      Width              : Positive := 240;
+      Height             : Positive := 240;
       RST                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      X_Offset, Y_Offset : Natural                   := 0;
-      Host               : ESP32S3.SPI.SPI_Host      := ESP32S3.SPI.SPI2;
-      Mode               : ESP32S3.SPI.SPI_Mode      := 0;
-      Clock_Hz           : Positive                  := 40_000_000) is
+      X_Offset, Y_Offset : Natural := 0;
+      Host               : ESP32S3.SPI.SPI_Host := ESP32S3.SPI.SPI2;
+      Mode               : ESP32S3.SPI.SPI_Mode := 0;
+      Clock_Hz           : Positive := 40_000_000) is
    begin
-      Dev := (Host => Host, Mode => Mode, Clock_Hz => Clock_Hz,
-              DC => DC, CS => CS, RST => RST,
-              W => Width, H => Height, X_Off => X_Offset, Y_Off => Y_Offset,
-              Configured => True);
+      Dev :=
+        (Host       => Host,
+         Mode       => Mode,
+         Clock_Hz   => Clock_Hz,
+         DC         => DC,
+         CS         => CS,
+         RST        => RST,
+         W          => Width,
+         H          => Height,
+         X_Off      => X_Offset,
+         Y_Off      => Y_Offset,
+         Configured => True);
 
       --  Control pins as GPIO outputs; CS idles high (deselected).
       ESP32S3.GPIO.Configure (DC, Mode => ESP32S3.GPIO.Output);
@@ -178,7 +199,8 @@ package body ESP32S3.ST7789 is
       if not Dev.Configured then
          raise Not_Initialized with "ST7789 acquired before Setup";
       end if;
-      Guards (Natural (Dev.CS)).Acquire;     --  suspends until this display free
+      Guards (Natural (Dev.CS))
+        .Acquire;     --  suspends until this display free
       S.Active := True;
       S.Host := Dev.Host;
       S.Mode := Dev.Mode;
@@ -200,7 +222,8 @@ package body ESP32S3.ST7789 is
       end if;
    end Release;
 
-   overriding procedure Finalize (S : in out Session) is
+   overriding
+   procedure Finalize (S : in out Session) is
    begin
       Release (S);
    end Finalize;
@@ -239,7 +262,7 @@ package body ESP32S3.ST7789 is
       delay until Clock + Milliseconds (10);
    end Init;
 
-   procedure Display_On  (S : Session) is
+   procedure Display_On (S : Session) is
    begin
       Check_Owned (S);
       Command (S, Cmd_DISPON);
@@ -254,10 +277,10 @@ package body ESP32S3.ST7789 is
    procedure Set_Rotation (S : Session; Rot : Rotation) is
       M : constant Byte :=
         (case Rot is
-            when Rot_0   => 16#00#,
-            when Rot_90  => 16#60#,
-            when Rot_180 => 16#C0#,
-            when Rot_270 => 16#A0#);
+           when Rot_0   => 16#00#,
+           when Rot_90  => 16#60#,
+           when Rot_180 => 16#C0#,
+           when Rot_270 => 16#A0#);
    begin
       Check_Owned (S);
       Command (S, Cmd_MADCTL, (1 => M));
@@ -301,7 +324,8 @@ package body ESP32S3.ST7789 is
          return;
       end if;
 
-      ESP32S3.SPI.Acquire (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
+      ESP32S3.SPI.Acquire
+        (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
       ESP32S3.GPIO.Clear (S.CS);
       Window (Bus, S, X, Y, X + RW - 1, Y + RH - 1);
       Cmd1 (Bus, S, Cmd_RAMWR);
@@ -311,8 +335,9 @@ package body ESP32S3.ST7789 is
          PPC   : constant Natural := Chunk / 2;        --  pixels per chunk
          Count : Natural := RW * RH;
       begin
-         for I in 0 .. PPC - 1 loop                    --  prefill the colour once
-            Tx_Buf (S.Host) (2 * I)     := Hi;
+         for I in 0 .. PPC - 1 loop
+            --  prefill the colour once
+            Tx_Buf (S.Host) (2 * I) := Hi;
             Tx_Buf (S.Host) (2 * I + 1) := Lo;
          end loop;
          while Count > 0 loop
@@ -360,15 +385,18 @@ package body ESP32S3.ST7789 is
       --  the off-panel tail of every row: streaming Pixels linearly into an
       --  oversized window (X+W-1 past the right edge) would wrap the controller's
       --  RAMWR auto-increment and corrupt GRAM (the panel is only S.W columns).
-      VW : constant Natural := (if X >= S.W then 0 else Natural'Min (W, S.W - X));
-      VH : constant Natural := (if Y >= S.H then 0 else Natural'Min (H, S.H - Y));
+      VW  : constant Natural :=
+        (if X >= S.W then 0 else Natural'Min (W, S.W - X));
+      VH  : constant Natural :=
+        (if Y >= S.H then 0 else Natural'Min (H, S.H - Y));
    begin
       Check_Owned (S);
       if W = 0 or else H = 0 or else VW = 0 or else VH = 0 then
          return;
       end if;
 
-      ESP32S3.SPI.Acquire (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
+      ESP32S3.SPI.Acquire
+        (Bus, S.Host, Mode => S.Mode, Clock_Hz => S.Clock_Hz);
       ESP32S3.GPIO.Clear (S.CS);
       Window (Bus, S, X, Y, X + VW - 1, Y + VH - 1);   --  visible rect only
       Cmd1 (Bus, S, Cmd_RAMWR);
@@ -381,12 +409,14 @@ package body ESP32S3.ST7789 is
             Row_Start : constant Natural := Pixels'First + Row * W;
             Col       : Natural := 0;
          begin
-            exit when Row_Start > Pixels'Last;        --  short array: stop cleanly
+            exit when
+              Row_Start > Pixels'Last;        --  short array: stop cleanly
             while Col < VW loop
                declare
                   N : constant Natural :=
-                    Natural'Min (Natural'Min (VW - Col, PPC),
-                                 Pixels'Last - (Row_Start + Col) + 1);
+                    Natural'Min
+                      (Natural'Min (VW - Col, PPC),
+                       Pixels'Last - (Row_Start + Col) + 1);
                begin
                   exit when N = 0;
                   for K in 0 .. N - 1 loop
@@ -409,9 +439,10 @@ package body ESP32S3.ST7789 is
    -- RGB --
    ---------
 
-   function RGB (R, G, B : Natural) return Color is
-     (Color (Natural'Min (R, 255) / 8) * 2048
-      + Color (Natural'Min (G, 255) / 4) * 32
-      + Color (Natural'Min (B, 255) / 8));
+   function RGB (R, G, B : Natural) return Color
+   is (Color (Natural'Min (R, 255) / 8)
+       * 2048
+       + Color (Natural'Min (G, 255) / 4) * 32
+       + Color (Natural'Min (B, 255) / 8));
 
 end ESP32S3.ST7789;

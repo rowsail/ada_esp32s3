@@ -1,5 +1,5 @@
 with System;
-with Interfaces;  use Interfaces;
+with Interfaces; use Interfaces;
 
 package body ESP32S3.HC595 is
 
@@ -14,14 +14,16 @@ package body ESP32S3.HC595 is
 
    --------------------------------------------------------------------------
 
-   function Output_Count (C : Controller) return Natural is (C.Chips * 8);
+   function Output_Count (C : Controller) return Natural
+   is (C.Chips * 8);
 
-   function Bit_Mask (Index : Natural) return Byte is
-     (Byte (2 ** (Index mod 8)));
+   function Bit_Mask (Index : Natural) return Byte
+   is (Byte (2**(Index mod 8)));
 
    --------------------------------------------------------------------------
 
-   procedure Set_Output (C : in out Controller; Index : Natural; On : Boolean) is
+   procedure Set_Output (C : in out Controller; Index : Natural; On : Boolean)
+   is
       Chip : constant Positive := Index / 8 + 1;   --  0-based -> 1-based store
    begin
       if On then
@@ -31,8 +33,8 @@ package body ESP32S3.HC595 is
       end if;
    end Set_Output;
 
-   function Get_Output (C : Controller; Index : Natural) return Boolean is
-     ((C.State (Index / 8 + 1) and Bit_Mask (Index)) /= 0);
+   function Get_Output (C : Controller; Index : Natural) return Boolean
+   is ((C.State (Index / 8 + 1) and Bit_Mask (Index)) /= 0);
 
    procedure Set_Byte (C : in out Controller; Chip : Natural; Value : Byte) is
    begin
@@ -53,13 +55,17 @@ package body ESP32S3.HC595 is
          Tx (K) := C.State (C.Chips - K + 1);
       end loop;
 
-      S.Acquire (Sess, C.Host, Mode => 0, Clock_Hz => C.Clock,
-                 Select_CB => No_CS'Access);
+      S.Acquire
+        (Sess,
+         C.Host,
+         Mode      => 0,
+         Clock_Hz  => C.Clock,
+         Select_CB => No_CS'Access);
       S.Transfer (Sess, Tx'Address, Rx'Address, C.Chips);
       S.Release (Sess);
 
       --  Latch: a rising edge on RCLK copies the shift register to the outputs.
-      G.Set   (C.RCLK);
+      G.Set (C.RCLK);
       G.Clear (C.RCLK);
    end Shift_And_Latch;
 
@@ -74,8 +80,8 @@ package body ESP32S3.HC595 is
       end if;
    end Update;
 
-   procedure Write_Output (C : in out Controller; Index : Natural; On : Boolean)
-   is
+   procedure Write_Output
+     (C : in out Controller; Index : Natural; On : Boolean) is
    begin
       Set_Output (C, Index, On);
       Update (C);
@@ -95,7 +101,7 @@ package body ESP32S3.HC595 is
 
    --------------------------------------------------------------------------
 
-   procedure Enable_Outputs  (C : in out Controller) is
+   procedure Enable_Outputs (C : in out Controller) is
    begin
       G.Clear (C.OE);     --  /OE low = outputs driven
    end Enable_Outputs;
@@ -113,23 +119,22 @@ package body ESP32S3.HC595 is
       RCLK     : G.Pin_Id;
       OE       : G.Pin_Id;
       Clock_Hz : Positive := 10_000_000;
-      Enable   : Boolean  := True)
-   is
+      Enable   : Boolean := True) is
    begin
-      C.Host        := Host;
-      C.Clock       := Clock_Hz;
-      C.RCLK        := RCLK;
-      C.OE          := OE;
+      C.Host := Host;
+      C.Clock := Clock_Hz;
+      C.RCLK := RCLK;
+      C.OE := OE;
       C.Auto_Enable := Enable;
-      C.Live        := False;
-      C.State       := (others => 0);
+      C.Live := False;
+      C.State := (others => 0);
 
       --  Park the control lines: RCLK idle low, outputs OFF (/OE high) so the
       --  undefined power-up shift state never reaches the pins.
-      G.Configure (OE,   G.Output);
-      G.Set       (OE);                  --  /OE high: outputs disabled (high-Z)
+      G.Configure (OE, G.Output);
+      G.Set (OE);                  --  /OE high: outputs disabled (high-Z)
       G.Configure (RCLK, G.Output);
-      G.Clear     (RCLK);                --  idle low
+      G.Clear (RCLK);                --  idle low
 
       --  Latch a defined all-zeros state, but leave /OE HIGH -- the outputs stay
       --  disabled until the application's first Update brings them live.

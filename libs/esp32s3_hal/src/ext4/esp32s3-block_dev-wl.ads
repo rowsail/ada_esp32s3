@@ -42,12 +42,13 @@ with Interfaces;
 --  Layering:  ext4  ->  Block_Dev.WL  ->  Block_Dev.W25Q_Source  ->  ESP32S3.W25Q
 --
 --  Single-threaded use, like the rest of the ext4 stack.
+
 package ESP32S3.Block_Dev.WL is
 
    --  Wear-leveling erase-block size and the 512-byte sectors within it.  4 KB
    --  matches the W25Q flash erase sector; the remap granularity is one block.
-   Block_Bytes        : constant := 4096;
-   Sectors_Per_Block  : constant := Block_Bytes / Sector'Length;   --  8
+   Block_Bytes       : constant := 4096;
+   Sectors_Per_Block : constant := Block_Bytes / Sector'Length;   --  8
 
    --  Per-volume state.  Declare one (aliased), Attach it to the lower device,
    --  Mount (or Format) it, then Make a Device from it.  Must outlive the Device.
@@ -57,9 +58,8 @@ package ESP32S3.Block_Dev.WL is
    --  erase blocks of Lower for the ping-pong config; the rest becomes the
    --  data+spare region.  Update_Rate is the number of logical writes between
    --  moves.  Raises Constraint_Error if Lower is too small (< 4 erase blocks).
-   procedure Attach (V           : in out Volume;
-                     Lower       : Device;
-                     Update_Rate : Positive := 16);
+   procedure Attach
+     (V : in out Volume; Lower : Device; Update_Rate : Positive := 16);
 
    --  Load persisted state from the config blocks (highest valid sequence wins).
    --  Formatted is False if neither config block holds a valid record for this
@@ -84,13 +84,15 @@ package ESP32S3.Block_Dev.WL is
 
 private
    type Volume is limited record
-      Lower       : Device;
-      Data_Blocks : Natural := 0;             --  D: data + one spare/hole
-      Logical     : Natural := 0;             --  L = D - 1 usable logical blocks
-      Update_Rate : Positive := 16;
-      Move_Steps  : Interfaces.Unsigned_64 := 0;   --  t: completed moves
+      Lower        : Device;
+      Data_Blocks  : Natural := 0;             --  D: data + one spare/hole
+      Logical      : Natural :=
+        0;             --  L = D - 1 usable logical blocks
+      Update_Rate  : Positive := 16;
+      Move_Steps   : Interfaces.Unsigned_64 := 0;   --  t: completed moves
       Access_Count : Natural := 0;            --  writes since the last move
-      Sequence    : Interfaces.Unsigned_64 := 0;   --  config generation (ping-pong)
-      Mounted     : Boolean := False;
+      Sequence     : Interfaces.Unsigned_64 :=
+        0;   --  config generation (ping-pong)
+      Mounted      : Boolean := False;
    end record;
 end ESP32S3.Block_Dev.WL;

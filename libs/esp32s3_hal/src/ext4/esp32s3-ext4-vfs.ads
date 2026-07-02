@@ -10,6 +10,7 @@ with ESP32S3.Ext4.FS;
 --  ESP32S3.Ext4.FS.Mount (the W25Q flash through Block_Dev.WL, an SD card through
 --  Block_Dev.SDMMC_Source / SD_SPI_Source); this just names the mounts and routes
 --  paths to them.
+
 package ESP32S3.Ext4.VFS is
 
    type Mount_Ref is access all ESP32S3.Ext4.FS.Mount;
@@ -23,7 +24,7 @@ package ESP32S3.Ext4.VFS is
 
    --  The registered mount points, for listing the virtual root "/".
    function Count return Natural;
-   function Name  (I : Positive) return String;
+   function Name (I : Positive) return String;
 
    --  Resolve an absolute path within the unified namespace:
    --    Is_Root => Path is "/" exactly -- the virtual root (FS is null; list the

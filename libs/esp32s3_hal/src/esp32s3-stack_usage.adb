@@ -9,9 +9,9 @@ package body ESP32S3.Stack_Usage is
    --  The env-task stack bounds, straight from the linker (start.S loads
    --  __stack_end into the SP, which then grows down towards __stack_start).
    Stack_Start_Sym : constant Character
-     with Import, Convention => Asm, External_Name => "__stack_start";
+   with Import, Convention => Asm, External_Name => "__stack_start";
    Stack_End_Sym   : constant Character
-     with Import, Convention => Asm, External_Name => "__stack_end";
+   with Import, Convention => Asm, External_Name => "__stack_end";
 
    Env_Low  : constant System.Address := Stack_Start_Sym'Address;
    Env_High : constant System.Address := Stack_End_Sym'Address;
@@ -62,7 +62,8 @@ package body ESP32S3.Stack_Usage is
    ---------------------
 
    procedure Paint_Env_Stack is
-      Here  : aliased Integer := 0;   --  lives in THIS frame, near the current SP
+      Here  : aliased Integer :=
+        0;   --  lives in THIS frame, near the current SP
       Limit : constant System.Address := Here'Address - Guard;
    begin
       --  Paint [__stack_start, here - guard): the still-unused region below us.
@@ -75,9 +76,12 @@ package body ESP32S3.Stack_Usage is
    -- Env_Used / Env_Free / Total --
    --------------------------------
 
-   function Env_Total return Natural is (Natural (Env_High - Env_Low));
-   function Env_Used  return Natural is (High_Water (Env_Low, Env_High));
-   function Env_Free  return Natural is (Env_Total - Env_Used);
+   function Env_Total return Natural
+   is (Natural (Env_High - Env_Low));
+   function Env_Used return Natural
+   is (High_Water (Env_Low, Env_High));
+   function Env_Free return Natural
+   is (Env_Total - Env_Used);
 
    ------------
    -- Report --

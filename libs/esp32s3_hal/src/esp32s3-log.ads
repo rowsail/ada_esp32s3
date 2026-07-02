@@ -14,6 +14,7 @@ with Interfaces;
 --  embedded/ZFP profiles.  Each call is one short esp_rom_printf, so the ROM
 --  printf's per-call limits (it truncates past ~6 conversions and drops past the
 --  64-byte FIFO in a single call) never bite -- compose a line from several Puts.
+
 package ESP32S3.Log is
 
    --  Write a string (no newline).
@@ -44,6 +45,7 @@ package ESP32S3.Log is
    --  digits, e.g. Put_Fixed (Temp_MilliC, 1000, 2) prints "23.45", and
    --  Put_Fixed (T_CentiC, 100, 2) prints a value given in hundredths.  Handles
    --  the sign and rounds toward zero.
-   procedure Put_Fixed (Numer : Integer; Denom : Positive; Decimals : Natural := 2);
+   procedure Put_Fixed
+     (Numer : Integer; Denom : Positive; Decimals : Natural := 2);
 
 end ESP32S3.Log;

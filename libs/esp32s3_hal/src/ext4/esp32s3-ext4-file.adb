@@ -22,17 +22,17 @@ package body ESP32S3.Ext4.File is
          return;
       end if;
       Avail := I.Size - Offset;
-      Want  := U64'Min (U64 (Into'Length), Avail);
+      Want := U64'Min (U64 (Into'Length), Avail);
 
       while Done < Want loop
          declare
             L_Block : constant U64 := Pos / BS;
             B_Off   : constant Natural := Natural (Pos mod BS);
             Chunk   : constant Natural :=
-                        Natural (U64'Min (BS - U64 (B_Off), Want - Done));
+              Natural (U64'Min (BS - U64 (B_Off), Want - Done));
             Dst_Lo  : constant Natural := Into'First + Natural (Done);
             Phys    : constant Block_Number :=
-                        Block_Map.Logical_To_Physical (V, I, L_Block);
+              Block_Map.Logical_To_Physical (V, I, L_Block);
          begin
             if Phys = 0 then
                Into (Dst_Lo .. Dst_Lo + Chunk - 1) := [others => 0];
@@ -41,7 +41,7 @@ package body ESP32S3.Ext4.File is
                  (V.Cache, Phys, B_Off, Into (Dst_Lo .. Dst_Lo + Chunk - 1));
             end if;
             Done := Done + U64 (Chunk);
-            Pos  := Pos + U64 (Chunk);
+            Pos := Pos + U64 (Chunk);
          end;
       end loop;
 
