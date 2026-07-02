@@ -20,10 +20,10 @@ package body ESP32S3.MAC is
    end Base;
 
    function Derived (Offset : Interfaces.Unsigned_8) return MAC_Address is
-      A : MAC_Address := Base;
+      Result : MAC_Address := Base;
    begin
-      A (5) := A (5) + Offset;   --  byte-wise: the factory block reserves low bits
-      return A;
+      Result (5) := Result (5) + Offset;   --  byte-wise: the factory block reserves low bits
+      return Result;
    end Derived;
 
    function Wi_Fi_Station return MAC_Address
@@ -36,29 +36,29 @@ package body ESP32S3.MAC is
    is (Derived (3));
 
    function Local (Addr : MAC_Address) return MAC_Address is
-      A : MAC_Address := Addr;
+      Result : MAC_Address := Addr;
    begin
-      A (0) := (A (0) or 16#02#) and 16#FE#;
-      return A;
+      Result (0) := (Result (0) or 16#02#) and 16#FE#;
+      return Result;
    end Local;
 
    function Image (Addr : MAC_Address) return String is
       Hex : constant array (0 .. 15) of Character := "0123456789abcdef";
-      function H (B : Unsigned_8) return String
-      is (Hex (Integer (Shift_Right (B, 4))) & Hex (Integer (B and 16#F#)));
+      function Hex_Byte (Value : Unsigned_8) return String
+      is (Hex (Integer (Shift_Right (Value, 4))) & Hex (Integer (Value and 16#F#)));
    begin
       return
-        H (Addr (0))
+        Hex_Byte (Addr (0))
         & ":"
-        & H (Addr (1))
+        & Hex_Byte (Addr (1))
         & ":"
-        & H (Addr (2))
+        & Hex_Byte (Addr (2))
         & ":"
-        & H (Addr (3))
+        & Hex_Byte (Addr (3))
         & ":"
-        & H (Addr (4))
+        & Hex_Byte (Addr (4))
         & ":"
-        & H (Addr (5));
+        & Hex_Byte (Addr (5));
    end Image;
 
 end ESP32S3.MAC;

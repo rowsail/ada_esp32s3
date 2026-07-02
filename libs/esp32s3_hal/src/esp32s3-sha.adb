@@ -64,7 +64,7 @@ package body ESP32S3.SHA is
             --  Load the 64-byte block as 16 words.
             for W in 0 .. 15 loop
                declare
-                  K : constant Natural := B * 64 + W * 4;
+                  Byte_Offset : constant Natural := B * 64 + W * 4;
                begin
                   --  Words are written as the little-endian packing of the byte
                   --  stream (matches esp-idf's direct word copy on this
@@ -72,10 +72,10 @@ package body ESP32S3.SHA is
                   SHA_Periph.M_MEM (W) :=
                     UInt32
                       (Join_LE
-                         (Padded_Byte (K),
-                          Padded_Byte (K + 1),
-                          Padded_Byte (K + 2),
-                          Padded_Byte (K + 3)));
+                         (Padded_Byte (Byte_Offset),
+                          Padded_Byte (Byte_Offset + 1),
+                          Padded_Byte (Byte_Offset + 2),
+                          Padded_Byte (Byte_Offset + 3)));
                end;
             end loop;
 
@@ -110,10 +110,15 @@ package body ESP32S3.SHA is
    begin
       for I in 0 .. Into'Length / 4 - 1 loop
          declare
-            H : constant UInt32 := Words (I);
-            B : constant Natural := Into'First + I * 4;
+            Word_Value : constant UInt32 := Words (I);
+            Byte_Index : constant Natural := Into'First + I * 4;
          begin
-            Split_LE (Unsigned_32 (H), Into (B), Into (B + 1), Into (B + 2), Into (B + 3));
+            Split_LE
+              (Unsigned_32 (Word_Value),
+               Into (Byte_Index),
+               Into (Byte_Index + 1),
+               Into (Byte_Index + 2),
+               Into (Byte_Index + 3));
          end;
       end loop;
    end Unpack;
@@ -123,12 +128,12 @@ package body ESP32S3.SHA is
    ------------
 
    function Hash_1 (Data : Byte_Array) return SHA1_Digest is
-      W : Word_Buffer;
-      D : SHA1_Digest;
+      Words  : Word_Buffer;
+      Digest : SHA1_Digest;
    begin
-      Engine.Hash (Data, SHA_1_Mode, W);
-      Unpack (W, D);
-      return D;
+      Engine.Hash (Data, SHA_1_Mode, Words);
+      Unpack (Words, Digest);
+      return Digest;
    end Hash_1;
 
    --------------
@@ -136,12 +141,12 @@ package body ESP32S3.SHA is
    --------------
 
    function Hash_224 (Data : Byte_Array) return SHA224_Digest is
-      W : Word_Buffer;
-      D : SHA224_Digest;
+      Words  : Word_Buffer;
+      Digest : SHA224_Digest;
    begin
-      Engine.Hash (Data, SHA_224_Mode, W);
-      Unpack (W, D);
-      return D;
+      Engine.Hash (Data, SHA_224_Mode, Words);
+      Unpack (Words, Digest);
+      return Digest;
    end Hash_224;
 
    --------------
@@ -149,12 +154,12 @@ package body ESP32S3.SHA is
    --------------
 
    function Hash_256 (Data : Byte_Array) return SHA256_Digest is
-      W : Word_Buffer;
-      D : SHA256_Digest;
+      Words  : Word_Buffer;
+      Digest : SHA256_Digest;
    begin
-      Engine.Hash (Data, SHA_256_Mode, W);
-      Unpack (W, D);
-      return D;
+      Engine.Hash (Data, SHA_256_Mode, Words);
+      Unpack (Words, Digest);
+      return Digest;
    end Hash_256;
 
 end ESP32S3.SHA;
