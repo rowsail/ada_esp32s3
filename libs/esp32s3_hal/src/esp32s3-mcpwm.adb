@@ -32,12 +32,12 @@ package body ESP32S3.MCPWM is
 
    --  Route a generator output signal to Pin as a push-pull matrix output.
    procedure Route_Out (Pin : G.Pin_Id; Sig : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
+      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
    begin
       G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
-      O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      O.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := O;
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
+      Out_Cfg.OEN_SEL := False;
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := Out_Cfg;
    end Route_Out;
 
    --  Route Pin into the matrix input signal Sig (input buffer on + pull), WITHOUT
@@ -45,16 +45,16 @@ package body ESP32S3.MCPWM is
    --  that is also being driven (e.g. capturing a PWM output looped on one pad).
    procedure Route_In (Sig : Natural; Pin : G.Pin_Id; Pull : G.Pull_Mode) is
       use type G.Pull_Mode;
-      Ix : constant Natural := Natural (Pin);
-      P  : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Ix);
+      Pad_Index : constant Natural := Natural (Pin);
+      Pad_Cfg   : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Pad_Index);
    begin
-      P.MCU_SEL := 1;
-      P.FUN_IE := True;
-      P.FUN_WPU := Pull = G.Pull_Up;
-      P.FUN_WPD := Pull = G.Pull_Down;
-      MX.IO_MUX_Periph.GPIO (Ix) := P;
+      Pad_Cfg.MCU_SEL := 1;
+      Pad_Cfg.FUN_IE := True;
+      Pad_Cfg.FUN_WPU := Pull = G.Pull_Up;
+      Pad_Cfg.FUN_WPD := Pull = G.Pull_Down;
+      MX.IO_MUX_Periph.GPIO (Pad_Index) := Pad_Cfg;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Sig) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix), SEL => True, others => <>);
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Pad_Index), SEL => True, others => <>);
    end Route_In;
 
    --  Fault / capture matrix input-signal indices (gpio_sig_map).
@@ -74,7 +74,7 @@ package body ESP32S3.MCPWM is
    --  second channel never resets a sibling that is already running.
    procedure Bring_Up_Unit (Unit : MCPWM_Unit) is
       use ESP32S3_Registers.SYSTEM;
-      R : constant Periph_Ref := Regs_Of (Unit);
+      Regs : constant Periph_Ref := Regs_Of (Unit);
    begin
       case Unit is
          when MCPWM0 =>
@@ -88,8 +88,8 @@ package body ESP32S3.MCPWM is
             SYSTEM_Periph.PERIP_RST_EN0.PWM1_RST := False;
       end case;
 
-      R.CLK := (EN => True, others => <>);          --  force the reg-file clock on
-      R.CLK_CFG := (CLK_PRESCALE => 0, others => <>);   --  PWM_clk = 160 MHz
+      Regs.CLK := (EN => True, others => <>);          --  force the reg-file clock on
+      Regs.CLK_CFG := (CLK_PRESCALE => 0, others => <>);   --  PWM_clk = 160 MHz
    end Bring_Up_Unit;
 
    --------------------------------------------------------------------------
@@ -157,19 +157,19 @@ package body ESP32S3.MCPWM is
 
    --  Stop a generator timer (internal; shared by Stop and Release).
    procedure Do_Stop (Unit : MCPWM_Unit; Ch : Channel_Index) is
-      R : constant Periph_Ref := Regs_Of (Unit);
+      Regs : constant Periph_Ref := Regs_Of (Unit);
    begin
       case Ch is
          --  START = 0: stop at the next timer zero
 
          when Ch0 =>
-            R.TIMER0_CFG1.TIMER0_START := 0;
+            Regs.TIMER0_CFG1.TIMER0_START := 0;
 
          when Ch1 =>
-            R.TIMER1_CFG1.TIMER1_START := 0;
+            Regs.TIMER1_CFG1.TIMER1_START := 0;
 
          when Ch2 =>
-            R.TIMER2_CFG1.TIMER2_START := 0;
+            Regs.TIMER2_CFG1.TIMER2_START := 0;
       end case;
    end Do_Stop;
 
@@ -228,20 +228,20 @@ package body ESP32S3.MCPWM is
       Dead_Time_Ns   : Natural := 0)
    is
       use type ESP32S3.GPIO.Pad_Number;
-      Unit  : constant MCPWM_Unit := C.U;
-      Ch    : constant Channel_Index := C.Idx;
-      R     : constant Periph_Ref := Regs_Of (Unit);
-      Total : constant Natural := Natural'Max (1, Src_Hz / Freq);  --  ticks / period
+      Unit       : constant MCPWM_Unit := C.U;
+      Ch         : constant Channel_Index := C.Idx;
+      Regs       : constant Periph_Ref := Regs_Of (Unit);
+      Total      : constant Natural := Natural'Max (1, Src_Hz / Freq);  --  ticks / period
       --  Choose the smallest timer prescale so the period fits the 16-bit field.
-      P1    : constant Natural :=
+      Divider    : constant Natural :=
         Natural'Max (1, Natural'Min (256, (Total + Max_Peak - 1) / Max_Peak));
-      Ticks : constant Natural :=
-        Natural'Max (2, Natural'Min (Max_Peak, Total / P1));     --  = TIMER_PERIOD + 1
-      Pre   : constant Natural := P1 - 1;
-      Per   : constant Natural := Ticks - 1;
+      Ticks      : constant Natural :=
+        Natural'Max (2, Natural'Min (Max_Peak, Total / Divider));     --  = TIMER_PERIOD + 1
+      Prescaler  : constant Natural := Divider - 1;
+      Period     : constant Natural := Ticks - 1;
       --  Dead-time in PWM-clock (160 MHz) ticks = ns * 0.16, clamped to 16 bits.
-      Has_B : constant Boolean := Complement_Pin /= ESP32S3.GPIO.No_Pin;
-      DT    : constant Natural :=
+      Has_B      : constant Boolean := Complement_Pin /= ESP32S3.GPIO.No_Pin;
+      Dead_Ticks : constant Natural :=
         Natural'Min (65535, (Dead_Time_Ns * (Src_Hz / 1_000_000)) / 1000);
    begin
       if not C.Held then
@@ -252,13 +252,13 @@ package body ESP32S3.MCPWM is
       --  Operator Ch is timed by timer Ch.
       case Ch is
          when Ch0 =>
-            R.OPERATOR_TIMERSEL.OPERATOR0_TIMERSEL := 0;
+            Regs.OPERATOR_TIMERSEL.OPERATOR0_TIMERSEL := 0;
 
          when Ch1 =>
-            R.OPERATOR_TIMERSEL.OPERATOR1_TIMERSEL := 1;
+            Regs.OPERATOR_TIMERSEL.OPERATOR1_TIMERSEL := 1;
 
          when Ch2 =>
-            R.OPERATOR_TIMERSEL.OPERATOR2_TIMERSEL := 2;
+            Regs.OPERATOR_TIMERSEL.OPERATOR2_TIMERSEL := 2;
       end case;
 
       --  Timer: up-count, given prescale + period, left stopped (START = 0).
@@ -266,69 +266,75 @@ package body ESP32S3.MCPWM is
       --  Generator A: high at timer zero (UTEZ=2), low at compare-A up (UTEA=1).
       case Ch is
          when Ch0 =>
-            R.TIMER0_CFG0 :=
-              (TIMER0_PRESCALE => TIMER0_CFG0_TIMER0_PRESCALE_Field (Pre),
-               TIMER0_PERIOD   => TIMER0_CFG0_TIMER0_PERIOD_Field (Per),
+            Regs.TIMER0_CFG0 :=
+              (TIMER0_PRESCALE => TIMER0_CFG0_TIMER0_PRESCALE_Field (Prescaler),
+               TIMER0_PERIOD   => TIMER0_CFG0_TIMER0_PERIOD_Field (Period),
                others          => <>);
-            R.TIMER0_CFG1 := (TIMER0_MOD => 1, TIMER0_START => 0, others => <>);
-            R.CMPR0_CFG := (CMPR0_A_UPMETHOD => 1, others => <>);  --  TEZ
-            R.CMPR0_VALUE0 := (CMPR0_A => 0, others => <>);
-            R.GEN0_CFG0 := (others => <>);
-            R.GEN0_A := (UTEZ => 2, UTEA => 1, others => <>);
+            Regs.TIMER0_CFG1 := (TIMER0_MOD => 1, TIMER0_START => 0, others => <>);
+            Regs.CMPR0_CFG := (CMPR0_A_UPMETHOD => 1, others => <>);  --  TEZ
+            Regs.CMPR0_VALUE0 := (CMPR0_A => 0, others => <>);
+            Regs.GEN0_CFG0 := (others => <>);
+            Regs.GEN0_A := (UTEZ => 2, UTEA => 1, others => <>);
             if Has_B then
-               R.DB0_CFG :=
+               Regs.DB0_CFG :=
                  (DB0_A_OUTBYPASS   => False,
                   DB0_B_OUTBYPASS   => False,
                   DB0_FED_OUTINVERT => True,
                   others            => <>);
-               R.DB0_RED_CFG := (DB0_RED => DB0_RED_CFG_DB0_RED_Field (DT), others => <>);
-               R.DB0_FED_CFG := (DB0_FED => DB0_FED_CFG_DB0_FED_Field (DT), others => <>);
+               Regs.DB0_RED_CFG :=
+                 (DB0_RED => DB0_RED_CFG_DB0_RED_Field (Dead_Ticks), others => <>);
+               Regs.DB0_FED_CFG :=
+                 (DB0_FED => DB0_FED_CFG_DB0_FED_Field (Dead_Ticks), others => <>);
             else
-               R.DB0_CFG := (others => <>);     --  bypass (A/B_OUTBYPASS default True)
+               Regs.DB0_CFG := (others => <>);     --  bypass (A/B_OUTBYPASS default True)
             end if;
 
          when Ch1 =>
-            R.TIMER1_CFG0 :=
-              (TIMER1_PRESCALE => TIMER1_CFG0_TIMER1_PRESCALE_Field (Pre),
-               TIMER1_PERIOD   => TIMER1_CFG0_TIMER1_PERIOD_Field (Per),
+            Regs.TIMER1_CFG0 :=
+              (TIMER1_PRESCALE => TIMER1_CFG0_TIMER1_PRESCALE_Field (Prescaler),
+               TIMER1_PERIOD   => TIMER1_CFG0_TIMER1_PERIOD_Field (Period),
                others          => <>);
-            R.TIMER1_CFG1 := (TIMER1_MOD => 1, TIMER1_START => 0, others => <>);
-            R.CMPR1_CFG := (CMPR1_A_UPMETHOD => 1, others => <>);
-            R.CMPR1_VALUE0 := (CMPR1_A => 0, others => <>);
-            R.GEN1_CFG0 := (others => <>);
-            R.GEN1_A := (UTEZ => 2, UTEA => 1, others => <>);
+            Regs.TIMER1_CFG1 := (TIMER1_MOD => 1, TIMER1_START => 0, others => <>);
+            Regs.CMPR1_CFG := (CMPR1_A_UPMETHOD => 1, others => <>);
+            Regs.CMPR1_VALUE0 := (CMPR1_A => 0, others => <>);
+            Regs.GEN1_CFG0 := (others => <>);
+            Regs.GEN1_A := (UTEZ => 2, UTEA => 1, others => <>);
             if Has_B then
-               R.DB1_CFG :=
+               Regs.DB1_CFG :=
                  (DB1_A_OUTBYPASS   => False,
                   DB1_B_OUTBYPASS   => False,
                   DB1_FED_OUTINVERT => True,
                   others            => <>);
-               R.DB1_RED_CFG := (DB1_RED => DB1_RED_CFG_DB1_RED_Field (DT), others => <>);
-               R.DB1_FED_CFG := (DB1_FED => DB1_FED_CFG_DB1_FED_Field (DT), others => <>);
+               Regs.DB1_RED_CFG :=
+                 (DB1_RED => DB1_RED_CFG_DB1_RED_Field (Dead_Ticks), others => <>);
+               Regs.DB1_FED_CFG :=
+                 (DB1_FED => DB1_FED_CFG_DB1_FED_Field (Dead_Ticks), others => <>);
             else
-               R.DB1_CFG := (others => <>);
+               Regs.DB1_CFG := (others => <>);
             end if;
 
          when Ch2 =>
-            R.TIMER2_CFG0 :=
-              (TIMER2_PRESCALE => TIMER2_CFG0_TIMER2_PRESCALE_Field (Pre),
-               TIMER2_PERIOD   => TIMER2_CFG0_TIMER2_PERIOD_Field (Per),
+            Regs.TIMER2_CFG0 :=
+              (TIMER2_PRESCALE => TIMER2_CFG0_TIMER2_PRESCALE_Field (Prescaler),
+               TIMER2_PERIOD   => TIMER2_CFG0_TIMER2_PERIOD_Field (Period),
                others          => <>);
-            R.TIMER2_CFG1 := (TIMER2_MOD => 1, TIMER2_START => 0, others => <>);
-            R.CMPR2_CFG := (CMPR2_A_UPMETHOD => 1, others => <>);
-            R.CMPR2_VALUE0 := (CMPR2_A => 0, others => <>);
-            R.GEN2_CFG0 := (others => <>);
-            R.GEN2_A := (UTEZ => 2, UTEA => 1, others => <>);
+            Regs.TIMER2_CFG1 := (TIMER2_MOD => 1, TIMER2_START => 0, others => <>);
+            Regs.CMPR2_CFG := (CMPR2_A_UPMETHOD => 1, others => <>);
+            Regs.CMPR2_VALUE0 := (CMPR2_A => 0, others => <>);
+            Regs.GEN2_CFG0 := (others => <>);
+            Regs.GEN2_A := (UTEZ => 2, UTEA => 1, others => <>);
             if Has_B then
-               R.DB2_CFG :=
+               Regs.DB2_CFG :=
                  (DB2_A_OUTBYPASS   => False,
                   DB2_B_OUTBYPASS   => False,
                   DB2_FED_OUTINVERT => True,
                   others            => <>);
-               R.DB2_RED_CFG := (DB2_RED => DB2_RED_CFG_DB2_RED_Field (DT), others => <>);
-               R.DB2_FED_CFG := (DB2_FED => DB2_FED_CFG_DB2_FED_Field (DT), others => <>);
+               Regs.DB2_RED_CFG :=
+                 (DB2_RED => DB2_RED_CFG_DB2_RED_Field (Dead_Ticks), others => <>);
+               Regs.DB2_FED_CFG :=
+                 (DB2_FED => DB2_FED_CFG_DB2_FED_Field (Dead_Ticks), others => <>);
             else
-               R.DB2_CFG := (others => <>);
+               Regs.DB2_CFG := (others => <>);
             end if;
       end case;
 
@@ -345,7 +351,7 @@ package body ESP32S3.MCPWM is
    -----------
 
    procedure Start (C : Channel) is
-      R : constant Periph_Ref := Regs_Of (C.U);
+      Regs : constant Periph_Ref := Regs_Of (C.U);
    begin
       if not C.Held then
          return;
@@ -354,13 +360,13 @@ package body ESP32S3.MCPWM is
          --  START = 2: start and run continuously
 
          when Ch0 =>
-            R.TIMER0_CFG1.TIMER0_START := 2;
+            Regs.TIMER0_CFG1.TIMER0_START := 2;
 
          when Ch1 =>
-            R.TIMER1_CFG1.TIMER1_START := 2;
+            Regs.TIMER1_CFG1.TIMER1_START := 2;
 
          when Ch2 =>
-            R.TIMER2_CFG1.TIMER2_START := 2;
+            Regs.TIMER2_CFG1.TIMER2_START := 2;
       end case;
    end Start;
 
@@ -380,14 +386,14 @@ package body ESP32S3.MCPWM is
    --------------
 
    procedure Set_Duty (C : Channel; Percent : Duty_Percent) is
-      R   : constant Periph_Ref := Regs_Of (C.U);
-      P   : constant Natural := Periods (C.U, C.Idx);
+      Regs    : constant Periph_Ref := Regs_Of (C.U);
+      Period  : constant Natural := Periods (C.U, C.Idx);
       --  The comparator field is 16-bit (max 65535), but a period can be the full
-      --  Max_Peak = 65536 (Freq ~ 2441 Hz); at 100% duty Min(P,P) would be 65536
+      --  Max_Peak = 65536 (Freq ~ 2441 Hz); at 100% duty Min(Period,Period) would be 65536
       --  and overflow the field -> Constraint_Error.  Cap at 65535 -- for every
-      --  smaller period the comparator = P is unchanged and still yields 100%.
-      Cmp : constant Natural :=
-        Natural'Min (65535, Natural'Min (P, Natural (Float (P) * Percent / 100.0)));
+      --  smaller period the comparator = Period is unchanged and still yields 100%.
+      Compare : constant Natural :=
+        Natural'Min (65535, Natural'Min (Period, Natural (Float (Period) * Percent / 100.0)));
    begin
       if not C.Held then
          return;
@@ -396,13 +402,13 @@ package body ESP32S3.MCPWM is
          --  single atomic write of the comparator
 
          when Ch0 =>
-            R.CMPR0_VALUE0 := (CMPR0_A => CMPR0_VALUE0_CMPR0_A_Field (Cmp), others => <>);
+            Regs.CMPR0_VALUE0 := (CMPR0_A => CMPR0_VALUE0_CMPR0_A_Field (Compare), others => <>);
 
          when Ch1 =>
-            R.CMPR1_VALUE0 := (CMPR1_A => CMPR1_VALUE0_CMPR1_A_Field (Cmp), others => <>);
+            Regs.CMPR1_VALUE0 := (CMPR1_A => CMPR1_VALUE0_CMPR1_A_Field (Compare), others => <>);
 
          when Ch2 =>
-            R.CMPR2_VALUE0 := (CMPR2_A => CMPR2_VALUE0_CMPR2_A_Field (Cmp), others => <>);
+            Regs.CMPR2_VALUE0 := (CMPR2_A => CMPR2_VALUE0_CMPR2_A_Field (Compare), others => <>);
       end case;
    end Set_Duty;
 
@@ -417,14 +423,14 @@ package body ESP32S3.MCPWM is
       Duty_Eighths : Carrier_Duty := 4;
       First_Pulse  : Carrier_Pulse := 1)
    is
-      R : constant Periph_Ref := Regs_Of (C.U);
+      Regs : constant Periph_Ref := Regs_Of (C.U);
    begin
       if not C.Held then
          return;
       end if;
       case C.Idx is
          when Ch0 =>
-            R.CHOPPER0_CFG :=
+            Regs.CHOPPER0_CFG :=
               (CHOPPER0_EN       => Enable,
                CHOPPER0_PRESCALE => CHOPPER0_CFG_CHOPPER0_PRESCALE_Field (Prescale),
                CHOPPER0_DUTY     => CHOPPER0_CFG_CHOPPER0_DUTY_Field (Duty_Eighths),
@@ -432,7 +438,7 @@ package body ESP32S3.MCPWM is
                others            => <>);
 
          when Ch1 =>
-            R.CHOPPER1_CFG :=
+            Regs.CHOPPER1_CFG :=
               (CHOPPER1_EN       => Enable,
                CHOPPER1_PRESCALE => CHOPPER1_CFG_CHOPPER1_PRESCALE_Field (Prescale),
                CHOPPER1_DUTY     => CHOPPER1_CFG_CHOPPER1_DUTY_Field (Duty_Eighths),
@@ -440,7 +446,7 @@ package body ESP32S3.MCPWM is
                others            => <>);
 
          when Ch2 =>
-            R.CHOPPER2_CFG :=
+            Regs.CHOPPER2_CFG :=
               (CHOPPER2_EN       => Enable,
                CHOPPER2_PRESCALE => CHOPPER2_CFG_CHOPPER2_PRESCALE_Field (Prescale),
                CHOPPER2_DUTY     => CHOPPER2_CFG_CHOPPER2_DUTY_Field (Duty_Eighths),
@@ -459,22 +465,22 @@ package body ESP32S3.MCPWM is
       Pin         : ESP32S3.GPIO.Pin_Id;
       Active_High : Boolean := True)
    is
-      R : constant Periph_Ref := Regs_Of (Unit);
+      Regs : constant Periph_Ref := Regs_Of (Unit);
    begin
       --  Pull the pad to the INACTIVE level so a disconnected input never faults.
       Route_In (Fault_Signal (Unit, Input), Pin, (if Active_High then G.Pull_Down else G.Pull_Up));
       case Input is
          when Fault0 =>
-            R.FAULT_DETECT.F0_EN := True;
-            R.FAULT_DETECT.F0_POLE := Active_High;
+            Regs.FAULT_DETECT.F0_EN := True;
+            Regs.FAULT_DETECT.F0_POLE := Active_High;
 
          when Fault1 =>
-            R.FAULT_DETECT.F1_EN := True;
-            R.FAULT_DETECT.F1_POLE := Active_High;
+            Regs.FAULT_DETECT.F1_EN := True;
+            Regs.FAULT_DETECT.F1_POLE := Active_High;
 
          when Fault2 =>
-            R.FAULT_DETECT.F2_EN := True;
-            R.FAULT_DETECT.F2_POLE := Active_High;
+            Regs.FAULT_DETECT.F2_EN := True;
+            Regs.FAULT_DETECT.F2_POLE := Active_High;
       end case;
    end Configure_Fault;
 
@@ -488,9 +494,9 @@ package body ESP32S3.MCPWM is
       Mode   : Fault_Mode := One_Shot;
       Action : Trip_Action := Force_Low)
    is
-      R   : constant Periph_Ref := Regs_Of (C.U);
-      Act : constant Natural := Trip_Action'Pos (Action);   --  0/1/2 = none/low/high
-      OST : constant Boolean := Mode = One_Shot;
+      Regs        : constant Periph_Ref := Regs_Of (C.U);
+      Action_Code : constant Natural := Trip_Action'Pos (Action);   --  0/1/2 = none/low/high
+      Is_One_Shot : constant Boolean := Mode = One_Shot;
    begin
       if not C.Held then
          return;
@@ -500,104 +506,104 @@ package body ESP32S3.MCPWM is
       case C.Idx is
          when Ch0 =>
             declare
-               C2 : TZ0_CFG0_Register := R.TZ0_CFG0;
+               Trip_Cfg : TZ0_CFG0_Register := Regs.TZ0_CFG0;
             begin
-               if OST then
-                  C2.TZ0_A_OST_U := TZ0_CFG0_TZ0_A_OST_U_Field (Act);
-                  C2.TZ0_B_OST_U := TZ0_CFG0_TZ0_B_OST_U_Field (Act);
+               if Is_One_Shot then
+                  Trip_Cfg.TZ0_A_OST_U := TZ0_CFG0_TZ0_A_OST_U_Field (Action_Code);
+                  Trip_Cfg.TZ0_B_OST_U := TZ0_CFG0_TZ0_B_OST_U_Field (Action_Code);
                   case Input is
                      when Fault0 =>
-                        C2.TZ0_F0_OST := True;
+                        Trip_Cfg.TZ0_F0_OST := True;
 
                      when Fault1 =>
-                        C2.TZ0_F1_OST := True;
+                        Trip_Cfg.TZ0_F1_OST := True;
 
                      when Fault2 =>
-                        C2.TZ0_F2_OST := True;
+                        Trip_Cfg.TZ0_F2_OST := True;
                   end case;
                else
-                  C2.TZ0_A_CBC_U := TZ0_CFG0_TZ0_A_CBC_U_Field (Act);
-                  C2.TZ0_B_CBC_U := TZ0_CFG0_TZ0_B_CBC_U_Field (Act);
+                  Trip_Cfg.TZ0_A_CBC_U := TZ0_CFG0_TZ0_A_CBC_U_Field (Action_Code);
+                  Trip_Cfg.TZ0_B_CBC_U := TZ0_CFG0_TZ0_B_CBC_U_Field (Action_Code);
                   case Input is
                      when Fault0 =>
-                        C2.TZ0_F0_CBC := True;
+                        Trip_Cfg.TZ0_F0_CBC := True;
 
                      when Fault1 =>
-                        C2.TZ0_F1_CBC := True;
+                        Trip_Cfg.TZ0_F1_CBC := True;
 
                      when Fault2 =>
-                        C2.TZ0_F2_CBC := True;
+                        Trip_Cfg.TZ0_F2_CBC := True;
                   end case;
                end if;
-               R.TZ0_CFG0 := C2;
+               Regs.TZ0_CFG0 := Trip_Cfg;
             end;
 
          when Ch1 =>
             declare
-               C2 : TZ1_CFG0_Register := R.TZ1_CFG0;
+               Trip_Cfg : TZ1_CFG0_Register := Regs.TZ1_CFG0;
             begin
-               if OST then
-                  C2.TZ1_A_OST_U := TZ1_CFG0_TZ1_A_OST_U_Field (Act);
-                  C2.TZ1_B_OST_U := TZ1_CFG0_TZ1_B_OST_U_Field (Act);
+               if Is_One_Shot then
+                  Trip_Cfg.TZ1_A_OST_U := TZ1_CFG0_TZ1_A_OST_U_Field (Action_Code);
+                  Trip_Cfg.TZ1_B_OST_U := TZ1_CFG0_TZ1_B_OST_U_Field (Action_Code);
                   case Input is
                      when Fault0 =>
-                        C2.TZ1_F0_OST := True;
+                        Trip_Cfg.TZ1_F0_OST := True;
 
                      when Fault1 =>
-                        C2.TZ1_F1_OST := True;
+                        Trip_Cfg.TZ1_F1_OST := True;
 
                      when Fault2 =>
-                        C2.TZ1_F2_OST := True;
+                        Trip_Cfg.TZ1_F2_OST := True;
                   end case;
                else
-                  C2.TZ1_A_CBC_U := TZ1_CFG0_TZ1_A_CBC_U_Field (Act);
-                  C2.TZ1_B_CBC_U := TZ1_CFG0_TZ1_B_CBC_U_Field (Act);
+                  Trip_Cfg.TZ1_A_CBC_U := TZ1_CFG0_TZ1_A_CBC_U_Field (Action_Code);
+                  Trip_Cfg.TZ1_B_CBC_U := TZ1_CFG0_TZ1_B_CBC_U_Field (Action_Code);
                   case Input is
                      when Fault0 =>
-                        C2.TZ1_F0_CBC := True;
+                        Trip_Cfg.TZ1_F0_CBC := True;
 
                      when Fault1 =>
-                        C2.TZ1_F1_CBC := True;
+                        Trip_Cfg.TZ1_F1_CBC := True;
 
                      when Fault2 =>
-                        C2.TZ1_F2_CBC := True;
+                        Trip_Cfg.TZ1_F2_CBC := True;
                   end case;
                end if;
-               R.TZ1_CFG0 := C2;
+               Regs.TZ1_CFG0 := Trip_Cfg;
             end;
 
          when Ch2 =>
             declare
-               C2 : TZ2_CFG0_Register := R.TZ2_CFG0;
+               Trip_Cfg : TZ2_CFG0_Register := Regs.TZ2_CFG0;
             begin
-               if OST then
-                  C2.TZ2_A_OST_U := TZ2_CFG0_TZ2_A_OST_U_Field (Act);
-                  C2.TZ2_B_OST_U := TZ2_CFG0_TZ2_B_OST_U_Field (Act);
+               if Is_One_Shot then
+                  Trip_Cfg.TZ2_A_OST_U := TZ2_CFG0_TZ2_A_OST_U_Field (Action_Code);
+                  Trip_Cfg.TZ2_B_OST_U := TZ2_CFG0_TZ2_B_OST_U_Field (Action_Code);
                   case Input is
                      when Fault0 =>
-                        C2.TZ2_F0_OST := True;
+                        Trip_Cfg.TZ2_F0_OST := True;
 
                      when Fault1 =>
-                        C2.TZ2_F1_OST := True;
+                        Trip_Cfg.TZ2_F1_OST := True;
 
                      when Fault2 =>
-                        C2.TZ2_F2_OST := True;
+                        Trip_Cfg.TZ2_F2_OST := True;
                   end case;
                else
-                  C2.TZ2_A_CBC_U := TZ2_CFG0_TZ2_A_CBC_U_Field (Act);
-                  C2.TZ2_B_CBC_U := TZ2_CFG0_TZ2_B_CBC_U_Field (Act);
+                  Trip_Cfg.TZ2_A_CBC_U := TZ2_CFG0_TZ2_A_CBC_U_Field (Action_Code);
+                  Trip_Cfg.TZ2_B_CBC_U := TZ2_CFG0_TZ2_B_CBC_U_Field (Action_Code);
                   case Input is
                      when Fault0 =>
-                        C2.TZ2_F0_CBC := True;
+                        Trip_Cfg.TZ2_F0_CBC := True;
 
                      when Fault1 =>
-                        C2.TZ2_F1_CBC := True;
+                        Trip_Cfg.TZ2_F1_CBC := True;
 
                      when Fault2 =>
-                        C2.TZ2_F2_CBC := True;
+                        Trip_Cfg.TZ2_F2_CBC := True;
                   end case;
                end if;
-               R.TZ2_CFG0 := C2;
+               Regs.TZ2_CFG0 := Trip_Cfg;
             end;
       end case;
    end Protect_Channel;
@@ -607,7 +613,7 @@ package body ESP32S3.MCPWM is
    -----------------
 
    procedure Clear_Fault (C : Channel) is
-      R : constant Periph_Ref := Regs_Of (C.U);
+      Regs : constant Periph_Ref := Regs_Of (C.U);
    begin
       if not C.Held then
          return;
@@ -616,16 +622,16 @@ package body ESP32S3.MCPWM is
          --  pulse CLR_OST to release a latched trip
 
          when Ch0 =>
-            R.TZ0_CFG1.TZ0_CLR_OST := True;
-            R.TZ0_CFG1.TZ0_CLR_OST := False;
+            Regs.TZ0_CFG1.TZ0_CLR_OST := True;
+            Regs.TZ0_CFG1.TZ0_CLR_OST := False;
 
          when Ch1 =>
-            R.TZ1_CFG1.TZ1_CLR_OST := True;
-            R.TZ1_CFG1.TZ1_CLR_OST := False;
+            Regs.TZ1_CFG1.TZ1_CLR_OST := True;
+            Regs.TZ1_CFG1.TZ1_CLR_OST := False;
 
          when Ch2 =>
-            R.TZ2_CFG1.TZ2_CLR_OST := True;
-            R.TZ2_CFG1.TZ2_CLR_OST := False;
+            Regs.TZ2_CFG1.TZ2_CLR_OST := True;
+            Regs.TZ2_CFG1.TZ2_CLR_OST := False;
       end case;
    end Clear_Fault;
 
@@ -634,20 +640,20 @@ package body ESP32S3.MCPWM is
    -------------
 
    function Faulted (C : Channel) return Boolean is
-      R : constant Periph_Ref := Regs_Of (C.U);
+      Regs : constant Periph_Ref := Regs_Of (C.U);
    begin
       if not C.Held then
          return False;
       end if;
       case C.Idx is
          when Ch0 =>
-            return R.TZ0_STATUS.TZ0_OST_ON or R.TZ0_STATUS.TZ0_CBC_ON;
+            return Regs.TZ0_STATUS.TZ0_OST_ON or Regs.TZ0_STATUS.TZ0_CBC_ON;
 
          when Ch1 =>
-            return R.TZ1_STATUS.TZ1_OST_ON or R.TZ1_STATUS.TZ1_CBC_ON;
+            return Regs.TZ1_STATUS.TZ1_OST_ON or Regs.TZ1_STATUS.TZ1_CBC_ON;
 
          when Ch2 =>
-            return R.TZ2_STATUS.TZ2_OST_ON or R.TZ2_STATUS.TZ2_CBC_ON;
+            return Regs.TZ2_STATUS.TZ2_OST_ON or Regs.TZ2_STATUS.TZ2_CBC_ON;
       end case;
    end Faulted;
 
@@ -671,20 +677,20 @@ package body ESP32S3.MCPWM is
    is (Cap.Held);
 
    procedure Release (Cap : in out Capture) is
-      R : constant Periph_Ref := Regs_Of (Cap.U);
+      Regs : constant Periph_Ref := Regs_Of (Cap.U);
    begin
       if Cap.Held then
          case Cap.Idx is
             --  disable the capture channel on release
 
             when Cap0 =>
-               R.CAP_CH0_CFG.CAP0_EN := False;
+               Regs.CAP_CH0_CFG.CAP0_EN := False;
 
             when Cap1 =>
-               R.CAP_CH1_CFG.CAP1_EN := False;
+               Regs.CAP_CH1_CFG.CAP1_EN := False;
 
             when Cap2 =>
-               R.CAP_CH2_CFG.CAP2_EN := False;
+               Regs.CAP_CH2_CFG.CAP2_EN := False;
          end case;
          Pool.Release_Capture (Cap.U, Cap.Idx);
          Cap.Held := False;
@@ -706,7 +712,7 @@ package body ESP32S3.MCPWM is
    is
       Unit : constant MCPWM_Unit := Cap.U;
       Chan : constant Cap_Index := Cap.Idx;
-      R    : constant Periph_Ref := Regs_Of (Unit);
+      Regs : constant Periph_Ref := Regs_Of (Unit);
       --  CAPn_MODE: bit0 = negedge, bit1 = posedge.
       Mode : constant CAP_CH0_CFG_CAP0_MODE_Field :=
         (case Edge is
@@ -717,20 +723,20 @@ package body ESP32S3.MCPWM is
       if not Cap.Held then
          return;
       end if;
-      R.CAP_TIMER_CFG.CAP_TIMER_EN := True;          --  run the capture timer (APB)
+      Regs.CAP_TIMER_CFG.CAP_TIMER_EN := True;          --  run the capture timer (APB)
       Route_In (Cap_Signal (Unit, Chan), Pin, G.Pull_Up);
       case Chan is
          when Cap0 =>
-            R.CAP_CH0_CFG := (CAP0_EN => True, CAP0_MODE => Mode, others => <>);
-            R.INT_CLR.CAP0_INT_CLR := True;
+            Regs.CAP_CH0_CFG := (CAP0_EN => True, CAP0_MODE => Mode, others => <>);
+            Regs.INT_CLR.CAP0_INT_CLR := True;
 
          when Cap1 =>
-            R.CAP_CH1_CFG := (CAP1_EN => True, CAP1_MODE => Mode, others => <>);
-            R.INT_CLR.CAP1_INT_CLR := True;
+            Regs.CAP_CH1_CFG := (CAP1_EN => True, CAP1_MODE => Mode, others => <>);
+            Regs.INT_CLR.CAP1_INT_CLR := True;
 
          when Cap2 =>
-            R.CAP_CH2_CFG := (CAP2_EN => True, CAP2_MODE => Mode, others => <>);
-            R.INT_CLR.CAP2_INT_CLR := True;
+            Regs.CAP_CH2_CFG := (CAP2_EN => True, CAP2_MODE => Mode, others => <>);
+            Regs.INT_CLR.CAP2_INT_CLR := True;
       end case;
    end Configure_Capture;
 
@@ -739,20 +745,20 @@ package body ESP32S3.MCPWM is
    ---------------------
 
    function Capture_Pending (Cap : Capture) return Boolean is
-      R : constant Periph_Ref := Regs_Of (Cap.U);
+      Regs : constant Periph_Ref := Regs_Of (Cap.U);
    begin
       if not Cap.Held then
          return False;
       end if;
       case Cap.Idx is
          when Cap0 =>
-            return R.INT_RAW.CAP0_INT_RAW;
+            return Regs.INT_RAW.CAP0_INT_RAW;
 
          when Cap1 =>
-            return R.INT_RAW.CAP1_INT_RAW;
+            return Regs.INT_RAW.CAP1_INT_RAW;
 
          when Cap2 =>
-            return R.INT_RAW.CAP2_INT_RAW;
+            return Regs.INT_RAW.CAP2_INT_RAW;
       end case;
    end Capture_Pending;
 
@@ -763,7 +769,7 @@ package body ESP32S3.MCPWM is
    procedure Read_Capture
      (Cap : Capture; Value : out Interfaces.Unsigned_32; Falling : out Boolean)
    is
-      R : constant Periph_Ref := Regs_Of (Cap.U);
+      Regs : constant Periph_Ref := Regs_Of (Cap.U);
    begin
       Value := 0;
       Falling := False;
@@ -772,19 +778,19 @@ package body ESP32S3.MCPWM is
       end if;
       case Cap.Idx is
          when Cap0 =>
-            Value := Unsigned_32 (R.CAP_CH0);
-            Falling := R.CAP_STATUS.CAP0_EDGE;   --  True = negedge
-            R.INT_CLR.CAP0_INT_CLR := True;
+            Value := Unsigned_32 (Regs.CAP_CH0);
+            Falling := Regs.CAP_STATUS.CAP0_EDGE;   --  True = negedge
+            Regs.INT_CLR.CAP0_INT_CLR := True;
 
          when Cap1 =>
-            Value := Unsigned_32 (R.CAP_CH1);
-            Falling := R.CAP_STATUS.CAP1_EDGE;
-            R.INT_CLR.CAP1_INT_CLR := True;
+            Value := Unsigned_32 (Regs.CAP_CH1);
+            Falling := Regs.CAP_STATUS.CAP1_EDGE;
+            Regs.INT_CLR.CAP1_INT_CLR := True;
 
          when Cap2 =>
-            Value := Unsigned_32 (R.CAP_CH2);
-            Falling := R.CAP_STATUS.CAP2_EDGE;
-            R.INT_CLR.CAP2_INT_CLR := True;
+            Value := Unsigned_32 (Regs.CAP_CH2);
+            Falling := Regs.CAP_STATUS.CAP2_EDGE;
+            Regs.INT_CLR.CAP2_INT_CLR := True;
       end case;
    end Read_Capture;
 

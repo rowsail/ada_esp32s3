@@ -144,42 +144,42 @@ package body ESP32S3.TWAI is
    -------------
 
    procedure Receive (S : Session; F : out Standard_Frame; Got : out Boolean) is
-      Id  : Interfaces.Unsigned_32;
-      Rmt : Boolean;
-      Len : Data_Length;
-      Dat : Data_Bytes;
+      Id          : Interfaces.Unsigned_32;
+      Remote_Flag : Boolean;
+      Length      : Data_Length;
+      Data        : Data_Bytes;
    begin
       E.Receive
         (State.Owned (S),
          Want_Extended => False,
          Id            => Id,
-         Remote        => Rmt,
-         Length        => Len,
-         Data          => Dat,
+         Remote        => Remote_Flag,
+         Length        => Length,
+         Data          => Data,
          Got           => Got);
       F :=
         (if Got
-         then (Id => Standard_Id (Id), Remote => Rmt, Length => Len, Data => Dat)
+         then (Id => Standard_Id (Id), Remote => Remote_Flag, Length => Length, Data => Data)
          else (others => <>));
    end Receive;
 
    procedure Receive (S : Session; F : out Extended_Frame; Got : out Boolean) is
-      Id  : Interfaces.Unsigned_32;
-      Rmt : Boolean;
-      Len : Data_Length;
-      Dat : Data_Bytes;
+      Id          : Interfaces.Unsigned_32;
+      Remote_Flag : Boolean;
+      Length      : Data_Length;
+      Data        : Data_Bytes;
    begin
       E.Receive
         (State.Owned (S),
          Want_Extended => True,
          Id            => Id,
-         Remote        => Rmt,
-         Length        => Len,
-         Data          => Dat,
+         Remote        => Remote_Flag,
+         Length        => Length,
+         Data          => Data,
          Got           => Got);
       F :=
         (if Got
-         then (Id => Extended_Id (Id), Remote => Rmt, Length => Len, Data => Dat)
+         then (Id => Extended_Id (Id), Remote => Remote_Flag, Length => Length, Data => Data)
          else (others => <>));
    end Receive;
 

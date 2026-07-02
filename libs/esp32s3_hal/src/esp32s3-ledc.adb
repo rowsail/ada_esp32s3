@@ -71,12 +71,12 @@ package body ESP32S3.LEDC is
    is (Sigs.LEDC_LS_SIG_OUT0 + Natural (Idx));
 
    procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
+      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
    begin
       G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
-      O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      O.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := O;
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
+      Out_Cfg.OEN_SEL := False;
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := Out_Cfg;
    end Drive_Out;
 
    --------------------------------------------------------------------------
@@ -181,11 +181,11 @@ package body ESP32S3.LEDC is
    procedure Configure
      (C : in out Channel; Freq : Positive; Pin : ESP32S3.GPIO.Pin_Id; Bits : Resolution := 10)
    is
-      T   : constant Timer_Index := Timer_Of (C.Idx);
-      Max : constant Natural := 2**Bits;
+      Timer_Num : constant Timer_Index := Timer_Of (C.Idx);
+      Max       : constant Natural := 2**Bits;
       --  CLK_DIV is Q10.8: div = Src / (Freq * 2**Bits), in 1/256ths.  Clamp to
       --  the field range [1.0 .. 2**18-1/256].
-      Div : constant Natural :=
+      Div       : constant Natural :=
         Natural'Max
           (256,
            Natural'Min
@@ -200,7 +200,7 @@ package body ESP32S3.LEDC is
       C.Bits := Bits;                        --  remembered for Set_Duty's scaling
 
       --  Timer: set divider + resolution, commit, then pulse reset to start it.
-      Timers (T).CONF :=
+      Timers (Timer_Num).CONF :=
         (DUTY_RES => TIMER_CONF_DUTY_RES_Field (Bits),
          CLK_DIV  => TIMER_CONF_CLK_DIV_Field (Div),
          TICK_SEL => False,
@@ -208,13 +208,13 @@ package body ESP32S3.LEDC is
          RST      => True,
          PARA_UP  => True,
          others   => <>);
-      Timers (T).CONF.RST := False;          --  release reset -> counter runs
+      Timers (Timer_Num).CONF.RST := False;          --  release reset -> counter runs
 
       --  Channel: hpoint 0, duty 0, bound to the timer, output enabled.
       Channels (C.Idx).HPOINT.HPOINT := 0;
       Channels (C.Idx).DUTY.DUTY := 0;
       Channels (C.Idx).CONF0 :=
-        (TIMER_SEL  => CH_CONF_TIMER_SEL_Field (T),
+        (TIMER_SEL  => CH_CONF_TIMER_SEL_Field (Timer_Num),
          SIG_OUT_EN => True,
          PARA_UP    => True,
          others     => <>);
@@ -234,14 +234,14 @@ package body ESP32S3.LEDC is
    --------------
 
    procedure Set_Duty (C : Channel; Percent : Duty_Percent) is
-      Max : constant Natural := 2**C.Bits;
-      Cnt : constant Natural := Natural'Min (Max, Natural (Float (Max) * Percent / 100.0));
+      Max   : constant Natural := 2**C.Bits;
+      Count : constant Natural := Natural'Min (Max, Natural (Float (Max) * Percent / 100.0));
    begin
       if not C.Held then
          return;
       end if;
       --  Duty register holds the count in its high bits (4 fractional bits).
-      Channels (C.Idx).DUTY.DUTY := CH_DUTY_DUTY_Field (Cnt * 16);
+      Channels (C.Idx).DUTY.DUTY := CH_DUTY_DUTY_Field (Count * 16);
       Channels (C.Idx).CONF1 :=
         (DUTY_START => True,
          DUTY_INC   => True,

@@ -42,14 +42,14 @@ package body ESP32S3.PCNT is
    is (Sigs.PCNT_SIG_CH0_IN0 + PCNT_Sigs_Per_Unit * Natural (Idx));
 
    procedure Route_In (Sig : Natural; Pin : G.Pin_Id) is
-      Ix : constant Natural := Natural (Pin);
-      P  : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Ix);
+      Pad_Index : constant Natural := Natural (Pin);
+      Pad_Cfg   : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Pad_Index);
    begin
-      P.MCU_SEL := 1;
-      P.FUN_IE := True;          --  input buffer on so PCNT reads the pad
-      MX.IO_MUX_Periph.GPIO (Ix) := P;
+      Pad_Cfg.MCU_SEL := 1;
+      Pad_Cfg.FUN_IE := True;          --  input buffer on so PCNT reads the pad
+      MX.IO_MUX_Periph.GPIO (Pad_Index) := Pad_Cfg;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Sig) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix), SEL => True, others => <>);
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Pad_Index), SEL => True, others => <>);
    end Route_In;
 
    procedure Reset_Unit (Idx : Unit_Index) is
