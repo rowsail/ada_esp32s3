@@ -70,12 +70,12 @@ begin
 
    --  test1: claim a channel, mem2mem copy, compare.
    declare
-      C  : Channel;
-      Ok : Boolean := False;
+      Channel_Handle : Channel;
+      Ok             : Boolean := False;
    begin
-      Claim (C, Mem2Mem);
-      if Is_Valid (C) then
-         Copy (C, Dst'Address, Src'Address, Buffer'Length);
+      Claim (Channel_Handle, Mem2Mem);
+      if Is_Valid (Channel_Handle) then
+         Copy (Channel_Handle, Dst'Address, Src'Address, Buffer'Length);
          Ok := (for all I in Buffer'Range => Dst (I) = Src (I));
       end if;
       Copy_Result (Ok);
@@ -105,10 +105,10 @@ begin
       end;                                --  Finalize C1..C5, Extra -> all freed
 
       declare
-         C : Channel;
+         Channel_Handle : Channel;
       begin
-         Claim (C, Mem2Mem);              --  succeeds only if the five were freed
-         Reclaimed := Is_Valid (C);
+         Claim (Channel_Handle, Mem2Mem);   --  succeeds only if the five were freed
+         Reclaimed := Is_Valid (Channel_Handle);
       end;
 
       Raii_Result (Five, Sixth_Rejected, Reclaimed, Five and Sixth_Rejected and Reclaimed);
