@@ -188,19 +188,19 @@ package body ESP32S3.CH422G is
    end Write_IO;
 
    procedure Write_IO_Pin (S : Session; Pin : IO_Pin; State : Pin_State; Result : out Status) is
-      M : constant ESP32S3.I2C.Byte := 2**Natural (Pin);
-      B : ESP32S3.I2C.Byte;
+      Mask : constant ESP32S3.I2C.Byte := 2**Natural (Pin);
+      Regs : ESP32S3.I2C.Byte;
    begin
       Check_Owned (S);
-      B := Shadows (S.Host).IO_Out;
+      Regs := Shadows (S.Host).IO_Out;
       if State = High then
-         B := B or M;
+         Regs := Regs or Mask;
       else
-         B := B and (not M);
+         Regs := Regs and (not Mask);
       end if;
-      Cmd (S, Addr_IO, B, Result);
+      Cmd (S, Addr_IO, Regs, Result);
       if Result = OK then
-         Shadows (S.Host).IO_Out := B;
+         Shadows (S.Host).IO_Out := Regs;
       end if;
    end Write_IO_Pin;
 
@@ -226,10 +226,10 @@ package body ESP32S3.CH422G is
    end Read_IO;
 
    procedure Read_IO_Pin (S : Session; Pin : IO_Pin; State : out Pin_State; Result : out Status) is
-      V : IO_Value;
+      Value : IO_Value;
    begin
-      Read_IO (S, V, Result);
-      State := (if (V and IO_Value (2**Natural (Pin))) /= 0 then High else Low);
+      Read_IO (S, Value, Result);
+      State := (if (Value and IO_Value (2**Natural (Pin))) /= 0 then High else Low);
    end Read_IO_Pin;
 
    --------------
@@ -246,20 +246,20 @@ package body ESP32S3.CH422G is
    end Write_OC;
 
    procedure Write_OC_Pin (S : Session; Pin : OC_Pin; State : Pin_State; Result : out Status) is
-      M : constant ESP32S3.I2C.Byte := 2**Natural (Pin);
-      B : ESP32S3.I2C.Byte;
+      Mask : constant ESP32S3.I2C.Byte := 2**Natural (Pin);
+      Regs : ESP32S3.I2C.Byte;
    begin
       Check_Owned (S);
-      B := Shadows (S.Host).OC_Out;
+      Regs := Shadows (S.Host).OC_Out;
       if State = High then
-         B := B or M;
+         Regs := Regs or Mask;
       else
-         B := B and (not M);
+         Regs := Regs and (not Mask);
       end if;
-      B := B and 16#0F#;          --  only OC0..OC3
-      Cmd (S, Addr_OC, B, Result);
+      Regs := Regs and 16#0F#;          --  only OC0..OC3
+      Cmd (S, Addr_OC, Regs, Result);
       if Result = OK then
-         Shadows (S.Host).OC_Out := B;
+         Shadows (S.Host).OC_Out := Regs;
       end if;
    end Write_OC_Pin;
 

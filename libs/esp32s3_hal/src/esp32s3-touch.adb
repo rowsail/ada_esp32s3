@@ -67,13 +67,13 @@ package body ESP32S3.Touch is
    ------------
 
    procedure Enable (Ch : Channel) is
-      N     : constant Natural := Natural (Ch);
-      Slope : constant := 7;            --  fastest charge slope
+      Pad_Index : constant Natural := Natural (Ch);
+      Slope     : constant := 7;            --  fastest charge slope
    begin
       --  Charge slope for this pad (3 bits at 29 - 3*n).
-      if N < 10 then
+      if Pad_Index < 10 then
          declare
-            Shift : constant Natural := 29 - 3 * N;
+            Shift : constant Natural := 29 - 3 * Pad_Index;
          begin
             Touch_DAC :=
               (Touch_DAC and not Shift_Left (UInt32 (7), Shift))
@@ -81,7 +81,7 @@ package body ESP32S3.Touch is
          end;
       else
          declare
-            Shift : constant Natural := 29 - 3 * (N - 10);
+            Shift : constant Natural := 29 - 3 * (Pad_Index - 10);
          begin
             Touch_DAC1 :=
               (Touch_DAC1 and not Shift_Left (UInt32 (7), Shift))
@@ -90,16 +90,17 @@ package body ESP32S3.Touch is
       end if;
 
       --  Route the pad into the RTC/touch domain (no digital input, no pulls).
-      Pads (N) := (Pads (N) or Mux_Sel) and not (Fun_IE or Pulls);
+      Pads (Pad_Index) := (Pads (Pad_Index) or Mux_Sel) and not (Fun_IE or Pulls);
 
       --  Add the channel to the scan set.
       RTC_CNTL_Periph.TOUCH_SCAN_CTRL.TOUCH_SCAN_PAD_MAP :=
         TOUCH_SCAN_CTRL_TOUCH_SCAN_PAD_MAP_Field
           (UInt32 (RTC_CNTL_Periph.TOUCH_SCAN_CTRL.TOUCH_SCAN_PAD_MAP)
-           or Shift_Left (UInt32 (1), N));
+           or Shift_Left (UInt32 (1), Pad_Index));
       SENS_Periph.SAR_TOUCH_CONF.SAR_TOUCH_OUTEN :=
         SAR_TOUCH_CONF_SAR_TOUCH_OUTEN_Field
-          (UInt32 (SENS_Periph.SAR_TOUCH_CONF.SAR_TOUCH_OUTEN) or Shift_Left (UInt32 (1), N));
+          (UInt32 (SENS_Periph.SAR_TOUCH_CONF.SAR_TOUCH_OUTEN)
+           or Shift_Left (UInt32 (1), Pad_Index));
    end Enable;
 
    ----------
