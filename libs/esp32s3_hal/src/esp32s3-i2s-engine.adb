@@ -65,13 +65,13 @@ package body ESP32S3.I2S.Engine is
          when Bits_32 => 32);
 
    procedure Drive_Out (Pad : ESP32S3.GPIO.Pin_Id; Signal : Natural) is
-      Ix : constant Natural := Natural (Pad);
-      O  : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
+      Pad_Index : constant Natural := Natural (Pad);
+      Out_Cfg   : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index);
    begin
       ESP32S3.GPIO.Configure
         (Pad, Mode => ESP32S3.GPIO.Output, Drive => ESP32S3.GPIO.Drive_Strong);
-      O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Signal);
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix) := O;
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Signal);
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index) := Out_Cfg;
    end Drive_Out;
 
    procedure Route_In (Signal : Natural; Pad : ESP32S3.GPIO.Pin_Id; As_Input : Boolean) is
@@ -91,19 +91,19 @@ package body ESP32S3.I2S.Engine is
      (B : in out Bus; Port : I2S_Port; Sample_Rate : Positive; Bits : Sample_Bits; Mode : I2S_Mode)
    is
       use ESP32S3_Registers.SYSTEM;
-      R      : constant Periph_Ref := Regs_Of (Port);
-      DB     : constant Natural := Data_Bits (Bits);
-      Is_PDM : constant Boolean := Mode = ESP32S3.I2S.PDM;
+      Regs     : constant Periph_Ref := Regs_Of (Port);
+      DB       : constant Natural := Data_Bits (Bits);   --  data bits per sample
+      Is_PDM   : constant Boolean := Mode = ESP32S3.I2S.PDM;
       --  Bit-clocks per audio-sample period.  Standard TDM: Bits per slot x two
       --  slots (stereo).  PDM: the serial stream runs at 64x the sample rate (the
       --  sigma-delta OSR) times the 2x ratio between the TX up-sampler (fp/fs =
       --  960/480) and the RX decimator (DSR = 128); locked to one shared clock,
       --  TX up and RX down net to unity.
-      Frame  : constant Natural := (if Is_PDM then 128 else DB * 2);
-      Bclk   : constant Natural := Sample_Rate * Frame;        --  serial bit clock
-      M      : constant Natural := 8;                          --  BCK divider
-      N      : constant Natural :=                             --  CLKM divider
-        Natural'Max (2, Natural'Min (255, (Src_Hz + (Bclk * M) / 2) / (Bclk * M)));
+      Frame    : constant Natural := (if Is_PDM then 128 else DB * 2);
+      Bclk     : constant Natural := Sample_Rate * Frame;  --  serial bit clock
+      Bck_Div  : constant Natural := 8;                    --  BCK divider
+      Clkm_Div : constant Natural :=                       --  CLKM divider
+        Natural'Max (2, Natural'Min (255, (Src_Hz + (Bclk * Bck_Div) / 2) / (Bclk * Bck_Div)));
    begin
       --  Re-opening a port that is mid-continuous-transmit (Reconfigure while
       --  streaming) must first halt TX and release its held GDMA channel -- the
@@ -126,34 +126,34 @@ package body ESP32S3.I2S.Engine is
             SYSTEM_Periph.PERIP_RST_EN0.I2S1_RST := False;
       end case;
 
-      --  Clock module: source = CLK160 (sel 2), integer divide by N, gate on.
-      R.TX_CLKM_DIV_CONF :=
+      --  Clock module: source = CLK160 (sel 2), integer divide by Clkm_Div, gate on.
+      Regs.TX_CLKM_DIV_CONF :=
         (TX_CLKM_DIV_X   => 0,
          TX_CLKM_DIV_Y   => 0,
          TX_CLKM_DIV_Z   => 0,
          TX_CLKM_DIV_YN1 => False,
          others          => <>);
-      R.RX_CLKM_DIV_CONF :=
+      Regs.RX_CLKM_DIV_CONF :=
         (RX_CLKM_DIV_X   => 0,
          RX_CLKM_DIV_Y   => 0,
          RX_CLKM_DIV_Z   => 0,
          RX_CLKM_DIV_YN1 => False,
          others          => <>);
-      R.TX_CLKM_CONF :=
-        (TX_CLKM_DIV_NUM => TX_CLKM_CONF_TX_CLKM_DIV_NUM_Field (N),
+      Regs.TX_CLKM_CONF :=
+        (TX_CLKM_DIV_NUM => TX_CLKM_CONF_TX_CLKM_DIV_NUM_Field (Clkm_Div),
          TX_CLK_SEL      => 2,
          TX_CLK_ACTIVE   => True,
          CLK_EN          => True,
          others          => <>);
-      R.RX_CLKM_CONF :=
-        (RX_CLKM_DIV_NUM => RX_CLKM_CONF_RX_CLKM_DIV_NUM_Field (N),
+      Regs.RX_CLKM_CONF :=
+        (RX_CLKM_DIV_NUM => RX_CLKM_CONF_RX_CLKM_DIV_NUM_Field (Clkm_Div),
          RX_CLK_SEL      => 2,
          RX_CLK_ACTIVE   => True,
          others          => <>);
 
-      --  Slot format: stereo TDM, BCK divider M, Philips (1-bit MSB shift).
-      R.TX_CONF1 :=
-        (TX_BCK_DIV_NUM      => TX_CONF1_TX_BCK_DIV_NUM_Field (M - 1),
+      --  Slot format: stereo TDM, BCK divider Bck_Div, Philips (1-bit MSB shift).
+      Regs.TX_CONF1 :=
+        (TX_BCK_DIV_NUM      => TX_CONF1_TX_BCK_DIV_NUM_Field (Bck_Div - 1),
          TX_BITS_MOD         => TX_CONF1_TX_BITS_MOD_Field (DB - 1),
          TX_TDM_CHAN_BITS    => TX_CONF1_TX_TDM_CHAN_BITS_Field (DB - 1),
          TX_TDM_WS_WIDTH     => TX_CONF1_TX_TDM_WS_WIDTH_Field (DB - 1),
@@ -161,8 +161,8 @@ package body ESP32S3.I2S.Engine is
          TX_MSB_SHIFT        => True,
          TX_BCK_NO_DLY       => False,
          others              => <>);
-      R.RX_CONF1 :=
-        (RX_BCK_DIV_NUM      => RX_CONF1_RX_BCK_DIV_NUM_Field (M - 1),
+      Regs.RX_CONF1 :=
+        (RX_BCK_DIV_NUM      => RX_CONF1_RX_BCK_DIV_NUM_Field (Bck_Div - 1),
          RX_BITS_MOD         => RX_CONF1_RX_BITS_MOD_Field (DB - 1),
          RX_TDM_CHAN_BITS    => RX_CONF1_RX_TDM_CHAN_BITS_Field (DB - 1),
          RX_TDM_WS_WIDTH     => RX_CONF1_RX_TDM_WS_WIDTH_Field (DB - 1),
@@ -171,9 +171,9 @@ package body ESP32S3.I2S.Engine is
          others              => <>);
 
       --  Two TDM slots, both active.
-      R.TX_TDM_CTRL :=
+      Regs.TX_TDM_CTRL :=
         (TX_TDM_TOT_CHAN_NUM => 1, TX_TDM_CHAN0_EN => True, TX_TDM_CHAN1_EN => True, others => <>);
-      R.RX_TDM_CTRL :=
+      Regs.RX_TDM_CTRL :=
         (RX_TDM_TOT_CHAN_NUM => 1,
          RX_TDM_PDM_CHAN0_EN => True,
          RX_TDM_PDM_CHAN1_EN => True,
@@ -185,12 +185,12 @@ package body ESP32S3.I2S.Engine is
          --  PCM -> PDM up-converter on TX (sigma-delta); the record defaults
          --  (OSR2 = 2, dither on, unity shifts) are the usual settings, and
          --  TX_PCM2PDM_CONF1's reset fp/fs = 960/480 give the 2x up-sample.
-         R.TX_PCM2PDM_CONF := (PCM2PDM_CONV_EN => True, others => <>);
+         Regs.TX_PCM2PDM_CONF := (PCM2PDM_CONV_EN => True, others => <>);
          --  PDM is used with real external devices, so NO SIG_LOOPBACK -- the
          --  receiver must read the actual data pad, not the TX side internally.
          --  In PDM the RECEIVER owns the clock (it clocks the mic), so RX masters
          --  and TX follows -- the reverse of the TDM roles, where TX masters.
-         R.TX_CONF :=
+         Regs.TX_CONF :=
            (TX_PDM_EN     => True,
             TX_TDM_EN     => False,
             TX_SLAVE_MOD  => True,
@@ -201,7 +201,7 @@ package body ESP32S3.I2S.Engine is
             others        => <>);
          --  PDM -> PCM down-converter on RX; DSR_16_EN selects the 128 (2x)
          --  decimation that matches the TX up-sample.
-         R.RX_CONF :=
+         Regs.RX_CONF :=
            (RX_PDM_EN             => True,
             RX_PDM2PCM_EN         => True,
             RX_PDM_SINC_DSR_16_EN => True,
@@ -212,7 +212,7 @@ package body ESP32S3.I2S.Engine is
             others                => <>);
       else
          --  Both TDM (standard I2S), no PDM.
-         R.TX_CONF :=
+         Regs.TX_CONF :=
            (TX_TDM_EN     => True,
             TX_PDM_EN     => False,
             TX_SLAVE_MOD  => False,
@@ -221,7 +221,7 @@ package body ESP32S3.I2S.Engine is
             TX_PCM_BYPASS => True,
             SIG_LOOPBACK  => True,
             others        => <>);
-         R.RX_CONF :=
+         Regs.RX_CONF :=
            (RX_TDM_EN     => True,
             RX_PDM_EN     => False,
             RX_SLAVE_MOD  => True,
@@ -234,24 +234,24 @@ package body ESP32S3.I2S.Engine is
       --  claimed here: transfers claim one transiently (a continuous transmit
       --  holds one only until Stop), so an idle open port ties up none of the
       --  five-channel pool.
-      R.TX_CONF.TX_RESET := True;
-      R.TX_CONF.TX_RESET := False;
-      R.TX_CONF.TX_FIFO_RESET := True;
-      R.TX_CONF.TX_FIFO_RESET := False;
-      R.RX_CONF.RX_RESET := True;
-      R.RX_CONF.RX_RESET := False;
-      R.RX_CONF.RX_FIFO_RESET := True;
-      R.RX_CONF.RX_FIFO_RESET := False;
-      R.TX_CONF.TX_UPDATE := True;
-      while R.TX_CONF.TX_UPDATE loop
+      Regs.TX_CONF.TX_RESET := True;
+      Regs.TX_CONF.TX_RESET := False;
+      Regs.TX_CONF.TX_FIFO_RESET := True;
+      Regs.TX_CONF.TX_FIFO_RESET := False;
+      Regs.RX_CONF.RX_RESET := True;
+      Regs.RX_CONF.RX_RESET := False;
+      Regs.RX_CONF.RX_FIFO_RESET := True;
+      Regs.RX_CONF.RX_FIFO_RESET := False;
+      Regs.TX_CONF.TX_UPDATE := True;
+      while Regs.TX_CONF.TX_UPDATE loop
          null;
       end loop;
-      R.RX_CONF.RX_UPDATE := True;
-      while R.RX_CONF.RX_UPDATE loop
+      Regs.RX_CONF.RX_UPDATE := True;
+      while Regs.RX_CONF.RX_UPDATE loop
          null;
       end loop;
 
-      B.Regs := R;
+      B.Regs := Regs;
       B.Port := Port;
       B.Streaming := False;
       B.Valid := True;
@@ -273,26 +273,26 @@ package body ESP32S3.I2S.Engine is
       Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin)
    is
       use type ESP32S3.GPIO.Pad_Number;
-      S : constant Sig := Signals (B.Port);
+      Host_Sigs : constant Sig := Signals (B.Port);
    begin
       if not B.Valid then
          return;
       end if;
-      if Mclk /= No_Pin and then S.Mck_Out /= 0 then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Mclk), S.Mck_Out);   --  master clock out
+      if Mclk /= No_Pin and then Host_Sigs.Mck_Out /= 0 then
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Mclk), Host_Sigs.Mck_Out);   --  master clock out
 
       end if;
       if Bclk /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Bclk), S.Bck_Out);
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Bclk), Host_Sigs.Bck_Out);
       end if;
       if Ws /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Ws), S.Ws_Out);
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Ws), Host_Sigs.Ws_Out);
       end if;
       if Dout /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Dout), S.Sd_Out);
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Dout), Host_Sigs.Sd_Out);
       end if;
       if Din /= No_Pin then
-         Route_In (S.Sd_In, ESP32S3.GPIO.Pin_Id (Din), As_Input => True);
+         Route_In (Host_Sigs.Sd_In, ESP32S3.GPIO.Pin_Id (Din), As_Input => True);
       end if;
    end Configure_Pins;
 
@@ -301,15 +301,15 @@ package body ESP32S3.I2S.Engine is
    ---------------------
 
    procedure Enable_Loopback (B : Bus; Pad : ESP32S3.GPIO.Pin_Id) is
-      S : constant Sig := Signals (B.Port);
+      Host_Sigs : constant Sig := Signals (B.Port);
    begin
       if not B.Valid then
          return;
       end if;
       --  Data-out on Pad, fed back into data-in (SIG_LOOPBACK already shares the
       --  clock/WS internally, so no clock pad is needed).
-      Drive_Out (Pad, S.Sd_Out);
-      Route_In (S.Sd_In, Pad, As_Input => False);
+      Drive_Out (Pad, Host_Sigs.Sd_Out);
+      Route_In (Host_Sigs.Sd_In, Pad, As_Input => False);
    end Enable_Loopback;
 
    ---------
@@ -319,7 +319,7 @@ package body ESP32S3.I2S.Engine is
    --  Shared TX/RX engine.  Arms whichever directions are requested, kicks the
    --  module, and blocks on the DMA EOF (RX if reading, else TX).
    procedure Run (B : Bus; Tx, Rx : System.Address; Length : Natural; Do_Tx, Do_Rx : Boolean) is
-      R    : constant Periph_Ref := B.Regs;
+      Regs : constant Periph_Ref := B.Regs;
       Chan : GD.Channel;          --  claimed transiently; released on return
    begin
       if not B.Valid or else Length = 0 or else Length > 4095 then
@@ -332,31 +332,31 @@ package body ESP32S3.I2S.Engine is
       end if;
 
       if Do_Tx then
-         R.TX_CONF.TX_FIFO_RESET := True;
-         R.TX_CONF.TX_FIFO_RESET := False;
+         Regs.TX_CONF.TX_FIFO_RESET := True;
+         Regs.TX_CONF.TX_FIFO_RESET := False;
          GD.Start (Chan, GD.Mem_To_Periph, Tx, Length);
       end if;
       if Do_Rx then
-         R.RX_CONF.RX_FIFO_RESET := True;
-         R.RX_CONF.RX_FIFO_RESET := False;
-         R.RXEOF_NUM.RX_EOF_NUM := RXEOF_NUM_RX_EOF_NUM_Field (Length);
+         Regs.RX_CONF.RX_FIFO_RESET := True;
+         Regs.RX_CONF.RX_FIFO_RESET := False;
+         Regs.RXEOF_NUM.RX_EOF_NUM := RXEOF_NUM_RX_EOF_NUM_Field (Length);
          GD.Start (Chan, GD.Periph_To_Mem, Rx, Length);
       end if;
 
-      R.TX_CONF.TX_UPDATE := True;
-      while R.TX_CONF.TX_UPDATE loop
+      Regs.TX_CONF.TX_UPDATE := True;
+      while Regs.TX_CONF.TX_UPDATE loop
          null;
       end loop;
-      R.RX_CONF.RX_UPDATE := True;
-      while R.RX_CONF.RX_UPDATE loop
+      Regs.RX_CONF.RX_UPDATE := True;
+      while Regs.RX_CONF.RX_UPDATE loop
          null;
       end loop;
 
       if Do_Rx then
-         R.RX_CONF.RX_START := True;
+         Regs.RX_CONF.RX_START := True;
       end if;
       if Do_Tx then
-         R.TX_CONF.TX_START := True;
+         Regs.TX_CONF.TX_START := True;
       end if;
 
       if Do_Rx then
@@ -372,13 +372,13 @@ package body ESP32S3.I2S.Engine is
       --  serializer done) first.  Same unbounded-poll style as TX_UPDATE above;
       --  it is bounded in practice because TX is running and the FIFO must empty.
       if Do_Tx then
-         while not R.STATE.TX_IDLE loop
+         while not Regs.STATE.TX_IDLE loop
             null;
          end loop;
       end if;
 
-      R.TX_CONF.TX_START := False;
-      R.RX_CONF.RX_START := False;
+      Regs.TX_CONF.TX_START := False;
+      Regs.RX_CONF.RX_START := False;
    end Run;   --  Chan finalizes here -> GD.Release returns it to the pool
 
    procedure Write (B : Bus; Tx : System.Address; Length : Natural) is
@@ -401,7 +401,7 @@ package body ESP32S3.I2S.Engine is
    ----------------------
 
    procedure Start_Continuous (B : in out Bus; Tx : System.Address; Length : Natural) is
-      R : constant Periph_Ref := B.Regs;
+      Regs : constant Periph_Ref := B.Regs;
    begin
       if not B.Valid or else B.Streaming or else Length = 0 or else Length > 4095 then
          return;
@@ -419,15 +419,15 @@ package body ESP32S3.I2S.Engine is
       --  Clear TX_STOP_EN so a momentary FIFO underrun can never latch TX off;
       --  with the self-looping DMA the FIFO stays fed, so the clock runs
       --  continuously and the waveform repeats with no gap.
-      R.TX_CONF.TX_STOP_EN := False;
-      R.TX_CONF.TX_FIFO_RESET := True;
-      R.TX_CONF.TX_FIFO_RESET := False;
+      Regs.TX_CONF.TX_STOP_EN := False;
+      Regs.TX_CONF.TX_FIFO_RESET := True;
+      Regs.TX_CONF.TX_FIFO_RESET := False;
       GD.Start_Loop (B.Chan, Tx, Length);
-      R.TX_CONF.TX_UPDATE := True;
-      while R.TX_CONF.TX_UPDATE loop
+      Regs.TX_CONF.TX_UPDATE := True;
+      while Regs.TX_CONF.TX_UPDATE loop
          null;
       end loop;
-      R.TX_CONF.TX_START := True;
+      Regs.TX_CONF.TX_START := True;
    end Start_Continuous;
 
    ----------
@@ -453,7 +453,7 @@ package body ESP32S3.I2S.Engine is
    --  TX_UPDATE / TX_START), so a continuous transmit driving the shared master
    --  clock keeps running while we sample the data-in line.
    procedure Capture (B : Bus; Rx : System.Address; Length : Natural) is
-      R    : constant Periph_Ref := B.Regs;
+      Regs : constant Periph_Ref := B.Regs;
       Chan : GD.Channel;          --  own transient RX channel (a continuous TX
       --  transmit, if any, holds a separate one)
    begin
@@ -465,21 +465,21 @@ package body ESP32S3.I2S.Engine is
          return;
       end if;
 
-      R.RX_CONF.RX_FIFO_RESET := True;
-      R.RX_CONF.RX_FIFO_RESET := False;
-      R.RXEOF_NUM.RX_EOF_NUM := RXEOF_NUM_RX_EOF_NUM_Field (Length);
+      Regs.RX_CONF.RX_FIFO_RESET := True;
+      Regs.RX_CONF.RX_FIFO_RESET := False;
+      Regs.RXEOF_NUM.RX_EOF_NUM := RXEOF_NUM_RX_EOF_NUM_Field (Length);
       GD.Start (Chan, GD.Periph_To_Mem, Rx, Length);
       --  Latch RX config.  Bounded: while a continuous TX is driving the shared
       --  clock, RX_UPDATE does not always self-clear, so never spin on it.
-      R.RX_CONF.RX_UPDATE := True;
+      Regs.RX_CONF.RX_UPDATE := True;
       declare
          Guard : Natural := 0;
       begin
-         while R.RX_CONF.RX_UPDATE and then Guard < 100_000 loop
+         while Regs.RX_CONF.RX_UPDATE and then Guard < 100_000 loop
             Guard := Guard + 1;
          end loop;
       end;
-      R.RX_CONF.RX_START := True;
+      Regs.RX_CONF.RX_START := True;
       --  Wait for the RX success-EOF.  A capture is clock-paced: Length bytes
       --  take Length/(rate*frame_bytes) seconds (tens of ms), far longer than
       --  GD.Wait's short guard -- which would return early on a half-filled
@@ -491,7 +491,7 @@ package body ESP32S3.I2S.Engine is
             Guard := Guard + 1;
          end loop;
       end;
-      R.RX_CONF.RX_START := False;
+      Regs.RX_CONF.RX_START := False;
    end Capture;   --  Chan finalizes -> released
 
    -----------
