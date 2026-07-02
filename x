@@ -100,7 +100,9 @@ monitor_tool () {  # pick the first available serial console for $1=port
     local port="$1"
     if [ -n "${ESP_MONITOR:-}" ]; then eval "$ESP_MONITOR"; return; fi
     if python3 -c 'import serial.tools.miniterm' 2>/dev/null; then
-        exec python3 -m serial.tools.miniterm --raw "$port" "$BAUD"
+        # --eol CR: send just CR on Enter (miniterm defaults to CRLF, which the
+        # line-oriented consoles on the device see as a spurious empty line).
+        exec python3 -m serial.tools.miniterm --raw --eol CR "$port" "$BAUD"
     elif command -v picocom >/dev/null; then exec picocom -b "$BAUD" "$port"
     elif command -v screen  >/dev/null; then exec screen "$port" "$BAUD"
     else
