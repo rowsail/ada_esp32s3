@@ -71,21 +71,21 @@ package body X509 is
    --  GeneralNames ::= SEQUENCE OF GeneralName; collect dNSName ([2], tag 0x82).
    procedure Parse_SAN (Cert : Byte_Array; First, Last : Natural; Result : in out Certificate) is
       Seq, Name : DER.TLV;
-      P         : Natural;
+      Pos       : Natural;
    begin
       DER.Read (Cert, First, Last, Seq);
       if not Seq.Valid or else Seq.Tag /= 16#30# then
          return;
       end if;
-      P := Seq.Content.First;
-      while P <= Seq.Content.Last loop
-         DER.Read (Cert, P, Seq.Content.Last, Name);
+      Pos := Seq.Content.First;
+      while Pos <= Seq.Content.Last loop
+         DER.Read (Cert, Pos, Seq.Content.Last, Name);
          exit when not Name.Valid;
          if Name.Tag = 16#82# and then Result.SAN_Count < Max_SAN then
             Result.SAN_Count := Result.SAN_Count + 1;
             Result.SAN (Result.SAN_Count) := Name.Content;
          end if;
-         P := Name.Elem_Last + 1;
+         Pos := Name.Elem_Last + 1;
       end loop;
    end Parse_SAN;
 
@@ -93,8 +93,8 @@ package body X509 is
    procedure Parse_Basic_Constraints
      (Cert : Byte_Array; First, Last : Natural; Result : in out Certificate)
    is
-      Seq, T : DER.TLV;
-      P      : Natural;
+      Seq, Field : DER.TLV;
+      Pos        : Natural;
    begin
       Result.BC_Present := True;
       DER.Read (Cert, First, Last, Seq);
@@ -102,24 +102,24 @@ package body X509 is
          return;                       --  empty/odd: cA stays FALSE (not a CA)
 
       end if;
-      P := Seq.Content.First;
-      DER.Read (Cert, P, Seq.Content.Last, T);
-      if T.Valid and then T.Tag = 16#01# and then Length (T.Content) = 1 then
-         Result.Is_CA := Cert (T.Content.First) /= 0;       --  cA BOOLEAN
-         P := T.Elem_Last + 1;
-         DER.Read (Cert, P, Seq.Content.Last, T);
+      Pos := Seq.Content.First;
+      DER.Read (Cert, Pos, Seq.Content.Last, Field);
+      if Field.Valid and then Field.Tag = 16#01# and then Length (Field.Content) = 1 then
+         Result.Is_CA := Cert (Field.Content.First) /= 0;       --  cA BOOLEAN
+         Pos := Field.Elem_Last + 1;
+         DER.Read (Cert, Pos, Seq.Content.Last, Field);
       end if;
-      if T.Valid
-        and then T.Tag = 16#02#                    --  pathLenConstraint INTEGER
-        and then Length (T.Content) in 1 .. 2
+      if Field.Valid
+        and then Field.Tag = 16#02#                --  pathLenConstraint INTEGER
+        and then Length (Field.Content) in 1 .. 2
       then
          declare
-            V : Integer := 0;
+            Value : Integer := 0;
          begin
-            for I in T.Content.First .. T.Content.Last loop
-               V := V * 256 + Integer (Cert (I));
+            for I in Field.Content.First .. Field.Content.Last loop
+               Value := Value * 256 + Integer (Cert (I));
             end loop;
-            Result.Path_Len := V;
+            Result.Path_Len := Value;
          end;
       end if;
    end Parse_Basic_Constraints;
@@ -129,15 +129,18 @@ package body X509 is
    procedure Parse_Key_Usage
      (Cert : Byte_Array; First, Last : Natural; Result : in out Certificate)
    is
-      BS    : DER.TLV;
-      Bits0 : U8;
+      Bit_String : DER.TLV;
+      Bits0      : U8;
    begin
       Result.KU_Present := True;
-      DER.Read (Cert, First, Last, BS);
-      if not BS.Valid or else BS.Tag /= 16#03# or else Length (BS.Content) < 2 then
+      DER.Read (Cert, First, Last, Bit_String);
+      if not Bit_String.Valid
+        or else Bit_String.Tag /= 16#03#
+        or else Length (Bit_String.Content) < 2
+      then
          return;
       end if;
-      Bits0 := Cert (BS.Content.First + 1);                 --  first data byte
+      Bits0 := Cert (Bit_String.Content.First + 1);         --  first data byte
       Result.KU_Digital_Sig := (Bits0 and 16#80#) /= 0;     --  bit 0
       Result.KU_Cert_Sign := (Bits0 and 16#04#) /= 0;     --  bit 5
    end Parse_Key_Usage;
@@ -145,16 +148,16 @@ package body X509 is
    --  ExtKeyUsage ::= SEQUENCE OF KeyPurposeId (OID).
    procedure Parse_EKU (Cert : Byte_Array; First, Last : Natural; Result : in out Certificate) is
       Seq, Purpose : DER.TLV;
-      P            : Natural;
+      Pos          : Natural;
    begin
       Result.EKU_Present := True;
       DER.Read (Cert, First, Last, Seq);
       if not Seq.Valid or else Seq.Tag /= 16#30# then
          return;
       end if;
-      P := Seq.Content.First;
-      while P <= Seq.Content.Last loop
-         DER.Read (Cert, P, Seq.Content.Last, Purpose);
+      Pos := Seq.Content.First;
+      while Pos <= Seq.Content.Last loop
+         DER.Read (Cert, Pos, Seq.Content.Last, Purpose);
          exit when not Purpose.Valid;
          if Purpose.Tag = 16#06# then
             if OID_Match (Cert, Purpose.Content, OID_Server_Auth) then
@@ -166,7 +169,7 @@ package body X509 is
                Result.EKU_Client := True;
             end if;
          end if;
-         P := Purpose.Elem_Last + 1;
+         Pos := Purpose.Elem_Last + 1;
       end loop;
    end Parse_EKU;
 
@@ -175,18 +178,18 @@ package body X509 is
      (Cert : Byte_Array; First, Last : Natural; Result : in out Certificate)
    is
       Seq, Ext, OID, Val : DER.TLV;
-      P, EP              : Natural;
+      Pos, Ext_Pos       : Natural;
    begin
       DER.Read (Cert, First, Last, Seq);
       if not Seq.Valid or else Seq.Tag /= 16#30# then
          return;
       end if;
-      P := Seq.Content.First;
-      while P <= Seq.Content.Last loop
-         DER.Read (Cert, P, Seq.Content.Last, Ext);
+      Pos := Seq.Content.First;
+      while Pos <= Seq.Content.Last loop
+         DER.Read (Cert, Pos, Seq.Content.Last, Ext);
          exit when not Ext.Valid or else Ext.Tag /= 16#30#;
-         EP := Ext.Content.First;
-         DER.Read (Cert, EP, Ext.Content.Last, OID);
+         Ext_Pos := Ext.Content.First;
+         DER.Read (Cert, Ext_Pos, Ext.Content.Last, OID);
          if OID.Valid and then OID.Tag = 16#06# then
             declare
                Critical   : Boolean := False;
@@ -194,13 +197,13 @@ package body X509 is
             begin
                --  Optional critical BOOLEAN (DER omits it when FALSE); record it,
                --  then take the extnValue OCTET STRING.
-               EP := OID.Elem_Last + 1;
-               DER.Read (Cert, EP, Ext.Content.Last, Val);
+               Ext_Pos := OID.Elem_Last + 1;
+               DER.Read (Cert, Ext_Pos, Ext.Content.Last, Val);
                if Val.Valid and then Val.Tag = 16#01# then
                   --  critical BOOLEAN
                   Critical := Length (Val.Content) >= 1 and then Cert (Val.Content.First) /= 0;
-                  EP := Val.Elem_Last + 1;
-                  DER.Read (Cert, EP, Ext.Content.Last, Val);
+                  Ext_Pos := Val.Elem_Last + 1;
+                  DER.Read (Cert, Ext_Pos, Ext.Content.Last, Val);
                end if;
                if Val.Valid and then Val.Tag = 16#04# then
                   --  extnValue OCTET STRING
@@ -230,14 +233,14 @@ package body X509 is
                end if;
             end;
          end if;
-         P := Ext.Elem_Last + 1;
+         Pos := Ext.Elem_Last + 1;
       end loop;
    end Parse_Extensions;
 
    procedure Parse (Cert : Byte_Array; Result : out Certificate) is
-      Ok                                                               : Boolean := True;
-      Outer, Tbs, E, Validity, SPKI, Bits, RSASeq, SigAlg, OID, SigVal : DER.TLV;
-      P, L                                                             : Natural;
+      Ok                                                                  : Boolean := True;
+      Outer, Tbs, Elem, Validity, SPKI, Bits, RSASeq, SigAlg, OID, SigVal : DER.TLV;
+      Pos, Limit                                                          : Natural;
    begin
       Result := (Valid => False, others => <>);
       if Cert'Length < 2 then
@@ -257,73 +260,73 @@ package body X509 is
       end if;
       Result.TBS := (First => Outer.Content.First, Last => Tbs.Elem_Last);
 
-      P := Tbs.Content.First;
-      L := Tbs.Content.Last;
+      Pos := Tbs.Content.First;
+      Limit := Tbs.Content.Last;
 
       --  version [0] EXPLICIT -- optional.
-      DER.Read (Cert, P, L, E);
-      if E.Valid and then E.Tag = 16#A0# then
-         P := E.Elem_Last + 1;
+      DER.Read (Cert, Pos, Limit, Elem);
+      if Elem.Valid and then Elem.Tag = 16#A0# then
+         Pos := Elem.Elem_Last + 1;
       end if;
 
       --  serialNumber INTEGER
-      Expect (Cert, P, L, 16#02#, E, Ok);
-      Result.Serial := E.Content;
-      P := E.Elem_Last + 1;
+      Expect (Cert, Pos, Limit, 16#02#, Elem, Ok);
+      Result.Serial := Elem.Content;
+      Pos := Elem.Elem_Last + 1;
 
       --  signature AlgorithmIdentifier  (skip)
-      Expect (Cert, P, L, 16#30#, E, Ok);
-      P := E.Elem_Last + 1;
+      Expect (Cert, Pos, Limit, 16#30#, Elem, Ok);
+      Pos := Elem.Elem_Last + 1;
 
       --  issuer Name  (skip)
-      Expect (Cert, P, L, 16#30#, E, Ok);
-      P := E.Elem_Last + 1;
+      Expect (Cert, Pos, Limit, 16#30#, Elem, Ok);
+      Pos := Elem.Elem_Last + 1;
 
       --  validity SEQUENCE { notBefore Time, notAfter Time }
-      Expect (Cert, P, L, 16#30#, Validity, Ok);
+      Expect (Cert, Pos, Limit, 16#30#, Validity, Ok);
       if Ok then
          declare
-            VP     : Natural := Validity.Content.First;
-            VL     : constant Natural := Validity.Content.Last;
-            NB, NA : DER.TLV;
+            Validity_Pos  : Natural := Validity.Content.First;
+            Validity_Last : constant Natural := Validity.Content.Last;
+            NB, NA        : DER.TLV;
          begin
-            Expect (Cert, VP, VL, 0, NB, Ok);
+            Expect (Cert, Validity_Pos, Validity_Last, 0, NB, Ok);
             Result.Not_Before := NB.Content;
             Result.NB_Tag := NB.Tag;
-            VP := NB.Elem_Last + 1;
-            Expect (Cert, VP, VL, 0, NA, Ok);
+            Validity_Pos := NB.Elem_Last + 1;
+            Expect (Cert, Validity_Pos, Validity_Last, 0, NA, Ok);
             Result.Not_After := NA.Content;
             Result.NA_Tag := NA.Tag;
          end;
       end if;
-      P := Validity.Elem_Last + 1;
+      Pos := Validity.Elem_Last + 1;
 
       --  subject Name  (skip)
-      Expect (Cert, P, L, 16#30#, E, Ok);
-      P := E.Elem_Last + 1;
+      Expect (Cert, Pos, Limit, 16#30#, Elem, Ok);
+      Pos := Elem.Elem_Last + 1;
 
       --  subjectPublicKeyInfo SEQUENCE { algorithm, subjectPublicKey BIT STRING }
-      Expect (Cert, P, L, 16#30#, SPKI, Ok);
+      Expect (Cert, Pos, Limit, 16#30#, SPKI, Ok);
       if Ok then
          declare
-            SP    : Natural := SPKI.Content.First;
-            SL    : constant Natural := SPKI.Content.Last;
-            AlgId : DER.TLV;
+            SPKI_Pos  : Natural := SPKI.Content.First;
+            SPKI_Last : constant Natural := SPKI.Content.Last;
+            AlgId     : DER.TLV;
          begin
-            Expect (Cert, SP, SL, 16#30#, AlgId, Ok);     --  algorithm SEQUENCE
+            Expect (Cert, SPKI_Pos, SPKI_Last, 16#30#, AlgId, Ok);  --  algorithm SEQUENCE
             --  Classify the key algorithm from the first OID inside it.
             declare
-               AP         : Natural := AlgId.Content.First;
+               Alg_Pos    : Natural := AlgId.Content.First;
                Alg, Curve : DER.TLV;
             begin
-               Expect (Cert, AP, AlgId.Content.Last, 16#06#, Alg, Ok);
+               Expect (Cert, Alg_Pos, AlgId.Content.Last, 16#06#, Alg, Ok);
                if Ok then
                   if OID_Match (Cert, Alg.Content, OID_RSA_Enc) then
                      Result.Key_Kind := Key_RSA;
                   elsif OID_Match (Cert, Alg.Content, OID_EC_PubKey) then
                      --  EC: the next OID is the named curve; require prime256v1.
-                     AP := Alg.Elem_Last + 1;
-                     Expect (Cert, AP, AlgId.Content.Last, 16#06#, Curve, Ok);
+                     Alg_Pos := Alg.Elem_Last + 1;
+                     Expect (Cert, Alg_Pos, AlgId.Content.Last, 16#06#, Curve, Ok);
                      if Ok and then OID_Match (Cert, Curve.Content, OID_P256_Curve) then
                         Result.Key_Kind := Key_EC_P256;
                      else
@@ -336,23 +339,23 @@ package body X509 is
                   end if;
                end if;
             end;
-            SP := AlgId.Elem_Last + 1;
-            Expect (Cert, SP, SL, 16#03#, Bits, Ok);      --  subjectPublicKey BIT STRING
+            SPKI_Pos := AlgId.Elem_Last + 1;
+            Expect (Cert, SPKI_Pos, SPKI_Last, 16#03#, Bits, Ok);  --  subjectPublicKey BIT STRING
 
             if Ok and then Result.Key_Kind = Key_RSA and then Length (Bits.Content) >= 2 then
                --  Skip the BIT STRING's unused-bits byte; parse RSAPublicKey.
                Expect (Cert, Bits.Content.First + 1, Bits.Content.Last, 16#30#, RSASeq, Ok);
                if Ok then
                   declare
-                     RP    : Natural := RSASeq.Content.First;
-                     RL    : constant Natural := RSASeq.Content.Last;
-                     M, Ex : DER.TLV;
+                     RSA_Pos           : Natural := RSASeq.Content.First;
+                     RSA_Last          : constant Natural := RSASeq.Content.Last;
+                     Modulus, Exponent : DER.TLV;
                   begin
-                     Expect (Cert, RP, RL, 16#02#, M, Ok);   --  modulus INTEGER
-                     Result.RSA_Modulus := M.Content;
-                     RP := M.Elem_Last + 1;
-                     Expect (Cert, RP, RL, 16#02#, Ex, Ok);  --  publicExponent INTEGER
-                     Result.RSA_Exponent := Ex.Content;
+                     Expect (Cert, RSA_Pos, RSA_Last, 16#02#, Modulus, Ok);   --  modulus INTEGER
+                     Result.RSA_Modulus := Modulus.Content;
+                     RSA_Pos := Modulus.Elem_Last + 1;
+                     Expect (Cert, RSA_Pos, RSA_Last, 16#02#, Exponent, Ok);  --  publicExponent
+                     Result.RSA_Exponent := Exponent.Content;
                   end;
                end if;
 
@@ -377,16 +380,16 @@ package body X509 is
 
       --  extensions [3] EXPLICIT -- optional; we pull subjectAltName dNSNames.
       if Ok then
-         P := SPKI.Elem_Last + 1;
-         DER.Read (Cert, P, L, E);
-         if E.Valid and then E.Tag = 16#A3# then
-            Parse_Extensions (Cert, E.Content.First, E.Content.Last, Result);
+         Pos := SPKI.Elem_Last + 1;
+         DER.Read (Cert, Pos, Limit, Elem);
+         if Elem.Valid and then Elem.Tag = 16#A3# then
+            Parse_Extensions (Cert, Elem.Content.First, Elem.Content.Last, Result);
          end if;
       end if;
 
       --  signatureAlgorithm SEQUENCE { OID ... }
-      P := Tbs.Elem_Last + 1;
-      Expect (Cert, P, Outer.Content.Last, 16#30#, SigAlg, Ok);
+      Pos := Tbs.Elem_Last + 1;
+      Expect (Cert, Pos, Outer.Content.Last, 16#30#, SigAlg, Ok);
       Expect (Cert, SigAlg.Content.First, SigAlg.Content.Last, 16#06#, OID, Ok);
       Result.Sig_Alg_OID := OID.Content;
       if Ok then
@@ -404,10 +407,10 @@ package body X509 is
             Result.Sig_Kind := Sig_Ed25519;
          end if;
       end if;
-      P := SigAlg.Elem_Last + 1;
+      Pos := SigAlg.Elem_Last + 1;
 
       --  signatureValue BIT STRING (drop the leading unused-bits byte).
-      Expect (Cert, P, Outer.Content.Last, 16#03#, SigVal, Ok);
+      Expect (Cert, Pos, Outer.Content.Last, 16#03#, SigVal, Ok);
       if Ok and then Length (SigVal.Content) >= 1 then
          Result.Signature := (First => SigVal.Content.First + 1, Last => SigVal.Content.Last);
       else
@@ -426,22 +429,22 @@ package body X509 is
    --  Parse an ASN.1 Time (UTCTime YYMMDDHHMMSSZ or GeneralizedTime
    --  YYYYMMDDHHMMSSZ) at slice S into a packed Time_64.  False if malformed.
    function Parse_Time (Cert : Byte_Array; S : Slice; Tag : U8; T : out Time_64) return Boolean is
-      F                          : constant Natural := S.First;
-      L                          : constant Natural := Length (S);
-      Base                       : Natural;
-      Year, Mon, Day, Hr, Mi, Sc : Natural;
+      First                                  : constant Natural := S.First;
+      Len                                    : constant Natural := Length (S);
+      Base                                   : Natural;
+      Year, Month, Day, Hour, Minute, Second : Natural;
 
       function Is_Digit (Off : Natural) return Boolean
-      is (Cert (F + Off) in 16#30# .. 16#39#);
-      function D (Off : Natural) return Natural
-      is (Natural (Cert (F + Off)) - 16#30#);
+      is (Cert (First + Off) in 16#30# .. 16#39#);
+      function Digit (Off : Natural) return Natural
+      is (Natural (Cert (First + Off)) - 16#30#);
       function Two (Off : Natural) return Natural
-      is (D (Off) * 10 + D (Off + 1));
+      is (Digit (Off) * 10 + Digit (Off + 1));
    begin
       T := 0;
       if Tag = 16#17# then
          --  UTCTime (13: YYMMDDHHMMSSZ)
-         if L /= 13 or else Cert (F + 12) /= 16#5A# then
+         if Len /= 13 or else Cert (First + 12) /= 16#5A# then
             return False;
          end if;
          for K in 0 .. 11 loop
@@ -453,7 +456,7 @@ package body X509 is
          Base := 2;
       elsif Tag = 16#18# then
          --  GeneralizedTime (15)
-         if L /= 15 or else Cert (F + 14) /= 16#5A# then
+         if Len /= 15 or else Cert (First + 14) /= 16#5A# then
             return False;
          end if;
          for K in 0 .. 13 loop
@@ -461,25 +464,25 @@ package body X509 is
                return False;
             end if;
          end loop;
-         Year := D (0) * 1000 + D (1) * 100 + D (2) * 10 + D (3);
+         Year := Digit (0) * 1000 + Digit (1) * 100 + Digit (2) * 10 + Digit (3);
          Base := 4;
       else
          return False;
       end if;
-      Mon := Two (Base);
+      Month := Two (Base);
       Day := Two (Base + 2);
-      Hr := Two (Base + 4);
-      Mi := Two (Base + 6);
-      Sc := Two (Base + 8);
-      if Mon not in 1 .. 12
+      Hour := Two (Base + 4);
+      Minute := Two (Base + 6);
+      Second := Two (Base + 8);
+      if Month not in 1 .. 12
         or else Day not in 1 .. 31
-        or else Hr > 23
-        or else Mi > 59
-        or else Sc > 60
+        or else Hour > 23
+        or else Minute > 59
+        or else Second > 60
       then
          return False;
       end if;
-      T := Pack_Time (Year, Mon, Day, Hr, Mi, Sc);
+      T := Pack_Time (Year, Month, Day, Hour, Minute, Second);
       return True;
    end Parse_Time;
 

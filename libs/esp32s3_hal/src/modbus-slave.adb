@@ -108,10 +108,10 @@ package body Modbus.Slave is
       Req_Len   : Natural;
       Reply_Len : out Natural)
    is
-      TID     : Word;
+      TID     : Word;                 --  MBAP transaction id (protocol field)
       Unit    : Unit_Id;
       Length  : Natural;
-      FC      : Function_Code;
+      FC      : Function_Code;        --  request function code (protocol field)
       PDU_Len : Natural := 0;
       Exc     : Exception_Code := None;
    begin
@@ -126,13 +126,13 @@ package body Modbus.Slave is
       case FC is
          when FC_Read_Coils | FC_Read_Discrete_Inputs             =>
             declare
-               A   : constant Address := Address (Get_U16 (Buf, 8));
+               Addr : constant Address := Address (Get_U16 (Buf, 8));
                --  Read Qty ONLY once the fields are present, and VALIDATE its range
                --  before it is used to size any array -- an attacker-supplied (or
                --  stale, on a short frame) Qty up to 65535 would otherwise allocate
                --  a 65535-element array on the stack and overflow it (a remote DoS
                --  that killed the whole server).
-               Qty : constant Natural :=
+               Qty  : constant Natural :=
                  (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
             begin
                if Req_Len < 12 or else Qty not in 1 .. Max_Read_Bits then
@@ -140,13 +140,13 @@ package body Modbus.Slave is
 
                else
                   declare
-                     Bc : constant Natural := (Qty + 7) / 8;      --  Qty bounded now
-                     B  : Bit_Array (0 .. Qty - 1) := (others => False);
+                     Bc   : constant Natural := (Qty + 7) / 8;   --  byte count; Qty bounded now
+                     Bits : Bit_Array (0 .. Qty - 1) := (others => False);
                   begin
                      if FC = FC_Read_Coils then
-                        On_Read_Coils (Self, Unit, A, Qty, B, Exc);
+                        On_Read_Coils (Self, Unit, Addr, Qty, Bits, Exc);
                      else
-                        On_Read_Discrete_Inputs (Self, Unit, A, Qty, B, Exc);
+                        On_Read_Discrete_Inputs (Self, Unit, Addr, Qty, Bits, Exc);
                      end if;
                      if Exc = None then
                         Buf (MBAP_Size) := Byte (FC);
@@ -155,7 +155,7 @@ package body Modbus.Slave is
                            Buf (I) := 0;
                         end loop;
                         for I in 0 .. Qty - 1 loop
-                           if B (I) then
+                           if Bits (I) then
                               Buf (9 + I / 8) := Buf (9 + I / 8) or Byte (2**(I mod 8));
                            end if;
                         end loop;
@@ -167,8 +167,8 @@ package body Modbus.Slave is
 
          when FC_Read_Holding_Registers | FC_Read_Input_Registers =>
             declare
-               A   : constant Address := Address (Get_U16 (Buf, 8));
-               Qty : constant Natural :=              --  validate before sizing (see above)
+               Addr : constant Address := Address (Get_U16 (Buf, 8));
+               Qty  : constant Natural :=            --  validate before sizing (see above)
                  (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
             begin
                if Req_Len < 12 or else Qty not in 1 .. Max_Read_Registers then
@@ -176,18 +176,18 @@ package body Modbus.Slave is
 
                else
                   declare
-                     W : Word_Array (0 .. Qty - 1) := (others => 0);   --  Qty bounded
+                     Words : Word_Array (0 .. Qty - 1) := (others => 0);   --  Qty bounded
                   begin
                      if FC = FC_Read_Holding_Registers then
-                        On_Read_Holding_Registers (Self, Unit, A, Qty, W, Exc);
+                        On_Read_Holding_Registers (Self, Unit, Addr, Qty, Words, Exc);
                      else
-                        On_Read_Input_Registers (Self, Unit, A, Qty, W, Exc);
+                        On_Read_Input_Registers (Self, Unit, Addr, Qty, Words, Exc);
                      end if;
                      if Exc = None then
                         Buf (MBAP_Size) := Byte (FC);
                         Buf (8) := Byte (2 * Qty);
                         for I in 0 .. Qty - 1 loop
-                           Put_U16 (Buf, 9 + 2 * I, W (I));
+                           Put_U16 (Buf, 9 + 2 * I, Words (I));
                         end loop;
                         PDU_Len := 2 + 2 * Qty;
                      end if;
@@ -197,14 +197,14 @@ package body Modbus.Slave is
 
          when FC_Write_Single_Coil                                =>
             declare
-               A : constant Address := Address (Get_U16 (Buf, 8));
-               V : constant Word := Get_U16 (Buf, 10);
+               Addr  : constant Address := Address (Get_U16 (Buf, 8));
+               Value : constant Word := Get_U16 (Buf, 10);
             begin
-               if Req_Len < 12 or else (V /= 16#FF00# and then V /= 16#0000#) then
-                  Exc := Illegal_Data_Value;                --  short frame or bad V
+               if Req_Len < 12 or else (Value /= 16#FF00# and then Value /= 16#0000#) then
+                  Exc := Illegal_Data_Value;                --  short frame or bad value
 
                else
-                  On_Write_Single_Coil (Self, Unit, A, V = 16#FF00#, Exc);
+                  On_Write_Single_Coil (Self, Unit, Addr, Value = 16#FF00#, Exc);
                   if Exc = None then
                      PDU_Len := 5;
                   end if;   --  echo FC+addr+value
@@ -213,14 +213,14 @@ package body Modbus.Slave is
 
          when FC_Write_Single_Register                            =>
             declare
-               A : constant Address := Address (Get_U16 (Buf, 8));
-               V : constant Word := Get_U16 (Buf, 10);
+               Addr  : constant Address := Address (Get_U16 (Buf, 8));
+               Value : constant Word := Get_U16 (Buf, 10);
             begin
                if Req_Len < 12 then
                   Exc := Illegal_Data_Value;                --  short frame
 
                else
-                  On_Write_Single_Register (Self, Unit, A, V, Exc);
+                  On_Write_Single_Register (Self, Unit, Addr, Value, Exc);
                   if Exc = None then
                      PDU_Len := 5;
                   end if;    --  echo FC+addr+value
@@ -229,10 +229,11 @@ package body Modbus.Slave is
 
          when FC_Write_Multiple_Coils                             =>
             declare
-               A   : constant Address := Address (Get_U16 (Buf, 8));
-               Qty : constant Natural :=            --  guard reads; validate before sizing
+               Addr : constant Address := Address (Get_U16 (Buf, 8));
+               Qty  : constant Natural :=            --  guard reads; validate before sizing
                  (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
-               Bc  : constant Natural := (if Req_Len >= 13 then Natural (Buf (12)) else 0);
+               Bc   : constant Natural :=            --  byte count
+                 (if Req_Len >= 13 then Natural (Buf (12)) else 0);
             begin
                if Req_Len < 13 + Bc                          --  header+byte-count+data
                  or else Qty not in 1 .. Max_Write_Bits
@@ -241,12 +242,12 @@ package body Modbus.Slave is
                   Exc := Illegal_Data_Value;
                else
                   declare
-                     V : Bit_Array (0 .. Qty - 1) := (others => False);
+                     Values : Bit_Array (0 .. Qty - 1) := (others => False);
                   begin
                      for I in 0 .. Qty - 1 loop
-                        V (I) := (Buf (13 + I / 8) and Byte (2**(I mod 8))) /= 0;
+                        Values (I) := (Buf (13 + I / 8) and Byte (2**(I mod 8))) /= 0;
                      end loop;
-                     On_Write_Multiple_Coils (Self, Unit, A, V, Exc);
+                     On_Write_Multiple_Coils (Self, Unit, Addr, Values, Exc);
                      if Exc = None then
                         PDU_Len := 5;
                      end if;    --  echo FC+addr+qty
@@ -256,10 +257,11 @@ package body Modbus.Slave is
 
          when FC_Write_Multiple_Registers                         =>
             declare
-               A   : constant Address := Address (Get_U16 (Buf, 8));
-               Qty : constant Natural :=            --  guard reads; validate before sizing
+               Addr : constant Address := Address (Get_U16 (Buf, 8));
+               Qty  : constant Natural :=            --  guard reads; validate before sizing
                  (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
-               Bc  : constant Natural := (if Req_Len >= 13 then Natural (Buf (12)) else 0);
+               Bc   : constant Natural :=            --  byte count
+                 (if Req_Len >= 13 then Natural (Buf (12)) else 0);
             begin
                if Req_Len < 13 + Bc                          --  header+byte-count+data
                  or else Qty not in 1 .. Max_Write_Registers
@@ -268,12 +270,12 @@ package body Modbus.Slave is
                   Exc := Illegal_Data_Value;
                else
                   declare
-                     V : Word_Array (0 .. Qty - 1) := (others => 0);
+                     Values : Word_Array (0 .. Qty - 1) := (others => 0);
                   begin
                      for I in 0 .. Qty - 1 loop
-                        V (I) := Get_U16 (Buf, 13 + 2 * I);
+                        Values (I) := Get_U16 (Buf, 13 + 2 * I);
                      end loop;
-                     On_Write_Multiple_Registers (Self, Unit, A, V, Exc);
+                     On_Write_Multiple_Registers (Self, Unit, Addr, Values, Exc);
                      if Exc = None then
                         PDU_Len := 5;
                      end if;    --  echo FC+addr+qty

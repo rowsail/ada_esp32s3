@@ -48,8 +48,8 @@ package body FTP_Client is
    --  close becomes Connect_Failed, a Receive timeout becomes Timed_Out.
    procedure Get_Line (S : in out Session; Line : out String; Last : out Natural; St : out Status)
    is
-      N : Natural := 0;
-      C : Interfaces.Unsigned_8;
+      Count : Natural := 0;
+      Octet : Interfaces.Unsigned_8;
    begin
       St := OK;
       Last := 0;
@@ -74,15 +74,15 @@ package body FTP_Client is
             end;
          end if;
 
-         C := S.Buf (S.Head);
+         Octet := S.Buf (S.Head);
          S.Head := S.Head + 1;
-         if Stream_Element (C) = LF then
-            Last := N;
+         if Stream_Element (Octet) = LF then
+            Last := Count;
             return;
-         elsif Stream_Element (C) /= CR then
-            if N < Line'Length then
-               N := N + 1;
-               Line (Line'First + N - 1) := Character'Val (Natural (C));
+         elsif Stream_Element (Octet) /= CR then
+            if Count < Line'Length then
+               Count := Count + 1;
+               Line (Line'First + Count - 1) := Character'Val (Natural (Octet));
             end if;                                --  else drop (over-long line)
          end if;
       end loop;
@@ -97,14 +97,14 @@ package body FTP_Client is
 
    --  The 3-digit reply code at the start of Line, or -1 if absent.
    function Code_Of (Line : String; Last : Natural) return Integer is
-      F : constant Natural := Line'First;
+      First : constant Natural := Line'First;
    begin
-      if Last >= 3 and then (for all I in F .. F + 2 => Line (I) in '0' .. '9') then
+      if Last >= 3 and then (for all I in First .. First + 2 => Line (I) in '0' .. '9') then
          return
-           (Character'Pos (Line (F)) - Character'Pos ('0'))
+           (Character'Pos (Line (First)) - Character'Pos ('0'))
            * 100
-           + (Character'Pos (Line (F + 1)) - Character'Pos ('0')) * 10
-           + (Character'Pos (Line (F + 2)) - Character'Pos ('0'));
+           + (Character'Pos (Line (First + 1)) - Character'Pos ('0')) * 10
+           + (Character'Pos (Line (First + 2)) - Character'Pos ('0'));
       else
          return -1;
       end if;
@@ -192,12 +192,12 @@ package body FTP_Client is
       end if;
       if Is_Mid_Multiline (Line, Last) then
          declare
-            L2 : String (1 .. 256);
-            N2 : Natural;
+            Cont_Line : String (1 .. 256);
+            Cont_Last : Natural;
          begin
             loop
-               Get_Line (S, L2, N2, St);
-               exit when St /= OK or else Is_Final_Line (L2, N2, Code);
+               Get_Line (S, Cont_Line, Cont_Last, St);
+               exit when St /= OK or else Is_Final_Line (Cont_Line, Cont_Last, Code);
             end loop;
          end;
       end if;
