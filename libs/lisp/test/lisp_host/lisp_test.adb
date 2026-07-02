@@ -108,8 +108,8 @@ begin
    Put_Line ("garbage collection:");
    declare
       procedure Run (Input : String) is
-         R : constant Ref := Lisp.Eval.Eval_Top (Lisp.Reader.Read (Input));
-         pragma Unreferenced (R);
+         Ignored : constant Ref := Lisp.Eval.Eval_Top (Lisp.Reader.Read (Input));
+         pragma Unreferenced (Ignored);
       begin
          null;
       end Run;
@@ -131,8 +131,8 @@ begin
    Put_Line ("tail calls:");
    declare
       procedure Run (Input : String) is
-         R : constant Ref := Lisp.Eval.Eval_Top (Lisp.Reader.Read (Input));
-         pragma Unreferenced (R);
+         Ignored : constant Ref := Lisp.Eval.Eval_Top (Lisp.Reader.Read (Input));
+         pragma Unreferenced (Ignored);
       begin
          null;
       end Run;

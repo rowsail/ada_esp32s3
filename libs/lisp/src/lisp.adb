@@ -54,7 +54,7 @@ package body Lisp is
    end Init;
 
    function Alloc (Template : Object) return Ref is
-      I : Natural;
+      Index : Natural;   --  index of the free cell being handed out
    begin
       if Arena = null then
          Init;                                  --  lazy default (host convenience)
@@ -63,11 +63,11 @@ package body Lisp is
       if Free_Head = 0 then
          raise Lisp_Error with "out of memory (arena full this form)";
       end if;
-      I := Free_Head;
-      Free_Head := Free_Next (I);
-      Arena (I) := Template;                     --  direct assignment: kind may change
+      Index := Free_Head;
+      Free_Head := Free_Next (Index);
+      Arena (Index) := Template;                     --  direct assignment: kind may change
       In_Use := In_Use + 1;
-      return Arena (I)'Access;
+      return Arena (Index)'Access;
    end Alloc;
 
    function Cons (A, D : Ref) return Ref
@@ -101,7 +101,7 @@ package body Lisp is
    N_Sym    : Natural := 0;
 
    function Intern (Name : String) return Ref is
-      L : constant Natural := Natural'Min (Name'Length, Max_Name);
+      Clamped_Len : constant Natural := Natural'Min (Name'Length, Max_Name);
    begin
       for I in 1 .. N_Sym loop
          if Symbols (I).Len = Name'Length and then Symbols (I).Name (1 .. Symbols (I).Len) = Name
@@ -113,8 +113,8 @@ package body Lisp is
          raise Lisp_Error with "symbol table full";
       end if;
       N_Sym := N_Sym + 1;
-      Symbols (N_Sym).Len := L;
-      Symbols (N_Sym).Name (1 .. L) := Name (Name'First .. Name'First + L - 1);
+      Symbols (N_Sym).Len := Clamped_Len;
+      Symbols (N_Sym).Name (1 .. Clamped_Len) := Name (Name'First .. Name'First + Clamped_Len - 1);
       Symbols (N_Sym).Obj := (Mark => False, K => K_Symbol, Sym => Symbol_Id (N_Sym));
       return Symbols (N_Sym).Obj'Access;
    end Intern;
@@ -164,9 +164,9 @@ package body Lisp is
    --  Printer
    --------------------------------------------------------------------------
    function Int_Image (V : Long_Long_Integer) return String is
-      S : constant String := Long_Long_Integer'Image (V);
+      Str : constant String := Long_Long_Integer'Image (V);
    begin
-      return (if V < 0 then S else S (S'First + 1 .. S'Last));  -- drop leading space
+      return (if V < 0 then Str else Str (Str'First + 1 .. Str'Last));  -- drop leading space
    end Int_Image;
 
    function Print (O : Ref) return String is

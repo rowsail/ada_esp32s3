@@ -50,49 +50,50 @@ package body Lisp.Reader is
          then
             Pos := Pos + 1;                                 --  dotted tail
             declare
-               D : constant Ref := Read_Obj;
+               Tail : constant Ref := Read_Obj;
             begin
                Skip_Atmosphere;
                if Pos > Source'Last or else Source (Pos) /= ')' then
                   raise Lisp_Error with "malformed dotted pair";
                end if;
                Pos := Pos + 1;
-               return D;
+               return Tail;
             end;
          else
             declare
-               A : constant Ref := Read_Obj;                --  car
+               Head : constant Ref := Read_Obj;             --  car
             begin
-               return Cons (A, Read_List);                  --  cdr (recurse)
+               return Cons (Head, Read_List);               --  cdr (recurse)
             end;
          end if;
       end Read_List;
 
       --  Parse the atom Source (First .. Last) as an integer or a symbol.
       function Atom (First, Last : Natural) return Ref is
-         S    : constant String := Source (First .. Last);
-         V    : Long_Long_Integer := 0;
-         Sign : Long_Long_Integer := 1;
-         I    : Natural := S'First;
+         Text   : constant String := Source (First .. Last);
+         Value  : Long_Long_Integer := 0;
+         Sign   : Long_Long_Integer := 1;
+         Cursor : Natural := Text'First;   --  scan position within Text
       begin
-         if S = "-" or else S = "+" then
-            return Intern (S);                              --  the operator symbol
+         if Text = "-" or else Text = "+" then
+            return Intern (Text);                           --  the operator symbol
 
          end if;
-         if S (I) = '-' then
+         if Text (Cursor) = '-' then
             Sign := -1;
-            I := I + 1;
-         elsif S (I) = '+' then
-            I := I + 1;
+            Cursor := Cursor + 1;
+         elsif Text (Cursor) = '+' then
+            Cursor := Cursor + 1;
          end if;
-         for J in I .. S'Last loop
-            if S (J) not in '0' .. '9' then
-               return Intern (S);                           --  not a number
+         for J in Cursor .. Text'Last loop
+            if Text (J) not in '0' .. '9' then
+               return Intern (Text);                        --  not a number
 
             end if;
-            V := V * 10 + Long_Long_Integer (Character'Pos (S (J)) - Character'Pos ('0'));
+            Value :=
+              Value * 10 + Long_Long_Integer (Character'Pos (Text (J)) - Character'Pos ('0'));
          end loop;
-         return Make_Int (Sign * V);
+         return Make_Int (Sign * Value);
       end Atom;
 
       function Read_Obj return Ref is
@@ -119,21 +120,21 @@ package body Lisp.Reader is
                  and then (Source (Pos + 1) = 't' or else Source (Pos + 1) = 'f')
                then
                   declare
-                     B : constant Boolean := Source (Pos + 1) = 't';
+                     Is_True : constant Boolean := Source (Pos + 1) = 't';
                   begin
                      Pos := Pos + 2;
-                     return Make_Bool (B);
+                     return Make_Bool (Is_True);
                   end;
                elsif Pos < Source'Last and then Source (Pos + 1) = 'x' then
                   Pos := Pos + 2;                            --  #xFF hex literal
                   declare
-                     V : Long_Long_Integer := 0;
+                     Value : Long_Long_Integer := 0;
                   begin
                      while Pos <= Source'Last and then Is_Hex (Source (Pos)) loop
-                        V := V * 16 + Hex_Val (Source (Pos));
+                        Value := Value * 16 + Hex_Val (Source (Pos));
                         Pos := Pos + 1;
                      end loop;
-                     return Make_Int (V);
+                     return Make_Int (Value);
                   end;
                end if;
                raise Lisp_Error with "bad # literal";
