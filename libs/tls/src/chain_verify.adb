@@ -28,6 +28,7 @@ package body Chain_Verify is
       Iss_Buf   : X509.Byte_Array;
       Iss       : X509.Certificate) return Boolean
    is
+      --  TBS = the child's To-Be-Signed certificate body; Sig = its signature bits.
       TBS : X509.Byte_Array renames Child_Buf (Child.TBS.First .. Child.TBS.Last);
       Sig : X509.Byte_Array renames Child_Buf (Child.Signature.First .. Child.Signature.Last);
    begin
@@ -97,14 +98,14 @@ package body Chain_Verify is
 
       --  Leaf: parse and check the host name.
       declare
-         LB   : X509.Byte_Array renames Chain (Chain'First).Data.all;
-         Leaf : X509.Certificate;
+         Leaf_Buf : X509.Byte_Array renames Chain (Chain'First).Data.all;
+         Leaf     : X509.Certificate;
       begin
-         X509.Parse (LB, Leaf);
+         X509.Parse (Leaf_Buf, Leaf);
          if not Leaf.Valid then
             return Malformed;
          end if;
-         if not X509.Host_Matches (LB, Leaf, Host) then
+         if not X509.Host_Matches (Leaf_Buf, Leaf, Host) then
             return Name_Mismatch;
          end if;
          if not Leaf_Usage_OK (Leaf) then
@@ -116,29 +117,29 @@ package body Chain_Verify is
       --  next certificate in the chain.
       for I in Chain'Range loop
          declare
-            CB : X509.Byte_Array renames Chain (I).Data.all;
-            C  : X509.Certificate;
+            Cert_Buf : X509.Byte_Array renames Chain (I).Data.all;
+            Cert     : X509.Certificate;
          begin
-            X509.Parse (CB, C);
-            if not C.Valid then
+            X509.Parse (Cert_Buf, Cert);
+            if not Cert.Valid then
                return Malformed;
             end if;
-            if not X509.Valid_At (CB, C, Now) then
+            if not X509.Valid_At (Cert_Buf, Cert, Now) then
                return Expired;
             end if;
             if I < Chain'Last then
                declare
-                  IB  : X509.Byte_Array renames Chain (I + 1).Data.all;
-                  Iss : X509.Certificate;
+                  Issuer_Buf : X509.Byte_Array renames Chain (I + 1).Data.all;
+                  Issuer     : X509.Certificate;
                begin
-                  X509.Parse (IB, Iss);
-                  if not Iss.Valid then
+                  X509.Parse (Issuer_Buf, Issuer);
+                  if not Issuer.Valid then
                      return Malformed;
                   end if;
-                  if not Sig_OK (CB, C, IB, Iss) then
+                  if not Sig_OK (Cert_Buf, Cert, Issuer_Buf, Issuer) then
                      return Bad_Signature;
                   end if;
-                  if not Is_Valid_CA (Iss) then
+                  if not Is_Valid_CA (Issuer) then
                      --  intermediate must be a CA
                      return Not_A_CA;
                   end if;
@@ -149,17 +150,20 @@ package body Chain_Verify is
 
       --  Anchor the top: its signature must verify under a pinned root key.
       declare
-         TB  : X509.Byte_Array renames Chain (Chain'Last).Data.all;
-         Top : X509.Certificate;
+         Top_Buf : X509.Byte_Array renames Chain (Chain'Last).Data.all;
+         Top     : X509.Certificate;
       begin
-         X509.Parse (TB, Top);                  --  re-parse (already known valid)
+         X509.Parse (Top_Buf, Top);                  --  re-parse (already known valid)
          for A in Anchors'Range loop
             declare
-               AB : X509.Byte_Array renames Anchors (A).Data.all;
-               Ac : X509.Certificate;
+               Anchor_Buf : X509.Byte_Array renames Anchors (A).Data.all;
+               Anchor     : X509.Certificate;
             begin
-               X509.Parse (AB, Ac);
-               if Ac.Valid and then Is_Valid_CA (Ac) and then Sig_OK (TB, Top, AB, Ac) then
+               X509.Parse (Anchor_Buf, Anchor);
+               if Anchor.Valid
+                 and then Is_Valid_CA (Anchor)
+                 and then Sig_OK (Top_Buf, Top, Anchor_Buf, Anchor)
+               then
                   return Valid;
                end if;
             end;

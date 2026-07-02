@@ -82,20 +82,20 @@ package body Cert_Verify is
    begin
       for J in 0 .. W'Length - 1 loop
          declare
-            P   : constant Integer := Integer (B'Last) - 4 * J;   --  LSB of word J
-            Acc : Word := 0;
+            Byte_Pos : constant Integer := Integer (B'Last) - 4 * J;   --  LSB of word J
+            Acc      : Word := 0;
          begin
-            if P >= Integer (B'First) then
-               Acc := Acc + Word (B (P));
+            if Byte_Pos >= Integer (B'First) then
+               Acc := Acc + Word (B (Byte_Pos));
             end if;
-            if P - 1 >= Integer (B'First) then
-               Acc := Acc + Word (B (P - 1)) * 16#100#;
+            if Byte_Pos - 1 >= Integer (B'First) then
+               Acc := Acc + Word (B (Byte_Pos - 1)) * 16#100#;
             end if;
-            if P - 2 >= Integer (B'First) then
-               Acc := Acc + Word (B (P - 2)) * 16#1_0000#;
+            if Byte_Pos - 2 >= Integer (B'First) then
+               Acc := Acc + Word (B (Byte_Pos - 2)) * 16#1_0000#;
             end if;
-            if P - 3 >= Integer (B'First) then
-               Acc := Acc + Word (B (P - 3)) * 16#100_0000#;
+            if Byte_Pos - 3 >= Integer (B'First) then
+               Acc := Acc + Word (B (Byte_Pos - 3)) * 16#100_0000#;
             end if;
             W (W'First + J) := Acc;
          end;
@@ -108,61 +108,61 @@ package body Cert_Verify is
    begin
       for J in 0 .. W'Length - 1 loop
          declare
-            Wd : constant Word := W (W'First + J);
-            P  : constant Natural := EM'Last - 4 * J;             --  LSB of word J
+            Word_Val : constant Word := W (W'First + J);
+            Byte_Pos : constant Natural := EM'Last - 4 * J;       --  LSB of word J
          begin
-            EM (P) := U8 (Wd mod 16#100#);
-            EM (P - 1) := U8 ((Wd / 16#100#) mod 16#100#);
-            EM (P - 2) := U8 ((Wd / 16#1_0000#) mod 16#100#);
-            EM (P - 3) := U8 ((Wd / 16#100_0000#) mod 16#100#);
+            EM (Byte_Pos) := U8 (Word_Val mod 16#100#);
+            EM (Byte_Pos - 1) := U8 ((Word_Val / 16#100#) mod 16#100#);
+            EM (Byte_Pos - 2) := U8 ((Word_Val / 16#1_0000#) mod 16#100#);
+            EM (Byte_Pos - 3) := U8 ((Word_Val / 16#100_0000#) mod 16#100#);
          end;
       end loop;
    end Words_To_BE;
 
    --  Big-endian SHA digests of Data, as Byte_Array (full length per variant).
    function SHA256_BA (Data : Byte_Array) return Byte_Array is
-      Msg : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
-      Dg  : SPARKNaCl.Hashing.SHA256.Digest;
-      R   : Byte_Array (0 .. 31);
+      Msg    : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
+      Digest : SPARKNaCl.Hashing.SHA256.Digest;
+      Result : Byte_Array (0 .. 31);
    begin
       for I in 0 .. Data'Length - 1 loop
          Msg (SPARKNaCl.N32 (I)) := SPARKNaCl.Byte (Data (Data'First + I));
       end loop;
-      Dg := SPARKNaCl.Hashing.SHA256.Hash (Msg);
-      for I in R'Range loop
-         R (I) := U8 (Dg (SPARKNaCl.Index_32 (I)));
+      Digest := SPARKNaCl.Hashing.SHA256.Hash (Msg);
+      for I in Result'Range loop
+         Result (I) := U8 (Digest (SPARKNaCl.Index_32 (I)));
       end loop;
-      return R;
+      return Result;
    end SHA256_BA;
 
    function SHA384_BA (Data : Byte_Array) return Byte_Array is
-      Msg : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
-      Dg  : SPARKNaCl.Hashing.SHA384.Digest;
-      R   : Byte_Array (0 .. 47);
+      Msg    : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
+      Digest : SPARKNaCl.Hashing.SHA384.Digest;
+      Result : Byte_Array (0 .. 47);
    begin
       for I in 0 .. Data'Length - 1 loop
          Msg (SPARKNaCl.N32 (I)) := SPARKNaCl.Byte (Data (Data'First + I));
       end loop;
-      Dg := SPARKNaCl.Hashing.SHA384.Hash (Msg);
-      for I in R'Range loop
-         R (I) := U8 (Dg (SPARKNaCl.Index_48 (I)));
+      Digest := SPARKNaCl.Hashing.SHA384.Hash (Msg);
+      for I in Result'Range loop
+         Result (I) := U8 (Digest (SPARKNaCl.Index_48 (I)));
       end loop;
-      return R;
+      return Result;
    end SHA384_BA;
 
    function SHA512_BA (Data : Byte_Array) return Byte_Array is
-      Msg : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
-      Dg  : SPARKNaCl.Hashing.SHA512.Digest;
-      R   : Byte_Array (0 .. 63);
+      Msg    : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
+      Digest : SPARKNaCl.Hashing.SHA512.Digest;
+      Result : Byte_Array (0 .. 63);
    begin
       for I in 0 .. Data'Length - 1 loop
          Msg (SPARKNaCl.N32 (I)) := SPARKNaCl.Byte (Data (Data'First + I));
       end loop;
-      Dg := SPARKNaCl.Hashing.SHA512.Hash (Msg);
-      for I in R'Range loop
-         R (I) := U8 (Dg (SPARKNaCl.Index_64 (I)));
+      Digest := SPARKNaCl.Hashing.SHA512.Hash (Msg);
+      for I in Result'Range loop
+         Result (I) := U8 (Digest (SPARKNaCl.Index_64 (I)));
       end loop;
-      return R;
+      return Result;
    end SHA512_BA;
 
    --  RSASSA-PKCS1-v1.5 verify with a precomputed digest Hash and its matching
@@ -191,44 +191,49 @@ package body Cert_Verify is
          end if;
          declare
             use ESP32S3.RSA;
-            N             : constant Natural := K / 4;
-            Nm, Sg, Ex, Z : Word_Array (0 .. N - 1);
-            Ok            : Boolean;
-            EM, Want      : Byte_Array (0 .. K - 1);
-            PS_Len        : constant Natural := K - 3 - (DI'Length + Hash'Length);
-            Diff          : U8 := 0;
-            Pos           : Natural;
+            Word_Count   : constant Natural := K / 4;
+            Mod_Words    : Word_Array (0 .. Word_Count - 1);   --  modulus n
+            Sig_Words    : Word_Array (0 .. Word_Count - 1);   --  signature
+            Exp_Words    : Word_Array (0 .. Word_Count - 1);   --  public exponent e
+            Result_Words : Word_Array (0 .. Word_Count - 1);   --  sig^e mod n
+            Ok           : Boolean;
+            EM           : Byte_Array (0 .. K - 1);            --  encoded message (RFC 8017)
+            Expected     : Byte_Array (0 .. K - 1);            --  block EM must equal
+            PS_Len       : constant Natural :=
+              K - 3 - (DI'Length + Hash'Length);               --  PKCS#1 padding-string length
+            Diff         : U8 := 0;
+            Pos          : Natural;
          begin
-            BE_To_Words (Modulus (M_First .. Modulus'Last), Nm);
-            BE_To_Words (Signature, Sg);
-            BE_To_Words (Exponent, Ex);
-            Mod_Exp (Sg, Ex, Nm, Z, Ok);          --  EM = sig^e mod n
+            BE_To_Words (Modulus (M_First .. Modulus'Last), Mod_Words);
+            BE_To_Words (Signature, Sig_Words);
+            BE_To_Words (Exponent, Exp_Words);
+            Mod_Exp (Sig_Words, Exp_Words, Mod_Words, Result_Words, Ok);  --  EM = sig^e mod n
             if not Ok then
                return False;
             end if;
-            Words_To_BE (Z, EM);
+            Words_To_BE (Result_Words, EM);
 
-            Want (0) := 16#00#;
-            Want (1) := 16#01#;
+            Expected (0) := 16#00#;
+            Expected (1) := 16#01#;
             Pos := 2;
             for I in 0 .. PS_Len - 1 loop
-               Want (Pos + I) := 16#FF#;
+               Expected (Pos + I) := 16#FF#;
             end loop;
             Pos := Pos + PS_Len;
-            Want (Pos) := 16#00#;
+            Expected (Pos) := 16#00#;
             Pos := Pos + 1;
             for I in DI'Range loop
-               Want (Pos) := DI (I);
+               Expected (Pos) := DI (I);
                Pos := Pos + 1;
             end loop;
             for I in Hash'Range loop
-               Want (Pos) := Hash (I);
+               Expected (Pos) := Hash (I);
                Pos := Pos + 1;
             end loop;
 
             for I in EM'Range loop
                --  constant-time compare
-               Diff := Diff or (EM (I) xor Want (I));
+               Diff := Diff or (EM (I) xor Expected (I));
             end loop;
             return Diff = 0;
          end;
@@ -250,9 +255,9 @@ package body Cert_Verify is
 
    --  MGF1 with SHA-256.
    function MGF1 (Seed : Byte_Array; Mask_Len : Natural) return Byte_Array is
-      R   : Byte_Array (0 .. Mask_Len - 1);
-      Pos : Natural := 0;
-      Cnt : Natural := 0;
+      Mask : Byte_Array (0 .. Mask_Len - 1);
+      Pos  : Natural := 0;
+      Cnt  : Natural := 0;
    begin
       while Pos < Mask_Len loop
          declare
@@ -269,14 +274,14 @@ package body Cert_Verify is
             H := SHA256_BA (In_Buf);
             for I in 0 .. 31 loop
                if Pos + I < Mask_Len then
-                  R (Pos + I) := H (I);
+                  Mask (Pos + I) := H (I);
                end if;
             end loop;
             Pos := Pos + 32;
             Cnt := Cnt + 1;
          end;
       end loop;
-      return R;
+      return Mask;
    end MGF1;
 
    function RSA_PSS_SHA256 (Message, Signature, Modulus, Exponent : Byte_Array) return Boolean is
@@ -294,29 +299,32 @@ package body Cert_Verify is
          end if;
          declare
             use ESP32S3.RSA;
-            N             : constant Natural := K / 4;
-            Nm, Sg, Ex, Z : Word_Array (0 .. N - 1);
-            Ok            : Boolean;
-            EMb           : Byte_Array (0 .. K - 1);
-            hLen          : constant := 32;
-            sLen          : constant := 32;
-            Topb          : Natural := 0;
-            Tt            : U8 := Modulus (M_First);
+            Word_Count   : constant Natural := K / 4;
+            Mod_Words    : Word_Array (0 .. Word_Count - 1);   --  modulus n
+            Sig_Words    : Word_Array (0 .. Word_Count - 1);   --  signature
+            Exp_Words    : Word_Array (0 .. Word_Count - 1);   --  public exponent e
+            Result_Words : Word_Array (0 .. Word_Count - 1);   --  sig^e mod n
+            Ok           : Boolean;
+            EMb          : Byte_Array (0 .. K - 1);   --  encoded message EM (RFC 8017)
+            hLen         : constant := 32;            --  SHA-256 digest length
+            sLen         : constant := 32;            --  salt length
+            Top_Bits     : Natural := 0;              --  bit width of the modulus top byte
+            Top_Byte     : U8 := Modulus (M_First);
          begin
-            BE_To_Words (Modulus (M_First .. Modulus'Last), Nm);
-            BE_To_Words (Signature, Sg);
-            BE_To_Words (Exponent, Ex);
-            Mod_Exp (Sg, Ex, Nm, Z, Ok);          --  EM = sig^e mod n  (k bytes BE)
+            BE_To_Words (Modulus (M_First .. Modulus'Last), Mod_Words);
+            BE_To_Words (Signature, Sig_Words);
+            BE_To_Words (Exponent, Exp_Words);
+            Mod_Exp (Sig_Words, Exp_Words, Mod_Words, Result_Words, Ok);  --  EM = sig^e mod n
             if not Ok then
                return False;
             end if;
-            Words_To_BE (Z, EMb);
-            while Tt /= 0 loop
-               Topb := Topb + 1;
-               Tt := Tt / 2;
+            Words_To_BE (Result_Words, EMb);
+            while Top_Byte /= 0 loop
+               Top_Bits := Top_Bits + 1;
+               Top_Byte := Top_Byte / 2;
             end loop;
             declare
-               ModBits  : constant Natural := (K - 1) * 8 + Topb;
+               ModBits  : constant Natural := (K - 1) * 8 + Top_Bits;
                EmBits   : constant Natural := ModBits - 1;
                EmLen    : constant Natural := (EmBits + 7) / 8;
                LeadBits : constant Natural := 8 * EmLen - EmBits;
@@ -396,27 +404,27 @@ package body Cert_Verify is
    --  SHA-384 of Data, left-truncated to 32 bytes (ECDSA uses the leftmost
    --  256 bits of the digest with a 256-bit group order).
    function SHA384_BA_32 (Data : Byte_Array) return Byte_Array is
-      Msg : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
-      Dg  : SPARKNaCl.Hashing.SHA384.Digest;
-      R   : Byte_Array (0 .. 31);
+      Msg    : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
+      Digest : SPARKNaCl.Hashing.SHA384.Digest;
+      Result : Byte_Array (0 .. 31);
    begin
       for I in 0 .. Data'Length - 1 loop
          Msg (SPARKNaCl.N32 (I)) := SPARKNaCl.Byte (Data (Data'First + I));
       end loop;
-      Dg := SPARKNaCl.Hashing.SHA384.Hash (Msg);
+      Digest := SPARKNaCl.Hashing.SHA384.Hash (Msg);
       for I in 0 .. 31 loop
-         R (I) := U8 (Dg (SPARKNaCl.Index_32 (I)));
+         Result (I) := U8 (Digest (SPARKNaCl.Index_32 (I)));
       end loop;
-      return R;
+      return Result;
    end SHA384_BA_32;
 
    function To_P256 (B : Byte_Array) return P256.Bytes_32 is
-      R : P256.Bytes_32;
+      Result : P256.Bytes_32;
    begin
       for I in 0 .. 31 loop
-         R (I) := P256.Byte (B (B'First + I));
+         Result (I) := P256.Byte (B (B'First + I));
       end loop;
-      return R;
+      return Result;
    end To_P256;
 
    --  Read a DER INTEGER at Pos (tag 0x02), big-endian, into a 32-byte right-aligned
@@ -463,7 +471,7 @@ package body Cert_Verify is
    function ECDSA_Core (Hash32 : Byte_Array; Sig_DER, Pub_X, Pub_Y : Byte_Array) return Boolean is
       Pos      : Natural;
       Ok       : Boolean := True;
-      R32, S32 : P256.Bytes_32;
+      R32, S32 : P256.Bytes_32;   --  the signature's r and s components (32-byte big-endian)
    begin
       if Sig_DER'Length < 8
         or else Pub_X'Length /= 32
