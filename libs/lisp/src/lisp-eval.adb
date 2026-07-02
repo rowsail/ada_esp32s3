@@ -18,11 +18,11 @@ package body Lisp.Eval is
    --  Environments: Env = (frame . parent); frame = a-list of (sym . value).
    --------------------------------------------------------------------------
    function Lookup (Sym, Env : Ref) return Ref is
-      E : Ref := Env;
+      Env_Cursor : Ref := Env;   --  walks the env chain outward
    begin
-      while Is_Cons (E) loop
+      while Is_Cons (Env_Cursor) loop
          declare
-            Frame : Ref := Car (E);
+            Frame : Ref := Car (Env_Cursor);
          begin
             while Is_Cons (Frame) loop
                if Car (Car (Frame)) = Sym then
@@ -31,7 +31,7 @@ package body Lisp.Eval is
                Frame := Cdr (Frame);
             end loop;
          end;
-         E := Cdr (E);
+         Env_Cursor := Cdr (Env_Cursor);
       end loop;
       raise Lisp_Error with "unbound symbol: " & Symbol_Name (Sym);
    end Lookup;
@@ -44,11 +44,11 @@ package body Lisp.Eval is
 
    --  Mutate the nearest existing binding of Sym.
    procedure Set_Var (Sym, Val, Env : Ref) is
-      E : Ref := Env;
+      Env_Cursor : Ref := Env;   --  walks the env chain outward
    begin
-      while Is_Cons (E) loop
+      while Is_Cons (Env_Cursor) loop
          declare
-            Frame : Ref := Car (E);
+            Frame : Ref := Car (Env_Cursor);
          begin
             while Is_Cons (Frame) loop
                if Car (Car (Frame)) = Sym then
@@ -58,7 +58,7 @@ package body Lisp.Eval is
                Frame := Cdr (Frame);
             end loop;
          end;
-         E := Cdr (E);
+         Env_Cursor := Cdr (Env_Cursor);
       end loop;
       raise Lisp_Error with "set! of unbound: " & Symbol_Name (Sym);
    end Set_Var;
@@ -72,62 +72,62 @@ package body Lisp.Eval is
    is (Car (Cdr (A)));
 
    function Prim_Add (Args : Ref) return Ref is
-      Sum : Long_Long_Integer := 0;
-      P   : Ref := Args;
+      Sum    : Long_Long_Integer := 0;
+      Cursor : Ref := Args;
    begin
-      while Is_Cons (P) loop
-         Sum := Sum + Int_Value (Car (P));
-         P := Cdr (P);
+      while Is_Cons (Cursor) loop
+         Sum := Sum + Int_Value (Car (Cursor));
+         Cursor := Cdr (Cursor);
       end loop;
       return Make_Int (Sum);
    end Prim_Add;
 
    function Prim_Mul (Args : Ref) return Ref is
-      Prod : Long_Long_Integer := 1;
-      P    : Ref := Args;
+      Prod   : Long_Long_Integer := 1;
+      Cursor : Ref := Args;
    begin
-      while Is_Cons (P) loop
-         Prod := Prod * Int_Value (Car (P));
-         P := Cdr (P);
+      while Is_Cons (Cursor) loop
+         Prod := Prod * Int_Value (Car (Cursor));
+         Cursor := Cdr (Cursor);
       end loop;
       return Make_Int (Prod);
    end Prim_Mul;
 
    function Prim_Sub (Args : Ref) return Ref is
-      P : Ref := Args;
+      Cursor : Ref := Args;
    begin
-      if Is_Nil (P) then
+      if Is_Nil (Cursor) then
          return Make_Int (0);
       end if;
       declare
-         Acc : Long_Long_Integer := Int_Value (Car (P));
+         Acc : Long_Long_Integer := Int_Value (Car (Cursor));
       begin
-         P := Cdr (P);
-         if Is_Nil (P) then
+         Cursor := Cdr (Cursor);
+         if Is_Nil (Cursor) then
             return Make_Int (-Acc);
          end if;     --  unary negate
-         while Is_Cons (P) loop
-            Acc := Acc - Int_Value (Car (P));
-            P := Cdr (P);
+         while Is_Cons (Cursor) loop
+            Acc := Acc - Int_Value (Car (Cursor));
+            Cursor := Cdr (Cursor);
          end loop;
          return Make_Int (Acc);
       end;
    end Prim_Sub;
 
    function Prim_Div (Args : Ref) return Ref is
-      Acc : Long_Long_Integer := Int_Value (Arg1 (Args));
-      P   : Ref := Cdr (Args);
+      Acc    : Long_Long_Integer := Int_Value (Arg1 (Args));
+      Cursor : Ref := Cdr (Args);
    begin
-      while Is_Cons (P) loop
+      while Is_Cons (Cursor) loop
          declare
-            D : constant Long_Long_Integer := Int_Value (Car (P));
+            Divisor : constant Long_Long_Integer := Int_Value (Car (Cursor));
          begin
-            if D = 0 then
+            if Divisor = 0 then
                raise Lisp_Error with "division by zero";
             end if;
-            Acc := Acc / D;
+            Acc := Acc / Divisor;
          end;
-         P := Cdr (P);
+         Cursor := Cdr (Cursor);
       end loop;
       return Make_Int (Acc);
    end Prim_Div;
@@ -159,19 +159,19 @@ package body Lisp.Eval is
    is (Make_Bool (not Is_Truthy (Arg1 (Args))));
 
    function Prim_Eq (Args : Ref) return Ref is
-      A : constant Ref := Arg1 (Args);
-      B : constant Ref := Arg2 (Args);
+      Left  : constant Ref := Arg1 (Args);
+      Right : constant Ref := Arg2 (Args);
    begin
-      if A = B then
+      if Left = Right then
          return Lisp_True;
       end if;
-      if A /= null and then B /= null and then A.K = B.K then
-         case A.K is
+      if Left /= null and then Right /= null and then Left.K = Right.K then
+         case Left.K is
             when K_Int  =>
-               return Make_Bool (A.I = B.I);
+               return Make_Bool (Left.I = Right.I);
 
             when K_Bool =>
-               return Make_Bool (A.B = B.B);
+               return Make_Bool (Left.B = Right.B);
 
             when K_Nil  =>
                return Lisp_True;
@@ -184,14 +184,14 @@ package body Lisp.Eval is
    end Prim_Eq;
 
    function Prim_Length (Args : Ref) return Ref is
-      N : Long_Long_Integer := 0;
-      P : Ref := Arg1 (Args);
+      Count  : Long_Long_Integer := 0;
+      Cursor : Ref := Arg1 (Args);
    begin
-      while Is_Cons (P) loop
-         N := N + 1;
-         P := Cdr (P);
+      while Is_Cons (Cursor) loop
+         Count := Count + 1;
+         Cursor := Cdr (Cursor);
       end loop;
-      return Make_Int (N);
+      return Make_Int (Count);
    end Prim_Length;
 
    --------------------------------------------------------------------------
@@ -214,69 +214,70 @@ package body Lisp.Eval is
 
    function Eval_Let (Args, Env : Ref) return Ref is
       New_Env : constant Ref := Cons (Nil, Env);
-      P       : Ref := Car (Args);              --  the binding list
+      Cursor  : Ref := Car (Args);              --  the binding list
    begin
-      while Is_Cons (P) loop
+      while Is_Cons (Cursor) loop
          declare
-            B : constant Ref := Car (P);        --  (var expr)
+            Binding : constant Ref := Car (Cursor);   --  (var expr)
          begin
-            Define (Car (B), Eval (Arg2 (B), Env), New_Env);   --  expr in outer env
+            Define (Car (Binding), Eval (Arg2 (Binding), Env), New_Env);   --  expr in outer env
          end;
-         P := Cdr (P);
+         Cursor := Cdr (Cursor);
       end loop;
       return Eval_Seq (Cdr (Args), New_Env);
    end Eval_Let;
 
    function Eval_Cond (Clauses, Env : Ref) return Ref is
-      P : Ref := Clauses;
+      Cursor : Ref := Clauses;
    begin
-      while Is_Cons (P) loop
+      while Is_Cons (Cursor) loop
          declare
-            Clause : constant Ref := Car (P);
+            Clause : constant Ref := Car (Cursor);
             Test   : constant Ref := Car (Clause);
          begin
             if Test = S_Else then
                return Eval_Seq (Cdr (Clause), Env);
             end if;
             declare
-               TV : constant Ref := Eval (Test, Env);
+               Test_Value : constant Ref := Eval (Test, Env);
             begin
-               if Is_Truthy (TV) then
-                  return (if Is_Nil (Cdr (Clause)) then TV else Eval_Seq (Cdr (Clause), Env));
+               if Is_Truthy (Test_Value) then
+                  return
+                    (if Is_Nil (Cdr (Clause)) then Test_Value else Eval_Seq (Cdr (Clause), Env));
                end if;
             end;
          end;
-         P := Cdr (P);
+         Cursor := Cdr (Cursor);
       end loop;
       return Nil;
    end Eval_Cond;
 
    function Eval_And (Args, Env : Ref) return Ref is
       Result : Ref := Lisp_True;
-      P      : Ref := Args;
+      Cursor : Ref := Args;
    begin
-      while Is_Cons (P) loop
-         Result := Eval (Car (P), Env);
+      while Is_Cons (Cursor) loop
+         Result := Eval (Car (Cursor), Env);
          if not Is_Truthy (Result) then
             return Result;
          end if;
-         P := Cdr (P);
+         Cursor := Cdr (Cursor);
       end loop;
       return Result;
    end Eval_And;
 
    function Eval_Or (Args, Env : Ref) return Ref is
-      P : Ref := Args;
+      Cursor : Ref := Args;
    begin
-      while Is_Cons (P) loop
+      while Is_Cons (Cursor) loop
          declare
-            V : constant Ref := Eval (Car (P), Env);
+            Value : constant Ref := Eval (Car (Cursor), Env);
          begin
-            if Is_Truthy (V) then
-               return V;
+            if Is_Truthy (Value) then
+               return Value;
             end if;
          end;
-         P := Cdr (P);
+         Cursor := Cdr (Cursor);
       end loop;
       return Lisp_False;
    end Eval_Or;
@@ -295,11 +296,11 @@ package body Lisp.Eval is
 
    function Eval_Seq (Body_List, Env : Ref) return Ref is
       Result : Ref := Nil;
-      P      : Ref := Body_List;
+      Cursor : Ref := Body_List;
    begin
-      while Is_Cons (P) loop
-         Result := Eval (Car (P), Env);
-         P := Cdr (P);
+      while Is_Cons (Cursor) loop
+         Result := Eval (Car (Cursor), Env);
+         Cursor := Cdr (Cursor);
       end loop;
       return Result;
    end Eval_Seq;
@@ -343,10 +344,10 @@ package body Lisp.Eval is
                      return Eval_Or (Args, Cur_Env);
                   elsif Op = S_Set then
                      declare
-                        V : constant Ref := Eval (Arg2 (Args), Cur_Env);
+                        Value : constant Ref := Eval (Arg2 (Args), Cur_Env);
                      begin
-                        Set_Var (Car (Args), V, Cur_Env);
-                        return V;
+                        Set_Var (Car (Args), Value, Cur_Env);
+                        return Value;
                      end;
                   elsif Op = S_If then
                      if Is_Truthy (Eval (Car (Args), Cur_Env)) then
@@ -361,63 +362,64 @@ package body Lisp.Eval is
                         return Nil;
                      end if;
                      declare
-                        P : Ref := Args;
+                        Cursor : Ref := Args;
                      begin
-                        while Is_Cons (Cdr (P)) loop
+                        while Is_Cons (Cdr (Cursor)) loop
                            declare
-                              X : constant Ref := Eval (Car (P), Cur_Env);
-                              pragma Unreferenced (X);
+                              Ignored : constant Ref := Eval (Car (Cursor), Cur_Env);
+                              pragma Unreferenced (Ignored);
                            begin
                               null;
                            end;
-                           P := Cdr (P);
+                           Cursor := Cdr (Cursor);
                         end loop;
-                        Cur_Expr := Car (P);                  --  tail: loop
+                        Cur_Expr := Car (Cursor);             --  tail: loop
                      end;
                   else
                      --  application
                      declare
-                        Fn : constant Ref := Eval (Op, Cur_Env);
-                        A  : constant Ref := Eval_Args (Args, Cur_Env);
+                        Fn         : constant Ref := Eval (Op, Cur_Env);
+                        Arg_Values : constant Ref := Eval_Args (Args, Cur_Env);
                      begin
                         if Fn = null then
                            raise Lisp_Error with "cannot apply nil";
                         end if;
                         case Fn.K is
                            when K_Prim    =>
-                              return Fn.Fn (A);
+                              return Fn.Fn (Arg_Values);
 
                            when K_Closure =>
                               declare
-                                 New_Env : constant Ref := Cons (Nil, Fn.Env);
-                                 P       : Ref := Fn.Params;
-                                 AA      : Ref := A;
+                                 New_Env      : constant Ref := Cons (Nil, Fn.Env);
+                                 Param_Cursor : Ref := Fn.Params;
+                                 Arg_Cursor   : Ref := Arg_Values;
                               begin
-                                 while Is_Cons (P) loop
-                                    if not Is_Cons (AA) then
+                                 while Is_Cons (Param_Cursor) loop
+                                    if not Is_Cons (Arg_Cursor) then
                                        raise Lisp_Error with "too few arguments";
                                     end if;
-                                    Define (Car (P), Car (AA), New_Env);
-                                    P := Cdr (P);
-                                    AA := Cdr (AA);
+                                    Define (Car (Param_Cursor), Car (Arg_Cursor), New_Env);
+                                    Param_Cursor := Cdr (Param_Cursor);
+                                    Arg_Cursor := Cdr (Arg_Cursor);
                                  end loop;
                                  if Is_Nil (Fn.Code) then
                                     return Nil;
                                  end if;
                                  declare
-                                    B : Ref := Fn.Code;
+                                    Body_Cursor : Ref := Fn.Code;
                                  begin
-                                    while Is_Cons (Cdr (B)) loop
+                                    while Is_Cons (Cdr (Body_Cursor)) loop
                                        declare
-                                          X : constant Ref := Eval (Car (B), New_Env);
-                                          pragma Unreferenced (X);
+                                          Ignored : constant Ref :=
+                                            Eval (Car (Body_Cursor), New_Env);
+                                          pragma Unreferenced (Ignored);
                                        begin
                                           null;
                                        end;
-                                       B := Cdr (B);
+                                       Body_Cursor := Cdr (Body_Cursor);
                                     end loop;
                                     Cur_Env := New_Env;
-                                    Cur_Expr := Car (B);      --  tail call: loop, no growth
+                                    Cur_Expr := Car (Body_Cursor);   --  tail call: loop, no growth
                                  end;
                               end;
 
