@@ -66,15 +66,17 @@ package body ESP32S3.GPS is
 
       --  Insert or refresh one satellite (keyed by System+PRN); when the table
       --  is full, evict the stalest entry.
-      procedure Upsert (S : Satellite; Now : Ada.Real_Time.Time) is
-         Free    : Natural := 0;
-         Stale   : Natural := 0;
-         Stale_T : Ada.Real_Time.Time := Ada.Real_Time.Time_Last;
+      procedure Upsert (New_Sat : Satellite; Now : Ada.Real_Time.Time) is
+         Free         : Natural := 0;
+         Stalest      : Natural := 0;
+         Stalest_Time : Ada.Real_Time.Time := Ada.Real_Time.Time_Last;
       begin
          for I in Sky'Range loop
-            if Sky (I).Used and then Sky (I).Sat.System = S.System and then Sky (I).Sat.PRN = S.PRN
+            if Sky (I).Used
+              and then Sky (I).Sat.System = New_Sat.System
+              and then Sky (I).Sat.PRN = New_Sat.PRN
             then
-               Sky (I) := (Sat => S, Updated_At => Now, Used => True);
+               Sky (I) := (Sat => New_Sat, Updated_At => Now, Used => True);
                return;
             end if;
          end loop;
@@ -82,16 +84,16 @@ package body ESP32S3.GPS is
             if not Sky (I).Used then
                Free := I;
                exit;
-            elsif Sky (I).Updated_At < Stale_T then
-               Stale_T := Sky (I).Updated_At;
-               Stale := I;
+            elsif Sky (I).Updated_At < Stalest_Time then
+               Stalest_Time := Sky (I).Updated_At;
+               Stalest := I;
             end if;
          end loop;
          if Free = 0 then
-            Free := Stale;
+            Free := Stalest;
          end if;
          if Free /= 0 then
-            Sky (Free) := (Sat => S, Updated_At => Now, Used => True);
+            Sky (Free) := (Sat => New_Sat, Updated_At => Now, Used => True);
          end if;
       end Upsert;
 
@@ -149,10 +151,10 @@ package body ESP32S3.GPS is
       end Apply;
 
       procedure Set_Raw (S : String) is
-         N : constant Natural := Natural'Min (S'Length, Max_Raw);
+         Copy_Len : constant Natural := Natural'Min (S'Length, Max_Raw);
       begin
-         Raw (1 .. N) := S (S'First .. S'First + N - 1);
-         Raw_Len := N;
+         Raw (1 .. Copy_Len) := S (S'First .. S'First + Copy_Len - 1);
+         Raw_Len := Copy_Len;
       end Set_Raw;
 
       procedure Get_Raw (Buffer : out String; Length : out Natural) is
@@ -177,17 +179,17 @@ package body ESP32S3.GPS is
       procedure Get_Sky
         (List : out Satellite_List; Count : out Natural; Max_Age : Ada.Real_Time.Time_Span)
       is
-         Now : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
-         N   : Natural := 0;
+         Now     : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
+         Written : Natural := 0;
       begin
          for I in Sky'Range loop
-            exit when N >= List'Length;
+            exit when Written >= List'Length;
             if Sky (I).Used and then Now - Sky (I).Updated_At <= Max_Age then
-               N := N + 1;
-               List (List'First + N - 1) := Sky (I).Sat;
+               Written := Written + 1;
+               List (List'First + Written - 1) := Sky (I).Sat;
             end if;
          end loop;
-         Count := N;
+         Count := Written;
       end Get_Sky;
    end Store;
 
@@ -259,14 +261,14 @@ package body ESP32S3.GPS is
    ---------------------------------------------------------------------------
 
    procedure Process (Sentence : String; Accepted : out Boolean) is
-      R   : NMEA.Parsed;
-      Now : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
+      Result : NMEA.Parsed;
+      Now    : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
    begin
       Store.Set_Raw (Sentence);   --  capture every framed line for diagnostics
-      NMEA.Parse (Sentence, R);
-      Accepted := R.Recognised;
-      if R.Recognised then
-         Store.Apply (R, Now);
+      NMEA.Parse (Sentence, Result);
+      Accepted := Result.Recognised;
+      if Result.Recognised then
+         Store.Apply (Result, Now);
       end if;
    end Process;
 
@@ -283,19 +285,20 @@ package body ESP32S3.GPS is
    task Reader
      with Priority => System.Default_Priority - 1;
    task body Reader is
-      S     : ESP32S3.UART.Session;
-      Chunk : ESP32S3.UART.Byte_Array (1 .. 64);
-      N     : Natural;
-      Line  : String (1 .. Max_Line) := (others => ' ');
-      Len   : Natural := 0;
-      Junk  : Boolean;
+      Port_Session : ESP32S3.UART.Session;
+      Chunk        : ESP32S3.UART.Byte_Array (1 .. 64);
+      Read_Count   : Natural;
+      Line         : String (1 .. Max_Line) := (others => ' ');
+      Len          : Natural := 0;
+      Junk         : Boolean;
    begin
       --  Idle until Setup has recorded the port, pins and baud.
       Ada.Synchronous_Task_Control.Suspend_Until_True (Start_Signal);
 
       --  Own the port and shape it to the link in one call -- configuration is
       --  part of Acquire, so it cannot precede ownership.
-      ESP32S3.UART.Acquire (S, Cfg.Port, Baud => Cfg.Baud, Tx => Cfg.Tx, Rx => Cfg.Rx);
+      ESP32S3.UART.Acquire
+        (Port_Session, Cfg.Port, Baud => Cfg.Baud, Tx => Cfg.Tx, Rx => Cfg.Rx);
 
       loop
          --  Transmit anything queued by Send (we hold the UART Session).
@@ -311,21 +314,21 @@ package body ESP32S3.GPS is
                   for I in 1 .. Out_Len loop
                      Bytes (I) := ESP32S3.UART.Byte (Character'Pos (Out_Buf (I)));
                   end loop;
-                  ESP32S3.UART.Write (S, Bytes);
+                  ESP32S3.UART.Write (Port_Session, Bytes);
                end;
             end if;
          end;
 
-         ESP32S3.UART.Read (S, Chunk, N);
-         if N = 0 then
+         ESP32S3.UART.Read (Port_Session, Chunk, Read_Count);
+         if Read_Count = 0 then
             delay until Ada.Real_Time.Clock + Milliseconds (5);  --  idle pacing
 
          end if;
-         for I in 1 .. N loop
+         for I in 1 .. Read_Count loop
             declare
-               C : constant Character := Character'Val (Natural (Chunk (I)));
+               Ch : constant Character := Character'Val (Natural (Chunk (I)));
             begin
-               if C = ASCII.CR or else C = ASCII.LF then
+               if Ch = ASCII.CR or else Ch = ASCII.LF then
                   if Len > 0 then
                      --  Defence in depth: a malformed sentence must only drop that
                      --  line, never propagate out and terminate this reader task
@@ -341,7 +344,7 @@ package body ESP32S3.GPS is
                   end if;
                elsif Len < Max_Line then
                   Len := Len + 1;
-                  Line (Len) := C;
+                  Line (Len) := Ch;
                else
                   Len := 0;     --  oversized line: drop and resync
                end if;
