@@ -37,13 +37,14 @@ package body ESP32S3.SPI.Engine is
          when SPI3 => GD.SPI3);
 
    procedure Drive_Out (Pad : ESP32S3.GPIO.Pin_Id; Signal : Natural) is
-      Ix : constant Natural := Natural (Pad);
-      O  : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
+      Pad_Index : constant Natural := Natural (Pad);
+      Out_Cfg   : GR.FUNC_OUT_SEL_CFG_Register :=   --  the pad's output-select config
+        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index);
    begin
       ESP32S3.GPIO.Configure
         (Pad, Mode => ESP32S3.GPIO.Output, Drive => ESP32S3.GPIO.Drive_Strong);
-      O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Signal);
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix) := O;
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Signal);
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index) := Out_Cfg;
    end Drive_Out;
 
    procedure Route_In (Signal : Natural; Pad : ESP32S3.GPIO.Pin_Id; As_Input : Boolean) is
@@ -65,26 +66,29 @@ package body ESP32S3.SPI.Engine is
          return;
       end if;
 
+      --  Split the total divider into Prescaler x (Count+1), then set the toggle
+      --  midpoint Half for a ~50% duty.  These map to the CLOCK register fields
+      --  CLKDIV_PRE / CLKCNT_N / CLKCNT_H / CLKCNT_L.
       declare
-         Total : constant Natural := Natural'Max (2, Src_Hz / Hz);  --  divider
-         Pre   : Natural := 0;
-         N     : Natural;
-         H     : Natural;
+         Total     : constant Natural := Natural'Max (2, Src_Hz / Hz);  --  total divider
+         Prescaler : Natural := 0;   --  CLKDIV_PRE (front divider, 0..15)
+         Count     : Natural;        --  CLKCNT_N/L: clock half-period count
+         Half      : Natural;        --  CLKCNT_H: high-phase midpoint
       begin
-         while Total / (Pre + 1) > 64 and then Pre < 15 loop
-            Pre := Pre + 1;
+         while Total / (Prescaler + 1) > 64 and then Prescaler < 15 loop
+            Prescaler := Prescaler + 1;
          end loop;
-         N := Natural'Min (63, Natural'Max (1, Total / (Pre + 1) - 1));
-         H := (N + 1) / 2;
-         if H > 0 then
-            H := H - 1;
+         Count := Natural'Min (63, Natural'Max (1, Total / (Prescaler + 1) - 1));
+         Half := (Count + 1) / 2;
+         if Half > 0 then
+            Half := Half - 1;
          end if;
          Regs.CLOCK :=
            (CLK_EQU_SYSCLK => False,
-            CLKDIV_PRE     => CLOCK_CLKDIV_PRE_Field (Pre),
-            CLKCNT_N       => CLOCK_CLKCNT_N_Field (N),
-            CLKCNT_H       => CLOCK_CLKCNT_H_Field (H),
-            CLKCNT_L       => CLOCK_CLKCNT_L_Field (N),
+            CLKDIV_PRE     => CLOCK_CLKDIV_PRE_Field (Prescaler),
+            CLKCNT_N       => CLOCK_CLKCNT_N_Field (Count),
+            CLKCNT_H       => CLOCK_CLKCNT_H_Field (Half),
+            CLKCNT_L       => CLOCK_CLKCNT_L_Field (Count),
             others         => <>);
       end;
    end Set_Clock;
@@ -180,7 +184,7 @@ package body ESP32S3.SPI.Engine is
       Cs   : ESP32S3.GPIO.Optional_Pin := No_Pin)
    is
       use type ESP32S3.GPIO.Pad_Number;
-      S : constant Sig := Signals (B.Host);
+      Host_Sigs : constant Sig := Signals (B.Host);   --  GPIO-matrix signal ids for this host
    begin
       if not B.Valid then
          return;
@@ -188,27 +192,27 @@ package body ESP32S3.SPI.Engine is
       --  Each Optional_Pin that is a real pin converts to Pin_Id here (the
       --  /= No_Pin guard guarantees the predicate holds).
       if Sclk /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Sclk), S.Clk);
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Sclk), Host_Sigs.Clk);
       end if;
       if Mosi /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Mosi), S.Mosi_Out);
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Mosi), Host_Sigs.Mosi_Out);
       end if;
       if Miso /= No_Pin then
-         Route_In (S.Miso_In, ESP32S3.GPIO.Pin_Id (Miso), As_Input => True);
+         Route_In (Host_Sigs.Miso_In, ESP32S3.GPIO.Pin_Id (Miso), As_Input => True);
       end if;
       if Cs /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Cs), S.Cs);
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Cs), Host_Sigs.Cs);
       end if;
    end Configure_Pins;
 
    procedure Enable_Loopback (B : Bus; Pad : ESP32S3.GPIO.Pin_Id) is
-      S : constant Sig := Signals (B.Host);
+      Host_Sigs : constant Sig := Signals (B.Host);   --  GPIO-matrix signal ids for this host
    begin
       if not B.Valid then
          return;
       end if;
-      Drive_Out (Pad, S.Mosi_Out);
-      Route_In (S.Miso_In, Pad, As_Input => False);
+      Drive_Out (Pad, Host_Sigs.Mosi_Out);
+      Route_In (Host_Sigs.Miso_In, Pad, As_Input => False);
    end Enable_Loopback;
 
    procedure Set_Hardware_CS (B : Bus; Enabled : Boolean) is

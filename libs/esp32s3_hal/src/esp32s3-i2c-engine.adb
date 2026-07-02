@@ -84,27 +84,29 @@ package body ESP32S3.I2C.Engine is
    --  pad in open-drain mode (controller only ever pulls low), output-enable
    --  taken from the peripheral.
    procedure Pad_Open_Drain (Pad : G.Pin_Id; Out_Sig : Natural) is
-      Ix : constant Natural := Natural (Pad);
-      P  : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Ix);
-      O  : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix);
+      Pad_Index : constant Natural := Natural (Pad);
+      Mux_Cfg   : MX.GPIO_Register :=                --  the pad's IO-MUX config
+        MX.IO_MUX_Periph.GPIO (Pad_Index);
+      Out_Cfg   : GR.FUNC_OUT_SEL_CFG_Register :=    --  the pad's output-select config
+        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index);
    begin
-      P.MCU_SEL := 1;                       --  route through the GPIO matrix
-      P.FUN_IE := True;                    --  input buffer on (read-back)
-      P.FUN_WPU := True;                    --  internal pull-up (line idles high)
-      P.FUN_WPD := False;
-      P.FUN_DRV := 2;                       --  ~20 mA, fine for open-drain
-      MX.IO_MUX_Periph.GPIO (Ix) := P;
+      Mux_Cfg.MCU_SEL := 1;                 --  route through the GPIO matrix
+      Mux_Cfg.FUN_IE := True;               --  input buffer on (read-back)
+      Mux_Cfg.FUN_WPU := True;              --  internal pull-up (line idles high)
+      Mux_Cfg.FUN_WPD := False;
+      Mux_Cfg.FUN_DRV := 2;                 --  ~20 mA, fine for open-drain
+      MX.IO_MUX_Periph.GPIO (Pad_Index) := Mux_Cfg;
 
-      GR.GPIO_Periph.PIN (Ix).PAD_DRIVER := True;   --  open-drain
+      GR.GPIO_Periph.PIN (Pad_Index).PAD_DRIVER := True;   --  open-drain
 
-      O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Out_Sig);
-      O.OEN_SEL := False;                   --  use the peripheral's output-enable
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Ix) := O;
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Out_Sig);
+      Out_Cfg.OEN_SEL := False;             --  use the peripheral's output-enable
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index) := Out_Cfg;
 
-      if Ix <= 31 then
-         GR.GPIO_Periph.ENABLE_W1TS := UInt32 (2)**Ix;
+      if Pad_Index <= 31 then
+         GR.GPIO_Periph.ENABLE_W1TS := UInt32 (2)**Pad_Index;
       else
-         GR.GPIO_Periph.ENABLE1_W1TS.ENABLE1_W1TS := UInt22 (2)**(Ix - 32);
+         GR.GPIO_Periph.ENABLE1_W1TS.ENABLE1_W1TS := UInt22 (2)**(Pad_Index - 32);
       end if;
    end Pad_Open_Drain;
 
@@ -124,14 +126,14 @@ package body ESP32S3.I2C.Engine is
 
    --  Bit length of N (0 -> 0, 45 -> 6, ...), for the timeout knob.
    function Bit_Length (N : Natural) return Natural is
-      V : Natural := N;
-      L : Natural := 0;
+      Value  : Natural := N;   --  shrinks toward 0 as we count bits
+      Length : Natural := 0;   --  number of bits seen so far
    begin
-      while V > 0 loop
-         L := L + 1;
-         V := V / 2;
+      while Value > 0 loop
+         Length := Length + 1;
+         Value := Value / 2;
       end loop;
-      return L;
+      return Length;
    end Bit_Length;
 
    procedure Set_Timing (Regs : Periph_Ref; Hz : Positive) is
@@ -249,13 +251,13 @@ package body ESP32S3.I2C.Engine is
    --------------------
 
    procedure Configure_Pins (B : Bus; Scl : G.Pin_Id; Sda : G.Pin_Id) is
-      S : constant Sig := Signals (B.Host);
+      Host_Sigs : constant Sig := Signals (B.Host);   --  GPIO-matrix signal ids for this host
    begin
       if not B.Valid then
          return;
       end if;
-      Route_Line (Scl, S.Scl);
-      Route_Line (Sda, S.Sda);
+      Route_Line (Scl, Host_Sigs.Scl);
+      Route_Line (Sda, Host_Sigs.Sda);
    end Configure_Pins;
 
    --  Reset both FIFOs, clear stale interrupts, kick off the loaded command
@@ -285,13 +287,13 @@ package body ESP32S3.I2C.Engine is
       begin
          loop
             declare
-               R : constant INT_RAW_Register := Regs.INT_RAW;
+               Ints : constant INT_RAW_Register := Regs.INT_RAW;   --  latched interrupts
             begin
                exit when
-                 R.TRANS_COMPLETE_INT_RAW
-                 or else R.NACK_INT_RAW
-                 or else R.TIME_OUT_INT_RAW
-                 or else R.ARBITRATION_LOST_INT_RAW;
+                 Ints.TRANS_COMPLETE_INT_RAW
+                 or else Ints.NACK_INT_RAW
+                 or else Ints.TIME_OUT_INT_RAW
+                 or else Ints.ARBITRATION_LOST_INT_RAW;
             end;
             exit when Guard = 0;
             Guard := Guard - 1;
