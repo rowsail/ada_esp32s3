@@ -32,8 +32,20 @@ with Ada.Finalization;
 --  attach a handler to it.
 
 package ESP32S3.GDMA is
+   --  DMA buffers must be DMA-capable memory (see Is_DMA_Capable).  Enforce the
+   --  preconditions below even when global assertions are off -- a buffer in
+   --  flash/PSRAM silently corrupts the transfer, so this is cheap insurance.
+   pragma Assertion_Policy (Pre => Check);
+
    --  The five GDMA channel pairs.
    type Channel_Id is mod 5;
+
+   --  True if A is in the ESP32-S3 internal SRAM the GDMA can reach
+   --  (0x3FC88000 .. 0x3FD00000).  Flash .rodata and PSRAM (both in
+   --  0x3C000000 .. 0x3E000000) are NOT DMA-capable -- passing such a buffer
+   --  (e.g. a `constant` aggregate placed in .rodata) makes the engine transfer
+   --  garbage.  The Copy/Start preconditions use this.
+   function Is_DMA_Capable (A : System.Address) return Boolean;
 
    --  Peripherals a channel can be bound to.  Mem2Mem is the internal
    --  memory-to-memory loopback (no external peripheral).  The others match the
@@ -69,7 +81,9 @@ package ESP32S3.GDMA is
    --  20-bit field the engine completes within the on-chip RAM region.
    --
    --  No-op if C is invalid or Length is 0 / over Max_Transfer.
-   procedure Copy (C : Channel; Dst, Src : System.Address; Length : Natural);
+   procedure Copy (C : Channel; Dst, Src : System.Address; Length : Natural)
+     with Pre => Length = 0
+                 or else (Is_DMA_Capable (Src) and then Is_DMA_Capable (Dst));
 
    ------------------------------------------------------------------------
    --  Peripheral-bound transfers.
@@ -92,7 +106,8 @@ package ESP32S3.GDMA is
    --  or call Wait for completion.  Buffer must be in internal SRAM; Length in
    --  1 .. Max_Transfer.  No-op on an invalid handle or out-of-range Length.
    procedure Start
-     (C : Channel; Dir : Direction; Buffer : System.Address; Length : Natural);
+     (C : Channel; Dir : Direction; Buffer : System.Address; Length : Natural)
+     with Pre => Length = 0 or else Is_DMA_Capable (Buffer);
 
    --  Arm a CONTINUOUS (self-looping) transmit on C's OUT path: a single
    --  descriptor whose link points back to itself, so the engine replays
@@ -104,7 +119,8 @@ package ESP32S3.GDMA is
    --  hold a whole number of wave periods so the wrap is seamless; Length in
    --  1 .. Max_Transfer.  No-op on an invalid handle or out-of-range Length.
    procedure Start_Loop
-     (C : Channel; Buffer : System.Address; Length : Natural);
+     (C : Channel; Buffer : System.Address; Length : Natural)
+     with Pre => Length = 0 or else Is_DMA_Capable (Buffer);
 
    --  True once the Dir transfer has signalled success-EOF (also True for an
    --  invalid handle, so a Wait never hangs on one).

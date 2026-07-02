@@ -1,4 +1,5 @@
 with System;
+with System.Storage_Elements;      use System.Storage_Elements;
 with System.Machine_Code;          use System.Machine_Code;
 with Ada.Unchecked_Conversion;
 with Ada.Interrupts.Names;
@@ -11,6 +12,15 @@ with ESP32S3_Registers.SYSTEM;
 with ESP32S3_Registers.INTERRUPT_CORE0;
 
 package body ESP32S3.GDMA is
+
+   --  Internal-SRAM window the GDMA can reach on the ESP32-S3.  .data/.bss/stack/
+   --  heap all live here (per the bare linker's dram0_0_seg); flash .rodata and
+   --  PSRAM sit in 0x3C000000..0x3E000000 and are not DMA-capable.
+   function Is_DMA_Capable (A : System.Address) return Boolean is
+      V : constant Integer_Address := To_Integer (A);
+   begin
+      return V in 16#3FC8_8000# .. 16#3FCF_FFFF#;
+   end Is_DMA_Capable;
 
    --  PERI_SEL value that DISCONNECTS a path from any peripheral.
    Disconnect_Sel : constant := 16#3F#;
