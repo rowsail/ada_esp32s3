@@ -14,15 +14,15 @@ package body FS_Glue is
 
    --  Left-justified decimal in a field of Width (like C "%-Nd").
    procedure Put_Dec_LJ (V : Natural; Width : Natural) is
-      S : String (1 .. 16);
-      P : Natural := S'First;
+      Str : String (1 .. 16);
+      Pos : Natural := Str'First;
    begin
-      Nat_IO.Put (S, V);                                   --  right-justified
-      while P < S'Last and then S (P) = ' ' loop
-         P := P + 1;
+      Nat_IO.Put (Str, V);                                 --  right-justified
+      while Pos < Str'Last and then Str (Pos) = ' ' loop
+         Pos := Pos + 1;
       end loop;
-      Put (S (P .. S'Last));                               --  the digits
-      for J in 1 .. Width - (S'Last - P + 1) loop
+      Put (Str (Pos .. Str'Last));                         --  the digits
+      for J in 1 .. Width - (Str'Last - Pos + 1) loop
          Put (' ');
       end loop;
    end Put_Dec_LJ;
