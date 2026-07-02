@@ -127,9 +127,9 @@ package body Modbus.Master is
       Result    : out Status;
       Exc       : out Exception_Code)
    is
-      Want_TID, RTID : Word;
-      RUnit          : Unit_Id;
-      Length         : Natural;
+      Want_TID, Reply_TID : Word;
+      Reply_Unit          : Unit_Id;
+      Length              : Natural;
    begin
       Exc := None;
       Reply_Len := 0;
@@ -163,7 +163,7 @@ package body Modbus.Master is
             Result := Disconnected;
             return;
       end case;
-      Get_MBAP (S.Buf, RTID, RUnit, Length);
+      Get_MBAP (S.Buf, Reply_TID, Reply_Unit, Length);
       if Length < 1 or else Length - 1 > Max_PDU then
          Result := Malformed_Reply;
          return;
@@ -186,18 +186,18 @@ package body Modbus.Master is
       end case;
       Reply_Len := Length - 1;
 
-      if RTID /= Want_TID then
+      if Reply_TID /= Want_TID then
          Result := Malformed_Reply;
          return;
       end if;
 
       declare
-         RFC : constant Function_Code := Function_Code (S.Buf (MBAP_Size));
+         Reply_FC : constant Function_Code := Function_Code (S.Buf (MBAP_Size));
       begin
-         if RFC = (Req_FC or Exception_Flag) and then Reply_Len >= 2 then
+         if Reply_FC = (Req_FC or Exception_Flag) and then Reply_Len >= 2 then
             Exc := To_Exception (S.Buf (MBAP_Size + 1));
             Result := Exception_Response;
-         elsif RFC = Req_FC then
+         elsif Reply_FC = Req_FC then
             Result := OK;
          else
             Result := Malformed_Reply;

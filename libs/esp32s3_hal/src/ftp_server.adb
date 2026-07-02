@@ -83,8 +83,8 @@ package body FTP_Server is
 
    --  Read one CRLF-terminated control line (CR/LF stripped).  False on close.
    function Get_Line (Line : out String; Last : out Natural) return Boolean is
-      N : Natural := 0;
-      C : Stream_Element;
+      Count : Natural := 0;
+      Octet : Stream_Element;
    begin
       Last := 0;
       loop
@@ -101,15 +101,15 @@ package body FTP_Server is
                In_Tail := Natural (RLast - In_Buf'First + 1);
             end;
          end if;
-         C := In_Buf (SEO (In_Head));
+         Octet := In_Buf (SEO (In_Head));
          In_Head := In_Head + 1;
-         if C = LF then
-            Last := N;
+         if Octet = LF then
+            Last := Count;
             return True;
-         elsif C /= CR then
-            if N < Line'Length then
-               N := N + 1;
-               Line (Line'First + N - 1) := Character'Val (Natural (C));
+         elsif Octet /= CR then
+            if Count < Line'Length then
+               Count := Count + 1;
+               Line (Line'First + Count - 1) := Character'Val (Natural (Octet));
             end if;
          end if;
       end loop;
@@ -123,57 +123,57 @@ package body FTP_Server is
    ---------------------------------------------------------------------------
 
    function Upper (S : String) return String is
-      R : String := S;
+      Result : String := S;
    begin
-      for I in R'Range loop
-         if R (I) in 'a' .. 'z' then
-            R (I) := Character'Val (Character'Pos (R (I)) - 32);
+      for I in Result'Range loop
+         if Result (I) in 'a' .. 'z' then
+            Result (I) := Character'Val (Character'Pos (Result (I)) - 32);
          end if;
       end loop;
-      return R;
+      return Result;
    end Upper;
 
    function Img (N : Natural) return String is
-      S : constant String := Natural'Image (N);
+      Image_Str : constant String := Natural'Image (N);
    begin
-      return S (S'First + 1 .. S'Last);
+      return Image_Str (Image_Str'First + 1 .. Image_Str'Last);
    end Img;
 
    --  Normalised absolute path of Arg, resolved against Cwd (handles "/", "..",
    --  ".", "//", trailing "/").  Result has no trailing slash except "/".
    function Abs_Path (Arg : String) return String is
-      Raw   : String (1 .. Cwd_Len + Arg'Length + 2);
-      RLen  : Natural := 0;
-      Out_S : String (1 .. Raw'Length);
-      OLen  : Natural := 0;
-      I     : Natural;
+      Raw      : String (1 .. Cwd_Len + Arg'Length + 2);
+      Raw_Len  : Natural := 0;
+      Out_Path : String (1 .. Raw'Length);
+      Out_Len  : Natural := 0;
+      I        : Natural;
    begin
       if Arg'Length > 0 and then Arg (Arg'First) = '/' then
          Raw (1 .. Arg'Length) := Arg;
-         RLen := Arg'Length;
+         Raw_Len := Arg'Length;
       else
          Raw (1 .. Cwd_Len) := Cwd (1 .. Cwd_Len);
-         RLen := Cwd_Len;
-         if RLen = 0 or else Raw (RLen) /= '/' then
-            RLen := RLen + 1;
-            Raw (RLen) := '/';
+         Raw_Len := Cwd_Len;
+         if Raw_Len = 0 or else Raw (Raw_Len) /= '/' then
+            Raw_Len := Raw_Len + 1;
+            Raw (Raw_Len) := '/';
          end if;
-         Raw (RLen + 1 .. RLen + Arg'Length) := Arg;
-         RLen := RLen + Arg'Length;
+         Raw (Raw_Len + 1 .. Raw_Len + Arg'Length) := Arg;
+         Raw_Len := Raw_Len + Arg'Length;
       end if;
 
       --  Walk components, applying . and ..
-      OLen := 1;
-      Out_S (1) := '/';
+      Out_Len := 1;
+      Out_Path (1) := '/';
       I := 1;
-      while I <= RLen loop
-         while I <= RLen and then Raw (I) = '/' loop
+      while I <= Raw_Len loop
+         while I <= Raw_Len and then Raw (I) = '/' loop
             I := I + 1;
          end loop;
          declare
             Start : constant Natural := I;
          begin
-            while I <= RLen and then Raw (I) /= '/' loop
+            while I <= Raw_Len and then Raw (I) /= '/' loop
                I := I + 1;
             end loop;
             declare
@@ -182,28 +182,28 @@ package body FTP_Server is
                if Comp = "" or else Comp = "." then
                   null;
                elsif Comp = ".." then
-                  while OLen > 1 and then Out_S (OLen) /= '/' loop
-                     OLen := OLen - 1;
+                  while Out_Len > 1 and then Out_Path (Out_Len) /= '/' loop
+                     Out_Len := Out_Len - 1;
                   end loop;
-                  if OLen > 1 then
-                     OLen := OLen - 1;
+                  if Out_Len > 1 then
+                     Out_Len := Out_Len - 1;
                   end if;   --  drop the slash
-                  if OLen = 0 then
-                     OLen := 1;
-                     Out_S (1) := '/';
+                  if Out_Len = 0 then
+                     Out_Len := 1;
+                     Out_Path (1) := '/';
                   end if;
                else
-                  if OLen = 0 or else Out_S (OLen) /= '/' then
-                     OLen := OLen + 1;
-                     Out_S (OLen) := '/';
+                  if Out_Len = 0 or else Out_Path (Out_Len) /= '/' then
+                     Out_Len := Out_Len + 1;
+                     Out_Path (Out_Len) := '/';
                   end if;
-                  Out_S (OLen + 1 .. OLen + Comp'Length) := Comp;
-                  OLen := OLen + Comp'Length;
+                  Out_Path (Out_Len + 1 .. Out_Len + Comp'Length) := Comp;
+                  Out_Len := Out_Len + Comp'Length;
                end if;
             end;
          end;
       end loop;
-      return Out_S (1 .. OLen);
+      return Out_Path (1 .. Out_Len);
    end Abs_Path;
 
    --  Split an absolute path into (parent dir, last name).
@@ -237,12 +237,12 @@ package body FTP_Server is
    --  or an unknown volume, Active_M is null (At_Root distinguishes the two) and
    --  the result is "".
    function Resolve_Path (Path : String) return String is
-      SF, SL : Natural;
-      Found  : Boolean;
+      Slice_First, Slice_Last : Natural;
+      Found                   : Boolean;
    begin
-      VFS.Resolve (Path, Active_M, SF, SL, Found, At_Root);
+      VFS.Resolve (Path, Active_M, Slice_First, Slice_Last, Found, At_Root);
       if Found then
-         return (if SL >= SF then Path (SF .. SL) else "/");
+         return (if Slice_Last >= Slice_First then Path (Slice_First .. Slice_Last) else "/");
       else
          Active_M := null;
          return "";
@@ -255,9 +255,9 @@ package body FTP_Server is
 
    --  Open the data listener and tell the client where to connect (PASV).
    procedure Do_Pasv is
-      P1 : constant Natural := Natural (DPort) / 256;
-      P2 : constant Natural := Natural (DPort) mod 256;
-      H  : String := Host_IP (1 .. Host_Len);
+      Port_Hi  : constant Natural := Natural (DPort) / 256;
+      Port_Lo  : constant Natural := Natural (DPort) mod 256;
+      Host_Str : String := Host_IP (1 .. Host_Len);
    begin
       if Have_Pasv then
          begin
@@ -272,12 +272,14 @@ package body FTP_Server is
       Listen_Socket (Data_Sock);
       Have_Pasv := True;
       --  227 wants the IP with commas: a.b.c.d -> a,b,c,d
-      for I in H'Range loop
-         if H (I) = '.' then
-            H (I) := ',';
+      for I in Host_Str'Range loop
+         if Host_Str (I) = '.' then
+            Host_Str (I) := ',';
          end if;
       end loop;
-      Reply ("227", "Entering Passive Mode (" & H & "," & Img (P1) & "," & Img (P2) & ")");
+      Reply
+        ("227",
+         "Entering Passive Mode (" & Host_Str & "," & Img (Port_Hi) & "," & Img (Port_Lo) & ")");
    end Do_Pasv;
 
    --  Accept the pending data connection (the listener becomes the connection).
@@ -342,11 +344,11 @@ package body FTP_Server is
    procedure Send_Entry (Conn : Socket_Type; Nm : String; Long, Is_Dir : Boolean; Size : Natural)
    is
       Line : String (1 .. 320);
-      L    : Natural := 0;
+      Len  : Natural := 0;
       procedure Put (S : String) is
       begin
-         Line (L + 1 .. L + S'Length) := S;
-         L := L + S'Length;
+         Line (Len + 1 .. Len + S'Length) := S;
+         Len := Len + S'Length;
       end Put;
    begin
       if Long then
@@ -358,12 +360,12 @@ package body FTP_Server is
       Put (Nm);
       Put (Character'Val (13) & Character'Val (10));
       declare
-         B : SEA (1 .. SEO (L));
+         Bytes : SEA (1 .. SEO (Len));
       begin
-         for I in 1 .. L loop
-            B (SEO (I)) := Stream_Element (Character'Pos (Line (I)));
+         for I in 1 .. Len loop
+            Bytes (SEO (I)) := Stream_Element (Character'Pos (Line (I)));
          end loop;
-         Send_All (Conn, B);
+         Send_All (Conn, Bytes);
       end;
    end Send_Entry;
 
@@ -464,12 +466,12 @@ package body FTP_Server is
          FSP.Read_File (Active_M.all, Info, Offset, Buf, Last);
          exit when Last = 0;
          declare
-            B : SEA (0 .. SEO (Last - 1));
+            Bytes : SEA (0 .. SEO (Last - 1));
          begin
             for I in 0 .. Last - 1 loop
-               B (SEO (I)) := Stream_Element (Buf (I));
+               Bytes (SEO (I)) := Stream_Element (Buf (I));
             end loop;
-            Send_All (Conn, B);
+            Send_All (Conn, Bytes);
          end;
          Offset := Offset + Interfaces.Unsigned_64 (Last);
       end loop;
@@ -522,12 +524,12 @@ package body FTP_Server is
          end;
          exit when RLast < Scratch'First;     --  EOF
          declare
-            D : E4.Byte_Array (0 .. Natural (RLast - Scratch'First));
+            Chunk : E4.Byte_Array (0 .. Natural (RLast - Scratch'First));
          begin
-            for I in D'Range loop
-               D (I) := E4.U8 (Scratch (Scratch'First + SEO (I)));
+            for I in Chunk'Range loop
+               Chunk (I) := E4.U8 (Scratch (Scratch'First + SEO (I)));
             end loop;
-            FSP.Append (Active_M.all, Ino, D);
+            FSP.Append (Active_M.all, Ino, Chunk);
          end;
       end loop;
       Close_Data (Conn);
@@ -648,18 +650,23 @@ package body FTP_Server is
       loop
          exit when not Get_Line (Line, Last);
          declare
-            L  : constant String := Line (1 .. Last);
-            Sp : Natural := 0;
+            Request_Line : constant String := Line (1 .. Last);
+            Space_Pos    : Natural := 0;
          begin
-            for I in L'Range loop
-               if L (I) = ' ' then
-                  Sp := I;
+            for I in Request_Line'Range loop
+               if Request_Line (I) = ' ' then
+                  Space_Pos := I;
                   exit;
                end if;
             end loop;
             declare
-               Cmd : constant String := Upper (if Sp = 0 then L else L (L'First .. Sp - 1));
-               Arg : constant String := (if Sp = 0 then "" else L (Sp + 1 .. L'Last));
+               Cmd : constant String :=
+                 Upper
+                   (if Space_Pos = 0
+                    then Request_Line
+                    else Request_Line (Request_Line'First .. Space_Pos - 1));
+               Arg : constant String :=
+                 (if Space_Pos = 0 then "" else Request_Line (Space_Pos + 1 .. Request_Line'Last));
             begin
                if Cmd = "USER" then
                   Reply ("331", "send any password");
