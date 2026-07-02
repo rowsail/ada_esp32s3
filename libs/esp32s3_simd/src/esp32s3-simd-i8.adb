@@ -28,14 +28,14 @@ package body ESP32S3.SIMD.I8 is
    end Sat_I8;
 
    function Arith_Shr (V : Integer; Amount : Shift_I8) return Integer is
-      D : constant Integer := 2**Integer (Amount);
+      Divisor : constant Integer := 2**Integer (Amount);
    begin
       if Amount = 0 then
          return V;
       elsif V >= 0 then
-         return V / D;
+         return V / Divisor;
       else
-         return -(((-V) + (D - 1)) / D);
+         return -(((-V) + (Divisor - 1)) / Divisor);
       end if;
    end Arith_Shr;
 
@@ -624,7 +624,8 @@ package body ESP32S3.SIMD.I8 is
       R_Ptr : Address := First_Address (Result);
       Cnt   : size_t := size_t (A'Length);
       Tail  : size_t := 0;
-      N127  : aliased Integer_8 := -127;
+      N127  : aliased Integer_8 :=
+        -127;  --  Integer_8'First + 1: the most negative value that negates without overflow
       I     : Natural;
       V     : Integer_8;
    begin
@@ -725,7 +726,8 @@ package body ESP32S3.SIMD.I8 is
       R_Ptr : Address := First_Address (Result);
       Cnt   : size_t := size_t (A'Length);
       Tail  : size_t := 0;
-      N127  : aliased Integer_8 := -127;
+      N127  : aliased Integer_8 :=
+        -127;  --  Integer_8'First + 1: the most negative value that negates without overflow
       I     : Natural;
       V     : Integer_8;
    begin
