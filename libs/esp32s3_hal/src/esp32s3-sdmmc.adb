@@ -99,9 +99,9 @@ package body ESP32S3.SDMMC is
    --  True if any of the five sticky data-error bits is set (mirrors Data_Err).
    --  Snapshots the register once, so it is a single full-width read.
    function Any_Data_Err return Boolean is
-      R : constant RINTSTS_Bits := RINT_Bits;
+      Ints : constant RINTSTS_Bits := RINT_Bits;
    begin
-      return R.DCRC or R.DRTO or R.HTO or R.FRUN or R.EBE;
+      return Ints.DCRC or Ints.DRTO or Ints.HTO or Ints.FRUN or Ints.EBE;
    end Any_Data_Err;
 
    --  Per-operation response words, filled by Issue (guarded by Lock).
@@ -140,26 +140,26 @@ package body ESP32S3.SDMMC is
 
    --  Drive matrix signal Sig out onto Pad.
    procedure Route_Out (Pad : ESP32S3.GPIO.Pin_Id; S : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
+      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
    begin
       ESP32S3.GPIO.Configure
         (Pad, Mode => ESP32S3.GPIO.Output, Drive => ESP32S3.GPIO.Drive_Strong);
-      O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (S);
-      O.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad)) := O;
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (S);
+      Out_Cfg.OEN_SEL := False;
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad)) := Out_Cfg;
    end Route_Out;
 
    --  Enable Pad's input buffer (with pull-up) and feed it to matrix input Sig.
    procedure Route_In (S : Natural; Pad : ESP32S3.GPIO.Pin_Id) is
-      Ix : constant Natural := Natural (Pad);
-      P  : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Ix);
+      Pad_Index : constant Natural := Natural (Pad);
+      Pad_Cfg   : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Pad_Index);
    begin
-      P.MCU_SEL := 1;
-      P.FUN_IE := True;
-      P.FUN_WPU := True;                       --  SD lines idle high
-      MX.IO_MUX_Periph.GPIO (Ix) := P;
+      Pad_Cfg.MCU_SEL := 1;
+      Pad_Cfg.FUN_IE := True;
+      Pad_Cfg.FUN_WPU := True;                  --  SD lines idle high
+      MX.IO_MUX_Periph.GPIO (Pad_Index) := Pad_Cfg;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (S) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix), SEL => True, others => <>);
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Pad_Index), SEL => True, others => <>);
    end Route_In;
 
    --  A bidirectional SD line: both driven out and sampled in, pulled up.
@@ -183,10 +183,10 @@ package body ESP32S3.SDMMC is
          START_CMD                   => True,
          others                      => <>);
       declare
-         D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Reg_Span;
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Reg_Span;
       begin
          while SDHOST_Periph.CMD.START_CMD loop
-            exit when Past (D);
+            exit when Past (Deadline);
          end loop;
       end;
    end Clock_Command;
@@ -251,19 +251,19 @@ package body ESP32S3.SDMMC is
 
       --  Wait for the CIU to load the command.
       declare
-         D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + CIU_Span;
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + CIU_Span;
       begin
          while SDHOST_Periph.CMD.START_CMD loop
-            exit when Past (D);
+            exit when Past (Deadline);
          end loop;
       end;
 
       --  Wait for command done (or an error / timeout).
       declare
-         D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Cmd_Span;
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Cmd_Span;
       begin
          while not (RINT_Bits.Cmd_Done or RINT_Bits.RTO) loop
-            exit when Past (D);
+            exit when Past (Deadline);
          end loop;
       end;
 
@@ -293,10 +293,10 @@ package body ESP32S3.SDMMC is
 
    --  Wait for the card to stop signalling busy (DATA0 held low after R1b/write).
    procedure Wait_Not_Busy is
-      D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Busy_Span;
+      Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Busy_Span;
    begin
       while SDHOST_Periph.STATUS.DATA_BUSY loop
-         exit when Past (D);
+         exit when Past (Deadline);
       end loop;
    end Wait_Not_Busy;
 
@@ -308,10 +308,10 @@ package body ESP32S3.SDMMC is
    begin
       SDHOST_Periph.CTRL.FIFO_RESET := True;
       declare
-         D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Reg_Span;
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Reg_Span;
       begin
          while SDHOST_Periph.CTRL.FIFO_RESET loop
-            exit when Past (D);
+            exit when Past (Deadline);
          end loop;
       end;
       SDHOST_Periph.BLKSIZ.BLOCK_SIZE := BLKSIZ_BLOCK_SIZE_Field (Bytes);
@@ -325,13 +325,13 @@ package body ESP32S3.SDMMC is
    type Small_Buf is array (Small_Index) of Unsigned_8;
 
    function Read_Small (N : Natural; Buf : out Small_Buf) return Status is
-      W : UInt32;
+      Fifo_Word : UInt32;
    begin
       Buf := (others => 0);
       for Word in 0 .. N / 4 - 1 loop
          declare
-            Ready : Boolean := False;
-            D     : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
+            Ready    : Boolean := False;
+            Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
          begin
             loop
                if Any_Data_Err then
@@ -342,25 +342,25 @@ package body ESP32S3.SDMMC is
                   Ready := True;
                   exit;
                end if;
-               exit when Past (D);
+               exit when Past (Deadline);
             end loop;
             if not Ready then
                return Read_Error;
             end if;
          end;
-         W := FIFO;
+         Fifo_Word := FIFO;
          Split_LE
-           (Unsigned_32 (W),
+           (Unsigned_32 (Fifo_Word),
             Buf (Word * 4),
             Buf (Word * 4 + 1),
             Buf (Word * 4 + 2),
             Buf (Word * 4 + 3));
       end loop;
       declare
-         D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
       begin
          while not (RINT_Bits.Data_Over or Any_Data_Err) loop
-            exit when Past (D);
+            exit when Past (Deadline);
          end loop;
       end;
       if Any_Data_Err then
@@ -373,12 +373,12 @@ package body ESP32S3.SDMMC is
 
    --  Pull 512 bytes (128 words, little-endian) out of the read FIFO.
    function Read_FIFO (Data : out Block) return Status is
-      W : UInt32;
+      Fifo_Word : UInt32;
    begin
       for Word in 0 .. Block_Words - 1 loop
          declare
-            Ready : Boolean := False;
-            D     : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
+            Ready    : Boolean := False;
+            Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
          begin
             loop
                if Any_Data_Err then
@@ -390,16 +390,16 @@ package body ESP32S3.SDMMC is
                   Ready := True;
                   exit;
                end if;
-               exit when Past (D);
+               exit when Past (Deadline);
             end loop;
             if not Ready then
                Data := (others => 0);
                return Read_Error;
             end if;
          end;
-         W := FIFO;
+         Fifo_Word := FIFO;
          Split_LE
-           (Unsigned_32 (W),
+           (Unsigned_32 (Fifo_Word),
             Data (Word * 4),
             Data (Word * 4 + 1),
             Data (Word * 4 + 2),
@@ -408,10 +408,10 @@ package body ESP32S3.SDMMC is
 
       --  Wait for the data-transfer-over flag.
       declare
-         D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
       begin
          while not (RINT_Bits.Data_Over or Any_Data_Err) loop
-            exit when Past (D);
+            exit when Past (Deadline);
          end loop;
       end;
       if Any_Data_Err then
@@ -424,12 +424,12 @@ package body ESP32S3.SDMMC is
 
    --  Push 512 bytes (128 words) into the write FIFO.
    function Write_FIFO (Data : Block) return Status is
-      W : UInt32;
+      Fifo_Word : UInt32;
    begin
       for Word in 0 .. Block_Words - 1 loop
          declare
-            Ready : Boolean := False;
-            D     : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
+            Ready    : Boolean := False;
+            Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
          begin
             loop
                if Any_Data_Err then
@@ -440,24 +440,24 @@ package body ESP32S3.SDMMC is
                   Ready := True;
                   exit;
                end if;
-               exit when Past (D);
+               exit when Past (Deadline);
             end loop;
             if not Ready then
                return Write_Error;
             end if;
          end;
-         W :=
+         Fifo_Word :=
            UInt32
              (Join_LE
                 (Data (Word * 4), Data (Word * 4 + 1), Data (Word * 4 + 2), Data (Word * 4 + 3)));
-         FIFO := W;
+         FIFO := Fifo_Word;
       end loop;
 
       declare
-         D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
       begin
          while not (RINT_Bits.Data_Over or Any_Data_Err) loop
-            exit when Past (D);
+            exit when Past (Deadline);
          end loop;
       end;
       if Any_Data_Err then
@@ -516,30 +516,30 @@ package body ESP32S3.SDMMC is
    end Decode_SCR;
 
    procedure Do_Initialize (C : in out Card; Result : out Status) is
-      N         : constant Natural := Card_No (C.On);
-      St        : Status;
-      V2        : Boolean := False;
-      Responded : Boolean := False;
-      Ready     : Boolean := False;
-      OCR_Arg   : UInt32;
+      Card_Index : constant Natural := Card_No (C.On);
+      St         : Status;
+      V2         : Boolean := False;
+      Responded  : Boolean := False;
+      Ready      : Boolean := False;
+      OCR_Arg    : UInt32;
    begin
       C.Kind := Unknown;
       C.Block_Addressed := False;
 
-      Set_Card_Clock (N, C.Init_Hz);
+      Set_Card_Clock (Card_Index, C.Init_Hz);
 
       --  CMD0: 80 init clocks then go-idle (no response).
-      St := Issue (0, 0, No_Resp, Slot_No => N, Init => True);
+      St := Issue (0, 0, No_Resp, Slot_No => Card_Index, Init => True);
 
       --  CMD8: voltage check.  No response => v1 card; else confirm 0xAA echo.
-      St := Issue (8, 16#1AA#, Short_Resp, Slot_No => N);
+      St := Issue (8, 16#1AA#, Short_Resp, Slot_No => Card_Index);
       V2 := (St = OK and then (R0 and 16#FF#) = 16#AA#);
 
       --  ACMD41 until the card powers up (OCR busy bit 31 set).
       OCR_Arg := (if V2 then 16#4030_0000# else 16#0030_0000#);   --  HCS + 3V3
       for Tries in 1 .. ACMD41_Tries loop
-         St := Issue (55, 0, Short_Resp, Slot_No => N);
-         St := Issue (41, OCR_Arg, Short_NoCRC, Slot_No => N);
+         St := Issue (55, 0, Short_Resp, Slot_No => Card_Index);
+         St := Issue (41, OCR_Arg, Short_NoCRC, Slot_No => Card_Index);
          if St = OK then
             Responded := True;
             if (R0 and 16#8000_0000#) /= 0 then
@@ -558,11 +558,11 @@ package body ESP32S3.SDMMC is
       C.Kind := (if C.Block_Addressed then SDHC else SDSC);
 
       --  CMD2: read CID (long response: R3w:R2w:R1w:R0 = CID[127:0]).
-      St := Issue (2, 0, Long_Resp, Slot_No => N);
+      St := Issue (2, 0, Long_Resp, Slot_No => Card_Index);
       C.CID := (Unsigned_32 (R0), Unsigned_32 (R1w), Unsigned_32 (R2w), Unsigned_32 (R3w));
 
       --  CMD3: publish a relative card address (R6: RCA in the high half-word).
-      St := Issue (3, 0, Short_Resp, Slot_No => N);
+      St := Issue (3, 0, Short_Resp, Slot_No => Card_Index);
       if St /= OK then
          Result := St;
          return;
@@ -570,30 +570,30 @@ package body ESP32S3.SDMMC is
       C.RCA := Unsigned_16 (Shift_Right (R0, 16) and 16#FFFF#);
 
       --  CMD9: read CSD (addressed by RCA, valid in standby -> before CMD7).
-      St := Issue (9, Shift_Left (UInt32 (C.RCA), 16), Long_Resp, Slot_No => N);
+      St := Issue (9, Shift_Left (UInt32 (C.RCA), 16), Long_Resp, Slot_No => Card_Index);
       C.CSD := (Unsigned_32 (R0), Unsigned_32 (R1w), Unsigned_32 (R2w), Unsigned_32 (R3w));
 
       --  CMD7: select the card (R1b -> may go busy).
-      St := Issue (7, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => N);
+      St := Issue (7, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => Card_Index);
       Wait_Not_Busy;
 
       --  Optional 4-bit bus: ACMD6 then set the controller's card width.
       if C.Width = Width_4 then
-         St := Issue (55, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => N);
-         St := Issue (6, 2, Short_Resp, Slot_No => N);           --  bus width = 4
-         SDHOST_Periph.CTYPE.CARD_WIDTH4 := CTYPE_CARD_WIDTH4_Field (2**N);
+         St := Issue (55, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => Card_Index);
+         St := Issue (6, 2, Short_Resp, Slot_No => Card_Index);  --  bus width = 4
+         SDHOST_Periph.CTYPE.CARD_WIDTH4 := CTYPE_CARD_WIDTH4_Field (2**Card_Index);
       end if;
 
       --  CMD16: 512-byte blocks (required for SDSC, harmless for SDHC).
-      St := Issue (16, Block_Bytes, Short_Resp, Slot_No => N);
+      St := Issue (16, Block_Bytes, Short_Resp, Slot_No => Card_Index);
 
       --  SCR (ACMD51): SD spec version + supported bus widths (8-byte data read).
       declare
          Buf : Small_Buf;
       begin
-         St := Issue (55, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => N);
+         St := Issue (55, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => Card_Index);
          Prepare_Data (8);
-         St := Issue (51, 0, Short_Resp, Dir => Read_Data, Slot_No => N);
+         St := Issue (51, 0, Short_Resp, Dir => Read_Data, Slot_No => Card_Index);
          if St = OK and then Read_Small (8, Buf) = OK then
             Decode_SCR (C, Buf);
          end if;
@@ -606,14 +606,14 @@ package body ESP32S3.SDMMC is
          Buf : Small_Buf;
       begin
          Prepare_Data (64);
-         St := Issue (6, 16#00FF_FFF1#, Short_Resp, Dir => Read_Data, Slot_No => N);
+         St := Issue (6, 16#00FF_FFF1#, Short_Resp, Dir => Read_Data, Slot_No => Card_Index);
          if St = OK and then Read_Small (64, Buf) = OK then
             C.HS_Supported := (Buf (13) and 16#02#) /= 0;  --  group 1 function 1
 
          end if;
          if C.Want_HS and then C.HS_Supported then
             Prepare_Data (64);
-            St := Issue (6, 16#80FF_FFF1#, Short_Resp, Dir => Read_Data, Slot_No => N);
+            St := Issue (6, 16#80FF_FFF1#, Short_Resp, Dir => Read_Data, Slot_No => Card_Index);
             if St = OK and then Read_Small (64, Buf) = OK then
                C.HS_Active := (Buf (16) and 16#0F#) = 1;   --  selected function
 
@@ -627,17 +627,17 @@ package body ESP32S3.SDMMC is
       begin
          C.Active_Hz := Positive'Min (C.Data_Hz, Cap);
       end;
-      Set_Card_Clock (N, C.Active_Hz);
+      Set_Card_Clock (Card_Index, C.Active_Hz);
       Result := OK;
    end Do_Initialize;
 
    procedure Do_Read (C : in out Card; LBA : Block_Address; Data : out Block; Result : out Status)
    is
-      N  : constant Natural := Card_No (C.On);
-      St : Status;
+      Card_Index : constant Natural := Card_No (C.On);
+      St         : Status;
    begin
       Prepare_Data;
-      St := Issue (17, Addr_Of (C, LBA), Short_Resp, Dir => Read_Data, Slot_No => N);
+      St := Issue (17, Addr_Of (C, LBA), Short_Resp, Dir => Read_Data, Slot_No => Card_Index);
       if St /= OK then
          Data := (others => 0);
          Result := St;
@@ -647,11 +647,11 @@ package body ESP32S3.SDMMC is
    end Do_Read;
 
    procedure Do_Write (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status) is
-      N  : constant Natural := Card_No (C.On);
-      St : Status;
+      Card_Index : constant Natural := Card_No (C.On);
+      St         : Status;
    begin
       Prepare_Data;
-      St := Issue (24, Addr_Of (C, LBA), Short_Resp, Dir => Write_Data, Slot_No => N);
+      St := Issue (24, Addr_Of (C, LBA), Short_Resp, Dir => Write_Data, Slot_No => Card_Index);
       if St /= OK then
          Result := St;
          return;
@@ -703,8 +703,8 @@ package body ESP32S3.SDMMC is
    is
       use ESP32S3_Registers.SYSTEM;
       use type ESP32S3.GPIO.Pad_Number;
-      S : constant Sig_Set := Sig (On);
-      N : constant Natural := Card_No (On);
+      Slot_Sig   : constant Sig_Set := Sig (On);
+      Card_Index : constant Natural := Card_No (On);
    begin
       C.On := On;
       C.Width := Width;
@@ -732,10 +732,10 @@ package body ESP32S3.SDMMC is
       SDHOST_Periph.CTRL :=
         (CONTROLLER_RESET => True, FIFO_RESET => True, DMA_RESET => True, others => <>);
       declare
-         D : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Reg_Span;
+         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Reg_Span;
       begin
          while SDHOST_Periph.CTRL.CONTROLLER_RESET or else SDHOST_Periph.CTRL.FIFO_RESET loop
-            exit when Past (D);
+            exit when Past (Deadline);
          end loop;
       end;
 
@@ -744,27 +744,27 @@ package body ESP32S3.SDMMC is
         (RESPONSE_TIMEOUT => 16#FF#, DATA_TIMEOUT => 16#FFFFFF#, others => <>);
       SDHOST_Periph.FIFOTH :=
         (TX_WMARK => 8, RX_WMARK => 7, DMA_MULTIPLE_TRANSACTION_SIZE => 0, others => <>);
-      SDHOST_Periph.RST_N.CARD_RESET := RST_N_CARD_RESET_Field (2**N);
+      SDHOST_Periph.RST_N.CARD_RESET := RST_N_CARD_RESET_Field (2**Card_Index);
       SDHOST_Periph.CTYPE := (others => <>);    --  start 1-bit; widened at init
       SDHOST_Periph.INTMASK := (others => <>);  --  poll, no interrupts
       RINT := 16#FFFF#;                         --  clear stale raw ints
 
       --  Route the slot's lines through the GPIO matrix.
-      Route_Out (Clk, S.Cclk);                --  clock: output only
-      Route_Bidir (Cmd, S.Ccmd);                --  command: bidirectional
-      Route_Bidir (D0, S.Cdat (0));
+      Route_Out (Clk, Slot_Sig.Cclk);           --  clock: output only
+      Route_Bidir (Cmd, Slot_Sig.Ccmd);         --  command: bidirectional
+      Route_Bidir (D0, Slot_Sig.Cdat (0));
       if D1 /= ESP32S3.GPIO.No_Pin then
-         Route_Bidir (ESP32S3.GPIO.Pin_Id (D1), S.Cdat (1));
+         Route_Bidir (ESP32S3.GPIO.Pin_Id (D1), Slot_Sig.Cdat (1));
       end if;
       if D2 /= ESP32S3.GPIO.No_Pin then
-         Route_Bidir (ESP32S3.GPIO.Pin_Id (D2), S.Cdat (2));
+         Route_Bidir (ESP32S3.GPIO.Pin_Id (D2), Slot_Sig.Cdat (2));
       end if;
       if D3 /= ESP32S3.GPIO.No_Pin then
-         Route_Bidir (ESP32S3.GPIO.Pin_Id (D3), S.Cdat (3));
+         Route_Bidir (ESP32S3.GPIO.Pin_Id (D3), Slot_Sig.Cdat (3));
       end if;
 
       --  Start the card clock slow for the identification phase.
-      Set_Card_Clock (N, Init_Clock_Hz);
+      Set_Card_Clock (Card_Index, Init_Clock_Hz);
    end Setup;
 
    procedure Initialize (C : in out Card; Result : out Status) is
@@ -778,15 +778,16 @@ package body ESP32S3.SDMMC is
    --  Extract Width bits (<= 32) starting at bit Lo from a 128-bit register
    --  (word 0 = bits [31:0]).  Fields may straddle a 32-bit word boundary.
    function Field (R : Reg128; Lo, Width : Natural) return Unsigned_32 is
-      W    : constant Natural := Lo / 32;
-      Off  : constant Natural := Lo mod 32;
-      Low  : constant Unsigned_64 := Unsigned_64 (R (W));
-      High : constant Unsigned_64 := (if W < 3 then Unsigned_64 (R (W + 1)) else 0);
-      V    : constant Unsigned_64 := Shift_Right (Low or Shift_Left (High, 32), Off);
-      Mask : constant Unsigned_64 :=
+      Word_Index : constant Natural := Lo / 32;
+      Off        : constant Natural := Lo mod 32;
+      Low        : constant Unsigned_64 := Unsigned_64 (R (Word_Index));
+      High       : constant Unsigned_64 :=
+        (if Word_Index < 3 then Unsigned_64 (R (Word_Index + 1)) else 0);
+      Value      : constant Unsigned_64 := Shift_Right (Low or Shift_Left (High, 32), Off);
+      Mask       : constant Unsigned_64 :=
         (if Width >= 32 then 16#FFFF_FFFF# else Shift_Left (Unsigned_64 (1), Width) - 1);
    begin
-      return Unsigned_32 (V and Mask);
+      return Unsigned_32 (Value and Mask);
    end Field;
 
    --------------
@@ -843,16 +844,16 @@ package body ESP32S3.SDMMC is
 
    function Capabilities (C : Card) return Card_Caps is
       --  TRAN_SPEED [103:96]: bits [2:0] = rate unit, [6:3] = time value index.
-      TS   : constant Unsigned_32 := Field (C.CSD, 96, 8);
-      Unit : constant array (0 .. 3) of Natural :=
+      TS         : constant Unsigned_32 := Field (C.CSD, 96, 8);
+      Unit       : constant array (0 .. 3) of Natural :=
         (100, 1_000, 10_000, 100_000);                       --  kbit/s
-      Mult : constant array (0 .. 15) of Natural :=          --  x10 (avoid frac)
+      Mult       : constant array (0 .. 15) of Natural :=          --  x10 (avoid frac)
         (0, 10, 12, 13, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80);
-      U    : constant Natural := Natural (TS and 7);
-      M    : constant Natural := Natural (Shift_Right (TS, 3) and 16#F#);
-      Caps : Card_Caps;
+      Unit_Index : constant Natural := Natural (TS and 7);
+      Mult_Index : constant Natural := Natural (Shift_Right (TS, 3) and 16#F#);
+      Caps       : Card_Caps;
    begin
-      Caps.Max_Speed_MHz := Unit (U) * Mult (M) / 10 / 1000;
+      Caps.Max_Speed_MHz := Unit (Unit_Index) * Mult (Mult_Index) / 10 / 1000;
       Caps.Command_Classes := Unsigned_16 (Field (C.CSD, 84, 12));   --  CCC
       Caps.Read_Block_Len := 2**Natural (Field (C.CSD, 80, 4));   --  READ_BL_LEN
       Caps.Spec_Major := C.Spec_Major;                          --  SCR
