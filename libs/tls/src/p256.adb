@@ -98,6 +98,7 @@ package body P256 is
 
    --  A - B mod 2^256 (drops the final borrow).
    function Sub_Raw (A, B : Num) return Num is
+      --  R = A - B mod 2^256; Bor = borrow out of each limb; D = per-limb difference.
       R   : Num;
       Bor : U64 := 0;
       D   : U64;
@@ -112,7 +113,7 @@ package body P256 is
 
    --  A + B; sets Carry to the 257th bit.
    procedure Add_Raw (A, B : Num; R : out Num; Carry : out U64) is
-      S : U64 := 0;
+      S : U64 := 0;   --  running limb sum (low 32 bits stored, high 32 carried up)
    begin
       for I in Num'Range loop
          S := U64 (A (I)) + U64 (B (I)) + S;
@@ -124,8 +125,8 @@ package body P256 is
 
    --  (A + B) mod M, for A, B < M.
    function Add_Mod (A, B, M : Num) return Num is
-      R : Num;
-      C : U64;
+      R : Num;   --  A + B
+      C : U64;   --  carry out of the top limb (the 257th bit)
    begin
       Add_Raw (A, B, R, C);
       if C /= 0 or else Geq (R, M) then
@@ -141,8 +142,8 @@ package body P256 is
          return Sub_Raw (A, B);
       else
          declare
-            R : Num;
-            C : U64;
+            R : Num;   --  wrapped difference, then + M
+            C : U64;   --  discarded carry
          begin
             Add_Raw (Sub_Raw (A, B), M, R, C);   --  (A - B + 2^256) + M, keep low
             return R;
@@ -156,7 +157,7 @@ package body P256 is
 
    --  X^-1 mod 2^32 (X odd), Newton's iteration.
    function Inv32 (X : U32) return U32 is
-      Y : U32 := X;
+      Y : U32 := X;   --  inverse approximation; Newton doubles the correct-bit count
    begin
       for I in 1 .. 5 loop
          Y := Y * (2 - X * Y);          --  doubles the number of correct bits
@@ -166,6 +167,8 @@ package body P256 is
 
    --  CIOS Montgomery multiply: returns A*B*R^-1 mod M (A, B < M).
    function Mont_Mul (A, B, M : Num; M0 : U32) return Num is
+      --  CIOS scratch: T = wide accumulator; CS/Cr = column sum and carry;
+      --  MM = reduction multiplier m = T(0)*M0 mod 2^32; R = the reduced result.
       T  : array (0 .. Limbs + 1) of U32 := (others => 0);
       CS : U64;
       Cr : U64;
@@ -207,7 +210,7 @@ package body P256 is
 
    --  R^2 mod M = 2^512 mod M, by 512 modular doublings (add/sub only).
    function Compute_R2 (M : Num) return Num is
-      X : Num := One;
+      X : Num := One;   --  1 doubled 512 times mod M yields 2^512 mod M
    begin
       for I in 1 .. 512 loop
          X := Add_Mod (X, X, M);
@@ -229,7 +232,7 @@ package body P256 is
 
    --  a^E mod M with a, result in Montgomery form (E a plain Num, MSB..LSB).
    function Mont_Pow (A_M, E, M : Num; M0 : U32; One_M : Num) return Num is
-      R : Num := One_M;
+      R : Num := One_M;   --  running Montgomery product (square-and-multiply)
    begin
       for I in reverse 0 .. 255 loop
          R := Mont_Mul (R, R, M, M0);
@@ -274,6 +277,8 @@ package body P256 is
    is (Add_Mod (A, A, P));
 
    function Dbl (Q : Point) return Point is
+      --  Jacobian doubling temps: Dlt = Z^2, Gamma = Y^2, Beta = X*Gamma,
+      --  Alpha = 3*(X-Dlt)*(X+Dlt), G2 = Gamma^2, T scratch, (X3,Y3,Z3) result.
       Dlt, Gamma, Beta, Alpha, T, X3, Y3, Z3, G2 : Num;
    begin
       if Is_Zero (Q.Z) or else Is_Zero (Q.Y) then
@@ -300,6 +305,8 @@ package body P256 is
    end Dbl;
 
    function Add (P1, P2 : Point) return Point is
+      --  Jacobian add temps (add-2007-bl): Z1Z1/Z2Z2 = Zi^2, U1/U2 and S1/S2 the
+      --  projected X and Y, H/I/J/Rr/V intermediates, (X3,Y3,Z3) result, T scratch.
       Z1Z1, Z2Z2, U1, U2, S1, S2, H, I, J, Rr, V, X3, Y3, Z3, T : Num;
    begin
       if Is_Zero (P1.Z) then
@@ -340,7 +347,7 @@ package body P256 is
 
    --  K (plain scalar) times P, double-and-add (MSB..LSB; variable-time is fine).
    function Scalar_Mul (K : Num; Q : Point) return Point is
-      R : Point := Infinity;
+      R : Point := Infinity;   --  running accumulator (double-and-add)
    begin
       for I in reverse 0 .. 255 loop
          R := Dbl (R);
@@ -356,7 +363,7 @@ package body P256 is
    ---------------------------------------------------------------------------
    --  32 big-endian bytes -> Num.
    function From_BE (Bz : Bytes_32) return Num is
-      R : Num;
+      R : Num;   --  the 8 little-endian limbs assembled from the big-endian bytes
    begin
       for I in 0 .. Limbs - 1 loop
          --  word I = bytes [28-4I .. 31-4I]
@@ -375,6 +382,7 @@ package body P256 is
 
    --  Is (x, y) (plain affine) on the curve y^2 = x^3 - 3x + b mod p?
    function On_Curve (X, Y : Num) return Boolean is
+      --  XM/YM/BM = x, y, b in Montgomery form; LHS = y^2; X3 = x^3 - 3x + b.
       XM  : constant Num := Mont_Mul (X, P_R2, P, P_M0);
       YM  : constant Num := Mont_Mul (Y, P_R2, P, P_M0);
       BM  : constant Num := Mont_Mul (B, P_R2, P, P_M0);
@@ -390,6 +398,8 @@ package body P256 is
    --  ECDSA verification.
    ---------------------------------------------------------------------------
    function Verify (Pub_X, Pub_Y : Bytes_32; Hash : Bytes_32; R, S : Bytes_32) return Boolean is
+      --  ECDSA verify: (Qx,Qy) public key, (Rr,Ss) the signature (r,s), E = hash,
+      --  W = s^-1 mod n, U1/U2 the scalars, RP = U1*G + U2*Q, Vx = recovered x.
       Qx             : constant Num := From_BE (Pub_X);
       Qy             : constant Num := From_BE (Pub_Y);
       Rr             : constant Num := From_BE (R);
@@ -439,7 +449,7 @@ package body P256 is
 
    --  Num -> 32 big-endian bytes.
    function To_BE (A : Num) return Bytes_32 is
-      R : Bytes_32;
+      R : Bytes_32;   --  big-endian bytes of A
    begin
       for I in 0 .. Limbs - 1 loop
          R (31 - 4 * I) := Byte (A (I) and 16#FF#);
@@ -452,7 +462,7 @@ package body P256 is
 
    --  Jacobian (Montgomery) -> plain affine (X, Y).  Ok False at infinity.
    procedure To_Affine (Pt : Point; AX, AY : out Num; Ok : out Boolean) is
-      Zinv, Z2inv, Z3inv : Num;
+      Zinv, Z2inv, Z3inv : Num;   --  Z^-1 and its square/cube, to divide out Jacobian Z
    begin
       AX := Zero;
       AY := Zero;
@@ -469,9 +479,9 @@ package body P256 is
    end To_Affine;
 
    function Public_Key (Priv : Bytes_32; Pub_X, Pub_Y : out Bytes_32) return Boolean is
-      D      : constant Num := From_BE (Priv);
-      R      : Point;
-      AX, AY : Num;
+      D      : constant Num := From_BE (Priv);   --  private scalar
+      R      : Point;                            --  D*G
+      AX, AY : Num;                              --  affine result
       Ok     : Boolean;
    begin
       Pub_X := (others => 0);
@@ -492,6 +502,7 @@ package body P256 is
    function ECDH
      (Priv : Bytes_32; Peer_X, Peer_Y : Bytes_32; Shared_X : out Bytes_32) return Boolean
    is
+      --  D = private scalar; (QX,QY) = peer public point; R = D*Q; (AX,AY) = shared point.
       D      : constant Num := From_BE (Priv);
       QX     : constant Num := From_BE (Peer_X);
       QY     : constant Num := From_BE (Peer_Y);
@@ -521,9 +532,9 @@ package body P256 is
 
    --  SHA-256 of Data via SPARKNaCl.
    function SHA256 (Data : Bytes) return Bytes_32 is
-      Msg : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));
-      Dg  : SPARKNaCl.Hashing.SHA256.Digest;
-      R   : Bytes_32;
+      Msg : SPARKNaCl.Byte_Seq (0 .. SPARKNaCl.N32 (Data'Length - 1));   --  input as NaCl bytes
+      Dg  : SPARKNaCl.Hashing.SHA256.Digest;                            --  digest
+      R   : Bytes_32;                                                   --  digest as Bytes_32
    begin
       for I in 0 .. Data'Length - 1 loop
          Msg (SPARKNaCl.N32 (I)) := SPARKNaCl.Byte (Data (Data'First + I));
@@ -539,6 +550,7 @@ package body P256 is
    --  one 64-byte block, so no key-shortening hash is needed.
    HMAC_Block : constant := 64;
    function HMAC_SHA256 (Key, Msg : Bytes) return Bytes_32 is
+      --  K0 = block-padded key; Inner/Outer = the two HMAC blocks; H1 = inner hash.
       K0    : Bytes (0 .. HMAC_Block - 1) := (others => 0);
       Inner : Bytes (0 .. HMAC_Block - 1 + Msg'Length);
       Outer : Bytes (0 .. HMAC_Block - 1 + 32);
@@ -564,6 +576,8 @@ package body P256 is
    end HMAC_SHA256;
 
    function Sign (Priv, Hash : Bytes_32; R, S : out Bytes_32) return Boolean is
+      --  RFC 6979: D = private key, E = hash mod n, N_One_M = 1 (Montgomery, mod n);
+      --  V/K = HMAC-DRBG state; Count = candidate-attempt guard.
       D       : constant Num := From_BE (Priv);
       E       : Num := From_BE (Hash);
       N_One_M : constant Num := To_Mont (One, NN, N_M0, N_R2);
@@ -606,6 +620,8 @@ package body P256 is
             Count := Count + 1;
             V := HMAC_SHA256 (K, V);
             declare
+               --  Kk = candidate nonce k; KG = k*G; (AX,AY) its affine point;
+               --  Rn/Sn = signature r,s; T = (e + r*d) scratch.
                Kk        : constant Num := From_BE (V);
                KG        : Point;
                AX, AY    : Num;
@@ -637,7 +653,7 @@ package body P256 is
             end;
             --  k rejected: reseed K, V and try the next candidate.
             declare
-               M : Bytes (0 .. 32);
+               M : Bytes (0 .. 32);   --  V || 0x00, the DRBG reseed input
             begin
                M (0 .. 31) := V;
                M (32) := 16#00#;

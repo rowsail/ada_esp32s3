@@ -48,21 +48,21 @@ package body TLS_Client is
    ---------------------------------------------------------------------------
 
    function To_B32 (B : Key32) return SPARKNaCl.Bytes_32 is
-      R : SPARKNaCl.Bytes_32;
+      Result : SPARKNaCl.Bytes_32;
    begin
       for I in 0 .. 31 loop
-         R (SPARKNaCl.Index_32 (I)) := SPARKNaCl.Byte (B (I));
+         Result (SPARKNaCl.Index_32 (I)) := SPARKNaCl.Byte (B (I));
       end loop;
-      return R;
+      return Result;
    end To_B32;
 
    function From_B32 (B : SPARKNaCl.Bytes_32) return Key32 is
-      R : Key32;
+      Result : Key32;
    begin
       for I in 0 .. 31 loop
-         R (I) := U8 (B (SPARKNaCl.Index_32 (I)));
+         Result (I) := U8 (B (SPARKNaCl.Index_32 (I)));
       end loop;
-      return R;
+      return Result;
    end From_B32;
 
    procedure Make_Key_Pair (S : in out Session) is
@@ -150,34 +150,34 @@ package body TLS_Client is
    ---------------------------------------------------------------------------
 
    procedure Send_Bytes (Sock : Socket_Type; Data : Byte_Array) is
-      SEA  : Stream_Element_Array (1 .. Stream_Element_Offset (Data'Length));
-      Last : Stream_Element_Offset;
+      Stream_Buf : Stream_Element_Array (1 .. Stream_Element_Offset (Data'Length));
+      Last       : Stream_Element_Offset;
    begin
       for I in Data'Range loop
-         SEA (Stream_Element_Offset (I - Data'First) + 1) := Stream_Element (Data (I));
+         Stream_Buf (Stream_Element_Offset (I - Data'First) + 1) := Stream_Element (Data (I));
       end loop;
-      Send_Socket (Sock, SEA, Last);
+      Send_Socket (Sock, Stream_Buf, Last);
    end Send_Bytes;
 
    --  Read exactly Buf'Length bytes (TLS records may straddle TCP segments).
    procedure Recv_Exact (Sock : Socket_Type; Buf : out Byte_Array; Ok : out Boolean) is
-      SEA  : Stream_Element_Array (1 .. Stream_Element_Offset (Buf'Length));
-      Pos  : Stream_Element_Offset := 1;
-      Last : Stream_Element_Offset;
+      Stream_Buf : Stream_Element_Array (1 .. Stream_Element_Offset (Buf'Length));
+      Pos        : Stream_Element_Offset := 1;
+      Last       : Stream_Element_Offset;
    begin
       Ok := False;
       if Buf'Length = 0 then
          Ok := True;
          return;
       end if;
-      while Pos <= SEA'Last loop
-         Receive_Socket (Sock, SEA (Pos .. SEA'Last), Last);
+      while Pos <= Stream_Buf'Last loop
+         Receive_Socket (Sock, Stream_Buf (Pos .. Stream_Buf'Last), Last);
          exit when Last < Pos;                 --  peer closed
          Pos := Last + 1;
       end loop;
-      if Pos > SEA'Last then
+      if Pos > Stream_Buf'Last then
          for I in Buf'Range loop
-            Buf (I) := U8 (SEA (Stream_Element_Offset (I - Buf'First) + 1));
+            Buf (I) := U8 (Stream_Buf (Stream_Element_Offset (I - Buf'First) + 1));
          end loop;
          Ok := True;
       end if;
@@ -215,20 +215,20 @@ package body TLS_Client is
    ---------------------------------------------------------------------------
 
    procedure Send_Client_Hello (S : in out Session; Sock : Socket_Type; Host : String) is
-      B                               : Builder renames CH;
-      Rnd                             : ESP32S3.RNG.Byte_Array (0 .. 31);
-      Rec, HS, Body_Mark, Ext_Mark, M : Natural;
+      B                                                : Builder renames CH;
+      Rnd                                              : ESP32S3.RNG.Byte_Array (0 .. 31);
+      Rec_Mark, HS_Mark, Body_Mark, Ext_Mark, SNI_Mark : Natural;
    begin
       B.Len := 0;
       --  Record header: handshake, legacy version 0x0303, length (patched last).
       P8 (B, CT_Handshake);
       P16 (B, 16#0303#);
-      Rec := B.Len;
+      Rec_Mark := B.Len;
       P16 (B, 0);
 
       --  Handshake header: client_hello, 3-byte length (patched last).
       P8 (B, HS_Client_Hello);
-      HS := B.Len;
+      HS_Mark := B.Len;
       P8 (B, 0);
       P16 (B, 0);
       Body_Mark := B.Len;
@@ -256,13 +256,13 @@ package body TLS_Client is
 
       --  server_name (SNI)
       P16 (B, 0);
-      M := B.Len;
+      SNI_Mark := B.Len;
       P16 (B, 0);
       P16 (B, Host'Length + 3);                            --  ServerNameList
       P8 (B, 0);                                          --  host_name
       P16 (B, Host'Length);
       PString (B, Host);
-      Patch16 (B, M);
+      Patch16 (B, SNI_Mark);
 
       --  supported_groups: x25519, secp256r1
       P16 (B, 10);
@@ -313,11 +313,11 @@ package body TLS_Client is
       declare
          HL : constant Natural := B.Len - Body_Mark;
       begin
-         B.Data (HS) := U8 (HL / 65536);
-         B.Data (HS + 1) := U8 ((HL / 256) mod 256);
-         B.Data (HS + 2) := U8 (HL mod 256);
+         B.Data (HS_Mark) := U8 (HL / 65536);
+         B.Data (HS_Mark + 1) := U8 ((HL / 256) mod 256);
+         B.Data (HS_Mark + 2) := U8 (HL mod 256);
       end;
-      Patch16 (B, Rec);
+      Patch16 (B, Rec_Mark);
 
       Send_Bytes (Sock, B.Data (0 .. B.Len - 1));
       Transcript (B.Data (5 .. B.Len - 1));         --  handshake message (no record hdr)
@@ -330,56 +330,56 @@ package body TLS_Client is
    procedure Parse_Server_Hello
      (S : in out Session; Frag : Byte_Array; Len : Natural; Ok : out Boolean)
    is
-      P    : Natural := Frag'First;
+      Pos  : Natural := Frag'First;
       Last : constant Natural := Frag'First + Len - 1;
 
       function U16_At (I : Natural) return U16
       is (U16 (Frag (I)) * 256 + U16 (Frag (I + 1)));
    begin
       Ok := False;
-      if Len < 40 or else Frag (P) /= HS_Server_Hello then
+      if Len < 40 or else Frag (Pos) /= HS_Server_Hello then
          return;
       end if;
-      P := P + 4;                                  --  hs type + 3-byte length
-      P := P + 2;                                  --  legacy_version
-      P := P + 32;                                 --  random
-      if P > Last then
+      Pos := Pos + 4;                              --  hs type + 3-byte length
+      Pos := Pos + 2;                              --  legacy_version
+      Pos := Pos + 32;                             --  random
+      if Pos > Last then
          return;
       end if;
-      P := P + 1 + Natural (Frag (P));             --  legacy_session_id_echo
-      if P + 2 > Last then
+      Pos := Pos + 1 + Natural (Frag (Pos));       --  legacy_session_id_echo
+      if Pos + 2 > Last then
          return;
       end if;
-      S.Suite := U16_At (P);
-      P := P + 2;          --  cipher_suite
-      P := P + 1;                                  --  legacy_compression_method
-      if P + 1 > Last then
+      S.Suite := U16_At (Pos);
+      Pos := Pos + 2;          --  cipher_suite
+      Pos := Pos + 1;                              --  legacy_compression_method
+      if Pos + 1 > Last then
          return;
       end if;
-      P := P + 2;                                  --  extensions length
+      Pos := Pos + 2;                              --  extensions length
 
       --  Walk extensions for key_share (51).
-      while P + 4 <= Last + 1 loop
+      while Pos + 4 <= Last + 1 loop
          declare
-            Ext_Type : constant U16 := U16_At (P);
-            Ext_Len  : constant Natural := Natural (U16_At (P + 2));
-            EBody    : constant Natural := P + 4;
+            Ext_Type : constant U16 := U16_At (Pos);
+            Ext_Len  : constant Natural := Natural (U16_At (Pos + 2));
+            Ext_Body : constant Natural := Pos + 4;
          begin
             if Ext_Type = 51 and then Ext_Len >= 4 then
                --  KeyShareEntry: group (2) + length (2) + key_exchange.
-               if U16_At (EBody) = 16#001D# and then Natural (U16_At (EBody + 2)) = 32 then
+               if U16_At (Ext_Body) = 16#001D# and then Natural (U16_At (Ext_Body + 2)) = 32 then
                   for I in 0 .. 31 loop
-                     S.Server_Pub (I) := Frag (EBody + 4 + I);
+                     S.Server_Pub (I) := Frag (Ext_Body + 4 + I);
                   end loop;
                   S.Group := 16#001D#;
                   S.Have_Share := True;
-               elsif U16_At (EBody) = 16#0017#
-                 and then Natural (U16_At (EBody + 2)) = 65
-                 and then Frag (EBody + 4) = 16#04#         --  uncompressed point
+               elsif U16_At (Ext_Body) = 16#0017#
+                 and then Natural (U16_At (Ext_Body + 2)) = 65
+                 and then Frag (Ext_Body + 4) = 16#04#      --  uncompressed point
                then
                   for I in 0 .. 31 loop
-                     S.Server_P256_X (I) := Frag (EBody + 5 + I);
-                     S.Server_P256_Y (I) := Frag (EBody + 37 + I);
+                     S.Server_P256_X (I) := Frag (Ext_Body + 5 + I);
+                     S.Server_P256_Y (I) := Frag (Ext_Body + 37 + I);
                   end loop;
                   S.Group := 16#0017#;
                   S.Have_Share := True;
@@ -388,7 +388,7 @@ package body TLS_Client is
                --  pre_shared_key: server accepted
                S.Resumed_PSK := True;           --  selected_identity is our only offer
             end if;
-            P := EBody + Ext_Len;
+            Pos := Ext_Body + Ext_Len;
          end;
       end loop;
       Ok := S.Suite /= 0;
@@ -436,41 +436,41 @@ package body TLS_Client is
    function Expand_Label
      (Secret : SHA.Digest; Label : String; Ctx : Byte_Seq; Len : Natural) return Byte_Seq
    is
-      FL   : constant String := "tls13 " & Label;
-      ILn  : constant Natural := 2 + 1 + FL'Length + 1 + Ctx'Length;
-      Info : Byte_Seq (0 .. N32 (ILn) - 1);
-      OKM  : HKDF.OKM_Seq (0 .. N32 (Len) - 1);
-      R    : Byte_Seq (0 .. N32 (Len) - 1);
-      P    : N32;
+      Full_Label : constant String := "tls13 " & Label;
+      Info_Len   : constant Natural := 2 + 1 + Full_Label'Length + 1 + Ctx'Length;
+      Info       : Byte_Seq (0 .. N32 (Info_Len) - 1);
+      OKM        : HKDF.OKM_Seq (0 .. N32 (Len) - 1);   --  HKDF output keying material
+      Result     : Byte_Seq (0 .. N32 (Len) - 1);
+      Pos        : N32;
    begin
       Info (0) := Byte (Len / 256);
       Info (1) := Byte (Len mod 256);
-      Info (2) := Byte (FL'Length);                   --  HkdfLabel.label length
-      for I in FL'Range loop
-         Info (3 + N32 (I - FL'First)) := Byte (Character'Pos (FL (I)));
+      Info (2) := Byte (Full_Label'Length);           --  HkdfLabel.label length
+      for I in Full_Label'Range loop
+         Info (3 + N32 (I - Full_Label'First)) := Byte (Character'Pos (Full_Label (I)));
       end loop;
-      P := 3 + N32 (FL'Length);
-      Info (P) := Byte (Ctx'Length);                  --  HkdfLabel.context length
+      Pos := 3 + N32 (Full_Label'Length);
+      Info (Pos) := Byte (Ctx'Length);                --  HkdfLabel.context length
       for I in Ctx'Range loop
-         Info (P + 1 + (I - Ctx'First)) := Ctx (I);
+         Info (Pos + 1 + (I - Ctx'First)) := Ctx (I);
       end loop;
       HKDF.Expand (OKM, Secret, Info);
-      for I in R'Range loop
-         R (I) := OKM (I);
+      for I in Result'Range loop
+         Result (I) := OKM (I);
       end loop;
-      return R;
+      return Result;
    end Expand_Label;
 
    --  Derive-Secret(Secret, Label, Transcript-Hash) -- a 32-byte secret.
    function Derive_Secret (Secret : SHA.Digest; Label : String; Th : SHA.Digest) return SHA.Digest
    is
-      B : constant Byte_Seq := Expand_Label (Secret, Label, Th, 32);
-      R : SHA.Digest;
+      Expanded : constant Byte_Seq := Expand_Label (Secret, Label, Th, 32);
+      Result   : SHA.Digest;
    begin
       for I in 0 .. 31 loop
-         R (Index_32 (I)) := B (N32 (I));
+         Result (Index_32 (I)) := Expanded (N32 (I));
       end loop;
-      return R;
+      return Result;
    end Derive_Secret;
 
    procedure Derive_Keys (S : in out Session) is
@@ -583,12 +583,12 @@ package body TLS_Client is
    end HMAC;
 
    function To_Digest (B : Key32) return SHA.Digest is
-      R : SHA.Digest;
+      Result : SHA.Digest;
    begin
       for I in 0 .. 31 loop
-         R (Index_32 (I)) := Byte (B (I));
+         Result (Index_32 (I)) := Byte (B (I));
       end loop;
-      return R;
+      return Result;
    end To_Digest;
 
    ---------------------------------------------------------------------------
@@ -614,13 +614,13 @@ package body TLS_Client is
       Ok         : out Boolean)
    is
       use ESP32S3.AES.GCM;
-      CLen : constant Natural := (if Len >= 16 then Len - 16 else 0);
-      Key  : ESP32S3.AES.Key_Bytes (0 .. 15);
-      IV   : Nonce;
-      AAD  : ESP32S3.AES.GCM.Byte_Array (0 .. 4);
-      Tag  : Auth_Tag;
-      DOk  : Boolean;
-      P    : Integer;
+      CLen   : constant Natural := (if Len >= 16 then Len - 16 else 0);
+      Key    : ESP32S3.AES.Key_Bytes (0 .. 15);
+      IV     : Nonce;
+      AAD    : ESP32S3.AES.GCM.Byte_Array (0 .. 4);
+      Tag    : Auth_Tag;
+      Dec_OK : Boolean;
+      Pos    : Integer;
    begin
       Out_Len := 0;
       Inner_Type := 0;
@@ -645,134 +645,144 @@ package body TLS_Client is
          Tag (I) := Frag (Frag'First + CLen + I);
       end loop;
 
-      Decrypt (Key, IV, AAD, GC_C (0 .. CLen - 1), Tag, GC_P (0 .. CLen - 1), DOk);
-      if not DOk then
+      Decrypt (Key, IV, AAD, GC_C (0 .. CLen - 1), Tag, GC_P (0 .. CLen - 1), Dec_OK);
+      if not Dec_OK then
          return;
       end if;
       --  Strip trailing zero padding; the last non-zero byte is the content type.
-      P := CLen - 1;
-      while P >= 0 and then GC_P (P) = 0 loop
-         P := P - 1;
+      Pos := CLen - 1;
+      while Pos >= 0 and then GC_P (Pos) = 0 loop
+         Pos := Pos - 1;
       end loop;
-      if P < 0 then
+      if Pos < 0 then
          return;
       end if;
-      Inner_Type := GC_P (P);
-      Out_Len := P;                 --  handshake bytes = GC_P (0 .. P-1)
+      Inner_Type := GC_P (Pos);
+      Out_Len := Pos;               --  handshake bytes = GC_P (0 .. Pos-1)
       Ok := True;
    end Decrypt_Record;
 
    --  Walk the reassembled handshake messages: note the Certificate (extract the
    --  leaf) and whether a Finished was seen.
    procedure Scan_Messages (S : in out Session; Saw_Finished : out Boolean) is
-      P : Natural := 0;
+      Pos : Natural := 0;
    begin
       Saw_Finished := False;
-      while P + 4 <= HSB_Len loop
+      while Pos + 4 <= HSB_Len loop
          declare
-            MType : constant U8 := HSB (P);
+            MType : constant U8 := HSB (Pos);
             MLen  : constant Natural :=
-              Natural (HSB (P + 1)) * 65536 + Natural (HSB (P + 2)) * 256 + Natural (HSB (P + 3));
+              Natural (HSB (Pos + 1))
+              * 65536
+              + Natural (HSB (Pos + 2)) * 256
+              + Natural (HSB (Pos + 3));
          begin
-            exit when P + 4 + MLen > HSB_Len;        --  message not fully present yet
+            exit when Pos + 4 + MLen > HSB_Len;      --  message not fully present yet
             if MType = 11 then
                --  Certificate
                declare
-                  CP       : Natural := P + 4;
-                  List_End : Natural := P + 4;
+                  Cert_Pos : Natural := Pos + 4;
+                  List_End : Natural := Pos + 4;
                begin
-                  CP := CP + 1 + Natural (HSB (CP));  --  certificate_request_context
+                  Cert_Pos := Cert_Pos + 1 + Natural (HSB (Cert_Pos));  --  cert_request_context
                   declare
                      ListLen : constant Natural :=
-                       Natural (HSB (CP))
+                       Natural (HSB (Cert_Pos))
                        * 65536
-                       + Natural (HSB (CP + 1)) * 256
-                       + Natural (HSB (CP + 2));
+                       + Natural (HSB (Cert_Pos + 1)) * 256
+                       + Natural (HSB (Cert_Pos + 2));
                   begin
-                     CP := CP + 3;              --  start of certificate_list
-                     List_End := Natural'Min (CP + ListLen, HSB_Len);
+                     Cert_Pos := Cert_Pos + 3;         --  start of certificate_list
+                     List_End := Natural'Min (Cert_Pos + ListLen, HSB_Len);
                   end;
                   --  Walk every entry: [cert len(3)][cert DER][ext len(2)][exts].
                   S.Chain_Count := 0;
-                  while CP + 3 <= List_End loop
+                  while Cert_Pos + 3 <= List_End loop
                      declare
-                        CLn : constant Natural :=
-                          Natural (HSB (CP))
+                        Cert_Len : constant Natural :=
+                          Natural (HSB (Cert_Pos))
                           * 65536
-                          + Natural (HSB (CP + 1)) * 256
-                          + Natural (HSB (CP + 2));
+                          + Natural (HSB (Cert_Pos + 1)) * 256
+                          + Natural (HSB (Cert_Pos + 2));
                      begin
-                        CP := CP + 3;
-                        exit when CLn = 0 or else CP + CLn > List_End;
+                        Cert_Pos := Cert_Pos + 3;
+                        exit when Cert_Len = 0 or else Cert_Pos + Cert_Len > List_End;
                         if S.Chain_Count < Max_Chain then
                            S.Chain_Count := S.Chain_Count + 1;
-                           S.Chain (S.Chain_Count) := (First => CP, Last => CP + CLn - 1);
+                           S.Chain (S.Chain_Count) :=
+                             (First => Cert_Pos, Last => Cert_Pos + Cert_Len - 1);
                         end if;
                         if S.Chain_Count = 1 then
                            --  leaf: kept for CertificateVerify
-                           S.Cert_First := CP;
-                           S.Cert_Last := CP + CLn - 1;
+                           S.Cert_First := Cert_Pos;
+                           S.Cert_Last := Cert_Pos + Cert_Len - 1;
                            S.Have_Cert := True;
                         end if;
-                        CP := CP + CLn;
-                        exit when CP + 2 > List_End;   --  skip this entry's extensions
-                        CP := CP + 2 + Natural (HSB (CP)) * 256 + Natural (HSB (CP + 1));
+                        Cert_Pos := Cert_Pos + Cert_Len;
+                        exit when Cert_Pos + 2 > List_End;   --  skip this entry's extensions
+                        Cert_Pos :=
+                          Cert_Pos
+                          + 2
+                          + Natural (HSB (Cert_Pos)) * 256
+                          + Natural (HSB (Cert_Pos + 1));
                      end;
                   end loop;
-                  S.Cert_End := P + 4 + MLen;         --  transcript point for CertVerify
+                  S.Cert_End := Pos + 4 + MLen;       --  transcript point for CertVerify
                end;
             elsif MType = 15 then
                --  CertificateVerify
-               S.CV_Alg := U16 (HSB (P + 4)) * 256 + U16 (HSB (P + 5));
+               S.CV_Alg := U16 (HSB (Pos + 4)) * 256 + U16 (HSB (Pos + 5));
                declare
-                  SLn : constant Natural := Natural (HSB (P + 6)) * 256 + Natural (HSB (P + 7));
+                  Sig_Len : constant Natural :=
+                    Natural (HSB (Pos + 6)) * 256 + Natural (HSB (Pos + 7));
                begin
-                  S.CV_Sig_First := P + 8;
-                  S.CV_Sig_Last := P + 8 + SLn - 1;
+                  S.CV_Sig_First := Pos + 8;
+                  S.CV_Sig_Last := Pos + 8 + Sig_Len - 1;
                end;
-               S.CV_End := P + 4 + MLen;              --  transcript point for Finished
+               S.CV_End := Pos + 4 + MLen;            --  transcript point for Finished
             elsif MType = 20 then
                --  Finished
-               S.Fin_First := P + 4;
-               S.Fin_Last := P + 4 + MLen - 1;
+               S.Fin_First := Pos + 4;
+               S.Fin_Last := Pos + 4 + MLen - 1;
                Saw_Finished := True;
             end if;
-            P := P + 4 + MLen;
+            Pos := Pos + 4 + MLen;
          end;
       end loop;
    end Scan_Messages;
 
    procedure Read_Server_Flight (S : in out Session; Sock : Socket_Type; Ok : out Boolean) is
-      Frag    : Byte_Array renames RB;
-      CType   : U8;
-      Len     : Natural;
-      RK      : Boolean;
-      Seq     : Unsigned_64 := 0;
-      ITyp    : U8;
-      OLen    : Natural;
-      DOk     : Boolean;
-      Records : Natural := 0;
-      Fin     : Boolean := False;
+      Frag       : Byte_Array renames RB;
+      CType      : U8;
+      Len        : Natural;
+      Rec_OK     : Boolean;
+      Seq        : Unsigned_64 := 0;
+      Inner_Type : U8;
+      Out_Len    : Natural;
+      Dec_OK     : Boolean;
+      Records    : Natural := 0;
+      Fin        : Boolean := False;
    begin
       Ok := False;
       HSB_Len := 0;
       for Attempt in 1 .. 16 loop
-         Recv_Record (Sock, CType, Frag, Len, RK);
-         exit when not RK;
+         Recv_Record (Sock, CType, Frag, Len, Rec_OK);
+         exit when not Rec_OK;
          if CType = CT_Change_Cipher_Spec then
             null;                                     --  middlebox-compat, ignore
          elsif CType = 23 then
             --  encrypted handshake
-            Decrypt_Record (S.Server_Key, S.Server_IV, Frag, Len, Seq, OLen, ITyp, DOk);
-            if not DOk then
+            Decrypt_Record
+              (S.Server_Key, S.Server_IV, Frag, Len, Seq, Out_Len, Inner_Type, Dec_OK);
+            if not Dec_OK then
                return;                                --  bad tag => wrong keys
 
             end if;
             Seq := Seq + 1;
             Records := Records + 1;
-            if ITyp = 22 then
+            if Inner_Type = 22 then
                --  handshake content
-               for I in 0 .. OLen - 1 loop
+               for I in 0 .. Out_Len - 1 loop
                   if HSB_Len <= HSB'Last then
                      HSB (HSB_Len) := GC_P (I);
                      HSB_Len := HSB_Len + 1;
@@ -802,7 +812,7 @@ package body TLS_Client is
       --  handshake and EncryptedExtensions' end in a resumed (no-cert) one.
       Pre    : constant Natural := (if S.Fin_First >= 4 then S.Fin_First - 4 else 0);
       TLen   : constant Natural := TR_Len + Pre;
-      M      : Byte_Seq (0 .. N32 (TLen) - 1);
+      Msg    : Byte_Seq (0 .. N32 (TLen) - 1);
       TH     : SHA.Digest;
       TH_BA  : Byte_Array (0 .. 31);
       Exp    : SHA.Digest;
@@ -816,12 +826,12 @@ package body TLS_Client is
          FK_BA (I) := U8 (FK (N32 (I)));
       end loop;
       for I in 0 .. TR_Len - 1 loop
-         M (N32 (I)) := Byte (TR (I));
+         Msg (N32 (I)) := Byte (TR (I));
       end loop;
       for I in 0 .. Pre - 1 loop
-         M (N32 (TR_Len + I)) := Byte (HSB (I));
+         Msg (N32 (TR_Len + I)) := Byte (HSB (I));
       end loop;
-      TH := SHA.Hash (M);
+      TH := SHA.Hash (Msg);
       for I in 0 .. 31 loop
          TH_BA (I) := U8 (TH (Index_32 (I)));
       end loop;
@@ -839,45 +849,45 @@ package body TLS_Client is
    --       || Transcript-Hash(ClientHello .. Certificate)
    --  with its certificate key.
    procedure Verify_Cert_Verify (S : in out Session) is
-      Ctx     : constant String := "TLS 1.3, server CertificateVerify";
-      CLn     : constant Natural := S.Cert_Last - S.Cert_First + 1;
-      SLn     : constant Natural := S.CV_Sig_Last - S.CV_Sig_First + 1;
-      TLen    : constant Natural := TR_Len + S.Cert_End;     --  CH .. Certificate
-      CertBuf : X509.Byte_Array (0 .. CLn - 1);
-      Sig     : X509.Byte_Array (0 .. SLn - 1);
-      Signed  : X509.Byte_Array (0 .. 64 + Ctx'Length + 1 + 32 - 1);
-      C       : X509.Certificate;
-      M       : Byte_Seq (0 .. N32 (TLen) - 1);
-      D       : SHA.Digest;
+      Ctx      : constant String := "TLS 1.3, server CertificateVerify";
+      Cert_Len : constant Natural := S.Cert_Last - S.Cert_First + 1;
+      Sig_Len  : constant Natural := S.CV_Sig_Last - S.CV_Sig_First + 1;
+      TLen     : constant Natural := TR_Len + S.Cert_End;     --  CH .. Certificate
+      CertBuf  : X509.Byte_Array (0 .. Cert_Len - 1);
+      Sig      : X509.Byte_Array (0 .. Sig_Len - 1);
+      Signed   : X509.Byte_Array (0 .. 64 + Ctx'Length + 1 + 32 - 1);
+      Cert     : X509.Certificate;
+      Msg      : Byte_Seq (0 .. N32 (TLen) - 1);
+      Digest   : SHA.Digest;
    begin
       S.CV_OK := False;
-      if CLn <= 0
-        or else SLn <= 0
+      if Cert_Len <= 0
+        or else Sig_Len <= 0
         or else S.Cert_End = 0
         or else (S.CV_Alg /= 16#0804#               --  rsa_pss_rsae_sha256
                  and then S.CV_Alg /= 16#0403#)      --  ecdsa_secp256r1_sha256
       then
          return;
       end if;
-      for I in 0 .. CLn - 1 loop
+      for I in 0 .. Cert_Len - 1 loop
          CertBuf (I) := HSB (S.Cert_First + I);
       end loop;
-      X509.Parse (CertBuf, C);
-      if not C.Valid then
+      X509.Parse (CertBuf, Cert);
+      if not Cert.Valid then
          return;
       end if;
-      for I in 0 .. SLn - 1 loop
+      for I in 0 .. Sig_Len - 1 loop
          Sig (I) := HSB (S.CV_Sig_First + I);
       end loop;
 
       --  Transcript-Hash(ClientHello .. Certificate).
       for I in 0 .. TR_Len - 1 loop
-         M (N32 (I)) := Byte (TR (I));
+         Msg (N32 (I)) := Byte (TR (I));
       end loop;
       for I in 0 .. S.Cert_End - 1 loop
-         M (N32 (TR_Len + I)) := Byte (HSB (I));
+         Msg (N32 (TR_Len + I)) := Byte (HSB (I));
       end loop;
-      D := SHA.Hash (M);
+      Digest := SHA.Hash (Msg);
 
       for I in 0 .. 63 loop
          Signed (I) := 16#20#;
@@ -887,26 +897,26 @@ package body TLS_Client is
       end loop;
       Signed (64 + Ctx'Length) := 0;
       for I in 0 .. 31 loop
-         Signed (64 + Ctx'Length + 1 + I) := U8 (D (Index_32 (I)));
+         Signed (64 + Ctx'Length + 1 + I) := U8 (Digest (Index_32 (I)));
       end loop;
 
       if S.CV_Alg = 16#0804# then
          S.CV_OK :=
-           C.Key_Kind = X509.Key_RSA
+           Cert.Key_Kind = X509.Key_RSA
            and then Cert_Verify.RSA_PSS_SHA256
                       (Message   => Signed,
                        Signature => Sig,
-                       Modulus   => CertBuf (C.RSA_Modulus.First .. C.RSA_Modulus.Last),
-                       Exponent  => CertBuf (C.RSA_Exponent.First .. C.RSA_Exponent.Last));
+                       Modulus   => CertBuf (Cert.RSA_Modulus.First .. Cert.RSA_Modulus.Last),
+                       Exponent  => CertBuf (Cert.RSA_Exponent.First .. Cert.RSA_Exponent.Last));
       else
          --  ecdsa_secp256r1_sha256
          S.CV_OK :=
-           C.Key_Kind = X509.Key_EC_P256
+           Cert.Key_Kind = X509.Key_EC_P256
            and then Cert_Verify.ECDSA_P256_SHA256
                       (Message => Signed,
                        Sig_DER => Sig,
-                       Pub_X   => CertBuf (C.EC_X.First .. C.EC_X.Last),
-                       Pub_Y   => CertBuf (C.EC_Y.First .. C.EC_Y.Last));
+                       Pub_X   => CertBuf (Cert.EC_X.First .. Cert.EC_X.Last),
+                       Pub_Y   => CertBuf (Cert.EC_Y.First .. Cert.EC_Y.Last));
       end if;
    end Verify_Cert_Verify;
 
@@ -972,7 +982,7 @@ package body TLS_Client is
       No_Ctx                       : constant Byte_Seq (1 .. 0) := (others => 0);
       TLen                         : constant Natural :=
         TR_Len + HSB_Len;   --  CH .. server Finished
-      M                            : Byte_Seq (0 .. N32 (TLen) - 1);
+      Msg                          : Byte_Seq (0 .. N32 (TLen) - 1);
       TH                           : SHA.Digest;
       TH_BA                        : Byte_Array (0 .. 31);
       CFK                          : constant Byte_Seq :=
@@ -986,12 +996,12 @@ package body TLS_Client is
         (16#14#, 16#03#, 16#03#, 16#00#, 16#01#, 16#01#);
    begin
       for I in 0 .. TR_Len - 1 loop
-         M (N32 (I)) := Byte (TR (I));
+         Msg (N32 (I)) := Byte (TR (I));
       end loop;
       for I in 0 .. HSB_Len - 1 loop
-         M (N32 (TR_Len + I)) := Byte (HSB (I));
+         Msg (N32 (TR_Len + I)) := Byte (HSB (I));
       end loop;
-      TH := SHA.Hash (M);
+      TH := SHA.Hash (Msg);
       for I in 0 .. 31 loop
          TH_BA (I) := U8 (TH (Index_32 (I)));
       end loop;
@@ -1044,7 +1054,7 @@ package body TLS_Client is
          Res : SHA.Digest;
       begin
          for I in 0 .. TLen - 1 loop
-            RM (N32 (I)) := M (N32 (I));
+            RM (N32 (I)) := Msg (N32 (I));
          end loop;
          for I in Fin'Range loop
             RM (N32 (TLen + (I - Fin'First))) := Byte (Fin (I));
@@ -1067,10 +1077,10 @@ package body TLS_Client is
    ---------------------------------------------------------------------------
 
    procedure Hello (S : in out Session; Sock : Socket_Type; Host : String; Ok : out Boolean) is
-      Frag  : Byte_Array renames RB;
-      CType : U8;
-      Len   : Natural;
-      RK    : Boolean;
+      Frag   : Byte_Array renames RB;
+      CType  : U8;
+      Len    : Natural;
+      Rec_OK : Boolean;
    begin
       Ok := False;
       TR_Len := 0;
@@ -1079,8 +1089,8 @@ package body TLS_Client is
 
       --  Read records until a handshake record arrives (skip ChangeCipherSpec).
       for Attempt in 1 .. 4 loop
-         Recv_Record (Sock, CType, Frag, Len, RK);
-         if not RK then
+         Recv_Record (Sock, CType, Frag, Len, Rec_OK);
+         if not Rec_OK then
             return;
          end if;
          if CType = CT_Alert then
@@ -1111,17 +1121,18 @@ package body TLS_Client is
    --  extension last (RFC 8446 4.2.11) offering S.Ticket as a PSK-with-(EC)DHE
    --  identity, then the binder over the truncated ClientHello.
    procedure Send_Resume_Client_Hello (S : in out Session; Sock : Socket_Type; Host : String) is
-      B                                                  : Builder renames CH;
-      Rnd                                                : ESP32S3.RNG.Byte_Array (0 .. 31);
-      Rec, HS, Body_Mark, Ext_Mark, M, PSK_Mark, Bind_At : Natural;
+      B                                                                   : Builder renames CH;
+      Rnd                                                                 :
+        ESP32S3.RNG.Byte_Array (0 .. 31);
+      Rec_Mark, HS_Mark, Body_Mark, Ext_Mark, SNI_Mark, PSK_Mark, Bind_At : Natural;
    begin
       B.Len := 0;
       P8 (B, CT_Handshake);
       P16 (B, 16#0303#);
-      Rec := B.Len;
+      Rec_Mark := B.Len;
       P16 (B, 0);
       P8 (B, HS_Client_Hello);
-      HS := B.Len;
+      HS_Mark := B.Len;
       P8 (B, 0);
       P16 (B, 0);
       Body_Mark := B.Len;
@@ -1143,13 +1154,13 @@ package body TLS_Client is
       Ext_Mark := B.Len;
       P16 (B, 0);
       P16 (B, 0);
-      M := B.Len;
+      SNI_Mark := B.Len;
       P16 (B, 0);                 --  server_name (SNI)
       P16 (B, Host'Length + 3);
       P8 (B, 0);
       P16 (B, Host'Length);
       PString (B, Host);
-      Patch16 (B, M);
+      Patch16 (B, SNI_Mark);
       P16 (B, 10);
       P16 (B, 6);
       P16 (B, 4);                --  supported_groups
@@ -1206,11 +1217,11 @@ package body TLS_Client is
       declare
          HL : constant Natural := B.Len - Body_Mark;
       begin
-         B.Data (HS) := U8 (HL / 65536);
-         B.Data (HS + 1) := U8 ((HL / 256) mod 256);
-         B.Data (HS + 2) := U8 (HL mod 256);
+         B.Data (HS_Mark) := U8 (HL / 65536);
+         B.Data (HS_Mark + 1) := U8 ((HL / 256) mod 256);
+         B.Data (HS_Mark + 2) := U8 (HL mod 256);
       end;
-      Patch16 (B, Rec);
+      Patch16 (B, Rec_Mark);
 
       --  binder = HMAC(finished_key, Transcript-Hash(truncated CH)); the truncated
       --  CH is the handshake message (from byte 5) minus the 35-byte binders portion
@@ -1258,10 +1269,10 @@ package body TLS_Client is
       Ok      : out Boolean;
       Resumed : out Boolean)
    is
-      Frag  : Byte_Array renames RB;
-      CType : U8;
-      Len   : Natural;
-      RK    : Boolean;
+      Frag   : Byte_Array renames RB;
+      CType  : U8;
+      Len    : Natural;
+      Rec_OK : Boolean;
    begin
       Ok := False;
       Resumed := False;
@@ -1279,8 +1290,8 @@ package body TLS_Client is
       Make_Key_Pair (S);
       Send_Resume_Client_Hello (S, Sock, Host);
       for Attempt in 1 .. 4 loop
-         Recv_Record (Sock, CType, Frag, Len, RK);
-         if not RK then
+         Recv_Record (Sock, CType, Frag, Len, Rec_OK);
+         if not Rec_OK then
             return;
          end if;
          if CType = CT_Alert then
@@ -1333,13 +1344,13 @@ package body TLS_Client is
    is (S.Chain_Count);
 
    function Server_Chain_Cert (S : Session; Index : Positive) return X509.Byte_Array is
-      B : constant Cert_Bounds := S.Chain (Index);
-      R : X509.Byte_Array (0 .. B.Last - B.First);
+      Bounds : constant Cert_Bounds := S.Chain (Index);
+      Result : X509.Byte_Array (0 .. Bounds.Last - Bounds.First);
    begin
-      for I in R'Range loop
-         R (I) := X509.U8 (HSB (B.First + I));
+      for I in Result'Range loop
+         Result (I) := X509.U8 (HSB (Bounds.First + I));
       end loop;
-      return R;
+      return Result;
    end Server_Chain_Cert;
 
    function Server_Finished_OK (S : Session) return Boolean
@@ -1359,9 +1370,9 @@ package body TLS_Client is
    --  GC_P (0 .. Len-1) and derive its resumption PSK (RFC 8446 4.6.1).  Only the
    --  first ticket of the session is kept.
    procedure Capture_Ticket (S : in out Session; Len : Natural) is
-      P, Body_End, Msg_Len, Nonce_Len, Tick_Len : Natural;
-      Empty                                     : constant Byte_Seq (1 .. 0) := (others => 0);
-      Nonce                                     : Byte_Array (0 .. 255) := (others => 0);
+      Pos, Body_End, Msg_Len, Nonce_Len, Tick_Len : Natural;
+      Empty                                       : constant Byte_Seq (1 .. 0) := (others => 0);
+      Nonce                                       : Byte_Array (0 .. 255) := (others => 0);
    begin
       if S.Has_Tick or else not S.Have_Res then
          return;                                  --  keep the first ticket only
@@ -1373,40 +1384,40 @@ package body TLS_Client is
       end if;
       Msg_Len := Natural (GC_P (1)) * 65536 + Natural (GC_P (2)) * 256 + Natural (GC_P (3));
       Body_End := 4 + Msg_Len;
-      P := 4;
-      if Body_End > Len or else P + 8 > Body_End then
+      Pos := 4;
+      if Body_End > Len or else Pos + 8 > Body_End then
          return;                                   --  lifetime(4) + age_add(4)
 
       end if;
       S.Ticket_Age_Add :=
-        Unsigned_32 (GC_P (P + 4))
+        Unsigned_32 (GC_P (Pos + 4))
         * 16#0100_0000#
-        + Unsigned_32 (GC_P (P + 5)) * 16#1_0000#
-        + Unsigned_32 (GC_P (P + 6)) * 16#100#
-        + Unsigned_32 (GC_P (P + 7));
-      P := P + 8;
-      if P >= Body_End then
+        + Unsigned_32 (GC_P (Pos + 5)) * 16#1_0000#
+        + Unsigned_32 (GC_P (Pos + 6)) * 16#100#
+        + Unsigned_32 (GC_P (Pos + 7));
+      Pos := Pos + 8;
+      if Pos >= Body_End then
          return;
       end if;
-      Nonce_Len := Natural (GC_P (P));
-      P := P + 1;
-      if Nonce_Len > 255 or else P + Nonce_Len > Body_End then
+      Nonce_Len := Natural (GC_P (Pos));
+      Pos := Pos + 1;
+      if Nonce_Len > 255 or else Pos + Nonce_Len > Body_End then
          return;
       end if;
       for I in 0 .. Nonce_Len - 1 loop
-         Nonce (I) := U8 (GC_P (P + I));
+         Nonce (I) := U8 (GC_P (Pos + I));
       end loop;
-      P := P + Nonce_Len;
-      if P + 2 > Body_End then
+      Pos := Pos + Nonce_Len;
+      if Pos + 2 > Body_End then
          return;
       end if;
-      Tick_Len := Natural (GC_P (P)) * 256 + Natural (GC_P (P + 1));
-      P := P + 2;
-      if Tick_Len = 0 or else Tick_Len > Max_Ticket or else P + Tick_Len > Body_End then
+      Tick_Len := Natural (GC_P (Pos)) * 256 + Natural (GC_P (Pos + 1));
+      Pos := Pos + 2;
+      if Tick_Len = 0 or else Tick_Len > Max_Ticket or else Pos + Tick_Len > Body_End then
          return;
       end if;
       for I in 0 .. Tick_Len - 1 loop
-         S.Ticket (I) := U8 (GC_P (P + I));
+         S.Ticket (I) := U8 (GC_P (Pos + I));
       end loop;
       S.Ticket_Len := Tick_Len;
 
@@ -1445,47 +1456,48 @@ package body TLS_Client is
       Last : out Natural;
       Ok   : out Boolean)
    is
-      Frag  : Byte_Array renames RB;
-      CType : U8;
-      Len   : Natural;
-      RK    : Boolean;
-      ITyp  : U8;
-      OLen  : Natural;
-      DOk   : Boolean;
+      Frag       : Byte_Array renames RB;
+      CType      : U8;
+      Len        : Natural;
+      Rec_OK     : Boolean;
+      Inner_Type : U8;
+      Out_Len    : Natural;
+      Dec_OK     : Boolean;
    begin
       Last := (if Buf'First > 0 then Buf'First - 1 else 0);
       Ok := False;
       loop
-         Recv_Record (Sock, CType, Frag, Len, RK);
-         if not RK then
+         Recv_Record (Sock, CType, Frag, Len, Rec_OK);
+         if not Rec_OK then
             return;
          end if;
          if CType = CT_Change_Cipher_Spec then
             null;                                          --  ignore
          elsif CType = 23 then
-            Decrypt_Record (S.S_App_Key, S.S_App_IV, Frag, Len, S.S_App_Seq, OLen, ITyp, DOk);
-            if not DOk then
+            Decrypt_Record
+              (S.S_App_Key, S.S_App_IV, Frag, Len, S.S_App_Seq, Out_Len, Inner_Type, Dec_OK);
+            if not Dec_OK then
                return;
             end if;
             S.S_App_Seq := S.S_App_Seq + 1;
-            if ITyp = 23 then
+            if Inner_Type = 23 then
                --  application_data
                declare
-                  N : constant Natural := Natural'Min (OLen, Buf'Length);
+                  Copy_Len : constant Natural := Natural'Min (Out_Len, Buf'Length);
                begin
-                  for I in 0 .. N - 1 loop
+                  for I in 0 .. Copy_Len - 1 loop
                      Buf (Buf'First + I) := GC_P (I);
                   end loop;
-                  Last := Buf'First + N - 1;
+                  Last := Buf'First + Copy_Len - 1;
                   Ok := True;
                   return;
                end;
-            elsif ITyp = 21 then
+            elsif Inner_Type = 21 then
                --  alert
                return;
-            elsif ITyp = 22 then
+            elsif Inner_Type = 22 then
                --  NewSessionTicket
-               Capture_Ticket (S, OLen);                   --  capture, then loop
+               Capture_Ticket (S, Out_Len);                   --  capture, then loop
             end if;
          else
             return;
