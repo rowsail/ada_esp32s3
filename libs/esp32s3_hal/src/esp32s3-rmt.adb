@@ -57,25 +57,25 @@ package body ESP32S3.RMT is
    is (Byte (Natural'Max (1, Natural'Min (255, Src_Hz / Resolution_Hz))));
 
    procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
+      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
    begin
       G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
-      O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      O.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := O;
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
+      Out_Cfg.OEN_SEL := False;
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := Out_Cfg;
    end Drive_Out;
 
    --  Route Pin into matrix input Sig WITHOUT disabling its output driver, so a
    --  TX channel driving the pad can be read back by an RX channel (loopback).
    procedure Route_In (Sig : Natural; Pin : G.Pin_Id) is
-      Ix : constant Natural := Natural (Pin);
-      P  : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Ix);
+      Pad_Index : constant Natural := Natural (Pin);
+      Pad_Cfg   : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Pad_Index);
    begin
-      P.MCU_SEL := 1;          --  pad driven via the GPIO matrix
-      P.FUN_IE := True;       --  enable the input buffer so RX can read the pad
-      MX.IO_MUX_Periph.GPIO (Ix) := P;
+      Pad_Cfg.MCU_SEL := 1;          --  pad driven via the GPIO matrix
+      Pad_Cfg.FUN_IE := True;       --  enable the input buffer so RX can read the pad
+      MX.IO_MUX_Periph.GPIO (Pad_Index) := Pad_Cfg;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Sig) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix), SEL => True, others => <>);
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Pad_Index), SEL => True, others => <>);
    end Route_In;
 
    --------------------------------------------------------------------------
@@ -280,11 +280,11 @@ package body ESP32S3.RMT is
    end Configure;
 
    procedure Transmit (C : TX_Channel; Symbols : Symbol_Array) is
-      Blk  : constant Integer := Integer (C.Idx);
-      Base : constant Natural := Blk * Block_Symbols;     --  flat slot of block
-      Cap  : constant Natural := C.Blocks * Block_Symbols - 1;
-      N    : constant Natural := Symbols'Length;
-      F    : constant Natural := Symbols'First;
+      Blk          : constant Integer := Integer (C.Idx);
+      Base         : constant Natural := Blk * Block_Symbols;     --  flat slot of block
+      Capacity     : constant Natural := C.Blocks * Block_Symbols - 1;
+      Symbol_Count : constant Natural := Symbols'Length;
+      First_Index  : constant Natural := Symbols'First;
 
       --  Reset the read pointer, latch the config, and start the channel.
       procedure Kick is
@@ -303,13 +303,13 @@ package body ESP32S3.RMT is
          return;
       end if;
 
-      if N <= Cap then
+      if Symbol_Count <= Capacity then
          --  One shot: the whole burst fits the channel's RAM.
          RMT_Periph.CH_TX_CONF0 (Blk).MEM_TX_WRAP_EN := False;
-         for J in 0 .. N - 1 loop
-            Mem_Flat (Base + J) := Symbols (F + J);
+         for J in 0 .. Symbol_Count - 1 loop
+            Mem_Flat (Base + J) := Symbols (First_Index + J);
          end loop;
-         Mem_Flat (Base + N) := (others => <>);           --  end marker
+         Mem_Flat (Base + Symbol_Count) := (others => <>);           --  end marker
          Kick;
          declare
             Guard : Natural := 5_000_000;
@@ -328,18 +328,18 @@ package body ESP32S3.RMT is
       --  final half is padded with {0,0} end markers, which stops the channel.
       declare
          Half   : constant Natural := Block_Symbols / 2;  --  24
-         Cursor : Natural := F;                           --  next source symbol
+         Cursor : Natural := First_Index;                           --  next source symbol
          Which  : Natural := 0;                           --  half to re-fill
 
-         procedure Fill_Half (H : Natural) is
-            HBase : constant Natural := Base + H * Half;
+         procedure Fill_Half (Half_Index : Natural) is
+            Half_Base : constant Natural := Base + Half_Index * Half;
          begin
             for K in 0 .. Half - 1 loop
-               if Cursor < F + N then
-                  Mem_Flat (HBase + K) := Symbols (Cursor);
+               if Cursor < First_Index + Symbol_Count then
+                  Mem_Flat (Half_Base + K) := Symbols (Cursor);
                   Cursor := Cursor + 1;
                else
-                  Mem_Flat (HBase + K) := (others => <>); --  end marker / pad
+                  Mem_Flat (Half_Base + K) := (others => <>); --  end marker / pad
                end if;
             end loop;
          end Fill_Half;
@@ -473,12 +473,12 @@ package body ESP32S3.RMT is
       RX_Conf (C.Idx).CONF1.MEM_OWNER := False;
       while J <= Block_Symbols - 1 and then J <= Into'Length - 1 loop
          declare
-            S : constant RMT_Symbol := RMTMEM (Blk) (J);
+            Symbol : constant RMT_Symbol := RMTMEM (Blk) (J);
          begin
-            exit when S.Duration0 = 0;        --  empty entry: nothing more
-            Into (Into'First + J) := S;
+            exit when Symbol.Duration0 = 0;        --  empty entry: nothing more
+            Into (Into'First + J) := Symbol;
             J := J + 1;
-            exit when S.Duration1 = 0;        --  idle truncated this last symbol
+            exit when Symbol.Duration1 = 0;        --  idle truncated this last symbol
          end;
       end loop;
       Count := J;

@@ -46,34 +46,34 @@ package body ESP32S3.TWAI.Engine is
    Buf : Data_Array
    with Import, Volatile, Address => TWAI0_Periph.DATA_0'Address;
 
-   procedure Put (N : Natural; V : Unsigned_8) is
+   procedure Put (Index : Natural; Value : Unsigned_8) is
    begin
-      Buf (N) := (TX_BYTE_0 => DATA_0_TX_BYTE_0_Field (V), others => <>);
+      Buf (Index) := (TX_BYTE_0 => DATA_0_TX_BYTE_0_Field (Value), others => <>);
    end Put;
 
-   function Get (N : Natural) return Unsigned_8
-   is (Unsigned_8 (Buf (N).TX_BYTE_0));
+   function Get (Index : Natural) return Unsigned_8
+   is (Unsigned_8 (Buf (Index).TX_BYTE_0));
 
    procedure Drive_Out (Pad : G.Pin_Id; Sig : Natural) is
-      O : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
+      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
    begin
       G.Configure (Pad, Mode => G.Output, Drive => G.Drive_Strong);
-      O.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      O.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad)) := O;
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
+      Out_Cfg.OEN_SEL := False;
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad)) := Out_Cfg;
    end Drive_Out;
 
    --  Enable the pad's input buffer and route it to matrix input Sig.  Works
    --  whether the pad is an external input or one TX is driving (loopback).
    procedure Route_In (Sig : Natural; Pad : G.Pin_Id) is
-      Ix : constant Natural := Natural (Pad);
-      P  : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Ix);
+      Pad_Index : constant Natural := Natural (Pad);
+      Pad_Cfg   : MX.GPIO_Register := MX.IO_MUX_Periph.GPIO (Pad_Index);
    begin
-      P.MCU_SEL := 1;
-      P.FUN_IE := True;
-      MX.IO_MUX_Periph.GPIO (Ix) := P;
+      Pad_Cfg.MCU_SEL := 1;
+      Pad_Cfg.FUN_IE := True;
+      MX.IO_MUX_Periph.GPIO (Pad_Index) := Pad_Cfg;
       GR.GPIO_Periph.FUNC_IN_SEL_CFG (Sig) :=
-        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Ix), SEL => True, others => <>);
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Pad_Index), SEL => True, others => <>);
    end Route_In;
 
    ----------
@@ -181,10 +181,10 @@ package body ESP32S3.TWAI.Engine is
       Data             : Data_Bytes)
    is
       --  frame-info byte: FF (bit 7) = extended, RTR (bit 6) = remote, DLC = low 4.
-      Info : constant Unsigned_8 :=
+      Info        : constant Unsigned_8 :=
         To_Byte
           ((Length => DLC_Field (Length), Reserved => 0, Remote => Remote, Extended => Extended));
-      Off  : Natural;                   --  first data byte (after the id bytes)
+      Data_Offset : Natural;                   --  first data byte (after the id bytes)
    begin
       if not B.Valid then
          return;
@@ -196,17 +196,17 @@ package body ESP32S3.TWAI.Engine is
          Put (2, Unsigned_8 (Shift_Right (Id, 13) and 16#FF#));
          Put (3, Unsigned_8 (Shift_Right (Id, 5) and 16#FF#));
          Put (4, Unsigned_8 (Shift_Left (Id and 16#1F#, 3)));
-         Off := 5;
+         Data_Offset := 5;
       else
          --  11-bit id in byte1[7:0] + byte2[7:5].
          Put (1, Unsigned_8 (Shift_Right (Id, 3) and 16#FF#));
          Put (2, Unsigned_8 (Shift_Left (Id and 16#7#, 5)));
-         Off := 3;
+         Data_Offset := 3;
       end if;
       --  A remote frame carries DLC but NO data field on the wire.
       if not Remote then
          for I in 0 .. Length - 1 loop
-            Put (Off + I, Data (I));
+            Put (Data_Offset + I, Data (I));
          end loop;
       end if;
 
@@ -267,8 +267,8 @@ package body ESP32S3.TWAI.Engine is
       Data          : out Data_Bytes;
       Got           : out Boolean)
    is
-      Wait : Natural := 5_000_000;
-      Off  : Natural;
+      Wait        : Natural := 5_000_000;
+      Data_Offset : Natural;
    begin
       Id := 0;
       Remote := False;
@@ -287,18 +287,18 @@ package body ESP32S3.TWAI.Engine is
       end if;
 
       declare
-         FI : constant Frame_Info := To_Info (Get (0));
+         Info : constant Frame_Info := To_Info (Get (0));
       begin
-         if FI.Extended /= Want_Extended then
+         if Info.Extended /= Want_Extended then
             return;                     --  other width: leave it for the matching
 
          end if;                        --  overload, Got stays False
 
-         Remote := FI.Remote;           --  RTR bit
+         Remote := Info.Remote;           --  RTR bit
          --  A CAN DLC of 9 .. 15 is legal on the wire (all mean 8 data bytes);
          --  clamp before the Data_Length (0 .. 8) conversion so a remote node
          --  sending a high DLC does not raise Constraint_Error on receive.
-         Length := Data_Length (Natural'Min (8, Natural (FI.Length)));
+         Length := Data_Length (Natural'Min (8, Natural (Info.Length)));
       end;
       if Want_Extended then
          Id :=
@@ -306,15 +306,15 @@ package body ESP32S3.TWAI.Engine is
            or Shift_Left (Unsigned_32 (Get (2)), 13)
            or Shift_Left (Unsigned_32 (Get (3)), 5)
            or Shift_Right (Unsigned_32 (Get (4)), 3);
-         Off := 5;
+         Data_Offset := 5;
       else
          Id := Shift_Left (Unsigned_32 (Get (1)), 3) or Shift_Right (Unsigned_32 (Get (2)), 5);
-         Off := 3;
+         Data_Offset := 3;
       end if;
       --  A remote frame has no data field; leave Data zeroed.
       if not Remote then
          for I in 0 .. Length - 1 loop
-            Data (I) := Get (Off + I);
+            Data (I) := Get (Data_Offset + I);
          end loop;
       end if;
       Got := True;
