@@ -5,9 +5,10 @@ package body Lisp is
    procedure Free_Vec is new Ada.Unchecked_Deallocation (Ref_Array, Ref_Vec);
 
    --  Singletons -- canonical, outside the arena so they always stay valid.
-   Nil_Obj   : aliased Object := (Mark => False, K => K_Nil);
-   True_Obj  : aliased Object := (Mark => False, K => K_Bool, B => True);
-   False_Obj : aliased Object := (Mark => False, K => K_Bool, B => False);
+   Nil_Obj    : aliased Object := (Mark => False, K => K_Nil);
+   True_Obj   : aliased Object := (Mark => False, K => K_Bool, B => True);
+   False_Obj  : aliased Object := (Mark => False, K => K_Bool, B => False);
+   Unspec_Obj : aliased Object := (Mark => False, K => K_Unspec);
 
    function Nil return Ref
    is (Nil_Obj'Access);
@@ -15,8 +16,25 @@ package body Lisp is
    is (True_Obj'Access);
    function Lisp_False return Ref
    is (False_Obj'Access);
+   function Unspecified return Ref
+   is (Unspec_Obj'Access);
    function Make_Bool (V : Boolean) return Ref
    is (if V then True_Obj'Access else False_Obj'Access);
+
+   --  Text-output sink for display / write / newline (a no-op until a host sets it).
+   Out_Hook : Output_Sink := null;
+
+   procedure Set_Output (Sink : Output_Sink) is
+   begin
+      Out_Hook := Sink;
+   end Set_Output;
+
+   procedure Emit (S : String) is
+   begin
+      if Out_Hook /= null then
+         Out_Hook (S);
+      end if;
+   end Emit;
 
    --------------------------------------------------------------------------
    --  The cell arena: a uniform pool with a free list.  Free cells are linked
@@ -372,28 +390,32 @@ package body Lisp is
       return Result (1 .. N);
    end String_Image;
 
-   function Print (O : Ref) return String is
+   --  Render an object to text.  Readable = True is the write form (strings
+   --  quoted-and-escaped, chars in #\ notation); False is the display form (raw).
+   function Render (O : Ref; Readable : Boolean) return String is
 
-      function Print_List (P : Ref) return String is
+      function Render_List (P : Ref) return String is
       begin
          if Is_Nil (Cdr (P)) then
-            return Print (Car (P));
+            return Render (Car (P), Readable);
          elsif Is_Cons (Cdr (P)) then
-            return Print (Car (P)) & " " & Print_List (Cdr (P));
+            return Render (Car (P), Readable) & " " & Render_List (Cdr (P));
          else
-            return Print (Car (P)) & " . " & Print (Cdr (P));   -- improper list
+            return Render (Car (P), Readable) & " . " & Render (Cdr (P), Readable);
          end if;
-      end Print_List;
+      end Render_List;
 
-      function Print_Vector (V : Ref) return String is
+      function Render_Vector (V : Ref) return String is
          function Join (I : Natural) return String
-         is (if I = V.Vec'Last then Print (V.Vec (I)) else Print (V.Vec (I)) & " " & Join (I + 1));
+         is (if I = V.Vec'Last
+             then Render (V.Vec (I), Readable)
+             else Render (V.Vec (I), Readable) & " " & Join (I + 1));
       begin
          if V.Vec = null or else V.Vec'Length = 0 then
             return "#()";
          end if;
          return "#(" & Join (V.Vec'First) & ")";
-      end Print_Vector;
+      end Render_Vector;
 
    begin
       if O = null then
@@ -402,6 +424,9 @@ package body Lisp is
       case O.K is
          when K_Nil     =>
             return "()";
+
+         when K_Unspec  =>
+            return "";                            --  no visible result
 
          when K_Bool    =>
             return (if O.B then "#t" else "#f");
@@ -413,16 +438,16 @@ package body Lisp is
             return Float_Image (O.F);
 
          when K_Char    =>
-            return Char_Image (O.Ch);
+            return (if Readable then Char_Image (O.Ch) else (1 => O.Ch));
 
          when K_String  =>
-            return String_Image (O);
+            return (if Readable then String_Image (O) else Str_Value (O));
 
          when K_Symbol  =>
             return Name_Of (O.Sym);
 
          when K_Cons    =>
-            return "(" & Print_List (O) & ")";
+            return "(" & Render_List (O) & ")";
 
          when K_Prim    =>
             return "#<primitive " & Name_Of (O.Fn_Name) & ">";
@@ -431,12 +456,18 @@ package body Lisp is
             return "#<closure>";
 
          when K_Vector  =>
-            return Print_Vector (O);
+            return Render_Vector (O);
 
          when K_Hash    =>
             return "#<hash-table>";
       end case;
-   end Print;
+   end Render;
+
+   function Print (O : Ref) return String
+   is (Render (O, True));
+
+   function Display_Str (O : Ref) return String
+   is (Render (O, False));
 
    --------------------------------------------------------------------------
    --  Garbage collection (mark + sweep)

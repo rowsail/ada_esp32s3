@@ -1164,6 +1164,42 @@ package body Lisp.Eval is
    end Prim_Hash_Values;
 
    --------------------------------------------------------------------------
+   --  Text output.  display renders human-readable (strings unquoted), write
+   --  machine-readable (strings quoted); both return the unspecified value so the
+   --  REPL's result echo stays clean.  newline emits CR/LF (the terminal wants it).
+   --------------------------------------------------------------------------
+   function Prim_Display (Args : Ref) return Ref is
+   begin
+      Emit (Display_Str (Arg1 (Args)));
+      return Unspecified;
+   end Prim_Display;
+
+   function Prim_Write (Args : Ref) return Ref is
+   begin
+      Emit (Print (Arg1 (Args)));
+      return Unspecified;
+   end Prim_Write;
+
+   function Prim_Newline (Args : Ref) return Ref is
+      pragma Unreferenced (Args);
+   begin
+      Emit (ASCII.CR & ASCII.LF);
+      return Unspecified;
+   end Prim_Newline;
+
+   function Prim_Write_Char (Args : Ref) return Ref is
+   begin
+      Emit ((1 => Char_Value (Arg1 (Args))));
+      return Unspecified;
+   end Prim_Write_Char;
+
+   function Prim_Write_String (Args : Ref) return Ref is
+   begin
+      Emit (Str_Value (Arg1 (Args)));
+      return Unspecified;
+   end Prim_Write_String;
+
+   --------------------------------------------------------------------------
    --  Special forms
    --------------------------------------------------------------------------
    function Eval_Define (Args, Env : Ref) return Ref is
@@ -1292,6 +1328,7 @@ package body Lisp.Eval is
                | K_String
                | K_Vector
                | K_Hash
+               | K_Unspec
                | K_Bool
                | K_Nil
                | K_Prim
@@ -1516,6 +1553,11 @@ package body Lisp.Eval is
       Reg (G_Env, "hash-table-count", Prim_Hash_Count'Access);
       Reg (G_Env, "hash-table-keys", Prim_Hash_Keys'Access);
       Reg (G_Env, "hash-table-values", Prim_Hash_Values'Access);
+      Reg (G_Env, "display", Prim_Display'Access);
+      Reg (G_Env, "write", Prim_Write'Access);
+      Reg (G_Env, "newline", Prim_Newline'Access);
+      Reg (G_Env, "write-char", Prim_Write_Char'Access);
+      Reg (G_Env, "write-string", Prim_Write_String'Access);
    end Init;
 
 end Lisp.Eval;

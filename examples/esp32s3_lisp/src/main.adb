@@ -82,6 +82,7 @@ begin
    Lisp.Init (40_000);                            --  arena in PSRAM (~640 KB)
    Lisp.Eval.Init;                                --  build the global environment
    Lisp_HAL.Register;                             --  add the hardware primitives
+   Lisp.Set_Output (ESP32S3.Log.Put'Access);      --  display / write -> USB console
 
    New_Line;
    Put_Line ("Ada-LISP on the ESP32-S3 -- a pure-Ada interpreter.");
