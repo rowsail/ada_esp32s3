@@ -510,6 +510,29 @@ package body Lisp.Eval is
       return Make_Int (Int_Value (Arg1 (Args)) mod B);    --  sign of the divisor
    end Prim_Modulo;
 
+   function Prim_Remainder (Args : Ref) return Ref is
+      B : constant Long_Long_Integer := Int_Value (Arg2 (Args));
+   begin
+      if B = 0 then
+         raise Lisp_Error with "remainder: division by zero";
+      end if;
+      return Make_Int (Int_Value (Arg1 (Args)) rem B);    --  sign of the dividend
+   end Prim_Remainder;
+
+   function Prim_Is_Even (Args : Ref) return Ref
+   is (Make_Bool (Int_Value (Arg1 (Args)) mod 2 = 0));
+   function Prim_Is_Odd (Args : Ref) return Ref
+   is (Make_Bool (Int_Value (Arg1 (Args)) mod 2 /= 0));
+
+   function Prim_Is_Symbol (Args : Ref) return Ref
+   is (Make_Bool (Is_Symbol (Arg1 (Args))));
+
+   function Prim_Is_Procedure (Args : Ref) return Ref is
+      O : constant Ref := Arg1 (Args);
+   begin
+      return Make_Bool (O /= null and then (O.K = K_Prim or else O.K = K_Closure));
+   end Prim_Is_Procedure;
+
    --  append: copy every list but the last, which is shared (may be improper).
    function Prim_Append (Args : Ref) return Ref is
    begin
@@ -891,6 +914,11 @@ package body Lisp.Eval is
       Reg (G_Env, "abs", Prim_Abs'Access);
       Reg (G_Env, "number?", Prim_Is_Number'Access);
       Reg (G_Env, "zero?", Prim_Is_Zero'Access);
+      Reg (G_Env, "symbol?", Prim_Is_Symbol'Access);
+      Reg (G_Env, "procedure?", Prim_Is_Procedure'Access);
+      Reg (G_Env, "even?", Prim_Is_Even'Access);
+      Reg (G_Env, "odd?", Prim_Is_Odd'Access);
+      Reg (G_Env, "remainder", Prim_Remainder'Access);
       Reg (G_Env, "cadr", Prim_Cadr'Access);
       Reg (G_Env, "caddr", Prim_Caddr'Access);
    end Init;
