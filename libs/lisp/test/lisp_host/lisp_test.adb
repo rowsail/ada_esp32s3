@@ -47,8 +47,53 @@ procedure Lisp_Test is
          Put_Line ("  FAIL " & Label);
       end if;
    end Check;
+
+   --  Capture display / write / newline output for the text-output tests.
+   Cap_Buf : String (1 .. 4096);
+   Cap_Len : Natural := 0;
+   procedure Capture (S : String) is
+   begin
+      if Cap_Len + S'Length <= Cap_Buf'Last then
+         Cap_Buf (Cap_Len + 1 .. Cap_Len + S'Length) := S;
+         Cap_Len := Cap_Len + S'Length;
+      end if;
+   end Capture;
+
+   --  Evaluate Input and compare the CAPTURED output (CR/LF shown as \r \n).
+   procedure D (Input, Want : String) is
+      Got : String (1 .. Cap_Buf'Length * 2);
+      N   : Natural := 0;
+   begin
+      Cap_Len := 0;
+      declare
+         Ignored : constant Ref := Lisp.Eval.Eval_Top (Lisp.Reader.Read (Input));
+         pragma Unreferenced (Ignored);
+      begin
+         null;
+      end;
+      for I in 1 .. Cap_Len loop
+         if Cap_Buf (I) = ASCII.CR then
+            Got (N + 1 .. N + 2) := "\r";
+            N := N + 2;
+         elsif Cap_Buf (I) = ASCII.LF then
+            Got (N + 1 .. N + 2) := "\n";
+            N := N + 2;
+         else
+            N := N + 1;
+            Got (N) := Cap_Buf (I);
+         end if;
+      end loop;
+      if Got (1 .. N) = Want then
+         Passed := Passed + 1;
+         Put_Line ("  ok   " & Input & "  ||  " & Got (1 .. N));
+      else
+         Failed := Failed + 1;
+         Put_Line ("  FAIL " & Input & "  ||  [" & Got (1 .. N) & "]  (want [" & Want & "])");
+      end if;
+   end D;
 begin
    Lisp.Eval.Init;   --  build the global environment
+   Lisp.Set_Output (Capture'Unrestricted_Access);   --  capture display/write output
    Put_Line ("reader / printer round-trips:");
    RT ("42", "42");
    RT ("-5", "-5");
@@ -312,6 +357,21 @@ begin
       & "(sort (hash-table-keys h) <))",
       "(1 2)");
    E ("(let ((h (make-hash-table 4))) (hash-set! h 1 'a) (hash-set! h 5 'b) (hash-ref h 5))", "b");
+
+   New_Line;
+   Put_Line ("display / write / newline:");
+   D ("(display 42)", "42");
+   D ("(display ""hi"")", "hi");                        --  display: no quotes
+   D ("(write ""hi"")", """hi""");                      --  write: quoted
+   D ("(display #\a)", "a");                            --  display char: raw
+   D ("(write #\a)", "#\a");                            --  write char: #\ form
+   D ("(display (list 1 ""x"" #\y))", "(1 x y)");       --  strings/chars raw inside
+   D ("(write (list 1 ""x"" #\y))", "(1 ""x"" #\y)");   --  quoted inside
+   D ("(newline)", "\r\n");
+   D ("(begin (display ""a"") (newline) (display ""b""))", "a\r\nb");
+   D ("(write-char #\Z)", "Z");
+   D ("(write-string ""hello"")", "hello");
+   E ("(display 5)", "");                               --  returns unspecified (prints empty)
 
    New_Line;
    Put_Line

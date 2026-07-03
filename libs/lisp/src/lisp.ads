@@ -30,7 +30,8 @@ package Lisp is
       K_Prim,
       K_Closure,
       K_Vector,
-      K_Hash);
+      K_Hash,
+      K_Unspec);      --  the "no useful value" result of display / write / newline
 
    type Symbol_Id is new Natural;
 
@@ -77,6 +78,9 @@ package Lisp is
 
          when K_Hash =>
             HTable : Ref;                 --  a bucket vector of (key . value) alists
+
+         when K_Unspec =>
+            null;
       end case;
    end record;
 
@@ -89,6 +93,7 @@ package Lisp is
    function Nil return Ref;
    function Lisp_True return Ref;
    function Lisp_False return Ref;
+   function Unspecified return Ref;   --  what display / write / newline return
 
    function Cons (A, D : Ref) return Ref;
    function Make_Int (V : Long_Long_Integer) return Ref;
@@ -144,7 +149,15 @@ package Lisp is
    --------------------------------------------------------------------------
    --  Rendering and arena control
    --------------------------------------------------------------------------
-   function Print (O : Ref) return String;          --  object as text
+   function Print (O : Ref) return String;          --  write form (strings quoted)
+   function Display_Str (O : Ref) return String;    --  display form (strings raw)
+
+   --  Text output for the in-language display / write / newline.  A host installs
+   --  the sink (the socket on the telnet server, the console on the standalone
+   --  example); with no sink installed, Emit is a no-op.
+   type Output_Sink is access procedure (S : String);
+   procedure Set_Output (Sink : Output_Sink);
+   procedure Emit (S : String);
 
    --  Allocate the cell arena (Cells objects).  On the board call this once, after
    --  PSRAM/heap are up, with a board-appropriate size; the arena is heap-allocated
