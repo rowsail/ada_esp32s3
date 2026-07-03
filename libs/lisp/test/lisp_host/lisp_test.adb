@@ -259,6 +259,38 @@ begin
    E ("(let ((p (list 1))) (set-cdr! p (list 2 3)) p)", "(1 2 3)");
 
    New_Line;
+   Put_Line ("vectors:");
+   E ("(vector? (vector 1 2 3))", "#t");
+   E ("(vector? (list 1 2))", "#f");
+   E ("(vector 1 2 3)", "#(1 2 3)");
+   E ("(make-vector 3 0)", "#(0 0 0)");
+   E ("(make-vector 0 0)", "#()");
+   E ("(vector-length (vector 1 2 3 4))", "4");
+   E ("(vector-ref (vector 10 20 30) 1)", "20");
+   E ("(let ((v (vector 1 2 3))) (vector-set! v 1 99) v)", "#(1 99 3)");
+   E ("(vector->list (vector 1 2 3))", "(1 2 3)");
+   E ("(list->vector (list 1 2 3))", "#(1 2 3)");
+   E ("(let ((v (make-vector 3 0))) (vector-fill! v 7) v)", "#(7 7 7)");
+   E ("#(1 2 3)", "#(1 2 3)");                      --  reader literal, self-evaluating
+   E ("#(1 (2 3) ""x"")", "#(1 (2 3) ""x"")");      --  nested / mixed elements
+   E ("(equal? (vector 1 2) (vector 1 2))", "#t");
+   E ("(equal? (vector 1 2) (vector 1 3))", "#f");
+   E ("(eq? (vector 1) (vector 1))", "#f");         --  distinct objects
+
+   --  GC integration: a vector reachable from Root survives; unreachable vector
+   --  backings are freed by the sweep (no leak, no double-free on a later GC).
+   declare
+      Root : constant Ref := Lisp.Eval.Eval_Top (Lisp.Reader.Read ("(define gv (vector 1 2 3))"));
+      pragma Unreferenced (Root);
+      R1   : constant Natural := Lisp.GC (Lisp.Eval.Global_Env);
+      pragma Unreferenced (R1);
+      R2   : constant Natural := Lisp.GC (Lisp.Eval.Global_Env);   --  again: no double-free
+      pragma Unreferenced (R2);
+   begin
+      E ("(vector-ref gv 2)", "3");                 --  gv survived two collections
+   end;
+
+   New_Line;
    Put_Line
      ("Lisp core:"
       & Natural'Image (Passed)

@@ -1,4 +1,8 @@
+with Ada.Unchecked_Deallocation;
+
 package body Lisp is
+
+   procedure Free_Vec is new Ada.Unchecked_Deallocation (Ref_Array, Ref_Vec);
 
    --  Singletons -- canonical, outside the arena so they always stay valid.
    Nil_Obj   : aliased Object := (Mark => False, K => K_Nil);
@@ -147,6 +151,43 @@ package body Lisp is
    is (O /= null and then O.K = K_Char);
    function Is_String (O : Ref) return Boolean
    is (O /= null and then O.K = K_String);
+   function Is_Vector (O : Ref) return Boolean
+   is (O /= null and then O.K = K_Vector);
+
+   --  The element array is indexed 1 .. N (so N = 0 needs no special case); the
+   --  Lisp-visible index is 0-based, mapped by +1 in Vector_Ref / Vector_Set.
+   function Make_Vector (N : Natural; Fill : Ref) return Ref is
+      V : constant Ref_Vec := new Ref_Array (1 .. N);
+   begin
+      for I in V'Range loop
+         V (I) := Fill;
+      end loop;
+      return Alloc ((Mark => False, K => K_Vector, Vec => V));
+   end Make_Vector;
+
+   function Vector_Length (O : Ref) return Natural is
+   begin
+      if not Is_Vector (O) then
+         raise Lisp_Error with "expected a vector";
+      end if;
+      return (if O.Vec = null then 0 else O.Vec'Length);
+   end Vector_Length;
+
+   function Vector_Ref (O : Ref; I : Natural) return Ref is
+   begin
+      if not Is_Vector (O) or else O.Vec = null or else I >= O.Vec'Length then
+         raise Lisp_Error with "vector-ref: index out of range";
+      end if;
+      return O.Vec (I + 1);
+   end Vector_Ref;
+
+   procedure Vector_Set (O : Ref; I : Natural; X : Ref) is
+   begin
+      if not Is_Vector (O) or else O.Vec = null or else I >= O.Vec'Length then
+         raise Lisp_Error with "vector-set!: index out of range";
+      end if;
+      O.Vec (I + 1) := X;
+   end Vector_Set;
 
    --------------------------------------------------------------------------
    --  Interned symbols -- stored in their own table (not the arena), so a Reset
@@ -330,6 +371,16 @@ package body Lisp is
          end if;
       end Print_List;
 
+      function Print_Vector (V : Ref) return String is
+         function Join (I : Natural) return String
+         is (if I = V.Vec'Last then Print (V.Vec (I)) else Print (V.Vec (I)) & " " & Join (I + 1));
+      begin
+         if V.Vec = null or else V.Vec'Length = 0 then
+            return "#()";
+         end if;
+         return "#(" & Join (V.Vec'First) & ")";
+      end Print_Vector;
+
    begin
       if O = null then
          return "()";
@@ -364,6 +415,9 @@ package body Lisp is
 
          when K_Closure =>
             return "#<closure>";
+
+         when K_Vector  =>
+            return Print_Vector (O);
       end case;
    end Print;
 
@@ -390,6 +444,13 @@ package body Lisp is
          when K_String  =>
             Mark_Obj (O.Str);   --  the char cons-chain
 
+         when K_Vector  =>
+            if O.Vec /= null then
+               for I in O.Vec'Range loop
+                  Mark_Obj (O.Vec (I));
+               end loop;
+            end if;
+
          when others    =>
             null;               --  no outgoing arena references (Int/Float/Char/...)
       end case;
@@ -410,6 +471,10 @@ package body Lisp is
             Arena (I).Mark := False;            --  live: keep, clear the bit
             In_Use := In_Use + 1;
          else
+            if Arena (I).K = K_Vector and then Arena (I).Vec /= null then
+               Free_Vec (Arena (I).Vec);        --  free the backing (nulls Vec too)
+
+            end if;
             Free_Next (I) := Free_Head;          --  free: relink index (no rewrite)
             Free_Head := I;
             Reclaimed := Reclaimed + 1;
@@ -421,6 +486,13 @@ package body Lisp is
    procedure Reset is
    begin
       if Arena /= null then
+         for I in Arena'Range loop
+            --  Reset orphans every cell; free any
+            if Arena (I).K = K_Vector and then Arena (I).Vec /= null then
+               Free_Vec (Arena (I).Vec);      --  vector backings first, or they leak
+
+            end if;
+         end loop;
          Build_Free_List;
       end if;
    end Reset;

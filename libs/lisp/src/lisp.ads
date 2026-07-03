@@ -12,8 +12,24 @@ package Lisp is
    type Object;
    type Ref is access all Object;
 
+   --  A vector's elements live in a separately heap-allocated array (vectors need
+   --  O(1) indexing, which the uniform-cell arena can't give); the K_Vector cell
+   --  just holds the access.  The GC marks the elements and frees dead backings.
+   type Ref_Array is array (Natural range <>) of Ref;
+   type Ref_Vec is access Ref_Array;
+
    type Kind is
-     (K_Nil, K_Bool, K_Int, K_Float, K_Char, K_String, K_Symbol, K_Cons, K_Prim, K_Closure);
+     (K_Nil,
+      K_Bool,
+      K_Int,
+      K_Float,
+      K_Char,
+      K_String,
+      K_Symbol,
+      K_Cons,
+      K_Prim,
+      K_Closure,
+      K_Vector);
 
    type Symbol_Id is new Natural;
 
@@ -54,6 +70,9 @@ package Lisp is
 
          when K_Closure =>
             Params, Code, Env : Ref;
+
+         when K_Vector =>
+            Vec : Ref_Vec;                --  0-based array of elements (heap)
       end case;
    end record;
 
@@ -86,6 +105,12 @@ package Lisp is
    function Char_Value (O : Ref) return Character;
    function Str_Value (O : Ref) return String;   --  a K_String's chars, as Ada text
 
+   --  Vectors: a K_Vector cell over a heap-allocated element array.
+   function Make_Vector (N : Natural; Fill : Ref) return Ref;
+   function Vector_Length (O : Ref) return Natural;
+   function Vector_Ref (O : Ref; I : Natural) return Ref;   --  Lisp_Error if I >= length
+   procedure Vector_Set (O : Ref; I : Natural; X : Ref);
+
    --------------------------------------------------------------------------
    --  Accessors and predicates
    --------------------------------------------------------------------------
@@ -100,6 +125,7 @@ package Lisp is
    function Is_Float (O : Ref) return Boolean;
    function Is_Char (O : Ref) return Boolean;
    function Is_String (O : Ref) return Boolean;
+   function Is_Vector (O : Ref) return Boolean;
    function Is_Truthy (O : Ref) return Boolean;     --  everything but #f and ()
 
    function Symbol_Name (O : Ref) return String;
