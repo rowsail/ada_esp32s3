@@ -185,6 +185,42 @@ begin
    E ("(number->string 1.5)", """1.5""");
 
    New_Line;
+   Put_Line ("added builtins:");
+   E ("(equal? (list 1 2) (list 1 2))", "#t");
+   E ("(equal? (list 1 2) (list 1 3))", "#f");
+   E ("(equal? ""ab"" ""ab"")", "#t");
+   E ("(eq? (list 1) (list 1))", "#f");
+   E ("(apply + (list 1 2 3))", "6");
+   E ("(apply + 1 2 (list 3 4))", "10");
+   E ("(apply cons (list 1 2))", "(1 . 2)");
+   E ("(map (lambda (x) (* x x)) (list 1 2 3))", "(1 4 9)");
+   E ("(map + (list 1 2 3) (list 10 20 30))", "(11 22 33)");
+   E ("(append (list 1 2) (list 3 4))", "(1 2 3 4)");
+   E ("(append)", "()");
+   E ("(append (list 1) (list 2) (list 3))", "(1 2 3)");
+   E ("(reverse (list 1 2 3))", "(3 2 1)");
+   E ("(assoc 2 (list (list 1 'a) (list 2 'b)))", "(2 b)");
+   E ("(assoc 9 (list (list 1 'a)))", "#f");
+   E ("(member 2 (list 1 2 3))", "(2 3)");
+   E ("(member 9 (list 1 2))", "#f");
+   E ("(quotient 17 5)", "3");
+   E ("(quotient -17 5)", "-3");
+   E ("(modulo 17 5)", "2");
+   E ("(modulo -17 5)", "3");
+   E ("(modulo 17 -5)", "-3");
+   E ("(abs -5)", "5");
+   E ("(abs -2.5)", "2.5");
+   E ("(number? 5)", "#t");
+   E ("(number? 1.5)", "#t");
+   E ("(number? 'x)", "#f");
+   E ("(number? ""s"")", "#f");
+   E ("(zero? 0)", "#t");
+   E ("(zero? 0.0)", "#t");
+   E ("(zero? 3)", "#f");
+   E ("(cadr (list 1 2 3))", "2");
+   E ("(caddr (list 1 2 3))", "3");
+
+   New_Line;
    Put_Line
      ("Lisp core:"
       & Natural'Image (Passed)

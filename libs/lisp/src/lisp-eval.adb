@@ -369,6 +369,220 @@ package body Lisp.Eval is
    is (Make_String (Print (Arg1 (Args))));
 
    --------------------------------------------------------------------------
+   --  List / equality / numeric helpers and the procedures built on them.
+   --------------------------------------------------------------------------
+   function Is_Number (O : Ref) return Boolean
+   is (O /= null and then (O.K = K_Int or else O.K = K_Float));
+
+   --  Deep structural equality (equal?): recurse through pairs, compare leaves
+   --  by value (strings by content), everything else by identity.
+   function Equal (A, B : Ref) return Boolean is
+   begin
+      if A = B then
+         return True;
+      elsif A = null or else B = null then
+         return Is_Nil (A) and then Is_Nil (B);
+      elsif A.K /= B.K then
+         return False;
+      end if;
+      case A.K is
+         when K_Int    =>
+            return A.I = B.I;
+
+         when K_Float  =>
+            return A.F = B.F;
+
+         when K_Char   =>
+            return A.Ch = B.Ch;
+
+         when K_Bool   =>
+            return A.B = B.B;
+
+         when K_Nil    =>
+            return True;
+
+         when K_Symbol =>
+            return A.Sym = B.Sym;
+
+         when K_String =>
+            return Str_Value (A) = Str_Value (B);
+
+         when K_Cons   =>
+            return Equal (A.Car, B.Car) and then Equal (A.Cdr, B.Cdr);
+
+         when others   =>
+            return False;   --  Prim / Closure: identity, already ruled out
+      end case;
+   end Equal;
+
+   --  Reverse a proper list.
+   function Rev (L : Ref) return Ref is
+      Result : Ref := Nil;
+      Cursor : Ref := L;
+   begin
+      while Is_Cons (Cursor) loop
+         Result := Cons (Car (Cursor), Result);
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Result;
+   end Rev;
+
+   --  Copy list A, ending it with B (append of two).
+   function Append2 (A, B : Ref) return Ref
+   is (if Is_Nil (A) then B else Cons (Car (A), Append2 (Cdr (A), B)));
+
+   --  Apply a function object to an already-evaluated argument list.  Shares the
+   --  evaluator's semantics (Eval_Seq for a closure body); used by apply and map.
+   --  Unlike Eval's inline path it does not tail-loop -- fine for these callers.
+   function Apply (Fn, Args : Ref) return Ref is
+   begin
+      if Fn = null then
+         raise Lisp_Error with "cannot apply nil";
+      end if;
+      case Fn.K is
+         when K_Prim    =>
+            return Fn.Fn (Args);
+
+         when K_Closure =>
+            declare
+               New_Env : constant Ref := Cons (Nil, Fn.Env);
+               P       : Ref := Fn.Params;
+               A       : Ref := Args;
+            begin
+               while Is_Cons (P) loop
+                  if not Is_Cons (A) then
+                     raise Lisp_Error with "too few arguments";
+                  end if;
+                  Define (Car (P), Car (A), New_Env);
+                  P := Cdr (P);
+                  A := Cdr (A);
+               end loop;
+               return Eval_Seq (Fn.Code, New_Env);
+            end;
+
+         when others    =>
+            raise Lisp_Error with "not applicable: " & Print (Fn);
+      end case;
+   end Apply;
+
+   function Prim_Equal (Args : Ref) return Ref
+   is (Make_Bool (Equal (Arg1 (Args), Arg2 (Args))));
+
+   function Prim_Reverse (Args : Ref) return Ref
+   is (Rev (Arg1 (Args)));
+
+   function Prim_Cadr (Args : Ref) return Ref
+   is (Car (Cdr (Arg1 (Args))));
+   function Prim_Caddr (Args : Ref) return Ref
+   is (Car (Cdr (Cdr (Arg1 (Args)))));
+
+   function Prim_Is_Number (Args : Ref) return Ref
+   is (Make_Bool (Is_Number (Arg1 (Args))));
+
+   function Prim_Is_Zero (Args : Ref) return Ref is
+      O : constant Ref := Arg1 (Args);
+   begin
+      return Make_Bool (if Is_Float (O) then Float_Value (O) = 0.0 else Int_Value (O) = 0);
+   end Prim_Is_Zero;
+
+   function Prim_Abs (Args : Ref) return Ref is
+      O : constant Ref := Arg1 (Args);
+   begin
+      return
+        (if Is_Float (O) then Make_Float (abs Float_Value (O)) else Make_Int (abs Int_Value (O)));
+   end Prim_Abs;
+
+   function Prim_Quotient (Args : Ref) return Ref is
+      B : constant Long_Long_Integer := Int_Value (Arg2 (Args));
+   begin
+      if B = 0 then
+         raise Lisp_Error with "quotient: division by zero";
+      end if;
+      return Make_Int (Int_Value (Arg1 (Args)) / B);      --  truncates toward zero
+   end Prim_Quotient;
+
+   function Prim_Modulo (Args : Ref) return Ref is
+      B : constant Long_Long_Integer := Int_Value (Arg2 (Args));
+   begin
+      if B = 0 then
+         raise Lisp_Error with "modulo: division by zero";
+      end if;
+      return Make_Int (Int_Value (Arg1 (Args)) mod B);    --  sign of the divisor
+   end Prim_Modulo;
+
+   --  append: copy every list but the last, which is shared (may be improper).
+   function Prim_Append (Args : Ref) return Ref is
+   begin
+      if Is_Nil (Args) then
+         return Nil;
+      elsif Is_Nil (Cdr (Args)) then
+         return Car (Args);
+      else
+         return Append2 (Car (Args), Prim_Append (Cdr (Args)));
+      end if;
+   end Prim_Append;
+
+   function Prim_Assoc (Args : Ref) return Ref is
+      Key    : constant Ref := Arg1 (Args);
+      Cursor : Ref := Arg2 (Args);
+   begin
+      while Is_Cons (Cursor) loop
+         if Is_Cons (Car (Cursor)) and then Equal (Car (Car (Cursor)), Key) then
+            return Car (Cursor);
+         end if;
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Lisp_False;
+   end Prim_Assoc;
+
+   function Prim_Member (Args : Ref) return Ref is
+      X      : constant Ref := Arg1 (Args);
+      Cursor : Ref := Arg2 (Args);
+   begin
+      while Is_Cons (Cursor) loop
+         if Equal (Car (Cursor), X) then
+            return Cursor;
+         end if;
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Lisp_False;
+   end Prim_Member;
+
+   --  apply: (apply f a b ... lst) -- the last argument is spliced in.
+   function Splice (R : Ref) return Ref
+   is (if Is_Nil (R)
+       then Nil
+       elsif Is_Nil (Cdr (R))
+       then Car (R)
+       else Cons (Car (R), Splice (Cdr (R))));
+
+   function Prim_Apply (Args : Ref) return Ref
+   is (Apply (Arg1 (Args), Splice (Cdr (Args))));
+
+   --  map: (map f lst1 lst2 ...) -- apply f across the lists until one runs out.
+   function List_Cars (L : Ref) return Ref
+   is (if Is_Nil (L) then Nil else Cons (Car (Car (L)), List_Cars (Cdr (L))));
+   function List_Cdrs (L : Ref) return Ref
+   is (if Is_Nil (L) then Nil else Cons (Cdr (Car (L)), List_Cdrs (Cdr (L))));
+   function All_Cons (L : Ref) return Boolean
+   is (Is_Nil (L) or else (Is_Cons (Car (L)) and then All_Cons (Cdr (L))));
+
+   function Prim_Map (Args : Ref) return Ref is
+      Fn     : constant Ref := Arg1 (Args);
+      Lists  : Ref := Cdr (Args);
+      Result : Ref := Nil;
+   begin
+      if Is_Nil (Lists) then
+         return Nil;
+      end if;
+      while All_Cons (Lists) loop
+         Result := Cons (Apply (Fn, List_Cars (Lists)), Result);
+         Lists := List_Cdrs (Lists);
+      end loop;
+      return Rev (Result);
+   end Prim_Map;
+
+   --------------------------------------------------------------------------
    --  Special forms
    --------------------------------------------------------------------------
    function Eval_Define (Args, Env : Ref) return Ref is
@@ -665,6 +879,20 @@ package body Lisp.Eval is
       Reg (G_Env, "string->list", Prim_Str_To_List'Access);
       Reg (G_Env, "list->string", Prim_List_To_Str'Access);
       Reg (G_Env, "number->string", Prim_Num_To_Str'Access);
+      Reg (G_Env, "equal?", Prim_Equal'Access);
+      Reg (G_Env, "apply", Prim_Apply'Access);
+      Reg (G_Env, "map", Prim_Map'Access);
+      Reg (G_Env, "append", Prim_Append'Access);
+      Reg (G_Env, "reverse", Prim_Reverse'Access);
+      Reg (G_Env, "assoc", Prim_Assoc'Access);
+      Reg (G_Env, "member", Prim_Member'Access);
+      Reg (G_Env, "quotient", Prim_Quotient'Access);
+      Reg (G_Env, "modulo", Prim_Modulo'Access);
+      Reg (G_Env, "abs", Prim_Abs'Access);
+      Reg (G_Env, "number?", Prim_Is_Number'Access);
+      Reg (G_Env, "zero?", Prim_Is_Zero'Access);
+      Reg (G_Env, "cadr", Prim_Cadr'Access);
+      Reg (G_Env, "caddr", Prim_Caddr'Access);
    end Init;
 
 end Lisp.Eval;
