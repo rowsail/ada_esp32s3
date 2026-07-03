@@ -260,6 +260,31 @@ package body Lisp.Reader is
                      end loop;
                      return Make_Int (Value);
                   end;
+               elsif Pos < Source'Last and then Source (Pos + 1) = '(' then
+                  --  #(...) vector literal: read the elements, then pack them.
+                  Pos := Pos + 2;                            --  past "#("
+                  declare
+                     Elems : constant Ref := Read_List;
+                     N     : Natural := 0;
+                     P     : Ref := Elems;
+                  begin
+                     while Is_Cons (P) loop
+                        N := N + 1;
+                        P := Cdr (P);
+                     end loop;
+                     declare
+                        V : constant Ref := Make_Vector (N, Nil);
+                        I : Natural := 0;
+                     begin
+                        P := Elems;
+                        while Is_Cons (P) loop
+                           Vector_Set (V, I, Car (P));
+                           I := I + 1;
+                           P := Cdr (P);
+                        end loop;
+                        return V;
+                     end;
+                  end;
                elsif Pos < Source'Last and then Source (Pos + 1) = '\' then
                   --  #\a  #\space  #\newline  #\tab  character literal
                   Pos := Pos + 2;

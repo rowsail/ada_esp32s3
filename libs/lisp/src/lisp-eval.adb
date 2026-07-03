@@ -414,6 +414,20 @@ package body Lisp.Eval is
          when K_Cons   =>
             return Equal (A.Car, B.Car) and then Equal (A.Cdr, B.Cdr);
 
+         when K_Vector =>
+            if A.Vec = null or else B.Vec = null then
+               return A.Vec = B.Vec;
+            elsif A.Vec'Length /= B.Vec'Length then
+               return False;
+            else
+               for I in A.Vec'Range loop
+                  if not Equal (A.Vec (I), B.Vec (I)) then
+                     return False;
+                  end if;
+               end loop;
+               return True;
+            end if;
+
          when others   =>
             return False;   --  Prim / Closure: identity, already ruled out
       end case;
@@ -856,6 +870,95 @@ package body Lisp.Eval is
    end Prim_Set_Cdr;
 
    --------------------------------------------------------------------------
+   --  Vectors (a K_Vector cell over a heap-allocated element array).
+   --------------------------------------------------------------------------
+   function Prim_Is_Vector (Args : Ref) return Ref
+   is (Make_Bool (Is_Vector (Arg1 (Args))));
+
+   function Prim_Make_Vector (Args : Ref) return Ref is
+      N    : constant Long_Long_Integer := Int_Value (Arg1 (Args));
+      Fill : Ref := Make_Int (0);
+   begin
+      if N < 0 then
+         raise Lisp_Error with "make-vector: negative length";
+      end if;
+      if Is_Cons (Cdr (Args)) then
+         Fill := Arg2 (Args);
+      end if;
+      return Make_Vector (Natural (N), Fill);
+   end Prim_Make_Vector;
+
+   function Prim_Vector (Args : Ref) return Ref is
+      N : Natural := 0;
+      P : Ref := Args;
+   begin
+      while Is_Cons (P) loop
+         N := N + 1;
+         P := Cdr (P);
+      end loop;
+      declare
+         V : constant Ref := Make_Vector (N, Nil);
+         I : Natural := 0;
+      begin
+         P := Args;
+         while Is_Cons (P) loop
+            Vector_Set (V, I, Car (P));
+            I := I + 1;
+            P := Cdr (P);
+         end loop;
+         return V;
+      end;
+   end Prim_Vector;
+
+   function Prim_List_To_Vector (Args : Ref) return Ref
+   is (Prim_Vector (Arg1 (Args)));
+
+   function Prim_Vector_Ref (Args : Ref) return Ref is
+      I : constant Long_Long_Integer := Int_Value (Arg2 (Args));
+   begin
+      if I < 0 then
+         raise Lisp_Error with "vector-ref: negative index";
+      end if;
+      return Vector_Ref (Arg1 (Args), Natural (I));
+   end Prim_Vector_Ref;
+
+   function Prim_Vector_Set (Args : Ref) return Ref is
+      V : constant Ref := Arg1 (Args);
+      I : constant Long_Long_Integer := Int_Value (Arg2 (Args));
+   begin
+      if I < 0 then
+         raise Lisp_Error with "vector-set!: negative index";
+      end if;
+      Vector_Set (V, Natural (I), Car (Cdr (Cdr (Args))));
+      return V;
+   end Prim_Vector_Set;
+
+   function Prim_Vector_Length (Args : Ref) return Ref
+   is (Make_Int (Long_Long_Integer (Vector_Length (Arg1 (Args)))));
+
+   function Prim_Vector_To_List (Args : Ref) return Ref is
+      V      : constant Ref := Arg1 (Args);
+      N      : constant Natural := Vector_Length (V);
+      Result : Ref := Nil;
+   begin
+      for K in 1 .. N loop
+         Result := Cons (Vector_Ref (V, N - K), Result);   --  N-K: N-1 down to 0
+      end loop;
+      return Result;
+   end Prim_Vector_To_List;
+
+   function Prim_Vector_Fill (Args : Ref) return Ref is
+      V : constant Ref := Arg1 (Args);
+      X : constant Ref := Arg2 (Args);
+      N : constant Natural := Vector_Length (V);
+   begin
+      for K in 1 .. N loop
+         Vector_Set (V, K - 1, X);
+      end loop;
+      return V;
+   end Prim_Vector_Fill;
+
+   --------------------------------------------------------------------------
    --  Special forms
    --------------------------------------------------------------------------
    function Eval_Define (Args, Env : Ref) return Ref is
@@ -978,13 +1081,21 @@ package body Lisp.Eval is
             return Nil;
          end if;
          case Cur_Expr.K is
-            when K_Int | K_Float | K_Char | K_String | K_Bool | K_Nil | K_Prim | K_Closure =>
+            when K_Int
+               | K_Float
+               | K_Char
+               | K_String
+               | K_Vector
+               | K_Bool
+               | K_Nil
+               | K_Prim
+               | K_Closure =>
                return Cur_Expr;
 
-            when K_Symbol                                                                  =>
+            when K_Symbol  =>
                return Lookup (Cur_Expr, Cur_Env);
 
-            when K_Cons                                                                    =>
+            when K_Cons    =>
                declare
                   Op   : constant Ref := Car (Cur_Expr);
                   Args : constant Ref := Cdr (Cur_Expr);
@@ -1182,6 +1293,15 @@ package body Lisp.Eval is
       Reg (G_Env, "sort", Prim_Sort'Access);
       Reg (G_Env, "set-car!", Prim_Set_Car'Access);
       Reg (G_Env, "set-cdr!", Prim_Set_Cdr'Access);
+      Reg (G_Env, "vector?", Prim_Is_Vector'Access);
+      Reg (G_Env, "make-vector", Prim_Make_Vector'Access);
+      Reg (G_Env, "vector", Prim_Vector'Access);
+      Reg (G_Env, "vector-ref", Prim_Vector_Ref'Access);
+      Reg (G_Env, "vector-set!", Prim_Vector_Set'Access);
+      Reg (G_Env, "vector-length", Prim_Vector_Length'Access);
+      Reg (G_Env, "vector->list", Prim_Vector_To_List'Access);
+      Reg (G_Env, "list->vector", Prim_List_To_Vector'Access);
+      Reg (G_Env, "vector-fill!", Prim_Vector_Fill'Access);
    end Init;
 
 end Lisp.Eval;
