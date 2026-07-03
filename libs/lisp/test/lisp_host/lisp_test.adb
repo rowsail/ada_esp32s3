@@ -291,6 +291,29 @@ begin
    end;
 
    New_Line;
+   Put_Line ("hash tables:");
+   E ("(hash-table? (make-hash-table))", "#t");
+   E ("(hash-table? (list))", "#f");
+   E ("(let ((h (make-hash-table))) (hash-set! h 'a 1) (hash-ref h 'a))", "1");
+   E ("(let ((h (make-hash-table))) (hash-set! h 'a 1) (hash-set! h 'a 2) (hash-ref h 'a))", "2");
+   E ("(let ((h (make-hash-table))) (hash-ref h 'x))", "#f");
+   E ("(let ((h (make-hash-table))) (hash-ref h 'x 99))", "99");
+   E ("(let ((h (make-hash-table))) (hash-set! h ""k"" 42) (hash-ref h ""k""))", "42");
+   E ("(let ((h (make-hash-table))) (hash-set! h (list 1 2) 'v) (hash-ref h (list 1 2)))", "v");
+   E
+     ("(let ((h (make-hash-table))) (hash-set! h 'a 1) (hash-set! h 'b 2) "
+      & "(hash-table-count h))",
+      "2");
+   E
+     ("(let ((h (make-hash-table))) (hash-set! h 'a 1) (hash-remove! h 'a) (hash-ref h 'a))",
+      "#f");
+   E
+     ("(let ((h (make-hash-table))) (hash-set! h 1 'a) (hash-set! h 2 'b) "
+      & "(sort (hash-table-keys h) <))",
+      "(1 2)");
+   E ("(let ((h (make-hash-table 4))) (hash-set! h 1 'a) (hash-set! h 5 'b) (hash-ref h 5))", "b");
+
+   New_Line;
    Put_Line
      ("Lisp core:"
       & Natural'Image (Passed)
