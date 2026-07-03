@@ -420,6 +420,68 @@ begin
    E ("(list (read) (read) (read))", "(7 foo (a b))");
 
    New_Line;
+   Put_Line ("eval / numeric / predicates:");
+   E ("(eval (read-from-string ""(+ 1 2)""))", "3");    --  read + eval close the loop
+   E ("(eval (list '* 6 7))", "42");
+   E ("(begin (define s 0) (for-each (lambda (x) (set! s (+ s x))) (list 1 2 3 4)) s)", "10");
+   E ("(min 3 1 2)", "1");
+   E ("(max 3 1 2)", "3");
+   E ("(positive? 5)", "#t");
+   E ("(negative? -3)", "#t");
+   E ("(positive? 0)", "#f");
+   E ("(boolean? #t)", "#t");
+   E ("(boolean? 5)", "#f");
+   E ("(eqv? 2 2)", "#t");
+   E ("(eqv? 'a 'a)", "#t");
+   E ("(eqv? (list 1) (list 1))", "#f");
+   E ("(sqrt 9.0)", "3.");
+   E ("(sqrt 2.0)", "1.414214");
+   E ("(cos 0.0)", "1.");
+   E ("(exp 0.0)", "1.");
+   E ("(floor 3.7)", "3.");
+   E ("(ceiling 3.2)", "4.");
+   E ("(round 3.5)", "4.");
+   E ("(truncate 3.9)", "3.");
+   E ("(floor 5)", "5");
+   E ("(bitwise-and 12 10)", "8");
+   E ("(bitwise-or 12 10)", "14");
+   E ("(bitwise-xor 12 10)", "6");
+   E ("(bitwise-not 0)", "-1");
+   E ("(arithmetic-shift 1 4)", "16");
+   E ("(arithmetic-shift 16 -2)", "4");
+
+   New_Line;
+   Put_Line ("chars / strings / lists / vectors:");
+   E ("(char=? #\a #\a)", "#t");
+   E ("(char<? #\a #\b)", "#t");
+   E ("(char-upcase #\a)", "#\A");
+   E ("(char-downcase #\A)", "#\a");
+   E ("(char-alphabetic? #\a)", "#t");
+   E ("(char-numeric? #\5)", "#t");
+   E ("(char-whitespace? #\space)", "#t");
+   E ("(string<? ""abc"" ""abd"")", "#t");
+   E ("(string-upcase ""abc"")", """ABC""");
+   E ("(string-downcase ""ABC"")", """abc""");
+   E ("(make-string 3 #\x)", """xxx""");
+   E ("(string #\a #\b #\c)", """abc""");
+   E ("(symbol->string 'hello)", """hello""");
+   E ("(eq? (string->symbol ""x"") 'x)", "#t");
+   E ("(string->number ""42"")", "42");
+   E ("(string->number ""3.14"")", "3.14");
+   E ("(string->number ""foo"")", "#f");
+   E ("(memq 'b (list 'a 'b 'c))", "(b c)");
+   E ("(assq 'b (list (list 'a 1) (list 'b 2)))", "(b 2)");
+   E ("(caar (list (list 1 2) 3))", "1");
+   E ("(cddr (list 1 2 3 4))", "(3 4)");
+   E ("(cadddr (list 1 2 3 4))", "4");
+   E ("(list-copy (list 1 2 3))", "(1 2 3)");
+   E ("(let ((a (list 1 2))) (eq? a (list-copy a)))", "#f");
+   E ("(vector-map (lambda (x) (* x x)) (vector 1 2 3))", "#(1 4 9)");
+   E
+     ("(begin (define t 0) (vector-for-each (lambda (x) (set! t (+ t x))) (vector 1 2 3)) t)",
+      "6");
+
+   New_Line;
    Put_Line
      ("Lisp core:"
       & Natural'Image (Passed)

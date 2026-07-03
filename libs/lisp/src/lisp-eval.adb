@@ -1,9 +1,14 @@
 with Ada.Numerics.Elementary_Functions;
+with Ada.Unchecked_Conversion;
+with Interfaces; use Interfaces;
 with Lisp.Reader;
 
 package body Lisp.Eval is
 
-   package EF renames Ada.Numerics.Elementary_Functions;   --  for expt of floats
+   package EF renames Ada.Numerics.Elementary_Functions;   --  math for sqrt/expt/...
+
+   function To_U64 is new Ada.Unchecked_Conversion (Long_Long_Integer, Interfaces.Unsigned_64);
+   function To_I64 is new Ada.Unchecked_Conversion (Interfaces.Unsigned_64, Long_Long_Integer);
 
    --  Forward declarations for the mutually-recursive evaluator pieces (Eval
    --  itself is already declared in the spec).
@@ -1366,6 +1371,369 @@ package body Lisp.Eval is
    is (Make_Bool (Is_Port (Arg1 (Args))));
 
    --------------------------------------------------------------------------
+   --  eval, iteration, errors.
+   --------------------------------------------------------------------------
+   function Prim_Eval (Args : Ref) return Ref
+   is (Eval (Arg1 (Args), G_Env));   --  evaluate the datum in the global environment
+
+   function Prim_For_Each (Args : Ref) return Ref is
+      Fn    : constant Ref := Arg1 (Args);
+      Lists : Ref := Cdr (Args);
+   begin
+      while All_Cons (Lists) loop
+         declare
+            Ignored : constant Ref := Apply (Fn, List_Cars (Lists));
+            pragma Unreferenced (Ignored);
+         begin
+            null;
+         end;
+         Lists := List_Cdrs (Lists);
+      end loop;
+      return Unspecified;
+   end Prim_For_Each;
+
+   function Prim_Error (Args : Ref) return Ref is
+      function Join (A : Ref) return String
+      is (if Is_Nil (A)
+          then ""
+          elsif Is_Nil (Cdr (A))
+          then Display_Str (Car (A))
+          else Display_Str (Car (A)) & " " & Join (Cdr (A)));
+   begin
+      raise Lisp_Error with Join (Args);
+      return Unspecified;   --  unreachable
+   end Prim_Error;
+
+   --------------------------------------------------------------------------
+   --  Numeric: min/max, sign tests, and the FPU transcendentals / rounding.
+   --------------------------------------------------------------------------
+   function Prim_Min (Args : Ref) return Ref is
+      Best   : Ref := Arg1 (Args);
+      Cursor : Ref := Cdr (Args);
+   begin
+      while Is_Cons (Cursor) loop
+         if As_Float (Car (Cursor)) < As_Float (Best) then
+            Best := Car (Cursor);
+         end if;
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Best;
+   end Prim_Min;
+
+   function Prim_Max (Args : Ref) return Ref is
+      Best   : Ref := Arg1 (Args);
+      Cursor : Ref := Cdr (Args);
+   begin
+      while Is_Cons (Cursor) loop
+         if As_Float (Car (Cursor)) > As_Float (Best) then
+            Best := Car (Cursor);
+         end if;
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Best;
+   end Prim_Max;
+
+   function Prim_Positive (Args : Ref) return Ref
+   is (Make_Bool (As_Float (Arg1 (Args)) > 0.0));
+   function Prim_Negative (Args : Ref) return Ref
+   is (Make_Bool (As_Float (Arg1 (Args)) < 0.0));
+   function Prim_Is_Boolean (Args : Ref) return Ref
+   is (Make_Bool (Arg1 (Args) /= null and then Arg1 (Args).K = K_Bool));
+
+   function Prim_Sqrt (Args : Ref) return Ref
+   is (Make_Float (EF.Sqrt (As_Float (Arg1 (Args)))));
+   function Prim_Sin (Args : Ref) return Ref
+   is (Make_Float (EF.Sin (As_Float (Arg1 (Args)))));
+   function Prim_Cos (Args : Ref) return Ref
+   is (Make_Float (EF.Cos (As_Float (Arg1 (Args)))));
+   function Prim_Tan (Args : Ref) return Ref
+   is (Make_Float (EF.Tan (As_Float (Arg1 (Args)))));
+   function Prim_Exp (Args : Ref) return Ref
+   is (Make_Float (EF.Exp (As_Float (Arg1 (Args)))));
+   function Prim_Log (Args : Ref) return Ref
+   is (Make_Float (EF.Log (As_Float (Arg1 (Args)))));
+
+   --  floor / ceiling / round / truncate: leave an integer alone, round a float.
+   function Prim_Floor (Args : Ref) return Ref is
+      O : constant Ref := Arg1 (Args);
+   begin
+      return (if Is_Float (O) then Make_Float (Float'Floor (Float_Value (O))) else O);
+   end Prim_Floor;
+   function Prim_Ceiling (Args : Ref) return Ref is
+      O : constant Ref := Arg1 (Args);
+   begin
+      return (if Is_Float (O) then Make_Float (Float'Ceiling (Float_Value (O))) else O);
+   end Prim_Ceiling;
+   function Prim_Round (Args : Ref) return Ref is
+      O : constant Ref := Arg1 (Args);
+   begin
+      return (if Is_Float (O) then Make_Float (Float'Rounding (Float_Value (O))) else O);
+   end Prim_Round;
+   function Prim_Truncate (Args : Ref) return Ref is
+      O : constant Ref := Arg1 (Args);
+   begin
+      return (if Is_Float (O) then Make_Float (Float'Truncation (Float_Value (O))) else O);
+   end Prim_Truncate;
+
+   --------------------------------------------------------------------------
+   --  Bitwise (on the 64-bit integer, two's complement).
+   --------------------------------------------------------------------------
+   function Prim_Bit_And (Args : Ref) return Ref is
+      Acc    : Interfaces.Unsigned_64 := Interfaces.Unsigned_64'Last;   --  all ones
+      Cursor : Ref := Args;
+   begin
+      while Is_Cons (Cursor) loop
+         Acc := Acc and To_U64 (Int_Value (Car (Cursor)));
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Make_Int (To_I64 (Acc));
+   end Prim_Bit_And;
+
+   function Prim_Bit_Or (Args : Ref) return Ref is
+      Acc    : Interfaces.Unsigned_64 := 0;
+      Cursor : Ref := Args;
+   begin
+      while Is_Cons (Cursor) loop
+         Acc := Acc or To_U64 (Int_Value (Car (Cursor)));
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Make_Int (To_I64 (Acc));
+   end Prim_Bit_Or;
+
+   function Prim_Bit_Xor (Args : Ref) return Ref is
+      Acc    : Interfaces.Unsigned_64 := 0;
+      Cursor : Ref := Args;
+   begin
+      while Is_Cons (Cursor) loop
+         Acc := Acc xor To_U64 (Int_Value (Car (Cursor)));
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Make_Int (To_I64 (Acc));
+   end Prim_Bit_Xor;
+
+   function Prim_Bit_Not (Args : Ref) return Ref
+   is (Make_Int (To_I64 (not To_U64 (Int_Value (Arg1 (Args))))));
+
+   function Prim_Ash (Args : Ref) return Ref is
+      N : constant Interfaces.Unsigned_64 := To_U64 (Int_Value (Arg1 (Args)));
+      C : constant Long_Long_Integer := Int_Value (Arg2 (Args));
+   begin
+      if C >= 0 then
+         return Make_Int (To_I64 (Interfaces.Shift_Left (N, Natural (C))));
+      else
+         return Make_Int (To_I64 (Interfaces.Shift_Right_Arithmetic (N, Natural (-C))));
+      end if;
+   end Prim_Ash;
+
+   --------------------------------------------------------------------------
+   --  Characters.
+   --------------------------------------------------------------------------
+   function Prim_Char_Eq (Args : Ref) return Ref
+   is (Make_Bool (Char_Value (Arg1 (Args)) = Char_Value (Arg2 (Args))));
+   function Prim_Char_Lt (Args : Ref) return Ref
+   is (Make_Bool (Char_Value (Arg1 (Args)) < Char_Value (Arg2 (Args))));
+
+   function Up (C : Character) return Character
+   is (if C in 'a' .. 'z' then Character'Val (Character'Pos (C) - 32) else C);
+   function Down (C : Character) return Character
+   is (if C in 'A' .. 'Z' then Character'Val (Character'Pos (C) + 32) else C);
+
+   function Prim_Char_Upcase (Args : Ref) return Ref
+   is (Make_Char (Up (Char_Value (Arg1 (Args)))));
+   function Prim_Char_Downcase (Args : Ref) return Ref
+   is (Make_Char (Down (Char_Value (Arg1 (Args)))));
+   function Prim_Char_Alpha (Args : Ref) return Ref
+   is (Make_Bool (Char_Value (Arg1 (Args)) in 'a' .. 'z' | 'A' .. 'Z'));
+   function Prim_Char_Num (Args : Ref) return Ref
+   is (Make_Bool (Char_Value (Arg1 (Args)) in '0' .. '9'));
+   function Prim_Char_Space (Args : Ref) return Ref
+   is (Make_Bool (Char_Value (Arg1 (Args)) in ' ' | ASCII.HT | ASCII.LF | ASCII.CR));
+
+   --------------------------------------------------------------------------
+   --  Strings.
+   --------------------------------------------------------------------------
+   function Prim_Str_Lt (Args : Ref) return Ref
+   is (Make_Bool (Str_Value (Arg1 (Args)) < Str_Value (Arg2 (Args))));
+
+   function Prim_Str_Upcase (Args : Ref) return Ref is
+      S : String := Str_Value (Arg1 (Args));
+   begin
+      for I in S'Range loop
+         S (I) := Up (S (I));
+      end loop;
+      return Make_String (S);
+   end Prim_Str_Upcase;
+
+   function Prim_Str_Downcase (Args : Ref) return Ref is
+      S : String := Str_Value (Arg1 (Args));
+   begin
+      for I in S'Range loop
+         S (I) := Down (S (I));
+      end loop;
+      return Make_String (S);
+   end Prim_Str_Downcase;
+
+   function Prim_Make_String (Args : Ref) return Ref is
+      N  : constant Long_Long_Integer := Int_Value (Arg1 (Args));
+      Ch : constant Character := (if Is_Cons (Cdr (Args)) then Char_Value (Arg2 (Args)) else ' ');
+   begin
+      if N < 0 then
+         raise Lisp_Error with "make-string: negative length";
+      end if;
+      return Make_String (String'(1 .. Natural (N) => Ch));
+   end Prim_Make_String;
+
+   function Prim_String (Args : Ref) return Ref is
+      N : Natural := 0;
+      P : Ref := Args;
+   begin
+      while Is_Cons (P) loop
+         N := N + 1;
+         P := Cdr (P);
+      end loop;
+      return R : Ref do
+         declare
+            Buf : String (1 .. N);
+            I   : Natural := 0;
+         begin
+            P := Args;
+            while Is_Cons (P) loop
+               I := I + 1;
+               Buf (I) := Char_Value (Car (P));
+               P := Cdr (P);
+            end loop;
+            R := Make_String (Buf);
+         end;
+      end return;
+   end Prim_String;
+
+   function Prim_Str_To_Sym (Args : Ref) return Ref
+   is (Intern (Str_Value (Arg1 (Args))));
+   function Prim_Sym_To_Str (Args : Ref) return Ref
+   is (Make_String (Symbol_Name (Arg1 (Args))));
+
+   function Prim_Str_To_Num (Args : Ref) return Ref is
+      D : Ref;
+   begin
+      begin
+         D := Lisp.Reader.Read (Str_Value (Arg1 (Args)));
+      exception
+         when others =>
+            return Lisp_False;
+      end;
+      if D /= null and then (D.K = K_Int or else D.K = K_Float) then
+         return D;
+      else
+         return Lisp_False;
+      end if;
+   end Prim_Str_To_Num;
+
+   --------------------------------------------------------------------------
+   --  eqv? and the eq-keyed list searches; extra c[ad]r accessors; list-copy.
+   --------------------------------------------------------------------------
+   function Eqv (A, B : Ref) return Boolean is
+   begin
+      if A = B then
+         return True;
+      elsif A = null or else B = null or else A.K /= B.K then
+         return False;
+      end if;
+      case A.K is
+         when K_Int   =>
+            return A.I = B.I;
+
+         when K_Float =>
+            return A.F = B.F;
+
+         when K_Char  =>
+            return A.Ch = B.Ch;
+
+         when K_Bool  =>
+            return A.B = B.B;
+
+         when others  =>
+            return False;
+      end case;
+   end Eqv;
+
+   function Prim_Eqv (Args : Ref) return Ref
+   is (Make_Bool (Eqv (Arg1 (Args), Arg2 (Args))));
+
+   function Prim_Memq (Args : Ref) return Ref is
+      X      : constant Ref := Arg1 (Args);
+      Cursor : Ref := Arg2 (Args);
+   begin
+      while Is_Cons (Cursor) loop
+         if Eqv (Car (Cursor), X) then
+            return Cursor;
+         end if;
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Lisp_False;
+   end Prim_Memq;
+
+   function Prim_Assq (Args : Ref) return Ref is
+      Key    : constant Ref := Arg1 (Args);
+      Cursor : Ref := Arg2 (Args);
+   begin
+      while Is_Cons (Cursor) loop
+         if Is_Cons (Car (Cursor)) and then Eqv (Car (Car (Cursor)), Key) then
+            return Car (Cursor);
+         end if;
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Lisp_False;
+   end Prim_Assq;
+
+   function Prim_Caar (Args : Ref) return Ref
+   is (Car (Car (Arg1 (Args))));
+   function Prim_Cdar (Args : Ref) return Ref
+   is (Cdr (Car (Arg1 (Args))));
+   function Prim_Cddr (Args : Ref) return Ref
+   is (Cdr (Cdr (Arg1 (Args))));
+   function Prim_Cdddr (Args : Ref) return Ref
+   is (Cdr (Cdr (Cdr (Arg1 (Args)))));
+   function Prim_Cadddr (Args : Ref) return Ref
+   is (Car (Cdr (Cdr (Cdr (Arg1 (Args))))));
+
+   function Prim_List_Copy (Args : Ref) return Ref is
+      function Copy (L : Ref) return Ref
+      is (if Is_Cons (L) then Cons (Car (L), Copy (Cdr (L))) else L);
+   begin
+      return Copy (Arg1 (Args));
+   end Prim_List_Copy;
+
+   --------------------------------------------------------------------------
+   --  Vector map / for-each.
+   --------------------------------------------------------------------------
+   function Prim_Vector_Map (Args : Ref) return Ref is
+      Fn : constant Ref := Arg1 (Args);
+      V  : constant Ref := Arg2 (Args);
+      N  : constant Natural := Vector_Length (V);
+      R  : constant Ref := Make_Vector (N, Nil);
+   begin
+      for K in 1 .. N loop
+         Vector_Set (R, K - 1, Apply (Fn, Cons (Vector_Ref (V, K - 1), Nil)));
+      end loop;
+      return R;
+   end Prim_Vector_Map;
+
+   function Prim_Vector_For_Each (Args : Ref) return Ref is
+      Fn : constant Ref := Arg1 (Args);
+      V  : constant Ref := Arg2 (Args);
+   begin
+      for K in 1 .. Vector_Length (V) loop
+         declare
+            Ignored : constant Ref := Apply (Fn, Cons (Vector_Ref (V, K - 1), Nil));
+            pragma Unreferenced (Ignored);
+         begin
+            null;
+         end;
+      end loop;
+      return Unspecified;
+   end Prim_Vector_For_Each;
+
+   --------------------------------------------------------------------------
    --  Special forms
    --------------------------------------------------------------------------
    function Eval_Define (Args, Env : Ref) return Ref is
@@ -1743,6 +2111,55 @@ package body Lisp.Eval is
       Reg (G_Env, "eof-object", Prim_Eof_Object'Access);
       Reg (G_Env, "eof-object?", Prim_Is_Eof'Access);
       Reg (G_Env, "input-port?", Prim_Is_Port'Access);
+      Reg (G_Env, "eval", Prim_Eval'Access);
+      Reg (G_Env, "for-each", Prim_For_Each'Access);
+      Reg (G_Env, "error", Prim_Error'Access);
+      Reg (G_Env, "min", Prim_Min'Access);
+      Reg (G_Env, "max", Prim_Max'Access);
+      Reg (G_Env, "positive?", Prim_Positive'Access);
+      Reg (G_Env, "negative?", Prim_Negative'Access);
+      Reg (G_Env, "boolean?", Prim_Is_Boolean'Access);
+      Reg (G_Env, "eqv?", Prim_Eqv'Access);
+      Reg (G_Env, "sqrt", Prim_Sqrt'Access);
+      Reg (G_Env, "sin", Prim_Sin'Access);
+      Reg (G_Env, "cos", Prim_Cos'Access);
+      Reg (G_Env, "tan", Prim_Tan'Access);
+      Reg (G_Env, "exp", Prim_Exp'Access);
+      Reg (G_Env, "log", Prim_Log'Access);
+      Reg (G_Env, "floor", Prim_Floor'Access);
+      Reg (G_Env, "ceiling", Prim_Ceiling'Access);
+      Reg (G_Env, "round", Prim_Round'Access);
+      Reg (G_Env, "truncate", Prim_Truncate'Access);
+      Reg (G_Env, "bitwise-and", Prim_Bit_And'Access);
+      Reg (G_Env, "bitwise-or", Prim_Bit_Or'Access);
+      Reg (G_Env, "bitwise-xor", Prim_Bit_Xor'Access);
+      Reg (G_Env, "bitwise-not", Prim_Bit_Not'Access);
+      Reg (G_Env, "arithmetic-shift", Prim_Ash'Access);
+      Reg (G_Env, "char=?", Prim_Char_Eq'Access);
+      Reg (G_Env, "char<?", Prim_Char_Lt'Access);
+      Reg (G_Env, "char-upcase", Prim_Char_Upcase'Access);
+      Reg (G_Env, "char-downcase", Prim_Char_Downcase'Access);
+      Reg (G_Env, "char-alphabetic?", Prim_Char_Alpha'Access);
+      Reg (G_Env, "char-numeric?", Prim_Char_Num'Access);
+      Reg (G_Env, "char-whitespace?", Prim_Char_Space'Access);
+      Reg (G_Env, "string<?", Prim_Str_Lt'Access);
+      Reg (G_Env, "string-upcase", Prim_Str_Upcase'Access);
+      Reg (G_Env, "string-downcase", Prim_Str_Downcase'Access);
+      Reg (G_Env, "make-string", Prim_Make_String'Access);
+      Reg (G_Env, "string", Prim_String'Access);
+      Reg (G_Env, "string->symbol", Prim_Str_To_Sym'Access);
+      Reg (G_Env, "symbol->string", Prim_Sym_To_Str'Access);
+      Reg (G_Env, "string->number", Prim_Str_To_Num'Access);
+      Reg (G_Env, "memq", Prim_Memq'Access);
+      Reg (G_Env, "assq", Prim_Assq'Access);
+      Reg (G_Env, "caar", Prim_Caar'Access);
+      Reg (G_Env, "cdar", Prim_Cdar'Access);
+      Reg (G_Env, "cddr", Prim_Cddr'Access);
+      Reg (G_Env, "cdddr", Prim_Cdddr'Access);
+      Reg (G_Env, "cadddr", Prim_Cadddr'Access);
+      Reg (G_Env, "list-copy", Prim_List_Copy'Access);
+      Reg (G_Env, "vector-map", Prim_Vector_Map'Access);
+      Reg (G_Env, "vector-for-each", Prim_Vector_For_Each'Access);
    end Init;
 
 end Lisp.Eval;
