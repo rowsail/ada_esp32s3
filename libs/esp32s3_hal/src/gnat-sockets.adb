@@ -245,6 +245,54 @@ package body GNAT.Sockets is
    --  Sockets
    ---------------------------------------------------------------------------
 
+   --  The socket "hardware" pool (In_Use + the per-slot state) is shared: a
+   --  board may run more than one task over the same W5500 (e.g. a telnet
+   --  session and a background FTP server).  Claiming a free slot is a
+   --  read-decide-write that the SPI lock does NOT make atomic, so two
+   --  concurrent Create_Sockets could grab the same slot.  This protected
+   --  object makes claim/free atomic.  (Move_To also touches In_Use, but only
+   --  across interfaces; with the single W5500 interface it returns early.)
+   protected Socket_Pool is
+      procedure Claim
+        (Id    : Interface_Id;
+         Count : Natural;
+         Mode  : Mode_Type;
+         J     : out Sock_Index;
+         Ok    : out Boolean);
+      procedure Release (Id : Interface_Id; J : Sock_Index);
+   end Socket_Pool;
+
+   protected body Socket_Pool is
+      procedure Claim
+        (Id    : Interface_Id;
+         Count : Natural;
+         Mode  : Mode_Type;
+         J     : out Sock_Index;
+         Ok    : out Boolean) is
+      begin
+         J := 0;
+         Ok := False;
+         for K in 0 .. Count - 1 loop
+            if not In_Use (Id, K) then
+               In_Use (Id, K) := True;
+               Local_Ports (Id, K) := 0;
+               Modes (Id, K) := Mode;
+               Opened (Id, K) := False;
+               Recv_Timeout (Id, K) := 0.0;
+               J := K;
+               Ok := True;
+               return;
+            end if;
+         end loop;
+      end Claim;
+
+      procedure Release (Id : Interface_Id; J : Sock_Index) is
+      begin
+         In_Use (Id, J) := False;
+         Opened (Id, J) := False;
+      end Release;
+   end Socket_Pool;
+
    procedure Create_Socket
      (Socket : out Socket_Type;
       Family : Family_Type := Family_Inet;
@@ -253,19 +301,15 @@ package body GNAT.Sockets is
       pragma Unreferenced (Family);
       Id    : constant Interface_Id := Default_Iface;
       Count : constant Natural := Registry (Id).Socket_Count;
+      J     : Sock_Index;
+      Ok    : Boolean;
    begin
-      for J in 0 .. Count - 1 loop
-         if not In_Use (Id, J) then
-            In_Use (Id, J) := True;
-            Local_Ports (Id, J) := 0;
-            Modes (Id, J) := Mode;
-            Opened (Id, J) := False;
-            Recv_Timeout (Id, J) := 0.0;
-            Socket := (Bound => True, Iface => Id, Index => J, others => <>);
-            return;
-         end if;
-      end loop;
-      raise Socket_Error;                        --  all of this interface's sockets in use
+      Socket_Pool.Claim (Id, Count, Mode, J, Ok);
+      if not Ok then
+         raise Socket_Error;                     --  all of this interface's sockets in use
+
+      end if;
+      Socket := (Bound => True, Iface => Id, Index => J, others => <>);
    end Create_Socket;
 
    procedure Set_Interface (Socket : in out Socket_Type; Iface : Interface_Id) is
@@ -447,8 +491,7 @@ package body GNAT.Sockets is
             if Registry (Id) /= null then
                Registry (Id).Close (J);
             end if;
-            In_Use (Id, J) := False;
-            Opened (Id, J) := False;
+            Socket_Pool.Release (Id, J);
          end;
       end if;
       Socket := No_Socket;
