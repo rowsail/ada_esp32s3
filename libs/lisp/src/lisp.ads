@@ -12,7 +12,8 @@ package Lisp is
    type Object;
    type Ref is access all Object;
 
-   type Kind is (K_Nil, K_Bool, K_Int, K_Symbol, K_Cons, K_Prim, K_Closure);
+   type Kind is
+     (K_Nil, K_Bool, K_Int, K_Float, K_Char, K_String, K_Symbol, K_Cons, K_Prim, K_Closure);
 
    type Symbol_Id is new Natural;
 
@@ -31,6 +32,15 @@ package Lisp is
 
          when K_Int =>
             I : Long_Long_Integer;
+
+         when K_Float =>
+            F : Float;                    --  IEEE single, on the hardware FPU
+
+         when K_Char =>
+            Ch : Character;
+
+         when K_String =>
+            Str : Ref;                    --  head of a cons-chain of K_Char cells
 
          when K_Symbol =>
             Sym : Symbol_Id;
@@ -59,6 +69,9 @@ package Lisp is
 
    function Cons (A, D : Ref) return Ref;
    function Make_Int (V : Long_Long_Integer) return Ref;
+   function Make_Float (V : Float) return Ref;
+   function Make_Char (C : Character) return Ref;
+   function Make_String (S : String) return Ref;   --  a cons-chain of char cells
    function Make_Bool (V : Boolean) return Ref;
    function Intern (Name : String) return Ref;   --  the canonical symbol object
 
@@ -67,6 +80,11 @@ package Lisp is
 
    --  Integer value of an Int object (Lisp_Error if it is not one).
    function Int_Value (O : Ref) return Long_Long_Integer;
+
+   --  Value accessors for the new leaf types (Lisp_Error on a type mismatch).
+   function Float_Value (O : Ref) return Float;
+   function Char_Value (O : Ref) return Character;
+   function Str_Value (O : Ref) return String;   --  a K_String's chars, as Ada text
 
    --------------------------------------------------------------------------
    --  Accessors and predicates
@@ -79,6 +97,9 @@ package Lisp is
    function Is_Nil (O : Ref) return Boolean;
    function Is_Cons (O : Ref) return Boolean;
    function Is_Symbol (O : Ref) return Boolean;
+   function Is_Float (O : Ref) return Boolean;
+   function Is_Char (O : Ref) return Boolean;
+   function Is_String (O : Ref) return Boolean;
    function Is_Truthy (O : Ref) return Boolean;     --  everything but #f and ()
 
    function Symbol_Name (O : Ref) return String;
