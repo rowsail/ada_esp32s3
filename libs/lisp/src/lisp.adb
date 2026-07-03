@@ -9,6 +9,12 @@ package body Lisp is
    True_Obj   : aliased Object := (Mark => False, K => K_Bool, B => True);
    False_Obj  : aliased Object := (Mark => False, K => K_Bool, B => False);
    Unspec_Obj : aliased Object := (Mark => False, K => K_Unspec);
+   Eof_Obj    : aliased Object := (Mark => False, K => K_Eof);
+
+   --  The one terminal input port, outside the arena; its buffer refills from the
+   --  input source a line at a time (Port_Str is a live reference the GC must keep).
+   Term_Port : aliased Object :=
+     (Mark => False, K => K_Port, Port_Str => null, Port_Pos => 0, Port_Term => True);
 
    function Nil return Ref
    is (Nil_Obj'Access);
@@ -18,6 +24,10 @@ package body Lisp is
    is (False_Obj'Access);
    function Unspecified return Ref
    is (Unspec_Obj'Access);
+   function Eof_Object return Ref
+   is (Eof_Obj'Access);
+   function Current_Input return Ref
+   is (Term_Port'Access);
    function Make_Bool (V : Boolean) return Ref
    is (if V then True_Obj'Access else False_Obj'Access);
 
@@ -35,6 +45,24 @@ package body Lisp is
          Out_Hook (S);
       end if;
    end Emit;
+
+   --  Character-input source (a no-op yielding end-of-input until a host sets it).
+   In_Hook : Input_Source := null;
+
+   procedure Set_Input (Src : Input_Source) is
+   begin
+      In_Hook := Src;
+   end Set_Input;
+
+   procedure Raw_Get (C : out Character; Ok : out Boolean) is
+   begin
+      if In_Hook /= null then
+         In_Hook (C, Ok);
+      else
+         C := ASCII.NUL;
+         Ok := False;
+      end if;
+   end Raw_Get;
 
    --------------------------------------------------------------------------
    --  The cell arena: a uniform pool with a free list.  Free cells are linked
@@ -220,6 +248,83 @@ package body Lisp is
       end if;
       return O.HTable;
    end Hash_Buckets;
+
+   function Is_Eof (O : Ref) return Boolean
+   is (O /= null and then O.K = K_Eof);
+   function Is_Port (O : Ref) return Boolean
+   is (O /= null and then O.K = K_Port);
+
+   function Make_String_Port (S : Ref) return Ref
+   is (Alloc ((Mark => False, K => K_Port, Port_Str => S, Port_Pos => 0, Port_Term => False)));
+
+   function Port_Buffer (P : Ref) return String
+   is (if not Is_Port (P) or else P.Port_Str = null then "" else Str_Value (P.Port_Str));
+
+   function Port_Position (P : Ref) return Natural
+   is (if Is_Port (P) then P.Port_Pos else 0);
+
+   procedure Port_Advance (P : Ref; To : Natural) is
+   begin
+      if Is_Port (P) then
+         P.Port_Pos := To;
+      end if;
+   end Port_Advance;
+
+   --  Terminal refill: keep any un-consumed tail, read one line (up to CR) from the
+   --  source, append it and a newline.  False only when there is nothing left at all.
+   function Port_Refill (P : Ref) return Boolean is
+      Old  : constant String := Port_Buffer (P);
+      Kept : constant String :=
+        (if P.Port_Pos >= Old'Length then "" else Old (Old'First + P.Port_Pos .. Old'Last));
+      Line : String (1 .. 1024);
+      N    : Natural := 0;
+      C    : Character;
+      Ok   : Boolean;
+      Got  : Boolean := False;
+   begin
+      if not (Is_Port (P) and then P.Port_Term) then
+         return False;
+      end if;
+      loop
+         Raw_Get (C, Ok);
+         exit when not Ok;                       --  end of input
+         Got := True;
+         exit when C = ASCII.CR;                 --  end of line
+         if C /= ASCII.LF and then N < Line'Last then
+            N := N + 1;
+            Line (N) := C;
+         end if;
+      end loop;
+      if not Got and then Kept'Length = 0 then
+         return False;
+      end if;
+      P.Port_Str := Make_String (Kept & Line (1 .. N) & ASCII.LF);
+      P.Port_Pos := 0;
+      return True;
+   end Port_Refill;
+
+   function Port_Get (P : Ref) return Integer is
+      S : constant String := Port_Buffer (P);
+   begin
+      if not Is_Port (P) then
+         return -1;
+      elsif P.Port_Pos >= S'Length then
+         return (if Port_Refill (P) then Port_Get (P) else -1);
+      end if;
+      P.Port_Pos := P.Port_Pos + 1;
+      return Character'Pos (S (S'First + P.Port_Pos - 1));
+   end Port_Get;
+
+   function Port_Peek (P : Ref) return Integer is
+      S : constant String := Port_Buffer (P);
+   begin
+      if not Is_Port (P) then
+         return -1;
+      elsif P.Port_Pos >= S'Length then
+         return (if Port_Refill (P) then Port_Peek (P) else -1);
+      end if;
+      return Character'Pos (S (S'First + P.Port_Pos));
+   end Port_Peek;
 
    --------------------------------------------------------------------------
    --  Interned symbols -- stored in their own table (not the arena), so a Reset
@@ -460,6 +565,12 @@ package body Lisp is
 
          when K_Hash    =>
             return "#<hash-table>";
+
+         when K_Eof     =>
+            return "#<eof>";
+
+         when K_Port    =>
+            return "#<input-port>";
       end case;
    end Render;
 
@@ -502,6 +613,9 @@ package body Lisp is
          when K_Hash    =>
             Mark_Obj (O.HTable);   --  the bucket vector (reaches all entries)
 
+         when K_Port    =>
+            Mark_Obj (O.Port_Str); --  the input buffer
+
          when others    =>
             null;               --  no outgoing arena references (Int/Float/Char/...)
       end case;
@@ -514,6 +628,7 @@ package body Lisp is
          return 0;
       end if;
       Mark_Obj (Root);
+      Mark_Obj (Current_Input);   --  the terminal port's pending buffer is a root
       Free_Head := 0;
       In_Use := 0;
       for I in Arena'Range loop
