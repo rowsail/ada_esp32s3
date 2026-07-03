@@ -232,6 +232,14 @@ begin
    E ("(remainder 17 5)", "2");
    E ("(remainder -17 5)", "-2");
    E ("(remainder 17 -5)", "2");
+   E ("(filter even? (list 1 2 3 4 5 6))", "(2 4 6)");
+   E ("(filter (lambda (x) (> x 2)) (list 1 2 3 4))", "(3 4)");
+   E ("(fold-left - 0 (list 1 2 3))", "-6");
+   E ("(fold-left + 0 (list 1 2 3 4))", "10");
+   E ("(fold-right - 0 (list 1 2 3))", "2");
+   E ("(fold-right cons (list) (list 1 2 3))", "(1 2 3)");
+   E ("(list-ref (list 10 20 30) 1)", "20");
+   E ("(list-tail (list 1 2 3 4) 2)", "(3 4)");
 
    New_Line;
    Put_Line

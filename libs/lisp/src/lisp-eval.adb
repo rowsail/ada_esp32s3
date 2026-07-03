@@ -605,6 +605,73 @@ package body Lisp.Eval is
       return Rev (Result);
    end Prim_Map;
 
+   --  (filter pred lst) -- keep the elements for which pred is truthy.
+   function Prim_Filter (Args : Ref) return Ref is
+      Pred   : constant Ref := Arg1 (Args);
+      Cursor : Ref := Arg2 (Args);
+      Result : Ref := Nil;
+   begin
+      while Is_Cons (Cursor) loop
+         if Is_Truthy (Apply (Pred, Cons (Car (Cursor), Nil))) then
+            Result := Cons (Car (Cursor), Result);
+         end if;
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Rev (Result);
+   end Prim_Filter;
+
+   --  (fold-left proc init lst) -- proc is (proc acc elem), left to right.
+   function Prim_Fold_Left (Args : Ref) return Ref is
+      Proc   : constant Ref := Arg1 (Args);
+      Acc    : Ref := Arg2 (Args);
+      Cursor : Ref := Car (Cdr (Cdr (Args)));
+   begin
+      while Is_Cons (Cursor) loop
+         Acc := Apply (Proc, Cons (Acc, Cons (Car (Cursor), Nil)));
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Acc;
+   end Prim_Fold_Left;
+
+   --  (fold-right proc init lst) -- proc is (proc elem acc); done by folding the
+   --  reversed list, so it stays iterative (no per-element Ada recursion).
+   function Prim_Fold_Right (Args : Ref) return Ref is
+      Proc   : constant Ref := Arg1 (Args);
+      Acc    : Ref := Arg2 (Args);
+      Cursor : Ref := Rev (Car (Cdr (Cdr (Args))));
+   begin
+      while Is_Cons (Cursor) loop
+         Acc := Apply (Proc, Cons (Car (Cursor), Cons (Acc, Nil)));
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Acc;
+   end Prim_Fold_Right;
+
+   --  (list-tail lst k) -- drop the first k elements.
+   function Prim_List_Tail (Args : Ref) return Ref is
+      Cursor : Ref := Arg1 (Args);
+      K      : Long_Long_Integer := Int_Value (Arg2 (Args));
+   begin
+      while K > 0 loop
+         if not Is_Cons (Cursor) then
+            raise Lisp_Error with "list-tail: index out of range";
+         end if;
+         Cursor := Cdr (Cursor);
+         K := K - 1;
+      end loop;
+      return Cursor;
+   end Prim_List_Tail;
+
+   --  (list-ref lst k) -- the k-th element (0-based).
+   function Prim_List_Ref (Args : Ref) return Ref is
+      Tail : constant Ref := Prim_List_Tail (Args);
+   begin
+      if not Is_Cons (Tail) then
+         raise Lisp_Error with "list-ref: index out of range";
+      end if;
+      return Car (Tail);
+   end Prim_List_Ref;
+
    --------------------------------------------------------------------------
    --  Special forms
    --------------------------------------------------------------------------
@@ -921,6 +988,11 @@ package body Lisp.Eval is
       Reg (G_Env, "remainder", Prim_Remainder'Access);
       Reg (G_Env, "cadr", Prim_Cadr'Access);
       Reg (G_Env, "caddr", Prim_Caddr'Access);
+      Reg (G_Env, "filter", Prim_Filter'Access);
+      Reg (G_Env, "fold-left", Prim_Fold_Left'Access);
+      Reg (G_Env, "fold-right", Prim_Fold_Right'Access);
+      Reg (G_Env, "list-ref", Prim_List_Ref'Access);
+      Reg (G_Env, "list-tail", Prim_List_Tail'Access);
    end Init;
 
 end Lisp.Eval;
