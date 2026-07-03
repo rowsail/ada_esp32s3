@@ -189,6 +189,20 @@ package body Lisp is
       O.Vec (I + 1) := X;
    end Vector_Set;
 
+   function Is_Hash (O : Ref) return Boolean
+   is (O /= null and then O.K = K_Hash);
+
+   function Make_Hash (Buckets : Ref) return Ref
+   is (Alloc ((Mark => False, K => K_Hash, HTable => Buckets)));
+
+   function Hash_Buckets (O : Ref) return Ref is
+   begin
+      if not Is_Hash (O) then
+         raise Lisp_Error with "expected a hash table";
+      end if;
+      return O.HTable;
+   end Hash_Buckets;
+
    --------------------------------------------------------------------------
    --  Interned symbols -- stored in their own table (not the arena), so a Reset
    --  of the arena leaves symbol identity intact.
@@ -418,6 +432,9 @@ package body Lisp is
 
          when K_Vector  =>
             return Print_Vector (O);
+
+         when K_Hash    =>
+            return "#<hash-table>";
       end case;
    end Print;
 
@@ -450,6 +467,9 @@ package body Lisp is
                   Mark_Obj (O.Vec (I));
                end loop;
             end if;
+
+         when K_Hash    =>
+            Mark_Obj (O.HTable);   --  the bucket vector (reaches all entries)
 
          when others    =>
             null;               --  no outgoing arena references (Int/Float/Char/...)

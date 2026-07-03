@@ -29,7 +29,8 @@ package Lisp is
       K_Cons,
       K_Prim,
       K_Closure,
-      K_Vector);
+      K_Vector,
+      K_Hash);
 
    type Symbol_Id is new Natural;
 
@@ -73,6 +74,9 @@ package Lisp is
 
          when K_Vector =>
             Vec : Ref_Vec;                --  0-based array of elements (heap)
+
+         when K_Hash =>
+            HTable : Ref;                 --  a bucket vector of (key . value) alists
       end case;
    end record;
 
@@ -111,6 +115,12 @@ package Lisp is
    function Vector_Ref (O : Ref; I : Natural) return Ref;   --  Lisp_Error if I >= length
    procedure Vector_Set (O : Ref; I : Natural; X : Ref);
 
+   --  Hash tables: a K_Hash cell wrapping a bucket vector (the elements are the
+   --  (key . value) association lists).  The GC reaches the whole table by marking
+   --  that one vector.
+   function Make_Hash (Buckets : Ref) return Ref;
+   function Hash_Buckets (O : Ref) return Ref;   --  the bucket vector
+
    --------------------------------------------------------------------------
    --  Accessors and predicates
    --------------------------------------------------------------------------
@@ -126,6 +136,7 @@ package Lisp is
    function Is_Char (O : Ref) return Boolean;
    function Is_String (O : Ref) return Boolean;
    function Is_Vector (O : Ref) return Boolean;
+   function Is_Hash (O : Ref) return Boolean;
    function Is_Truthy (O : Ref) return Boolean;     --  everything but #f and ()
 
    function Symbol_Name (O : Ref) return String;

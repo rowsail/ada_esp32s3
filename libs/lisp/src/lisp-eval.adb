@@ -959,6 +959,211 @@ package body Lisp.Eval is
    end Prim_Vector_Fill;
 
    --------------------------------------------------------------------------
+   --  Hash tables: a bucket vector of (key . value) alists, keyed by equal?.
+   --------------------------------------------------------------------------
+   Hash_Prime : constant := 1_000_003;
+
+   --  A hash consistent with equal? (equal keys hash the same); structural for
+   --  pairs/vectors, bounded in depth so a cyclic key cannot loop.
+   function Hash_Value (O : Ref; Depth : Natural := 0) return Natural is
+   begin
+      if O = null or else Depth > 6 then
+         return 0;
+      end if;
+      case O.K is
+         when K_Nil    =>
+            return 17;
+
+         when K_Bool   =>
+            return (if O.B then 1 else 2);
+
+         when K_Int    =>
+            return Natural (O.I mod Hash_Prime);
+
+         when K_Char   =>
+            return Character'Pos (O.Ch);
+
+         when K_Symbol =>
+            return Natural (O.Sym) mod Hash_Prime;
+
+         when K_Float  =>
+            return
+              (if abs O.F < 1.0e9
+               then Natural (Long_Long_Integer (Float'Truncation (abs O.F)) mod Hash_Prime)
+               else 3);
+
+         when K_String =>
+            declare
+               H : Long_Long_Integer := 0;
+            begin
+               for C of Str_Value (O) loop
+                  H := (H * 31 + Character'Pos (C)) mod Hash_Prime;
+               end loop;
+               return Natural (H);
+            end;
+
+         when K_Cons   =>
+            return
+              (Hash_Value (O.Car, Depth + 1) * 31 + Hash_Value (O.Cdr, Depth + 1) + 7)
+              mod Hash_Prime;
+
+         when K_Vector =>
+            declare
+               H : Natural := (if O.Vec = null then 0 else O.Vec'Length);
+            begin
+               if O.Vec /= null and then O.Vec'Length > 0 then
+                  H := (H * 31 + Hash_Value (O.Vec (O.Vec'First), Depth + 1)) mod Hash_Prime;
+               end if;
+               return H;
+            end;
+
+         when others   =>
+            return 5;   --  Prim / Closure / Hash: matched by identity only
+      end case;
+   end Hash_Value;
+
+   function Bucket_Index (H, Key : Ref) return Natural is
+      B : constant Natural := Vector_Length (Hash_Buckets (H));
+   begin
+      if B = 0 then
+         raise Lisp_Error with "hash table has no buckets";
+      end if;
+      return Hash_Value (Key) mod B;
+   end Bucket_Index;
+
+   function Prim_Is_Hash (Args : Ref) return Ref
+   is (Make_Bool (Is_Hash (Arg1 (Args))));
+
+   function Prim_Make_Hash (Args : Ref) return Ref is
+      Buckets : Natural := 97;
+   begin
+      if Is_Cons (Args) then
+         declare
+            N : constant Long_Long_Integer := Int_Value (Arg1 (Args));
+         begin
+            if N > 0 then
+               Buckets := Natural (N);
+            end if;
+         end;
+      end if;
+      return Make_Hash (Make_Vector (Buckets, Nil));
+   end Prim_Make_Hash;
+
+   function Prim_Hash_Set (Args : Ref) return Ref is
+      H      : constant Ref := Arg1 (Args);
+      Key    : constant Ref := Arg2 (Args);
+      Val    : constant Ref := Car (Cdr (Cdr (Args)));
+      BV     : constant Ref := Hash_Buckets (H);
+      Idx    : constant Natural := Bucket_Index (H, Key);
+      Bucket : constant Ref := Vector_Ref (BV, Idx);
+      Cursor : Ref := Bucket;
+   begin
+      while Is_Cons (Cursor) loop
+         if Equal (Car (Car (Cursor)), Key) then
+            Car (Cursor).Cdr := Val;                          --  update existing entry
+            return H;
+         end if;
+         Cursor := Cdr (Cursor);
+      end loop;
+      Vector_Set (BV, Idx, Cons (Cons (Key, Val), Bucket));   --  prepend a new entry
+      return H;
+   end Prim_Hash_Set;
+
+   function Prim_Hash_Ref (Args : Ref) return Ref is
+      H      : constant Ref := Arg1 (Args);
+      Key    : constant Ref := Arg2 (Args);
+      Cursor : Ref := Vector_Ref (Hash_Buckets (H), Bucket_Index (H, Key));
+   begin
+      while Is_Cons (Cursor) loop
+         if Equal (Car (Car (Cursor)), Key) then
+            return Cdr (Car (Cursor));
+         end if;
+         Cursor := Cdr (Cursor);
+      end loop;
+      if Is_Cons (Cdr (Cdr (Args))) then
+         --  optional default
+         return Car (Cdr (Cdr (Args)));
+      else
+         return Lisp_False;
+      end if;
+   end Prim_Hash_Ref;
+
+   function Prim_Hash_Remove (Args : Ref) return Ref is
+      H      : constant Ref := Arg1 (Args);
+      Key    : constant Ref := Arg2 (Args);
+      BV     : constant Ref := Hash_Buckets (H);
+      Idx    : constant Natural := Bucket_Index (H, Key);
+      Prev   : Ref := Nil;
+      Cursor : Ref := Vector_Ref (BV, Idx);
+   begin
+      while Is_Cons (Cursor) loop
+         if Equal (Car (Car (Cursor)), Key) then
+            if Is_Nil (Prev) then
+               Vector_Set (BV, Idx, Cdr (Cursor));            --  remove the head entry
+
+            else
+               Prev.Cdr := Cdr (Cursor);                      --  splice it out
+            end if;
+            return H;
+         end if;
+         Prev := Cursor;
+         Cursor := Cdr (Cursor);
+      end loop;
+      return H;
+   end Prim_Hash_Remove;
+
+   function Prim_Hash_Count (Args : Ref) return Ref is
+      BV    : constant Ref := Hash_Buckets (Arg1 (Args));
+      Total : Long_Long_Integer := 0;
+   begin
+      for K in 1 .. Vector_Length (BV) loop
+         declare
+            Cursor : Ref := Vector_Ref (BV, K - 1);
+         begin
+            while Is_Cons (Cursor) loop
+               Total := Total + 1;
+               Cursor := Cdr (Cursor);
+            end loop;
+         end;
+      end loop;
+      return Make_Int (Total);
+   end Prim_Hash_Count;
+
+   function Prim_Hash_Keys (Args : Ref) return Ref is
+      BV     : constant Ref := Hash_Buckets (Arg1 (Args));
+      Result : Ref := Nil;
+   begin
+      for K in 1 .. Vector_Length (BV) loop
+         declare
+            Cursor : Ref := Vector_Ref (BV, K - 1);
+         begin
+            while Is_Cons (Cursor) loop
+               Result := Cons (Car (Car (Cursor)), Result);
+               Cursor := Cdr (Cursor);
+            end loop;
+         end;
+      end loop;
+      return Result;
+   end Prim_Hash_Keys;
+
+   function Prim_Hash_Values (Args : Ref) return Ref is
+      BV     : constant Ref := Hash_Buckets (Arg1 (Args));
+      Result : Ref := Nil;
+   begin
+      for K in 1 .. Vector_Length (BV) loop
+         declare
+            Cursor : Ref := Vector_Ref (BV, K - 1);
+         begin
+            while Is_Cons (Cursor) loop
+               Result := Cons (Cdr (Car (Cursor)), Result);
+               Cursor := Cdr (Cursor);
+            end loop;
+         end;
+      end loop;
+      return Result;
+   end Prim_Hash_Values;
+
+   --------------------------------------------------------------------------
    --  Special forms
    --------------------------------------------------------------------------
    function Eval_Define (Args, Env : Ref) return Ref is
@@ -1086,6 +1291,7 @@ package body Lisp.Eval is
                | K_Char
                | K_String
                | K_Vector
+               | K_Hash
                | K_Bool
                | K_Nil
                | K_Prim
@@ -1302,6 +1508,14 @@ package body Lisp.Eval is
       Reg (G_Env, "vector->list", Prim_Vector_To_List'Access);
       Reg (G_Env, "list->vector", Prim_List_To_Vector'Access);
       Reg (G_Env, "vector-fill!", Prim_Vector_Fill'Access);
+      Reg (G_Env, "hash-table?", Prim_Is_Hash'Access);
+      Reg (G_Env, "make-hash-table", Prim_Make_Hash'Access);
+      Reg (G_Env, "hash-set!", Prim_Hash_Set'Access);
+      Reg (G_Env, "hash-ref", Prim_Hash_Ref'Access);
+      Reg (G_Env, "hash-remove!", Prim_Hash_Remove'Access);
+      Reg (G_Env, "hash-table-count", Prim_Hash_Count'Access);
+      Reg (G_Env, "hash-table-keys", Prim_Hash_Keys'Access);
+      Reg (G_Env, "hash-table-values", Prim_Hash_Values'Access);
    end Init;
 
 end Lisp.Eval;
