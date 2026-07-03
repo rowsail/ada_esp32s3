@@ -1,4 +1,8 @@
+with Ada.Numerics.Elementary_Functions;
+
 package body Lisp.Eval is
+
+   package EF renames Ada.Numerics.Elementary_Functions;   --  for expt of floats
 
    --  Forward declarations for the mutually-recursive evaluator pieces (Eval
    --  itself is already declared in the spec).
@@ -673,6 +677,185 @@ package body Lisp.Eval is
    end Prim_List_Ref;
 
    --------------------------------------------------------------------------
+   --  Integer number theory, exponent, sort, and pair mutation.
+   --------------------------------------------------------------------------
+   function GCD2 (A, B : Long_Long_Integer) return Long_Long_Integer is
+      X : Long_Long_Integer := abs A;
+      Y : Long_Long_Integer := abs B;
+      T : Long_Long_Integer;
+   begin
+      while Y /= 0 loop
+         T := X mod Y;
+         X := Y;
+         Y := T;
+      end loop;
+      return X;
+   end GCD2;
+
+   function Prim_Gcd (Args : Ref) return Ref is
+      Result : Long_Long_Integer := 0;   --  (gcd) = 0; (gcd a) = |a|
+      Cursor : Ref := Args;
+   begin
+      while Is_Cons (Cursor) loop
+         Result := GCD2 (Result, Int_Value (Car (Cursor)));
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Make_Int (Result);
+   end Prim_Gcd;
+
+   function Prim_Lcm (Args : Ref) return Ref is
+      Result : Long_Long_Integer := 1;   --  (lcm) = 1
+      Cursor : Ref := Args;
+   begin
+      while Is_Cons (Cursor) loop
+         declare
+            V : constant Long_Long_Integer := Int_Value (Car (Cursor));
+            G : constant Long_Long_Integer := GCD2 (Result, V);
+         begin
+            Result := (if G = 0 then 0 else abs (Result / G * V));   --  divide first
+         end;
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Make_Int (Result);
+   end Prim_Lcm;
+
+   --  Fast exponentiation (square-and-multiply).
+   function Int_Pow (Base, Exp : Long_Long_Integer) return Long_Long_Integer is
+      Result : Long_Long_Integer := 1;
+      B      : Long_Long_Integer := Base;
+      E      : Long_Long_Integer := Exp;
+   begin
+      while E > 0 loop
+         if E mod 2 = 1 then
+            Result := Result * B;
+         end if;
+         E := E / 2;
+         if E > 0 then
+            B := B * B;
+         end if;
+      end loop;
+      return Result;
+   end Int_Pow;
+
+   function Float_Pow (Base : Float; Exp : Long_Long_Integer) return Float is
+      Result : Float := 1.0;
+      B      : Float := Base;
+      E      : Long_Long_Integer := abs Exp;
+   begin
+      while E > 0 loop
+         if E mod 2 = 1 then
+            Result := Result * B;
+         end if;
+         E := E / 2;
+         if E > 0 then
+            B := B * B;
+         end if;
+      end loop;
+      return (if Exp < 0 then 1.0 / Result else Result);
+   end Float_Pow;
+
+   --  (expt base exp): exact integer when base and exp are non-negative integers;
+   --  otherwise a float (a negative integer exponent, or any float operand).
+   function Prim_Expt (Args : Ref) return Ref is
+      Base : constant Ref := Arg1 (Args);
+      Exp  : constant Ref := Arg2 (Args);
+   begin
+      if Is_Float (Exp) then
+         return Make_Float (EF."**" (As_Float (Base), Float_Value (Exp)));
+      elsif Is_Float (Base) then
+         return Make_Float (Float_Pow (Float_Value (Base), Int_Value (Exp)));
+      else
+         declare
+            E : constant Long_Long_Integer := Int_Value (Exp);
+         begin
+            if E >= 0 then
+               return Make_Int (Int_Pow (Int_Value (Base), E));
+            else
+               return Make_Float (Float_Pow (Float (Int_Value (Base)), E));
+            end if;
+         end;
+      end if;
+   exception
+      when Lisp_Error =>
+         raise;
+      when others =>
+         raise Lisp_Error with "expt: domain error or overflow";
+   end Prim_Expt;
+
+   --  Stable merge sort over a list: (sort lst less?).
+   function Sort_Merge (A0, B0, Less : Ref) return Ref is
+      A   : Ref := A0;
+      B   : Ref := B0;
+      Acc : Ref := Nil;
+   begin
+      while Is_Cons (A) and then Is_Cons (B) loop
+         --  take B only when it is strictly less, so equal keys keep A first (stable)
+         if Is_Truthy (Apply (Less, Cons (Car (B), Cons (Car (A), Nil)))) then
+            Acc := Cons (Car (B), Acc);
+            B := Cdr (B);
+         else
+            Acc := Cons (Car (A), Acc);
+            A := Cdr (A);
+         end if;
+      end loop;
+      while Is_Cons (A) loop
+         Acc := Cons (Car (A), Acc);
+         A := Cdr (A);
+      end loop;
+      while Is_Cons (B) loop
+         Acc := Cons (Car (B), Acc);
+         B := Cdr (B);
+      end loop;
+      return Rev (Acc);
+   end Sort_Merge;
+
+   function Sort_List (L, Less : Ref) return Ref is
+      N : Natural := 0;
+      P : Ref := L;
+   begin
+      while Is_Cons (P) loop
+         N := N + 1;
+         P := Cdr (P);
+      end loop;
+      if N < 2 then
+         return L;
+      end if;
+      declare
+         Front : Ref := Nil;              --  first half, copied (reversed then Rev'd)
+         Q     : Ref := L;
+      begin
+         for I in 1 .. N / 2 loop
+            Front := Cons (Car (Q), Front);
+            Q := Cdr (Q);
+         end loop;
+         return Sort_Merge (Sort_List (Rev (Front), Less), Sort_List (Q, Less), Less);
+      end;
+   end Sort_List;
+
+   function Prim_Sort (Args : Ref) return Ref
+   is (Sort_List (Arg1 (Args), Arg2 (Args)));
+
+   function Prim_Set_Car (Args : Ref) return Ref is
+      P : constant Ref := Arg1 (Args);
+   begin
+      if not Is_Cons (P) then
+         raise Lisp_Error with "set-car!: not a pair";
+      end if;
+      P.Car := Arg2 (Args);
+      return Arg2 (Args);
+   end Prim_Set_Car;
+
+   function Prim_Set_Cdr (Args : Ref) return Ref is
+      P : constant Ref := Arg1 (Args);
+   begin
+      if not Is_Cons (P) then
+         raise Lisp_Error with "set-cdr!: not a pair";
+      end if;
+      P.Cdr := Arg2 (Args);
+      return Arg2 (Args);
+   end Prim_Set_Cdr;
+
+   --------------------------------------------------------------------------
    --  Special forms
    --------------------------------------------------------------------------
    function Eval_Define (Args, Env : Ref) return Ref is
@@ -993,6 +1176,12 @@ package body Lisp.Eval is
       Reg (G_Env, "fold-right", Prim_Fold_Right'Access);
       Reg (G_Env, "list-ref", Prim_List_Ref'Access);
       Reg (G_Env, "list-tail", Prim_List_Tail'Access);
+      Reg (G_Env, "gcd", Prim_Gcd'Access);
+      Reg (G_Env, "lcm", Prim_Lcm'Access);
+      Reg (G_Env, "expt", Prim_Expt'Access);
+      Reg (G_Env, "sort", Prim_Sort'Access);
+      Reg (G_Env, "set-car!", Prim_Set_Car'Access);
+      Reg (G_Env, "set-cdr!", Prim_Set_Cdr'Access);
    end Init;
 
 end Lisp.Eval;
