@@ -91,9 +91,31 @@ procedure Lisp_Test is
          Put_Line ("  FAIL " & Input & "  ||  [" & Got (1 .. N) & "]  (want [" & Want & "])");
       end if;
    end D;
+   --  Canned input source, for the terminal-port (read) test.
+   Feed_Buf : String (1 .. 256);
+   Feed_Len : Natural := 0;
+   Feed_Pos : Natural := 0;
+   procedure Feed_In (C : out Character; Ok : out Boolean) is
+   begin
+      if Feed_Pos < Feed_Len then
+         Feed_Pos := Feed_Pos + 1;
+         C := Feed_Buf (Feed_Pos);
+         Ok := True;
+      else
+         C := ASCII.NUL;
+         Ok := False;
+      end if;
+   end Feed_In;
+   procedure Set_Feed (S : String) is
+   begin
+      Feed_Len := S'Length;
+      Feed_Buf (1 .. Feed_Len) := S;
+      Feed_Pos := 0;
+   end Set_Feed;
 begin
    Lisp.Eval.Init;   --  build the global environment
    Lisp.Set_Output (Capture'Unrestricted_Access);   --  capture display/write output
+   Lisp.Set_Input (Feed_In'Unrestricted_Access);    --  canned terminal input
    Put_Line ("reader / printer round-trips:");
    RT ("42", "42");
    RT ("-5", "-5");
@@ -372,6 +394,30 @@ begin
    D ("(write-char #\Z)", "Z");
    D ("(write-string ""hello"")", "hello");
    E ("(display 5)", "");                               --  returns unspecified (prints empty)
+
+   New_Line;
+   Put_Line ("read / ports:");
+   E ("(read-from-string ""42"")", "42");
+   E ("(read-from-string ""(+ 1 2)"")", "(+ 1 2)");     --  datum, unevaluated
+   E ("(read-from-string ""hello"")", "hello");
+   E ("(read-from-string ""\""hi\"""")", """hi""");     --  a string datum
+   E ("(input-port? (open-input-string ""x""))", "#t");
+   E ("(input-port? 5)", "#f");
+   E ("(eof-object? (eof-object))", "#t");
+   E ("(eof-object? 5)", "#f");
+   E ("(let ((p (open-input-string ""1 2 3""))) (list (read p) (read p) (read p)))", "(1 2 3)");
+   E ("(let ((p (open-input-string ""1""))) (list (read p) (eof-object? (read p))))", "(1 #t)");
+   E
+     ("(let ((p (open-input-string ""ab""))) "
+      & "(list (read-char p) (read-char p) (eof-object? (read-char p))))",
+      "(#\a #\b #t)");
+   E
+     ("(let ((p (open-input-string ""xy""))) (list (peek-char p) (read-char p) (read-char p)))",
+      "(#\x #\x #\y)");
+   E ("(let ((p (open-input-string ""hello\nworld""))) (read-line p))", """hello""");
+   --  Terminal port: read pulls from the input source, refilling a line at a time.
+   Set_Feed ("7 foo (a b)" & ASCII.CR);
+   E ("(list (read) (read) (read))", "(7 foo (a b))");
 
    New_Line;
    Put_Line

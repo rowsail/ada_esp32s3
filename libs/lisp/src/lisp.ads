@@ -31,7 +31,9 @@ package Lisp is
       K_Closure,
       K_Vector,
       K_Hash,
-      K_Unspec);      --  the "no useful value" result of display / write / newline
+      K_Unspec,       --  the "no useful value" result of display / write / newline
+      K_Eof,          --  the end-of-file object returned by read at end of input
+      K_Port);        --  an input port (a string source, or the terminal)
 
    type Symbol_Id is new Natural;
 
@@ -79,8 +81,13 @@ package Lisp is
          when K_Hash =>
             HTable : Ref;                 --  a bucket vector of (key . value) alists
 
-         when K_Unspec =>
+         when K_Unspec | K_Eof =>
             null;
+
+         when K_Port =>
+            Port_Str  : Ref;              --  the input buffer (a K_String, or null)
+            Port_Pos  : Natural;          --  next char index into it (0-based)
+            Port_Term : Boolean;          --  True = refill from the terminal when drained
       end case;
    end record;
 
@@ -94,6 +101,7 @@ package Lisp is
    function Lisp_True return Ref;
    function Lisp_False return Ref;
    function Unspecified return Ref;   --  what display / write / newline return
+   function Eof_Object return Ref;    --  the end-of-file object
 
    function Cons (A, D : Ref) return Ref;
    function Make_Int (V : Long_Long_Integer) return Ref;
@@ -158,6 +166,31 @@ package Lisp is
    type Output_Sink is access procedure (S : String);
    procedure Set_Output (Sink : Output_Sink);
    procedure Emit (S : String);
+
+   --  Character input for read / read-char / read-line.  A host installs the
+   --  source (Ok = False signals end of input); it feeds the terminal port.
+   type Input_Source is access procedure (C : out Character; Ok : out Boolean);
+   procedure Set_Input (Src : Input_Source);
+
+   --------------------------------------------------------------------------
+   --  Input ports.  A string port reads a fixed string; the terminal port
+   --  (Current_Input) refills from the input source, a line at a time.
+   --------------------------------------------------------------------------
+   function Is_Eof (O : Ref) return Boolean;
+   function Is_Port (O : Ref) return Boolean;
+   function Make_String_Port (S : Ref) return Ref;   --  S is a K_String
+   function Current_Input return Ref;                --  the shared terminal port
+
+   --  Character-level access (returns the character code, or -1 at end of input).
+   function Port_Get (P : Ref) return Integer;       --  consume one character
+   function Port_Peek (P : Ref) return Integer;      --  look without consuming
+
+   --  For the datum reader (in Lisp.Eval): the remaining buffer, its cursor, a way
+   --  to move the cursor after a parse, and a refill (True if it got more input).
+   function Port_Buffer (P : Ref) return String;
+   function Port_Position (P : Ref) return Natural;
+   procedure Port_Advance (P : Ref; To : Natural);
+   function Port_Refill (P : Ref) return Boolean;
 
    --  Allocate the cell arena (Cells objects).  On the board call this once, after
    --  PSRAM/heap are up, with a board-appropriate size; the arena is heap-allocated

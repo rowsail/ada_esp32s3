@@ -1,4 +1,5 @@
 with Ada.Numerics.Elementary_Functions;
+with Lisp.Reader;
 
 package body Lisp.Eval is
 
@@ -1200,6 +1201,171 @@ package body Lisp.Eval is
    end Prim_Write_String;
 
    --------------------------------------------------------------------------
+   --  Input: read / read-char / peek-char / read-line over string or terminal
+   --  ports.  read reuses Lisp.Reader over the port's buffer, refilling the
+   --  terminal port a line at a time until a datum is complete.
+   --------------------------------------------------------------------------
+   function Port_Of (Args : Ref) return Ref is
+   begin
+      if Is_Cons (Args) then
+         if not Is_Port (Arg1 (Args)) then
+            raise Lisp_Error with "expected an input port";
+         end if;
+         return Arg1 (Args);
+      else
+         return Current_Input;
+      end if;
+   end Port_Of;
+
+   --  True when text is not obviously incomplete (so a parse failure is a real
+   --  syntax error, not "type more"): all parens closed and no open string.
+   function Complete_Enough (S : String) return Boolean is
+      Depth  : Integer := 0;
+      In_Str : Boolean := False;
+      I      : Natural := S'First;
+   begin
+      while I <= S'Last loop
+         declare
+            C : constant Character := S (I);
+         begin
+            if In_Str then
+               if C = '\' and then I < S'Last then
+                  I := I + 1;
+               elsif C = '"' then
+                  In_Str := False;
+               end if;
+            else
+               case C is
+                  when '"'    =>
+                     In_Str := True;
+
+                  when '('    =>
+                     Depth := Depth + 1;
+
+                  when ')'    =>
+                     Depth := Depth - 1;
+
+                  when ';'    =>
+                     while I < S'Last and then S (I + 1) /= ASCII.LF loop
+                        I := I + 1;
+                     end loop;
+
+                  when others =>
+                     null;
+               end case;
+            end if;
+         end;
+         I := I + 1;
+      end loop;
+      return Depth <= 0 and then not In_Str;
+   end Complete_Enough;
+
+   function Prim_Read_Char (Args : Ref) return Ref is
+      C : constant Integer := Port_Get (Port_Of (Args));
+   begin
+      return (if C < 0 then Eof_Object else Make_Char (Character'Val (C)));
+   end Prim_Read_Char;
+
+   function Prim_Peek_Char (Args : Ref) return Ref is
+      C : constant Integer := Port_Peek (Port_Of (Args));
+   begin
+      return (if C < 0 then Eof_Object else Make_Char (Character'Val (C)));
+   end Prim_Peek_Char;
+
+   function Prim_Read_Line (Args : Ref) return Ref is
+      P   : constant Ref := Port_Of (Args);
+      Buf : String (1 .. 2048);
+      N   : Natural := 0;
+      C   : Integer := Port_Get (P);
+   begin
+      if C < 0 then
+         return Eof_Object;                        --  end of input, no line
+
+      end if;
+      while C >= 0 and then Character'Val (C) /= ASCII.LF and then Character'Val (C) /= ASCII.CR
+      loop
+         if N < Buf'Last then
+            N := N + 1;
+            Buf (N) := Character'Val (C);
+         end if;
+         C := Port_Get (P);
+      end loop;
+      return Make_String (Buf (1 .. N));
+   end Prim_Read_Line;
+
+   function Prim_Read (Args : Ref) return Ref is
+      P : constant Ref := Port_Of (Args);
+   begin
+      loop
+         declare
+            Content : constant String := Port_Buffer (P);
+            Pos0    : constant Natural := Port_Position (P);
+         begin
+            if Pos0 >= Content'Length then
+               if not Port_Refill (P) then
+                  return Eof_Object;
+               end if;
+            else
+               declare
+                  RPos : Natural := Content'First + Pos0;
+               begin
+                  declare
+                     D : constant Ref := Lisp.Reader.Read (Content, RPos);
+                  begin
+                     if D /= null then
+                        Port_Advance (P, RPos - Content'First);
+                        return D;
+                     else
+                        Port_Advance (P, Content'Length);   --  only whitespace
+                        if not Port_Refill (P) then
+                           return Eof_Object;
+                        end if;
+                     end if;
+                  end;
+               exception
+                  when Lisp_Error =>
+                     if Complete_Enough (Content (Content'First + Pos0 .. Content'Last))
+                       or else not Port_Refill (P)
+                     then
+                        raise;                       --  real syntax error, or EOF mid-form
+
+                     end if;
+                     --  otherwise: incomplete but we got more input -- loop and retry
+               end;
+            end if;
+         end;
+      end loop;
+   end Prim_Read;
+
+   function Prim_Open_Input_String (Args : Ref) return Ref is
+   begin
+      if not Is_String (Arg1 (Args)) then
+         raise Lisp_Error with "open-input-string: expected a string";
+      end if;
+      return Make_String_Port (Arg1 (Args));
+   end Prim_Open_Input_String;
+
+   function Prim_Read_From_String (Args : Ref) return Ref
+   is (Prim_Read (Cons (Prim_Open_Input_String (Args), Nil)));
+
+   function Prim_Eof_Object (Args : Ref) return Ref is
+      pragma Unreferenced (Args);
+   begin
+      return Eof_Object;
+   end Prim_Eof_Object;
+
+   function Prim_Current_Input (Args : Ref) return Ref is
+      pragma Unreferenced (Args);
+   begin
+      return Current_Input;
+   end Prim_Current_Input;
+
+   function Prim_Is_Eof (Args : Ref) return Ref
+   is (Make_Bool (Is_Eof (Arg1 (Args))));
+   function Prim_Is_Port (Args : Ref) return Ref
+   is (Make_Bool (Is_Port (Arg1 (Args))));
+
+   --------------------------------------------------------------------------
    --  Special forms
    --------------------------------------------------------------------------
    function Eval_Define (Args, Env : Ref) return Ref is
@@ -1295,7 +1461,14 @@ package body Lisp.Eval is
       if Is_Nil (Args) then
          return Nil;
       else
-         return Cons (Eval (Car (Args), Env), Eval_Args (Cdr (Args), Env));
+         --  Bind the head first so arguments evaluate left to right (Ada leaves the
+         --  order of Cons's operands unspecified, which matters once a primitive
+         --  such as read or display has side effects).
+         declare
+            First : constant Ref := Eval (Car (Args), Env);
+         begin
+            return Cons (First, Eval_Args (Cdr (Args), Env));
+         end;
       end if;
    end Eval_Args;
 
@@ -1329,6 +1502,8 @@ package body Lisp.Eval is
                | K_Vector
                | K_Hash
                | K_Unspec
+               | K_Eof
+               | K_Port
                | K_Bool
                | K_Nil
                | K_Prim
@@ -1558,6 +1733,16 @@ package body Lisp.Eval is
       Reg (G_Env, "newline", Prim_Newline'Access);
       Reg (G_Env, "write-char", Prim_Write_Char'Access);
       Reg (G_Env, "write-string", Prim_Write_String'Access);
+      Reg (G_Env, "read", Prim_Read'Access);
+      Reg (G_Env, "read-char", Prim_Read_Char'Access);
+      Reg (G_Env, "peek-char", Prim_Peek_Char'Access);
+      Reg (G_Env, "read-line", Prim_Read_Line'Access);
+      Reg (G_Env, "read-from-string", Prim_Read_From_String'Access);
+      Reg (G_Env, "open-input-string", Prim_Open_Input_String'Access);
+      Reg (G_Env, "current-input-port", Prim_Current_Input'Access);
+      Reg (G_Env, "eof-object", Prim_Eof_Object'Access);
+      Reg (G_Env, "eof-object?", Prim_Is_Eof'Access);
+      Reg (G_Env, "input-port?", Prim_Is_Port'Access);
    end Init;
 
 end Lisp.Eval;
