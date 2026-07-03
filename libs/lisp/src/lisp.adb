@@ -87,6 +87,67 @@ package body Lisp is
       return O.I;
    end Int_Value;
 
+   function Make_Float (V : Float) return Ref
+   is (Alloc ((Mark => False, K => K_Float, F => V)));
+
+   function Make_Char (C : Character) return Ref
+   is (Alloc ((Mark => False, K => K_Char, Ch => C)));
+
+   --  A string is stored as a Nil-terminated cons-chain of char cells, so it is
+   --  ordinary arena garbage (no separate pool).  Build it back-to-front.
+   function Make_String (S : String) return Ref is
+      Chain : Ref := Nil;
+   begin
+      for I in reverse S'Range loop
+         Chain := Cons (Make_Char (S (I)), Chain);
+      end loop;
+      return Alloc ((Mark => False, K => K_String, Str => Chain));
+   end Make_String;
+
+   function Float_Value (O : Ref) return Float is
+   begin
+      if O = null or else O.K /= K_Float then
+         raise Lisp_Error with "expected a float";
+      end if;
+      return O.F;
+   end Float_Value;
+
+   function Char_Value (O : Ref) return Character is
+   begin
+      if O = null or else O.K /= K_Char then
+         raise Lisp_Error with "expected a char";
+      end if;
+      return O.Ch;
+   end Char_Value;
+
+   function Str_Value (O : Ref) return String is
+      Len : Natural := 0;
+      P   : Ref;
+   begin
+      if O = null or else O.K /= K_String then
+         raise Lisp_Error with "expected a string";
+      end if;
+      P := O.Str;
+      while P /= null and then P.K = K_Cons loop
+         Len := Len + 1;
+         P := P.Cdr;
+      end loop;
+      return R : String (1 .. Len) do
+         P := O.Str;
+         for I in 1 .. Len loop
+            R (I) := Char_Value (P.Car);
+            P := P.Cdr;
+         end loop;
+      end return;
+   end Str_Value;
+
+   function Is_Float (O : Ref) return Boolean
+   is (O /= null and then O.K = K_Float);
+   function Is_Char (O : Ref) return Boolean
+   is (O /= null and then O.K = K_Char);
+   function Is_String (O : Ref) return Boolean
+   is (O /= null and then O.K = K_String);
+
    --------------------------------------------------------------------------
    --  Interned symbols -- stored in their own table (not the arena), so a Reset
    --  of the arena leaves symbol identity intact.
@@ -169,6 +230,93 @@ package body Lisp is
       return (if V < 0 then Str else Str (Str'First + 1 .. Str'Last));  -- drop leading space
    end Int_Image;
 
+   --  Print a single float: sign, integer part, '.', up to six trimmed fractional
+   --  digits (so 3.0 -> "3.", 0.25 -> "0.25").  Falls back to Ada's image for
+   --  magnitudes too large for the fixed formatter.
+   function Float_Image (V : Float) return String is
+      Neg : constant Boolean := V < 0.0;
+      U   : constant Float := abs V;
+   begin
+      if U >= 1.0e9 then
+         declare
+            S : constant String := Float'Image (V);
+         begin
+            return (if S (S'First) = ' ' then S (S'First + 1 .. S'Last) else S);
+         end;
+      end if;
+      declare
+         Scaled : constant Long_Long_Integer := Long_Long_Integer (Float'Rounding (U * 1.0e6));
+         IPart  : constant Long_Long_Integer := Scaled / 1_000_000;
+         FPart  : Long_Long_Integer := Scaled mod 1_000_000;
+         Buf    : String (1 .. 6);
+         N      : Natural := 6;
+      begin
+         for K in reverse 1 .. 6 loop
+            Buf (K) := Character'Val (Character'Pos ('0') + Integer (FPart mod 10));
+            FPart := FPart / 10;
+         end loop;
+         while N > 0 and then Buf (N) = '0' loop
+            N := N - 1;
+         end loop;
+         return (if Neg then "-" else "") & Int_Image (IPart) & "." & Buf (1 .. N);
+      end;
+   end Float_Image;
+
+   Backslash : constant Character := '\';
+
+   --  A char in #\ notation, naming the common non-printing ones.
+   function Char_Image (C : Character) return String is
+   begin
+      case C is
+         when ' '      =>
+            return "#\space";
+
+         when ASCII.LF =>
+            return "#\newline";
+
+         when ASCII.HT =>
+            return "#\tab";
+
+         when others   =>
+            return "#\" & C;
+      end case;
+   end Char_Image;
+
+   --  A string in write notation: double-quoted, with " \ newline tab escaped.
+   function String_Image (O : Ref) return String is
+      S      : constant String := Str_Value (O);
+      Result : String (1 .. 2 * S'Length + 2);
+      N      : Natural := 1;
+   begin
+      Result (1) := '"';
+      for C of S loop
+         case C is
+            when '"'      =>
+               Result (N + 1 .. N + 2) := Backslash & '"';
+               N := N + 2;
+
+            when '\'      =>
+               Result (N + 1 .. N + 2) := Backslash & Backslash;
+               N := N + 2;
+
+            when ASCII.LF =>
+               Result (N + 1 .. N + 2) := Backslash & 'n';
+               N := N + 2;
+
+            when ASCII.HT =>
+               Result (N + 1 .. N + 2) := Backslash & 't';
+               N := N + 2;
+
+            when others   =>
+               N := N + 1;
+               Result (N) := C;
+         end case;
+      end loop;
+      N := N + 1;
+      Result (N) := '"';
+      return Result (1 .. N);
+   end String_Image;
+
    function Print (O : Ref) return String is
 
       function Print_List (P : Ref) return String is
@@ -195,6 +343,15 @@ package body Lisp is
 
          when K_Int     =>
             return Int_Image (O.I);
+
+         when K_Float   =>
+            return Float_Image (O.F);
+
+         when K_Char    =>
+            return Char_Image (O.Ch);
+
+         when K_String  =>
+            return String_Image (O);
 
          when K_Symbol  =>
             return Name_Of (O.Sym);
@@ -230,8 +387,11 @@ package body Lisp is
             Mark_Obj (O.Code);
             Mark_Obj (O.Env);
 
+         when K_String  =>
+            Mark_Obj (O.Str);   --  the char cons-chain
+
          when others    =>
-            null;               --  no outgoing arena references
+            null;               --  no outgoing arena references (Int/Float/Char/...)
       end case;
    end Mark_Obj;
 

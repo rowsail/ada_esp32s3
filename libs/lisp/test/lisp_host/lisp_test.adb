@@ -144,6 +144,47 @@ begin
    end;
 
    New_Line;
+   Put_Line ("floats:");
+   RT ("1.5", "1.5");
+   RT ("-2.5", "-2.5");
+   RT ("3.0", "3.");
+   RT ("0.25", "0.25");
+   RT ("1e3", "1000.");
+   RT ("2.5e-1", "0.25");
+   E ("(+ 1.5 2.5)", "4.");            --  float add
+   E ("(+ 1 2.5)", "3.5");             --  int + float -> float (contagion)
+   E ("(* 2 3.0)", "6.");
+   E ("(/ 7.0 2)", "3.5");             --  float divide
+   E ("(/ 7 2)", "3");                 --  int divide unchanged
+   E ("(- 5.0 1 1)", "3.");
+   E ("(< 1 2.5)", "#t");              --  mixed comparison
+   E ("(= 2.0 2)", "#t");
+   E ("(eq? 1.5 1.5)", "#t");
+   E ("(+ 1 2)", "3");                 --  pure-int path still integer
+
+   New_Line;
+   Put_Line ("strings and chars:");
+   RT ("""hello""", """hello""");
+   RT ("""a\""b""", """a\""b""");      --  embedded escaped quote
+   RT ("#\a", "#\a");
+   RT ("#\space", "#\space");
+   E ("(string? ""hi"")", "#t");
+   E ("(string? 5)", "#f");
+   E ("(string-length ""hello"")", "5");
+   E ("(string-append ""foo"" ""bar"" ""!"")", """foobar!""");
+   E ("(string=? ""ab"" ""ab"")", "#t");
+   E ("(string=? ""ab"" ""ac"")", "#f");
+   E ("(string-ref ""abc"" 1)", "#\b");
+   E ("(substring ""hello world"" 0 5)", """hello""");
+   E ("(char? (string-ref ""x"" 0))", "#t");
+   E ("(char->integer #\A)", "65");
+   E ("(integer->char 66)", "#\B");
+   E ("(list->string (list #\h #\i))", """hi""");
+   E ("(string->list ""ab"")", "(#\a #\b)");
+   E ("(number->string 42)", """42""");
+   E ("(number->string 1.5)", """1.5""");
+
+   New_Line;
    Put_Line
      ("Lisp core:"
       & Natural'Image (Passed)

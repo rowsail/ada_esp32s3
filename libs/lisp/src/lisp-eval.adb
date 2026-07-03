@@ -71,26 +71,59 @@ package body Lisp.Eval is
    function Arg2 (A : Ref) return Ref
    is (Car (Cdr (A)));
 
+   --  Numeric tower: integers stay integers; the moment a float appears, the
+   --  running result promotes to float (int + float -> float).
+   function As_Float (O : Ref) return Float
+   is (if Is_Float (O) then Float_Value (O) else Float (Int_Value (O)));
+
    function Prim_Add (Args : Ref) return Ref is
-      Sum    : Long_Long_Integer := 0;
-      Cursor : Ref := Args;
+      ISum      : Long_Long_Integer := 0;
+      FSum      : Float := 0.0;
+      Any_Float : Boolean := False;
+      Cursor    : Ref := Args;
    begin
       while Is_Cons (Cursor) loop
-         Sum := Sum + Int_Value (Car (Cursor));
+         declare
+            O : constant Ref := Car (Cursor);
+         begin
+            if Is_Float (O) and then not Any_Float then
+               FSum := Float (ISum);
+               Any_Float := True;
+            end if;
+            if Any_Float then
+               FSum := FSum + As_Float (O);
+            else
+               ISum := ISum + Int_Value (O);
+            end if;
+         end;
          Cursor := Cdr (Cursor);
       end loop;
-      return Make_Int (Sum);
+      return (if Any_Float then Make_Float (FSum) else Make_Int (ISum));
    end Prim_Add;
 
    function Prim_Mul (Args : Ref) return Ref is
-      Prod   : Long_Long_Integer := 1;
-      Cursor : Ref := Args;
+      IProd     : Long_Long_Integer := 1;
+      FProd     : Float := 1.0;
+      Any_Float : Boolean := False;
+      Cursor    : Ref := Args;
    begin
       while Is_Cons (Cursor) loop
-         Prod := Prod * Int_Value (Car (Cursor));
+         declare
+            O : constant Ref := Car (Cursor);
+         begin
+            if Is_Float (O) and then not Any_Float then
+               FProd := Float (IProd);
+               Any_Float := True;
+            end if;
+            if Any_Float then
+               FProd := FProd * As_Float (O);
+            else
+               IProd := IProd * Int_Value (O);
+            end if;
+         end;
          Cursor := Cdr (Cursor);
       end loop;
-      return Make_Int (Prod);
+      return (if Any_Float then Make_Float (FProd) else Make_Int (IProd));
    end Prim_Mul;
 
    function Prim_Sub (Args : Ref) return Ref is
@@ -100,48 +133,94 @@ package body Lisp.Eval is
          return Make_Int (0);
       end if;
       declare
-         Acc : Long_Long_Integer := Int_Value (Car (Cursor));
+         First     : constant Ref := Car (Cursor);
+         IAcc      : Long_Long_Integer := (if Is_Float (First) then 0 else Int_Value (First));
+         FAcc      : Float := (if Is_Float (First) then Float_Value (First) else 0.0);
+         Any_Float : Boolean := Is_Float (First);
       begin
          Cursor := Cdr (Cursor);
          if Is_Nil (Cursor) then
-            return Make_Int (-Acc);
-         end if;     --  unary negate
+            --  unary negate
+            return (if Any_Float then Make_Float (-FAcc) else Make_Int (-IAcc));
+         end if;
          while Is_Cons (Cursor) loop
-            Acc := Acc - Int_Value (Car (Cursor));
+            declare
+               O : constant Ref := Car (Cursor);
+            begin
+               if Is_Float (O) and then not Any_Float then
+                  FAcc := Float (IAcc);
+                  Any_Float := True;
+               end if;
+               if Any_Float then
+                  FAcc := FAcc - As_Float (O);
+               else
+                  IAcc := IAcc - Int_Value (O);
+               end if;
+            end;
             Cursor := Cdr (Cursor);
          end loop;
-         return Make_Int (Acc);
+         return (if Any_Float then Make_Float (FAcc) else Make_Int (IAcc));
       end;
    end Prim_Sub;
 
    function Prim_Div (Args : Ref) return Ref is
-      Acc    : Long_Long_Integer := Int_Value (Arg1 (Args));
-      Cursor : Ref := Cdr (Args);
+      First     : constant Ref := Arg1 (Args);
+      IAcc      : Long_Long_Integer := (if Is_Float (First) then 0 else Int_Value (First));
+      FAcc      : Float := (if Is_Float (First) then Float_Value (First) else 0.0);
+      Any_Float : Boolean := Is_Float (First);
+      Cursor    : Ref := Cdr (Args);
    begin
       while Is_Cons (Cursor) loop
          declare
-            Divisor : constant Long_Long_Integer := Int_Value (Car (Cursor));
+            O : constant Ref := Car (Cursor);
          begin
-            if Divisor = 0 then
-               raise Lisp_Error with "division by zero";
+            if Is_Float (O) and then not Any_Float then
+               FAcc := Float (IAcc);
+               Any_Float := True;
             end if;
-            Acc := Acc / Divisor;
+            if Any_Float then
+               FAcc := FAcc / As_Float (O);          --  float divide (IEEE)
+
+            else
+               declare
+                  D : constant Long_Long_Integer := Int_Value (O);
+               begin
+                  if D = 0 then
+                     raise Lisp_Error with "division by zero";
+                  end if;
+                  IAcc := IAcc / D;                   --  integer divide (truncating)
+               end;
+            end if;
          end;
          Cursor := Cdr (Cursor);
       end loop;
-      return Make_Int (Acc);
+      return (if Any_Float then Make_Float (FAcc) else Make_Int (IAcc));
    end Prim_Div;
 
+   --  Comparisons: compare as floats if either side is a float, else as integers.
+   function Both_Int (A, B : Ref) return Boolean
+   is (not (Is_Float (A) or else Is_Float (B)));
+
    function Prim_Num_Eq (Args : Ref) return Ref
-   is (Make_Bool (Int_Value (Arg1 (Args)) = Int_Value (Arg2 (Args))));
+   is (if Both_Int (Arg1 (Args), Arg2 (Args))
+       then Make_Bool (Int_Value (Arg1 (Args)) = Int_Value (Arg2 (Args)))
+       else Make_Bool (As_Float (Arg1 (Args)) = As_Float (Arg2 (Args))));
    function Prim_Lt (Args : Ref) return Ref
-   is (Make_Bool (Int_Value (Arg1 (Args)) < Int_Value (Arg2 (Args))));
+   is (if Both_Int (Arg1 (Args), Arg2 (Args))
+       then Make_Bool (Int_Value (Arg1 (Args)) < Int_Value (Arg2 (Args)))
+       else Make_Bool (As_Float (Arg1 (Args)) < As_Float (Arg2 (Args))));
    function Prim_Gt (Args : Ref) return Ref
-   is (Make_Bool (Int_Value (Arg1 (Args)) > Int_Value (Arg2 (Args))));
+   is (if Both_Int (Arg1 (Args), Arg2 (Args))
+       then Make_Bool (Int_Value (Arg1 (Args)) > Int_Value (Arg2 (Args)))
+       else Make_Bool (As_Float (Arg1 (Args)) > As_Float (Arg2 (Args))));
    function Prim_Le (Args : Ref) return Ref
-   is (Make_Bool (Int_Value (Arg1 (Args)) <= Int_Value (Arg2 (Args))));
+   is (if Both_Int (Arg1 (Args), Arg2 (Args))
+       then Make_Bool (Int_Value (Arg1 (Args)) <= Int_Value (Arg2 (Args)))
+       else Make_Bool (As_Float (Arg1 (Args)) <= As_Float (Arg2 (Args))));
    function Prim_Ge (Args : Ref) return Ref
-   is (Make_Bool (Int_Value (Arg1 (Args)) >= Int_Value (Arg2 (Args))));
+   is (if Both_Int (Arg1 (Args), Arg2 (Args))
+       then Make_Bool (Int_Value (Arg1 (Args)) >= Int_Value (Arg2 (Args)))
+       else Make_Bool (As_Float (Arg1 (Args)) >= As_Float (Arg2 (Args))));
 
    function Prim_Car (Args : Ref) return Ref
    is (Car (Arg1 (Args)));
@@ -167,16 +246,22 @@ package body Lisp.Eval is
       end if;
       if Left /= null and then Right /= null and then Left.K = Right.K then
          case Left.K is
-            when K_Int  =>
+            when K_Int   =>
                return Make_Bool (Left.I = Right.I);
 
-            when K_Bool =>
+            when K_Float =>
+               return Make_Bool (Left.F = Right.F);
+
+            when K_Char  =>
+               return Make_Bool (Left.Ch = Right.Ch);
+
+            when K_Bool  =>
                return Make_Bool (Left.B = Right.B);
 
-            when K_Nil  =>
+            when K_Nil   =>
                return Lisp_True;
 
-            when others =>
+            when others  =>
                null;
          end case;
       end if;
@@ -193,6 +278,95 @@ package body Lisp.Eval is
       end loop;
       return Make_Int (Count);
    end Prim_Length;
+
+   --------------------------------------------------------------------------
+   --  Strings (stored as char cons-chains) and characters.
+   --------------------------------------------------------------------------
+   function Prim_Is_String (Args : Ref) return Ref
+   is (Make_Bool (Is_String (Arg1 (Args))));
+   function Prim_Is_Char (Args : Ref) return Ref
+   is (Make_Bool (Is_Char (Arg1 (Args))));
+
+   function Prim_Str_Len (Args : Ref) return Ref
+   is (Make_Int (Long_Long_Integer (Str_Value (Arg1 (Args))'Length)));
+
+   function Concat (Args : Ref) return String
+   is (if Is_Nil (Args) then "" else Str_Value (Car (Args)) & Concat (Cdr (Args)));
+
+   function Prim_Str_Append (Args : Ref) return Ref
+   is (Make_String (Concat (Args)));
+
+   function Prim_Str_Eq (Args : Ref) return Ref
+   is (Make_Bool (Str_Value (Arg1 (Args)) = Str_Value (Arg2 (Args))));
+
+   function Prim_Str_Ref (Args : Ref) return Ref is
+      S : constant String := Str_Value (Arg1 (Args));
+      K : constant Long_Long_Integer := Int_Value (Arg2 (Args));
+   begin
+      if K < 0 or else K >= Long_Long_Integer (S'Length) then
+         raise Lisp_Error with "string-ref: index out of range";
+      end if;
+      return Make_Char (S (S'First + Natural (K)));
+   end Prim_Str_Ref;
+
+   function Prim_Substring (Args : Ref) return Ref is
+      S  : constant String := Str_Value (Arg1 (Args));
+      Lo : constant Long_Long_Integer := Int_Value (Arg2 (Args));
+      Hi : constant Long_Long_Integer := Int_Value (Car (Cdr (Cdr (Args))));
+   begin
+      if Lo < 0 or else Hi > Long_Long_Integer (S'Length) or else Lo > Hi then
+         raise Lisp_Error with "substring: index out of range";
+      end if;
+      return Make_String (S (S'First + Natural (Lo) .. S'First + Natural (Hi) - 1));
+   end Prim_Substring;
+
+   function Prim_Char_To_Int (Args : Ref) return Ref
+   is (Make_Int (Long_Long_Integer (Character'Pos (Char_Value (Arg1 (Args))))));
+
+   function Prim_Int_To_Char (Args : Ref) return Ref is
+      V : constant Long_Long_Integer := Int_Value (Arg1 (Args));
+   begin
+      if V < 0 or else V > 255 then
+         raise Lisp_Error with "integer->char: out of range";
+      end if;
+      return Make_Char (Character'Val (Integer (V)));
+   end Prim_Int_To_Char;
+
+   function Prim_Str_To_List (Args : Ref) return Ref is
+      S      : constant String := Str_Value (Arg1 (Args));
+      Result : Ref := Nil;
+   begin
+      for I in reverse S'Range loop
+         Result := Cons (Make_Char (S (I)), Result);
+      end loop;
+      return Result;
+   end Prim_Str_To_List;
+
+   function Prim_List_To_Str (Args : Ref) return Ref is
+      Cursor : Ref := Arg1 (Args);
+      Len    : Natural := 0;
+      P      : Ref := Cursor;
+   begin
+      while Is_Cons (P) loop
+         Len := Len + 1;
+         P := Cdr (P);
+      end loop;
+      return R : Ref do
+         declare
+            Buf : String (1 .. Len);
+         begin
+            P := Cursor;
+            for I in 1 .. Len loop
+               Buf (I) := Char_Value (Car (P));
+               P := Cdr (P);
+            end loop;
+            R := Make_String (Buf);
+         end;
+      end return;
+   end Prim_List_To_Str;
+
+   function Prim_Num_To_Str (Args : Ref) return Ref
+   is (Make_String (Print (Arg1 (Args))));
 
    --------------------------------------------------------------------------
    --  Special forms
@@ -317,13 +491,13 @@ package body Lisp.Eval is
             return Nil;
          end if;
          case Cur_Expr.K is
-            when K_Int | K_Bool | K_Nil | K_Prim | K_Closure =>
+            when K_Int | K_Float | K_Char | K_String | K_Bool | K_Nil | K_Prim | K_Closure =>
                return Cur_Expr;
 
-            when K_Symbol                                    =>
+            when K_Symbol                                                                  =>
                return Lookup (Cur_Expr, Cur_Env);
 
-            when K_Cons                                      =>
+            when K_Cons                                                                    =>
                declare
                   Op   : constant Ref := Car (Cur_Expr);
                   Args : constant Ref := Cdr (Cur_Expr);
@@ -479,6 +653,18 @@ package body Lisp.Eval is
       Reg (G_Env, "not", Prim_Not'Access);
       Reg (G_Env, "eq?", Prim_Eq'Access);
       Reg (G_Env, "length", Prim_Length'Access);
+      Reg (G_Env, "string?", Prim_Is_String'Access);
+      Reg (G_Env, "char?", Prim_Is_Char'Access);
+      Reg (G_Env, "string-length", Prim_Str_Len'Access);
+      Reg (G_Env, "string-append", Prim_Str_Append'Access);
+      Reg (G_Env, "string=?", Prim_Str_Eq'Access);
+      Reg (G_Env, "string-ref", Prim_Str_Ref'Access);
+      Reg (G_Env, "substring", Prim_Substring'Access);
+      Reg (G_Env, "char->integer", Prim_Char_To_Int'Access);
+      Reg (G_Env, "integer->char", Prim_Int_To_Char'Access);
+      Reg (G_Env, "string->list", Prim_Str_To_List'Access);
+      Reg (G_Env, "list->string", Prim_List_To_Str'Access);
+      Reg (G_Env, "number->string", Prim_Num_To_Str'Access);
    end Init;
 
 end Lisp.Eval;
