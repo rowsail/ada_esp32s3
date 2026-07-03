@@ -219,6 +219,19 @@ begin
    E ("(zero? 3)", "#f");
    E ("(cadr (list 1 2 3))", "2");
    E ("(caddr (list 1 2 3))", "3");
+   E ("(symbol? 'x)", "#t");
+   E ("(symbol? 5)", "#f");
+   E ("(procedure? car)", "#t");
+   E ("(procedure? (lambda (x) x))", "#t");
+   E ("(procedure? 5)", "#f");
+   E ("(even? 4)", "#t");
+   E ("(even? -4)", "#t");
+   E ("(even? 3)", "#f");
+   E ("(odd? 3)", "#t");
+   E ("(odd? -3)", "#t");
+   E ("(remainder 17 5)", "2");
+   E ("(remainder -17 5)", "-2");
+   E ("(remainder 17 -5)", "2");
 
    New_Line;
    Put_Line
