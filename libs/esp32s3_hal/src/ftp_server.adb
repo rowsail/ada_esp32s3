@@ -322,8 +322,19 @@ package body FTP_Server is
       Len  : Natural := 0;
       Ino  : E4.Inode_Number := 0;
    end record;
-   Entries     : array (1 .. Max_Entries) of Entry_Rec;
+   --  ~69 KB: allocated on first listing so it lands on the heap (PSRAM on
+   --  boards that put the heap there) rather than in internal-RAM .bss.
+   type Entry_Array is array (1 .. Max_Entries) of Entry_Rec;
+   type Entry_Array_Ptr is access Entry_Array;
+   Entries     : Entry_Array_Ptr := null;
    N_Entries   : Natural := 0;
+
+   procedure Need_Entries is
+   begin
+      if Entries = null then
+         Entries := new Entry_Array;
+      end if;
+   end Need_Entries;
 
    procedure Record_Entry (Name : String; Ino : E4.Inode_Number; File_Type : E4.U8) is
       pragma Unreferenced (File_Type);
@@ -404,6 +415,7 @@ package body FTP_Server is
          return;
       end if;
 
+      Need_Entries;
       N_Entries := 0;
       FSP.Iterate (Active_M.all, Dir, Record_Entry'Access);
 

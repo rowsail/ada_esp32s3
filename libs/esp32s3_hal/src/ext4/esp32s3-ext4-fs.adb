@@ -1,3 +1,5 @@
+with Ada.Task_Identification;
+with Ada.Finalization;
 with ESP32S3.Ext4.Superblock;
 with ESP32S3.Ext4.Block_Cache;
 with ESP32S3.Ext4.Path;
@@ -9,6 +11,81 @@ with ESP32S3.Ext4.Block_Map;
 package body ESP32S3.Ext4.FS is
 
    use type Interfaces.Unsigned_32;
+   use type Ada.Task_Identification.Task_Id;
+
+   --------------------------------------------------------------------------
+   --  Whole-operation serialisation.  A single mount may be shared by more
+   --  than one task -- e.g. a telnet session and a background FTP server both
+   --  driving the same volume.  The block cache, inode buffers and free-count
+   --  bookkeeping are shared mutable state that a half-finished operation
+   --  leaves inconsistent, so each public entry point below runs under this
+   --  mutex.  (The SPI layer already serialises individual bus transfers;
+   --  this serialises the many-transfer operations built on top of them.)
+   --
+   --  It is OWNER-AWARE / recursive because Iterate invokes a caller-supplied
+   --  Visit that legitimately calls back in (e.g. Stat per entry); a plain
+   --  mutex would self-deadlock there.  Uncontended (one acquire, no wait) in
+   --  the common single-task case, so existing callers are unaffected.
+   --------------------------------------------------------------------------
+   protected FS_Mutex is
+      entry Enter;
+      procedure Bump;
+      procedure Leave;
+      function Is_Owner (Who : Ada.Task_Identification.Task_Id) return Boolean;
+   private
+      Owner : Ada.Task_Identification.Task_Id := Ada.Task_Identification.Null_Task_Id;
+      Depth : Natural := 0;
+   end FS_Mutex;
+
+   protected body FS_Mutex is
+      function Is_Owner (Who : Ada.Task_Identification.Task_Id) return Boolean
+      is (Depth > 0 and then Owner = Who);
+
+      entry Enter when Depth = 0 is
+      begin
+         Owner := Enter'Caller;
+         Depth := 1;
+      end Enter;
+
+      procedure Bump is
+      begin
+         Depth := Depth + 1;
+      end Bump;
+
+      procedure Leave is
+      begin
+         Depth := Depth - 1;
+         if Depth = 0 then
+            Owner := Ada.Task_Identification.Null_Task_Id;
+         end if;
+      end Leave;
+   end FS_Mutex;
+
+   --  Scope guard: acquire on entry (recursively if this task already holds
+   --  the mutex), release on scope exit -- including on an exception, so a
+   --  failed FS call can never leak the lock.
+   type Scoped_Lock is new Ada.Finalization.Limited_Controlled with null record;
+   overriding
+   procedure Initialize (S : in out Scoped_Lock);
+   overriding
+   procedure Finalize (S : in out Scoped_Lock);
+
+   overriding
+   procedure Initialize (S : in out Scoped_Lock) is
+      Me : constant Ada.Task_Identification.Task_Id := Ada.Task_Identification.Current_Task;
+   begin
+      if FS_Mutex.Is_Owner (Me) then
+         FS_Mutex.Bump;
+      else
+         FS_Mutex.Enter;
+      end if;
+   end Initialize;
+
+   overriding
+   procedure Finalize (S : in out Scoped_Lock) is
+   begin
+      FS_Mutex.Leave;
+   end Finalize;
 
    --  INCOMPAT feature bits this build can read.  ro_compat bits need no gating
    --  for a read-only mount (that is what ro_compat means); EXTENTS / 64BIT /
@@ -80,6 +157,8 @@ package body ESP32S3.Ext4.FS is
    ------------
 
    function Lookup (M : in out Mount; Path : String) return Inode_Number is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       return ESP32S3.Ext4.Path.Resolve (M.V, Path);
    end Lookup;
@@ -89,6 +168,8 @@ package body ESP32S3.Ext4.FS is
    ----------
 
    procedure Stat (M : in out Mount; N : Inode_Number; I : out Inode.Info) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Inode.Read (M.V, N, I);
    end Stat;
@@ -98,7 +179,10 @@ package body ESP32S3.Ext4.FS is
    ---------------
 
    procedure Read_File
-     (M : in out Mount; I : Inode.Info; Offset : U64; Into : out Byte_Array; Last : out Natural) is
+     (M : in out Mount; I : Inode.Info; Offset : U64; Into : out Byte_Array; Last : out Natural)
+   is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       File.Read (M.V, I, Offset, Into, Last);
    end Read_File;
@@ -110,7 +194,10 @@ package body ESP32S3.Ext4.FS is
    procedure Iterate
      (M     : in out Mount;
       I     : Inode.Info;
-      Visit : not null access procedure (Name : String; Ino : Inode_Number; File_Type : U8)) is
+      Visit : not null access procedure (Name : String; Ino : Inode_Number; File_Type : U8))
+   is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Dir.Iterate (M.V, I, Visit);
    end Iterate;
@@ -120,6 +207,8 @@ package body ESP32S3.Ext4.FS is
    -----------------
 
    function Create_File (M : in out Mount; Dir_Path, Name : String) return Inode_Number is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       return Writer.Create_File (M.V, Dir_Path, Name);
    end Create_File;
@@ -129,46 +218,64 @@ package body ESP32S3.Ext4.FS is
    ----------------
 
    procedure Write_File (M : in out Mount; N : Inode_Number; Data : Byte_Array) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Writer.Write_Small (M.V, N, Data);
    end Write_File;
 
    procedure Append (M : in out Mount; N : Inode_Number; Data : Byte_Array) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Writer.Append (M.V, N, Data);
    end Append;
 
    procedure Mkdir (M : in out Mount; Dir_Path, Name : String) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Writer.Mkdir (M.V, Dir_Path, Name);
    end Mkdir;
 
    procedure Unlink (M : in out Mount; Dir_Path, Name : String) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Writer.Unlink (M.V, Dir_Path, Name);
    end Unlink;
 
    procedure Rmdir (M : in out Mount; Dir_Path, Name : String) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Writer.Rmdir (M.V, Dir_Path, Name);
    end Rmdir;
 
    procedure Rename (M : in out Mount; Old_Dir, Old_Name, New_Dir, New_Name : String) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Writer.Rename (M.V, Old_Dir, Old_Name, New_Dir, New_Name);
    end Rename;
 
    procedure Truncate (M : in out Mount; N : Inode_Number; New_Size : U64) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Writer.Truncate (M.V, N, New_Size);
    end Truncate;
 
    procedure Link (M : in out Mount; Target_Path, New_Dir, New_Name : String) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Writer.Link (M.V, Target_Path, New_Dir, New_Name);
    end Link;
 
    procedure Symlink (M : in out Mount; Dir_Path, Name, Target : String) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Writer.Make_Symlink (M.V, Dir_Path, Name, Target);
    end Symlink;
@@ -186,6 +293,8 @@ package body ESP32S3.Ext4.FS is
    end Flush_Direct;
 
    procedure Commit (M : in out Mount) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       if Superblock.Has_Journal (M.V.SB) then
          Journal.Transaction_Commit (M.V, Simulate_Crash => False);
@@ -195,6 +304,8 @@ package body ESP32S3.Ext4.FS is
    end Commit;
 
    procedure Commit_Crash (M : in out Mount) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       --  Crash simulation needs the journal's barrier; on a no-journal volume
       --  there is none, so this degenerates to a plain direct flush.
@@ -206,6 +317,8 @@ package body ESP32S3.Ext4.FS is
    end Commit_Crash;
 
    procedure Drop_Cache (M : in out Mount) is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       ESP32S3.Ext4.Block_Cache.Drop (M.V.Cache);
       M.Live := False;
