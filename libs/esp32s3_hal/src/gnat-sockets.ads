@@ -108,6 +108,10 @@ package GNAT.Sockets is
 
    procedure Close_Socket (Socket : in out Socket_Type);
 
+   --  Bytes waiting to be read on Socket (0 if none) -- a non-blocking peek so a
+   --  caller can check for input (e.g. a Ctrl-C) without a blocking Receive.
+   function Available (Socket : Socket_Type) return Natural;
+
    --  Socket options (a minimal subset).  Receive_Timeout caps how long a
    --  Receive_Socket blocks; when it elapses with no data, Receive_Socket raises
    --  Socket_Error (as on desktop GNAT.Sockets).  A timeout of 0.0 means block

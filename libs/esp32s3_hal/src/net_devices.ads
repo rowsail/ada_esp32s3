@@ -77,6 +77,10 @@ package Net_Devices is
    --  TCP data transfer.  Wait_Data blocks until data is ready, the peer closes,
    --  or the receive timeout elapses (Timed_Out).
    procedure Wait_Data (Self : in out Device; Index : Natural; Result : out Status) is abstract;
+
+   --  Bytes waiting in the socket's receive buffer (0 if none / not open) -- lets
+   --  a caller poll for input without blocking (e.g. Ctrl-C during long output).
+   function Available (Self : Device; Index : Natural) return Natural is abstract;
    procedure Send
      (Self   : in out Device;
       Index  : Natural;

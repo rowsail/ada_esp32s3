@@ -69,6 +69,8 @@ private
    overriding
    procedure Wait_Data (Self : in out Instance; Index : Natural; Result : out Net_Devices.Status);
    overriding
+   function Available (Self : Instance; Index : Natural) return Natural;
+   overriding
    procedure Send
      (Self   : in out Instance;
       Index  : Natural;

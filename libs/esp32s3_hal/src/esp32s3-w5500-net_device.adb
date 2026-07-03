@@ -173,6 +173,10 @@ package body ESP32S3.W5500.Net_Device is
    end Receive;
 
    overriding
+   function Available (Self : Instance; Index : Natural) return Natural
+   is (WS.Available (Self.Socks (Socket_Id (Index))));
+
+   overriding
    procedure Send_To
      (Self   : in out Instance;
       Index  : Natural;

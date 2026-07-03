@@ -443,6 +443,15 @@ package body GNAT.Sockets is
       end if;
    end Send_Socket;
 
+   function Available (Socket : Socket_Type) return Natural is
+      Id : constant Interface_Id := If_Of (Socket);
+   begin
+      if Registry (Id) = null then
+         return 0;
+      end if;
+      return Registry (Id).Available (Ix_Of (Socket));
+   end Available;
+
    procedure Receive_Socket
      (Socket : Socket_Type;
       Item   : out Ada.Streams.Stream_Element_Array;
