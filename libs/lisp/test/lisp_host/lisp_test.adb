@@ -240,6 +240,23 @@ begin
    E ("(fold-right cons (list) (list 1 2 3))", "(1 2 3)");
    E ("(list-ref (list 10 20 30) 1)", "20");
    E ("(list-tail (list 1 2 3 4) 2)", "(3 4)");
+   E ("(gcd 12 18)", "6");
+   E ("(gcd 12 18 24)", "6");
+   E ("(gcd -12 8)", "4");
+   E ("(gcd)", "0");
+   E ("(lcm 4 6)", "12");
+   E ("(lcm 4 6 8)", "24");
+   E ("(lcm)", "1");
+   E ("(expt 2 10)", "1024");
+   E ("(expt 2 0)", "1");
+   E ("(expt 2.0 3)", "8.");
+   E ("(expt 2 -2)", "0.25");
+   E ("(sort (list 3 1 2) <)", "(1 2 3)");
+   E ("(sort (list 5 3 8 1 9 2 7) <)", "(1 2 3 5 7 8 9)");
+   E ("(sort (list 3 1 2) >)", "(3 2 1)");
+   E ("(let ((p (cons 1 2))) (set-car! p 9) p)", "(9 . 2)");
+   E ("(let ((p (cons 1 2))) (set-cdr! p 9) p)", "(1 . 9)");
+   E ("(let ((p (list 1))) (set-cdr! p (list 2 3)) p)", "(1 2 3)");
 
    New_Line;
    Put_Line
