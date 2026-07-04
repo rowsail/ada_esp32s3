@@ -482,6 +482,33 @@ begin
       "6");
 
    New_Line;
+   Put_Line ("special forms:");
+   E ("((lambda args args) 1 2 3)", "(1 2 3)");             --  variadic (bare symbol)
+   E ("((lambda (a . rest) rest) 1 2 3)", "(2 3)");         --  dotted rest
+   E ("((lambda (a . rest) a) 1 2 3)", "1");
+   E ("(begin (define (f a . rest) (list a rest)) (f 1 2 3))", "(1 (2 3))");
+   E ("(begin (define (g . xs) (length xs)) (g 1 2 3 4))", "4");
+   E ("(let* ((a 1) (b (+ a 1))) (+ a b))", "3");           --  sequential let
+   E
+     ("(letrec ((ev (lambda (n) (if (= n 0) #t (od (- n 1))))) "
+      & "(od (lambda (n) (if (= n 0) #f (ev (- n 1)))))) (ev 10))",
+      "#t");   --  mutual rec
+   E ("(let loop ((i 0) (acc 0)) (if (= i 5) acc (loop (+ i 1) (+ acc i))))", "10");
+   E ("(when (> 5 3) 'yes)", "yes");
+   E ("(when (< 5 3) 'yes)", "");                           --  false -> unspecified
+   E ("(when #t 1 2 3)", "3");
+   E ("(unless (< 5 3) 'ok)", "ok");
+   E ("(case 2 ((1) 'one) ((2 3) 'two-three) (else 'other))", "two-three");
+   E ("(case 9 ((1) 'a) (else 'z))", "z");
+   E ("(case 'x ((a b) 1) ((x y) 2))", "2");
+   E ("(do ((i 0 (+ i 1)) (acc 0 (+ acc i))) ((= i 5) acc))", "10");
+   E ("(do ((i 0 (+ i 1))) ((= i 3) 'done))", "done");
+   E ("`(1 2 3)", "(1 2 3)");                               --  quasiquote (no unquote)
+   E ("`(1 ,(+ 1 1) 3)", "(1 2 3)");                        --  unquote
+   E ("`(1 ,@(list 2 3) 4)", "(1 2 3 4)");                  --  unquote-splicing
+   E ("(let ((x 5)) `(a ,x b))", "(a 5 b)");
+
+   New_Line;
    Put_Line
      ("Lisp core:"
       & Natural'Image (Passed)
