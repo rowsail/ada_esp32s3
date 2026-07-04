@@ -9,7 +9,9 @@ package body Lisp.Reader is
        or else C = ')'
        or else C = '''
        or else C = ';'
-       or else C = '"');
+       or else C = '"'
+       or else C = '`'
+       or else C = ',');
 
    function Is_Hex (C : Character) return Boolean
    is (C in '0' .. '9' or else C in 'a' .. 'f' or else C in 'A' .. 'F');
@@ -204,6 +206,19 @@ package body Lisp.Reader is
             when '''    =>
                Pos := Pos + 1;                              --  'x => (quote x)
                return Cons (Intern ("quote"), Cons (Read_Obj, Nil));
+
+            when '`'    =>
+               Pos := Pos + 1;                              --  `x => (quasiquote x)
+               return Cons (Intern ("quasiquote"), Cons (Read_Obj, Nil));
+
+            when ','    =>
+               if Pos < Source'Last and then Source (Pos + 1) = '@' then
+                  Pos := Pos + 2;                           --  ,@x => (unquote-splicing x)
+                  return Cons (Intern ("unquote-splicing"), Cons (Read_Obj, Nil));
+               else
+                  Pos := Pos + 1;                           --  ,x => (unquote x)
+                  return Cons (Intern ("unquote"), Cons (Read_Obj, Nil));
+               end if;
 
             when '"'    =>
                --  "..." string literal, with \" \\ \n \t escapes.

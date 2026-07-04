@@ -17,6 +17,8 @@ package body Lisp.Eval is
 
    --  Special-form symbols, interned once (compared by identity).
    S_Quote, S_If, S_Define, S_Lambda, S_Let, S_Cond, S_Begin, S_Set, S_And, S_Or, S_Else : Ref;
+   S_Let_Star, S_Letrec, S_When, S_Unless, S_Case, S_Do                                  : Ref;
+   S_Quasi, S_Unquote, S_Unquote_Splice                                                  : Ref;
 
    G_Env : Ref;
    function Global_Env return Ref
@@ -458,6 +460,26 @@ package body Lisp.Eval is
    --  Apply a function object to an already-evaluated argument list.  Shares the
    --  evaluator's semantics (Eval_Seq for a closure body); used by apply and map.
    --  Unlike Eval's inline path it does not tail-loop -- fine for these callers.
+   --  Bind a lambda's parameter list to the argument values in Env.  Supports a
+   --  trailing rest parameter -- a dotted tail (a b . rest) or a bare symbol
+   --  (args) -- which receives the list of the remaining arguments.
+   procedure Bind_Params (Params, Arg_Values, Env : Ref) is
+      P : Ref := Params;
+      A : Ref := Arg_Values;
+   begin
+      while Is_Cons (P) loop
+         if not Is_Cons (A) then
+            raise Lisp_Error with "too few arguments";
+         end if;
+         Define (Car (P), Car (A), Env);
+         P := Cdr (P);
+         A := Cdr (A);
+      end loop;
+      if Is_Symbol (P) then
+         Define (P, A, Env);
+      end if;
+   end Bind_Params;
+
    function Apply (Fn, Args : Ref) return Ref is
    begin
       if Fn = null then
@@ -470,17 +492,8 @@ package body Lisp.Eval is
          when K_Closure =>
             declare
                New_Env : constant Ref := Cons (Nil, Fn.Env);
-               P       : Ref := Fn.Params;
-               A       : Ref := Args;
             begin
-               while Is_Cons (P) loop
-                  if not Is_Cons (A) then
-                     raise Lisp_Error with "too few arguments";
-                  end if;
-                  Define (Car (P), Car (A), New_Env);
-                  P := Cdr (P);
-                  A := Cdr (A);
-               end loop;
+               Bind_Params (Fn.Params, Args, New_Env);
                return Eval_Seq (Fn.Code, New_Env);
             end;
 
@@ -1752,19 +1765,183 @@ package body Lisp.Eval is
    end Eval_Define;
 
    function Eval_Let (Args, Env : Ref) return Ref is
+   begin
+      --  Named let: (let name ((v e) ...) body ...) -- a self-recursive procedure.
+      if Is_Symbol (Car (Args)) then
+         declare
+            Name       : constant Ref := Car (Args);
+            Bindings   : constant Ref := Arg2 (Args);
+            Body_Forms : constant Ref := Cdr (Cdr (Args));
+            Loop_Env   : constant Ref := Cons (Nil, Env);
+            function Vars (B : Ref) return Ref
+            is (if Is_Cons (B) then Cons (Car (Car (B)), Vars (Cdr (B))) else Nil);
+            function Inits (B : Ref) return Ref
+            is (if Is_Cons (B) then Cons (Eval (Arg2 (Car (B)), Env), Inits (Cdr (B))) else Nil);
+            Proc       : constant Ref := Make_Closure (Vars (Bindings), Body_Forms, Loop_Env);
+         begin
+            Define (Name, Proc, Loop_Env);
+            return Apply (Proc, Inits (Bindings));
+         end;
+      end if;
+      declare
+         New_Env : constant Ref := Cons (Nil, Env);
+         Cursor  : Ref := Car (Args);              --  the binding list
+      begin
+         while Is_Cons (Cursor) loop
+            declare
+               Binding : constant Ref := Car (Cursor);   --  (var expr)
+            begin
+               Define (Car (Binding), Eval (Arg2 (Binding), Env), New_Env);   --  expr in outer env
+            end;
+            Cursor := Cdr (Cursor);
+         end loop;
+         return Eval_Seq (Cdr (Args), New_Env);
+      end;
+   end Eval_Let;
+
+   --  let*: each binding's expression sees the ones before it (one growing frame).
+   function Eval_Let_Star (Args, Env : Ref) return Ref is
       New_Env : constant Ref := Cons (Nil, Env);
-      Cursor  : Ref := Car (Args);              --  the binding list
+      Cursor  : Ref := Car (Args);
    begin
       while Is_Cons (Cursor) loop
          declare
-            Binding : constant Ref := Car (Cursor);   --  (var expr)
+            Binding : constant Ref := Car (Cursor);
          begin
-            Define (Car (Binding), Eval (Arg2 (Binding), Env), New_Env);   --  expr in outer env
+            Define (Car (Binding), Eval (Arg2 (Binding), New_Env), New_Env);
          end;
          Cursor := Cdr (Cursor);
       end loop;
       return Eval_Seq (Cdr (Args), New_Env);
-   end Eval_Let;
+   end Eval_Let_Star;
+
+   --  letrec: all names are in scope for every expression (bind first, assign after).
+   function Eval_Letrec (Args, Env : Ref) return Ref is
+      New_Env : constant Ref := Cons (Nil, Env);
+      Cursor  : Ref;
+   begin
+      Cursor := Car (Args);
+      while Is_Cons (Cursor) loop
+         Define (Car (Car (Cursor)), Unspecified, New_Env);
+         Cursor := Cdr (Cursor);
+      end loop;
+      Cursor := Car (Args);
+      while Is_Cons (Cursor) loop
+         declare
+            Binding : constant Ref := Car (Cursor);
+         begin
+            Set_Var (Car (Binding), Eval (Arg2 (Binding), New_Env), New_Env);
+         end;
+         Cursor := Cdr (Cursor);
+      end loop;
+      return Eval_Seq (Cdr (Args), New_Env);
+   end Eval_Letrec;
+
+   --  case: eval the key, take the clause whose datum list contains it (eqv?).
+   function Eval_Case (Args, Env : Ref) return Ref is
+      Key     : constant Ref := Eval (Car (Args), Env);
+      Clauses : Ref := Cdr (Args);
+   begin
+      while Is_Cons (Clauses) loop
+         declare
+            Clause : constant Ref := Car (Clauses);
+            Datums : constant Ref := Car (Clause);
+            D      : Ref := Datums;
+         begin
+            if Datums = S_Else then
+               return Eval_Seq (Cdr (Clause), Env);
+            end if;
+            while Is_Cons (D) loop
+               if Eqv (Car (D), Key) then
+                  return Eval_Seq (Cdr (Clause), Env);
+               end if;
+               D := Cdr (D);
+            end loop;
+         end;
+         Clauses := Cdr (Clauses);
+      end loop;
+      return Unspecified;
+   end Eval_Case;
+
+   --  do: (do ((var init step) ...) (test result ...) command ...).  Steps are
+   --  computed in parallel (all in the current env) before rebinding.
+   function Eval_Do (Args, Env : Ref) return Ref is
+      Specs       : constant Ref := Car (Args);
+      Test_Clause : constant Ref := Arg2 (Args);
+      Commands    : constant Ref := Cdr (Cdr (Args));
+      Loop_Env    : constant Ref := Cons (Nil, Env);
+      S           : Ref;
+   begin
+      S := Specs;
+      while Is_Cons (S) loop
+         Define (Car (Car (S)), Eval (Arg2 (Car (S)), Env), Loop_Env);
+         S := Cdr (S);
+      end loop;
+      loop
+         if Is_Truthy (Eval (Car (Test_Clause), Loop_Env)) then
+            return Eval_Seq (Cdr (Test_Clause), Loop_Env);
+         end if;
+         declare
+            C : Ref := Commands;
+         begin
+            while Is_Cons (C) loop
+               declare
+                  Ig : constant Ref := Eval (Car (C), Loop_Env);
+                  pragma Unreferenced (Ig);
+               begin
+                  null;
+               end;
+               C := Cdr (C);
+            end loop;
+         end;
+         declare
+            New_Vals : Ref := Nil;   --  (var . value) pairs, computed before rebinding
+         begin
+            S := Specs;
+            while Is_Cons (S) loop
+               declare
+                  Step : constant Ref := Cdr (Cdr (Car (S)));
+               begin
+                  if Is_Cons (Step) then
+                     New_Vals :=
+                       Cons (Cons (Car (Car (S)), Eval (Car (Step), Loop_Env)), New_Vals);
+                  end if;
+               end;
+               S := Cdr (S);
+            end loop;
+            while Is_Cons (New_Vals) loop
+               Set_Var (Car (Car (New_Vals)), Cdr (Car (New_Vals)), Loop_Env);
+               New_Vals := Cdr (New_Vals);
+            end loop;
+         end;
+      end loop;
+   end Eval_Do;
+
+   --  quasiquote: copy the template, evaluating unquote (,) and splicing
+   --  unquote-splicing (,@); nesting raises/lowers the depth.
+   function Eval_Quasi (Template, Env : Ref; Depth : Natural) return Ref is
+   begin
+      if not Is_Cons (Template) then
+         return Template;
+      elsif Car (Template) = S_Unquote then
+         if Depth = 1 then
+            return Eval (Cadr (Template), Env);
+         else
+            return Cons (S_Unquote, Eval_Quasi (Cdr (Template), Env, Depth - 1));
+         end if;
+      elsif Car (Template) = S_Quasi then
+         return Cons (S_Quasi, Eval_Quasi (Cdr (Template), Env, Depth + 1));
+      end if;
+      declare
+         Head : constant Ref := Car (Template);
+      begin
+         if Is_Cons (Head) and then Car (Head) = S_Unquote_Splice and then Depth = 1 then
+            return Append2 (Eval (Cadr (Head), Env), Eval_Quasi (Cdr (Template), Env, Depth));
+         else
+            return Cons (Eval_Quasi (Head, Env, Depth), Eval_Quasi (Cdr (Template), Env, Depth));
+         end if;
+      end;
+   end Eval_Quasi;
 
    function Eval_Cond (Clauses, Env : Ref) return Ref is
       Cursor : Ref := Clauses;
@@ -1894,6 +2071,28 @@ package body Lisp.Eval is
                      return Eval_Define (Args, Cur_Env);
                   elsif Op = S_Let then
                      return Eval_Let (Args, Cur_Env);
+                  elsif Op = S_Let_Star then
+                     return Eval_Let_Star (Args, Cur_Env);
+                  elsif Op = S_Letrec then
+                     return Eval_Letrec (Args, Cur_Env);
+                  elsif Op = S_Case then
+                     return Eval_Case (Args, Cur_Env);
+                  elsif Op = S_Do then
+                     return Eval_Do (Args, Cur_Env);
+                  elsif Op = S_Quasi then
+                     return Eval_Quasi (Car (Args), Cur_Env, 1);
+                  elsif Op = S_When then
+                     if Is_Truthy (Eval (Car (Args), Cur_Env)) then
+                        return Eval_Seq (Cdr (Args), Cur_Env);
+                     else
+                        return Unspecified;
+                     end if;
+                  elsif Op = S_Unless then
+                     if not Is_Truthy (Eval (Car (Args), Cur_Env)) then
+                        return Eval_Seq (Cdr (Args), Cur_Env);
+                     else
+                        return Unspecified;
+                     end if;
                   elsif Op = S_Cond then
                      return Eval_Cond (Args, Cur_Env);
                   elsif Op = S_And then
@@ -1948,18 +2147,9 @@ package body Lisp.Eval is
 
                            when K_Closure =>
                               declare
-                                 New_Env      : constant Ref := Cons (Nil, Fn.Env);
-                                 Param_Cursor : Ref := Fn.Params;
-                                 Arg_Cursor   : Ref := Arg_Values;
+                                 New_Env : constant Ref := Cons (Nil, Fn.Env);
                               begin
-                                 while Is_Cons (Param_Cursor) loop
-                                    if not Is_Cons (Arg_Cursor) then
-                                       raise Lisp_Error with "too few arguments";
-                                    end if;
-                                    Define (Car (Param_Cursor), Car (Arg_Cursor), New_Env);
-                                    Param_Cursor := Cdr (Param_Cursor);
-                                    Arg_Cursor := Cdr (Arg_Cursor);
-                                 end loop;
+                                 Bind_Params (Fn.Params, Arg_Values, New_Env);
                                  if Is_Nil (Fn.Code) then
                                     return Nil;
                                  end if;
@@ -2017,6 +2207,15 @@ package body Lisp.Eval is
       S_And := Intern ("and");
       S_Or := Intern ("or");
       S_Else := Intern ("else");
+      S_Let_Star := Intern ("let*");
+      S_Letrec := Intern ("letrec");
+      S_When := Intern ("when");
+      S_Unless := Intern ("unless");
+      S_Case := Intern ("case");
+      S_Do := Intern ("do");
+      S_Quasi := Intern ("quasiquote");
+      S_Unquote := Intern ("unquote");
+      S_Unquote_Splice := Intern ("unquote-splicing");
 
       G_Env := Cons (Nil, Nil);
       Reg (G_Env, "+", Prim_Add'Access);
