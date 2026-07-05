@@ -95,8 +95,15 @@ package body Bare_Crt is
    -- Write --
    -----------
 
-   procedure Hal_Log_Cstr (S : System.Address)
-   with Import, Convention => C, External_Name => "hal_log_cstr";
+   --  ROM console output: the chip mask-ROM printf (esp_rom_printf), imported
+   --  directly the way the RTS's System.Text_IO does -- a ROM ABI symbol, not
+   --  linked C.  A "%s" format prints the string verbatim.  This replaces the
+   --  former hal_log_cstr shim in bare_log.c (now removed): one fewer C file, same
+   --  bytes on the wire.
+   procedure Rom_Printf (Format : System.Address; Item : System.Address)
+   with Import, Convention => C, External_Name => "esp_rom_printf";
+
+   Str_Fmt : constant String := "%s" & ASCII.NUL;
 
    function Write
      (Fd : Interfaces.C.int; Buf : System.Address; N : Interfaces.C.unsigned)
@@ -112,7 +119,7 @@ package body Bare_Crt is
          Tmp (I + 1) := Character'Val (Integer (Load (Buf + Storage_Offset (I))));
       end loop;
       Tmp (Len + 1) := ASCII.NUL;
-      Hal_Log_Cstr (Tmp'Address);
+      Rom_Printf (Str_Fmt'Address, Tmp'Address);
       return Interfaces.C.int (N);
    end Write;
 

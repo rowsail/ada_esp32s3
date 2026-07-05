@@ -175,7 +175,7 @@ if [ "${ENV_STACK_PSRAM:-0}" != 0 ]; then
 fi
 
 $GCC $CFLAGS -DADA_MAIN="$ADA_MAIN" -DENV_STACK_SIZE="$ENV_STACK_SIZE" $ENV_STACK_GLUE_DEF $SO_DEF -c "$BARE/bare_glue.c" -o "$OBJ/bare_glue.o"
-$GCC $CFLAGS -c "$BARE/bare_log.c" -o "$OBJ/bare_log.o"   # ESP32S3.Log shim (hal_log_*)
+# (bare_log.c removed: bare_crt.adb now calls esp_rom_printf directly, in Ada.)
 # Per-example C glue is optional (examples that log via ESP32S3.Log need none).
 GLUE_OBJ=""
 if [ -f "$EX/glue.c" ]; then
@@ -256,7 +256,7 @@ $GCC -nostdlib -no-pie \
     -Wl,--defsym=__heap_end=_bare_heap_top \
     $BHEAP_DEFSYM \
     -o "$EX/app.elf" \
-    "$EX/obj/app_main.o" "$OBJ/bare_glue.o" "$OBJ/bare_log.o" $GLUE_OBJ "$OBJ/bare_boot.o" "$OBJ/app_desc.o" \
+    "$EX/obj/app_main.o" "$OBJ/bare_glue.o" $GLUE_OBJ "$OBJ/bare_boot.o" "$OBJ/app_desc.o" \
     "$OBJ/start.o" "$OBJ/highint5.o" $SO_OBJ "${LIB_OBJS[@]}" $EXTRA_OBJS \
     "$OBJ/xtensa_context.o" "$OBJ/xtensa_vectors.o" \
     "$OBJ/xtensa_intr_asm.o" "$OBJ/xtensa_intr.o" \

@@ -24,8 +24,8 @@ package Bare_Crt is
    function Getenv (Name : System.Address) return System.Address;
    pragma Export (C, Getenv, "getenv");
 
-   --  Route bytes to the ROM console (via the hal_log_cstr shim).  Used by any
-   --  runtime path writing to fd 1/2.
+   --  Route bytes to the ROM console (esp_rom_printf, imported directly).  Used by
+   --  any runtime path writing to fd 1/2.
    function Write
      (Fd : Interfaces.C.int; Buf : System.Address; N : Interfaces.C.unsigned)
       return Interfaces.C.int;
