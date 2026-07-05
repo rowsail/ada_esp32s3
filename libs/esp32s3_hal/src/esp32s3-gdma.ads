@@ -40,12 +40,24 @@ package ESP32S3.GDMA is
    --  The five GDMA channel pairs.
    type Channel_Id is mod 5;
 
-   --  True if A is in the ESP32-S3 internal SRAM the GDMA can reach
-   --  (0x3FC88000 .. 0x3FD00000).  Flash .rodata and PSRAM (both in
-   --  0x3C000000 .. 0x3E000000) are NOT DMA-capable -- passing such a buffer
-   --  (e.g. a `constant` aggregate placed in .rodata) makes the engine transfer
-   --  garbage.  The Copy/Start preconditions use this.
+   --  True if the GDMA can transfer to/from A.  Internal SRAM
+   --  (0x3FC88000 .. 0x3FD00000) always qualifies.  External PSRAM
+   --  (0x3C000000 .. 0x3E000000) qualifies when A is cache-line (32-byte)
+   --  aligned: the driver keeps PSRAM coherent by writing back / invalidating the
+   --  DCache around each transfer, and enables DMA burst mode for it.  A PSRAM
+   --  buffer should also be sized to a 32-byte multiple (or not share its trailing
+   --  cache line with live data), since the invalidate rounds up to a whole line.
+   --  Flash .rodata (also in 0x3C..) is not writable/aligned for this and is
+   --  excluded -- a `constant` aggregate there still cannot be DMA'd.
    function Is_DMA_Capable (A : System.Address) return Boolean;
+
+   --  Self-check of the PSRAM coherency path: does a memory-to-memory DMA between
+   --  two buffers of the CALLER'S choosing round-trip a byte pattern?  Call with
+   --  PSRAM buffers (e.g. from a task whose stack is in PSRAM) to exercise the
+   --  cache write-back/invalidate; the result says which memory was actually
+   --  tested.  Buffers must be 32-byte aligned and >= 64 bytes.
+   type Self_Test_Result is (Passed_PSRAM, Passed_SRAM, Failed, No_Channel);
+   function Self_Test (Buf_A, Buf_B : System.Address) return Self_Test_Result;
 
    --  Peripherals a channel can be bound to.  Mem2Mem is the internal
    --  memory-to-memory loopback (no external peripheral).  The others match the

@@ -9,6 +9,11 @@ PROVIDE ( Cache_Disable_ICache       = 0x4000186c );
 PROVIDE ( Cache_Enable_ICache        = 0x40001878 );
 PROVIDE ( Cache_Disable_DCache       = 0x40001884 );
 PROVIDE ( Cache_Enable_DCache        = 0x40001890 );
+/* DCache maintenance by address, for GDMA <-> PSRAM coherency (ESP32S3.GDMA):
+ * write back dirty lines before the DMA reads them, invalidate stale lines
+ * after the DMA writes them. */
+PROVIDE ( Cache_Invalidate_Addr      = 0x400016b0 );
+PROVIDE ( rom_Cache_WriteBack_Addr   = 0x400016c8 );
 PROVIDE ( rom_config_instruction_cache_mode = 0x40001a1c );
 PROVIDE ( Cache_Set_ICache_Mode      = 0x40001620 );
 PROVIDE ( Cache_Occupy_ICache_MEMORY = 0x40001980 );
