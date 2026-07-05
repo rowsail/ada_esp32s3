@@ -81,6 +81,14 @@ package body ESP32S3.Ext4.Writer is
          raise Use_Error with "file too large (single-indirect maximum)";
       end if;
 
+      --  Free any existing content first.  Write_File assigns all-new blocks and
+      --  overwrites only slots 0 .. N_Blk-1; without this it would leak every old
+      --  block and leave stale pointers in the higher slots (and the indirect
+      --  pointer), which a later Append could adopt -- exposing freed blocks'
+      --  previous contents as live file data.  Truncate to 0 frees the blocks and
+      --  zeroes every I_Block slot, so the subsequent write starts from empty.
+      Truncate (V, N, 0);
+
       Inode.Read (V, N, I);
       for B in 0 .. N_Blk - 1 loop
          declare
@@ -626,6 +634,36 @@ package body ESP32S3.Ext4.Writer is
          raise Use_Error with "rename target already exists: " & New_Name;
       end if;
       Inode.Read (V, Child, CI);
+
+      --  Refuse to move a directory into itself or one of its own descendants:
+      --  re-parenting it there detaches the whole subtree into an unreachable
+      --  ".." cycle (every file under it orphaned).  Walk from the destination up
+      --  to the root; if Child is on that path, the destination is inside it.
+      if Inode.Is_Dir (CI) and then ON /= NN then
+         declare
+            Walk  : Inode_Number := NN;
+            WI    : Inode.Info;
+            Root  : constant Inode_Number := 2;      --  ext4 root inode
+            Steps : Natural := 0;
+         begin
+            loop
+               if Walk = Child then
+                  raise Use_Error
+                    with "rename would move a directory into its own subtree";
+               end if;
+               exit when Walk = Root;
+               Inode.Read (V, Walk, WI);
+               declare
+                  Parent : constant Inode_Number := Dir.Lookup (V, WI, "..");
+               begin
+                  exit when Parent = 0 or else Parent = Walk;   --  top / self-loop
+                  Walk := Parent;
+               end;
+               Steps := Steps + 1;
+               exit when Steps > 4096;                --  guard a corrupt cycle
+            end loop;
+         end;
+      end if;
 
       Dir.Add_Entry (V, New_DI, New_Name, Child, FType_Of (CI));
       declare

@@ -1,4 +1,5 @@
 with Ada.Real_Time;
+with Ada.IO_Exceptions;
 
 package body ESP32S3.W25Q is
 
@@ -82,13 +83,19 @@ package body ESP32S3.W25Q is
    --  speed / optimisation -- the same rationale as the SDMMC driver.
    Ready_Span : constant Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (1000);
 
-   procedure Wait_Until_Ready (S : in out SPI.Session) is
+   --  True if the flash reported not-busy before the deadline; False on timeout.
+   --  Callers MUST act on False -- a program/erase that never cleared BUSY did
+   --  not persist, and treating it as done silently drops the write.
+   function Wait_Until_Ready (S : in out SPI.Session) return Boolean is
       use type Ada.Real_Time.Time;
       Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Ready_Span;
    begin
       while (Read_Register (S, Cmd_Read_Status1) and Status_Busy) /= 0 loop
-         exit when Ada.Real_Time.Clock >= Deadline;
+         if Ada.Real_Time.Clock >= Deadline then
+            return False;
+         end if;
       end loop;
+      return True;
    end Wait_Until_Ready;
 
    --  Acquire the host for this flash, with its chip select (built-in CS_Pin or
@@ -181,8 +188,14 @@ package body ESP32S3.W25Q is
       Acquire (S, Dev);
       Write_Enable (S);
       Command (S, Cmd'Address, Rsp'Address, Header_Len);
-      Wait_Until_Ready (S);
-      SPI.Release (S);
+      declare
+         Ok : constant Boolean := Wait_Until_Ready (S);
+      begin
+         SPI.Release (S);
+         if not Ok then
+            raise Ada.IO_Exceptions.Device_Error with "W25Q erase timed out (BUSY)";
+         end if;
+      end;
    end Erase_Sector;
 
    procedure Program_Page (Dev : Flash; Addr : Address; Data : Byte_Array) is
@@ -199,8 +212,14 @@ package body ESP32S3.W25Q is
       Acquire (S, Dev);
       Write_Enable (S);
       Command (S, Buf'Address, Rsp'Address, Header_Len + Len);
-      Wait_Until_Ready (S);
-      SPI.Release (S);
+      declare
+         Ok : constant Boolean := Wait_Until_Ready (S);
+      begin
+         SPI.Release (S);
+         if not Ok then
+            raise Ada.IO_Exceptions.Device_Error with "W25Q program timed out (BUSY)";
+         end if;
+      end;
    end Program_Page;
 
 end ESP32S3.W25Q;
