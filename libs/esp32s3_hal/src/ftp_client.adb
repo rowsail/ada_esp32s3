@@ -255,7 +255,14 @@ package body FTP_Client is
       while I <= Line'First + Last - 1 and then Slot <= 6 loop
          exit when Line (I) = ')';
          if Line (I) in '0' .. '9' then
-            Nums (Slot) := Nums (Slot) * 10 + (Character'Pos (Line (I)) - Character'Pos ('0'));
+            --  Cap accumulation: each field is a byte (0..255).  Without the
+            --  guard a malicious server could send a long digit run and overflow
+            --  the Integer (unhandled Constraint_Error); the range check below
+            --  then rejects anything that grew past 255.
+            if Nums (Slot) <= 255 then
+               Nums (Slot) :=
+                 Nums (Slot) * 10 + (Character'Pos (Line (I)) - Character'Pos ('0'));
+            end if;
          elsif Line (I) = ',' then
             Slot := Slot + 1;
          end if;
@@ -265,21 +272,34 @@ package body FTP_Client is
          St := Protocol_Error;
          return;
       end if;
+      for K in 1 .. 6 loop
+         if Nums (K) > 255 then      --  every h1..h4,p1,p2 field must be a byte
+            St := Protocol_Error;
+            return;
+         end if;
+      end loop;
 
       declare
-         Addr : constant Sock_Addr_Type :=
-           (Family => Family_Inet, Addr => S.Host, Port => Port_Type (Nums (5) * 256 + Nums (6)));
+         --  Compute the port in the body (not the declarative part) so a bad
+         --  value is a handled Protocol_Error, and close the data socket on any
+         --  failure so the 8-slot pool is not leaked.
+         Addr : Sock_Addr_Type;
       begin
+         Addr := (Family => Family_Inet, Addr => S.Host,
+                  Port => Port_Type (Nums (5) * 256 + Nums (6)));
          Create_Socket (Data, Family_Inet, Socket_Stream);
-         if S.Timeout > 0.0 then
-            Set_Socket_Option
-              (Data, Socket_Level, (Name => Receive_Timeout, Timeout => S.Timeout));
-         end if;
-         Connect_Socket (Data, Addr);
-         St := OK;
-      exception
-         when Socket_Error =>
-            St := Data_Failed;
+         begin
+            if S.Timeout > 0.0 then
+               Set_Socket_Option
+                 (Data, Socket_Level, (Name => Receive_Timeout, Timeout => S.Timeout));
+            end if;
+            Connect_Socket (Data, Addr);
+            St := OK;
+         exception
+            when Socket_Error =>
+               Close_Socket (Data);      --  don't leak the pool slot
+               St := Data_Failed;
+         end;
       end;
    end Open_Passive;
 
@@ -314,6 +334,10 @@ package body FTP_Client is
          Connect_Socket (S.Control, (Family_Inet, Host, Port));
       exception
          when Socket_Error =>
+            --  Create_Socket succeeded but connect/setopt failed: close the slot
+            --  so an intermittently-unreachable server doesn't drain the 8-socket
+            --  pool over repeated Connect attempts.
+            Close_Socket (S.Control);
             Result := Connect_Failed;
             return;
       end;

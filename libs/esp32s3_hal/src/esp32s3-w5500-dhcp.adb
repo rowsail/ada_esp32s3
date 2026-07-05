@@ -41,11 +41,14 @@ package body ESP32S3.W5500.DHCP is
    Boot_Reply    : constant Byte := 2;
    Flag_Bcast_Hi : constant Byte := 16#80#;   --  high byte of the BOOTP flags word
 
-   --  The fixed transaction id we use for our single-client exchange, and the
-   --  DHCP magic cookie (RFC 2131: 99, 130, 83, 99).  Off_Xid is where the xid
-   --  sits in the header; both are matched whole on replies.
+   --  The transaction id, DERIVED from our MAC (its last four octets) so two
+   --  boards running this firmware on one LAN don't share an xid -- with a fixed
+   --  xid and the broadcast flag set, each board could bind the OTHER's lease.
+   --  Off_Xid is where the xid sits in the header; it is matched whole on replies.
    Off_Xid : constant := 4;
-   Xid     : constant Byte_Array (0 .. 3) := (16#39#, 16#03#, 16#F3#, 16#26#);
+   function Xid_Of (MAC : MAC_Address) return Byte_Array
+   is (Byte_Array'(MAC (2), MAC (3), MAC (4), MAC (5)));
+   --  DHCP magic cookie (RFC 2131: 99, 130, 83, 99).
    Cookie  : constant Byte_Array (0 .. 3) := (16#63#, 16#82#, 16#53#, 16#63#);
 
    Zero_IP : constant IPv4_Address := (0, 0, 0, 0);
@@ -75,7 +78,7 @@ package body ESP32S3.W5500.DHCP is
       TX (1) := 1;
       TX (2) := 6;
       TX (3) := 0;     --  op/htype/hlen/hops
-      TX (Off_Xid .. Off_Xid + 3) := Xid;
+      TX (Off_Xid .. Off_Xid + 3) := Xid_Of (MAC);
       if Broadcast then
          TX (Off_Flags) := Flag_Bcast_Hi;
       end if;
@@ -114,6 +117,7 @@ package body ESP32S3.W5500.DHCP is
    --  Lease, and report the server id and the assigned address (yiaddr).
    function Wait_Reply
      (S                 : in out WS.Socket;
+      MAC               : MAC_Address;
       Want              : Byte;
       Deadline          : Time;
       Lease             : in out Lease_Info;
@@ -132,12 +136,14 @@ package body ESP32S3.W5500.DHCP is
       loop
          WS.Receive_From (S, From_Addr, From_Port, RX, Count, Recv_St);
          Count := Natural'Min (Count, RX'Length);   --  never index past RX(299)
-         --  Only trust a datagram that is a BOOTREPLY (op=2) for OUR exchange
-         --  (matching xid) carrying the DHCP magic cookie; otherwise it is a
+         --  Only trust a datagram that is a BOOTREPLY (op=2) for OUR exchange:
+         --  matching xid, our MAC echoed in chaddr (so another board's reply is
+         --  not accepted), and the DHCP magic cookie.  Anything else is a
          --  stray/rogue packet on UDP/68 and is ignored.
          if Count >= Off_Options
            and then RX (Off_Op) = Boot_Reply
-           and then RX (Off_Xid .. Off_Xid + 3) = Xid
+           and then RX (Off_Xid .. Off_Xid + 3) = Xid_Of (MAC)
+           and then RX (Off_Chaddr .. Off_Chaddr + 5) = MAC
            and then RX (Off_Cookie .. Off_Cookie + 3) = Cookie
          then
             Msg := 0;
@@ -233,11 +239,11 @@ package body ESP32S3.W5500.DHCP is
       for Attempt in 1 .. Tries loop
          TX_Len := Build (Discover, MAC, Zero_IP, True, Zero_IP, Zero_IP);
          WS.Send_To (S, Bcast, Server_Port, TX (0 .. TX_Len - 1), St);
-         if St = WS.OK and then Wait_Reply (S, Offer, Clock + Seconds (2), Lease, Srv_Id, Offered)
+         if St = WS.OK and then Wait_Reply (S, MAC, Offer, Clock + Seconds (2), Lease, Srv_Id, Offered)
          then
             TX_Len := Build (Request, MAC, Zero_IP, True, Offered, Srv_Id);
             WS.Send_To (S, Bcast, Server_Port, TX (0 .. TX_Len - 1), St);
-            if St = WS.OK and then Wait_Reply (S, Ack, Clock + Seconds (2), Lease, Srv_Id, Offered)
+            if St = WS.OK and then Wait_Reply (S, MAC, Ack, Clock + Seconds (2), Lease, Srv_Id, Offered)
             then
                Lease.IP := Offered;
                Server := Srv_Id;
@@ -276,7 +282,7 @@ package body ESP32S3.W5500.DHCP is
       else
          WS.Send_To (S, Server, Server_Port, TX (0 .. TX_Len - 1), St);
       end if;
-      if St = WS.OK and then Wait_Reply (S, Ack, Clock + Seconds (2), Lease, Srv_Id, Assigned_IP)
+      if St = WS.OK and then Wait_Reply (S, MAC, Ack, Clock + Seconds (2), Lease, Srv_Id, Assigned_IP)
       then
          if Assigned_IP /= Zero_IP then
             Lease.IP := Assigned_IP;
