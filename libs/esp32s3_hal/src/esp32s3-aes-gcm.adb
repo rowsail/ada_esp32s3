@@ -19,12 +19,19 @@ package body ESP32S3.AES.GCM is
       Lsb : U8;                     --  bit shifted out of V this step
    begin
       for I in 0 .. 127 loop
-         --  bit i of X, most-significant bit first
-         if (X (I / 8) and Interfaces.Shift_Right (U8'(16#80#), I mod 8)) /= 0 then
+         --  Branchless: derive a 0x00/0xFF mask from bit i of X (MSB first) and
+         --  conditionally XOR via the mask, rather than an `if bit then ...`.  The
+         --  bits here come from the secret hash subkey H, so a data-dependent
+         --  branch (or a conditional reduction below) leaks it through timing.
+         declare
+            B1   : constant U8 :=
+              Interfaces.Shift_Right (X (I / 8), 7 - (I mod 8)) and 1;
+            Mask : constant U8 := U8'(0) - B1;         --  0 -> 0x00, 1 -> 0xFF
+         begin
             for J in Blk'Range loop
-               Z (J) := Z (J) xor V (J);
+               Z (J) := Z (J) xor (V (J) and Mask);
             end loop;
-         end if;
+         end;
          --  V := V >> 1 (across the 16 bytes, big-endian), then reduce if a 1 fell out
          Lsb := V (15) and 1;
          for J in reverse 1 .. 15 loop
@@ -32,9 +39,7 @@ package body ESP32S3.AES.GCM is
               Interfaces.Shift_Right (V (J), 1) or Interfaces.Shift_Left (V (J - 1) and 1, 7);
          end loop;
          V (0) := Interfaces.Shift_Right (V (0), 1);
-         if Lsb = 1 then
-            V (0) := V (0) xor 16#E1#;
-         end if;
+         V (0) := V (0) xor (16#E1# and (U8'(0) - Lsb));   --  reduce iff a 1 fell out
       end loop;
       return Z;
    end GF_Mul;
