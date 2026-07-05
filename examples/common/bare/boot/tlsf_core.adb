@@ -288,15 +288,20 @@ package body Tlsf_Core is
    --------------
 
    function Allocate (N : Storage_Count) return System.Address is
-      Adj              : constant Storage_Count :=
-        (if Round_Up (N) < Min_Payload then Min_Payload else Round_Up (N));
-      Sz               : Storage_Count := Adj;
+      Adj              : Storage_Count;
+      Sz               : Storage_Count;
       FL0, SL0, FL, SL : Integer;
       B                : System.Address;
    begin
-      if N = 0 or else not Inited then
+      --  Reject before any size arithmetic: N within Align of Storage_Count'Last
+      --  would wrap Round_Up negative and hand back a tiny block for a ~2 GB
+      --  request.  (bare_heap already caps N at Storage_Count'Last; this is the
+      --  allocator's own backstop.)
+      if N = 0 or else not Inited or else N > Storage_Count'Last - Align then
          return System.Null_Address;
       end if;
+      Adj := (if Round_Up (N) < Min_Payload then Min_Payload else Round_Up (N));
+      Sz  := Adj;
       Mapping_Search (Sz, FL0, SL0);
       if not Find_Suitable (FL0, SL0, FL, SL) then
          return System.Null_Address;            --  OOM
@@ -359,6 +364,9 @@ package body Tlsf_Core is
       if N = 0 then
          Deallocate (P);
          return System.Null_Address;
+      end if;
+      if N > Storage_Count'Last - Align then
+         return System.Null_Address;   --  Round_Up would wrap (see Allocate)
       end if;
       B := Block_Of (P);
       if Size_Of (B) >= Round_Up (N) then
