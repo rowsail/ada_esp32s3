@@ -802,6 +802,19 @@ package body FTP_Server is
          Listen_Socket (Listener);
          Accept_Socket (Listener, Ctrl, Peer);     --  Ctrl becomes the connection
          Ctrl_Peer := Peer;                         --  remember for the data-peer check
+         --  Idle timeout on the control connection: without it a client that
+         --  vanishes without a FIN (power loss, upstream drop) wedges this
+         --  single-client server forever.  A control receive that blocks past the
+         --  timeout raises Socket_Error, which Serve_Client's handler turns into a
+         --  clean session close so the next client can connect.  (Standard FTP
+         --  idle-timeout behaviour.)
+         begin
+            Set_Socket_Option
+              (Ctrl, Socket_Level, (Name => Receive_Timeout, Timeout => 300.0));
+         exception
+            when others =>
+               null;
+         end;
          --  No IP given: PASV advertises the address the client reached us on.
          if Derive then
             Set_Host (Image (Get_Socket_Name (Ctrl).Addr));
