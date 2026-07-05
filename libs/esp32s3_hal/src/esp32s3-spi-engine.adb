@@ -139,9 +139,13 @@ package body ESP32S3.SPI.Engine is
       GD.Claim (B.Chan, GDMA_Periph (Host));   --  claim into the Bus in place
 
       Regs.CMD.UPDATE := True;
-      while Regs.CMD.UPDATE loop
-         null;
-      end loop;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.CMD.UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
 
       B.Regs := Regs;
       B.Host := Host;
@@ -156,9 +160,13 @@ package body ESP32S3.SPI.Engine is
       if B.Regs /= null then
          Set_Clock (B.Regs, Hz);              --  recompute the divider
          B.Regs.CMD.UPDATE := True;           --  latch into the shifter
-         while B.Regs.CMD.UPDATE loop
-            null;
-         end loop;
+         declare
+            Guard : Natural := 0;
+         begin
+            while B.Regs.CMD.UPDATE and then Guard < 100_000 loop
+               Guard := Guard + 1;
+            end loop;
+         end;
       end if;
    end Set_Clock;
 
@@ -170,9 +178,13 @@ package body ESP32S3.SPI.Engine is
          B.Regs.USER.CK_OUT_EDGE := Out_Edge;
          B.Regs.MISC.CK_IDLE_EDGE := Idle_Edge;
          B.Regs.CMD.UPDATE := True;           --  latch into the shifter
-         while B.Regs.CMD.UPDATE loop
-            null;
-         end loop;
+         declare
+            Guard : Natural := 0;
+         begin
+            while B.Regs.CMD.UPDATE and then Guard < 100_000 loop
+               Guard := Guard + 1;
+            end loop;
+         end;
       end if;
    end Set_Mode;
 
@@ -266,6 +278,10 @@ package body ESP32S3.SPI.Engine is
             Guard := Guard - 1;
          end loop;
          if Guard = 0 then
+            --  Stalled: halt both DMA directions so neither engine later writes
+            --  into the caller's (stack) Rx/Tx after the frame is abandoned.
+            GD.Stop (B.Chan, GD.Mem_To_Periph);
+            GD.Stop (B.Chan, GD.Periph_To_Mem);
             return;
          end if;
       end;

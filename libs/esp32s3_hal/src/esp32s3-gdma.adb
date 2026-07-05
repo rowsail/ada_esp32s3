@@ -293,6 +293,32 @@ package body ESP32S3.GDMA is
       end case;
    end Disarm;
 
+   ----------
+   -- Stop --
+   ----------
+
+   procedure Stop (C : Channel; Dir : Direction) is
+   begin
+      if not C.Valid then
+         return;
+      end if;
+      --  Halt the engine and detach the descriptor by pulsing the direction's
+      --  reset.  Used on a timeout: otherwise the descriptor still points at the
+      --  caller's (often stack) buffer, and a later recovery would DMA stale
+      --  bytes into a reused frame.  Also drop the EOF enable.
+      case Dir is
+         when Mem_To_Periph =>
+            Channels (C.Id).OUT_LINK.OUTLINK_STOP := True;
+            Channels (C.Id).OUT_CONF0.OUT_RST := True;
+            Channels (C.Id).OUT_CONF0.OUT_RST := False;
+         when Periph_To_Mem =>
+            Channels (C.Id).IN_LINK.INLINK_STOP := True;
+            Channels (C.Id).IN_CONF0.IN_RST := True;
+            Channels (C.Id).IN_CONF0.IN_RST := False;
+      end case;
+      Disarm (C.Id, Dir);
+   end Stop;
+
    --------------------------------------------------------------------------
    --  Protected channel allocator.  Serialises Claim / Release and the
    --  one-time module bring-up, so concurrent tasks can never be handed the
@@ -554,7 +580,13 @@ package body ESP32S3.GDMA is
             Cancel_Handler (Timeout_Ev (C.Id, Dir), Cancelled);
          end;
       end if;
-      Disarm (C.Id, Dir);   --  drop the EOF enable (whether the spin or the IRQ won)
+      if not Done (C, Dir) then
+         --  Timed out: halt the engine so it can't later write the caller's
+         --  buffer.  (Stop also Disarms.)
+         Stop (C, Dir);
+      else
+         Disarm (C.Id, Dir);   --  completed: just drop the EOF enable
+      end if;
    end Wait;
 
 end ESP32S3.GDMA;

@@ -52,44 +52,53 @@ package body ESP32S3.PCNT is
         (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Pad_Index), SEL => True, others => <>);
    end Route_In;
 
+   --  All CTRL touches (per-unit CNT_RST/CNT_PAUSE, and the one-time CLK_EN)
+   --  are read-modify-writes of ONE shared register.  Route them through a
+   --  protected object so an op on unit N can't lose an op on unit M (or the
+   --  clock-enable) issued from another task/core.
+   protected CTRL_Guard is
+      procedure Reset (Idx : Unit_Index);
+      procedure Pause (Idx : Unit_Index; On : Boolean);
+   end CTRL_Guard;
+
+   protected body CTRL_Guard is
+      procedure Reset (Idx : Unit_Index) is
+      begin
+         case Idx is
+            when 0 =>
+               PCNT_Periph.CTRL.CNT_RST_U0 := True;
+               PCNT_Periph.CTRL.CNT_RST_U0 := False;
+            when 1 =>
+               PCNT_Periph.CTRL.CNT_RST_U1 := True;
+               PCNT_Periph.CTRL.CNT_RST_U1 := False;
+            when 2 =>
+               PCNT_Periph.CTRL.CNT_RST_U2 := True;
+               PCNT_Periph.CTRL.CNT_RST_U2 := False;
+            when 3 =>
+               PCNT_Periph.CTRL.CNT_RST_U3 := True;
+               PCNT_Periph.CTRL.CNT_RST_U3 := False;
+         end case;
+      end Reset;
+
+      procedure Pause (Idx : Unit_Index; On : Boolean) is
+      begin
+         case Idx is
+            when 0 => PCNT_Periph.CTRL.CNT_PAUSE_U0 := On;
+            when 1 => PCNT_Periph.CTRL.CNT_PAUSE_U1 := On;
+            when 2 => PCNT_Periph.CTRL.CNT_PAUSE_U2 := On;
+            when 3 => PCNT_Periph.CTRL.CNT_PAUSE_U3 := On;
+         end case;
+      end Pause;
+   end CTRL_Guard;
+
    procedure Reset_Unit (Idx : Unit_Index) is
    begin
-      case Idx is
-         --  pulse the unit's CNT_RST
-
-         when 0 =>
-            PCNT_Periph.CTRL.CNT_RST_U0 := True;
-            PCNT_Periph.CTRL.CNT_RST_U0 := False;
-
-         when 1 =>
-            PCNT_Periph.CTRL.CNT_RST_U1 := True;
-            PCNT_Periph.CTRL.CNT_RST_U1 := False;
-
-         when 2 =>
-            PCNT_Periph.CTRL.CNT_RST_U2 := True;
-            PCNT_Periph.CTRL.CNT_RST_U2 := False;
-
-         when 3 =>
-            PCNT_Periph.CTRL.CNT_RST_U3 := True;
-            PCNT_Periph.CTRL.CNT_RST_U3 := False;
-      end case;
+      CTRL_Guard.Reset (Idx);
    end Reset_Unit;
 
    procedure Set_Pause (Idx : Unit_Index; On : Boolean) is
    begin
-      case Idx is
-         when 0 =>
-            PCNT_Periph.CTRL.CNT_PAUSE_U0 := On;
-
-         when 1 =>
-            PCNT_Periph.CTRL.CNT_PAUSE_U1 := On;
-
-         when 2 =>
-            PCNT_Periph.CTRL.CNT_PAUSE_U2 := On;
-
-         when 3 =>
-            PCNT_Periph.CTRL.CNT_PAUSE_U3 := On;
-      end case;
+      CTRL_Guard.Pause (Idx, On);
    end Set_Pause;
 
    --------------------------------------------------------------------------
@@ -114,7 +123,10 @@ package body ESP32S3.PCNT is
             SYSTEM_Periph.PERIP_CLK_EN0.PCNT_CLK_EN := True;
             SYSTEM_Periph.PERIP_RST_EN0.PCNT_RST := True;
             SYSTEM_Periph.PERIP_RST_EN0.PCNT_RST := False;
-            PCNT_Periph.CTRL.CLK_EN := True;         --  register-clock gate
+            --  One-time register-clock gate, serialized by this same Pool lock and
+            --  done before any unit runs -- so it does not race the runtime
+            --  Reset/Pause ops that CTRL_Guard protects.
+            PCNT_Periph.CTRL.CLK_EN := True;
             Inited := True;
          end if;
          Ok := not In_Use (Index);

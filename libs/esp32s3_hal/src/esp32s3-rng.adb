@@ -1,3 +1,5 @@
+with Interfaces;              use Interfaces;
+with System.Machine_Code;     use System.Machine_Code;
 with ESP32S3_Registers.RNG;
 with ESP32S3_Registers.RTC_CNTL;
 with ESP32S3_Registers.SYSTEM;
@@ -11,11 +13,35 @@ package body ESP32S3.RNG is
       return ESP32S3_Registers.RNG.RNG_Periph.DATA;
    end Read;
 
+   --  The S3 RNG accumulates fresh entropy BETWEEN reads; sampling DATA back to
+   --  back returns correlated (even duplicated) words.  esp-idf enforces >= 16
+   --  APB cycles between reads -- ~48 CPU cycles at 240 MHz.  Wait ~80 via the
+   --  cycle counter (rounds up, stays ZFP-safe, and matters: this feeds key gen).
+   procedure Pace is
+      function CCOUNT return Unsigned_32 is
+         V : Unsigned_32;
+      begin
+         Asm ("rsr.ccount %0",
+              Outputs => Unsigned_32'Asm_Output ("=r", V), Volatile => True);
+         return V;
+      end CCOUNT;
+      Start : constant Unsigned_32 := CCOUNT;
+   begin
+      while CCOUNT - Start < 80 loop
+         null;
+      end loop;
+   end Pace;
+
    procedure Fill (Buffer : out Byte_Array) is
       use ESP32S3_Registers;                         --  brings UInt32 + its ops
-      I : Natural := Buffer'First;
+      I     : Natural := Buffer'First;
+      First : Boolean := True;
    begin
       while I <= Buffer'Last loop
+         if not First then
+            Pace;                                  --  space this read from the last
+         end if;
+         First := False;
          declare
             W : constant Word := Read;            --  one fresh random word
             N : constant Natural := Natural'Min (4, Buffer'Last - I + 1);

@@ -144,12 +144,20 @@ package body ESP32S3.Timer is
    -----------
 
    function Value (T : Timer) return Ticks is
-      Regs : constant Periph_Ref := Regs_Of (T.Idx);
+      Regs  : constant Periph_Ref := Regs_Of (T.Idx);
+      Guard : Natural := 10_000;
    begin
       if not T.Held then
          return 0;
       end if;
-      Regs.TUPDATE0 := (UPDATE => True, others => <>);   --  latch the live count
+      --  The counter is in a different clock domain: request a latch, then wait
+      --  for UPDATE (bit 31) to self-clear before reading HI/LO -- otherwise the
+      --  read can return the previous latched value or a mid-update mix (stale or
+      --  non-monotonic timestamps).  Bounded so a wedged TIMG can't hang.
+      Regs.TUPDATE0 := (UPDATE => True, others => <>);
+      while Regs.TUPDATE0.UPDATE and then Guard > 0 loop
+         Guard := Guard - 1;
+      end loop;
       return Ticks (Unsigned_64 (Regs.THI0.HI)) * 2**32 + Ticks (Unsigned_64 (Regs.TLO0));
    end Value;
 

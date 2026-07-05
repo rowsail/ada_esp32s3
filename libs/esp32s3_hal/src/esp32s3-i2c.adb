@@ -97,6 +97,11 @@ package body ESP32S3.I2C is
 
    procedure Acquire (S : in out Session; Host : I2C_Host) is
    begin
+      if S.Active then
+         --  Re-acquiring a live Session would block on its own guard forever, or
+         --  (for a different host) orphan the first host's guard for the run.
+         raise Program_Error with "I2C Session already active; Release first";
+      end if;
       if not State.Ready (Host) then
          raise Not_Initialized with "I2C host acquired before Setup";
       end if;

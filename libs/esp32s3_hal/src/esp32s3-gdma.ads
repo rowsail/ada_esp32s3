@@ -129,6 +129,11 @@ package ESP32S3.GDMA is
    --  runtime (embedded/full), like the rest of the Session drivers.
    procedure Wait (C : Channel; Dir : Direction);
 
+   --  Halt a channel direction and detach its descriptor (pulses the engine
+   --  reset).  Call after a timeout so a late recovery cannot DMA into a buffer
+   --  the caller has already reused.
+   procedure Stop (C : Channel; Dir : Direction);
+
 private
    type Channel is new Ada.Finalization.Limited_Controlled with record
       Id    : Channel_Id := 0;

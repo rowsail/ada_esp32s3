@@ -89,6 +89,9 @@ package body ESP32S3.UART is
       Cts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Rx_Flow_Threshold : Natural := 100) is
    begin
+      if S.Active then
+         raise Program_Error with "UART Session already active; Release first";
+      end if;
       Guards (Port).Acquire;          --  suspends here until the port is free
       State.Ensure (Port);            --  first acquirer creates the controller
       S.Port := Port;
