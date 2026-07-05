@@ -15,6 +15,7 @@ package body ESP32S3.W5500.DHCP is
    Offer    : constant Byte := 2;
    Request  : constant Byte := 3;
    Ack      : constant Byte := 5;
+   Nak      : constant Byte := 6;   --  server refuses the (re)bind -> re-acquire
 
    --  DHCP option codes (RFC 2132).
    Opt_Subnet     : constant := 1;
@@ -55,7 +56,11 @@ package body ESP32S3.W5500.DHCP is
    Bcast   : constant IPv4_Address := (255, 255, 255, 255);
 
    --  One DHCP client => one set of scratch buffers (uses are never concurrent).
-   TX, RX : Byte_Array (0 .. 299);
+   --  RX is sized for a full DHCP message (RFC 2131: a client must accept at least
+   --  576 bytes) so a server's larger option block -- e.g. carrying option 51, the
+   --  lease time -- is not truncated (which forced the 60 s minimum-lease churn).
+   TX : Byte_Array (0 .. 299);
+   RX : Byte_Array (0 .. 767);
 
    ---------------------------------------------------------------------------
    --  Frame build + reply parse
@@ -121,7 +126,8 @@ package body ESP32S3.W5500.DHCP is
       Want              : Byte;
       Deadline          : Time;
       Lease             : in out Lease_Info;
-      Server_Id, Yiaddr : out IPv4_Address) return Boolean
+      Server_Id, Yiaddr : out IPv4_Address;
+      Refused           : out Boolean) return Boolean
    is
       From_Addr : IPv4_Address;
       From_Port : WS.Port_Number;
@@ -133,6 +139,7 @@ package body ESP32S3.W5500.DHCP is
    begin
       Server_Id := Zero_IP;
       Yiaddr := Zero_IP;
+      Refused := False;
       loop
          WS.Receive_From (S, From_Addr, From_Port, RX, Count, Recv_St);
          Count := Natural'Min (Count, RX'Length);   --  never index past RX(299)
@@ -204,6 +211,11 @@ package body ESP32S3.W5500.DHCP is
             if Msg = Want then
                Yiaddr := RX (Off_Yiaddr .. Off_Yiaddr + 3);
                return True;
+            elsif Msg = Nak then
+               --  Server refused this (re)bind: stop waiting and tell the caller to
+               --  re-acquire now, rather than time out and sit until lease expiry.
+               Refused := True;
+               return False;
             end if;
          end if;
          exit when Clock >= Deadline;
@@ -228,6 +240,7 @@ package body ESP32S3.W5500.DHCP is
       St              : WS.Status;
       TX_Len          : Natural;
       Offered, Srv_Id : IPv4_Address;
+      Refused         : Boolean;   --  a NAK during DORA just means retry the loop
    begin
       Lease := (others => <>);
       Server := Zero_IP;
@@ -239,11 +252,13 @@ package body ESP32S3.W5500.DHCP is
       for Attempt in 1 .. Tries loop
          TX_Len := Build (Discover, MAC, Zero_IP, True, Zero_IP, Zero_IP);
          WS.Send_To (S, Bcast, Server_Port, TX (0 .. TX_Len - 1), St);
-         if St = WS.OK and then Wait_Reply (S, MAC, Offer, Clock + Seconds (2), Lease, Srv_Id, Offered)
+         if St = WS.OK
+           and then Wait_Reply (S, MAC, Offer, Clock + Seconds (2), Lease, Srv_Id, Offered, Refused)
          then
             TX_Len := Build (Request, MAC, Zero_IP, True, Offered, Srv_Id);
             WS.Send_To (S, Bcast, Server_Port, TX (0 .. TX_Len - 1), St);
-            if St = WS.OK and then Wait_Reply (S, MAC, Ack, Clock + Seconds (2), Lease, Srv_Id, Offered)
+            if St = WS.OK
+              and then Wait_Reply (S, MAC, Ack, Clock + Seconds (2), Lease, Srv_Id, Offered, Refused)
             then
                Lease.IP := Offered;
                Server := Srv_Id;
@@ -265,13 +280,15 @@ package body ESP32S3.W5500.DHCP is
       Socket    : Socket_Id;
       Broadcast : Boolean;
       Server    : IPv4_Address;
-      Lease     : in out Lease_Info) return Boolean
+      Lease     : in out Lease_Info;
+      Refused   : out Boolean) return Boolean
    is
       S                   : WS.Socket;
       St                  : WS.Status;
       TX_Len              : Natural;
       Srv_Id, Assigned_IP : IPv4_Address;
    begin
+      Refused := False;
       WS.Open_UDP (Dev, S, Socket, Client_Port, St);
       if St /= WS.OK then
          return False;
@@ -282,7 +299,8 @@ package body ESP32S3.W5500.DHCP is
       else
          WS.Send_To (S, Server, Server_Port, TX (0 .. TX_Len - 1), St);
       end if;
-      if St = WS.OK and then Wait_Reply (S, MAC, Ack, Clock + Seconds (2), Lease, Srv_Id, Assigned_IP)
+      if St = WS.OK
+        and then Wait_Reply (S, MAC, Ack, Clock + Seconds (2), Lease, Srv_Id, Assigned_IP, Refused)
       then
          if Assigned_IP /= Zero_IP then
             Lease.IP := Assigned_IP;
@@ -316,8 +334,11 @@ package body ESP32S3.W5500.DHCP is
       MAC    : MAC_Address;
       Lease  : in out Lease_Info;
       Socket : Socket_Id := 0) return Boolean is
+      Refused : Boolean;   --  not exposed on this one-shot API
    begin
-      return Do_Renew (Dev, MAC, Socket, Broadcast => True, Server => Zero_IP, Lease => Lease);
+      return Do_Renew
+        (Dev, MAC, Socket, Broadcast => True, Server => Zero_IP, Lease => Lease,
+         Refused => Refused);
    end Renew_Lease;
 
    ---------------------------------------------------------------------------
@@ -346,10 +367,29 @@ package body ESP32S3.W5500.DHCP is
       Set_True (Go);
    end Maintain;
 
+   --  Publish the lease atomically: Lease_Task writes M_Lease field-by-field as it
+   --  parses a reply, so Current_Lease (called from other tasks) must not read that
+   --  multi-word record directly -- it would see a torn, half-updated value.  The
+   --  task copies a completed lease into this protected store; readers get it whole.
+   protected Lease_Store is
+      function Get return Lease_Info;
+      procedure Set (L : Lease_Info);
+   private
+      Value : Lease_Info;
+   end Lease_Store;
+
+   protected body Lease_Store is
+      function Get return Lease_Info is (Value);
+      procedure Set (L : Lease_Info) is
+      begin
+         Value := L;
+      end Set;
+   end Lease_Store;
+
    function Is_Bound return Boolean
    is (M_Bound);
    function Current_Lease return Lease_Info
-   is (M_Lease);
+   is (Lease_Store.Get);
 
    task Lease_Task
      with Priority => System.Priority'First + 1;
@@ -357,6 +397,7 @@ package body ESP32S3.W5500.DHCP is
       Server   : IPv4_Address;
       Bound_At : Time;
       Renewed  : Boolean;
+      Refused  : Boolean;
    begin
       Suspend_Until_True (Go);                       --  wait until Maintain arms us
       loop
@@ -364,6 +405,7 @@ package body ESP32S3.W5500.DHCP is
          while not Do_Acquire (M_Dev, M_MAC, M_Socket, 4, M_Lease, Server) loop
             delay until Clock + Seconds (10);
          end loop;
+         Lease_Store.Set (M_Lease);                  --  publish for Current_Lease
          M_Bound := True;
          if M_Cb /= null then
             M_Cb (M_Lease);
@@ -381,16 +423,22 @@ package body ESP32S3.W5500.DHCP is
                Expiry     : constant Time := Bound_At + Seconds (Lease_Secs);
             begin
                delay until T1;
-               Renewed := Do_Renew (M_Dev, M_MAC, M_Socket, False, Server, M_Lease);
-               if not Renewed then
+               Renewed := Do_Renew (M_Dev, M_MAC, M_Socket, False, Server, M_Lease, Refused);
+               if not Renewed and then not Refused then
                   delay until T2;
-                  Renewed := Do_Renew (M_Dev, M_MAC, M_Socket, True, Server, M_Lease);
+                  Renewed := Do_Renew (M_Dev, M_MAC, M_Socket, True, Server, M_Lease, Refused);
                end if;
                if Renewed then
                   Bound_At := Clock;
+                  Lease_Store.Set (M_Lease);         --  publish the renewed lease
                   if M_Cb /= null then
                      M_Cb (M_Lease);
                   end if;
+               elsif Refused then
+                  --  Server NAK'd the (re)bind: our address is no longer valid, so
+                  --  drop it and re-acquire NOW rather than sit until expiry.
+                  M_Bound := False;
+                  exit;
                else
                   delay until Expiry;
                   exit;                              --  expired -> re-acquire

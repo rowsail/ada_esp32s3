@@ -16,6 +16,12 @@ package body ESP32S3.W5500.Sockets is
    Sn_TX_WR  : constant Unsigned_16 := 16#24#;
    Sn_RX_RSR : constant Unsigned_16 := 16#26#;
    Sn_RX_RD  : constant Unsigned_16 := 16#28#;
+   Sn_KPALVTR : constant Unsigned_16 := 16#2F#;   --  auto keep-alive, units of 5 s
+
+   --  Keep-alive period for TCP sockets (12 * 5 s = 60 s): once a connection is
+   --  established the chip probes an idle peer and drops the socket if it is dead,
+   --  so a peer that vanished without a FIN doesn't wedge a blocked reader forever.
+   KPALV_60s : constant Byte := 12;
 
    --  Sn_MR protocol.
    MR_TCP : constant Byte := 16#01#;
@@ -126,6 +132,7 @@ package body ESP32S3.W5500.Sockets is
       Issue (S, Cmd_Close);
       W8 (S, Sn_MR, MR_TCP);
       W16 (S, Sn_PORT, Local_Port);
+      W8 (S, Sn_KPALVTR, KPALV_60s);   --  auto keep-alive once established
       Issue (S, Cmd_Open);
       if R8 (S, Sn_SR) = SR_INIT then
          S.Is_Open := True;

@@ -536,7 +536,7 @@ package body FTP_Server is
       RLast    : SEO;
    begin
       if RO then
-         Reply ("532", "read-only server");
+         Reply ("550", "read-only server");   --  550, not 532 (which means "need account")
          return;
       end if;
       if Active_M = null then
@@ -555,26 +555,38 @@ package body FTP_Server is
       if not Accept_Data (Conn) then
          return;
       end if;
-      loop
-         begin
-            Receive_Socket (Conn, Scratch, RLast);
-         exception
-            when Socket_Error =>
-               exit;
-         end;
-         exit when RLast < Scratch'First;     --  EOF
-         declare
-            Chunk : E4.Byte_Array (0 .. Natural (RLast - Scratch'First));
-         begin
-            for I in Chunk'Range loop
-               Chunk (I) := E4.U8 (Scratch (Scratch'First + SEO (I)));
-            end loop;
-            FSP.Append (Active_M.all, Ino, Chunk);
-         end;
-      end loop;
-      Close_Data (Conn);
-      FSP.Commit (Active_M.all);
-      Reply ("226", "transfer complete");
+      declare
+         Aborted : Boolean := False;
+      begin
+         loop
+            begin
+               Receive_Socket (Conn, Scratch, RLast);
+            exception
+               when Socket_Error =>
+                  --  A data-connection error is NOT a clean end-of-file (that is
+                  --  the peer closing, seen as RLast < 'First below).  Reporting
+                  --  226 here would tell the client a truncated upload succeeded.
+                  Aborted := True;
+                  exit;
+            end;
+            exit when RLast < Scratch'First;     --  clean EOF: peer closed
+            declare
+               Chunk : E4.Byte_Array (0 .. Natural (RLast - Scratch'First));
+            begin
+               for I in Chunk'Range loop
+                  Chunk (I) := E4.U8 (Scratch (Scratch'First + SEO (I)));
+               end loop;
+               FSP.Append (Active_M.all, Ino, Chunk);
+            end;
+         end loop;
+         Close_Data (Conn);
+         if Aborted then
+            Reply ("426", "data connection error; transfer aborted");
+         else
+            FSP.Commit (Active_M.all);
+            Reply ("226", "transfer complete");
+         end if;
+      end;
    exception
       when others =>
          Close_Data (Conn);
@@ -644,7 +656,7 @@ package body FTP_Server is
       Name_Len : Natural;
    begin
       if RO then
-         Reply ("532", "read-only server");
+         Reply ("550", "read-only server");   --  550, not 532 (which means "need account")
          return;
       end if;
       if Active_M = null then
