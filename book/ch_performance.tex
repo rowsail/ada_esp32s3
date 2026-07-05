@@ -56,8 +56,8 @@ the code must stay in flash; IRAM is for the hot slivers, not the program.
 
 External PSRAM gives you megabytes where SRAM gives you kilobytes, but it comes with
 two performance caveats. It is reached through the cache and the octal SPI bus, so it
-is slower than internal SRAM: fine for a big LISP arena or a filesystem block
-cache, not where you want a hot inner loop's working set. And, decisively, \emph{it
+is slower than internal SRAM: fine for an interpreter's heap arena or a filesystem
+block cache, not where you want a hot inner loop's working set. And, decisively, \emph{it
 cannot be a DMA endpoint}: the GDMA controller reaches only internal SRAM. So even
 when a task's stack lives in PSRAM (the \texttt{ENV\_STACK\_PSRAM} option of
 Chapter~\ref{ch:static-mem}), any buffer handed to DMA (an SD-card transfer, an

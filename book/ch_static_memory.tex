@@ -24,8 +24,8 @@ size is a build-time knob, \texttt{ENV\_STACK\_SIZE}, defaulting to 32\,KiB unde
 exception machinery needs more headroom, so the heavier profiles start larger). The
 build turns the number into the linker symbols \texttt{\_\_stack\_start} and
 \texttt{\_\_stack\_end} that \texttt{start.S} loads into the stack pointer; an
-example that recurses deeply just exports a bigger value (the LISP and SIMD examples
-set 64\,KiB and 128\,KiB).
+example that recurses deeply just exports a bigger value (the SIMD example sets
+128\,KiB; the interpreter examples in the companion collection go bigger still).
 
 \begin{lstlisting}[style=sh]
 export ENV_STACK_SIZE=131072    # 128 KiB env-task stack for this example
@@ -87,8 +87,8 @@ Segregated Fit) allocator with O(1) \texttt{malloc}/\texttt{free} and bounded
 fragmentation, described in full in Chapter~\ref{ch:heap}. Its arena is placed by
 the build: by default the leftover internal DRAM after \texttt{.data},
 \texttt{.bss} and the stacks (a couple of hundred KiB), or, with
-\texttt{HEAP\_PSRAM=1}, the 8\,MB PSRAM for programs that need real room (the LISP
-arena and the ext4 block cache both live there).
+\texttt{HEAP\_PSRAM=1}, the 8\,MB PSRAM for programs that need real room (the ext4
+block cache and the examples-collection interpreter heaps live there).
 
 \begin{lstlisting}[style=sh]
 export HEAP_SIZE=1 HEAP_PSRAM=1   # heap arena in PSRAM, not internal DRAM

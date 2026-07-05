@@ -877,8 +877,8 @@ or write is trusted, the flash analogue of the TLV2556's self-test inputs
 may program any aligned 256-byte page but can only erase a whole 4\,KB sector, and
 the \texttt{Program\_Page} precondition enforces the page rule at the call site.
 Above this driver, \texttt{Block\_Dev.WL} adds wear levelling and \texttt{Ext4.FS} a
-filesystem (Chapter~\ref{ch:storage}); from the LISP REPL, \texttt{(spi-xfer ...)}
-reads the same JEDEC id by hand (Chapter~\ref{ch:lisp}).
+filesystem (Chapter~\ref{ch:storage}); from the LISP REPL in the companion
+examples collection, \texttt{(spi-xfer ...)} reads the same JEDEC id by hand.
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_w25q}.
 
