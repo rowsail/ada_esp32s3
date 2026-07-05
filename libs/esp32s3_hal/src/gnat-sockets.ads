@@ -38,6 +38,13 @@ package GNAT.Sockets is
    --  Convenience for a single-interface board: register Device as the default.
    procedure Initialize (Device : Net_Devices.Device_Access);
 
+   --  Fence off a hardware socket index so Create_Socket's pool never allocates
+   --  it.  Required when another subsystem drives that hardware socket directly
+   --  and concurrently -- notably DHCP.Maintain, whose lease-renewal socket would
+   --  otherwise be handed to an application connection (and clobbered on renewal).
+   --  Call once after registering the interface, before creating sockets.
+   procedure Reserve_Socket (Iface : Interface_Id; Index : Natural);
+
    type Port_Type is range 0 .. 65535;
 
    type Family_Type is (Family_Inet);                  --  IPv4 only

@@ -16,6 +16,10 @@ package body Bare_Crt is
    Ch_9  : constant Storage_Element := Character'Pos ('9');
    Ch_Sp : constant Storage_Element := Character'Pos (' ');
    Ch_HT : constant Storage_Element := Character'Pos (ASCII.HT);
+   Ch_LF : constant Storage_Element := Character'Pos (ASCII.LF);
+   Ch_VT : constant Storage_Element := Character'Pos (ASCII.VT);
+   Ch_FF : constant Storage_Element := Character'Pos (ASCII.FF);
+   Ch_CR : constant Storage_Element := Character'Pos (ASCII.CR);
 
    ------------
    -- Strlen --
@@ -59,9 +63,10 @@ package body Bare_Crt is
       C    : Storage_Element;
    begin
       loop
-         --  skip leading blanks
+         --  skip leading whitespace (C isspace: space, \t \n \v \f \r)
          C := Load (S + I);
-         exit when C /= Ch_Sp and then C /= Ch_HT;
+         exit when C /= Ch_Sp and then C /= Ch_HT and then C /= Ch_LF
+           and then C /= Ch_VT and then C /= Ch_FF and then C /= Ch_CR;
          I := I + 1;
       end loop;
       C := Load (S + I);                      --  optional sign
@@ -111,15 +116,25 @@ package body Bare_Crt is
    is
       pragma Unreferenced (Fd);
       Len : constant Natural := Natural (N);
-      --  Copy into a NUL-terminated buffer and emit with one "%s" (console text
-      --  has no embedded NUL; a NUL byte would truncate, as for any "%s").
-      Tmp : String (1 .. Len + 1);
+      --  Emit in fixed-size NUL-terminated chunks: a dynamic String (1 .. Len+1)
+      --  put the whole payload on the (16 KB) task stack, so a large write could
+      --  overflow it.  Chunking bounds stack use to Chunk+1 bytes regardless of N.
+      --  (Console text has no embedded NUL; a NUL byte truncates, as for any "%s".)
+      Chunk : constant := 128;
+      Tmp   : String (1 .. Chunk + 1);
+      Done  : Natural := 0;
+      This  : Natural;
    begin
-      for I in 0 .. Len - 1 loop
-         Tmp (I + 1) := Character'Val (Integer (Load (Buf + Storage_Offset (I))));
+      while Done < Len loop
+         This := Natural'Min (Chunk, Len - Done);
+         for I in 0 .. This - 1 loop
+            Tmp (I + 1) :=
+              Character'Val (Integer (Load (Buf + Storage_Offset (Done + I))));
+         end loop;
+         Tmp (This + 1) := ASCII.NUL;
+         Rom_Printf (Str_Fmt'Address, Tmp'Address);
+         Done := Done + This;
       end loop;
-      Tmp (Len + 1) := ASCII.NUL;
-      Rom_Printf (Str_Fmt'Address, Tmp'Address);
       return Interfaces.C.int (N);
    end Write;
 

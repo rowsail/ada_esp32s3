@@ -1,6 +1,7 @@
 with System;
 with System.Storage_Elements;      use System.Storage_Elements;
 with System.Machine_Code;          use System.Machine_Code;
+with Interfaces;                   use Interfaces;
 with Ada.Unchecked_Conversion;
 with Ada.Interrupts.Names;
 with Ada.Synchronous_Task_Control; use Ada.Synchronous_Task_Control;
@@ -13,14 +14,56 @@ with ESP32S3_Registers.INTERRUPT_CORE0;
 
 package body ESP32S3.GDMA is
 
-   --  Internal-SRAM window the GDMA can reach on the ESP32-S3.  .data/.bss/stack/
-   --  heap all live here (per the bare linker's dram0_0_seg); flash .rodata and
-   --  PSRAM sit in 0x3C000000..0x3E000000 and are not DMA-capable.
+   use type System.Address;
+
+   Cache_Line : constant := 32;   --  ESP32-S3 external-memory DCache line size
+
+   --  True if A is in external PSRAM (accessed through the DCache).
+   function In_PSRAM (A : System.Address) return Boolean
+   is (To_Integer (A) in 16#3C00_0000# .. 16#3DFF_FFFF#);
+
+   --  The GDMA reaches internal SRAM directly, and external PSRAM THROUGH the
+   --  DCache -- so a PSRAM buffer is DMA-capable only when it is cache-line
+   --  aligned (the sync below rounds the length to a line, so the buffer should
+   --  also be sized to a line-multiple, or share its trailing line with nothing
+   --  live).  Flash .rodata (also 0x3C..) is never writable/aligned for this and
+   --  so is correctly excluded.
    function Is_DMA_Capable (A : System.Address) return Boolean is
-      Addr : constant Integer_Address := To_Integer (A);   --  A as a plain integer
+      Addr : constant Integer_Address := To_Integer (A);
    begin
-      return Addr in 16#3FC8_8000# .. 16#3FCF_FFFF#;
+      return Addr in 16#3FC8_8000# .. 16#3FCF_FFFF#            --  internal SRAM
+        or else (In_PSRAM (A) and then Addr mod Cache_Line = 0);
    end Is_DMA_Capable;
+
+   --  ROM DCache maintenance by address (rom_syms.ld).  Write back dirty lines so
+   --  PSRAM holds the CPU's data before the DMA reads it; invalidate stale lines
+   --  so the CPU re-reads PSRAM after the DMA wrote it.
+   procedure Rom_WriteBack (Addr, Size : Unsigned_32)
+   with Import, Convention => C, External_Name => "rom_Cache_WriteBack_Addr";
+   procedure Rom_Invalidate (Addr, Size : Unsigned_32)
+   with Import, Convention => C, External_Name => "Cache_Invalidate_Addr";
+
+   --  Synchronise a PSRAM region with the DMA's view, over whole cache lines, with
+   --  interrupts masked: the ROM op briefly manipulates the DCache, so an ISR that
+   --  touched cached memory in the window could fault or race.
+   procedure Cache_Sync (Addr : System.Address; Length : Natural; Invalidate : Boolean) is
+      Base : constant Integer_Address :=
+        To_Integer (Addr) - (To_Integer (Addr) mod Cache_Line);
+      Last : constant Integer_Address := To_Integer (Addr) + Integer_Address (Length);
+      Size : constant Integer_Address :=
+        ((Last - Base + Cache_Line - 1) / Cache_Line) * Cache_Line;
+      PS   : Unsigned_32;
+   begin
+      Asm ("rsil %0, 15", Outputs => Unsigned_32'Asm_Output ("=r", PS),
+           Volatile => True, Clobber => "memory");
+      if Invalidate then
+         Rom_Invalidate (Unsigned_32 (Base), Unsigned_32 (Size));
+      else
+         Rom_WriteBack (Unsigned_32 (Base), Unsigned_32 (Size));
+      end if;
+      Asm ("wsr.ps %0" & ASCII.LF & "rsync", Inputs => Unsigned_32'Asm_Input ("r", PS),
+           Volatile => True, Clobber => "memory");
+   end Cache_Sync;
 
    --  PERI_SEL value that DISCONNECTS a path from any peripheral.
    Disconnect_Sel : constant := 16#3F#;
@@ -139,6 +182,13 @@ package body ESP32S3.GDMA is
    --  level -> lands in .bss (internal SRAM), satisfying the 20-bit link addr.
    TX_Desc : array (Channel_Id) of aliased Descriptor;
    RX_Desc : array (Channel_Id) of aliased Descriptor;
+
+   --  A receive into PSRAM needs its cache lines invalidated AFTER the DMA writes
+   --  them, but the buffer address isn't known at the Wait/Done completion point
+   --  -- stash it here per channel when the RX is armed (Null when the RX target
+   --  was internal SRAM and needs no sync).
+   RX_Sync_Buf : array (Channel_Id) of System.Address := (others => System.Null_Address);
+   RX_Sync_Len : array (Channel_Id) of Natural := (others => 0);
 
    function Addr_To_U32 is new Ada.Unchecked_Conversion (System.Address, UInt32);
 
@@ -293,6 +343,32 @@ package body ESP32S3.GDMA is
       end case;
    end Disarm;
 
+   ----------
+   -- Stop --
+   ----------
+
+   procedure Stop (C : Channel; Dir : Direction) is
+   begin
+      if not C.Valid then
+         return;
+      end if;
+      --  Halt the engine and detach the descriptor by pulsing the direction's
+      --  reset.  Used on a timeout: otherwise the descriptor still points at the
+      --  caller's (often stack) buffer, and a later recovery would DMA stale
+      --  bytes into a reused frame.  Also drop the EOF enable.
+      case Dir is
+         when Mem_To_Periph =>
+            Channels (C.Id).OUT_LINK.OUTLINK_STOP := True;
+            Channels (C.Id).OUT_CONF0.OUT_RST := True;
+            Channels (C.Id).OUT_CONF0.OUT_RST := False;
+         when Periph_To_Mem =>
+            Channels (C.Id).IN_LINK.INLINK_STOP := True;
+            Channels (C.Id).IN_CONF0.IN_RST := True;
+            Channels (C.Id).IN_CONF0.IN_RST := False;
+      end case;
+      Disarm (C.Id, Dir);
+   end Stop;
+
    --------------------------------------------------------------------------
    --  Protected channel allocator.  Serialises Claim / Release and the
    --  one-time module bring-up, so concurrent tasks can never be handed the
@@ -412,6 +488,24 @@ package body ESP32S3.GDMA is
          return;
       end if;
 
+      --  PSRAM coherency + burst, as for Start: flush Src so the DMA reads the
+      --  CPU's data; flush Dst clean and record it so Wait invalidates it after
+      --  the DMA writes it.
+      Channels (C.Id).OUT_CONF0.OUT_DATA_BURST_EN := In_PSRAM (Src);
+      Channels (C.Id).OUT_CONF0.OUTDSCR_BURST_EN := In_PSRAM (Src);
+      Channels (C.Id).IN_CONF0.IN_DATA_BURST_EN := In_PSRAM (Dst);
+      Channels (C.Id).IN_CONF0.INDSCR_BURST_EN := In_PSRAM (Dst);
+      if In_PSRAM (Src) then
+         Cache_Sync (Src, Length, Invalidate => False);
+      end if;
+      if In_PSRAM (Dst) then
+         Cache_Sync (Dst, Length, Invalidate => False);
+         RX_Sync_Buf (C.Id) := Dst;
+         RX_Sync_Len (C.Id) := Length;
+      else
+         RX_Sync_Buf (C.Id) := System.Null_Address;
+      end if;
+
       --  Source (OUT/TX) and destination (IN/RX) descriptors.
       Set_Desc (TX_Desc (C.Id), Src, Length);
       Set_Desc (RX_Desc (C.Id), Dst, Length);
@@ -451,7 +545,13 @@ package body ESP32S3.GDMA is
 
       case Dir is
          when Mem_To_Periph =>
-            --  OUT/TX path
+            --  OUT/TX path.  PSRAM access needs data-burst mode, and the DMA reads
+            --  from PSRAM -- so flush the CPU's writes to it first.
+            Channels (C.Id).OUT_CONF0.OUT_DATA_BURST_EN := In_PSRAM (Buffer);
+            Channels (C.Id).OUT_CONF0.OUTDSCR_BURST_EN := In_PSRAM (Buffer);
+            if In_PSRAM (Buffer) then
+               Cache_Sync (Buffer, Length, Invalidate => False);   --  write back
+            end if;
             Set_Desc (TX_Desc (C.Id), Buffer, Length);
             Channels (C.Id).OUT_INT_CLR.OUT_DONE := True;
             Channels (C.Id).OUT_INT_CLR.OUT_DSCR_ERR := True;
@@ -461,7 +561,18 @@ package body ESP32S3.GDMA is
             Channels (C.Id).OUT_LINK.OUTLINK_START := True;
 
          when Periph_To_Mem =>
-            --  IN/RX path
+            --  IN/RX path.  PSRAM access needs data-burst mode; flush first so no
+            --  dirty line is later evicted over the DMA data, and record the buffer
+            --  so Wait can invalidate it once the DMA has written PSRAM.
+            Channels (C.Id).IN_CONF0.IN_DATA_BURST_EN := In_PSRAM (Buffer);
+            Channels (C.Id).IN_CONF0.INDSCR_BURST_EN := In_PSRAM (Buffer);
+            if In_PSRAM (Buffer) then
+               Cache_Sync (Buffer, Length, Invalidate => False);   --  write back (clean)
+               RX_Sync_Buf (C.Id) := Buffer;
+               RX_Sync_Len (C.Id) := Length;
+            else
+               RX_Sync_Buf (C.Id) := System.Null_Address;
+            end if;
             Set_Desc (RX_Desc (C.Id), Buffer, Length);
             Channels (C.Id).IN_INT_CLR.IN_DONE := True;
             Channels (C.Id).IN_INT_CLR.IN_DSCR_ERR := True;
@@ -554,7 +665,52 @@ package body ESP32S3.GDMA is
             Cancel_Handler (Timeout_Ev (C.Id, Dir), Cancelled);
          end;
       end if;
-      Disarm (C.Id, Dir);   --  drop the EOF enable (whether the spin or the IRQ won)
+      if not Done (C, Dir) then
+         --  Timed out: halt the engine so it can't later write the caller's
+         --  buffer.  (Stop also Disarms.)
+         Stop (C, Dir);
+      else
+         Disarm (C.Id, Dir);   --  completed: just drop the EOF enable
+         --  The DMA just wrote PSRAM; invalidate the CPU's stale cached copy so a
+         --  read sees the received data (Start/Copy recorded the buffer).
+         if Dir = Periph_To_Mem
+           and then RX_Sync_Buf (C.Id) /= System.Null_Address
+         then
+            Cache_Sync (RX_Sync_Buf (C.Id), RX_Sync_Len (C.Id), Invalidate => True);
+            RX_Sync_Buf (C.Id) := System.Null_Address;
+         end if;
+      end if;
    end Wait;
+
+   ---------------
+   -- Self_Test --
+   ---------------
+
+   function Self_Test (Buf_A, Buf_B : System.Address) return Self_Test_Result is
+      Len : constant := 64;
+      type Bytes is array (0 .. Len - 1) of Unsigned_8;
+      function Pattern (I : Natural) return Unsigned_8
+      is (Unsigned_8 ((I * 7 + 3) mod 256));
+      A : Bytes with Import, Address => Buf_A;
+      B : Bytes with Import, Address => Buf_B;
+      C : Channel;
+   begin
+      Claim (C, Mem2Mem);
+      if not Is_Valid (C) then
+         return No_Channel;
+      end if;
+      for I in A'Range loop        --  CPU writes the source (into cache if PSRAM)
+         A (I) := Pattern (I);
+      end loop;
+      B := (others => 0);
+      Copy (C, Buf_B, Buf_A, Len);  --  DMA A -> B, with the cache sync under test
+      Release (C);
+      for I in B'Range loop         --  CPU reads the destination back
+         if B (I) /= Pattern (I) then
+            return Failed;
+         end if;
+      end loop;
+      return (if In_PSRAM (Buf_A) then Passed_PSRAM else Passed_SRAM);
+   end Self_Test;
 
 end ESP32S3.GDMA;

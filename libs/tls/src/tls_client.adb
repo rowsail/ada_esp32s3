@@ -365,9 +365,16 @@ package body TLS_Client is
             Ext_Len  : constant Natural := Natural (U16_At (Pos + 2));
             Ext_Body : constant Natural := Pos + 4;
          begin
-            if Ext_Type = 51 and then Ext_Len >= 4 then
+            --  Require the whole extension body to be present in Frag before any
+            --  inner read: the outer loop only guarantees the 4-byte header, so a
+            --  short fragment with a large Ext_Len would otherwise index past it.
+            if Ext_Type = 51 and then Ext_Len >= 4
+              and then Ext_Body + Ext_Len <= Last + 1
+            then
                --  KeyShareEntry: group (2) + length (2) + key_exchange.
-               if U16_At (Ext_Body) = 16#001D# and then Natural (U16_At (Ext_Body + 2)) = 32 then
+               if U16_At (Ext_Body) = 16#001D# and then Natural (U16_At (Ext_Body + 2)) = 32
+                 and then Ext_Body + 36 <= Last + 1        --  4 + 32 key bytes
+               then
                   for I in 0 .. 31 loop
                      S.Server_Pub (I) := Frag (Ext_Body + 4 + I);
                   end loop;
@@ -375,6 +382,7 @@ package body TLS_Client is
                   S.Have_Share := True;
                elsif U16_At (Ext_Body) = 16#0017#
                  and then Natural (U16_At (Ext_Body + 2)) = 65
+                 and then Ext_Body + 69 <= Last + 1        --  5 + 64 point bytes
                  and then Frag (Ext_Body + 4) = 16#04#      --  uncompressed point
                then
                   for I in 0 .. 31 loop
@@ -681,20 +689,29 @@ package body TLS_Client is
             if MType = 11 then
                --  Certificate
                declare
+                  Msg_End  : constant Natural := Pos + 4 + MLen;   --  end of this message
                   Cert_Pos : Natural := Pos + 4;
                   List_End : Natural := Pos + 4;
                begin
                   Cert_Pos := Cert_Pos + 1 + Natural (HSB (Cert_Pos));  --  cert_request_context
-                  declare
-                     ListLen : constant Natural :=
-                       Natural (HSB (Cert_Pos))
-                       * 65536
-                       + Natural (HSB (Cert_Pos + 1)) * 256
-                       + Natural (HSB (Cert_Pos + 2));
-                  begin
-                     Cert_Pos := Cert_Pos + 3;         --  start of certificate_list
-                     List_End := Natural'Min (Cert_Pos + ListLen, HSB_Len);
-                  end;
+                  --  A bogus context length could push Cert_Pos past the message
+                  --  (and near HSB's end, past the 8 KB buffer); bound the 3-byte
+                  --  ListLen read before indexing.
+                  if Cert_Pos + 3 > Msg_End or else Cert_Pos + 2 > HSB_Len then
+                     S.Chain_Count := 0;
+                     List_End := Cert_Pos;                 --  empty walk below
+                  else
+                     declare
+                        ListLen : constant Natural :=
+                          Natural (HSB (Cert_Pos))
+                          * 65536
+                          + Natural (HSB (Cert_Pos + 1)) * 256
+                          + Natural (HSB (Cert_Pos + 2));
+                     begin
+                        Cert_Pos := Cert_Pos + 3;         --  start of certificate_list
+                        List_End := Natural'Min (Cert_Pos + ListLen, HSB_Len);
+                     end;
+                  end if;
                   --  Walk every entry: [cert len(3)][cert DER][ext len(2)][exts].
                   S.Chain_Count := 0;
                   while Cert_Pos + 3 <= List_End loop
@@ -736,8 +753,18 @@ package body TLS_Client is
                   Sig_Len : constant Natural :=
                     Natural (HSB (Pos + 6)) * 256 + Natural (HSB (Pos + 7));
                begin
-                  S.CV_Sig_First := Pos + 8;
-                  S.CV_Sig_Last := Pos + 8 + Sig_Len - 1;
+                  --  The signature must exactly fill the message body (2 alg + 2
+                  --  len + Sig_Len = MLen).  Reject anything else: a bogus wire
+                  --  length (up to 65535) would otherwise push CV_Sig_Last past
+                  --  the message -- and past the 8 KB HSB -- so Verify_Cert_Verify
+                  --  sizes a giant stack array and reads out of bounds.
+                  if MLen >= 4 and then Sig_Len = MLen - 4 then
+                     S.CV_Sig_First := Pos + 8;
+                     S.CV_Sig_Last := Pos + 8 + Sig_Len - 1;
+                  else
+                     S.CV_Sig_First := 1;
+                     S.CV_Sig_Last := 0;      --  Sig_Len <= 0 => Verify rejects it
+                  end if;
                end;
                S.CV_End := Pos + 4 + MLen;            --  transcript point for Finished
             elsif MType = 20 then
@@ -1106,7 +1133,14 @@ package body TLS_Client is
                if S.Flight then
                   Verify_Cert_Verify (S);
                   Verify_Finished (S);
-                  if S.Fin_OK then
+                  --  Require the CertificateVerify signature to check out, not
+                  --  just Finished: Finished proves the ECDHE agreement, while
+                  --  CertificateVerify proves the peer holds the presented cert's
+                  --  private key.  A full (non-PSK) handshake without CV_OK is a
+                  --  MITM forwarding someone else's certificate.  (Chain / trust-
+                  --  anchor / hostname validation is still the caller's job -- see
+                  --  Server_Cert_Verify_OK and Chain_Verify in the spec.)
+                  if S.Fin_OK and then S.CV_OK then
                      Complete_Handshake (S, Sock);   --  send our Finished, open channel
 
                   end if;
@@ -1310,7 +1344,9 @@ package body TLS_Client is
                      Verify_Cert_Verify (S);
                   end if;
                   Verify_Finished (S);
-                  if S.Fin_OK then
+                  --  On the full (cert) path require CV_OK; a PSK resumption is
+                  --  authenticated by the pre-shared key itself, no cert sent.
+                  if S.Fin_OK and then (S.Resumed_PSK or else S.CV_OK) then
                      Complete_Handshake (S, Sock);
                      Resumed := S.Resumed_PSK;
                   end if;

@@ -5,6 +5,12 @@ with ESP32S3.Endian;
 
 package body DNS_Client is
 
+   --  Varies the transaction id from one query to the next so a reply is bound
+   --  to the query that asked for it (checked below).  Not cryptographic, but
+   --  combined with the source-address/port checks it defeats the trivial
+   --  "accept any datagram on the port" cache-poisoning the old fixed id allowed.
+   Next_Id : Unsigned_16 := 16#1234#;
+
    function Resolve
      (Server     : Inet_Addr_Type;
       Name       : String;
@@ -20,6 +26,7 @@ package body DNS_Client is
       SLast : Stream_Element_Offset;
       To    : aliased Sock_Addr_Type := (Family_Inet, Server, 53);
       From  : aliased Sock_Addr_Type;
+      Q_Id  : constant Unsigned_16 := Next_Id;
 
       --  Decimal image of E with no leading blank ("84", not " 84").
       function Img (Element : Stream_Element) return String is
@@ -38,8 +45,8 @@ package body DNS_Client is
             Pos := Pos + 1;
          end B;
       begin
-         B (16#12#);
-         B (16#34#);          --  ID
+         B (Integer (Shift_Right (Q_Id, 8)));
+         B (Integer (Q_Id and 16#FF#));   --  ID (this query's)
          B (16#01#);
          B (16#00#);          --  flags: standard query, recursion desired
          B (0);
@@ -94,6 +101,7 @@ package body DNS_Client is
             (ESP32S3.Endian.Join_BE16 (Unsigned_8 (Resp (Pos)), Unsigned_8 (Resp (Pos + 1)))));
    begin
       Addr := Any_Inet_Addr;
+      Next_Id := Next_Id + 1;             --  advance for the next caller
       Build_Query;
       Create_Socket (Sock, Family_Inet, Socket_Datagram);
       Bind_Socket (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
@@ -110,40 +118,65 @@ package body DNS_Client is
             return False;
       end;
 
+      --  Everything from here closes Sock on the way out (normal, reject, or an
+      --  exception from a malformed reply) so the datagram socket never leaks.
       declare
-         AnCount : constant Integer := U16 (Resp'First + 6);   --  answer count
-         Pos     : Stream_Element_Offset := Resp'First + 12;   --  past the header
-         Found   : Boolean := False;
+         Found : Boolean := False;
       begin
-         Skip_Name (Pos);                 --  skip the question's QNAME
-         Pos := Pos + 4;                  --   + QTYPE + QCLASS
-         for A in 1 .. AnCount loop
-            exit when Pos + 10 > RLast;
-            Skip_Name (Pos);              --  answer NAME (usually a pointer)
-            declare
-               RRType : constant Integer := U16 (Pos);
-               RDLen  : constant Integer := U16 (Pos + 8);
-               RData  : constant Stream_Element_Offset := Pos + 10;
-            begin
-               if RRType = 1 and then RDLen = 4 then
-                  --  an A record
-                  Addr :=
-                    Inet_Addr
-                      (Img (Resp (RData))
-                       & "."
-                       & Img (Resp (RData + 1))
-                       & "."
-                       & Img (Resp (RData + 2))
-                       & "."
-                       & Img (Resp (RData + 3)));
-                  Found := True;
-                  exit;
-               end if;
-               Pos := RData + Stream_Element_Offset (RDLen);
-            end;
-         end loop;
+         --  Reject a datagram that isn't from the server we asked, on port 53,
+         --  echoing our transaction id, and long enough to hold a DNS header.
+         if From.Addr /= Server
+           or else From.Port /= 53
+           or else RLast < Resp'First + 11
+           or else U16 (Resp'First) /= Integer (Q_Id)
+         then
+            Close_Socket (Sock);
+            return False;
+         end if;
+
+         declare
+            AnCount : constant Integer := U16 (Resp'First + 6);   --  answer count
+            Pos     : Stream_Element_Offset := Resp'First + 12;   --  past the header
+         begin
+            Skip_Name (Pos);              --  skip the question's QNAME
+            Pos := Pos + 4;               --   + QTYPE + QCLASS
+            for A in 1 .. AnCount loop
+               Skip_Name (Pos);           --  answer NAME (usually a pointer)
+               --  Bound AFTER Skip_Name: it can advance Pos past RLast, and the
+               --  fixed 10-byte RR header (type/class/ttl/rdlength) plus its
+               --  RDATA must all lie within the received bytes before we index.
+               exit when Pos + 10 > RLast;
+               declare
+                  RRType : constant Integer := U16 (Pos);
+                  RDLen  : constant Integer := U16 (Pos + 8);
+                  RData  : constant Stream_Element_Offset := Pos + 10;
+               begin
+                  exit when RData + Stream_Element_Offset (RDLen) - 1 > RLast;
+                  if RRType = 1 and then RDLen = 4 then
+                     --  an A record
+                     Addr :=
+                       Inet_Addr
+                         (Img (Resp (RData))
+                          & "."
+                          & Img (Resp (RData + 1))
+                          & "."
+                          & Img (Resp (RData + 2))
+                          & "."
+                          & Img (Resp (RData + 3)));
+                     Found := True;
+                     exit;
+                  end if;
+                  Pos := RData + Stream_Element_Offset (RDLen);
+               end;
+            end loop;
+         end;
          Close_Socket (Sock);
          return Found;
+      exception
+         when others =>
+            --  any malformed-reply error: don't leak the socket, report failure
+            Close_Socket (Sock);
+            return False;
       end;
    end Resolve;
 

@@ -38,7 +38,8 @@ package body FTP_Server is
    Name     : String (1 .. 64);            --  server name for the 220 greeting
    Name_Len : Natural := 0;
 
-   Ctrl    : Socket_Type;                 --  the control connection
+   Ctrl      : Socket_Type;               --  the control connection
+   Ctrl_Peer : Sock_Addr_Type;            --  its remote address (data-peer check)
    Cwd     : String (1 .. 1024);          --  current directory (absolute)
    Cwd_Len : Natural := 1;
 
@@ -268,8 +269,18 @@ package body FTP_Server is
          end;
       end if;
       Create_Socket (Data_Sock, Family_Inet, Socket_Stream);
-      Bind_Socket (Data_Sock, (Family => Family_Inet, Addr => Any_Inet_Addr, Port => DPort));
-      Listen_Socket (Data_Sock);
+      begin
+         Bind_Socket (Data_Sock, (Family => Family_Inet, Addr => Any_Inet_Addr, Port => DPort));
+         Listen_Socket (Data_Sock);
+      exception
+         when Socket_Error =>
+            --  Bind/Listen failed after Create: close the slot (else it leaks and
+            --  the catch-all in Run tears down the control session) and report.
+            Close_Socket (Data_Sock);
+            Have_Pasv := False;
+            Reply ("425", "cannot open data listener");
+            return;
+      end;
       Have_Pasv := True;
       --  227 wants the IP with commas: a.b.c.d -> a,b,c,d
       for I in Host_Str'Range loop
@@ -292,9 +303,26 @@ package body FTP_Server is
       end if;
       Reply ("150", "opening data connection");
       Accept_Socket (Data_Sock, Conn, Addr);
+      --  Only accept a data connection from the same host as the control session:
+      --  the listener binds Any_Inet_Addr on a predictable port, so otherwise a
+      --  third party on the network could race the client to it and receive the
+      --  file (or inject a STOR body).
+      if Addr.Addr /= Ctrl_Peer.Addr then
+         Close_Socket (Conn);
+         Reply ("425", "data connection from unexpected host");
+         return False;
+      end if;
       return True;
    exception
       when Socket_Error =>
+         --  Close the listener before dropping Have_Pasv, or the next Do_Pasv
+         --  (which only closes when Have_Pasv is set) leaks this slot forever.
+         begin
+            Close_Socket (Data_Sock);
+         exception
+            when others =>
+               null;
+         end;
          Reply ("425", "data connection failed");
          Have_Pasv := False;
          return False;
@@ -773,6 +801,20 @@ package body FTP_Server is
          Bind_Socket (Listener, (Family => Family_Inet, Addr => Any_Inet_Addr, Port => Port));
          Listen_Socket (Listener);
          Accept_Socket (Listener, Ctrl, Peer);     --  Ctrl becomes the connection
+         Ctrl_Peer := Peer;                         --  remember for the data-peer check
+         --  Idle timeout on the control connection: without it a client that
+         --  vanishes without a FIN (power loss, upstream drop) wedges this
+         --  single-client server forever.  A control receive that blocks past the
+         --  timeout raises Socket_Error, which Serve_Client's handler turns into a
+         --  clean session close so the next client can connect.  (Standard FTP
+         --  idle-timeout behaviour.)
+         begin
+            Set_Socket_Option
+              (Ctrl, Socket_Level, (Name => Receive_Timeout, Timeout => 300.0));
+         exception
+            when others =>
+               null;
+         end;
          --  No IP given: PASV advertises the address the client reached us on.
          if Derive then
             Set_Host (Image (Get_Socket_Name (Ctrl).Addr));

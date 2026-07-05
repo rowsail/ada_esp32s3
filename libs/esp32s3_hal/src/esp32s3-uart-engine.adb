@@ -63,9 +63,16 @@ package body ESP32S3.UART.Engine is
    --  remaining 1/16-resolution divisor into CLKDIV.integer + CLKDIV.frag.
    procedure Program_Baud (Regs : Periph_Ref; Baud : Baud_Rate) is
       Max_Div  : constant := 4095;                       --  CLKDIV is 12 bits
+      --  64-bit intermediates: Max_Div * Baud overflows 32-bit Integer for any
+      --  Baud above ~524 kBd, and Baud_Rate ranges to 5 MBd (921600/1M/2M/5M all
+      --  fell in the overflow band before).
+      B64      : constant Long_Long_Integer := Long_Long_Integer (Baud);
+      S64      : constant Long_Long_Integer := Long_Long_Integer (Src_Hz);
       Sclk_Div : constant Natural :=
-        Natural'Max (1, (Src_Hz + (Max_Div * Baud) - 1) / (Max_Div * Baud));
-      Clk_Div  : constant Natural := (Src_Hz * 16) / (Baud * Sclk_Div);
+        Natural (Long_Long_Integer'Max
+          (1, (S64 + (Max_Div * B64) - 1) / (Max_Div * B64)));
+      Clk_Div  : constant Natural :=
+        Natural ((S64 * 16) / (B64 * Long_Long_Integer (Sclk_Div)));
    begin
       Regs.CLK_CONF :=
         (SCLK_SEL     => 3,
@@ -286,6 +293,10 @@ package body ESP32S3.UART.Engine is
             while Natural (B.Regs.STATUS.TXFIFO_CNT) >= Fifo_Len and then Guard > 0 loop
                Guard := Guard - 1;
             end loop;
+            --  Timed out with the FIFO still full (e.g. CTS held low): stop rather
+            --  than push into a full FIFO, where the byte -- and every byte after
+            --  it -- would be silently dropped by the hardware.
+            exit when Guard = 0;
          end;
          B.Regs.FIFO := (RXFIFO_RD_BYTE => ESP32S3_Registers.Byte (Data_Byte), others => <>);
       end loop;

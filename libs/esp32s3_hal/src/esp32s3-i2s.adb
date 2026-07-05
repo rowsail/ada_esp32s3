@@ -130,6 +130,9 @@ package body ESP32S3.I2S is
       Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
       Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin) is
    begin
+      if S.Active then
+         raise Program_Error with "I2S Session already active; Release first";
+      end if;
       Guards (Port).Acquire;          --  suspends here until the port is free
       S.Port := Port;
       S.Active := True;

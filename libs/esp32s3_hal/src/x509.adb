@@ -405,6 +405,12 @@ package body X509 is
             Result.Sig_Kind := Sig_ECDSA_SHA384;
          elsif OID_Match (Cert, OID.Content, OID_Ed25519) then
             Result.Sig_Kind := Sig_Ed25519;
+         else
+            --  Unknown signatureAlgorithm: we cannot verify this certificate's
+            --  signature, so it must not parse as Valid (matches how an unknown
+            --  key type is rejected above).  Otherwise a caller that forgets to
+            --  reject Sig_Other treats an unverifiable cert as trusted.
+            Ok := False;
          end if;
       end if;
       Pos := SigAlg.Elem_Last + 1;

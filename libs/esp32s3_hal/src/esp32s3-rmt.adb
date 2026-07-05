@@ -53,8 +53,20 @@ package body ESP32S3.RMT is
    RX_Conf : RX_Array
    with Import, Volatile, Address => RMT_Periph.CH_RX_CONF00'Address;
 
-   function Div_Of (Resolution_Hz : Positive) return Byte
-   is (Byte (Natural'Max (1, Natural'Min (255, Src_Hz / Resolution_Hz))));
+   --  DIV_CNT is the per-channel 8-bit divider off the 80 MHz source; the group
+   --  prescaler (SCLK_DIV_NUM) is shared across channels and left at 0.  So the
+   --  lowest representable resolution is Src_Hz/255 (~314 kHz).  Raise rather than
+   --  silently clamp -- a clamped divider mis-times every symbol by up to orders
+   --  of magnitude, and the caller cannot tell.
+   function Div_Of (Resolution_Hz : Positive) return Byte is
+      Div : constant Natural := Src_Hz / Resolution_Hz;
+   begin
+      if Div > 255 then
+         raise Constraint_Error with
+           "RMT resolution too low (min ~314 kHz with the 8-bit divider)";
+      end if;
+      return Byte (Natural'Max (1, Div));
+   end Div_Of;
 
    procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
       Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));

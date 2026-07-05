@@ -381,12 +381,16 @@ package body ESP32S3.Ext4.Journal is
       Targets : array (1 .. Max_WS) of Block_Number;
       N       : Natural := 0;
 
+      WS_Overflow : Boolean := False;   --  more dirty blocks than the write-set holds
+
       procedure Collect (B : Block_Number) is
       begin
          if N < Max_WS - 1 then
             --  leave room for the SB target
             N := N + 1;
             Targets (N) := B;
+         else
+            WS_Overflow := True;   --  do NOT silently drop -- fail the commit below
          end if;
       end Collect;
 
@@ -502,6 +506,33 @@ package body ESP32S3.Ext4.Journal is
       First := U64 (Get_U32_BE (Jsb.all, 16#14#));
       S_Seq := Get_U32_BE (Jsb.all, 16#18#);
       UUID := Jsb.all (16#30# .. 16#3F#);
+
+      --  Capacity gate (do this BEFORE writing anything, so a failure leaves the
+      --  dirty blocks in cache and the on-disk journal untouched -- never a
+      --  half-written transaction).  A write-set that overflowed the collector,
+      --  that does not fit one descriptor block's tags, or that would run past
+      --  the log region [First .. Maxlen-1] cannot be committed atomically.
+      --  Truncating it (the old behaviour) or running off the journal end into
+      --  unrelated device sectors is corruption; raise instead.
+      declare
+         Maxlen   : constant U64 := U64 (Get_U32_BE (Jsb.all, 16#10#));
+         Tag_Sz   : constant Natural := (if Use_64 then 12 else 8);
+         --  usable descriptor bytes after the 12-byte header and the 16-byte
+         --  UUID that follows the first tag
+         Desc_Cap : constant Natural := (BS - 12 - 16) / Tag_Sz;
+      begin
+         if WS_Overflow
+           or else N > Desc_Cap
+           or else (Maxlen > First and then U64 (N) + 2 > Maxlen - First)
+           or else Maxlen <= First
+         then
+            Free (Jsb);
+            Free (Blk);
+            Free (SBblk);
+            raise Transaction_Too_Large
+              with "ext4 journal: write-set exceeds journal capacity";
+         end if;
+      end;
 
       --  3. Descriptor block (direct) at journal block First.
       Blk.all := [others => 0];

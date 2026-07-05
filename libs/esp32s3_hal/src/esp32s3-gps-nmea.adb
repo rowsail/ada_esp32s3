@@ -414,9 +414,12 @@ package body ESP32S3.GPS.NMEA is
             --  NMEA-4.10 signalId field is misread as a PRN.
             Result.Recognised := True;
             declare
-               Msg_No : constant Natural := To_Nat (Field (Payload, 2));
+               --  Cap the wire-supplied counts: To_Nat can return ~2**31, and
+               --  4 * (Msg_No - 1) would then overflow Natural.  A GSV sequence is
+               --  a handful of messages listing at most a few dozen satellites.
+               Msg_No : constant Natural := Natural'Min (To_Nat (Field (Payload, 2)), 32);
                View   : constant String := Field (Payload, 3);
-               In_V   : constant Natural := To_Nat (View);
+               In_V   : constant Natural := Natural'Min (To_Nat (View), 255);
                Sys    : constant GNSS_System := System_Of (Kind);
                Before : constant Natural := (if Msg_No >= 1 then 4 * (Msg_No - 1) else 0);
                Here   : constant Natural :=

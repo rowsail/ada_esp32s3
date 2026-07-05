@@ -125,7 +125,12 @@ package body ESP32S3.Ext4.FS is
       then
          Journal.Replay (M.V);
          ESP32S3.Ext4.Block_Cache.Flush (M.V.Cache);   --  checkpoint replay
-
+         --  Replay rewrote the on-disk superblock (recovered free counts); the
+         --  in-memory M.V.SB read above is now stale.  Re-read it, or Close's
+         --  Superblock.Sync would re-encode the pre-crash counts back over the
+         --  recovered ones -- free-count drift accumulating every recovery cycle.
+         Superblock.Read (Dev, M.V.SB);
+         Superblock.Require_Supported (M.V.SB, Handled_Incompat);
       end if;
    end Open;
 
@@ -134,6 +139,10 @@ package body ESP32S3.Ext4.FS is
    -----------
 
    procedure Close (M : in out Mount) is
+      --  Serialize teardown against in-flight operations: Done frees the cache's
+      --  Meta/Pool, so a concurrent op mid-flush would touch freed memory.
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       if M.Live then
          if not M.V.Read_Only then
@@ -332,12 +341,18 @@ package body ESP32S3.Ext4.FS is
    is (M.V.SB.Block_Size);
 
    function Map_Block (M : in out Mount; I : Inode.Info; L_Block : U64) return Block_Number is
+      --  Reads the shared cache via the block map; lock like every other op.
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       return Block_Map.Logical_To_Physical (M.V, I, L_Block);
    end Map_Block;
 
    procedure Journal_Commit
-     (M : in out Mount; Targets : Journal.Target_Array; New_Data : Byte_Array) is
+     (M : in out Mount; Targets : Journal.Target_Array; New_Data : Byte_Array)
+   is
+      Guard : Scoped_Lock;
+      pragma Unreferenced (Guard);
    begin
       Journal.Commit (M.V, Targets, New_Data);
    end Journal_Commit;

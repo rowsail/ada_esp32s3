@@ -171,6 +171,9 @@ package body ESP32S3.SPI is
       Select_CB : CS_Select := null;
       Ctx       : System.Address := System.Null_Address) is
    begin
+      if S.Active then
+         raise Program_Error with "SPI Session already active; Release first";
+      end if;
       if not State.Ready (Host) then
          raise Not_Initialized with "SPI host acquired before Setup";
       end if;

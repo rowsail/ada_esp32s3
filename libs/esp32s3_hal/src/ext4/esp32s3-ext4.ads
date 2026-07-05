@@ -54,6 +54,7 @@ package ESP32S3.Ext4 is
    Unsupported_Feature : exception;   --  an incompat feature we don't implement
    Bad_Checksum        : exception;   --  metadata_csum / crc mismatch
    Corrupt             : exception;   --  structural inconsistency on disk
+   Transaction_Too_Large : exception; --  write-set exceeds the journal's capacity
    No_Space            : exception;   --  out of blocks or inodes
    Not_Empty           : exception;   --  rmdir on a non-empty directory
    Read_Only           : exception;   --  write attempted on a read-only mount

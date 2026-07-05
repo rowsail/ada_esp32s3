@@ -28,12 +28,15 @@ package body NTP_Client is
       if Timeout > 0.0 then
          Set_Socket_Option (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
       end if;
-      Send_Socket (Sock, Req, Last, To => To'Access);
       begin
+         --  Send inside the handler too: Send_Socket can raise (e.g. an ARP
+         --  timeout to the server) and a leaked datagram socket would drain the
+         --  8-slot pool over repeated failures.
+         Send_Socket (Sock, Req, Last, To => To'Access);
          Receive_Socket (Sock, Resp, Last, From => From'Access);
       exception
          when Socket_Error =>
-            --  no reply within Timeout
+            --  no reply within Timeout (or send failed)
             Close_Socket (Sock);
             return False;
       end;

@@ -354,6 +354,7 @@ package body ESP32S3.W5500.Sockets is
 
    --  Issue SEND and wait for SEND_OK (or TIMEOUT).  Returns False on timeout.
    function Flush_Send (S : Socket) return Boolean is
+      Deadline : constant Time := Clock + Milliseconds (10_000);
    begin
       W8 (S, Sn_IR, IR_SEND_OK);                            --  clear stale SEND_OK
       Issue (S, Cmd_Send);
@@ -369,8 +370,17 @@ package body ESP32S3.W5500.Sockets is
                return False;
             end if;
          end;
+         --  A peer RST after Cmd_Send drops the socket to CLOSED and raises
+         --  NEITHER SEND_OK nor TIMEOUT -- without these two exits the loop spun
+         --  forever, wedging the sending task.  Match WIZnet's own send() loop:
+         --  bail if the socket closed, and cap the total wait.
+         if R8 (S, Sn_SR) = SR_CLOSED then
+            return False;
+         end if;
+         exit when Clock >= Deadline;
          Wait_Event (S);
       end loop;
+      return False;   --  deadline elapsed
    end Flush_Send;
 
    procedure Send (S : in out Socket; Data : Byte_Array; Sent : out Natural; Result : out Status)
@@ -383,6 +393,11 @@ package body ESP32S3.W5500.Sockets is
       if not S.Is_Open then
          Sent := 0;
          Result := Not_Open;
+         return;
+      end if;
+      if Data'Length = 0 then
+         Sent := 0;              --  nothing to send; don't issue a 0-byte Cmd_Send
+         Result := OK;
          return;
       end if;
       --  Wait for room in the TX buffer rather than giving up: on a SUSTAINED

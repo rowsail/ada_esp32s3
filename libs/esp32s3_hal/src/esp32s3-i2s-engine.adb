@@ -242,14 +242,26 @@ package body ESP32S3.I2S.Engine is
       Regs.RX_CONF.RX_RESET := False;
       Regs.RX_CONF.RX_FIFO_RESET := True;
       Regs.RX_CONF.RX_FIFO_RESET := False;
+      --  Bounded latch waits: RX_UPDATE/TX_UPDATE do not always self-clear while
+      --  a continuous transfer drives the shared clock (see Capture), so never
+      --  spin unbounded here -- a Read/Transfer issued during Start_Continuous
+      --  would otherwise hang the task forever.
       Regs.TX_CONF.TX_UPDATE := True;
-      while Regs.TX_CONF.TX_UPDATE loop
-         null;
-      end loop;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.TX_CONF.TX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
       Regs.RX_CONF.RX_UPDATE := True;
-      while Regs.RX_CONF.RX_UPDATE loop
-         null;
-      end loop;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.RX_CONF.RX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
 
       B.Regs := Regs;
       B.Port := Port;
@@ -343,14 +355,26 @@ package body ESP32S3.I2S.Engine is
          GD.Start (Chan, GD.Periph_To_Mem, Rx, Length);
       end if;
 
+      --  Bounded latch waits: RX_UPDATE/TX_UPDATE do not always self-clear while
+      --  a continuous transfer drives the shared clock (see Capture), so never
+      --  spin unbounded here -- a Read/Transfer issued during Start_Continuous
+      --  would otherwise hang the task forever.
       Regs.TX_CONF.TX_UPDATE := True;
-      while Regs.TX_CONF.TX_UPDATE loop
-         null;
-      end loop;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.TX_CONF.TX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
       Regs.RX_CONF.RX_UPDATE := True;
-      while Regs.RX_CONF.RX_UPDATE loop
-         null;
-      end loop;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.RX_CONF.RX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
 
       if Do_Rx then
          Regs.RX_CONF.RX_START := True;
@@ -372,9 +396,15 @@ package body ESP32S3.I2S.Engine is
       --  serializer done) first.  Same unbounded-poll style as TX_UPDATE above;
       --  it is bounded in practice because TX is running and the FIFO must empty.
       if Do_Tx then
-         while not Regs.STATE.TX_IDLE loop
-            null;
-         end loop;
+         --  Bounded: in PDM/slave modes with no external clock the FIFO may never
+         --  drain, so cap the drain wait rather than hang.
+         declare
+            Guard : Natural := 0;
+         begin
+            while not Regs.STATE.TX_IDLE and then Guard < 1_000_000 loop
+               Guard := Guard + 1;
+            end loop;
+         end;
       end if;
 
       Regs.TX_CONF.TX_START := False;

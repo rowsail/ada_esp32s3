@@ -25,6 +25,46 @@ package body ESP32S3.MCPWM is
          when MCPWM0 => MCPWM0_Periph'Access,
          when MCPWM1 => MCPWM1_Periph'Access);
 
+   --  OPERATOR_TIMERSEL and FAULT_DETECT are per-unit registers written
+   --  field-by-field (each a read-modify-write).  Two tasks configuring
+   --  different channels / fault inputs of the SAME unit would lose each other's
+   --  updates, so route those RMWs through a protected object.
+   protected CTRL_Guard is
+      procedure Select_Timer (Unit : MCPWM_Unit; Ch : Channel_Index);
+      procedure Enable_Fault
+        (Unit : MCPWM_Unit; Input : Fault_Input; Active_High : Boolean);
+   end CTRL_Guard;
+
+   protected body CTRL_Guard is
+      procedure Select_Timer (Unit : MCPWM_Unit; Ch : Channel_Index) is
+         Regs : constant Periph_Ref := Regs_Of (Unit);
+      begin
+         case Ch is
+            when Ch0 => Regs.OPERATOR_TIMERSEL.OPERATOR0_TIMERSEL := 0;
+            when Ch1 => Regs.OPERATOR_TIMERSEL.OPERATOR1_TIMERSEL := 1;
+            when Ch2 => Regs.OPERATOR_TIMERSEL.OPERATOR2_TIMERSEL := 2;
+         end case;
+      end Select_Timer;
+
+      procedure Enable_Fault
+        (Unit : MCPWM_Unit; Input : Fault_Input; Active_High : Boolean)
+      is
+         Regs : constant Periph_Ref := Regs_Of (Unit);
+      begin
+         case Input is
+            when Fault0 =>
+               Regs.FAULT_DETECT.F0_EN := True;
+               Regs.FAULT_DETECT.F0_POLE := Active_High;
+            when Fault1 =>
+               Regs.FAULT_DETECT.F1_EN := True;
+               Regs.FAULT_DETECT.F1_POLE := Active_High;
+            when Fault2 =>
+               Regs.FAULT_DETECT.F2_EN := True;
+               Regs.FAULT_DETECT.F2_POLE := Active_High;
+         end case;
+      end Enable_Fault;
+   end CTRL_Guard;
+
    --  Generator outputs OUTnA = base + 2n (OUTnB = +1); fault/capture inputs
    --  stride by 1.  Bases come from ESP32S3.GPIO_Signals (gpio_sig_map).
    function Out_Signal (Unit : MCPWM_Unit; Ch : Channel_Index) return Natural
@@ -249,17 +289,8 @@ package body ESP32S3.MCPWM is
       end if;
       Periods (Unit, Ch) := Ticks;
 
-      --  Operator Ch is timed by timer Ch.
-      case Ch is
-         when Ch0 =>
-            Regs.OPERATOR_TIMERSEL.OPERATOR0_TIMERSEL := 0;
-
-         when Ch1 =>
-            Regs.OPERATOR_TIMERSEL.OPERATOR1_TIMERSEL := 1;
-
-         when Ch2 =>
-            Regs.OPERATOR_TIMERSEL.OPERATOR2_TIMERSEL := 2;
-      end case;
+      --  Operator Ch is timed by timer Ch (RMW of the shared OPERATOR_TIMERSEL).
+      CTRL_Guard.Select_Timer (Unit, Ch);
 
       --  Timer: up-count, given prescale + period, left stopped (START = 0).
       --  Comparator A: 0 % to start, reloaded at TEZ (glitch-free).
@@ -469,19 +500,7 @@ package body ESP32S3.MCPWM is
    begin
       --  Pull the pad to the INACTIVE level so a disconnected input never faults.
       Route_In (Fault_Signal (Unit, Input), Pin, (if Active_High then G.Pull_Down else G.Pull_Up));
-      case Input is
-         when Fault0 =>
-            Regs.FAULT_DETECT.F0_EN := True;
-            Regs.FAULT_DETECT.F0_POLE := Active_High;
-
-         when Fault1 =>
-            Regs.FAULT_DETECT.F1_EN := True;
-            Regs.FAULT_DETECT.F1_POLE := Active_High;
-
-         when Fault2 =>
-            Regs.FAULT_DETECT.F2_EN := True;
-            Regs.FAULT_DETECT.F2_POLE := Active_High;
-      end case;
+      CTRL_Guard.Enable_Fault (Unit, Input, Active_High);   --  RMW of FAULT_DETECT
    end Configure_Fault;
 
    ---------------------

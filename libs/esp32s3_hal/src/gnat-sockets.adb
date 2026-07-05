@@ -27,6 +27,14 @@ package body GNAT.Sockets is
    In_Use       : array (Interface_Id, Sock_Index) of Boolean := (others => (others => False));
    Local_Ports  : array (Interface_Id, Sock_Index) of Net_Devices.Port_Number :=
      (others => (others => 0));
+
+   --  Rolling ephemeral source port.  A fixed port per socket index reused the
+   --  exact 4-tuple on every reconnect to the same server, so the SYN was
+   --  rejected while the server side was still in TIME_WAIT.  Hand out a fresh
+   --  port each connect, cycling the IANA dynamic range (49152 .. 65535).
+   Ephemeral_Lo   : constant := 49_152;
+   Ephemeral_Hi   : constant := 65_535;
+   Next_Ephemeral : Natural := Ephemeral_Lo;
    Modes        : array (Interface_Id, Sock_Index) of Mode_Type :=
      (others => (others => Socket_Stream));
    Opened       : array (Interface_Id, Sock_Index) of Boolean := (others => (others => False));
@@ -260,6 +268,7 @@ package body GNAT.Sockets is
          J     : out Sock_Index;
          Ok    : out Boolean);
       procedure Release (Id : Interface_Id; J : Sock_Index);
+      procedure Reserve (Id : Interface_Id; J : Sock_Index);
    end Socket_Pool;
 
    protected body Socket_Pool is
@@ -291,7 +300,22 @@ package body GNAT.Sockets is
          In_Use (Id, J) := False;
          Opened (Id, J) := False;
       end Release;
+
+      --  Permanently mark a slot in use so Claim never hands it out (there is no
+      --  matching Release): used to fence off a hardware socket another subsystem
+      --  drives directly, e.g. DHCP.Maintain's renewal socket.
+      procedure Reserve (Id : Interface_Id; J : Sock_Index) is
+      begin
+         In_Use (Id, J) := True;
+      end Reserve;
    end Socket_Pool;
+
+   procedure Reserve_Socket (Iface : Interface_Id; Index : Natural) is
+   begin
+      if Index <= Sock_Index'Last then
+         Socket_Pool.Reserve (Iface, Sock_Index (Index));
+      end if;
+   end Reserve_Socket;
 
    procedure Create_Socket
      (Socket : out Socket_Type;
@@ -404,8 +428,10 @@ package body GNAT.Sockets is
          St : Net_Devices.Status;
       begin
          if Local_Ports (Id, J) = 0 then
-            --  pick an ephemeral local port
-            Local_Ports (Id, J) := Net_Devices.Port_Number (50_000 + J);
+            --  pick the next ephemeral local port (fresh 4-tuple per reconnect)
+            Local_Ports (Id, J) := Net_Devices.Port_Number (Next_Ephemeral);
+            Next_Ephemeral :=
+              (if Next_Ephemeral >= Ephemeral_Hi then Ephemeral_Lo else Next_Ephemeral + 1);
          end if;
          Ensure_Open (Id, J);                     --  open TCP on the local port
          Registry (Id).Connect (J, Server.Addr.B, Net_Devices.Port_Number (Server.Port), St);

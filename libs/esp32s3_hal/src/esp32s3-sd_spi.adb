@@ -1,4 +1,5 @@
 with Interfaces; use Interfaces;
+with Ada.Real_Time;
 with ESP32S3.GPIO;
 
 package body ESP32S3.SD_SPI is
@@ -279,15 +280,20 @@ package body ESP32S3.SD_SPI is
       end if;
 
       --  Wait for the data start token (0xFE).  A token with the top nibble
-      --  clear but /= 0xFE is an error token.
-      for I in 1 .. 4000 loop
-         Token := Swap (C, Session, 16#FF#);
-         exit when Token = Data_Token;
-         if Token /= 16#FF# then
-            exit;                              --  error token -> bail
-
-         end if;
-      end loop;
+      --  clear but /= 0xFE is an error token.  Time-based (SD read budget ~100 ms)
+      --  so a slow-but-healthy card isn't failed spuriously.
+      declare
+         use type Ada.Real_Time.Time;
+         Deadline : constant Ada.Real_Time.Time :=
+           Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (250);
+      begin
+         loop
+            Token := Swap (C, Session, 16#FF#);
+            exit when Token = Data_Token;
+            exit when Token /= 16#FF#;         --  error token -> bail
+            exit when Ada.Real_Time.Clock >= Deadline;
+         end loop;
+      end;
       Got_Token := (Token = Data_Token);
 
       if not Got_Token then
@@ -352,12 +358,23 @@ package body ESP32S3.SD_SPI is
       end if;
 
       --  Card holds MISO low (0x00) while it programs; wait for it to release.
-      for I in 1 .. 100_000 loop
-         if Swap (C, Session, 16#FF#) /= 0 then
-            Busy := False;
-            exit;
-         end if;
-      end loop;
+      --  Time-based: the SD spec allows up to 250 ms of busy programming, far
+      --  longer than a fixed iteration count reaches at 8 MHz -- a too-short spin
+      --  reported a spurious Write_Error while the card actually completed, so
+      --  in-memory FS state then disagreed with the medium.
+      declare
+         use type Ada.Real_Time.Time;
+         Deadline : constant Ada.Real_Time.Time :=
+           Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (500);
+      begin
+         loop
+            if Swap (C, Session, 16#FF#) /= 0 then
+               Busy := False;
+               exit;
+            end if;
+            exit when Ada.Real_Time.Clock >= Deadline;
+         end loop;
+      end;
 
       ESP32S3.GPIO.Set (C.Cs);
       Response := Swap (C, Session, 16#FF#);   --  trailing clocks
