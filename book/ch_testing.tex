@@ -32,10 +32,10 @@ listing that stops compiling stops the book from building.
 \section{Layer 2: host-native tests against an oracle}\index{host testing}
 
 Much of the system is pure logic over an interface, and pure logic does not need the
-board. The TLSF allocator (\texttt{tlsf\_core}, Chapter~\ref{ch:heap}), the LISP
-reader and evaluator (Chapter~\ref{ch:lisp}), the ext4 block logic
-(Chapter~\ref{ch:storage}), the Modbus framing (Chapter~\ref{ch:modbus}) and the
-routing table are all written target-free, so the identical Ada compiles and runs on
+board. The TLSF allocator (\texttt{tlsf\_core}, Chapter~\ref{ch:heap}), the ext4 block
+logic (Chapter~\ref{ch:storage}), the Modbus framing (Chapter~\ref{ch:modbus}), the
+routing table, and the language interpreters in the companion examples collection
+(LISP, Lua, MicroPython, Forth) are all written target-free, so the identical Ada compiles and runs on
 the host (x86) as an ordinary program. There it can be tested fast, in a debugger,
 and against an \emph{oracle}: a second, independent implementation that is already
 trusted.
@@ -44,9 +44,8 @@ The filesystem is the sharpest example. Its host tests build real images with th
 Linux \texttt{mke2fs}, mutate them through the Ada code, and check every step against
 the kernel's own tools: every read is byte-compared to the source file, every write
 is checked with \texttt{e2fsck -fn}, and journal replay is cross-checked against the
-kernel's recovery. The LISP host test runs a suite of expressions and compares each
-result; the Modbus and routing tests drive the framing and the longest-prefix logic
-against hand-built vectors. When a host test passes, the logic is right; only the
+kernel's recovery. The Modbus and routing tests drive the framing and the
+longest-prefix logic against hand-built vectors. When a host test passes, the logic is right; only the
 hardware wiring is then left to prove.
 
 \section{Layer 3: known-answer tests for cryptography}\index{known-answer test}
