@@ -74,16 +74,15 @@ package ESP32S3.GDMA is
    --      a line multiple, the buffer occupies whole lines exclusively (aligned at
    --      BOTH ends), so the maintenance never reaches beyond it.
    --
-   --  Size a payload UP to a 32-byte multiple (e.g. 128 for 100 useful bytes) and
-   --  transfer the whole buffer, or a sub-length whose round-up stays within it.
-   --  The predicate is checked at every creation / pass (loud failure, not silent
-   --  corruption); it also rejects an arbitrary slice whose length is not a line
-   --  multiple.  Internal-SRAM buffers are DMA-capable at any alignment, so this
-   --  type costs nothing there.
-   pragma Assertion_Policy (Dynamic_Predicate => Check);
+   --  Size a payload UP to a 32-byte multiple (e.g. 128 for 100 useful bytes).
+   --  The type carries only the ALIGNMENT (so slicing and element copies inside a
+   --  driver stay friction-free); the whole-cache-line SIZE is enforced as a
+   --  PRECONDITION on the DMA operations below, checked on the whole buffer at the
+   --  call boundary -- pass the whole buffer plus a transfer Length, not a slice.
+   --  Internal-SRAM buffers are DMA-capable at any alignment, so this type costs
+   --  nothing there.
    type DMA_Buffer is array (Natural range <>) of Interfaces.Unsigned_8
-     with Alignment        => DMA_Alignment,
-          Dynamic_Predicate => DMA_Buffer'Length mod DMA_Alignment = 0;
+     with Alignment => DMA_Alignment;
 
    --  Self-check of the PSRAM coherency path: does a memory-to-memory DMA between
    --  two buffers of the CALLER'S choosing round-trip a byte pattern?  Call with
@@ -163,6 +162,24 @@ package ESP32S3.GDMA is
    --  1 .. Max_Transfer.  No-op on an invalid handle or out-of-range Length.
    procedure Start_Loop (C : Channel; Buffer : System.Address; Length : Natural)
    with Pre => Length = 0 or else Is_DMA_Capable (Buffer);
+
+   --  Type-safe overloads: pass the WHOLE DMA_Buffer plus the transfer Length.
+   --  The compiler checks alignment (the type) and the whole-cache-line SIZE (the
+   --  predicate, on this parameter pass) of the buffer, so no runtime address
+   --  check is needed -- and because the buffer's footprint is a cache-line
+   --  multiple, the PSRAM cache maintenance for ANY Length (<= the buffer) rounds
+   --  up to a line that still lies within the buffer.  So a partial transfer
+   --  passes the whole (line-multiple) buffer and a smaller Length -- do NOT slice
+   --  to Length, which would fail the size predicate.  Forward to the address
+   --  versions above.
+   procedure Copy (C : Channel; Dst, Src : DMA_Buffer; Length : Natural)
+   with Pre => Length <= Src'Length and then Length <= Dst'Length
+               and then Src'Length mod DMA_Alignment = 0
+               and then Dst'Length mod DMA_Alignment = 0;
+   procedure Start (C : Channel; Dir : Direction; Buffer : DMA_Buffer; Length : Natural)
+   with Pre => Length <= Buffer'Length and then Buffer'Length mod DMA_Alignment = 0;
+   procedure Start_Loop (C : Channel; Buffer : DMA_Buffer; Length : Natural)
+   with Pre => Length <= Buffer'Length and then Buffer'Length mod DMA_Alignment = 0;
 
    --  True once the Dir transfer has signalled success-EOF (also True for an
    --  invalid handle, so a Wait never hangs on one).

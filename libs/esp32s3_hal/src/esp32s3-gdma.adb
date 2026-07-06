@@ -635,6 +635,30 @@ package body ESP32S3.GDMA is
       Channels (C.Id).OUT_LINK.OUTLINK_START := True;
    end Start_Loop;
 
+   --  Type-safe DMA_Buffer overloads (forward to the address versions; the buffer
+   --  type + size predicate were checked when the argument was passed in).  The
+   --  cache maintenance for Length rounds up within the line-multiple buffer.
+   procedure Copy (C : Channel; Dst, Src : DMA_Buffer; Length : Natural) is
+   begin
+      if Length > 0 then
+         Copy (C, Dst (Dst'First)'Address, Src (Src'First)'Address, Length);
+      end if;
+   end Copy;
+
+   procedure Start (C : Channel; Dir : Direction; Buffer : DMA_Buffer; Length : Natural) is
+   begin
+      if Length > 0 then
+         Start (C, Dir, Buffer (Buffer'First)'Address, Length);
+      end if;
+   end Start;
+
+   procedure Start_Loop (C : Channel; Buffer : DMA_Buffer; Length : Natural) is
+   begin
+      if Length > 0 then
+         Start_Loop (C, Buffer (Buffer'First)'Address, Length);
+      end if;
+   end Start_Loop;
+
    ----------
    -- Done --
    ----------

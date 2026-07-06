@@ -233,6 +233,13 @@ package body ESP32S3.SPI is
       E.Transfer (State.Owned (S).all, Tx, Rx, Length);
    end Transfer;
 
+   procedure Transfer (S : Session; Tx, Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural) is
+   begin
+      --  Size + alignment were checked by the precondition on this typed entry;
+      --  forward the buffer bases to the engine.
+      E.Transfer (State.Owned (S).all, Tx (Tx'First)'Address, Rx (Rx'First)'Address, Length);
+   end Transfer;
+
    -------------
    -- Release --
    -------------
