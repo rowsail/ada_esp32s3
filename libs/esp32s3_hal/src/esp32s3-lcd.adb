@@ -120,6 +120,11 @@ package body ESP32S3.LCD is
       E.Transmit (State.Owned (S).all, Tx, Length, Ok);
    end Transmit;
 
+   procedure Transmit (S : Session; Tx : ESP32S3.GDMA.DMA_Buffer; Length : Natural; Ok : out Boolean) is
+   begin
+      Transmit (S, Tx (Tx'First)'Address, Length, Ok);
+   end Transmit;
+
    -------------
    -- Release --
    -------------

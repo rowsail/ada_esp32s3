@@ -1,4 +1,5 @@
 with System;
+with ESP32S3.GDMA;
 with Interfaces; use Interfaces;
 
 package body ESP32S3.HC595 is
@@ -45,17 +46,20 @@ package body ESP32S3.HC595 is
    --  Shift the shadow out through the string and latch it -- no /OE change.
    procedure Shift_And_Latch (C : in out Controller) is
       Sess : S.Session;
-      Tx   : State_Array (1 .. C.Chips);
-      Rx   : State_Array (1 .. C.Chips);   --  full-duplex DMA; ignored
+      --  DMA buffers padded to a whole cache line (the DMA size precondition);
+      --  only C.Chips bytes are transferred.
+      RU   : constant Natural := ((C.Chips + 31) / 32) * 32;
+      Tx   : ESP32S3.GDMA.DMA_Buffer (0 .. RU - 1) := (others => 0);
+      Rx   : ESP32S3.GDMA.DMA_Buffer (0 .. RU - 1);   --  full-duplex DMA; ignored
    begin
       --  The farthest chip in the chain receives its byte first (the bits ripple
       --  through), so send State in reverse: chip Chips (farthest) .. chip 1.
-      for K in 1 .. C.Chips loop
-         Tx (K) := C.State (C.Chips - K + 1);
+      for K in 0 .. C.Chips - 1 loop
+         Tx (K) := C.State (C.Chips - K);
       end loop;
 
       S.Acquire (Sess, C.Host, Mode => 0, Clock_Hz => C.Clock, Select_CB => No_CS'Access);
-      S.Transfer (Sess, Tx'Address, Rx'Address, C.Chips);
+      S.Transfer (Sess, Tx, Rx, C.Chips);
       S.Release (Sess);
 
       --  Latch: a rising edge on RCLK copies the shift register to the outputs.

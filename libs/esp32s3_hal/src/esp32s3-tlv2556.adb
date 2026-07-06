@@ -1,6 +1,8 @@
 with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
+with ESP32S3.GDMA;
+
 package body ESP32S3.TLV2556 is
 
    package SPI renames ESP32S3.SPI;
@@ -47,13 +49,16 @@ package body ESP32S3.TLV2556 is
    ----------------------------------------------------------------------------
 
    procedure Cycle (S : in out SPI.Session; Tx : Frame; Rx : out Frame) is
-      Out_Buf : aliased Frame := Tx;
-      In_Buf  : aliased Frame;
+      --  DMA buffers padded to a whole cache line (the DMA size precondition);
+      --  only Frame'Length (2) bytes are transferred.
+      Out_Buf : ESP32S3.GDMA.DMA_Buffer (0 .. 31) := (others => 0);
+      In_Buf  : ESP32S3.GDMA.DMA_Buffer (0 .. 31);
    begin
+      Out_Buf (0 .. Frame'Length - 1) := ESP32S3.GDMA.DMA_Buffer (Tx);
       SPI.Select_Device (S, On => True);
-      SPI.Transfer (S, Out_Buf'Address, In_Buf'Address, Frame'Length);
+      SPI.Transfer (S, Out_Buf, In_Buf, Frame'Length);
       SPI.Select_Device (S, On => False);
-      Rx := In_Buf;
+      Rx := Frame (In_Buf (0 .. Frame'Length - 1));
    end Cycle;
 
    ----------------------------------------------------------------------------
