@@ -96,5 +96,15 @@ bug in `superblock` (the absolute-vs-`Buf'First` CRC slice).
 targets — larger because their logic interleaves with I/O and variable-length walking
 rather than a straight fixed-offset record. Same factoring pattern, more per unit.
 
+## Crypto / TLS (scouted; expensive, not done)
+
+`libs/tls/p256.Verify` (ECDSA-P256 signature check) is SPARK-legal and gnatprove runs
+against the *cross* `tls.gpr` directly (target setup works) — but proving it pulls in
+the whole vendored **SPARKNaCl** elliptic-curve contract closure and did not converge in
+200 s. Two gotchas noted for a dedicated pass: SPARK forbids `out` parameters on
+functions (`Public_Key`/`ECDH`/`Sign` must be `SPARK_Mode => Off` or become procedures),
+and the proof needs SPARKNaCl's lemmas to line up. High-value but a real time budget,
+not a quick add. `cert_verify`'s RSA path is hardware (ESP32-S3 RSA accelerator) → `Off`.
+
 The HAL-wide `Pre`/`Post` contracts (see the driver specs) use the same syntax
 SPARK consumes, so they are the foundation this proof surface builds on.
