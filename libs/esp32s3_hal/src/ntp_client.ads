@@ -33,6 +33,12 @@ package NTP_Client is
       Day       : out Integer;
       Hour      : out Integer;
       Minute    : out Integer;
-      Second    : out Integer);
+      Second    : out Integer)
+   with Post =>
+        Month in 1 .. 12
+        and then Day in 1 .. 31
+        and then Hour in 0 .. 23
+        and then Minute in 0 .. 59
+        and then Second in 0 .. 59;
 
 end NTP_Client;

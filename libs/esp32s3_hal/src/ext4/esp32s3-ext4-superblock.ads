@@ -77,7 +77,8 @@ package ESP32S3.Ext4.Superblock is
    --  Patch SB's mutable fields (free counts, feature_incompat) into Buf at byte
    --  Base, refreshing the SB checksum -- for journaling the SB as a block.  Buf
    --  must already hold the current on-disk superblock at [Base .. Base+1023].
-   procedure Encode (SB : Info; Buf : in out Byte_Array; Base : Natural);
+   procedure Encode (SB : Info; Buf : in out Byte_Array; Base : Natural)
+   with Pre => Base + 1024 <= Buf'Length;
 
    --  Raise Unsupported_Feature for any INCOMPAT bit outside Handled.
    procedure Require_Supported (SB : Info; Handled : U32);

@@ -43,14 +43,17 @@ package ESP32S3.LEDC is
    --  frequency/resolution -- use channels 0 .. 3 for four independent frequencies.
    --  The achievable frequency depends on Bits: freq_max = 80 MHz / 2**Bits.
    procedure Configure
-     (C : in out Channel; Freq : Positive; Pin : ESP32S3.GPIO.Pin_Id; Bits : Resolution := 10);
+     (C : in out Channel; Freq : Positive; Pin : ESP32S3.GPIO.Pin_Id; Bits : Resolution := 10)
+   with Pre => Is_Valid (C);
 
    --  Set C's duty cycle (0 .. 100 %).  Takes effect at the next period; safe
    --  without a lock because you exclusively own C.
-   procedure Set_Duty (C : Channel; Percent : Duty_Percent);
+   procedure Set_Duty (C : Channel; Percent : Duty_Percent)
+   with Pre => Is_Valid (C);
 
    --  Force the output inactive (low) without releasing the channel.
-   procedure Stop (C : Channel);
+   procedure Stop (C : Channel)
+   with Pre => Is_Valid (C);
 
 private
    type Channel is new Ada.Finalization.Limited_Controlled with record

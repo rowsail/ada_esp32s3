@@ -66,16 +66,20 @@ package Modbus is
    ---------------------------------------------------------------------------
    --  Wire helpers (big-endian).  Pos is the index of the high byte.
    ---------------------------------------------------------------------------
-   function Get_U16 (B : Byte_Array; Pos : Natural) return Word;
-   procedure Put_U16 (B : in out Byte_Array; Pos : Natural; V : Word);
+   function Get_U16 (B : Byte_Array; Pos : Natural) return Word
+   with Pre => Pos >= B'First and then Pos < B'Last;
+   procedure Put_U16 (B : in out Byte_Array; Pos : Natural; V : Word)
+   with Pre => Pos >= B'First and then Pos < B'Last;
 
    --  MBAP header: Transaction Id, Protocol Id (0), Length, Unit Id.  PDU_Len is
    --  the count of PDU bytes that follow; the Length field is PDU_Len + 1 (it
    --  covers the Unit byte too).  B must have room for MBAP_Size bytes from B'First.
-   procedure Put_MBAP (B : in out Byte_Array; TID : Word; Unit : Unit_Id; PDU_Len : Natural);
+   procedure Put_MBAP (B : in out Byte_Array; TID : Word; Unit : Unit_Id; PDU_Len : Natural)
+   with Pre => B'Length >= MBAP_Size;
 
    --  Parse an MBAP header.  Length is the raw Length field (Unit + PDU bytes), so
    --  the PDU is Length - 1 bytes.
-   procedure Get_MBAP (B : Byte_Array; TID : out Word; Unit : out Unit_Id; Length : out Natural);
+   procedure Get_MBAP (B : Byte_Array; TID : out Word; Unit : out Unit_Id; Length : out Natural)
+   with Pre => B'Length >= MBAP_Size;
 
 end Modbus;

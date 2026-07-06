@@ -57,6 +57,10 @@ package ESP32S3.SPI is
    --  finalization, so these task-safe drivers target the embedded/full profile.
    type Session is limited private;
 
+   --  True while S holds its host (between Acquire and Release / finalization);
+   --  the ownership guard the transfer / select preconditions below rely on.
+   function Is_Held (S : Session) return Boolean;
+
    ----------------------------------------------------------------------------
    --  One-time host configuration -- call once per host at startup, before any
    --  task contends for it (single-threaded).
@@ -139,7 +143,8 @@ package ESP32S3.SPI is
       Miso      : ESP32S3.GPIO.Optional_Pin := No_Pin;
       CS_Pin    : ESP32S3.GPIO.Optional_Pin := No_Pin;
       Select_CB : CS_Select := null;
-      Ctx       : System.Address := System.Null_Address);
+      Ctx       : System.Address := System.Null_Address)
+   with Post => Is_Held (S);
 
    --  Assert (On => True) / deassert (On => False) this device's chip select --
    --  its CS_Pin or its callback, whichever was given at Acquire.  Bracket a
@@ -149,7 +154,8 @@ package ESP32S3.SPI is
    --  No-op for a hardware-CS Session (neither CS_Pin nor Select_CB given) --
    --  there the peripheral toggles CS0 per Transfer.  Raises Not_Owned unless S
    --  holds a host.
-   procedure Select_Device (S : in out Session; On : Boolean);
+   procedure Select_Device (S : in out Session; On : Boolean)
+   with Pre => Is_Held (S);
 
    --  Full-duplex DMA transfer of Length bytes on the held host: shift Tx out on
    --  MOSI, capture MISO into Rx.  Blocking.  Buffers in internal SRAM.  Raises
@@ -157,7 +163,7 @@ package ESP32S3.SPI is
    --  DMA descriptor) -- the precondition catches an out-of-range length, which
    --  the engine would otherwise drop silently.
    procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural)
-   with Pre => Length in 1 .. 4095;
+   with Pre => Is_Held (S) and then Length in 1 .. 4095;
 
    --  Type-safe overload: DMA_Buffer gives the aligned start, and the precondition
    --  checks the whole-cache-line SIZE (footprint a 32-byte multiple) so the PSRAM
@@ -165,14 +171,15 @@ package ESP32S3.SPI is
    --  transfer Length (<= the buffer); this is the DMA size+alignment guarantee,
    --  enforced at the call.
    procedure Transfer (S : Session; Tx, Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
-   with Pre => Length in 1 .. 4095
+   with Pre => Is_Held (S) and then Length in 1 .. 4095
                and then Length <= Tx'Length and then Length <= Rx'Length
                and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0
                and then Rx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
 
    --  Relinquish ownership (lets a waiting task proceed).  Harmless if already
    --  released.  Always release a Session you Acquired.
-   procedure Release (S : in out Session);
+   procedure Release (S : in out Session)
+   with Post => not Is_Held (S);
 
 private
    type Session is new Ada.Finalization.Limited_Controlled with record
@@ -183,8 +190,11 @@ private
       Ctx       : System.Address := System.Null_Address;   --  per-device context
       Selected  : Boolean := False;                 --  CS currently asserted?
    end record;
+
    --  Finalize releases the host AND, if Selected, calls Select_CB (Off) first --
    --  so a fault between select and deselect can never leave a device asserted.
    overriding
    procedure Finalize (S : in out Session);   --  auto-release on scope exit
+   function Is_Held (S : Session) return Boolean is (S.Active);
+
 end ESP32S3.SPI;

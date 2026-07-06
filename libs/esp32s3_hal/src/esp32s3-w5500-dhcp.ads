@@ -12,6 +12,8 @@ with ESP32S3.W5500.Sockets;
 
 package ESP32S3.W5500.DHCP is
 
+   use type ESP32S3.W5500.Sockets.Device_Access;   --  '/= null' in Pre aspects
+
    type Lease_Info is record
       IP, Subnet, Gateway, DNS : IPv4_Address := (0, 0, 0, 0);
       Lease_Seconds            : Interfaces.Unsigned_32 := 0;
@@ -26,7 +28,8 @@ package ESP32S3.W5500.DHCP is
       MAC    : MAC_Address;
       Lease  : out Lease_Info;
       Socket : Socket_Id := 0;
-      Tries  : Positive := 4) return Boolean;
+      Tries  : Positive := 4) return Boolean
+   with Pre => Dev /= null;
 
    --  Renew an existing lease once: a REQUEST that keeps the current IP up
    --  (ciaddr = the leased address), broadcast so any server can answer.  True on
@@ -35,7 +38,8 @@ package ESP32S3.W5500.DHCP is
      (Dev    : ESP32S3.W5500.Sockets.Device_Access;
       MAC    : MAC_Address;
       Lease  : in out Lease_Info;
-      Socket : Socket_Id := 0) return Boolean;
+      Socket : Socket_Id := 0) return Boolean
+   with Pre => Dev /= null;
 
    ----------------------------------------------------------------------------
    --  Automatic maintenance: acquire a lease and keep it renewed indefinitely.
@@ -54,7 +58,8 @@ package ESP32S3.W5500.DHCP is
      (Dev      : ESP32S3.W5500.Sockets.Device_Access;
       MAC      : MAC_Address;
       Socket   : Socket_Id := 0;
-      On_Bound : Bound_Callback := null);
+      On_Bound : Bound_Callback := null)
+   with Pre => Dev /= null;
 
    function Is_Bound return Boolean;       --  a lease is currently held
    function Current_Lease return Lease_Info;

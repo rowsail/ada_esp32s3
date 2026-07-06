@@ -29,6 +29,7 @@ package Chain_Verify is
    --  (root certificates the device trusts).  Each certificate must be valid at
    --  Now, each link's signature must verify under the next certificate's key, the
    --  leaf must match Host, and the top must be anchored.
-   function Validate (Chain, Anchors : Cert_List; Host : String; Now : X509.Time_64) return Result;
+   function Validate (Chain, Anchors : Cert_List; Host : String; Now : X509.Time_64) return Result
+   with Pre => Chain'Length > 0;
 
 end Chain_Verify;

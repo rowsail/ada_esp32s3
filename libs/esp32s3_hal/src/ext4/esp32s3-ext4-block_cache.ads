@@ -20,26 +20,31 @@ package ESP32S3.Ext4.Block_Cache is
      (C          : in out Cache;
       Dev        : ESP32S3.Block_Dev.Device;
       Block_Size : Positive;
-      Entries    : Positive := 32);
+      Entries    : Positive := 32)
+   with Pre => Block_Size mod 512 = 0;
 
    --  The configured filesystem block size in bytes.
    function Block_Size (C : Cache) return Natural;
 
    --  Copy filesystem block B into Into (Into'Length must equal Block_Size).
-   procedure Read (C : in out Cache; B : Block_Number; Into : out Byte_Array);
+   procedure Read (C : in out Cache; B : Block_Number; Into : out Byte_Array)
+   with Pre => Into'Length = Block_Size (C);
 
    --  Copy Into'Length bytes from offset Block_Off of block B into Into
    --  (Block_Off + Into'Length must be <= Block_Size).  Lets callers read just
    --  the field/entry/chunk they need without a block-sized stack buffer.
    procedure Read_At
-     (C : in out Cache; B : Block_Number; Block_Off : Natural; Into : out Byte_Array);
+     (C : in out Cache; B : Block_Number; Block_Off : Natural; Into : out Byte_Array)
+   with Pre => Block_Off + Into'Length <= Block_Size (C);
 
    --  Replace Into'Length bytes at offset Block_Off of block B (and mark dirty).
-   procedure Write_At (C : in out Cache; B : Block_Number; Block_Off : Natural; From : Byte_Array);
+   procedure Write_At (C : in out Cache; B : Block_Number; Block_Off : Natural; From : Byte_Array)
+   with Pre => Block_Off + From'Length <= Block_Size (C);
 
    --  Replace cached block B with From (length = Block_Size) and mark it dirty;
    --  written back on eviction or Flush.
-   procedure Write (C : in out Cache; B : Block_Number; From : Byte_Array);
+   procedure Write (C : in out Cache; B : Block_Number; From : Byte_Array)
+   with Pre => From'Length = Block_Size (C);
 
    --  Write every dirty block back to the device.
    procedure Flush (C : in out Cache);

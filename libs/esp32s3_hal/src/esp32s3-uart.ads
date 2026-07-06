@@ -39,6 +39,11 @@ package ESP32S3.UART is
    --  relies on finalization -> these task-safe drivers target embedded/full.
    type Session is limited private;
 
+   --  True while S holds its port (between Acquire and Release / finalization);
+   --  the ownership guard that every transfer and configuration call relies on
+   --  (each raises Not_Owned unless S is active).
+   function Is_Held (S : Session) return Boolean;
+
    ----------------------------------------------------------------------------
    --  Concurrent, mutually-exclusive use.  A port is configured and used ONLY
    --  through a held Session: Acquire takes the port AND configures it, and
@@ -84,7 +89,8 @@ package ESP32S3.UART is
       Rx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Rts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Cts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rx_Flow_Threshold : Natural := 100);
+      Rx_Flow_Threshold : Natural := 100)
+   with Post => Is_Held (S);
 
    --  Re-apply the whole baud + frame format + pin routing on the port S
    --  already holds, without releasing it -- the same settings Acquire takes,
@@ -102,21 +108,25 @@ package ESP32S3.UART is
       Rx                : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Rts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
       Cts               : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Rx_Flow_Threshold : Natural := 100);
+      Rx_Flow_Threshold : Natural := 100)
+   with Pre => Is_Held (S);
 
    --  Push Data to the TX FIFO, waiting for room.  Returns once every byte is
    --  queued (not necessarily fully shifted out).  Raises Not_Owned unless S
    --  currently holds a port.
-   procedure Write (S : Session; Data : Byte_Array);
+   procedure Write (S : Session; Data : Byte_Array)
+   with Pre => Is_Held (S);
 
    --  Read up to Data'Length bytes into Data, waiting briefly for each; Count is
    --  how many were actually received (short read on timeout).  Raises Not_Owned
    --  unless S currently holds a port.
-   procedure Read (S : Session; Data : out Byte_Array; Count : out Natural);
+   procedure Read (S : Session; Data : out Byte_Array; Count : out Natural)
+   with Pre => Is_Held (S);
 
    --  Bytes currently waiting in the RX FIFO.  Raises Not_Owned unless S holds
    --  a port.
-   function Available (S : Session) return Natural;
+   function Available (S : Session) return Natural
+   with Pre => Is_Held (S);
 
    --  ----  Finer configuration -- all require the held port  ----------------
    --  Each acts on the port S currently holds and raises Not_Owned unless S is
@@ -127,10 +137,14 @@ package ESP32S3.UART is
    --  Re-program one frame attribute independently, leaving the others (and the
    --  pin routing) untouched.  Each is a read-modify-write of just that
    --  attribute and takes effect immediately.
-   procedure Set_Baud (S : Session; Baud : Baud_Rate);
-   procedure Set_Data_Bits (S : Session; Bits : Data_Bits);
-   procedure Set_Parity (S : Session; Parity : Parity_Mode);
-   procedure Set_Stop_Bits (S : Session; Stop : Stop_Bits);
+   procedure Set_Baud (S : Session; Baud : Baud_Rate)
+   with Pre => Is_Held (S);
+   procedure Set_Data_Bits (S : Session; Bits : Data_Bits)
+   with Pre => Is_Held (S);
+   procedure Set_Parity (S : Session; Parity : Parity_Mode)
+   with Pre => Is_Held (S);
+   procedure Set_Stop_Bits (S : Session; Stop : Stop_Bits)
+   with Pre => Is_Held (S);
 
    --  Re-route the held port's lines to physical pads (same semantics as
    --  Configure's pin parameters; sets the FULL flow-control + inversion state,
@@ -148,7 +162,8 @@ package ESP32S3.UART is
       Tx_Invert         : Boolean := False;
       Rx_Invert         : Boolean := False;
       Rts_Invert        : Boolean := False;
-      Cts_Invert        : Boolean := False);
+      Cts_Invert        : Boolean := False)
+   with Pre => Is_Held (S);
 
    --  Independently invert (or un-invert) each line's polarity on the held port.
    --  Sets the full state of all four lines; default False clears inversion.
@@ -157,22 +172,28 @@ package ESP32S3.UART is
       Tx  : Boolean := False;
       Rx  : Boolean := False;
       Rts : Boolean := False;
-      Cts : Boolean := False);
+      Cts : Boolean := False)
+   with Pre => Is_Held (S);
 
    --  Controller-level internal TX->RX loopback on the held port (a self-test
    --  that needs NO pins and no wiring -- UART is push-pull, so unlike I2C this
    --  fully works on-chip): bytes written come straight back on Read.
-   procedure Enable_Loopback (S : Session; On : Boolean := True);
+   procedure Enable_Loopback (S : Session; On : Boolean := True)
+   with Pre => Is_Held (S);
 
    --  Relinquish ownership (lets a waiting task proceed).  Harmless if already
    --  released.  Always release a Session you Acquired.
-   procedure Release (S : in out Session);
+   procedure Release (S : in out Session)
+   with Post => not Is_Held (S);
 
 private
    type Session is new Ada.Finalization.Limited_Controlled with record
       Port   : UART_Port := UART0;
       Active : Boolean := False;
    end record;
+
    overriding
    procedure Finalize (S : in out Session);   --  auto-release on scope exit
+   function Is_Held (S : Session) return Boolean is (S.Active);
+
 end ESP32S3.UART;

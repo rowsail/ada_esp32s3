@@ -29,7 +29,8 @@ package ESP32S3.GPIO.Interrupts is
    --  Enable Pin's interrupt with the given trigger and action.  On first use
    --  this also routes the GPIO source to the level-3 device slot.  The pin's
    --  input buffer must be on (ESP32S3.GPIO.Configure already enables it).
-   procedure Enable (Pin : Pin_Id; On : Trigger; Action : Callback);
+   procedure Enable (Pin : Pin_Id; On : Trigger; Action : Callback)
+   with Pre => Action /= null;
 
    --  Stop delivering Pin's interrupt.
    procedure Disable (Pin : Pin_Id);

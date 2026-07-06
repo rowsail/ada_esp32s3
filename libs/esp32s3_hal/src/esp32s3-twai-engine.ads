@@ -12,6 +12,8 @@ with ESP32S3.GPIO;
 
 private package ESP32S3.TWAI.Engine is
 
+   use type Interfaces.Unsigned_32;   --  '<=' in Send's Pre
+
    --  A configured controller.  (The TWAI block is a singleton, so this carries
    --  only the operating-mode flag + a validity bit -- the registers live at a
    --  fixed address reached in the body.)
@@ -37,7 +39,8 @@ private package ESP32S3.TWAI.Engine is
       Extended, Remote : Boolean;
       Id               : Interfaces.Unsigned_32;
       Length           : Data_Length;
-      Data             : Data_Bytes);
+      Data             : Data_Bytes)
+   with Pre => (if Extended then Id <= 16#1FFF_FFFF# else Id <= 16#7FF#);
 
    --  Is a received frame waiting (RX buffer non-empty)?  RX_Extended reports the
    --  waiting frame's width (the frame-info FF bit, valid only when RX_Pending).

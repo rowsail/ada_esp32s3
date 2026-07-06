@@ -48,6 +48,10 @@ package ESP32S3.W5500.Sockets is
    type Event_Waiter is access procedure (Index : Socket_Id);
    procedure Set_Event_Waiter (W : Event_Waiter);
 
+   --  Is the handle currently open (bound to a hardware socket)?  Used by the
+   --  contracts below and by callers before a data-transfer operation.
+   function Is_Open (S : Socket) return Boolean;
+
    ---------------------------------------------------------------------------
    --  Open / close.  Index selects one of the eight hardware sockets.
    ---------------------------------------------------------------------------
@@ -59,7 +63,9 @@ package ESP32S3.W5500.Sockets is
       S          : in out Socket;
       Index      : Socket_Id;
       Local_Port : Port_Number;
-      Result     : out Status);
+      Result     : out Status)
+   with Pre  => Dev /= null,
+        Post => (if Result = OK then Is_Open (S));
 
    --  Open a connectionless UDP socket bound to Local_Port (=> SOCK_UDP).
    procedure Open_UDP
@@ -67,10 +73,13 @@ package ESP32S3.W5500.Sockets is
       S          : in out Socket;
       Index      : Socket_Id;
       Local_Port : Port_Number;
-      Result     : out Status);
+      Result     : out Status)
+   with Pre  => Dev /= null,
+        Post => (if Result = OK then Is_Open (S));
 
    --  Close immediately (no TCP disconnect handshake).
-   procedure Close (S : in out Socket);
+   procedure Close (S : in out Socket)
+   with Post => not Is_Open (S);
 
    ---------------------------------------------------------------------------
    --  TCP connection setup
@@ -97,7 +106,8 @@ package ESP32S3.W5500.Sockets is
    procedure Wait_Connected (S : in out Socket; Result : out Status);
 
    --  TCP graceful disconnect (DISCON: FIN + handshake), then the handle is closed.
-   procedure Disconnect (S : in out Socket);
+   procedure Disconnect (S : in out Socket)
+   with Post => not Is_Open (S);
 
    ---------------------------------------------------------------------------
    --  TCP data transfer (non-blocking on receive; send waits for SEND_OK)
@@ -119,13 +129,15 @@ package ESP32S3.W5500.Sockets is
 
    --  Send up to Data'Length bytes; Sent = how many were transmitted (may be less
    --  than Data'Length if the TX buffer was partly full).
-   procedure Send (S : in out Socket; Data : Byte_Array; Sent : out Natural; Result : out Status);
+   procedure Send (S : in out Socket; Data : Byte_Array; Sent : out Natural; Result : out Status)
+   with Post => Sent <= Data'Length;
 
    --  Receive up to Into'Length bytes; Count = how many were read (0 if none
    --  waiting).  Result = Closed_By_Peer once the peer has half-closed and the
    --  buffer is drained.
    procedure Receive
-     (S : in out Socket; Into : out Byte_Array; Count : out Natural; Result : out Status);
+     (S : in out Socket; Into : out Byte_Array; Count : out Natural; Result : out Status)
+   with Post => Count <= Into'Length;
 
    ---------------------------------------------------------------------------
    --  UDP datagrams
@@ -146,7 +158,8 @@ package ESP32S3.W5500.Sockets is
       From_Port : out Port_Number;
       Into      : out Byte_Array;
       Count     : out Natural;
-      Result    : out Status);
+      Result    : out Status)
+   with Post => Count <= Into'Length;
 
 private
    type Protocol is (None, TCP_Proto, UDP_Proto);
@@ -157,4 +170,6 @@ private
       Is_Open      : Boolean := False;
       Recv_Timeout : Duration := 0.0;   --  0 => Wait_Data blocks forever
    end record;
+
+   function Is_Open (S : Socket) return Boolean is (S.Is_Open);
 end ESP32S3.W5500.Sockets;

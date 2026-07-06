@@ -14,12 +14,14 @@ private package ESP32S3.I2C.Engine is
    --  A configured master controller.
    type Bus is private;
 
-   function Open (Host : I2C_Host; Clock_Hz : Positive) return Bus;
+   function Open (Host : I2C_Host; Clock_Hz : Positive) return Bus
+   with Post => Is_Open (Open'Result);
 
    function Is_Open (B : Bus) return Boolean;
 
    --  Route SCL/SDA to pads as open-drain with internal pull-ups.
-   procedure Configure_Pins (B : Bus; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id);
+   procedure Configure_Pins (B : Bus; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id)
+   with Pre => Is_Open (B);
 
    --  One START..STOP master write transaction.  Success := slave ACKed addr +
    --  every data byte (when Check_Ack).  Data length 0 is an address-only probe.
@@ -28,11 +30,13 @@ private package ESP32S3.I2C.Engine is
       Addr      : Slave_Address;
       Data      : Byte_Array;
       Success   : out Boolean;
-      Check_Ack : Boolean := True);
+      Check_Ack : Boolean := True)
+   with Pre => Is_Open (B) and then Data'Length <= Max_Transfer - 1;
 
    --  One START..STOP master read transaction (ACK all but last byte).
    --  Success := slave ACKed the address.
-   procedure Read (B : Bus; Addr : Slave_Address; Data : out Byte_Array; Success : out Boolean);
+   procedure Read (B : Bus; Addr : Slave_Address; Data : out Byte_Array; Success : out Boolean)
+   with Pre => Is_Open (B) and then Data'Length <= Max_Transfer;
 
    procedure Close (B : in out Bus);
 

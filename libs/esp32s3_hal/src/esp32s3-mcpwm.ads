@@ -75,16 +75,20 @@ package ESP32S3.MCPWM is
       Freq           : Positive;
       Pin            : ESP32S3.GPIO.Pin_Id;
       Complement_Pin : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Dead_Time_Ns   : Natural := 0);
+      Dead_Time_Ns   : Natural := 0)
+   with Pre => Is_Valid (C);
 
    --  Start / stop the channel's timer (the output halts in its current state).
-   procedure Start (C : Channel);
-   procedure Stop (C : Channel);
+   procedure Start (C : Channel)
+   with Pre => Is_Valid (C);
+   procedure Stop (C : Channel)
+   with Pre => Is_Valid (C);
 
    --  Set the channel's duty cycle (0 .. 100 %).  Single atomic register write;
    --  the new value is loaded glitch-free at the next period boundary.  Safe
    --  without a lock because you exclusively own C.
-   procedure Set_Duty (C : Channel; Percent : Duty_Percent);
+   procedure Set_Duty (C : Channel; Percent : Duty_Percent)
+   with Pre => Is_Valid (C);
 
    ----------------------------------------------------------------------------
    --  Carrier (chopper) modulation -- chops the output with a high-frequency
@@ -102,7 +106,8 @@ package ESP32S3.MCPWM is
       Enable       : Boolean := True;
       Prescale     : Carrier_Prescale := 0;
       Duty_Eighths : Carrier_Duty := 4;
-      First_Pulse  : Carrier_Pulse := 1);
+      First_Pulse  : Carrier_Pulse := 1)
+   with Pre => Is_Valid (C);
 
    ----------------------------------------------------------------------------
    --  Fault / trip-zone -- a fault input pin forces the outputs to a safe state
@@ -128,13 +133,16 @@ package ESP32S3.MCPWM is
      (C      : Channel;
       Input  : Fault_Input;
       Mode   : Fault_Mode := One_Shot;
-      Action : Trip_Action := Force_Low);
+      Action : Trip_Action := Force_Low)
+   with Pre => Is_Valid (C);
 
    --  Clear a latched one-shot trip (re-enables the outputs if the fault is gone).
-   procedure Clear_Fault (C : Channel);
+   procedure Clear_Fault (C : Channel)
+   with Pre => Is_Valid (C);
 
    --  True while the channel is tripped (one-shot latched or cycle-by-cycle on).
-   function Faulted (C : Channel) return Boolean;
+   function Faulted (C : Channel) return Boolean
+   with Pre => Is_Valid (C);
 
    ----------------------------------------------------------------------------
    --  Capture -- timestamp edges on an input pin (measure an external signal's
@@ -158,15 +166,18 @@ package ESP32S3.MCPWM is
    --  Route Pin to the claimed capture channel and start timestamping the given
    --  edges.
    procedure Configure_Capture
-     (Cap : Capture; Pin : ESP32S3.GPIO.Pin_Id; Edge : Cap_Edge := Both_Edges);
+     (Cap : Capture; Pin : ESP32S3.GPIO.Pin_Id; Edge : Cap_Edge := Both_Edges)
+   with Pre => Is_Valid (Cap);
 
    --  True once a new edge has been captured (and not yet read).
-   function Capture_Pending (Cap : Capture) return Boolean;
+   function Capture_Pending (Cap : Capture) return Boolean
+   with Pre => Is_Valid (Cap);
 
    --  Read the latest capture timestamp (in Capture_Clock_Hz ticks) and which
    --  edge it was, and clear the pending flag.
    procedure Read_Capture
-     (Cap : Capture; Value : out Interfaces.Unsigned_32; Falling : out Boolean);
+     (Cap : Capture; Value : out Interfaces.Unsigned_32; Falling : out Boolean)
+   with Pre => Is_Valid (Cap);
 
 private
 

@@ -30,7 +30,8 @@ private package ESP32S3.LCD.Engine is
 
    --  Stream Length bytes (1 .. 4095) from Tx out the data bus, one per PCLK.
    --  Ok is True once the transfer completes.
-   procedure Transmit (B : Bus; Tx : System.Address; Length : Natural; Ok : out Boolean);
+   procedure Transmit (B : Bus; Tx : System.Address; Length : Natural; Ok : out Boolean)
+   with Pre => Length in 1 .. 4095;
 
 private
    type Bus is limited record

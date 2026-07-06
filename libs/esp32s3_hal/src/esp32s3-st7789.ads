@@ -37,7 +37,8 @@ package ESP32S3.ST7789 is
 
    --  16-bit RGB565 colour (5 red, 6 green, 5 blue), MSB-first on the wire.
    type Color is mod 2**16;
-   function RGB (R, G, B : Natural) return Color;   --  each 0 .. 255
+   function RGB (R, G, B : Natural) return Color   --  each 0 .. 255
+   with Pre => R <= 255 and then G <= 255 and then B <= 255;
 
    Black : constant Color := 16#0000#;
    White : constant Color := 16#FFFF#;
@@ -108,7 +109,8 @@ package ESP32S3.ST7789 is
 
    --  Blit a W x H block of pixels (row-major) at (X, Y).  Pixels'Length must be
    --  W * H.
-   procedure Draw_Bitmap (S : Session; X, Y, W, H : Natural; Pixels : Color_Array);
+   procedure Draw_Bitmap (S : Session; X, Y, W, H : Natural; Pixels : Color_Array)
+   with Pre => Pixels'Length = W * H;
 
 private
    type Device is record

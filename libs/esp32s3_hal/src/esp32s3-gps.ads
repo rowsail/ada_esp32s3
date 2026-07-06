@@ -173,7 +173,8 @@ package ESP32S3.GPS is
    procedure Satellites_In_View
      (List    : out Satellite_List;
       Count   : out Natural;
-      Max_Age : Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (3000));
+      Max_Age : Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (3000))
+   with Post => Count <= List'Length;
 
    --  Time elapsed since a reading's Updated_At -- compare against your tolerance
    --  to decide whether the value is stale.
@@ -191,7 +192,8 @@ package ESP32S3.GPS is
    --  copied (0 if none yet), clipped to Buffer'Length.  Captured for EVERY
    --  framed line -- recognised or not -- so it is handy for diagnosing a quiet
    --  or unlocked receiver (e.g. is it sending empty, no-fix sentences?).
-   procedure Last_Sentence (Buffer : out String; Length : out Natural);
+   procedure Last_Sentence (Buffer : out String; Length : out Natural)
+   with Post => Length <= Buffer'Length;
 
    ----------------------------------------------------------------------------
    --  Test / advanced hook: feed one already-framed NMEA sentence (between, and

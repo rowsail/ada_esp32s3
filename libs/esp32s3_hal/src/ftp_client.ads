@@ -72,10 +72,12 @@ package FTP_Client is
       Password : String;
       Result   : out Status;
       Port     : GNAT.Sockets.Port_Type := 21;
-      Timeout  : Duration := 0.0);
+      Timeout  : Duration := 0.0)
+   with Post => (if Result = OK then Is_Open (S));
 
    --  Send QUIT (best effort) and close the control connection.  Idempotent.
-   procedure Quit (S : in out Session);
+   procedure Quit (S : in out Session)
+   with Post => not Is_Open (S);
 
    --  True while the control connection is up: from a successful Connect until
    --  Quit, or until an operation fails in a way that tears the session down (see
@@ -92,7 +94,8 @@ package FTP_Client is
       Path   : String;
       Sink   : Data_Sink;
       Ctx    : System.Address;
-      Result : out Status);
+      Result : out Status)
+   with Pre => Is_Open (S);
 
    --  Upload to Path, pulling its bytes from Source (Ctx) until Source reports
    --  Last = 0.  Creates or overwrites the remote file.
@@ -101,7 +104,8 @@ package FTP_Client is
       Path   : String;
       Source : Data_Source;
       Ctx    : System.Address;
-      Result : out Status);
+      Result : out Status)
+   with Pre => Is_Open (S);
 
    --  List a directory (NLST: bare names, one per line, CRLF-separated), streamed
    --  to Sink (Ctx).  Path empty = the current directory.

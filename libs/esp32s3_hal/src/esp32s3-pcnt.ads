@@ -27,17 +27,23 @@ package ESP32S3.PCNT is
    --  Route Pin to U's input and start counting.  By default each rising edge
    --  increments; set Both_Edges to count rising and falling edges.  The counter
    --  is cleared to 0.
-   procedure Configure (U : in out Unit; Pin : ESP32S3.GPIO.Pin_Id; Both_Edges : Boolean := False);
+   procedure Configure (U : in out Unit; Pin : ESP32S3.GPIO.Pin_Id; Both_Edges : Boolean := False)
+   with Pre => Is_Valid (U);
 
    --  Current counter value (signed; wraps at +/- 32768).
-   function Count (U : Unit) return Integer;
+   function Count (U : Unit) return Integer
+   with Pre  => Is_Valid (U),
+        Post => Count'Result in -32_768 .. 32_767;
 
    --  Reset the counter to 0.
-   procedure Clear (U : Unit);
+   procedure Clear (U : Unit)
+   with Pre => Is_Valid (U);
 
    --  Pause / resume counting (the count is retained while paused).
-   procedure Pause (U : Unit);
-   procedure Resume (U : Unit);
+   procedure Pause (U : Unit)
+   with Pre => Is_Valid (U);
+   procedure Resume (U : Unit)
+   with Pre => Is_Valid (U);
 
 private
    type Unit is new Ada.Finalization.Limited_Controlled with record

@@ -11,6 +11,8 @@ with GNAT.Sockets;
 
 package DNS_Client is
 
+   use type GNAT.Sockets.Inet_Addr_Type;   --  '=' in Resolve's Post
+
    --  Resolve Name (e.g. "api.open-meteo.com") to its first IPv4 address by querying
    --  the resolver at Server (e.g. Inet_Addr ("8.8.8.8")).  True with Addr set on
    --  success; False with Addr = Any_Inet_Addr if the resolver does not answer in
@@ -24,6 +26,9 @@ package DNS_Client is
       Name       : String;
       Addr       : out GNAT.Sockets.Inet_Addr_Type;
       Timeout    : Duration := 0.0;
-      Local_Port : GNAT.Sockets.Port_Type := 13_001) return Boolean;
+      Local_Port : GNAT.Sockets.Port_Type := 13_001) return Boolean
+   with Pre  => Name'Length > 0,
+        Post =>
+          (if not Resolve'Result then Addr = GNAT.Sockets.Any_Inet_Addr);
 
 end DNS_Client;

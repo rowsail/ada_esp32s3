@@ -75,7 +75,8 @@ package ESP32S3.SDMMC is
       Width         : Bus_Width := Width_1;
       Init_Clock_Hz : Positive := 400_000;
       Data_Clock_Hz : Positive := 20_000_000;
-      High_Speed    : Boolean := False);
+      High_Speed    : Boolean := False)
+   with Pre => Init_Clock_Hz <= 400_000;   --  SD spec: identification clock cap
 
    ----------------------------------------------------------------------------
    --  Operation.
@@ -84,7 +85,8 @@ package ESP32S3.SDMMC is
    --  Run the card-identification sequence (CMD0/8, ACMD41, CMD2/3/9/7, bus
    --  width, block length).  On OK the card is selected and the bus raised to
    --  Data_Clock_Hz; Kind reports what it is.
-   procedure Initialize (C : in out Card; Result : out Status);
+   procedure Initialize (C : in out Card; Result : out Status)
+   with Post => (if Result = OK then Kind (C) /= Unknown);
 
    --  What Initialize found (Unknown until a successful Initialize).
    function Kind (C : Card) return Card_Kind;

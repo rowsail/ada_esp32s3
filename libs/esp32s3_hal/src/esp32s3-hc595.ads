@@ -41,7 +41,8 @@ package ESP32S3.HC595 is
       Enable   : Boolean := True);
 
    --  Total parallel outputs (Chips * 8).
-   function Output_Count (C : Controller) return Natural;
+   function Output_Count (C : Controller) return Natural
+   with Post => Output_Count'Result = C.Chips * 8;
 
    --  Modify the SHADOW (call Update to push it to the pins).  Index is
    --  0 .. Output_Count-1: chip Index/8 (chip 0 is the one nearest the ESP), and
