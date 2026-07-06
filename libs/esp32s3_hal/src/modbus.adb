@@ -1,6 +1,6 @@
 with Interfaces; use Interfaces;
 
-package body Modbus is
+package body Modbus with SPARK_Mode => On is
 
    function To_Byte (E : Exception_Code) return Byte is
    begin

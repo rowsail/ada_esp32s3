@@ -10,7 +10,7 @@ with Interfaces;
 --  Written against the GNAT.Sockets facade, so the same source runs on a desktop
 --  (host-tested against a Python peer) and on the bare-metal W5500.
 
-package Modbus is
+package Modbus with SPARK_Mode => On is
 
    subtype Byte is Interfaces.Unsigned_8;
    type Byte_Array is array (Natural range <>) of Byte;
@@ -75,7 +75,9 @@ package Modbus is
    --  the count of PDU bytes that follow; the Length field is PDU_Len + 1 (it
    --  covers the Unit byte too).  B must have room for MBAP_Size bytes from B'First.
    procedure Put_MBAP (B : in out Byte_Array; TID : Word; Unit : Unit_Id; PDU_Len : Natural)
-   with Pre => B'Length >= MBAP_Size;
+   with Pre => B'Length >= MBAP_Size and then PDU_Len <= Max_PDU;
+   --  PDU_Len <= Max_PDU (253): the wire Length field is Unit + PDU, so PDU_Len + 1
+   --  must not overflow -- the protocol caps a PDU at 253 bytes.
 
    --  Parse an MBAP header.  Length is the raw Length field (Unit + PDU bytes), so
    --  the PDU is Length - 1 bytes.

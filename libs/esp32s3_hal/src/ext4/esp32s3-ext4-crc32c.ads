@@ -6,7 +6,7 @@
 --  it with feature-specific values.  `Checksum` is the standard one-shot form
 --  (init ~0, final xor ~0) -- self-test: Checksum ("123456789") = 16#E306_9283#.
 
-package ESP32S3.Ext4.CRC32C is
+package ESP32S3.Ext4.CRC32C with SPARK_Mode => On is
 
    --  Continue a CRC32C over Data starting from Seed; returns the running CRC.
    function Update (Seed : U32; Data : Byte_Array) return U32;
