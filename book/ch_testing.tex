@@ -89,13 +89,27 @@ prove the wiring, and the ACATS sweep proves that the language and the runtime t
 whole stack stands on behave as the standard says, on the same silicon the product
 ships on.
 
+\section{Layer 6: proving the absence of errors with SPARK}\index{SPARK}\index{formal proof}
+
+Every layer so far checks behaviour on inputs it was given. The top layer checks that a
+whole category of failure cannot occur on \emph{any} input. Much of the pure logic ---
+the ext4 serializers, the X.509, NMEA, and DNS parsers, the Modbus framing, the software
+crypto and the conversion math --- is written in the SPARK subset of Ada and proved with
+\texttt{gnatprove} to be free of run-time errors: no overflow, no buffer overrun, no
+division by zero, no non-terminating loop, over the entire input space. For the code that
+parses bytes chosen by a stranger, that is the difference between ``no fuzzer found a
+crash'' and ``a crash is impossible.'' This is the subject of
+Chapter~\ref{ch:spark}; it sits above the others because it rules out what they can only
+sample.
+
 \section{Putting the layers together}
 
 No single layer is enough, and each is cheap where the next is dear. The compiler is
 free and catches the most; the host tests are fast and oracle-checked but cannot see
 a pad; the self-tests see the pad but need the board; the conformance sweep is slow
-but proves the foundation. A change to the filesystem runs the host suite against
-\texttt{e2fsck} in seconds, a change to the curve re-runs a KAT, a change to a driver
-re-runs its loopback on the board, and a change to the runtime re-runs the sweep.
-Together they are why the code in this book can be trusted to do on silicon what the
-prose says it does.
+but proves the foundation; and the proofs, above them all, rule out an entire class of
+run-time failure on inputs no test enumerates. A change to the filesystem runs the host
+suite against \texttt{e2fsck} in seconds, a change to the curve re-runs a KAT, a change
+to a driver re-runs its loopback on the board, a change to the runtime re-runs the
+sweep, and a change to a parser re-runs its proof. Together they are why the code in
+this book can be trusted to do on silicon what the prose says it does.
