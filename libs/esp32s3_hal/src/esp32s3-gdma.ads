@@ -1,5 +1,6 @@
 with System;
 with Ada.Finalization;
+with Interfaces;
 
 --  ESP32-S3 General DMA (GDMA).
 --
@@ -50,6 +51,24 @@ package ESP32S3.GDMA is
    --  Flash .rodata (also in 0x3C..) is not writable/aligned for this and is
    --  excluded -- a `constant` aggregate there still cannot be DMA'd.
    function Is_DMA_Capable (A : System.Address) return Boolean;
+
+   --  DMA buffer alignment = the external-memory DCache line.  The GDMA reaches
+   --  PSRAM THROUGH the DCache, so a PSRAM buffer must be cache-line aligned (and,
+   --  ideally, sized to whole lines) for the write-back/invalidate around a
+   --  transfer to touch only that buffer -- see Is_DMA_Capable.
+   DMA_Alignment : constant := 32;
+
+   --  A byte buffer GUARANTEED suitable for DMA wherever it lives.  Declaring a
+   --  buffer of this type -- whether a local (incl. on a PSRAM task stack), a
+   --  static object, or `new DMA_Buffer` on the heap -- makes GNAT place its DATA
+   --  on a 32-byte boundary (it over-aligns the heap allocation as needed, past
+   --  the array's bounds "dope").  Internal-SRAM buffers are DMA-capable at any
+   --  alignment, so using this type everywhere a buffer MIGHT be DMA'd is safe and
+   --  costs nothing there.  (A plain unaligned array's data can land off a line and
+   --  is rejected by Is_DMA_Capable in PSRAM -- a loud failure, not silent
+   --  corruption.)
+   type DMA_Buffer is array (Natural range <>) of Interfaces.Unsigned_8
+     with Alignment => DMA_Alignment;
 
    --  Self-check of the PSRAM coherency path: does a memory-to-memory DMA between
    --  two buffers of the CALLER'S choosing round-trip a byte pattern?  Call with
