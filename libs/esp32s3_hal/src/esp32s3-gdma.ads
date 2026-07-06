@@ -58,17 +58,32 @@ package ESP32S3.GDMA is
    --  transfer to touch only that buffer -- see Is_DMA_Capable.
    DMA_Alignment : constant := 32;
 
-   --  A byte buffer GUARANTEED suitable for DMA wherever it lives.  Declaring a
-   --  buffer of this type -- whether a local (incl. on a PSRAM task stack), a
-   --  static object, or `new DMA_Buffer` on the heap -- makes GNAT place its DATA
-   --  on a 32-byte boundary (it over-aligns the heap allocation as needed, past
-   --  the array's bounds "dope").  Internal-SRAM buffers are DMA-capable at any
-   --  alignment, so using this type everywhere a buffer MIGHT be DMA'd is safe and
-   --  costs nothing there.  (A plain unaligned array's data can land off a line and
-   --  is rejected by Is_DMA_Capable in PSRAM -- a loud failure, not silent
-   --  corruption.)
+   --  A byte buffer GUARANTEED suitable for DMA wherever it lives.  TWO properties
+   --  are required, and both are enforced here:
+   --
+   --    * Aligned START -- Alignment => DMA_Alignment.  Declaring a buffer of this
+   --      type (a local, incl. on a PSRAM task stack; a static object; or
+   --      `new DMA_Buffer` on the heap) makes GNAT place its DATA on a 32-byte
+   --      boundary (it over-aligns the heap allocation as needed, past the array's
+   --      bounds "dope").
+   --    * Whole-cache-line SIZE -- the length is a multiple of DMA_Alignment.  This
+   --      is NOT implied by alignment, and it matters: the PSRAM cache write-back /
+   --      invalidate rounds the region UP to a whole cache line, so a buffer that
+   --      ended mid-line would have the maintenance op touch the neighbouring
+   --      bytes -- dropping an adjacent object's dirty cached write.  With the size
+   --      a line multiple, the buffer occupies whole lines exclusively (aligned at
+   --      BOTH ends), so the maintenance never reaches beyond it.
+   --
+   --  Size a payload UP to a 32-byte multiple (e.g. 128 for 100 useful bytes) and
+   --  transfer the whole buffer, or a sub-length whose round-up stays within it.
+   --  The predicate is checked at every creation / pass (loud failure, not silent
+   --  corruption); it also rejects an arbitrary slice whose length is not a line
+   --  multiple.  Internal-SRAM buffers are DMA-capable at any alignment, so this
+   --  type costs nothing there.
+   pragma Assertion_Policy (Dynamic_Predicate => Check);
    type DMA_Buffer is array (Natural range <>) of Interfaces.Unsigned_8
-     with Alignment => DMA_Alignment;
+     with Alignment        => DMA_Alignment,
+          Dynamic_Predicate => DMA_Buffer'Length mod DMA_Alignment = 0;
 
    --  Self-check of the PSRAM coherency path: does a memory-to-memory DMA between
    --  two buffers of the CALLER'S choosing round-trip a byte pattern?  Call with
