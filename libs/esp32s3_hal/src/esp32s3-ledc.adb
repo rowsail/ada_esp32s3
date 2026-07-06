@@ -1,5 +1,6 @@
 with ESP32S3.GPIO;
 with ESP32S3.GPIO_Signals;
+with ESP32S3.LEDC.Math;
 with ESP32S3_Registers;      use ESP32S3_Registers;
 with ESP32S3_Registers.LEDC; use ESP32S3_Registers.LEDC;
 with ESP32S3_Registers.GPIO;
@@ -10,8 +11,6 @@ package body ESP32S3.LEDC is
    package GR renames ESP32S3_Registers.GPIO;   --  GPIO matrix register layer
    package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
-
-   Src_Hz : constant := 80_000_000;             --  APB clock feeds the LEDC timers
 
    type Timer_Index is range 0 .. 3;
 
@@ -182,17 +181,9 @@ package body ESP32S3.LEDC is
      (C : in out Channel; Freq : Positive; Pin : ESP32S3.GPIO.Pin_Id; Bits : Resolution := 10)
    is
       Timer_Num : constant Timer_Index := Timer_Of (C.Idx);
-      Max       : constant Natural := 2**Bits;
-      --  CLK_DIV is Q10.8: div = Src / (Freq * 2**Bits), in 1/256ths.  Clamp to
-      --  the field range [1.0 .. 2**18-1/256].
-      Div       : constant Natural :=
-        Natural'Max
-          (256,
-           Natural'Min
-             (2**18 - 1,
-              Natural
-                ((Long_Long_Integer (Src_Hz) * 256)
-                 / (Long_Long_Integer (Freq) * Long_Long_Integer (Max)))));
+      --  CLK_DIV is Q10.8: div = Src / (Freq * 2**Bits), in 1/256ths, clamped to
+      --  the field range.  The (proved) divider math lives in ESP32S3.LEDC.Math.
+      Div       : constant Natural := Math.Clock_Divider (Freq, Bits);
    begin
       if not C.Held then
          return;

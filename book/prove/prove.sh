@@ -58,6 +58,10 @@ prove "$T/pcf85063a_prove/pcf85063a_prove.gpr"       "PCF85063A RTC BCD<->binary
 prove "$T/qmi8658c_prove/qmi8658c_prove.gpr"         "QMI8658C IMU sign/sensitivity"
 prove "$T/tlv2556_prove/tlv2556_prove.gpr"           "TLV2556 ADC count->mV"
 prove "$T/es8311_prove/es8311_prove.gpr"             "ES8311 codec volume register"
+prove "$T/twai_math_prove/twai_math_prove.gpr"       "TWAI CAN baud prescaler"
+prove "$T/ledc_math_prove/ledc_math_prove.gpr"       "LEDC clock divider"
+prove "$T/rmt_math_prove/rmt_math_prove.gpr"         "RMT tick divider"
+prove "$T/mcpwm_math_prove/mcpwm_math_prove.gpr"     "MCPWM period/prescale/dead-time"
 prove "$T/endian_host/endian_host.gpr"               "Endian join/split"
 
 #  Cert chain-walking (libs/tls/chain_verify) is also proven silver, but via the

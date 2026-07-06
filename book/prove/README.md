@@ -42,10 +42,16 @@ Alire toolchain (`~/.alire/bin/gnatprove`).
 | `ESP32S3.QMI8658C` | IMU sign-extension + sensitivity scaling | `qmi8658c_prove.gpr` |
 | `ESP32S3.TLV2556` | ADC count → millivolts | `tlv2556_prove.gpr` |
 | `ESP32S3.ES8311` | codec volume % → DAC register | `es8311_prove.gpr` |
+| `ESP32S3.TWAI.Math` | CAN baud-rate prescaler / bit-timing | `twai_math_prove.gpr` |
+| `ESP32S3.LEDC.Math` | LED-PWM clock divider (Q10.8) | `ledc_math_prove.gpr` |
+| `ESP32S3.RMT.Math` | RMT tick divider | `rmt_math_prove.gpr` |
+| `ESP32S3.MCPWM.Math` | motor-PWM period / prescale / dead-time | `mcpwm_math_prove.gpr` |
 | `ESP32S3.Endian` | LE/BE byte join/split primitives | `endian_host.gpr` |
 
-The last group is *pure math extracted from hardware drivers* — the register/MMIO parts of
-those drivers stay unmarked (only the pure subprograms carry `SPARK_Mode => On`).
+The last two groups are *pure math from hardware drivers*: the SHT41/SD_SPI/RTC/IMU/ADC/codec
+helpers are marked `SPARK_Mode => On` in place (MMIO code stays unmarked); the TWAI/LEDC/RMT/MCPWM
+timing arithmetic was **extracted** into pure `*.Math` sibling packages (behaviour-neutral — exact
+expressions relocated, register writes untouched) so it could be proved in isolation.
 
 **~740 run-time checks discharged, 0 unproved.** The **untrusted-input parsers** are the
 highest-value proofs — `X509` (certificates), `NMEA` (GPS sentences), `DNS` (resolver
@@ -137,19 +143,21 @@ bug in `superblock` (the absolute-vs-`Buf'First` CRC slice).
 
 ## The boundary — what is left, and why it is out of reach
 
-The proof surface now covers essentially all the **pure, separable** logic in the HAL. What
-remains is out of the SPARK subset by construction, or needs a structural refactor first:
+The proof surface now covers **all the pure, separable logic in the HAL** — every fixed-offset
+serializer, untrusted-input parser, checksum, and conversion, plus the timing/PWM arithmetic that
+was extractable. What remains is genuinely out of reach:
 
-- **Needs extraction, not yet done** — `twai`/`ledc`/`rmt`/`mcpwm` carry real pure arithmetic
-  (baud prescaler, clock divider, duty, dead-time), but it is *inlined inside the register-writing
-  procedures*, whose bodies `with ESP32S3_Registers.*` (volatile MMIO) — a native prove project
-  can't compile them in isolation. Extract the math into pure siblings first (watch `Bit_Rate*20`,
-  `Dead_Time_Ns*160` for overflow). Same for ext4 `journal`/`block_dev` wear-levelling/`mkfs`
-  (access-type buffers + `Unchecked_Deallocation` + variable-length replay).
+- **Would need extraction, deferred** — ext4 `journal`/`block_dev` wear-levelling/`mkfs` bury
+  their logic in access-type buffers + `Unchecked_Deallocation` + variable-length replay; the
+  `Set_Duty` paths in `ledc`/`mcpwm` use `Float`. (The `twai`/`ledc`/`rmt`/`mcpwm` integer timing
+  math *was* extracted into `*.Math` siblings and proved — see the table.)
 - **Out of the subset by construction** — the register/MMIO drivers (SPI/I2C/UART/I2S/GDMA/GPIO…,
   volatile), the hardware crypto accelerators (SHA/AES-ECB/RSA), controlled-type bus sessions
   (`Finalize`), access-to-subprogram callbacks, `fonts` (`Unchecked_Conversion` to access),
   `mac` (needs the EFUSE register layer), `stack_usage` (`System.Address` ordering).
+- **Provable in principle, but non-converging** — `p256.Verify` (ECDSA): SPARK-legal and gnatprove
+  runs, but the vendored **SPARKNaCl** elliptic-curve contract closure did not discharge under a
+  long budget. A dedicated, lemma-level effort, not a harvest.
 
 ## Crypto / TLS (scouted; expensive, not done)
 

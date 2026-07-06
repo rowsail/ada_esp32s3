@@ -1,6 +1,7 @@
 with System;
 with ESP32S3.GPIO;
 with ESP32S3.GPIO_Signals;
+with ESP32S3.RMT.Math;
 with ESP32S3_Registers;     use ESP32S3_Registers;
 with ESP32S3_Registers.RMT; use ESP32S3_Registers.RMT;
 with ESP32S3_Registers.GPIO;
@@ -13,8 +14,6 @@ package body ESP32S3.RMT is
    package MX renames ESP32S3_Registers.IO_MUX;
    package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
-
-   Src_Hz : constant := 80_000_000;             --  APB clock feeds the RMT
 
    ---------------------------------------------------------------------------
    --  RMT symbol RAM: eight 48-symbol blocks at RMT_Base + 0x400.  TX channel n
@@ -58,15 +57,10 @@ package body ESP32S3.RMT is
    --  lowest representable resolution is Src_Hz/255 (~314 kHz).  Raise rather than
    --  silently clamp -- a clamped divider mis-times every symbol by up to orders
    --  of magnitude, and the caller cannot tell.
-   function Div_Of (Resolution_Hz : Positive) return Byte is
-      Div : constant Natural := Src_Hz / Resolution_Hz;
-   begin
-      if Div > 255 then
-         raise Constraint_Error with
-           "RMT resolution too low (min ~314 kHz with the 8-bit divider)";
-      end if;
-      return Byte (Natural'Max (1, Div));
-   end Div_Of;
+   --  The (proved) divider math lives in ESP32S3.RMT.Math; wrap it in the
+   --  register Byte type here.  Same raise, same value.
+   function Div_Of (Resolution_Hz : Positive) return Byte
+   is (Byte (Math.Divider (Resolution_Hz)));
 
    procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
       Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));

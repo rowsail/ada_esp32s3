@@ -1,6 +1,7 @@
 with Interfaces;            use Interfaces;
 with ESP32S3.GPIO;
 with ESP32S3.GPIO_Signals;
+with ESP32S3.MCPWM.Math;
 with ESP32S3_Registers;     use ESP32S3_Registers;
 with ESP32S3_Registers.PWM; use ESP32S3_Registers.PWM;
 with ESP32S3_Registers.GPIO;
@@ -13,10 +14,6 @@ package body ESP32S3.MCPWM is
    package MX renames ESP32S3_Registers.IO_MUX;   --  IO_MUX (per-pad config)
    package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
-
-   --  PWM_clk source with CLK_CFG.CLK_PRESCALE = 0 (period 6.25 ns = 160 MHz).
-   Src_Hz   : constant := 160_000_000;
-   Max_Peak : constant := 65_536;                 --  timer period field is 16-bit
 
    type Periph_Ref is access all PWM_Peripheral;
 
@@ -271,18 +268,15 @@ package body ESP32S3.MCPWM is
       Unit       : constant MCPWM_Unit := C.U;
       Ch         : constant Channel_Index := C.Idx;
       Regs       : constant Periph_Ref := Regs_Of (Unit);
-      Total      : constant Natural := Natural'Max (1, Src_Hz / Freq);  --  ticks / period
-      --  Choose the smallest timer prescale so the period fits the 16-bit field.
-      Divider    : constant Natural :=
-        Natural'Max (1, Natural'Min (256, (Total + Max_Peak - 1) / Max_Peak));
-      Ticks      : constant Natural :=
-        Natural'Max (2, Natural'Min (Max_Peak, Total / Divider));     --  = TIMER_PERIOD + 1
+      --  The (proved) period / prescaler / dead-time math lives in
+      --  ESP32S3.MCPWM.Math; the register writes stay here.
+      Total      : constant Natural := Math.Period_Total (Freq);       --  ticks / period
+      Divider    : constant Natural := Math.Prescale_Divider (Total);  --  smallest fitting
+      Ticks      : constant Natural := Math.Period_Ticks (Total, Divider);  --  TIMER_PERIOD + 1
       Prescaler  : constant Natural := Divider - 1;
       Period     : constant Natural := Ticks - 1;
-      --  Dead-time in PWM-clock (160 MHz) ticks = ns * 0.16, clamped to 16 bits.
       Has_B      : constant Boolean := Complement_Pin /= ESP32S3.GPIO.No_Pin;
-      Dead_Ticks : constant Natural :=
-        Natural'Min (65535, (Dead_Time_Ns * (Src_Hz / 1_000_000)) / 1000);
+      Dead_Ticks : constant Natural := Math.Dead_Time_Ticks (Dead_Time_Ns);
    begin
       if not C.Held then
          return;
