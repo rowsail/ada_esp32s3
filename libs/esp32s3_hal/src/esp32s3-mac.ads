@@ -35,6 +35,7 @@ package ESP32S3.MAC is
    function Local (Addr : MAC_Address) return MAC_Address;
 
    --  "aa:bb:cc:dd:ee:ff"
-   function Image (Addr : MAC_Address) return String;
+   function Image (Addr : MAC_Address) return String
+   with Post => Image'Result'Length = 17;
 
 end ESP32S3.MAC;

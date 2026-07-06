@@ -66,6 +66,11 @@ package ESP32S3.I2S is
    --  (auto-releases on scope exit, including during exception unwinding).
    type Session is limited private;
 
+   --  True while S holds its port (between Acquire and Release / finalization);
+   --  the ownership guard that every transfer and reconfiguration relies on
+   --  (each raises Not_Owned unless S is active).
+   function Is_Held (S : Session) return Boolean;
+
    ----------------------------------------------------------------------------
    --  Concurrent, mutually-exclusive use.  Acquire a port AND configure it in
    --  the same call; every transfer plus every later reconfiguration runs
@@ -102,7 +107,8 @@ package ESP32S3.I2S is
       Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
       Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
       Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
-      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin);
+      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin)
+   with Post => Is_Held (S);
 
    --  Re-open the held port at a new audio format and pin routing (re-claims the
    --  GDMA channel).  Use this to change sample rate / width / mode on a port
@@ -116,7 +122,8 @@ package ESP32S3.I2S is
       Ws          : ESP32S3.GPIO.Optional_Pin := No_Pin;
       Dout        : ESP32S3.GPIO.Optional_Pin := No_Pin;
       Din         : ESP32S3.GPIO.Optional_Pin := No_Pin;
-      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin);
+      Mclk        : ESP32S3.GPIO.Optional_Pin := No_Pin)
+   with Pre => Is_Held (S);
 
    --  Re-route the held port's signals to physical pads (a finer change than
    --  Reconfigure, leaving the audio format untouched).  Raises Not_Owned unless
@@ -127,18 +134,21 @@ package ESP32S3.I2S is
       Ws   : ESP32S3.GPIO.Optional_Pin := No_Pin;
       Dout : ESP32S3.GPIO.Optional_Pin := No_Pin;
       Din  : ESP32S3.GPIO.Optional_Pin := No_Pin;
-      Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin);
+      Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin)
+   with Pre => Is_Held (S);
 
    --  Internal data-line loopback through one GPIO pad (self-test; no wiring):
    --  TX and RX share WS+BCK internally (the hardware SIG_LOOPBACK bit) and the
    --  data-out signal is fed back into data-in on Pad, on the held port.  Raises
    --  Not_Owned unless S holds the port.
-   procedure Enable_Loopback (S : Session; Pad : ESP32S3.GPIO.Pin_Id);
+   procedure Enable_Loopback (S : Session; Pad : ESP32S3.GPIO.Pin_Id)
+   with Pre => Is_Held (S);
 
    --  The sample width the held port is currently configured for (the Bits of
    --  its most recent Acquire/Reconfigure).  Raises Not_Owned unless S holds the
    --  port.  The typed transfers below use it in their preconditions.
-   function Configured_Bits (S : Session) return Sample_Bits;
+   function Configured_Bits (S : Session) return Sample_Bits
+   with Pre => Is_Held (S);
 
    ----------------------------------------------------------------------------
    --  Transfers come in two layers.
@@ -157,41 +167,52 @@ package ESP32S3.I2S is
 
    --  Shift a buffer out on the data-out line.  Blocking.
    procedure Write (S : Session; Samples : PCM_8)
-   with Pre => Configured_Bits (S) = Bits_8;
+   with Pre => Is_Held (S) and then Configured_Bits (S) = Bits_8;
    procedure Write (S : Session; Samples : PCM_16)
-   with Pre => Configured_Bits (S) = Bits_16;
+   with Pre => Is_Held (S) and then Configured_Bits (S) = Bits_16;
    procedure Write (S : Session; Samples : PCM_32)
-   with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
-   procedure Write_Raw (S : Session; Tx : System.Address; Length : Natural);
+   with Pre => Is_Held (S) and then Configured_Bits (S) in Bits_24 | Bits_32;
+   procedure Write_Raw (S : Session; Tx : System.Address; Length : Natural)
+   with Pre => Is_Held (S) and then Length in 1 .. 4095;
    --  Type-safe overload (buffer 32-byte aligned + line-multiple sized).
    procedure Write_Raw (S : Session; Tx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
-   with Pre => Length <= Tx'Length and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
+   with Pre => Is_Held (S) and then Length in 1 .. 4095
+               and then Length <= Tx'Length
+               and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
 
 
    --  Capture from the data-in line into a buffer.  Blocking.
    procedure Read (S : Session; Samples : out PCM_8)
-   with Pre => Configured_Bits (S) = Bits_8;
+   with Pre => Is_Held (S) and then Configured_Bits (S) = Bits_8;
    procedure Read (S : Session; Samples : out PCM_16)
-   with Pre => Configured_Bits (S) = Bits_16;
+   with Pre => Is_Held (S) and then Configured_Bits (S) = Bits_16;
    procedure Read (S : Session; Samples : out PCM_32)
-   with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
-   procedure Read_Raw (S : Session; Rx : System.Address; Length : Natural);
+   with Pre => Is_Held (S) and then Configured_Bits (S) in Bits_24 | Bits_32;
+   procedure Read_Raw (S : Session; Rx : System.Address; Length : Natural)
+   with Pre => Is_Held (S) and then Length in 1 .. 4095;
    --  Type-safe overload (buffer 32-byte aligned + line-multiple sized).
    procedure Read_Raw (S : Session; Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
-   with Pre => Length <= Rx'Length and then Rx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
+   with Pre => Is_Held (S) and then Length in 1 .. 4095
+               and then Length <= Rx'Length
+               and then Rx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
 
 
    --  Full-duplex: shift Tx out and capture Rx in simultaneously (same length).
    procedure Transfer (S : Session; Tx : PCM_8; Rx : out PCM_8)
-   with Pre => Configured_Bits (S) = Bits_8 and then Tx'Length = Rx'Length;
+   with Pre => Is_Held (S) and then Configured_Bits (S) = Bits_8
+               and then Tx'Length = Rx'Length;
    procedure Transfer (S : Session; Tx : PCM_16; Rx : out PCM_16)
-   with Pre => Configured_Bits (S) = Bits_16 and then Tx'Length = Rx'Length;
+   with Pre => Is_Held (S) and then Configured_Bits (S) = Bits_16
+               and then Tx'Length = Rx'Length;
    procedure Transfer (S : Session; Tx : PCM_32; Rx : out PCM_32)
-   with Pre => Configured_Bits (S) in Bits_24 | Bits_32 and then Tx'Length = Rx'Length;
-   procedure Transfer_Raw (S : Session; Tx, Rx : System.Address; Length : Natural);
+   with Pre => Is_Held (S) and then Configured_Bits (S) in Bits_24 | Bits_32
+               and then Tx'Length = Rx'Length;
+   procedure Transfer_Raw (S : Session; Tx, Rx : System.Address; Length : Natural)
+   with Pre => Is_Held (S) and then Length in 1 .. 4095;
    --  Type-safe overload (buffers 32-byte aligned + line-multiple sized).
    procedure Transfer_Raw (S : Session; Tx, Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
-   with Pre => Length <= Tx'Length and then Length <= Rx'Length
+   with Pre => Is_Held (S) and then Length in 1 .. 4095
+               and then Length <= Tx'Length and then Length <= Rx'Length
                and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0
                and then Rx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
 
@@ -202,44 +223,55 @@ package ESP32S3.I2S is
    --  The buffer must stay valid (internal SRAM) and should hold a whole number
    --  of wave periods so the wrap is seamless.  Stop halts it.
    procedure Start_Continuous (S : Session; Samples : PCM_8)
-   with Pre => Configured_Bits (S) = Bits_8;
+   with Pre => Is_Held (S) and then Configured_Bits (S) = Bits_8;
    procedure Start_Continuous (S : Session; Samples : PCM_16)
-   with Pre => Configured_Bits (S) = Bits_16;
+   with Pre => Is_Held (S) and then Configured_Bits (S) = Bits_16;
    procedure Start_Continuous (S : Session; Samples : PCM_32)
-   with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
-   procedure Start_Continuous_Raw (S : Session; Tx : System.Address; Length : Natural);
+   with Pre => Is_Held (S) and then Configured_Bits (S) in Bits_24 | Bits_32;
+   procedure Start_Continuous_Raw (S : Session; Tx : System.Address; Length : Natural)
+   with Pre => Is_Held (S) and then Length in 1 .. 4095;
    --  Type-safe overload (buffer 32-byte aligned + line-multiple sized).
    procedure Start_Continuous_Raw (S : Session; Tx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
-   with Pre => Length <= Tx'Length and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
+   with Pre => Is_Held (S) and then Length in 1 .. 4095
+               and then Length <= Tx'Length
+               and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
 
 
    --  Stop a continuous transmit started by Start_Continuous (TX clock off).
    --  Raises Not_Owned unless S holds the port.
-   procedure Stop (S : Session);
+   procedure Stop (S : Session)
+   with Pre => Is_Held (S);
 
    --  Capture into a buffer WITHOUT disturbing the TX path -- so it can run
    --  concurrently with a continuous transmit (Start_Continuous), which supplies
    --  the shared master clock.  Blocking.
    procedure Capture (S : Session; Samples : out PCM_8)
-   with Pre => Configured_Bits (S) = Bits_8;
+   with Pre => Is_Held (S) and then Configured_Bits (S) = Bits_8;
    procedure Capture (S : Session; Samples : out PCM_16)
-   with Pre => Configured_Bits (S) = Bits_16;
+   with Pre => Is_Held (S) and then Configured_Bits (S) = Bits_16;
    procedure Capture (S : Session; Samples : out PCM_32)
-   with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
-   procedure Capture_Raw (S : Session; Rx : System.Address; Length : Natural);
+   with Pre => Is_Held (S) and then Configured_Bits (S) in Bits_24 | Bits_32;
+   procedure Capture_Raw (S : Session; Rx : System.Address; Length : Natural)
+   with Pre => Is_Held (S) and then Length in 1 .. 4095;
    --  Type-safe overload (buffer 32-byte aligned + line-multiple sized).
    procedure Capture_Raw (S : Session; Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
-   with Pre => Length <= Rx'Length and then Rx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
+   with Pre => Is_Held (S) and then Length in 1 .. 4095
+               and then Length <= Rx'Length
+               and then Rx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
 
 
    --  Relinquish ownership (lets a waiting task proceed).  Idempotent.
-   procedure Release (S : in out Session);
+   procedure Release (S : in out Session)
+   with Post => not Is_Held (S);
 
 private
    type Session is new Ada.Finalization.Limited_Controlled with record
       Port   : I2S_Port := I2S0;
       Active : Boolean := False;   --  holds Port's guard
    end record;
+
    overriding
    procedure Finalize (S : in out Session);   --  auto-release on scope exit
+   function Is_Held (S : Session) return Boolean is (S.Active);
+
 end ESP32S3.I2S;

@@ -63,7 +63,8 @@ package ESP32S3.SD_SPI is
       Host                 : ESP32S3.SPI.SPI_Host;
       Sclk, Mosi, Miso, Cs : ESP32S3.GPIO.Pin_Id;
       Init_Clock_Hz        : Positive := 400_000;
-      Data_Clock_Hz        : Positive := 8_000_000);
+      Data_Clock_Hz        : Positive := 8_000_000)
+   with Pre => Init_Clock_Hz <= 400_000;   --  SD spec: identification clock cap
 
    ----------------------------------------------------------------------------
    --  Operation.
@@ -71,7 +72,8 @@ package ESP32S3.SD_SPI is
 
    --  Run the power-up + CMD0/8/ACMD41/CMD58 handshake.  On OK the card is ready
    --  and the bus has been raised to Data_Clock_Hz; Kind reports what it is.
-   procedure Initialize (C : in out Card; Result : out Status);
+   procedure Initialize (C : in out Card; Result : out Status)
+   with Post => (if Result = OK then Kind (C) /= Unknown);
 
    --  What Initialize found (Unknown until a successful Initialize).
    function Kind (C : Card) return Card_Kind;

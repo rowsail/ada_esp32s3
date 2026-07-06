@@ -8,12 +8,14 @@ with ESP32S3.Ext4.Volume;
 package ESP32S3.Ext4.Writer is
 
    --  Create a regular file Name in directory Dir_Path; return its inode number.
-   function Create_File (V : in out Volume.Context; Dir_Path, Name : String) return Inode_Number;
+   function Create_File (V : in out Volume.Context; Dir_Path, Name : String) return Inode_Number
+   with Pre => Dir_Path'Length > 0 and then Name'Length > 0;
 
    --  Set the entire contents of (currently empty) file inode N in one call,
    --  from an in-memory buffer.  Allocates 12 direct + one single-indirect
    --  block, so up to (12 + block_size/4) * block_size bytes (~4 MiB at 4 KiB).
-   procedure Write_Small (V : in out Volume.Context; N : Inode_Number; Data : Byte_Array);
+   procedure Write_Small (V : in out Volume.Context; N : Inode_Number; Data : Byte_Array)
+   with Pre => N >= 1;
 
    --  Append Data to the END of regular file inode N, growing it block by block.
    --  Streaming: call it repeatedly with small chunks to build a large file
@@ -22,37 +24,52 @@ package ESP32S3.Ext4.Writer is
    --  final size past that raises Use_Error before allocating anything.  If the
    --  volume fills mid-append (No_Space) the bytes written so far are committed
    --  (no leaked blocks) and the exception propagates.
-   procedure Append (V : in out Volume.Context; N : Inode_Number; Data : Byte_Array);
+   procedure Append (V : in out Volume.Context; N : Inode_Number; Data : Byte_Array)
+   with Pre => N >= 1;
 
    --  Create an empty subdirectory Name in directory Dir_Path (with "."/"..").
-   procedure Mkdir (V : in out Volume.Context; Dir_Path, Name : String);
+   procedure Mkdir (V : in out Volume.Context; Dir_Path, Name : String)
+   with Pre => Dir_Path'Length > 0 and then Name'Length > 0;
 
    --  Remove regular file Name from directory Dir_Path; frees its inode + data
    --  blocks when the last link goes.  (Files with indirect/extent maps are not
    --  yet freeable -> Unsupported_Feature.)
-   procedure Unlink (V : in out Volume.Context; Dir_Path, Name : String);
+   procedure Unlink (V : in out Volume.Context; Dir_Path, Name : String)
+   with Pre => Dir_Path'Length > 0 and then Name'Length > 0;
 
    --  Remove empty subdirectory Name from Dir_Path (raises Not_Empty otherwise).
-   procedure Rmdir (V : in out Volume.Context; Dir_Path, Name : String);
+   procedure Rmdir (V : in out Volume.Context; Dir_Path, Name : String)
+   with Pre => Dir_Path'Length > 0 and then Name'Length > 0;
 
    --  Rename Old_Name in Old_Dir to New_Name in New_Dir (same or different
    --  directory).  The target must not already exist.  Moving a directory across
    --  parents fixes up its ".." and the two parents' link counts.
-   procedure Rename (V : in out Volume.Context; Old_Dir, Old_Name, New_Dir, New_Name : String);
+   procedure Rename (V : in out Volume.Context; Old_Dir, Old_Name, New_Dir, New_Name : String)
+   with
+     Pre =>
+       Old_Dir'Length > 0
+       and then Old_Name'Length > 0
+       and then New_Dir'Length > 0
+       and then New_Name'Length > 0;
 
    --  Set regular file inode N's size to New_Size.  Shrinking frees the now-unused
    --  data (+ indirect) blocks; growing just extends the size (sparse).  Direct /
    --  single-indirect only.
-   procedure Truncate (V : in out Volume.Context; N : Inode_Number; New_Size : U64);
+   procedure Truncate (V : in out Volume.Context; N : Inode_Number; New_Size : U64)
+   with Pre => N >= 1;
 
    --  Create a hard link New_Name in New_Dir to the existing file Target_Path
    --  (not a directory; target must not already exist).
-   procedure Link (V : in out Volume.Context; Target_Path, New_Dir, New_Name : String);
+   procedure Link (V : in out Volume.Context; Target_Path, New_Dir, New_Name : String)
+   with
+     Pre =>
+       Target_Path'Length > 0 and then New_Dir'Length > 0 and then New_Name'Length > 0;
 
    --  Create a symbolic link Name in Dir_Path whose contents is Target (the
    --  link text -- not resolved).  Short targets (< 60 bytes) are stored inline
    --  in the inode ("fast symlink"); longer ones use a single data block.  The
    --  target must not exceed one block.
-   procedure Make_Symlink (V : in out Volume.Context; Dir_Path, Name, Target : String);
+   procedure Make_Symlink (V : in out Volume.Context; Dir_Path, Name, Target : String)
+   with Pre => Dir_Path'Length > 0 and then Name'Length > 0;
 
 end ESP32S3.Ext4.Writer;

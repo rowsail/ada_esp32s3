@@ -90,7 +90,8 @@ package X509 is
 
    --  Parse a DER-encoded certificate.  On success Result.Valid is True and the
    --  slices are filled; on any structural problem Result.Valid is False.
-   procedure Parse (Cert : Byte_Array; Result : out Certificate);
+   procedure Parse (Cert : Byte_Array; Result : out Certificate)
+   with Pre => Cert'Length > 0;
 
    --  notBefore <= Now <= notAfter, with Now a Pack_Time value (e.g. derived from
    --  the NTP clock).  False if either validity time fails to parse.

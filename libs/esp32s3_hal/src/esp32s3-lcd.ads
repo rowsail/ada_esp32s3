@@ -72,7 +72,8 @@ package ESP32S3.LCD is
    --  Stream Length bytes (1 .. 4095) from Tx out the data bus, one per PCLK.
    --  Blocking; Ok is True once the transfer completes.  Buffer in internal SRAM.
    --  Raises Not_Owned unless S holds the controller.
-   procedure Transmit (S : Session; Tx : System.Address; Length : Natural; Ok : out Boolean);
+   procedure Transmit (S : Session; Tx : System.Address; Length : Natural; Ok : out Boolean)
+   with Pre => Length in 1 .. 4095;
 
    --  Type-safe overload (buffer 32-byte aligned + line-multiple sized).
    procedure Transmit (S : Session; Tx : ESP32S3.GDMA.DMA_Buffer; Length : Natural; Ok : out Boolean)

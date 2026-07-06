@@ -34,9 +34,11 @@ package Modbus.Master is
       Port      : GNAT.Sockets.Port_Type := Default_Port;
       Configure : Socket_Hook := null;
       Timeout   : Duration := 1.0;
-      Result    : out Status);
+      Result    : out Status)
+   with Post => (if Result = OK then Is_Open (S));
 
-   procedure Close (S : in out Session);
+   procedure Close (S : in out Session)
+   with Post => not Is_Open (S);
    function Is_Open (S : Session) return Boolean;
 
    ---------------------------------------------------------------------------

@@ -89,7 +89,8 @@ package Modbus.Slave is
      (Self      : in out Server'Class;
       Buf       : in out Byte_Array;
       Req_Len   : Natural;
-      Reply_Len : out Natural);
+      Reply_Len : out Natural)
+   with Pre => Req_Len <= Buf'Length;
 
 private
    type Server is tagged limited null record;

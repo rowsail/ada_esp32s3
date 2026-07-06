@@ -32,10 +32,12 @@ package ESP32S3.SDM is
    --  carrier is easier to smooth with an RC low-pass; the exact value rarely
    --  matters, so it is rounded to the nearest available divider.
    procedure Configure
-     (C : in out Channel; Pin : ESP32S3.GPIO.Pin_Id; Carrier_Hz : Positive := 1_000_000);
+     (C : in out Channel; Pin : ESP32S3.GPIO.Pin_Id; Carrier_Hz : Positive := 1_000_000)
+   with Pre => Is_Valid (C);
 
    --  Set the average output density (0 .. 100 %).  Single register write.
-   procedure Set_Density (C : Channel; Percent : Density_Percent);
+   procedure Set_Density (C : Channel; Percent : Density_Percent)
+   with Pre => Is_Valid (C);
 
 private
    type Channel is new Ada.Finalization.Limited_Controlled with record

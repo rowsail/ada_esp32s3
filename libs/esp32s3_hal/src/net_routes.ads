@@ -30,13 +30,16 @@ package Net_Routes is
    --  Add a route: destinations matching Dest under Mask go out Iface.  Lower
    --  Metric wins among equally-specific routes.
    procedure Add_Route
-     (Dest, Mask : Net_Devices.IPv4_Address; Iface : Interface_Id; Metric : Natural := 100);
+     (Dest, Mask : Net_Devices.IPv4_Address; Iface : Interface_Id; Metric : Natural := 100)
+   with Post => Has_Routes;
 
    --  Shorthand for a 0.0.0.0/0 default route out Iface.
-   procedure Set_Default (Iface : Interface_Id; Metric : Natural := 100);
+   procedure Set_Default (Iface : Interface_Id; Metric : Natural := 100)
+   with Post => Has_Routes;
 
    --  Drop all routes (reconfiguration / tests).
-   procedure Clear;
+   procedure Clear
+   with Post => not Has_Routes;
 
    --  Are any routes configured?  The facade falls back to its default interface
    --  when this is False, so a single-interface board that sets up no routes keeps

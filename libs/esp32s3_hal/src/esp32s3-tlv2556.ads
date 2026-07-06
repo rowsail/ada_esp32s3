@@ -76,6 +76,7 @@ package ESP32S3.TLV2556 is
 
    --  Convert a result to millivolts for the given reference (External returns 0
    --  -- the full scale is the board's REF+, which only the application knows).
-   function Millivolts (S : Sample; Ref : Reference) return Natural;
+   function Millivolts (S : Sample; Ref : Reference) return Natural
+   with Post => (if Ref = External then Millivolts'Result = 0);
 
 end ESP32S3.TLV2556;

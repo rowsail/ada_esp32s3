@@ -98,6 +98,12 @@ package body ESP32S3.Ext4.FS is
      or Superblock.Incompat_64Bit
      or Superblock.Incompat_Csum_Seed;   --  read-safe: only relocates the seed
 
+   -------------
+   -- Is_Live --
+   -------------
+
+   function Is_Live (M : Mount) return Boolean is (M.Live);
+
    ----------
    -- Open --
    ----------

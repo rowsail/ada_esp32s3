@@ -59,10 +59,12 @@ package ESP32S3.ES8311 is
       --  ADC PGA gain, 0 .. 42 dB
       I2C_Clock_Hz : Positive := 100_000;
       Addr         : Address := Default_Address;
-      Ok           : out Boolean);
+      Ok           : out Boolean)
+   with Pre => Volume <= 100 and then Mic_Gain_Db <= 42;
 
    --  Set the DAC output volume (0 .. 100 %).  Setup must have run.
-   procedure Set_Volume (Percent : Natural; Ok : out Boolean);
+   procedure Set_Volume (Percent : Natural; Ok : out Boolean)
+   with Pre => Percent <= 100;
 
    ----------------------------------------------------------------------------
    --  Concurrent, mutually-exclusive audio output.
@@ -82,7 +84,8 @@ package ESP32S3.ES8311 is
    --  plays the left slot) out to the codec.  Blocking; Length 1 .. 4095.  Note
    --  back-to-back Play calls leave a brief gap between buffers (an audible
    --  click for a continuous tone); use Play_Continuous for gapless playback.
-   procedure Play (O : Output; Samples : System.Address; Length : Natural);
+   procedure Play (O : Output; Samples : System.Address; Length : Natural)
+   with Pre => Length in 1 .. 4095;
 
    --  Start playing the Samples buffer on a self-looping DMA and return
    --  immediately: it is replayed forever with NO gap between passes (gapless,
@@ -90,7 +93,8 @@ package ESP32S3.ES8311 is
    --  (in internal SRAM) and should hold a whole number of wave periods so the
    --  wrap is seamless -- e.g. for a steady tone, size the buffer to an integer
    --  number of cycles.  Length 1 .. 4095 bytes.  Stop halts it.
-   procedure Play_Continuous (O : Output; Samples : System.Address; Length : Natural);
+   procedure Play_Continuous (O : Output; Samples : System.Address; Length : Natural)
+   with Pre => Length in 1 .. 4095;
 
    --  Stop a continuous playback started by Play_Continuous.
    procedure Stop (O : Output);
@@ -100,7 +104,8 @@ package ESP32S3.ES8311 is
    --  NOT disturb playback -- so you can capture while Play_Continuous keeps the
    --  tone (and the shared master clock) running.  The mono ADC fills the left
    --  slot of each stereo frame.  Length 1 .. 4095.
-   procedure Capture (O : Output; Samples : System.Address; Length : Natural);
+   procedure Capture (O : Output; Samples : System.Address; Length : Natural)
+   with Pre => Length in 1 .. 4095;
 
    --  Relinquish the port (also done automatically on scope exit).
    procedure Release (O : in out Output);

@@ -26,6 +26,9 @@ with Net_Devices;
 
 package GNAT.Sockets is
 
+   use type Net_Devices.Device_Access;             --  operators in Pre/Post aspects
+   use type Ada.Streams.Stream_Element_Offset;
+
    --  Identifies a registered interface (0 = the first / default).  Shared with
    --  Net_Devices / Net_Routes so the registry and the routing table agree.
    subtype Interface_Id is Net_Devices.Interface_Id;
@@ -33,10 +36,12 @@ package GNAT.Sockets is
    --  Register a network interface; the first one registered is the default.
    --  Returns its id.  (A Net_Devices.Device is provided by a chip driver, e.g.
    --  ESP32S3.W5500.Net_Device.)
-   function Add_Interface (Device : Net_Devices.Device_Access) return Interface_Id;
+   function Add_Interface (Device : Net_Devices.Device_Access) return Interface_Id
+   with Pre => Device /= null;
 
    --  Convenience for a single-interface board: register Device as the default.
-   procedure Initialize (Device : Net_Devices.Device_Access);
+   procedure Initialize (Device : Net_Devices.Device_Access)
+   with Pre => Device /= null;
 
    --  Fence off a hardware socket index so Create_Socket's pool never allocates
    --  it.  Required when another subsystem drives that hardware socket directly
@@ -52,7 +57,8 @@ package GNAT.Sockets is
 
    type Inet_Addr_Type is private;
    function Inet_Addr (Image : String) return Inet_Addr_Type;   --  "a.b.c.d"
-   function Image (Value : Inet_Addr_Type) return String;        --  -> "a.b.c.d"
+   function Image (Value : Inet_Addr_Type) return String         --  -> "a.b.c.d"
+   with Post => Image'Result'Length in 7 .. 15;
    Any_Inet_Addr : constant Inet_Addr_Type;                      --  0.0.0.0
 
    type Sock_Addr_Type is record
@@ -102,7 +108,8 @@ package GNAT.Sockets is
      (Socket : Socket_Type;
       Item   : Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
-      To     : access Sock_Addr_Type := null);
+      To     : access Sock_Addr_Type := null)
+   with Post => Last <= Item'Last;
 
    --  Block until data arrives, then fill Item; Last is the last index written
    --  (Item'First - 1 when the TCP peer has closed -- end of stream).  From /=
@@ -111,7 +118,8 @@ package GNAT.Sockets is
      (Socket : Socket_Type;
       Item   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
-      From   : access Sock_Addr_Type := null);
+      From   : access Sock_Addr_Type := null)
+   with Post => Last <= Item'Last;
 
    procedure Close_Socket (Socket : in out Socket_Type);
 

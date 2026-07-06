@@ -15,6 +15,7 @@ package ESP32S3.Ext4.File is
       I      : Inode.Info;
       Offset : U64;
       Into   : out Byte_Array;
-      Last   : out Natural);
+      Last   : out Natural)
+   with Post => Last <= Into'Length;
 
 end ESP32S3.Ext4.File;

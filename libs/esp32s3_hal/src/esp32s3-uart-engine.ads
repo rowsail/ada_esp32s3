@@ -16,7 +16,8 @@ private package ESP32S3.UART.Engine is
 
    function Open
      (Port : UART_Port; Baud : Baud_Rate; Bits : Data_Bits; Parity : Parity_Mode; Stop : Stop_Bits)
-      return Bus;
+      return Bus
+   with Post => Is_Open (Open'Result);
 
    function Is_Open (B : Bus) return Boolean;
 
@@ -31,30 +32,40 @@ private package ESP32S3.UART.Engine is
       Rx                : ESP32S3.GPIO.Optional_Pin;
       Rts               : ESP32S3.GPIO.Optional_Pin;
       Cts               : ESP32S3.GPIO.Optional_Pin;
-      Rx_Flow_Threshold : Natural);
+      Rx_Flow_Threshold : Natural)
+   with Pre => Is_Open (B);
 
    --  Independently re-program one frame attribute on an open port: the baud
    --  divider, or a single CONF0 field (data bits / parity / stop bits) via a
    --  read-modify-write that leaves the other fields untouched.
-   procedure Set_Baud (B : Bus; Baud : Baud_Rate);
-   procedure Set_Data_Bits (B : Bus; Bits : Data_Bits);
-   procedure Set_Parity (B : Bus; Parity : Parity_Mode);
-   procedure Set_Stop_Bits (B : Bus; Stop : Stop_Bits);
+   procedure Set_Baud (B : Bus; Baud : Baud_Rate)
+   with Pre => Is_Open (B);
+   procedure Set_Data_Bits (B : Bus; Bits : Data_Bits)
+   with Pre => Is_Open (B);
+   procedure Set_Parity (B : Bus; Parity : Parity_Mode)
+   with Pre => Is_Open (B);
+   procedure Set_Stop_Bits (B : Bus; Stop : Stop_Bits)
+   with Pre => Is_Open (B);
 
    --  Controller-level internal TX->RX loopback (CONF0.LOOPBACK).
-   procedure Set_Loopback (B : Bus; On : Boolean);
+   procedure Set_Loopback (B : Bus; On : Boolean)
+   with Pre => Is_Open (B);
 
    --  Independently invert each line at the controller (CONF0 *_INV bits).
-   procedure Set_Inversion (B : Bus; Tx, Rx, Rts, Cts : Boolean);
+   procedure Set_Inversion (B : Bus; Tx, Rx, Rts, Cts : Boolean)
+   with Pre => Is_Open (B);
 
    --  Push every byte to the TX FIFO, waiting (bounded) for room.
-   procedure Write (B : Bus; Data : Byte_Array);
+   procedure Write (B : Bus; Data : Byte_Array)
+   with Pre => Is_Open (B);
 
    --  Bytes waiting in the RX FIFO.
-   function Rx_Available (B : Bus) return Natural;
+   function Rx_Available (B : Bus) return Natural
+   with Pre => Is_Open (B);
 
    --  Read up to Data'Length bytes (bounded wait per byte); Count = received.
-   procedure Read (B : Bus; Data : out Byte_Array; Count : out Natural);
+   procedure Read (B : Bus; Data : out Byte_Array; Count : out Natural)
+   with Pre => Is_Open (B);
 
    procedure Close (B : in out Bus);
 

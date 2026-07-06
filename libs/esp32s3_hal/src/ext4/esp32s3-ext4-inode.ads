@@ -35,17 +35,20 @@ package ESP32S3.Ext4.Inode is
    is ((I.Flags and INLINE_DATA_FL) /= 0);
 
    --  Read inode N (>= 1).
-   procedure Read (V : in out Volume.Context; N : Inode_Number; I : out Info);
+   procedure Read (V : in out Volume.Context; N : Inode_Number; I : out Info)
+   with Pre => N >= 1;
 
    --  Write inode N's modelled fields (mode/size/flags/links/i_blocks/i_block).
    --  Fresh zero-initialises the whole inode first (for a freshly-allocated one);
    --  otherwise the unmodelled fields are preserved.  Recomputes the checksum
    --  when metadata_csum is in effect.
    procedure Write
-     (V : in out Volume.Context; N : Inode_Number; I : Info; Fresh : Boolean := False);
+     (V : in out Volume.Context; N : Inode_Number; I : Info; Fresh : Boolean := False)
+   with Pre => N >= 1;
 
    --  Mark inode N as deleted on disk (links_count := 0, dtime := nonzero) so
    --  e2fsck treats the now-free inode as a clean deletion.
-   procedure Mark_Deleted (V : in out Volume.Context; N : Inode_Number);
+   procedure Mark_Deleted (V : in out Volume.Context; N : Inode_Number)
+   with Pre => N >= 1;
 
 end ESP32S3.Ext4.Inode;

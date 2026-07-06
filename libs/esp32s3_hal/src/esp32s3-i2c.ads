@@ -41,6 +41,10 @@ package ESP32S3.I2C is
    --  relies on finalization -> these task-safe drivers target embedded/full.
    type Session is limited private;
 
+   --  True while S holds its host (between Acquire and Release / finalization);
+   --  the ownership guard the Write / Read preconditions below rely on.
+   function Is_Held (S : Session) return Boolean;
+
    ----------------------------------------------------------------------------
    --  One-time host configuration -- call once per host at startup, before any
    --  task contends for it (single-threaded).
@@ -73,7 +77,8 @@ package ESP32S3.I2C is
    --  Take exclusive ownership of a Setup host.  Suspends until no other task
    --  holds it.  Keep it across a whole transaction, then Release.  Raises
    --  Not_Initialized if Host was never Setup.
-   procedure Acquire (S : in out Session; Host : I2C_Host);
+   procedure Acquire (S : in out Session; Host : I2C_Host)
+   with Post => Is_Held (S);
 
    --  Master write: START, (Addr<<1 | W), Data bytes, STOP.  Success is True
    --  iff the slave ACKed the address and every byte.  Data length 0 sends an
@@ -84,23 +89,29 @@ package ESP32S3.I2C is
       Addr      : Slave_Address;
       Data      : Byte_Array;
       Success   : out Boolean;
-      Check_Ack : Boolean := True);
+      Check_Ack : Boolean := True)
+   with Pre => Is_Held (S) and then Data'Length <= Max_Transfer - 1;
 
    --  Master read: START, (Addr<<1 | R), read Data'Length bytes (ACK all but
    --  the last, NACK the last), STOP.  Success is True iff the slave ACKed the
    --  address.  Blocking.  Raises Not_Owned unless S currently holds a host.
    procedure Read
-     (S : Session; Addr : Slave_Address; Data : out Byte_Array; Success : out Boolean);
+     (S : Session; Addr : Slave_Address; Data : out Byte_Array; Success : out Boolean)
+   with Pre => Is_Held (S) and then Data'Length <= Max_Transfer;
 
    --  Relinquish ownership (lets a waiting task proceed).  Harmless if already
    --  released.  Always release a Session you Acquired.
-   procedure Release (S : in out Session);
+   procedure Release (S : in out Session)
+   with Post => not Is_Held (S);
 
 private
    type Session is new Ada.Finalization.Limited_Controlled with record
       Host   : I2C_Host := I2C0;
       Active : Boolean := False;   --  holds Host's guard
    end record;
+
    overriding
    procedure Finalize (S : in out Session);   --  auto-release on scope exit
+   function Is_Held (S : Session) return Boolean is (S.Active);
+
 end ESP32S3.I2C;

@@ -17,33 +17,40 @@ private package ESP32S3.SPI.Engine is
    --  a (limited, controlled) GDMA Channel; built in place by Open.
    type Bus is limited private;
 
-   procedure Open (B : in out Bus; Host : SPI_Host; Mode : SPI_Mode; Clock_Hz : Positive);
+   procedure Open (B : in out Bus; Host : SPI_Host; Mode : SPI_Mode; Clock_Hz : Positive)
+   with Post => Is_Open (B);
 
    function Is_Open (B : Bus) return Boolean;
 
    --  Change just the bit clock of an already-Open bus (no GDMA re-Claim).
-   procedure Set_Clock (B : Bus; Hz : Positive);
+   procedure Set_Clock (B : Bus; Hz : Positive)
+   with Pre => Is_Open (B);
 
    --  Change just the SPI mode (CPOL/CPHA) of an already-Open bus.  Applied per
    --  device at Acquire, so two devices on one host can run different modes.
-   procedure Set_Mode (B : Bus; Mode : SPI_Mode);
+   procedure Set_Mode (B : Bus; Mode : SPI_Mode)
+   with Pre => Is_Open (B);
 
    procedure Configure_Pins
      (B    : Bus;
       Sclk : ESP32S3.GPIO.Optional_Pin;
       Mosi : ESP32S3.GPIO.Optional_Pin;
       Miso : ESP32S3.GPIO.Optional_Pin;
-      Cs   : ESP32S3.GPIO.Optional_Pin := No_Pin);
+      Cs   : ESP32S3.GPIO.Optional_Pin := No_Pin)
+   with Pre => Is_Open (B);
 
-   procedure Enable_Loopback (B : Bus; Pad : ESP32S3.GPIO.Pin_Id);
+   procedure Enable_Loopback (B : Bus; Pad : ESP32S3.GPIO.Pin_Id)
+   with Pre => Is_Open (B);
 
    --  Enable (Enabled => True) or suppress (False) the peripheral's hardware CS0
    --  output for this host.  Suppressed when a device drives its own chip select
    --  via a callback, so the auto-asserted CS0 cannot disturb another device's
    --  pad sharing the bus (sets MISC.CS0_DIS).
-   procedure Set_Hardware_CS (B : Bus; Enabled : Boolean);
+   procedure Set_Hardware_CS (B : Bus; Enabled : Boolean)
+   with Pre => Is_Open (B);
 
-   procedure Transfer (B : Bus; Tx, Rx : System.Address; Length : Natural);
+   procedure Transfer (B : Bus; Tx, Rx : System.Address; Length : Natural)
+   with Pre => Is_Open (B) and then Length in 1 .. 4095;
 
    procedure Close (B : in out Bus);
 

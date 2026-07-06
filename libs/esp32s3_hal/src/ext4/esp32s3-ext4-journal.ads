@@ -29,7 +29,8 @@ package ESP32S3.Ext4.Journal is
    --  Replay) applies the logged blocks to their targets.  This is the commit half
    --  of the journal: a crash after Commit recovers forward, before it has no
    --  effect.  Non-checksummed journals only.
-   procedure Commit (V : in out Volume.Context; Targets : Target_Array; New_Data : Byte_Array);
+   procedure Commit (V : in out Volume.Context; Targets : Target_Array; New_Data : Byte_Array)
+   with Pre => New_Data'Length >= Targets'Length * Volume.Block_Size (V);
 
    --  Commit the cache's dirty metadata blocks AND the superblock as one
    --  journaled transaction: log them + write the journal commit (durable), set

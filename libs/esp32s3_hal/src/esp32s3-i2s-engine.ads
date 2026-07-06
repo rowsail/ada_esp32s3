@@ -20,7 +20,8 @@ private package ESP32S3.I2S.Engine is
       Port        : I2S_Port;
       Sample_Rate : Positive;
       Bits        : Sample_Bits;
-      Mode        : I2S_Mode);
+      Mode        : I2S_Mode)
+   with Post => Is_Open (B);
 
    function Is_Open (B : Bus) return Boolean;
 
@@ -30,27 +31,35 @@ private package ESP32S3.I2S.Engine is
       Ws   : ESP32S3.GPIO.Optional_Pin;
       Dout : ESP32S3.GPIO.Optional_Pin := No_Pin;
       Din  : ESP32S3.GPIO.Optional_Pin := No_Pin;
-      Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin);
+      Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin)
+   with Pre => Is_Open (B);
 
-   procedure Enable_Loopback (B : Bus; Pad : ESP32S3.GPIO.Pin_Id);
+   procedure Enable_Loopback (B : Bus; Pad : ESP32S3.GPIO.Pin_Id)
+   with Pre => Is_Open (B);
 
-   procedure Write (B : Bus; Tx : System.Address; Length : Natural);
-   procedure Read (B : Bus; Rx : System.Address; Length : Natural);
-   procedure Transfer (B : Bus; Tx, Rx : System.Address; Length : Natural);
+   procedure Write (B : Bus; Tx : System.Address; Length : Natural)
+   with Pre => Is_Open (B) and then Length in 1 .. 4095;
+   procedure Read (B : Bus; Rx : System.Address; Length : Natural)
+   with Pre => Is_Open (B) and then Length in 1 .. 4095;
+   procedure Transfer (B : Bus; Tx, Rx : System.Address; Length : Natural)
+   with Pre => Is_Open (B) and then Length in 1 .. 4095;
 
    --  Start the TX path streaming Tx (Length bytes) on a SELF-LOOPING DMA and
    --  leave it running: the buffer is replayed forever with no inter-buffer
    --  gap (gapless).  Returns immediately; Stop halts it.  Tx in internal SRAM,
    --  Length 1 .. 4095, and Tx should hold a whole number of wave periods.
-   procedure Start_Continuous (B : in out Bus; Tx : System.Address; Length : Natural);
+   procedure Start_Continuous (B : in out Bus; Tx : System.Address; Length : Natural)
+   with Pre => Is_Open (B) and then Length in 1 .. 4095;
 
    --  Stop a continuous transmit (TX clock off) and release its held channel.
-   procedure Stop (B : in out Bus);
+   procedure Stop (B : in out Bus)
+   with Pre => Is_Open (B);
 
    --  Blocking RX-only capture of Length bytes into Rx that does NOT touch the
    --  TX path -- so it can run while a continuous transmit (Start_Continuous)
    --  keeps the shared master clock running.  Rx in internal SRAM, 1 .. 4095.
-   procedure Capture (B : Bus; Rx : System.Address; Length : Natural);
+   procedure Capture (B : Bus; Rx : System.Address; Length : Natural)
+   with Pre => Is_Open (B) and then Length in 1 .. 4095;
 
    procedure Close (B : in out Bus);
 

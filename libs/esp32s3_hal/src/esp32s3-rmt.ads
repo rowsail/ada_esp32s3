@@ -65,14 +65,16 @@ package ESP32S3.RMT is
      (C             : in out TX_Channel;
       Resolution_Hz : Positive;
       Pin           : ESP32S3.GPIO.Pin_Id;
-      Blocks        : Positive := 1);
+      Blocks        : Positive := 1)
+   with Pre => Is_Valid (C) and then Blocks <= 4;
 
    --  Transmit Symbols and block until the channel finishes.  A burst up to the
    --  channel's RAM (Blocks*48-1 symbols) is loaded and sent in one shot; a
    --  LONGER burst is streamed by re-filling the symbol RAM in halves as it
    --  drains (Phase 2, "wrap"), so Symbols may be any length.  Because the call
    --  blocks and busy-polls the re-fill, keep higher-priority interrupts short.
-   procedure Transmit (C : TX_Channel; Symbols : Symbol_Array);
+   procedure Transmit (C : TX_Channel; Symbols : Symbol_Array)
+   with Pre => Is_Valid (C);
 
    ----------------------------------------------------------------------------
    --  Receive.
@@ -88,14 +90,17 @@ package ESP32S3.RMT is
      (C             : in out RX_Channel;
       Resolution_Hz : Positive;
       Pin           : ESP32S3.GPIO.Pin_Id;
-      Idle_Ticks    : Tick_Count := 2_000);
+      Idle_Ticks    : Tick_Count := 2_000)
+   with Pre => Is_Valid (C);
 
    --  Arm the receiver (call just before the incoming burst).
-   procedure Start (C : RX_Channel);
+   procedure Start (C : RX_Channel)
+   with Pre => Is_Valid (C);
 
    --  Block until reception ends, then return the captured symbols in Into and
    --  how many were captured in Count (0 if none / timed out).
-   procedure Receive (C : RX_Channel; Into : out Symbol_Array; Count : out Natural);
+   procedure Receive (C : RX_Channel; Into : out Symbol_Array; Count : out Natural)
+   with Pre => Is_Valid (C);
 
 private
    type TX_Channel is new Ada.Finalization.Limited_Controlled with record

@@ -27,24 +27,32 @@ package ESP32S3.Timer is
    --  Configure T to count up at Tick_Hz ticks/second (default 1 MHz = 1 ÃÂµs per
    --  tick; max ~80 MHz / 1, min ~80 MHz / 65536).  The counter is stopped and
    --  reset to 0; call Start.
-   procedure Configure (T : in out Timer; Tick_Hz : Positive := 1_000_000);
+   procedure Configure (T : in out Timer; Tick_Hz : Positive := 1_000_000)
+   with Pre => Is_Valid (T);
 
-   procedure Start (T : Timer);
-   procedure Stop (T : Timer);
+   procedure Start (T : Timer)
+   with Pre => Is_Valid (T);
+   procedure Stop (T : Timer)
+   with Pre => Is_Valid (T);
 
    --  Reload the counter to 0 (whether running or stopped).
-   procedure Reset (T : Timer);
+   procedure Reset (T : Timer)
+   with Pre => Is_Valid (T);
 
    --  Current counter value (latched then read).
-   function Value (T : Timer) return Ticks;
+   function Value (T : Timer) return Ticks
+   with Pre => Is_Valid (T);
 
    --  Raise the alarm interrupt-status flag when the counter reaches At_Ticks.
-   procedure Set_Alarm (T : Timer; At_Ticks : Ticks);
+   procedure Set_Alarm (T : Timer; At_Ticks : Ticks)
+   with Pre => Is_Valid (T);
 
    --  True once the alarm has fired (the flag stays set until Clear_Alarm).
-   function Alarm_Fired (T : Timer) return Boolean;
+   function Alarm_Fired (T : Timer) return Boolean
+   with Pre => Is_Valid (T);
 
-   procedure Clear_Alarm (T : Timer);
+   procedure Clear_Alarm (T : Timer)
+   with Pre => Is_Valid (T);
 
 private
    type Timer is new Ada.Finalization.Limited_Controlled with record

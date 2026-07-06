@@ -20,11 +20,13 @@ package ESP32S3.Ext4.VFS is
    --  Register filesystem FS under Name (no slashes), so it appears at "/Name".
    --  The Mount must be library-level (its access is stored here and outlives the
    --  call).  Silently ignored past Max_Mounts.
-   procedure Add (Name : String; FS : Mount_Ref);
+   procedure Add (Name : String; FS : Mount_Ref)
+   with Pre => Name'Length > 0;
 
    --  The registered mount points, for listing the virtual root "/".
    function Count return Natural;
-   function Name (I : Positive) return String;
+   function Name (I : Positive) return String
+   with Pre => I <= Count;
 
    --  Resolve an absolute path within the unified namespace:
    --    Is_Root => Path is "/" exactly -- the virtual root (FS is null; list the
@@ -39,6 +41,7 @@ package ESP32S3.Ext4.VFS is
       Sub_First : out Natural;
       Sub_Last  : out Natural;
       Found     : out Boolean;
-      Is_Root   : out Boolean);
+      Is_Root   : out Boolean)
+   with Pre => Path'Length > 0;
 
 end ESP32S3.Ext4.VFS;

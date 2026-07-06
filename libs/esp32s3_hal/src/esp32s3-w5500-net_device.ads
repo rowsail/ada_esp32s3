@@ -12,13 +12,15 @@ package ESP32S3.W5500.Net_Device is
 
    --  Bind this interface object to a W5500 that is already Setup / Reset /
    --  Configured.  Call once before registering it with GNAT.Sockets.
-   procedure Attach (Self : in out Instance; Dev : access ESP32S3.W5500.Device);
+   procedure Attach (Self : in out Instance; Dev : access ESP32S3.W5500.Device)
+   with Pre => Dev /= null;
 
    --  Convenience for the common single-NIC board: attach a built-in interface
    --  object to Dev and register it with GNAT.Sockets as the default interface.
    --  For multiple NICs, declare your own aliased Instance objects, Attach each,
    --  and register them with GNAT.Sockets.Add_Interface.
-   procedure Register_Default (Dev : access ESP32S3.W5500.Device);
+   procedure Register_Default (Dev : access ESP32S3.W5500.Device)
+   with Pre => Dev /= null;
 
 private
    package WS renames ESP32S3.W5500.Sockets;

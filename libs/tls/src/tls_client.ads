@@ -42,13 +42,15 @@ package TLS_Client is
    --  a Finished was seen -- which on its own proves the keys are right.
    function Flight_OK (S : Session) return Boolean;
    function Have_Server_Cert (S : Session) return Boolean;
-   function Server_Cert (S : Session) return Byte_Array; --  leaf cert DER
+   function Server_Cert (S : Session) return Byte_Array --  leaf cert DER
+   with Pre => Have_Server_Cert (S);
 
    --  The full certificate chain the server sent (leaf first, then its issuers),
    --  so the caller can anchor it to a pinned root via Chain_Verify.  The DER is
    --  returned as X509.Byte_Array (ready to reference by access for Chain_Verify).
    function Server_Cert_Count (S : Session) return Natural;
-   function Server_Chain_Cert (S : Session; Index : Positive) return X509.Byte_Array;
+   function Server_Chain_Cert (S : Session; Index : Positive) return X509.Byte_Array
+   with Pre => Index <= Server_Cert_Count (S);
 
    --  The server's Finished verified: its HMAC over the handshake transcript
    --  matches, proving the transcript, keys and decryption are all consistent.
@@ -63,7 +65,8 @@ package TLS_Client is
    function Ready (S : Session) return Boolean;
 
    --  Send application data over the channel (encrypted).
-   procedure Send (S : in out Session; Sock : GNAT.Sockets.Socket_Type; Data : Byte_Array);
+   procedure Send (S : in out Session; Sock : GNAT.Sockets.Socket_Type; Data : Byte_Array)
+   with Pre => Ready (S) and then Data'Length > 0;
 
    --  Receive one application-data record and decrypt it.  Last is the index of the
    --  last byte written to Buf (Buf'First-1 if none); Ok is False on a closed
@@ -74,7 +77,8 @@ package TLS_Client is
       Sock : GNAT.Sockets.Socket_Type;
       Buf  : out Byte_Array;
       Last : out Natural;
-      Ok   : out Boolean);
+      Ok   : out Boolean)
+   with Pre => Ready (S);
 
    --  Session resumption (RFC 8446 2.2 / 4.6.1).  After a full handshake the server
    --  usually sends one or more NewSessionTicket messages; Recv captures the first
@@ -96,7 +100,8 @@ package TLS_Client is
       Host    : String;
       Prior   : Session;
       Ok      : out Boolean;
-      Resumed : out Boolean);
+      Resumed : out Boolean)
+   with Pre => Has_Ticket (Prior);
 
 private
    subtype Key32 is Byte_Array (0 .. 31);

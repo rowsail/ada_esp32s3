@@ -53,17 +53,22 @@ package Net_Devices is
       Mode       : Transport;
       Local_Port : Port_Number;
       Result     : out Status)
-   is abstract;
+   is abstract
+   with Pre'Class => Index < Socket_Count (Self);
 
-   procedure Close (Self : in out Device; Index : Natural) is abstract;
+   procedure Close (Self : in out Device; Index : Natural) is abstract
+   with Pre'Class => Index < Socket_Count (Self);
 
    --  TCP server: move to LISTEN; block until a client connects; report the peer.
-   procedure Listen (Self : in out Device; Index : Natural; Result : out Status) is abstract;
+   procedure Listen (Self : in out Device; Index : Natural; Result : out Status) is abstract
+   with Pre'Class => Index < Socket_Count (Self);
    procedure Wait_Connected (Self : in out Device; Index : Natural; Result : out Status)
-   is abstract;
+   is abstract
+   with Pre'Class => Index < Socket_Count (Self);
    procedure Peer
      (Self : in out Device; Index : Natural; Addr : out IPv4_Address; Port : out Port_Number)
-   is abstract;
+   is abstract
+   with Pre'Class => Index < Socket_Count (Self);
 
    --  TCP client: connect to Host:Port.
    procedure Connect
@@ -72,29 +77,36 @@ package Net_Devices is
       Host   : IPv4_Address;
       Port   : Port_Number;
       Result : out Status)
-   is abstract;
+   is abstract
+   with Pre'Class => Index < Socket_Count (Self);
 
    --  TCP data transfer.  Wait_Data blocks until data is ready, the peer closes,
    --  or the receive timeout elapses (Timed_Out).
-   procedure Wait_Data (Self : in out Device; Index : Natural; Result : out Status) is abstract;
+   procedure Wait_Data (Self : in out Device; Index : Natural; Result : out Status) is abstract
+   with Pre'Class => Index < Socket_Count (Self);
 
    --  Bytes waiting in the socket's receive buffer (0 if none / not open) -- lets
    --  a caller poll for input without blocking (e.g. Ctrl-C during long output).
-   function Available (Self : Device; Index : Natural) return Natural is abstract;
+   function Available (Self : Device; Index : Natural) return Natural is abstract
+   with Pre'Class => Index < Socket_Count (Self);
    procedure Send
      (Self   : in out Device;
       Index  : Natural;
       Data   : Ada.Streams.Stream_Element_Array;
       Sent   : out Natural;
       Result : out Status)
-   is abstract;
+   is abstract
+   with Pre'Class  => Index < Socket_Count (Self),
+        Post'Class => Sent <= Data'Length;
    procedure Receive
      (Self   : in out Device;
       Index  : Natural;
       Into   : out Ada.Streams.Stream_Element_Array;
       Count  : out Natural;
       Result : out Status)
-   is abstract;
+   is abstract
+   with Pre'Class  => Index < Socket_Count (Self),
+        Post'Class => Count <= Into'Length;
 
    --  UDP datagrams.
    procedure Send_To
@@ -104,7 +116,8 @@ package Net_Devices is
       Port   : Port_Number;
       Data   : Ada.Streams.Stream_Element_Array;
       Result : out Status)
-   is abstract;
+   is abstract
+   with Pre'Class => Index < Socket_Count (Self);
    procedure Receive_From
      (Self      : in out Device;
       Index     : Natural;
@@ -113,9 +126,12 @@ package Net_Devices is
       Into      : out Ada.Streams.Stream_Element_Array;
       Count     : out Natural;
       Result    : out Status)
-   is abstract;
+   is abstract
+   with Pre'Class  => Index < Socket_Count (Self),
+        Post'Class => Count <= Into'Length;
 
    procedure Set_Receive_Timeout (Self : in out Device; Index : Natural; To : Duration)
-   is abstract;
+   is abstract
+   with Pre'Class => Index < Socket_Count (Self);
 
 end Net_Devices;
