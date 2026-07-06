@@ -16,6 +16,7 @@
 #    * ESP32S3.Ext4.Superblock / Inode / Group_Desc -- metadata Decode/Encode (ext4_host.gpr)
 #    * Modbus                -- Modbus-TCP wire framing        (modbus_slave_host.gpr)
 #    * ESP32S3.Endian        -- LE/BE byte join/split          (endian_host.gpr)
+#    * X509.DER              -- untrusted DER TLV reader        (x509_prove.gpr)
 #
 #  gnatprove is provided by the Alire toolchain (~/.alire/bin/gnatprove).
 export PATH="$HOME/.alire/bin:$PATH"
@@ -42,6 +43,7 @@ prove () {  #  $1 = project file, $2 = label
 prove "$T/ext4_host/ext4_host.gpr"                 "ext4 byte helpers + CRC32C + Superblock/Inode/Group_Desc"
 prove "$T/modbus_slave_host/modbus_slave_host.gpr" "Modbus framing"
 prove "$T/endian_host/endian_host.gpr"             "Endian join/split"
+prove "$T/x509_prove/x509_prove.gpr"               "X509 DER reader (untrusted input)"
 
 echo "PROVE_EXIT: $fail"
 exit $fail

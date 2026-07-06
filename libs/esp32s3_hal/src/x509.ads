@@ -9,7 +9,12 @@ with Interfaces;
 package X509 is
 
    subtype U8 is Interfaces.Unsigned_8;
-   type Byte_Array is array (Natural range <>) of U8;
+   --  Certificate byte buffers.  Index capped well below Integer'Last so 'Length
+   --  and cursor arithmetic provably cannot overflow while parsing untrusted DER
+   --  (16 MiB is far above any real certificate); lets SPARK prove the DER reader.
+   Max_Cert_Bytes : constant := 2 ** 24;                --  16 MiB
+   subtype Buffer_Index is Natural range 0 .. Max_Cert_Bytes - 1;
+   type Byte_Array is array (Buffer_Index range <>) of U8;
 
    --  An index range into the certificate buffer (empty when First > Last).
    type Slice is record

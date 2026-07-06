@@ -26,6 +26,13 @@ Alire toolchain (`~/.alire/bin/gnatprove`).
 | `ESP32S3.Ext4.Group_Desc` | group-descriptor `Decode`/`Encode` (I/O ops `Off`) | `ext4_host.gpr` |
 | `Modbus` | Modbus-TCP wire framing (MBAP + U16 pack/unpack) | `modbus_slave_host.gpr` |
 | `ESP32S3.Endian` | LE/BE byte join/split primitives | `endian_host.gpr` |
+| `X509.DER` | DER TLV reader — **untrusted certificate input** | `x509_prove.gpr` |
+
+`X509.DER.Read` is the highest-value proof here: it parses attacker-controlled
+certificate bytes, and proving it silver means **no buffer overrun on any malformed
+or malicious DER** — a real security property, not just a crash guard. (It needed the
+same constrained-index fix: `X509.Byte_Array` capped at 16 MiB so cursor arithmetic
+provably cannot overflow while walking untrusted lengths.)
 
 Two latent bugs found by proving these: the `Put_MBAP` overflow (above), and
 `Superblock.Encode` checksumming an *absolute* `Buf (Base .. Base + …)` slice where
