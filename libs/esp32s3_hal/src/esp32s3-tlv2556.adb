@@ -24,7 +24,8 @@ package body ESP32S3.TLV2556 is
    is (case Ref is
          when Internal_4096mV => 16#00#,    --  00: internal 4.096 V
          when Internal_2048mV => 16#04#,    --  01: internal 2.048 V
-         when External        => 16#0C#);   --  11: external reference
+         when External        => 16#0C#)    --  11: external reference
+   with SPARK_Mode => On;
 
    --  Conversion time is at most 5.54 us (2.7-3.6 V); wait comfortably past it
    --  between priming a conversion and reading it back (no EOC pin is wired).
@@ -96,6 +97,7 @@ package body ESP32S3.TLV2556 is
    is (case Ref is
          when Internal_4096mV => Natural (S),            --  1 LSB = 1 mV
          when Internal_2048mV => Natural (S) * 2048 / 4096,
-         when External        => 0);                     --  scale unknown here
+         when External        => 0)                      --  scale unknown here
+   with SPARK_Mode => On;
 
 end ESP32S3.TLV2556;

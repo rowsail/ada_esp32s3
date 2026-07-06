@@ -54,6 +54,10 @@ prove "$T/net_routes_prove/net_routes_prove.gpr"     "Net_Routes longest-prefix 
 prove "$T/aes_gcm_prove/aes_gcm_prove.gpr"           "AES-GCM GHASH GF(2^128) + CTR"
 prove "$T/sht41_prove/sht41_prove.gpr"               "SHT41 CRC-8 + datasheet conversions"
 prove "$T/sd_spi_prove/sd_spi_prove.gpr"             "SD_SPI CRC-7 command frame"
+prove "$T/pcf85063a_prove/pcf85063a_prove.gpr"       "PCF85063A RTC BCD<->binary"
+prove "$T/qmi8658c_prove/qmi8658c_prove.gpr"         "QMI8658C IMU sign/sensitivity"
+prove "$T/tlv2556_prove/tlv2556_prove.gpr"           "TLV2556 ADC count->mV"
+prove "$T/es8311_prove/es8311_prove.gpr"             "ES8311 codec volume register"
 prove "$T/endian_host/endian_host.gpr"               "Endian join/split"
 
 #  Cert chain-walking (libs/tls/chain_verify) is also proven silver, but via the

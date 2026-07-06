@@ -1,0 +1,19 @@
+--  Native project for SPARK-proving the pure BCD<->binary conversions of the
+--  PCF85063A RTC driver: To_BCD / From_BCD (packed two-digit decimal) and the
+--  Alarm_Field selector.  The I2C register I/O (Read_Regs / Write_Regs /
+--  Get_Time / Set_Time / ...) is hardware and stays unmarked (SPARK_Mode off).
+--  The I2C and GPIO specs are host-portable (no register layer), so this
+--  compiles natively.  No main.
+project PCF85063A_Prove is
+   for Source_Dirs use ("../../src");
+   for Object_Dir use "obj";
+   for Source_Files use
+     ("esp32s3.ads",
+      "esp32s3-gpio.ads",
+      "esp32s3-i2c.ads",
+      "esp32s3-pcf85063a.ads",
+      "esp32s3-pcf85063a.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end PCF85063A_Prove;

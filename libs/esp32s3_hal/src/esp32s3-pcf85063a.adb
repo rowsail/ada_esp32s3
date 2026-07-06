@@ -29,11 +29,15 @@ package body ESP32S3.PCF85063A is
    --  BCD <-> binary (the chip stores two packed decimal digits per byte).
    ---------------------------------------------------------------------------
 
+   --  Two packed decimal digits in one byte.  The chip's fields are all two
+   --  digits (0 .. 59 / 0 .. 99), so V <= 99 keeps the packed byte <= 16#99#.
    function To_BCD (V : Natural) return Byte
-   is (Byte ((V / 10) * 16 + (V mod 10)));
+   is (Byte ((V / 10) * 16 + (V mod 10)))
+   with SPARK_Mode => On, Pre => V <= 99;
 
    function From_BCD (B : Byte) return Natural
-   is (Natural (B / 16) * 10 + Natural (B mod 16));
+   is (Natural (B / 16) * 10 + Natural (B mod 16))
+   with SPARK_Mode => On;
 
    ---------------------------------------------------------------------------
    --  Register access on an already-acquired Session.  The public operations
@@ -82,7 +86,8 @@ package body ESP32S3.PCF85063A is
 
    --  An alarm register byte: the BCD value, or the "disabled" sentinel.
    function Alarm_Field (Use_It : Boolean; Value : Byte) return Byte
-   is (if Use_It then Value else Alarm_Disable);
+   is (if Use_It then Value else Alarm_Disable)
+   with SPARK_Mode => On;
 
    -----------
    -- Setup --
