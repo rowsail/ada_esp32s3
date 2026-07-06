@@ -2,14 +2,37 @@ with Interfaces; use Interfaces;
 with ESP32S3.Ext4.Block_Cache;
 with ESP32S3.Ext4.Group_Desc;
 
-package body ESP32S3.Ext4.Bitmap is
+package body ESP32S3.Ext4.Bitmap with SPARK_Mode => On is
+
+   --  Pure bit arithmetic over one bitmap byte; Bit is the 0..7 index within it.
+   --  Split out so the mask math is SPARK-proved offset/overflow-free; the
+   --  block-device I/O and the free-count bookkeeping stay in the Off callers.
+   function Bit_Is_Set (B : U8; Bit : Natural) return Boolean
+   is ((B and Shift_Left (U8 (1), Bit)) /= 0)
+   with Pre => Bit <= 7;
+
+   function With_Bit_Set (B : U8; Bit : Natural) return U8
+   is (B or Shift_Left (U8 (1), Bit))
+   with Pre => Bit <= 7;
+
+   function With_Bit_Cleared (B : U8; Bit : Natural) return U8
+   is (B and not Shift_Left (U8 (1), Bit))
+   with Pre => Bit <= 7;
+
+   --  Forward declaration carrying SPARK_Mode => Off: a function with an in-out
+   --  parameter is legal Ada but outside the SPARK subset, so the body-local I/O
+   --  function is given an explicit Off declaration to keep it out of analysis.
+   function Clear_Bit
+     (V : in out Volume.Context; Bmp : Block_Number; Index : Natural) return Boolean
+   with SPARK_Mode => Off;
 
    --  TRIPWIRE counter (see the spec): frees that hit an already-clear bit.
    Phantom_Frees : Natural := 0;
 
    function Phantom_Free_Count return Natural
-   is (Phantom_Frees);
-   procedure Reset_Phantom_Free_Count is
+   is (Phantom_Frees)
+   with SPARK_Mode => Off;
+   procedure Reset_Phantom_Free_Count with SPARK_Mode => Off is
    begin
       Phantom_Frees := 0;
    end Reset_Phantom_Free_Count;
@@ -23,6 +46,7 @@ package body ESP32S3.Ext4.Bitmap is
       Count : U32;
       Bit   : out U32;
       Found : out Boolean)
+   with SPARK_Mode => Off
    is
       Byte : Byte_Array (0 .. 0);
    begin
@@ -34,8 +58,8 @@ package body ESP32S3.Ext4.Bitmap is
             Bit_In   : constant Natural := I mod 8;
          begin
             ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Bmp, Byte_Idx, Byte);
-            if (Byte (0) and Shift_Left (U8 (1), Bit_In)) = 0 then
-               Byte (0) := Byte (0) or Shift_Left (U8 (1), Bit_In);
+            if not Bit_Is_Set (Byte (0), Bit_In) then
+               Byte (0) := With_Bit_Set (Byte (0), Bit_In);
                ESP32S3.Ext4.Block_Cache.Write_At (V.Cache, Bmp, Byte_Idx, Byte);
                Bit := U32 (I);
                Found := True;
@@ -49,7 +73,8 @@ package body ESP32S3.Ext4.Bitmap is
    -- Alloc_Block --
    -----------------
 
-   function Alloc_Block (V : in out Volume.Context) return Block_Number is
+   function Alloc_Block (V : in out Volume.Context) return Block_Number
+   with SPARK_Mode => Off is
       GD    : Group_Desc.Desc;
       Bit   : U32;
       Found : Boolean;
@@ -76,7 +101,8 @@ package body ESP32S3.Ext4.Bitmap is
    -- Alloc_Inode --
    -----------------
 
-   function Alloc_Inode (V : in out Volume.Context; As_Dir : Boolean) return Inode_Number is
+   function Alloc_Inode (V : in out Volume.Context; As_Dir : Boolean) return Inode_Number
+   with SPARK_Mode => Off is
       GD    : Group_Desc.Desc;
       Bit   : U32;
       Found : Boolean;
@@ -106,18 +132,18 @@ package body ESP32S3.Ext4.Bitmap is
    --  count corruption.  (Clear_Bit already reads the byte, so the test is free.)
    function Clear_Bit
      (V : in out Volume.Context; Bmp : Block_Number; Index : Natural) return Boolean
+   with SPARK_Mode => Off
    is
       Byte_Idx : constant Natural := Index / 8;
       Bit      : constant Natural := Index mod 8;
-      Mask     : constant U8 := Shift_Left (U8 (1), Bit);
       Byte     : Byte_Array (0 .. 0);
    begin
       ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Bmp, Byte_Idx, Byte);
-      if (Byte (0) and Mask) = 0 then
+      if not Bit_Is_Set (Byte (0), Bit) then
          return False;                        --  already clear -> no-op
 
       end if;
-      Byte (0) := Byte (0) and not Mask;
+      Byte (0) := With_Bit_Cleared (Byte (0), Bit);
       ESP32S3.Ext4.Block_Cache.Write_At (V.Cache, Bmp, Byte_Idx, Byte);
       return True;
    end Clear_Bit;
@@ -126,7 +152,8 @@ package body ESP32S3.Ext4.Bitmap is
    -- Free_Block --
    ----------------
 
-   procedure Free_Block (V : in out Volume.Context; B : Block_Number) is
+   procedure Free_Block (V : in out Volume.Context; B : Block_Number)
+   with SPARK_Mode => Off is
       Rel   : constant U64 := U64 (B) - U64 (V.SB.First_Data_Block);
       Group : constant U32 := U32 (Rel / U64 (V.SB.Blocks_Per_Group));
       Index : constant Natural := Natural (Rel mod U64 (V.SB.Blocks_Per_Group));
@@ -146,7 +173,8 @@ package body ESP32S3.Ext4.Bitmap is
    -- Free_Inode --
    ----------------
 
-   procedure Free_Inode (V : in out Volume.Context; N : Inode_Number; Was_Dir : Boolean) is
+   procedure Free_Inode (V : in out Volume.Context; N : Inode_Number; Was_Dir : Boolean)
+   with SPARK_Mode => Off is
       Idx0  : constant U32 := U32 (N) - 1;
       Group : constant U32 := Idx0 / V.SB.Inodes_Per_Group;
       Index : constant Natural := Natural (Idx0 mod V.SB.Inodes_Per_Group);

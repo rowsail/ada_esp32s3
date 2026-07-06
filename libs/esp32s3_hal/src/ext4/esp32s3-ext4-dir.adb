@@ -2,7 +2,9 @@ with Interfaces; use Interfaces;
 with ESP32S3.Ext4.Block_Cache;
 with ESP32S3.Ext4.Block_Map;
 
-package body ESP32S3.Ext4.Dir is
+package body ESP32S3.Ext4.Dir with SPARK_Mode => On is
+
+   --  ==== Pure, SPARK-proved decode helpers ================================
 
    --  Convert raw name bytes to a String.
    function To_String (B : Byte_Array) return String is
@@ -14,12 +16,32 @@ package body ESP32S3.Ext4.Dir is
       return S;
    end To_String;
 
+   --  Fixed-layout header of an ext4_dir_entry_2 (the first 8 bytes, before the
+   --  variable-length name).  Split out so the bounds decode is proved; the
+   --  variable-length walk and its in-block checks stay in the Off callers.
+   type Entry_Header is record
+      Ino       : U32;        --  child inode (0 => unused slot)
+      Rec_Len   : Natural;    --  distance to the next entry
+      Name_Len  : Natural;    --  name length in bytes
+      File_Type : U8;
+   end record;
+
+   function Decode_Entry_Hdr (Raw : Byte_Array) return Entry_Header
+   is (Entry_Header'(Ino       => Get_U32 (Raw, 0),
+                     Rec_Len   => Natural (Get_U16 (Raw, 4)),
+                     Name_Len  => Natural (Get_U8 (Raw, 6)),
+                     File_Type => Get_U8 (Raw, 7)))
+   with Pre => Raw'Length >= 8;
+
+   --  ==== Directory walking + editing (out of SPARK: Block_Cache I/O, the
+   --  generic callback, and access-to-subprogram Iterate) ==================
+
    --  Walk every entry of Dir, invoking Visit; if Visit returns True, stop.
    generic
       with function Visit (Name : String; Ino : Inode_Number; File_Type : U8) return Boolean;
    procedure Walk (V : in out Volume.Context; Dir : Inode.Info);
 
-   procedure Walk (V : in out Volume.Context; Dir : Inode.Info) is
+   procedure Walk (V : in out Volume.Context; Dir : Inode.Info) with SPARK_Mode => Off is
       BS    : constant Natural := V.SB.Block_Size;
       N_Blk : constant U64 := (Dir.Size + U64 (BS) - 1) / U64 (BS);
       Hdr   : Byte_Array (0 .. 7);
@@ -33,10 +55,11 @@ package body ESP32S3.Ext4.Dir is
                while Pos + 8 <= BS loop
                   ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Phys, Pos, Hdr);
                   declare
-                     Ino      : constant U32 := Get_U32 (Hdr, 0);
-                     Rec_Len  : constant Natural := Natural (Get_U16 (Hdr, 4));
-                     Name_Len : constant Natural := Natural (Get_U8 (Hdr, 6));
-                     Ftype    : constant U8 := Get_U8 (Hdr, 7);
+                     H        : constant Entry_Header := Decode_Entry_Hdr (Hdr);
+                     Ino      : constant U32 := H.Ino;
+                     Rec_Len  : constant Natural := H.Rec_Len;
+                     Name_Len : constant Natural := H.Name_Len;
+                     Ftype    : constant U8 := H.File_Type;
                   begin
                      exit when Rec_Len < 8;            --  malformed: avoid a loop
                      exit when Pos + Rec_Len > BS;     --  entry must stay in-block
@@ -63,6 +86,7 @@ package body ESP32S3.Ext4.Dir is
    ------------
 
    function Lookup (V : in out Volume.Context; Dir : Inode.Info; Name : String) return Inode_Number
+   with SPARK_Mode => Off
    is
       Found : Inode_Number := 0;
 
@@ -91,6 +115,7 @@ package body ESP32S3.Ext4.Dir is
      (V     : in out Volume.Context;
       Dir   : Inode.Info;
       Visit : not null access procedure (Name : String; Ino : Inode_Number; File_Type : U8))
+   with SPARK_Mode => Off
    is
       function Call (Nm : String; Ino : Inode_Number; Ft : U8) return Boolean is
       begin
@@ -113,6 +138,7 @@ package body ESP32S3.Ext4.Dir is
       Name      : String;
       Child     : Inode_Number;
       File_Type : U8)
+   with SPARK_Mode => Off
    is
       function R4 (N : Natural) return Natural
       is ((N + 3) / 4 * 4);
@@ -153,9 +179,10 @@ package body ESP32S3.Ext4.Dir is
                while Pos + 8 <= BS loop
                   ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Phys, Pos, Hdr);
                   declare
-                     Ino    : constant U32 := Get_U32 (Hdr, 0);
-                     Rec    : constant Natural := Natural (Get_U16 (Hdr, 4));
-                     NLen   : constant Natural := Natural (Get_U8 (Hdr, 6));
+                     H      : constant Entry_Header := Decode_Entry_Hdr (Hdr);
+                     Ino    : constant U32 := H.Ino;
+                     Rec    : constant Natural := H.Rec_Len;
+                     NLen   : constant Natural := H.Name_Len;
                      Actual : constant Natural := (if Ino = 0 then 0 else 8 + R4 (NLen));
                   begin
                      exit when Rec < 8;
@@ -185,6 +212,7 @@ package body ESP32S3.Ext4.Dir is
 
    function Remove_Entry
      (V : in out Volume.Context; Dir : Inode.Info; Name : String) return Inode_Number
+   with SPARK_Mode => Off
    is
       BS    : constant Natural := V.SB.Block_Size;
       N_Blk : constant U64 := (Dir.Size + U64 (BS) - 1) / U64 (BS);
@@ -201,9 +229,10 @@ package body ESP32S3.Ext4.Dir is
                while Pos + 8 <= BS loop
                   ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Phys, Pos, Hdr);
                   declare
-                     Ino  : constant U32 := Get_U32 (Hdr, 0);
-                     Rec  : constant Natural := Natural (Get_U16 (Hdr, 4));
-                     NLen : constant Natural := Natural (Get_U8 (Hdr, 6));
+                     H    : constant Entry_Header := Decode_Entry_Hdr (Hdr);
+                     Ino  : constant U32 := H.Ino;
+                     Rec  : constant Natural := H.Rec_Len;
+                     NLen : constant Natural := H.Name_Len;
                      Nm   : Byte_Array (0 .. (if NLen = 0 then 0 else NLen - 1));
                   begin
                      exit when Rec < 8;
@@ -238,7 +267,8 @@ package body ESP32S3.Ext4.Dir is
    -- Is_Empty --
    --------------
 
-   function Is_Empty (V : in out Volume.Context; Dir : Inode.Info) return Boolean is
+   function Is_Empty (V : in out Volume.Context; Dir : Inode.Info) return Boolean
+   with SPARK_Mode => Off is
       Only_Dots : Boolean := True;
 
       function Check (Nm : String; Ino : Inode_Number; Ft : U8) return Boolean is
@@ -265,6 +295,7 @@ package body ESP32S3.Ext4.Dir is
    function Set_Entry_Inode
      (V : in out Volume.Context; Dir : Inode.Info; Name : String; New_Ino : Inode_Number)
       return Boolean
+   with SPARK_Mode => Off
    is
       BS    : constant Natural := V.SB.Block_Size;
       N_Blk : constant U64 := (Dir.Size + U64 (BS) - 1) / U64 (BS);
@@ -279,9 +310,10 @@ package body ESP32S3.Ext4.Dir is
                while Pos + 8 <= BS loop
                   ESP32S3.Ext4.Block_Cache.Read_At (V.Cache, Phys, Pos, Hdr);
                   declare
-                     Ino  : constant U32 := Get_U32 (Hdr, 0);
-                     Rec  : constant Natural := Natural (Get_U16 (Hdr, 4));
-                     NLen : constant Natural := Natural (Get_U8 (Hdr, 6));
+                     H    : constant Entry_Header := Decode_Entry_Hdr (Hdr);
+                     Ino  : constant U32 := H.Ino;
+                     Rec  : constant Natural := H.Rec_Len;
+                     NLen : constant Natural := H.Name_Len;
                      Nm   : Byte_Array (0 .. (if NLen = 0 then 0 else NLen - 1));
                   begin
                      exit when Rec < 8;

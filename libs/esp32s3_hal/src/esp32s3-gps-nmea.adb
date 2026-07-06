@@ -1,7 +1,7 @@
 with Interfaces;
 use type Interfaces.Unsigned_8;
 
-package body ESP32S3.GPS.NMEA is
+package body ESP32S3.GPS.NMEA with SPARK_Mode => On is
 
    subtype LLI is Long_Long_Integer;
 
@@ -20,10 +20,14 @@ package body ESP32S3.GPS.NMEA is
 
    --  Index of the last '.' in S, or 0 if there is none.  An NMEA numeric field
    --  carries at most one decimal point, so "last" = "the" point.
-   function Last_Dot (S : String) return Integer is
+   function Last_Dot (S : String) return Integer
+     with Post => Last_Dot'Result = 0
+                  or else Last_Dot'Result in S'First .. S'Last
+   is
       Dot : Integer := 0;
    begin
       for I in S'Range loop
+         pragma Loop_Invariant (Dot = 0 or else Dot in S'First .. S'Last);
          if S (I) = '.' then
             Dot := I;
          end if;
@@ -55,11 +59,19 @@ package body ESP32S3.GPS.NMEA is
       Count : Natural := 0;
    begin
       for C of S loop
-         exit when C not in '0' .. '9' or else Count = Places;
+         pragma Loop_Invariant (Count <= Places);
+         --  Saturate rather than overflow (as To_Nat does): a real fractional
+         --  field is a handful of digits, but UART noise can present many.
+         exit when C not in '0' .. '9'
+           or else Count = Places
+           or else Acc > (Natural'Last - 9) / 10;
          Acc := Acc * 10 + (Character'Pos (C) - Character'Pos ('0'));
          Count := Count + 1;
       end loop;
       while Count < Places loop
+         pragma Loop_Invariant (Count < Places);
+         pragma Loop_Variant (Decreases => Places - Count);
+         exit when Acc > Natural'Last / 10;
          Acc := Acc * 10;
          Count := Count + 1;
       end loop;
@@ -68,11 +80,16 @@ package body ESP32S3.GPS.NMEA is
 
    --  Return field number N (0-based) of a comma-separated payload, as a slice
    --  of S.  Out-of-range -> an empty slice.
-   function Field (S : String; N : Natural) return String is
+   function Field (S : String; N : Natural) return String
+     with Pre  => S'Last <= Integer'Last - 16,
+          Post => Field'Result'Last <= S'Last
+   is
       Start : Integer := S'First;
       Count : Natural := 0;
    begin
       for I in S'Range loop
+         pragma Loop_Invariant (Start in S'First .. I);
+         pragma Loop_Invariant (Count <= I - S'First);
          if S (I) = ',' then
             if Count = N then
                return S (Start .. I - 1);
@@ -84,7 +101,7 @@ package body ESP32S3.GPS.NMEA is
       if Count = N then
          return S (Start .. S'Last);
       end if;
-      return S (S'First .. S'First - 1);   --  empty
+      return S (S'Last + 1 .. S'Last);   --  empty (tail slice: 'Last is provably S'Last)
    end Field;
 
    ---------------------------------------------------------------------------
@@ -92,7 +109,26 @@ package body ESP32S3.GPS.NMEA is
    --  Places = 3).  Missing fraction is treated as zero.
    ---------------------------------------------------------------------------
 
-   function Scaled (S : String; Places : Natural) return Integer is
+   --  10**E as a closed form (no variable-exponent ** for the prover to chew on),
+   --  bounded so the products below provably stay inside 64 bits.
+   function Pow10 (E : Natural) return LLI
+   is (case E is
+         when 0      => 1,
+         when 1      => 10,
+         when 2      => 100,
+         when 3      => 1_000,
+         when 4      => 10_000,
+         when 5      => 100_000,
+         when 6      => 1_000_000,
+         when 7      => 10_000_000,
+         when 8      => 100_000_000,
+         when others => 1_000_000_000)
+   with Pre => E <= 9, Post => Pow10'Result in 1 .. 1_000_000_000;
+
+   function Scaled (S : String; Places : Natural) return Integer
+     with Pre  => Places <= 9 and then S'Last <= Integer'Last - 16,
+          Post => Scaled'Result >= 0
+   is
       Dot : Integer := 0;
    begin
       if S = "" then
@@ -104,10 +140,10 @@ package body ESP32S3.GPS.NMEA is
          --  To_Nat * 10**Places can still exceed Integer on garbage input.
          Whole : constant LLI :=
            (if Dot = 0
-            then LLI (To_Nat (S)) * 10**Places
+            then LLI (To_Nat (S)) * Pow10 (Places)
             else
               LLI (To_Nat (S (S'First .. Dot - 1)))
-              * 10**Places
+              * Pow10 (Places)
               + LLI (Frac (S (Dot + 1 .. S'Last), Places)));
       begin
          if Whole > LLI (Integer'Last) then
@@ -145,8 +181,12 @@ package body ESP32S3.GPS.NMEA is
          return 0;          --  implausible (real |lat|<=90, |lon|<=180): reject,
 
       end if;               --  and keeps Deg_E7 well within Integer_32 below
+      --  A well-formed "ddmm.mmmmm" holds exactly two minute digits (0..99) and
+      --  a five-digit fraction (0..99_999); clamp so the arithmetic below is
+      --  provably within Integer_32 even on a garbled field.
       Min_E5 :=
-        LLI (To_Nat (S (Dot - 2 .. Dot - 1))) * 100_000 + LLI (Frac (S (Dot + 1 .. S'Last), 5));
+        LLI (Natural'Min (To_Nat (S (Dot - 2 .. Dot - 1)), 99)) * 100_000
+        + LLI (Natural'Min (Frac (S (Dot + 1 .. S'Last), 5), 99_999));
       --  1e-5 minute = (1e7 / 60) / 1e5 deg_e7 = 5/3 deg_e7.
       Deg_E7 := LLI (Degrees) * 10_000_000 + (Min_E5 * 5) / 3;
 
@@ -183,7 +223,9 @@ package body ESP32S3.GPS.NMEA is
       end if;
       Result.Day := To_Nat (S (S'First .. S'First + 1));
       Result.Month := To_Nat (S (S'First + 2 .. S'First + 3));
-      Result.Year := 2000 + To_Nat (S (S'First + 4 .. S'First + 5));
+      --  Two-digit year field (0..99); clamp so the +2000 provably cannot
+      --  overflow on a garbled field.
+      Result.Year := 2000 + Natural'Min (To_Nat (S (S'First + 4 .. S'First + 5)), 99);
       return Result;
    end To_Date;
 
@@ -264,7 +306,9 @@ package body ESP32S3.GPS.NMEA is
       end if;
 
       declare
-         Payload : String renames Sentence (First .. Last);
+         P_First : constant Integer := First;
+         P_Last  : constant Integer := Last;
+         Payload : String renames Sentence (P_First .. P_Last);
          Kind    : constant String := Field (Payload, 0);
       begin
          if Is_Type (Kind, "GGA") then
@@ -431,6 +475,7 @@ package body ESP32S3.GPS.NMEA is
                   Result.In_View := In_V;
                end if;
                for K in 0 .. Here - 1 loop
+                  pragma Loop_Invariant (Count <= K);
                   declare
                      Prn : constant String := Field (Payload, 4 + 4 * K);  --  satellite id
                      Elv : constant String := Field (Payload, 5 + 4 * K);  --  elevation, deg

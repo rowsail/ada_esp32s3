@@ -2,6 +2,7 @@ with Interfaces;             use Interfaces;
 with Ada.Unchecked_Conversion;
 with ESP32S3.GPIO;
 with ESP32S3.GPIO_Signals;
+with ESP32S3.TWAI.Math;
 with ESP32S3_Registers;      use ESP32S3_Registers;
 with ESP32S3_Registers.TWAI; use ESP32S3_Registers.TWAI;
 with ESP32S3_Registers.GPIO;
@@ -37,8 +38,6 @@ package body ESP32S3.TWAI.Engine is
    package MX renames ESP32S3_Registers.IO_MUX;
    package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
-
-   Src_Hz : constant := 80_000_000;             --  APB clock feeds the TWAI
 
    --  The 13 data/accept registers (offsets 0x40..0x70) as a byte-addressable
    --  array (each register exposes the byte in its low 8 bits).
@@ -83,22 +82,11 @@ package body ESP32S3.TWAI.Engine is
    function Open (Mode : Bus_Mode; Bit_Rate : Positive) return Bus is
       use ESP32S3_Registers.SYSTEM;
       --  bit = (1 + (TSEG1+1) + (TSEG2+1)) time-quanta; the hardware prescaler is
-      --  t_q = 2*(BAUD_PRESC+1) / f_apb, so the effective divisor BRP below is
-      --  2*(BAUD_PRESC+1) and must be even.  Use 20 Tq/bit (not 16): with f_apb =
-      --  80 MHz that makes BRP = 80e6/(rate*20) come out EVEN for every standard
-      --  rate -- 1M/500k/250k/125k -> BRP 4/8/16/32 -> exact.  (16 Tq/bit gave an
-      --  ODD BRP=5 for 1 Mbit, which the even-rounding turned into 1.25 Mbit/s, a
-      --  25% error that will not communicate on a real bus.)
-      Tq_Per_Bit : constant := 20;
-      BRP        : Integer := Integer (Src_Hz / (Bit_Rate * Tq_Per_Bit));   --  ~ even prescaler
+      --  t_q = 2*(BAUD_PRESC+1) / f_apb, so the effective divisor BRP is
+      --  2*(BAUD_PRESC+1), even, in 2 .. 128.  The (proved) baud-rate math lives
+      --  in ESP32S3.TWAI.Math; the register writes stay here.
+      BRP : constant Integer := ESP32S3.TWAI.Math.Prescaler (Bit_Rate);
    begin
-      if BRP < 2 then
-         BRP := 2;
-      elsif BRP > 128 then
-         BRP := 128;
-      end if;
-      BRP := (BRP / 2) * 2;                            --  make it even
-
       SYSTEM_Periph.PERIP_CLK_EN0.TWAI_CLK_EN := True;
       SYSTEM_Periph.PERIP_RST_EN0.TWAI_RST := True;
       SYSTEM_Periph.PERIP_RST_EN0.TWAI_RST := False;

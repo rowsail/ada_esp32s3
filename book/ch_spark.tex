@@ -1,0 +1,126 @@
+\chapter{Formal Proof with SPARK}
+\label{ch:spark}\index{SPARK}\index{formal proof}\index{proof!SPARK}
+
+Every layer in Chapter~\ref{ch:testing} answers the same question in a different
+way: \emph{does the code do the right thing on the inputs we tried?} A test runs one
+input and checks one answer; a thousand tests run a thousand. Formal proof asks a
+different question, and answers it once for all inputs: \emph{can this code go wrong
+on \textbf{any} input at all?} Where a test demonstrates the presence of correct
+behaviour on an example, a proof demonstrates the \emph{absence} of a whole class of
+failure over the entire input space. That is the layer this chapter adds, and for a
+bare-metal system that parses bytes it never chose --- a certificate from a stranger,
+a GPS sentence from a noisy sky, a DNS reply from the network --- it is the layer
+that matters most.
+
+SPARK is a subset of Ada with a proof tool, \texttt{gnatprove}, that ships in the
+same Alire toolchain as the compiler. Mark a package \lstinline{with SPARK_Mode => On}
+and the tool reads its contracts and its code and discharges, or fails to discharge,
+a \emph{verification condition} for every operation that could fault: every array
+index, every arithmetic operation that could overflow, every division, every
+dereference, and the termination of every loop. When it succeeds it has proved, with
+an SMT solver rather than a test, that the code is free of run-time errors --- the
+\emph{silver} level of SPARK adoption, absence of run-time errors (\index{AoRTE}AoRTE).
+No \lstinline{Constraint_Error}, no \lstinline{Storage_Error} from an unbounded loop,
+no buffer overrun, on any input the types allow.
+
+\section{What is proved}\index{proof!surface}
+
+The proof surface is the pure, bounded logic of the HAL: the parsers, serializers,
+checksums, and conversions that compute over bytes rather than poke registers. Around
+thirty units carry \lstinline{SPARK_Mode => On} and discharge some seven hundred and
+eighty run-time checks with zero unproved. The set falls into natural groups: the
+ext4 on-disk serializers and their byte helpers (Chapter~\ref{ch:storage}); the
+network and protocol parsers; the software half of the cryptography; and a scattering
+of pure arithmetic --- civil-date math, longest-prefix routing, sensor conversions,
+and the timing dividers extracted from the PWM drivers.
+
+The headline is the group exposed to hostile input. The X.509 certificate reader, the
+NMEA GPS-sentence parser, the DNS response parser, the certificate-chain walk, and the
+Modbus slave and master all parse bytes chosen by someone else, and all are now proved
+to have \textbf{no buffer overrun, no overflow, and no infinite loop on any malformed
+or malicious message}. This is not a hardened version that passed a fuzzer; it is a
+proof that the failure cannot occur. The DNS parser makes the point sharply: a DNS
+name can contain a \emph{compression pointer} back into the message, and a malicious
+pointer that points at itself would loop a naive parser forever. The proof required a
+\lstinline{Loop_Variant} showing the cursor strictly advances, so termination on a
+self-referential pointer is not tested but guaranteed.
+
+\section{Drawing the boundary}\index{SPARK!boundary}
+
+A driver is not pure. It writes volatile registers, follows access-type pointers, and
+raises exceptions on bad hardware --- none of which is in the SPARK subset. The
+technique is to draw a line \emph{inside} the unit. The pure computation is marked
+\lstinline{On} and proved; the parts that touch the world are marked
+\lstinline{SPARK_Mode => Off} and left to the other verification layers. For the ext4
+serializers this meant \emph{factoring}: the buffer-to-record step was lifted out of
+each \lstinline{Read}/\lstinline{Write} into a pure \lstinline{Decode}/\lstinline{Encode}
+function that a proved caller invokes, while the block-device I/O and the checksum
+stayed behind the boundary. The move is behaviour-neutral --- the same expressions,
+relocated --- and the host filesystem suite (Chapter~\ref{ch:testing}, Layer~2) reran
+\texttt{e2fsck}-clean afterward to confirm it.
+
+One recurring obstacle is worth recording because it shapes every buffer proof. An
+\lstinline{array (Natural range <>)} of bytes can, \emph{in the type}, have a length
+of $2^{31}$, which overflows \lstinline{Integer}; so the solver cannot even prove that
+\lstinline{Off + N <= Buf'Length} does not overflow, and the whole parser stalls. The
+fix is to constrain the index --- \lstinline{subtype Buffer_Index is Natural range 0 .. 2**24 - 1}
+--- so the length provably fits an integer. A certificate or a filesystem block is far
+below sixteen megabytes, so the constraint costs nothing and unlocks everything; it is
+the single change that made the ext4 and X.509 buffers provable.
+
+\section{What the proofs found}\index{bug!found by proof}
+
+A proof that goes through is quiet. A proof that will not go through is often pointing
+at a real defect, and this effort surfaced five, every one on a malformed-input path
+that testing had not reached:
+
+\begin{itemize}
+  \item \textbf{Modbus \lstinline{Put_MBAP}} computed \lstinline{PDU_Len + 1} on an
+    unbounded length --- an overflow on a crafted request. The proof drove the
+    precondition \lstinline{PDU_Len <= Max_PDU}, the real 253-byte protocol cap.
+  \item \textbf{Superblock \lstinline{Encode}} checksummed an \emph{absolute}
+    \lstinline{Buf (Base .. Base + N)} slice where every writer used
+    \lstinline{Buf'First + offset} --- wrong for a non-zero-based buffer; now
+    \lstinline{Buf'First}-relative.
+  \item \textbf{X.509 \lstinline{Host_Matches}} could index out of range on a hostile
+    certificate whose subject-alt-name slices did not match its buffer; now guarded.
+  \item \textbf{Chain validation} dereferenced a certificate's \lstinline{Data} pointer
+    with no null or empty check --- a caller-supplied chain could crash it; now rejected
+    as malformed.
+  \item \textbf{The SHT41 CRC} loop bound \lstinline{while I + 2 <= Data'Last} overflowed
+    in its own guard and underflowed on an empty buffer; rewritten as a group count.
+\end{itemize}
+
+None was reachable by a well-formed message, which is exactly why the test suites had
+not caught them and why proving over the whole input space did.
+
+\section{The edge of the subset}\index{SPARK!limits}
+
+Proof has an honest boundary, and naming it is part of the discipline. Three things sit
+outside it. First, code that is \emph{out of the SPARK subset by construction}: the
+volatile memory-mapped register drivers, the hardware crypto accelerators
+(SHA, AES, RSA), the controlled-type bus sessions with their \lstinline{Finalize}, the
+access-to-subprogram interrupt callbacks. These are verified by the other layers ---
+loopback self-tests and known-answer tests --- not by proof, and that is the right tool
+for them. Second, pure arithmetic that is \emph{inlined} in a register procedure, like a
+baud prescaler or a dead-time divider; that logic \emph{can} be proved, but only after
+extracting it into a pure sibling package, which is exactly what was done for the
+TWAI, LEDC, RMT, and MCPWM timing math. Third, code that is provable \emph{in principle
+but not in practice}: the P-256 signature check is legal SPARK and the tool runs, but
+proving it pulls in the entire vendored SPARKNaCl elliptic-curve contract closure, which
+did not converge under a long budget --- a dedicated, lemma-level effort rather than a
+harvest. Knowing which of the three a unit falls into is what keeps the surface honest.
+
+\section{Running the proofs}\index{book!prove}
+
+The proofs run the way the tests do, from one script. \texttt{book/prove/prove.sh}
+invokes \texttt{gnatprove} at the silver level over each native prove project and exits
+non-zero if any run-time check is unproved, so a change that breaks a proof breaks the
+build just as a failing test would. The proofs run host-native because run-time-error
+freedom of pure logic is target-independent --- the same argument as the host tests,
+one layer up. The companion \texttt{book/prove/README.md} lists the proved units, the
+factoring pattern, and the toolchain gotchas learned along the way. Formal proof does
+not replace the layers below it; it caps them. The compiler rejects the ill-typed, the
+host tests check the answers, the self-tests check the wiring, the sweep checks the
+foundation --- and above them all, proof rules out an entire category of failure on
+inputs no test will ever enumerate.

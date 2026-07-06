@@ -1,0 +1,18 @@
+--  Native project for SPARK-proving the pure calendar math in NTP_Client
+--  (To_UTC: Unix time -> UTC civil fields, no run-time errors).  The socket
+--  I/O Query is SPARK_Mode => Off; gnatprove analyses To_UTC only.  No main.
+project Ntp_Prove is
+   for Source_Dirs use ("../../src");
+   for Object_Dir use "obj";
+   for Source_Files use
+     ("ntp_client.ads",
+      "ntp_client.adb",
+      "esp32s3.ads",
+      "esp32s3-endian.ads",
+      "esp32s3-endian.adb",
+      "gnat-sockets.ads",
+      "net_devices.ads");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end Ntp_Prove;

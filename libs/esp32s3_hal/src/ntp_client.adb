@@ -3,7 +3,7 @@ with GNAT.Sockets; use GNAT.Sockets;
 with Interfaces;   use Interfaces;
 with ESP32S3.Endian;
 
-package body NTP_Client is
+package body NTP_Client with SPARK_Mode => On is
 
    NTP_Unix : constant := 2_208_988_800;   --  seconds from 1900-01-01 to 1970-01-01
 
@@ -12,6 +12,7 @@ package body NTP_Client is
       Unix_Time  : out Interfaces.Integer_64;
       Timeout    : Duration := 0.0;
       Local_Port : Port_Type := 12_300) return Boolean
+   with SPARK_Mode => Off
    is
       Sock : Socket_Type;
       --  48-byte SNTP request: LI=0, VN=3, Mode=3 (client) in the first byte.

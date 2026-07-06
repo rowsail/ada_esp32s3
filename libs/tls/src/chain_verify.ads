@@ -5,7 +5,7 @@ with X509;
 --  usage extensions (basicConstraints / keyUsage / extKeyUsage) -- and anchor the
 --  chain to a pinned set of root certificates.
 
-package Chain_Verify is
+package Chain_Verify with SPARK_Mode => On is
 
    type Result is
      (Valid,
@@ -18,9 +18,12 @@ package Chain_Verify is
       Untrusted_Root);  --  the top of the chain is not signed by a pinned root
 
    --  A certificate is referenced by its (library-level, aliased) DER bytes, so no
-   --  copying and no heap.
+   --  copying and no heap.  A *named* access-to-constant type (an anonymous access
+   --  component is not legal SPARK); it designates the unconstrained Byte_Array so
+   --  'Access of a library-level aliased buffer still matches statically.
+   type Cert_Data_Ref is access constant X509.Byte_Array;
    type Cert_Ref is record
-      Data : access constant X509.Byte_Array;
+      Data : Cert_Data_Ref;
    end record;
    type Cert_List is array (Positive range <>) of Cert_Ref;
 

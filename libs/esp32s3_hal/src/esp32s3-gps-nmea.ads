@@ -10,7 +10,7 @@
 --  Has_* flag says whether that field was present and decoded, so the caller
 --  publishes only what actually arrived.
 
-private package ESP32S3.GPS.NMEA is
+private package ESP32S3.GPS.NMEA with SPARK_Mode => On is
 
    --  Everything one GGA or RMC sentence can yield.  Only the fields whose Has_*
    --  flag is set are meaningful.
@@ -52,6 +52,9 @@ private package ESP32S3.GPS.NMEA is
    end record;
 
    --  Decode one framed sentence (leading '$' through the trailing '*HH').
-   procedure Parse (Sentence : String; Result : out Parsed);
+   --  The bound on Sentence'Last is trivially met by any real line buffer and
+   --  lets the fixed-offset index arithmetic below stay provably in range.
+   procedure Parse (Sentence : String; Result : out Parsed)
+   with Pre => Sentence'Last <= Integer'Last - 16;
 
 end ESP32S3.GPS.NMEA;

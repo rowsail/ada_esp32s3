@@ -1,10 +1,84 @@
 with Interfaces; use Interfaces;
 with ESP32S3.Ext4.Block_Cache;
 
-package body ESP32S3.Ext4.Block_Map is
+package body ESP32S3.Ext4.Block_Map with SPARK_Mode => On is
+
+   --  ==== Pure, SPARK-proved decode helpers ================================
+   --  The classic block-map and extent-tree field decoding, split out of the
+   --  I/O ops below so their fixed-offset byte arithmetic is proved in-bounds
+   --  and overflow-free; the block-device reads and `raise Corrupt` stay in
+   --  the Off callers.
+
+   --  One of the inode's 15 block-map pointer slots (0..11 direct, 12/13/14
+   --  the single/double/triple indirect roots) from the 60-byte i_block.
+   function Root_Ptr (I_Block : Byte_Array; K : Natural) return U32
+   is (Get_U32 (I_Block, K * 4))
+   with Pre => I_Block'Length >= 60 and then K <= 14;
+
+   --  ext4 extent-node header (ext4_extent_header, 12 bytes; we read 8).
+   type Extent_Header is record
+      Magic   : U16;
+      Entries : Natural;      --  eh_entries
+      Depth   : Natural;      --  eh_depth (0 => leaf)
+   end record;
+
+   function Decode_Header (Raw : Byte_Array) return Extent_Header
+   is (Extent_Header'(Magic   => Get_U16 (Raw, 0),
+                      Entries => Natural (Get_U16 (Raw, 2)),
+                      Depth   => Natural (Get_U16 (Raw, 6))))
+   with Pre => Raw'Length >= 8;
+
+   --  Entry capacity of a node: the root lives in the 60-byte i_block, an
+   --  interior/leaf node fills a whole block.  A larger eh_entries is corrupt
+   --  and, on the root, would overrun the i_block slice.
+   function Max_Entries (Is_Root : Boolean; Block_Size : Natural) return Natural
+   is (if Is_Root then (60 - 12) / 12 else (Block_Size - 12) / 12)
+   with Pre => Block_Size >= 12;
+
+   --  A leaf extent (ext4_extent, 12 bytes).
+   type Leaf_Extent is record
+      First_Block : U64;      --  ee_block: first file block this extent covers
+      Length      : U64;      --  ee_len (top bit = "uninitialised" flag stripped)
+      Start       : U64;      --  ee_start_hi:ee_start_lo physical start
+   end record;
+
+   function Decode_Leaf (Raw : Byte_Array) return Leaf_Extent
+   is (Leaf_Extent'(
+         First_Block => U64 (Get_U32 (Raw, 0)),
+         Length      => U64 (if Get_U16 (Raw, 4) > 32768
+                             then Get_U16 (Raw, 4) - 32768
+                             else Get_U16 (Raw, 4)),
+         Start       => U64 (Get_U32 (Raw, 8))
+                        or Shift_Left (U64 (Get_U16 (Raw, 6)), 32)))
+   with Pre => Raw'Length >= 12;
+
+   --  An interior index entry (ext4_extent_idx, 12 bytes).
+   type Index_Extent is record
+      First_Block : U64;      --  ei_block
+      Child       : U64;      --  ei_leaf_hi:ei_leaf_lo child node block
+   end record;
+
+   function Decode_Index (Raw : Byte_Array) return Index_Extent
+   is (Index_Extent'(
+         First_Block => U64 (Get_U32 (Raw, 0)),
+         Child       => U64 (Get_U32 (Raw, 4))
+                        or Shift_Left (U64 (Get_U16 (Raw, 8)), 32)))
+   with Pre => Raw'Length >= 12;
+
+   --  ==== I/O ops (out of SPARK: Block_Cache reads + raise Corrupt) ========
+   --  Forward declarations carrying SPARK_Mode => Off: each is a function with
+   --  an in-out parameter (legal Ada, outside the SPARK subset), so an explicit
+   --  Off declaration keeps it out of analysis.
+   function Ptr_At (V : in out Volume.Context; Blk : Block_Number; Index : U64) return Block_Number
+   with SPARK_Mode => Off;
+   function Indirect (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number
+   with SPARK_Mode => Off;
+   function Extents (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number
+   with SPARK_Mode => Off;
 
    --  Read the Index-th 32-bit block pointer from pointer-block Blk.
    function Ptr_At (V : in out Volume.Context; Blk : Block_Number; Index : U64) return Block_Number
+   with SPARK_Mode => Off
    is
       T : Byte_Array (0 .. 3);
    begin
@@ -18,25 +92,26 @@ package body ESP32S3.Ext4.Block_Map is
 
    --  Classic 12-direct + single/double/triple-indirect mapping.
    function Indirect (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number
+   with SPARK_Mode => Off
    is
       PPB : constant U64 := U64 (V.SB.Block_Size) / 4;   --  pointers per block
       L   : U64 := L_Block;
    begin
       if L < 12 then
-         return Block_Number (Get_U32 (I.I_Block, Natural (L) * 4));
+         return Block_Number (Root_Ptr (I.I_Block, Natural (L)));
       end if;
       L := L - 12;
 
       if L < PPB then
          --  single indirect
-         return Ptr_At (V, Block_Number (Get_U32 (I.I_Block, 12 * 4)), L);
+         return Ptr_At (V, Block_Number (Root_Ptr (I.I_Block, 12)), L);
       end if;
       L := L - PPB;
 
       if L < PPB * PPB then
          --  double indirect
          declare
-            D1  : constant Block_Number := Block_Number (Get_U32 (I.I_Block, 13 * 4));
+            D1  : constant Block_Number := Block_Number (Root_Ptr (I.I_Block, 13));
             Mid : constant Block_Number := Ptr_At (V, D1, L / PPB);
          begin
             return Ptr_At (V, Mid, L mod PPB);
@@ -46,7 +121,7 @@ package body ESP32S3.Ext4.Block_Map is
 
       declare
          --  triple indirect
-         T1 : constant Block_Number := Block_Number (Get_U32 (I.I_Block, 14 * 4));
+         T1 : constant Block_Number := Block_Number (Root_Ptr (I.I_Block, 14));
          A  : constant Block_Number := Ptr_At (V, T1, L / (PPB * PPB));
          B  : constant Block_Number := Ptr_At (V, A, (L / PPB) mod PPB);
       begin
@@ -59,6 +134,7 @@ package body ESP32S3.Ext4.Block_Map is
    Extent_Magic : constant U16 := 16#F30A#;
 
    function Extents (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number
+   with SPARK_Mode => Off
    is
       --  Read Into'Length bytes at Off of the current node (root = inode bytes).
       procedure Node_Bytes (Node : Block_Number; Off : Natural; Into : out Byte_Array) is
@@ -78,16 +154,13 @@ package body ESP32S3.Ext4.Block_Map is
    begin
       loop
          Node_Bytes (Node, 0, Hdr);
-         if Get_U16 (Hdr, 0) /= Extent_Magic then
+         if Decode_Header (Hdr).Magic /= Extent_Magic then
             raise Corrupt with "bad extent-tree magic";
          end if;
          declare
-            Entries : constant Natural := Natural (Get_U16 (Hdr, 2));
-            Depth   : constant Natural := Natural (Get_U16 (Hdr, 6));
-            --  Entry capacity: the root lives in the 60-byte i_block (4 entries
-            --  max); an interior/leaf node fills a whole block.  A larger count is
-            --  corrupt -- and on the root would overrun the 60-byte i_block slice.
-            Max_Ent : constant Natural := (if Node = 0 then (60 - 12) / 12 else (BS - 12) / 12);
+            Entries : constant Natural := Decode_Header (Hdr).Entries;
+            Depth   : constant Natural := Decode_Header (Hdr).Depth;
+            Max_Ent : constant Natural := Max_Entries (Node = 0, BS);
          begin
             --  ext4 extent trees are at most 5 levels deep, and each descent must
             --  strip exactly one level: this makes the loop provably terminate, so
@@ -103,15 +176,12 @@ package body ESP32S3.Ext4.Block_Map is
                for E in 0 .. Entries - 1 loop
                   Node_Bytes (Node, 12 + E * 12, Ent);
                   declare
-                     EE_Block : constant U64 := U64 (Get_U32 (Ent, 0));
-                     Len_Raw  : constant U16 := Get_U16 (Ent, 4);
-                     Len      : constant U64 :=
-                       U64 (if Len_Raw > 32768 then Len_Raw - 32768 else Len_Raw);
-                     Start    : constant U64 :=
-                       U64 (Get_U32 (Ent, 8)) or Shift_Left (U64 (Get_U16 (Ent, 6)), 32);
+                     LE : constant Leaf_Extent := Decode_Leaf (Ent);
                   begin
-                     if L_Block >= EE_Block and then L_Block < EE_Block + Len then
-                        return Block_Number (Start + (L_Block - EE_Block));
+                     if L_Block >= LE.First_Block
+                       and then L_Block < LE.First_Block + LE.Length
+                     then
+                        return Block_Number (LE.Start + (L_Block - LE.First_Block));
                      end if;
                   end;
                end loop;
@@ -126,12 +196,10 @@ package body ESP32S3.Ext4.Block_Map is
                   for E in 0 .. Entries - 1 loop
                      Node_Bytes (Node, 12 + E * 12, Ent);
                      declare
-                        EI_Block : constant U64 := U64 (Get_U32 (Ent, 0));
-                        Leaf     : constant U64 :=
-                          U64 (Get_U32 (Ent, 4)) or Shift_Left (U64 (Get_U16 (Ent, 8)), 32);
+                        IE : constant Index_Extent := Decode_Index (Ent);
                      begin
-                        if EI_Block <= L_Block then
-                           Child := Block_Number (Leaf);
+                        if IE.First_Block <= L_Block then
+                           Child := Block_Number (IE.Child);
                            Found := True;
                         end if;
                      end;
@@ -148,7 +216,8 @@ package body ESP32S3.Ext4.Block_Map is
    end Extents;
 
    function Logical_To_Physical
-     (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number is
+     (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number
+   with SPARK_Mode => Off is
    begin
       if Inode.Uses_Extents (I) then
          return Extents (V, I, L_Block);

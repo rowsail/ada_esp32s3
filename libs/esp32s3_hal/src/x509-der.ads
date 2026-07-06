@@ -2,7 +2,7 @@
 --  the caller walks structures by entering an element's content range and reading
 --  the children.  Strictly bounds-checked.
 
-package X509.DER is
+package X509.DER with SPARK_Mode => On is
 
    type TLV is record
       Tag       : U8 := 0;

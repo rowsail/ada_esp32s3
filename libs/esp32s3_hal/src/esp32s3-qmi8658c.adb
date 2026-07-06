@@ -41,7 +41,8 @@ package body ESP32S3.QMI8658C is
    function To_I16 is new Ada.Unchecked_Conversion (Interfaces.Unsigned_16, Interfaces.Integer_16);
 
    function Signed (Lo, Hi : Byte) return Interfaces.Integer_16
-   is (To_I16 (Interfaces.Unsigned_16 (Hi) * 256 + Interfaces.Unsigned_16 (Lo)));
+   is (To_I16 (Interfaces.Unsigned_16 (Hi) * 256 + Interfaces.Unsigned_16 (Lo)))
+   with SPARK_Mode => On;
 
    ---------------------------------------------------------------------------
    --  Register access on an already-acquired Session (Addr = the device's I2C
@@ -251,11 +252,26 @@ package body ESP32S3.QMI8658C is
    ---------------------------------
 
    --  Accel: 16384 / 8192 / 4096 / 2048 LSB/g for 2 / 4 / 8 / 16 g.
+   --  (Closed-form 2**(14 - aFS); a case keeps the exponent linear for proof.)
    function Accel_LSB_Per_G (Dev : Device) return Positive
-   is (2**(14 - Accel_Range'Pos (Dev.Accel_Rng)));
+   is (case Dev.Accel_Rng is
+         when Range_2G  => 16_384,
+         when Range_4G  => 8_192,
+         when Range_8G  => 4_096,
+         when Range_16G => 2_048)
+   with SPARK_Mode => On;
 
-   --  Gyro: 2048 .. 16 LSB/dps for 16 .. 2048 dps.
+   --  Gyro: 2048 .. 16 LSB/dps for 16 .. 2048 dps (closed-form 2**(11 - gFS)).
    function Gyro_LSB_Per_DPS (Dev : Device) return Positive
-   is (2**(11 - Gyro_Range'Pos (Dev.Gyro_Rng)));
+   is (case Dev.Gyro_Rng is
+         when Range_16DPS   => 2_048,
+         when Range_32DPS   => 1_024,
+         when Range_64DPS   => 512,
+         when Range_128DPS  => 256,
+         when Range_256DPS  => 128,
+         when Range_512DPS  => 64,
+         when Range_1024DPS => 32,
+         when Range_2048DPS => 16)
+   with SPARK_Mode => On;
 
 end ESP32S3.QMI8658C;

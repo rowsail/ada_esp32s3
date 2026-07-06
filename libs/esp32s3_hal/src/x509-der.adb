@@ -1,4 +1,4 @@
-package body X509.DER is
+package body X509.DER with SPARK_Mode => On is
 
    use type Interfaces.Unsigned_8;
    use type Interfaces.Unsigned_64;

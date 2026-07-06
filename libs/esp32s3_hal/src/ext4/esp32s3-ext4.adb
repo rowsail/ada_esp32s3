@@ -1,6 +1,6 @@
 with Interfaces; use Interfaces;
 
-package body ESP32S3.Ext4 is
+package body ESP32S3.Ext4 with SPARK_Mode => On is
 
    function Get_U8 (B : Byte_Array; Off : Natural) return U8
    is (B (B'First + Off));

@@ -1,0 +1,19 @@
+--  Native project for SPARK-proving the pure CRC7 command-frame checksum of the
+--  SD-over-SPI driver (CRC7_Frame -- the poly x^7+x^3+1 used for CMD0/CMD8).
+--  The SPI/GDMA/card I/O is hardware and stays unmarked (SPARK_Mode off).  The
+--  SPI, GDMA and GPIO specs are host-portable (System / Ada.Finalization /
+--  Interfaces only, no register layer), so this compiles natively.  No main.
+project SD_SPI_Prove is
+   for Source_Dirs use ("../../src");
+   for Object_Dir use "obj";
+   for Source_Files use
+     ("esp32s3.ads",
+      "esp32s3-gpio.ads",
+      "esp32s3-gdma.ads",
+      "esp32s3-spi.ads",
+      "esp32s3-sd_spi.ads",
+      "esp32s3-sd_spi.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end SD_SPI_Prove;

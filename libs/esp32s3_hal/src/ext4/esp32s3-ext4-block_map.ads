@@ -6,9 +6,10 @@ with ESP32S3.Ext4.Inode;
 --  here) or extent trees (ext4, Phase 2).  A result of 0 means a sparse hole
 --  (the logical block reads as zeros).
 
-package ESP32S3.Ext4.Block_Map is
+package ESP32S3.Ext4.Block_Map with SPARK_Mode => On is
 
    function Logical_To_Physical
-     (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number;
+     (V : in out Volume.Context; I : Inode.Info; L_Block : U64) return Block_Number
+   with SPARK_Mode => Off;
 
 end ESP32S3.Ext4.Block_Map;

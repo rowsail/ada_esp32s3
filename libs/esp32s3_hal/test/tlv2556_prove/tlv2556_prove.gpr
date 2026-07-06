@@ -1,0 +1,19 @@
+--  Native project for SPARK-proving the pure count->millivolts conversion of
+--  the TLV2556 ADC driver (Millivolts, carrying a Post) plus the CFGR2_Nibble
+--  reference selector.  The SPI/GDMA transfer (Cycle / Read / Initialize) is
+--  hardware and stays unmarked (SPARK_Mode off).  The SPI, GDMA and GPIO specs
+--  are host-portable (no register layer), so this compiles natively.  No main.
+project TLV2556_Prove is
+   for Source_Dirs use ("../../src");
+   for Object_Dir use "obj";
+   for Source_Files use
+     ("esp32s3.ads",
+      "esp32s3-gpio.ads",
+      "esp32s3-gdma.ads",
+      "esp32s3-spi.ads",
+      "esp32s3-tlv2556.ads",
+      "esp32s3-tlv2556.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end TLV2556_Prove;

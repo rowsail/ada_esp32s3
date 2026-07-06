@@ -14,7 +14,7 @@ with Ada.IO_Exceptions;
 --  secondary stack, heap); it also compiles host-native (x86 GNAT) for testing,
 --  since it is pure logic over the ESP32S3.Block_Dev block interface.
 
-package ESP32S3.Ext4 is
+package ESP32S3.Ext4 with SPARK_Mode => On is
 
    --  Unsigned scalar aliases used throughout the on-disk structures.
    subtype U8 is Interfaces.Unsigned_8;
@@ -22,8 +22,15 @@ package ESP32S3.Ext4 is
    subtype U32 is Interfaces.Unsigned_32;
    subtype U64 is Interfaces.Unsigned_64;
 
-   --  Raw byte buffers (block/sector contents, checksum inputs, names).
-   type Byte_Array is array (Natural range <>) of U8;
+   --  Raw byte buffers (block/sector contents, checksum inputs, names).  The index
+   --  is capped well below Integer'Last: ext4 works one block (<= 64 KiB) at a time,
+   --  and a bounded index makes 'Length provably fit an Integer, which is what lets
+   --  SPARK discharge the offset bounds on the Get_*/Put_* helpers below (an
+   --  unconstrained Natural index permits 'Length = 2**31, which overflows).  16 MiB
+   --  is far above any real ext4 buffer.
+   Max_Buffer_Bytes : constant := 2 ** 24;                --  16 MiB
+   subtype Buffer_Index is Natural range 0 .. Max_Buffer_Bytes - 1;
+   type Byte_Array is array (Buffer_Index range <>) of U8;
 
    --  A filesystem block number (NOT a 512-byte sector; ext block = 1 KiB .. 64 KiB).
    --  64-bit-clean for the ext4 "64bit" feature.
@@ -66,18 +73,28 @@ package ESP32S3.Ext4 is
    --  0-based byte offset from B'First.
    ---------------------------------------------------------------------------
 
-   function Get_U8 (B : Byte_Array; Off : Natural) return U8;
-   function Get_U16 (B : Byte_Array; Off : Natural) return U16;
-   function Get_U32 (B : Byte_Array; Off : Natural) return U32;
-   function Get_U64 (B : Byte_Array; Off : Natural) return U64;
+   function Get_U8 (B : Byte_Array; Off : Natural) return U8
+   with Pre => Off <= B'Length - 1;
+   function Get_U16 (B : Byte_Array; Off : Natural) return U16
+   with Pre => Off <= B'Length - 2;
+   function Get_U32 (B : Byte_Array; Off : Natural) return U32
+   with Pre => Off <= B'Length - 4;
+   function Get_U64 (B : Byte_Array; Off : Natural) return U64
+   with Pre => Off <= B'Length - 8;
 
-   procedure Put_U8 (B : in out Byte_Array; Off : Natural; V : U8);
-   procedure Put_U16 (B : in out Byte_Array; Off : Natural; V : U16);
-   procedure Put_U32 (B : in out Byte_Array; Off : Natural; V : U32);
-   procedure Put_U64 (B : in out Byte_Array; Off : Natural; V : U64);
+   procedure Put_U8 (B : in out Byte_Array; Off : Natural; V : U8)
+   with Pre => Off <= B'Length - 1;
+   procedure Put_U16 (B : in out Byte_Array; Off : Natural; V : U16)
+   with Pre => Off <= B'Length - 2;
+   procedure Put_U32 (B : in out Byte_Array; Off : Natural; V : U32)
+   with Pre => Off <= B'Length - 4;
+   procedure Put_U64 (B : in out Byte_Array; Off : Natural; V : U64)
+   with Pre => Off <= B'Length - 8;
 
    --  Big-endian variants -- the JBD2 journal stores its structures big-endian.
-   function Get_U32_BE (B : Byte_Array; Off : Natural) return U32;
-   procedure Put_U32_BE (B : in out Byte_Array; Off : Natural; V : U32);
+   function Get_U32_BE (B : Byte_Array; Off : Natural) return U32
+   with Pre => Off <= B'Length - 4;
+   procedure Put_U32_BE (B : in out Byte_Array; Off : Natural; V : U32)
+   with Pre => Off <= B'Length - 4;
 
 end ESP32S3.Ext4;

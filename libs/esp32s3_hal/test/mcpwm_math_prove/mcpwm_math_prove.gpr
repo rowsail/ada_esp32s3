@@ -1,0 +1,17 @@
+--  Native project for SPARK-proving the pure MCPWM period/prescaler/dead-time
+--  math (ESP32S3.MCPWM.Math).  The register-writing driver body stays unmarked
+--  (SPARK off).  The parent specs are host-portable, so this compiles natively.
+--  No main.
+project MCPWM_Math_Prove is
+   for Source_Dirs use ("../../src");
+   for Object_Dir use "obj";
+   for Source_Files use
+     ("esp32s3.ads",
+      "esp32s3-gpio.ads",
+      "esp32s3-mcpwm.ads",
+      "esp32s3-mcpwm-math.ads",
+      "esp32s3-mcpwm-math.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end MCPWM_Math_Prove;

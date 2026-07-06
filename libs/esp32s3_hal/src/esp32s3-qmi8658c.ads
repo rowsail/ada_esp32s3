@@ -156,8 +156,8 @@ package ESP32S3.QMI8658C is
    --  Sensitivity of the configured ranges, used to scale the raw counts:
    --     g   = A.X / Float (Accel_LSB_Per_G (Dev))
    --     dps = G.X / Float (Gyro_LSB_Per_DPS (Dev))
-   function Accel_LSB_Per_G (Dev : Device) return Positive;
-   function Gyro_LSB_Per_DPS (Dev : Device) return Positive;
+   function Accel_LSB_Per_G (Dev : Device) return Positive with SPARK_Mode => On;
+   function Gyro_LSB_Per_DPS (Dev : Device) return Positive with SPARK_Mode => On;
 
 private
    type Device is record

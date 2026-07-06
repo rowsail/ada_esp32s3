@@ -16,7 +16,8 @@ package body ESP32S3.ES8311 is
    function Vol_Reg (Percent : Natural) return Byte
    is (if Percent = 0
        then 0
-       else Byte (Integer'Min (255, (Integer'Min (100, Percent) * 256) / 100 - 1)));
+       else Byte (Integer'Min (255, (Integer'Min (100, Percent) * 256) / 100 - 1)))
+   with SPARK_Mode => On;
 
    ---------------------------------------------------------------------------
    --  Small I2C register helpers (all carry an Ok accumulator so a failed ACK
