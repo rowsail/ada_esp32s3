@@ -38,6 +38,7 @@ prove () {  #  $1 = project file, $2 = label
 
 prove "$T/ext4_host/ext4_host.gpr"                 "ext4 CRC32C"
 prove "$T/modbus_slave_host/modbus_slave_host.gpr" "Modbus framing"
+prove "$T/endian_host/endian_host.gpr"             "Endian join/split"
 
 echo "PROVE_EXIT: $fail"
 exit $fail

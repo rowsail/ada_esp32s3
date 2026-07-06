@@ -9,7 +9,7 @@ with Interfaces;
 --  the call, which is one conversion per word, not per byte.
 
 package ESP32S3.Endian
-  with Pure
+  with Pure, SPARK_Mode => On
 is
 
    subtype U8 is Interfaces.Unsigned_8;
