@@ -9,7 +9,7 @@ terminate) on the code most exposed to malformed input.
 ## Run it
 
 ```sh
-book/prove/prove.sh        # gnatprove --level=2 (silver) over the SPARK_Mode => On units
+book/prove/prove.sh        # gnatprove --level=1 (silver) over the SPARK_Mode => On units
 ```
 
 Exits non-zero if any run-time check is unproved. `gnatprove` ships with the
@@ -21,27 +21,33 @@ Alire toolchain (`~/.alire/bin/gnatprove`).
 |------|------|---------|
 | `ESP32S3.Ext4` | `Get_*`/`Put_*` byte serialization helpers | `ext4_host.gpr` |
 | `ESP32S3.Ext4.CRC32C` | ext4 metadata checksum (Castagnoli) | `ext4_host.gpr` |
-| `ESP32S3.Ext4.Superblock` | superblock `Encode` + queries (I/O ops `Off`) | `ext4_host.gpr` |
-| `ESP32S3.Ext4.Inode` | inode `Decode`/`Encode` + queries (I/O ops `Off`) | `ext4_host.gpr` |
-| `ESP32S3.Ext4.Group_Desc` | group-descriptor `Decode`/`Encode` (I/O ops `Off`) | `ext4_host.gpr` |
-| `Modbus` | Modbus-TCP wire framing (MBAP + U16 pack/unpack) | `modbus_slave_host.gpr` |
+| `ESP32S3.Ext4.Superblock` | superblock `Encode` + queries | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Inode` | inode `Decode`/`Encode` + queries | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Group_Desc` | group-descriptor `Decode`/`Encode` | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Bitmap` | bit set/clear/test math | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Block_Map` | direct/indirect + extent-node decode/validate | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Dir` | dir-entry header decode + name copy | `ext4_host.gpr` |
+| `ESP32S3.Ext4.File` | EOF-clamped read/chunk size math | `ext4_host.gpr` |
+| `X509.DER` + `X509` | DER TLV reader **and the certificate parser** — **untrusted input** | `x509_prove.gpr` |
+| `ESP32S3.GPS.NMEA` | NMEA-0183 GPS-sentence parser — **untrusted input** | `nmea_prove.gpr` |
+| `Modbus` / `.Slave` / `.Master` | wire framing, slave `Process` dispatch, master PDU build/parse | `modbus_*_host.gpr` |
+| `NTP_Client.To_UTC` | SNTP → UTC civil-date math | `ntp_prove.gpr` |
+| `Net_Routes` | IPv4 longest-prefix-match routing | `net_routes_prove.gpr` |
 | `ESP32S3.Endian` | LE/BE byte join/split primitives | `endian_host.gpr` |
-| `X509.DER` | DER TLV reader — **untrusted certificate input** | `x509_prove.gpr` |
 
-`X509.DER.Read` is the highest-value proof here: it parses attacker-controlled
-certificate bytes, and proving it silver means **no buffer overrun on any malformed
-or malicious DER** — a real security property, not just a crash guard. (It needed the
-same constrained-index fix: `X509.Byte_Array` capped at 16 MiB so cursor arithmetic
-provably cannot overflow while walking untrusted lengths.)
+**~650 run-time checks discharged, 0 unproved.** The **untrusted-input parsers** are the
+highest-value proofs — `X509` (certificates), `NMEA` (GPS sentences), and the `Modbus`
+slave/master (peer PDUs) all now provably have **no buffer overrun or overflow on any
+malformed or malicious input**, a real security property rather than a crash guard.
 
-Two latent bugs found by proving these: the `Put_MBAP` overflow (above), and
-`Superblock.Encode` checksumming an *absolute* `Buf (Base .. Base + …)` slice where
-the writers use `Buf'First + offset` — wrong for a non-zero-based buffer, now
-`Buf'First`-relative.
+### Bugs / hardening found by proving
 
-Proving `Modbus` already paid for itself: GNATprove found that `Put_MBAP` could
-overflow on `PDU_Len + 1` for an unbounded `PDU_Len`, which drove the
-precondition `PDU_Len <= Max_PDU` (the real protocol cap of 253 bytes).
+- `Put_MBAP` could overflow on `PDU_Len + 1` (unbounded `PDU_Len`) → drove
+  `Pre => PDU_Len <= Max_PDU` (the 253-byte protocol cap).
+- `Superblock.Encode` checksummed an *absolute* `Buf (Base .. Base + …)` slice where the
+  writers use `Buf'First + offset` — wrong for a non-zero-based buffer; now `Buf'First`-relative.
+- `X509.Host_Matches`/`Name_Matches` could index out of range on a hostile `Certificate`
+  whose SAN slices don't match the buffer or whose `SAN_Count > Max_SAN` — now guarded.
 
 ## Adding a unit
 
@@ -89,12 +95,31 @@ I/O op (`Read`/`Write` over `Block_Cache`). The pattern that proves them:
 This is behaviour-neutral (ext4 host harness e2fsck-CLEAN throughout) and found a real
 bug in `superblock` (the absolute-vs-`Buf'First` CRC slice).
 
-## Remaining ext4 (next passes)
+## GNATprove / GNAT-15 gotchas (learned the hard way)
 
-`dir` (variable-length directory entries — record iteration, not a fixed serializer),
-`block_map`/`file` (extent + indirect-block math over I/O), and `bitmap` are the next
-targets — larger because their logic interleaves with I/O and variable-length walking
-rather than a straight fixed-offset record. Same factoring pattern, more per unit.
+- **Unbounded `'Length` overflow** — an `array (Natural range <>)` byte buffer has `'Length`
+  up to 2**31, which overflows `Integer`, defeating `Off + N <= B'Length`. Fix: constrain the
+  index subtype (`0 .. 2**24 - 1`) — applied to `ESP32S3.Ext4.Byte_Array` and `X509.Byte_Array`.
+  Where you can't edit the array's package (Modbus), pin the buffer to exact bounds at the
+  proof boundary instead.
+- Write offset preconditions as `Off <= B'Length - N`, **never** `Off + N <= B'Length` (the
+  addition itself can overflow).
+- A **function with `out`/`in out` params is not legal SPARK** — convert to a procedure, or give
+  it an explicit declaration carrying `SPARK_Mode => Off` (a body-only `Off` is *not* honored for
+  the profile-legality check inside an `On` package).
+- **`SPARK_Mode => Off` conflicts with a `Post` aspect** on a spec in an `On` package — use spec-On
+  + body-`Off` for those, or mark only the pure helpers `On` and leave the package unmarked.
+- An **expression function's** aspect goes *after* the `is (...)`.
+- Provers stall on nonlinear ops: replace `2 ** k` with `Shift_Left (1, k)` and variable-exponent
+  `10 ** p` with a closed-form `case` function.
+- SPARK forbids renaming a slice with **variable** bounds — bind the bounds as `constant`s first.
+
+## Remaining / excluded
+
+All nine ext4 units the surface reaches are proven. Not pursued (and why): the JBD2 `journal`
+and `block_dev` wear-levelling use access-type buffers + `Unchecked_Deallocation` + variable-length
+replay; `mkfs` buries its pure field-writing inside a single I/O procedure. These need factoring
+against access/I/O boundaries — a larger, separate effort, not a fixed-offset record.
 
 ## Crypto / TLS (scouted; expensive, not done)
 

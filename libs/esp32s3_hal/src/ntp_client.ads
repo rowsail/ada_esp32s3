@@ -10,7 +10,7 @@ with GNAT.Sockets;
 --  Use it with one `with NTP_Client;`.  GNAT.Sockets must already be usable (on the
 --  W5500, call GNAT.Sockets.Initialize (Device) once during bring-up).
 
-package NTP_Client is
+package NTP_Client with SPARK_Mode => On is
 
    --  Query the NTP server at Server (UDP port 123) for the current UTC time.
    --  True with Unix_Time set (seconds since 1970-01-01 UTC) on success; False if
@@ -22,7 +22,8 @@ package NTP_Client is
      (Server     : GNAT.Sockets.Inet_Addr_Type;
       Unix_Time  : out Interfaces.Integer_64;
       Timeout    : Duration := 0.0;
-      Local_Port : GNAT.Sockets.Port_Type := 12_300) return Boolean;
+      Local_Port : GNAT.Sockets.Port_Type := 12_300) return Boolean
+   with SPARK_Mode => Off;
 
    --  Break a Unix time (seconds since 1970-01-01 UTC) into UTC calendar fields
    --  (Howard Hinnant's civil-from-days algorithm; valid for any Gregorian date).
@@ -34,7 +35,8 @@ package NTP_Client is
       Hour      : out Integer;
       Minute    : out Integer;
       Second    : out Integer)
-   with Post =>
+   with Pre  => Unix_Time in 0 .. 16#FFFF_FFFF#,   --  the 32-bit NTP second domain
+        Post =>
         Month in 1 .. 12
         and then Day in 1 .. 31
         and then Hour in 0 .. 23

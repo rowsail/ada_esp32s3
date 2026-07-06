@@ -7,7 +7,7 @@ with GNAT.Sockets;
 --  or a Modbus Exception_Code (e.g. Illegal_Data_Address); the server turns that
 --  into the proper exception reply.  Serves one client at a time.
 
-package Modbus.Slave is
+package Modbus.Slave with SPARK_Mode => On is
 
    type Server is tagged limited private;
 
@@ -79,7 +79,8 @@ package Modbus.Slave is
    procedure Run
      (Self      : in out Server'Class;
       Port      : GNAT.Sockets.Port_Type := Default_Port;
-      Configure : Socket_Hook := null);
+      Configure : Socket_Hook := null)
+   with SPARK_Mode => Off;   --  sockets: listen/accept/serve loop
 
    --  Process ONE request ADU in Buf (0 .. Req_Len - 1), dispatching to Self, and
    --  build the reply ADU into Buf, returning its length (0 = drop, no reply).
@@ -90,7 +91,13 @@ package Modbus.Slave is
       Buf       : in out Byte_Array;
       Req_Len   : Natural;
       Reply_Len : out Natural)
-   with Pre => Req_Len <= Buf'Length;
+   with Pre => Buf'First = 0 and then Buf'Last = Max_ADU - 1
+               and then Req_Len <= Buf'Length;
+   --  Buf is a full-ADU scratch buffer based at 0 (the fixed MBAP/PDU field
+   --  offsets are absolute), sized to hold the biggest reply PDU; Serve and the
+   --  host harness both pass a Byte_Array (0 .. Max_ADU - 1).  Pinning the exact
+   --  bounds keeps 'Length a constant so the unconstrained-index 'Length cannot
+   --  overflow Integer (the base Modbus Byte_Array is array (Natural range <>)).
 
 private
    type Server is tagged limited null record;

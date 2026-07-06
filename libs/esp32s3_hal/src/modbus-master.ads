@@ -6,7 +6,7 @@ with GNAT.Sockets;
 --  outcome reported through Status -- not an Ada exception; Ada exceptions are
 --  reserved for caller bugs (the Pre contracts on quantity / buffer size).
 
-package Modbus.Master is
+package Modbus.Master with SPARK_Mode => On is
 
    type Session is limited private;
 
@@ -35,10 +35,10 @@ package Modbus.Master is
       Configure : Socket_Hook := null;
       Timeout   : Duration := 1.0;
       Result    : out Status)
-   with Post => (if Result = OK then Is_Open (S));
+   with Post => (if Result = OK then Is_Open (S));   --  body is SPARK_Mode Off
 
    procedure Close (S : in out Session)
-   with Post => not Is_Open (S);
+   with Post => not Is_Open (S);                      --  body is SPARK_Mode Off
    function Is_Open (S : Session) return Boolean;
 
    ---------------------------------------------------------------------------
@@ -53,7 +53,8 @@ package Modbus.Master is
       Into   : out Bit_Array;
       Result : out Status;
       Exc    : out Exception_Code)
-   with Pre => Qty <= Max_Read_Bits and then Into'Length >= Qty;
+   with SPARK_Mode => Off,
+        Pre => Qty <= Max_Read_Bits and then Into'Length >= Qty;
 
    procedure Read_Discrete_Inputs
      (S      : in out Session;
@@ -63,7 +64,8 @@ package Modbus.Master is
       Into   : out Bit_Array;
       Result : out Status;
       Exc    : out Exception_Code)
-   with Pre => Qty <= Max_Read_Bits and then Into'Length >= Qty;
+   with SPARK_Mode => Off,
+        Pre => Qty <= Max_Read_Bits and then Into'Length >= Qty;
 
    procedure Read_Holding_Registers
      (S      : in out Session;
@@ -73,7 +75,8 @@ package Modbus.Master is
       Into   : out Word_Array;
       Result : out Status;
       Exc    : out Exception_Code)
-   with Pre => Qty <= Max_Read_Registers and then Into'Length >= Qty;
+   with SPARK_Mode => Off,
+        Pre => Qty <= Max_Read_Registers and then Into'Length >= Qty;
 
    procedure Read_Input_Registers
      (S      : in out Session;
@@ -83,7 +86,8 @@ package Modbus.Master is
       Into   : out Word_Array;
       Result : out Status;
       Exc    : out Exception_Code)
-   with Pre => Qty <= Max_Read_Registers and then Into'Length >= Qty;
+   with SPARK_Mode => Off,
+        Pre => Qty <= Max_Read_Registers and then Into'Length >= Qty;
 
    ---------------------------------------------------------------------------
    --  Writes.

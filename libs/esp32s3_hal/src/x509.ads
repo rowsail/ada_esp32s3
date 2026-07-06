@@ -6,7 +6,7 @@ with Interfaces;
 --  every read is validated and any malformation yields Valid = False rather than an
 --  out-of-range access.
 
-package X509 is
+package X509 with SPARK_Mode => On is
 
    subtype U8 is Interfaces.Unsigned_8;
    --  Certificate byte buffers.  Index capped well below Integer'Last so 'Length
@@ -17,9 +17,12 @@ package X509 is
    type Byte_Array is array (Buffer_Index range <>) of U8;
 
    --  An index range into the certificate buffer (empty when First > Last).
+   --  First may legitimately be Buffer_Index'Last + 1 for an empty element (one
+   --  past the end), so it stays a plain Natural; Last is always a real buffer
+   --  index (or 0 when empty), so bounding it lets SPARK prove Length below.
    type Slice is record
       First : Natural := 1;
-      Last  : Natural := 0;
+      Last  : Buffer_Index := 0;
    end record;
    function Length (S : Slice) return Natural
    is (if S.Last >= S.First then S.Last - S.First + 1 else 0);
@@ -49,7 +52,13 @@ package X509 is
         * 100
         + Time_64 (Minute))
        * 100
-       + Time_64 (Second));
+       + Time_64 (Second))
+   with Pre => Year <= 9999
+     and then Month <= 99
+     and then Day <= 99
+     and then Hour <= 99
+     and then Minute <= 99
+     and then Second <= 99;
 
    --  The fields we extract from a certificate.  All are index ranges into the
    --  original buffer (no copying); TBS is the exact signed region (the full DER of

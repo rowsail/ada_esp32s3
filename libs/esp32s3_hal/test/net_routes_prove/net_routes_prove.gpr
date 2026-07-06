@@ -1,0 +1,14 @@
+--  Native project for SPARK-proving the pure IPv4 longest-prefix-match routing
+--  table (Net_Routes): no run-time errors in the mask packing, prefix-length
+--  popcount, and route-selection loop.  No main.
+project Net_Routes_Prove is
+   for Source_Dirs use ("../../src");
+   for Object_Dir use "obj";
+   for Source_Files use
+     ("net_routes.ads",
+      "net_routes.adb",
+      "net_devices.ads");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end Net_Routes_Prove;

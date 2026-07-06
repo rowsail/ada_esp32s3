@@ -16,7 +16,7 @@ with Net_Devices;
 --  Liveness is injected (Configure) rather than wired to a specific stack, so the
 --  table is pure logic and host-testable with a mock up-state.
 
-package Net_Routes is
+package Net_Routes with SPARK_Mode => On is
 
    subtype Interface_Id is Net_Devices.Interface_Id;
 

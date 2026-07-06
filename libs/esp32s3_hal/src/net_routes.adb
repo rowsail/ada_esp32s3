@@ -1,6 +1,6 @@
 with Interfaces; use Interfaces;
 
-package body Net_Routes is
+package body Net_Routes with SPARK_Mode => On is
 
    --  Pack a dotted address into a 32-bit value for masking/compare.
    function U32 (Addr : Net_Devices.IPv4_Address) return Unsigned_32
@@ -11,12 +11,13 @@ package body Net_Routes is
 
    --  Prefix length = number of set bits in the mask (works for any mask, /0..32).
    function Prefix_Len (Mask : Unsigned_32) return Natural is
-      Bits  : Unsigned_32 := Mask;
       Count : Natural := 0;
    begin
-      while Bits /= 0 loop
-         Count := Count + Natural (Bits and 1);
-         Bits := Shift_Right (Bits, 1);
+      for Bit_Index in 0 .. 31 loop
+         pragma Loop_Invariant (Count <= Bit_Index);
+         if (Shift_Right (Mask, Bit_Index) and 1) = 1 then
+            Count := Count + 1;
+         end if;
       end loop;
       return Count;
    end Prefix_Len;
@@ -30,7 +31,7 @@ package body Net_Routes is
 
    Max_Routes : constant := 16;
    Table      : array (1 .. Max_Routes) of Route;
-   N_Routes   : Natural := 0;
+   N_Routes   : Integer range 0 .. Max_Routes := 0;
    Up         : Up_Query := null;
 
    procedure Configure (Is_Up : Up_Query) is

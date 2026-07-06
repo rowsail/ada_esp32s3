@@ -2,7 +2,7 @@ with Ada.Streams;  use Ada.Streams;
 with GNAT.Sockets; use GNAT.Sockets;
 with Interfaces;   use Interfaces;
 
-package body Modbus.Slave is
+package body Modbus.Slave with SPARK_Mode => On is
 
    use type Function_Code;
 
@@ -156,7 +156,8 @@ package body Modbus.Slave is
                         end loop;
                         for I in 0 .. Qty - 1 loop
                            if Bits (I) then
-                              Buf (9 + I / 8) := Buf (9 + I / 8) or Byte (2**(I mod 8));
+                              Buf (9 + I / 8) :=
+                                Buf (9 + I / 8) or Shift_Left (Byte'(1), I mod 8);
                            end if;
                         end loop;
                         PDU_Len := 2 + Bc;
@@ -245,7 +246,7 @@ package body Modbus.Slave is
                      Values : Bit_Array (0 .. Qty - 1) := (others => False);
                   begin
                      for I in 0 .. Qty - 1 loop
-                        Values (I) := (Buf (13 + I / 8) and Byte (2**(I mod 8))) /= 0;
+                        Values (I) := (Buf (13 + I / 8) and Shift_Left (Byte'(1), I mod 8)) /= 0;
                      end loop;
                      On_Write_Multiple_Coils (Self, Unit, Addr, Values, Exc);
                      if Exc = None then
@@ -302,8 +303,15 @@ package body Modbus.Slave is
    ---------------------------------------------------------------------------
 
    --  Read exactly Count bytes into Buf at Offset.  False on close/error.
+   --  Off at the declaration: a function with an "in out" parameter is not legal
+   --  SPARK, so it must sit entirely outside the analysed subset.
    function Recv_Exact
      (Conn : Socket_Type; Buf : in out Byte_Array; Offset, Count : Natural) return Boolean
+   with SPARK_Mode => Off;
+
+   function Recv_Exact
+     (Conn : Socket_Type; Buf : in out Byte_Array; Offset, Count : Natural) return Boolean
+   with SPARK_Mode => Off
    is
       Got : Natural := 0;
    begin
@@ -329,6 +337,7 @@ package body Modbus.Slave is
    end Recv_Exact;
 
    function Send_All (Conn : Socket_Type; Buf : Byte_Array; Count : Natural) return Boolean is
+      pragma SPARK_Mode (Off);   --  Send_Socket + address overlay
       --  View the first Count bytes of Buf as a Stream_Element_Array with no
       --  copy: Byte and Stream_Element are both 8-bit, so the layout matches
       --  (same overlay idiom as ESP32S3.W5500.Net_Device).
@@ -350,6 +359,7 @@ package body Modbus.Slave is
 
    --  Serve requests on one connection until the client closes.
    procedure Serve (Self : in out Server'Class; Conn : Socket_Type) is
+      pragma SPARK_Mode (Off);   --  socket recv/send loop
       Buf  : Byte_Array (0 .. Max_ADU - 1);
       RLen : Natural;
    begin
@@ -373,6 +383,7 @@ package body Modbus.Slave is
       Port      : GNAT.Sockets.Port_Type := Default_Port;
       Configure : Socket_Hook := null)
    is
+      pragma SPARK_Mode (Off);   --  create/bind/listen/accept
       Listener, Conn : Socket_Type;
       Peer           : Sock_Addr_Type;
    begin
