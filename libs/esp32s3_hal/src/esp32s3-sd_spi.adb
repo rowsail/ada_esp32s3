@@ -1,6 +1,7 @@
 with Interfaces; use Interfaces;
 with Ada.Real_Time;
 with ESP32S3.GPIO;
+with ESP32S3.GDMA;
 
 package body ESP32S3.SD_SPI is
 
@@ -23,7 +24,7 @@ package body ESP32S3.SD_SPI is
    --  DMA scratch, one pair per host (the held SPI Session serialises a host's
    --  use of its pair).  Package-level => lands in .bss = internal SRAM, which
    --  GDMA can reach (a task stack in PSRAM cannot be a DMA target).
-   type Buf is array (0 .. 511) of Unsigned_8;
+   subtype Buf is ESP32S3.GDMA.DMA_Buffer (0 .. 511);   --  512 = 16 cache lines
    Tx_Buf : array (ESP32S3.SPI.SPI_Host) of Buf;
    Rx_Buf : array (ESP32S3.SPI.SPI_Host) of Buf;
 
@@ -34,7 +35,7 @@ package body ESP32S3.SD_SPI is
    --  Shift N bytes from Tx_Buf out, capturing the same count into Rx_Buf.
    procedure Shift (C : Card; S : ESP32S3.SPI.Session; N : Natural) is
    begin
-      ESP32S3.SPI.Transfer (S, Tx_Buf (C.Host)'Address, Rx_Buf (C.Host)'Address, N);
+      ESP32S3.SPI.Transfer (S, Tx_Buf (C.Host), Rx_Buf (C.Host), N);
    end Shift;
 
    --  Clock N idle (0xFF) bytes (card sees MOSI high); ignore what comes back.

@@ -1,4 +1,5 @@
 with System;
+with ESP32S3.GDMA;
 with Interfaces;    use Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 
@@ -34,8 +35,8 @@ package body ESP32S3.ST7789 is
    --  dump that any host may share).  Each DMA Transfer is <= 4095 bytes.
    ---------------------------------------------------------------------------
 
-   Chunk  : constant := 4092;             --  <= 4095, even (whole RGB565 pixels)
-   type Buffer is array (0 .. Chunk - 1) of Byte;
+   Chunk  : constant := 4064;             --  <= 4095, a 32-byte multiple, even (RGB565)
+   subtype Buffer is ESP32S3.GDMA.DMA_Buffer (0 .. Chunk - 1);
    Tx_Buf : array (ESP32S3.SPI.SPI_Host) of Buffer;
    Rx_Buf : Buffer;
 
@@ -78,7 +79,7 @@ package body ESP32S3.ST7789 is
    procedure Send (Bus : ESP32S3.SPI.Session; Host : ESP32S3.SPI.SPI_Host; N : Natural) is
    begin
       if N > 0 then
-         ESP32S3.SPI.Transfer (Bus, Tx_Buf (Host)'Address, Rx_Buf'Address, N);
+         ESP32S3.SPI.Transfer (Bus, Tx_Buf (Host), Rx_Buf, N);
       end if;
    end Send;
 

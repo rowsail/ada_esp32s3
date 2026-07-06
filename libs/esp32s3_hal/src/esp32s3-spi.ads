@@ -1,4 +1,5 @@
 with System;
+with ESP32S3.GDMA;
 with Ada.Finalization;
 with ESP32S3.GPIO;
 
@@ -18,6 +19,7 @@ with ESP32S3.GPIO;
 --  Requires a tasking runtime (Jorvik light-tasking or richer).
 
 package ESP32S3.SPI is
+   pragma Assertion_Policy (Pre => Check);
 
    --  The two general-purpose hosts (SPI0/SPI1 are the flash/PSRAM controllers
    --  and are deliberately not offered).
@@ -156,6 +158,17 @@ package ESP32S3.SPI is
    --  the engine would otherwise drop silently.
    procedure Transfer (S : Session; Tx, Rx : System.Address; Length : Natural)
    with Pre => Length in 1 .. 4095;
+
+   --  Type-safe overload: DMA_Buffer gives the aligned start, and the precondition
+   --  checks the whole-cache-line SIZE (footprint a 32-byte multiple) so the PSRAM
+   --  cache maintenance can't reach a neighbour.  Pass the whole buffer + the
+   --  transfer Length (<= the buffer); this is the DMA size+alignment guarantee,
+   --  enforced at the call.
+   procedure Transfer (S : Session; Tx, Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
+   with Pre => Length in 1 .. 4095
+               and then Length <= Tx'Length and then Length <= Rx'Length
+               and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0
+               and then Rx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
 
    --  Relinquish ownership (lets a waiting task proceed).  Harmless if already
    --  released.  Always release a Session you Acquired.

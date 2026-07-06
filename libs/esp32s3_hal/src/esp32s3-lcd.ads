@@ -14,7 +14,10 @@ with ESP32S3.GPIO;
 --  limited, controlled Session that owns it exclusively and releases on scope
 --  exit.  Uses finalization, so it targets the embedded/full profile.
 
+with ESP32S3.GDMA;
+
 package ESP32S3.LCD is
+   pragma Assertion_Policy (Pre => Check);
 
    No_Pin : constant ESP32S3.GPIO.Pad_Number := ESP32S3.GPIO.No_Pin;
 
@@ -70,6 +73,10 @@ package ESP32S3.LCD is
    --  Blocking; Ok is True once the transfer completes.  Buffer in internal SRAM.
    --  Raises Not_Owned unless S holds the controller.
    procedure Transmit (S : Session; Tx : System.Address; Length : Natural; Ok : out Boolean);
+
+   --  Type-safe overload (buffer 32-byte aligned + line-multiple sized).
+   procedure Transmit (S : Session; Tx : ESP32S3.GDMA.DMA_Buffer; Length : Natural; Ok : out Boolean)
+   with Pre => Length <= Tx'Length and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
 
    procedure Release (S : in out Session);
 

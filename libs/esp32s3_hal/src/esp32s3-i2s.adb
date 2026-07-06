@@ -205,6 +205,11 @@ package body ESP32S3.I2S is
       E.Write (State.Owned (S).all, Tx, Length);   --  Owned raises unless held
    end Write_Raw;
 
+   procedure Write_Raw (S : Session; Tx : ESP32S3.GDMA.DMA_Buffer; Length : Natural) is
+   begin
+      Write_Raw (S, Tx (Tx'First)'Address, Length);
+   end Write_Raw;
+
    procedure Write (S : Session; Samples : PCM_8) is
    begin
       Write_Raw (S, Samples'Address, Samples'Length * Bytes_8);
@@ -227,6 +232,11 @@ package body ESP32S3.I2S is
    procedure Read_Raw (S : Session; Rx : System.Address; Length : Natural) is
    begin
       E.Read (State.Owned (S).all, Rx, Length);
+   end Read_Raw;
+
+   procedure Read_Raw (S : Session; Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural) is
+   begin
+      Read_Raw (S, Rx (Rx'First)'Address, Length);
    end Read_Raw;
 
    procedure Read (S : Session; Samples : out PCM_8) is
@@ -253,6 +263,11 @@ package body ESP32S3.I2S is
       E.Transfer (State.Owned (S).all, Tx, Rx, Length);
    end Transfer_Raw;
 
+   procedure Transfer_Raw (S : Session; Tx, Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural) is
+   begin
+      Transfer_Raw (S, Tx (Tx'First)'Address, Rx (Rx'First)'Address, Length);
+   end Transfer_Raw;
+
    procedure Transfer (S : Session; Tx : PCM_8; Rx : out PCM_8) is
    begin
       Transfer_Raw (S, Tx'Address, Rx'Address, Tx'Length * Bytes_8);
@@ -275,6 +290,11 @@ package body ESP32S3.I2S is
    procedure Start_Continuous_Raw (S : Session; Tx : System.Address; Length : Natural) is
    begin
       E.Start_Continuous (State.Owned (S).all, Tx, Length);
+   end Start_Continuous_Raw;
+
+   procedure Start_Continuous_Raw (S : Session; Tx : ESP32S3.GDMA.DMA_Buffer; Length : Natural) is
+   begin
+      Start_Continuous_Raw (S, Tx (Tx'First)'Address, Length);
    end Start_Continuous_Raw;
 
    procedure Start_Continuous (S : Session; Samples : PCM_8) is
@@ -308,6 +328,11 @@ package body ESP32S3.I2S is
    procedure Capture_Raw (S : Session; Rx : System.Address; Length : Natural) is
    begin
       E.Capture (State.Owned (S).all, Rx, Length);
+   end Capture_Raw;
+
+   procedure Capture_Raw (S : Session; Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural) is
+   begin
+      Capture_Raw (S, Rx (Rx'First)'Address, Length);
    end Capture_Raw;
 
    procedure Capture (S : Session; Samples : out PCM_8) is

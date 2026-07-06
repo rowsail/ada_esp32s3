@@ -43,9 +43,13 @@ package body ESP32S3.GDMA is
    procedure Rom_Invalidate (Addr, Size : Unsigned_32)
    with Import, Convention => C, External_Name => "Cache_Invalidate_Addr";
 
-   --  Synchronise a PSRAM region with the DMA's view, over whole cache lines, with
-   --  interrupts masked: the ROM op briefly manipulates the DCache, so an ISR that
-   --  touched cached memory in the window could fault or race.
+   --  The DCache controller is shared by both cores, and the ROM cache ops are not
+   --  reentrant, so serialise them across cores with an S32C1I spinlock (in .bss --
+   --  S32C1I is unsupported on PSRAM).  Taken after masking local interrupts, so an
+   --  ISR touching cached memory can't run mid-op on this core either.
+   Cache_Lock : aliased Unsigned_32 := 0 with Volatile;
+
+   --  Synchronise a PSRAM region with the DMA's view, over whole cache lines.
    procedure Cache_Sync (Addr : System.Address; Length : Natural; Invalidate : Boolean) is
       Base : constant Integer_Address :=
         To_Integer (Addr) - (To_Integer (Addr) mod Cache_Line);
@@ -53,14 +57,29 @@ package body ESP32S3.GDMA is
       Size : constant Integer_Address :=
         ((Last - Base + Cache_Line - 1) / Cache_Line) * Cache_Line;
       PS   : Unsigned_32;
+      Old  : Unsigned_32;
+      Zero : constant Unsigned_32 := 0;
    begin
       Asm ("rsil %0, 15", Outputs => Unsigned_32'Asm_Output ("=r", PS),
            Volatile => True, Clobber => "memory");
+      loop         --  acquire the cross-core spinlock
+         Old := 1;
+         Asm ("wsr.scompare1 %1" & ASCII.LF & "s32c1i %0, %2, 0",
+              Outputs  => Unsigned_32'Asm_Output ("+r", Old),
+              Inputs   => (Unsigned_32'Asm_Input ("r", Zero),
+                           System.Address'Asm_Input ("r", Cache_Lock'Address)),
+              Volatile => True, Clobber => "memory");
+         exit when Old = 0;
+      end loop;
       if Invalidate then
          Rom_Invalidate (Unsigned_32 (Base), Unsigned_32 (Size));
       else
          Rom_WriteBack (Unsigned_32 (Base), Unsigned_32 (Size));
       end if;
+      Asm ("memw" & ASCII.LF & "s32i.n %0, %1, 0",   --  release the spinlock
+           Inputs   => (Unsigned_32'Asm_Input ("r", Zero),
+                        System.Address'Asm_Input ("r", Cache_Lock'Address)),
+           Volatile => True, Clobber => "memory");
       Asm ("wsr.ps %0" & ASCII.LF & "rsync", Inputs => Unsigned_32'Asm_Input ("r", PS),
            Volatile => True, Clobber => "memory");
    end Cache_Sync;
@@ -614,6 +633,30 @@ package body ESP32S3.GDMA is
       Asm ("memw", Volatile => True, Clobber => "memory");
       Channels (C.Id).OUT_LINK.OUTLINK_ADDR := Link_Addr (TX_Desc (C.Id)'Address);
       Channels (C.Id).OUT_LINK.OUTLINK_START := True;
+   end Start_Loop;
+
+   --  Type-safe DMA_Buffer overloads (forward to the address versions; the buffer
+   --  type + size predicate were checked when the argument was passed in).  The
+   --  cache maintenance for Length rounds up within the line-multiple buffer.
+   procedure Copy (C : Channel; Dst, Src : DMA_Buffer; Length : Natural) is
+   begin
+      if Length > 0 then
+         Copy (C, Dst (Dst'First)'Address, Src (Src'First)'Address, Length);
+      end if;
+   end Copy;
+
+   procedure Start (C : Channel; Dir : Direction; Buffer : DMA_Buffer; Length : Natural) is
+   begin
+      if Length > 0 then
+         Start (C, Dir, Buffer (Buffer'First)'Address, Length);
+      end if;
+   end Start;
+
+   procedure Start_Loop (C : Channel; Buffer : DMA_Buffer; Length : Natural) is
+   begin
+      if Length > 0 then
+         Start_Loop (C, Buffer (Buffer'First)'Address, Length);
+      end if;
    end Start_Loop;
 
    ----------

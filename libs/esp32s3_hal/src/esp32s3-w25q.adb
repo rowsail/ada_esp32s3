@@ -1,9 +1,11 @@
 with Ada.Real_Time;
 with Ada.IO_Exceptions;
+with ESP32S3.GDMA;
 
 package body ESP32S3.W25Q is
 
    package SPI renames ESP32S3.SPI;
+   subtype DMA_Buffer is ESP32S3.GDMA.DMA_Buffer;
 
    --  Winbond command opcodes.  We put the chip in 4-byte ADDRESS MODE (0xB7)
    --  at Initialize and then use the STANDARD opcodes, which then consume four
@@ -33,7 +35,7 @@ package body ESP32S3.W25Q is
    --  SRAM, so this lives in package .bss rather than as a stack/.rodata constant
    --  (a constant aggregate may be placed in XIP flash, which DMA cannot read).
    --  Reads are serialised by the per-host SPI lock, so one shared source is safe.
-   Zero_Src : Byte_Array (0 .. 255) := (others => 0);
+   Zero_Src : DMA_Buffer (0 .. 255) := (others => 0);
 
    --  DMA bounce buffers, also in .bss (internal SRAM).  GDMA cannot reach the
    --  caller-supplied Tx/Rx buffers when they live in PSRAM -- e.g. a task whose
@@ -42,8 +44,13 @@ package body ESP32S3.W25Q is
    --  transfer here is small (<= Header_Len + Page_Size) and serialised by the
    --  per-host SPI lock, so one shared scratch pair is safe.  Copies caller Tx in
    --  and Rx out around the DMA.
-   Scratch_Tx : Byte_Array (0 .. Header_Len + Page_Size - 1);
-   Scratch_Rx : Byte_Array (0 .. Header_Len + Page_Size - 1);
+   --  Rounded UP to a whole cache line (DMA_Buffer / the DMA size precondition
+   --  require the FOOTPRINT be a 32-byte multiple; the transfer Length may be less).
+   Scratch_Len : constant :=
+     ((Header_Len + Page_Size + ESP32S3.GDMA.DMA_Alignment - 1)
+      / ESP32S3.GDMA.DMA_Alignment) * ESP32S3.GDMA.DMA_Alignment;
+   Scratch_Tx : DMA_Buffer (0 .. Scratch_Len - 1);
+   Scratch_Rx : DMA_Buffer (0 .. Scratch_Len - 1);
 
    ----------------------------------------------------------------------------
    --  Low-level command helpers (all run while the host is already Acquired)
@@ -65,11 +72,11 @@ package body ESP32S3.W25Q is
       Caller_Tx : Byte_Array (0 .. Len - 1) with Import, Address => Tx;
       Caller_Rx : Byte_Array (0 .. Len - 1) with Import, Address => Rx;
    begin
-      Scratch_Tx (0 .. Len - 1) := Caller_Tx;
+      Scratch_Tx (0 .. Len - 1) := DMA_Buffer (Caller_Tx);
       SPI.Select_Device (S, On => True);
-      SPI.Transfer (S, Scratch_Tx'Address, Scratch_Rx'Address, Len);
+      SPI.Transfer (S, Scratch_Tx, Scratch_Rx, Len);   --  whole (line-multiple) bufs + Len
       SPI.Select_Device (S, On => False);
-      Caller_Rx (0 .. Len - 1) := Scratch_Rx (0 .. Len - 1);
+      Caller_Rx (0 .. Len - 1) := Byte_Array (Scratch_Rx (0 .. Len - 1));
    end Command;
 
    --  Latch the write-enable bit before an erase/program (its own CS pulse).
@@ -184,12 +191,12 @@ package body ESP32S3.W25Q is
       --  Bounce through internal SRAM (Data may be a PSRAM ext4 cache block that
       --  DMA cannot reach): send the header from Scratch_Tx, and read each chunk
       --  into Scratch_Rx before copying it out to the caller's Data.
-      Scratch_Tx (0 .. Header_Len - 1) := Header;
-      SPI.Transfer (S, Scratch_Tx'Address, Scratch_Rx'Address, Header_Len);
+      Scratch_Tx (0 .. Header_Len - 1) := DMA_Buffer (Header);
+      SPI.Transfer (S, Scratch_Tx, Scratch_Rx, Header_Len);
       while Pos <= Data'Last loop
          Chunk := Natural'Min (Zero_Src'Length, Data'Last - Pos + 1);
-         SPI.Transfer (S, Zero_Src'Address, Scratch_Rx'Address, Chunk);
-         Data (Pos .. Pos + Chunk - 1) := Scratch_Rx (0 .. Chunk - 1);
+         SPI.Transfer (S, Zero_Src, Scratch_Rx, Chunk);
+         Data (Pos .. Pos + Chunk - 1) := Byte_Array (Scratch_Rx (0 .. Chunk - 1));
          Pos := Pos + Chunk;
       end loop;
       SPI.Select_Device (S, On => False);

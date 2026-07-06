@@ -21,7 +21,10 @@ with ESP32S3.GPIO;
 --
 --  Requires a tasking runtime (Jorvik light-tasking or richer).
 
+with ESP32S3.GDMA;
+
 package ESP32S3.I2S is
+   pragma Assertion_Policy (Pre => Check);
 
    --  The two I2S controllers.
    type I2S_Port is (I2S0, I2S1);
@@ -160,6 +163,10 @@ package ESP32S3.I2S is
    procedure Write (S : Session; Samples : PCM_32)
    with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
    procedure Write_Raw (S : Session; Tx : System.Address; Length : Natural);
+   --  Type-safe overload (buffer 32-byte aligned + line-multiple sized).
+   procedure Write_Raw (S : Session; Tx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
+   with Pre => Length <= Tx'Length and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
+
 
    --  Capture from the data-in line into a buffer.  Blocking.
    procedure Read (S : Session; Samples : out PCM_8)
@@ -169,6 +176,10 @@ package ESP32S3.I2S is
    procedure Read (S : Session; Samples : out PCM_32)
    with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
    procedure Read_Raw (S : Session; Rx : System.Address; Length : Natural);
+   --  Type-safe overload (buffer 32-byte aligned + line-multiple sized).
+   procedure Read_Raw (S : Session; Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
+   with Pre => Length <= Rx'Length and then Rx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
+
 
    --  Full-duplex: shift Tx out and capture Rx in simultaneously (same length).
    procedure Transfer (S : Session; Tx : PCM_8; Rx : out PCM_8)
@@ -178,6 +189,12 @@ package ESP32S3.I2S is
    procedure Transfer (S : Session; Tx : PCM_32; Rx : out PCM_32)
    with Pre => Configured_Bits (S) in Bits_24 | Bits_32 and then Tx'Length = Rx'Length;
    procedure Transfer_Raw (S : Session; Tx, Rx : System.Address; Length : Natural);
+   --  Type-safe overload (buffers 32-byte aligned + line-multiple sized).
+   procedure Transfer_Raw (S : Session; Tx, Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
+   with Pre => Length <= Tx'Length and then Length <= Rx'Length
+               and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0
+               and then Rx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
+
 
    --  Start a self-looping DMA that replays the buffer forever with NO
    --  inter-buffer gap and return immediately, leaving the TX clock running --
@@ -191,6 +208,10 @@ package ESP32S3.I2S is
    procedure Start_Continuous (S : Session; Samples : PCM_32)
    with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
    procedure Start_Continuous_Raw (S : Session; Tx : System.Address; Length : Natural);
+   --  Type-safe overload (buffer 32-byte aligned + line-multiple sized).
+   procedure Start_Continuous_Raw (S : Session; Tx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
+   with Pre => Length <= Tx'Length and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
+
 
    --  Stop a continuous transmit started by Start_Continuous (TX clock off).
    --  Raises Not_Owned unless S holds the port.
@@ -206,6 +227,10 @@ package ESP32S3.I2S is
    procedure Capture (S : Session; Samples : out PCM_32)
    with Pre => Configured_Bits (S) in Bits_24 | Bits_32;
    procedure Capture_Raw (S : Session; Rx : System.Address; Length : Natural);
+   --  Type-safe overload (buffer 32-byte aligned + line-multiple sized).
+   procedure Capture_Raw (S : Session; Rx : ESP32S3.GDMA.DMA_Buffer; Length : Natural)
+   with Pre => Length <= Rx'Length and then Rx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
+
 
    --  Relinquish ownership (lets a waiting task proceed).  Idempotent.
    procedure Release (S : in out Session);
