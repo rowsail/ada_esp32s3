@@ -13,7 +13,7 @@
 #  Currently proven (silver, 0 unproved checks):
 #    * ESP32S3.Ext4          -- Get_*/Put_* byte serialization helpers (ext4_host.gpr)
 #    * ESP32S3.Ext4.CRC32C   -- ext4 metadata checksum                 (ext4_host.gpr)
-#    * ESP32S3.Ext4.Superblock -- superblock Encode + queries          (ext4_host.gpr)
+#    * ESP32S3.Ext4.Superblock / Inode / Group_Desc -- metadata Decode/Encode (ext4_host.gpr)
 #    * Modbus                -- Modbus-TCP wire framing        (modbus_slave_host.gpr)
 #    * ESP32S3.Endian        -- LE/BE byte join/split          (endian_host.gpr)
 #
@@ -39,7 +39,7 @@ prove () {  #  $1 = project file, $2 = label
    echo
 }
 
-prove "$T/ext4_host/ext4_host.gpr"                 "ext4 byte helpers + CRC32C + Superblock"
+prove "$T/ext4_host/ext4_host.gpr"                 "ext4 byte helpers + CRC32C + Superblock/Inode/Group_Desc"
 prove "$T/modbus_slave_host/modbus_slave_host.gpr" "Modbus framing"
 prove "$T/endian_host/endian_host.gpr"             "Endian join/split"
 

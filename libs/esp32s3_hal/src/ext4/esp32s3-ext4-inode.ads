@@ -8,7 +8,7 @@ use type Interfaces.Unsigned_32;
 --  classic block map (12 direct + 3 indirect pointers) or, when EXTENTS_FL is
 --  set, the root of an extent tree (Phase 2); the block-map facade decides.
 
-package ESP32S3.Ext4.Inode is
+package ESP32S3.Ext4.Inode with SPARK_Mode => On is
 
    type Info is record
       Mode       : U16 := 0;
@@ -36,7 +36,7 @@ package ESP32S3.Ext4.Inode is
 
    --  Read inode N (>= 1).
    procedure Read (V : in out Volume.Context; N : Inode_Number; I : out Info)
-   with Pre => N >= 1;
+   with Pre => N >= 1, SPARK_Mode => Off;
 
    --  Write inode N's modelled fields (mode/size/flags/links/i_blocks/i_block).
    --  Fresh zero-initialises the whole inode first (for a freshly-allocated one);
@@ -44,11 +44,11 @@ package ESP32S3.Ext4.Inode is
    --  when metadata_csum is in effect.
    procedure Write
      (V : in out Volume.Context; N : Inode_Number; I : Info; Fresh : Boolean := False)
-   with Pre => N >= 1;
+   with Pre => N >= 1, SPARK_Mode => Off;
 
    --  Mark inode N as deleted on disk (links_count := 0, dtime := nonzero) so
    --  e2fsck treats the now-free inode as a clean deletion.
    procedure Mark_Deleted (V : in out Volume.Context; N : Inode_Number)
-   with Pre => N >= 1;
+   with Pre => N >= 1, SPARK_Mode => Off;
 
 end ESP32S3.Ext4.Inode;

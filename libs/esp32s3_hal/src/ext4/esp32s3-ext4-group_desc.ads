@@ -5,7 +5,7 @@ with ESP32S3.Ext4.Volume;
 --  (the ext4 "64bit" feature).  The table starts in the block right after the
 --  superblock block (First_Data_Block + 1).
 
-package ESP32S3.Ext4.Group_Desc is
+package ESP32S3.Ext4.Group_Desc with SPARK_Mode => On is
 
    type Desc is record
       Block_Bitmap : Block_Number := 0;
@@ -17,11 +17,13 @@ package ESP32S3.Ext4.Group_Desc is
    end record;
 
    --  Read group G's descriptor.
-   procedure Read (V : in out Volume.Context; Group : U32; D : out Desc);
+   procedure Read (V : in out Volume.Context; Group : U32; D : out Desc)
+   with SPARK_Mode => Off;
 
    --  Write group G's free counts + used-dirs back (locations are untouched).
    --  Only valid on a filesystem without metadata_csum (no bg_checksum recompute).
-   procedure Write (V : in out Volume.Context; Group : U32; D : Desc);
+   procedure Write (V : in out Volume.Context; Group : U32; D : Desc)
+   with SPARK_Mode => Off;
 
    --  Block number at which the group-descriptor table starts.
    function Table_Start (V : Volume.Context) return Block_Number

@@ -22,6 +22,8 @@ Alire toolchain (`~/.alire/bin/gnatprove`).
 | `ESP32S3.Ext4` | `Get_*`/`Put_*` byte serialization helpers | `ext4_host.gpr` |
 | `ESP32S3.Ext4.CRC32C` | ext4 metadata checksum (Castagnoli) | `ext4_host.gpr` |
 | `ESP32S3.Ext4.Superblock` | superblock `Encode` + queries (I/O ops `Off`) | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Inode` | inode `Decode`/`Encode` + queries (I/O ops `Off`) | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Group_Desc` | group-descriptor `Decode`/`Encode` (I/O ops `Off`) | `ext4_host.gpr` |
 | `Modbus` | Modbus-TCP wire framing (MBAP + U16 pack/unpack) | `modbus_slave_host.gpr` |
 | `ESP32S3.Endian` | LE/BE byte join/split primitives | `endian_host.gpr` |
 
@@ -64,13 +66,28 @@ SPARK could not discharge an `Off + N <= B'Length` precondition. Capping the ind
 clean `Off <= B'Length - N` preconditions on `Get_*`/`Put_*` discharge. The change is
 source-compatible (whole HAL compiles; ext4 host harness e2fsck-CLEAN unchanged).
 
+## The factoring pattern (applied to superblock / inode / group_desc)
+
+Each fixed-layout metadata serializer had its buffer<->record step embedded *inside* an
+I/O op (`Read`/`Write` over `Block_Cache`). The pattern that proves them:
+
+1. Extract a pure `Decode (Raw) return Info` and `Encode (Info, Raw)` (offset-bounded
+   `Pre => Raw'Length >= N`) from the I/O op; the op then just does I/O + calls them.
+2. Mark the package `SPARK_Mode => On`, and the ops that take `Volume.Context` /
+   `Block_Dev.Device` or `raise` (`Read`/`Write`/`Locate`/`Verify_Csum` …)
+   `SPARK_Mode => Off`.
+3. Nested closure helpers over the buffer (group_desc's `Ptr`/`Cnt`) need their own
+   offset `Pre` too.
+
+This is behaviour-neutral (ext4 host harness e2fsck-CLEAN throughout) and found a real
+bug in `superblock` (the absolute-vs-`Buf'First` CRC slice).
+
 ## Remaining ext4 (next passes)
 
-`inode`, `group_desc`, and `dir` embed their serialization *inside* the I/O ops
-(`Read`/`Write` over `Block_Cache`), so only small pure helpers are separately provable
-today. Proving their encode/decode means first factoring the pure buffer<->record step
-out of the I/O op (as `superblock` already has via `Encode`), then applying the same
-`SPARK_Mode => Off` boundary on the I/O. Tractable, incremental, one serializer at a time.
+`dir` (variable-length directory entries — record iteration, not a fixed serializer),
+`block_map`/`file` (extent + indirect-block math over I/O), and `bitmap` are the next
+targets — larger because their logic interleaves with I/O and variable-length walking
+rather than a straight fixed-offset record. Same factoring pattern, more per unit.
 
 The HAL-wide `Pre`/`Post` contracts (see the driver specs) use the same syntax
 SPARK consumes, so they are the foundation this proof surface builds on.
