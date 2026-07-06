@@ -1,6 +1,6 @@
 with Interfaces; use Interfaces;
 
-package body ESP32S3.Ext4.CRC32C is
+package body ESP32S3.Ext4.CRC32C with SPARK_Mode => On is
 
    Poly : constant U32 := 16#82F6_3B78#;   --  Castagnoli polynomial, reflected
 
