@@ -1,11 +1,12 @@
 with Interfaces; use Interfaces;
 with ESP32S3.Ext4.CRC32C;
 
-package body ESP32S3.Ext4.Superblock is
+package body ESP32S3.Ext4.Superblock with SPARK_Mode => On is
 
    Magic : constant U16 := 16#EF53#;
 
-   procedure Read (Dev : ESP32S3.Block_Dev.Device; SB : out Info) is
+   procedure Read (Dev : ESP32S3.Block_Dev.Device; SB : out Info)
+     with SPARK_Mode => Off is
       --  The superblock lives at byte offset 1024 = sectors 2 and 3.
       Buf : Byte_Array (0 .. 1023);
       Sec : ESP32S3.Block_Dev.Sector;
@@ -117,11 +118,14 @@ package body ESP32S3.Ext4.Superblock is
       end if;
       if SB.Has_Csum then
          Put_U32
-           (Buf, Base + 16#3FC#, CRC32C.Update (16#FFFF_FFFF#, Buf (Base .. Base + 16#3FB#)));
+           (Buf, Base + 16#3FC#,
+            CRC32C.Update
+              (16#FFFF_FFFF#, Buf (Buf'First + Base .. Buf'First + Base + 16#3FB#)));
       end if;
    end Encode;
 
-   procedure Sync (Dev : ESP32S3.Block_Dev.Device; SB : Info) is
+   procedure Sync (Dev : ESP32S3.Block_Dev.Device; SB : Info)
+     with SPARK_Mode => Off is
       Buf : Byte_Array (0 .. 1023);
       Sec : ESP32S3.Block_Dev.Sector;
    begin
@@ -138,7 +142,8 @@ package body ESP32S3.Ext4.Superblock is
       ESP32S3.Block_Dev.Write_Sector (Dev, 3, Sec);
    end Sync;
 
-   procedure Require_Supported (SB : Info; Handled : U32) is
+   procedure Require_Supported (SB : Info; Handled : U32)
+     with SPARK_Mode => Off is
    begin
       if (SB.Feature_Incompat and not Handled) /= 0 then
          raise Unsupported_Feature

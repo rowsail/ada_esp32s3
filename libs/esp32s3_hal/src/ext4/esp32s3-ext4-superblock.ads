@@ -7,7 +7,7 @@ use type Interfaces.Unsigned_32;
 --  device before the block cache exists (the cache needs the block size from
 --  here).  Owns the on-disk `ext4_super_block`.
 
-package ESP32S3.Ext4.Superblock is
+package ESP32S3.Ext4.Superblock with SPARK_Mode => On is
 
    type Info is record
       Block_Size        : Natural := 1024;
@@ -61,11 +61,13 @@ package ESP32S3.Ext4.Superblock is
    is ((SB.Feature_Compat and Compat_Has_Journal) /= 0);
 
    --  Read + validate the superblock from Dev (raises Corrupt on a bad magic).
-   procedure Read (Dev : ESP32S3.Block_Dev.Device; SB : out Info);
+   procedure Read (Dev : ESP32S3.Block_Dev.Device; SB : out Info)
+   with SPARK_Mode => Off;   --  block-device I/O + raises on corrupt data
 
    --  Write SB's free-block / free-inode counts back to the on-disk superblock
    --  (and refresh its checksum when metadata_csum is in effect).
-   procedure Sync (Dev : ESP32S3.Block_Dev.Device; SB : Info);
+   procedure Sync (Dev : ESP32S3.Block_Dev.Device; SB : Info)
+   with SPARK_Mode => Off;   --  block-device I/O
 
    --  The filesystem block that holds the superblock, and the SB's offset within
    --  it (the SB lives at byte 1024: block 1 for 1 KiB blocks, else block 0).
@@ -78,9 +80,10 @@ package ESP32S3.Ext4.Superblock is
    --  Base, refreshing the SB checksum -- for journaling the SB as a block.  Buf
    --  must already hold the current on-disk superblock at [Base .. Base+1023].
    procedure Encode (SB : Info; Buf : in out Byte_Array; Base : Natural)
-   with Pre => Base + 1024 <= Buf'Length;
+   with Pre => Base <= Buf'Length - 1024;
 
    --  Raise Unsupported_Feature for any INCOMPAT bit outside Handled.
-   procedure Require_Supported (SB : Info; Handled : U32);
+   procedure Require_Supported (SB : Info; Handled : U32)
+   with SPARK_Mode => Off;   --  a validation gate: raises on unsupported features
 
 end ESP32S3.Ext4.Superblock;

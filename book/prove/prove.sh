@@ -11,8 +11,11 @@
 #  its spec and body; GNATprove then analyses it (and only it) automatically.
 #
 #  Currently proven (silver, 0 unproved checks):
-#    * ESP32S3.Ext4.CRC32C   -- ext4 metadata checksum        (ext4_host.gpr)
+#    * ESP32S3.Ext4          -- Get_*/Put_* byte serialization helpers (ext4_host.gpr)
+#    * ESP32S3.Ext4.CRC32C   -- ext4 metadata checksum                 (ext4_host.gpr)
+#    * ESP32S3.Ext4.Superblock -- superblock Encode + queries          (ext4_host.gpr)
 #    * Modbus                -- Modbus-TCP wire framing        (modbus_slave_host.gpr)
+#    * ESP32S3.Endian        -- LE/BE byte join/split          (endian_host.gpr)
 #
 #  gnatprove is provided by the Alire toolchain (~/.alire/bin/gnatprove).
 export PATH="$HOME/.alire/bin:$PATH"
@@ -23,7 +26,7 @@ fail=0
 prove () {  #  $1 = project file, $2 = label
    echo "=== prove: $2 ==="
    local out
-   out="$(gnatprove -P "$1" --level=2 --report=fail -j0 --output=oneline 2>&1)"
+   out="$(gnatprove -P "$1" --level=1 --prover=z3 --timeout=10 -j0 --report=fail --output=oneline 2>&1)"
    if echo "$out" | grep -qiE "medium:|high:|: *error:"; then
       echo "$out" | grep -iE "medium:|high:|: *error:"
       fail=1
@@ -36,7 +39,7 @@ prove () {  #  $1 = project file, $2 = label
    echo
 }
 
-prove "$T/ext4_host/ext4_host.gpr"                 "ext4 CRC32C"
+prove "$T/ext4_host/ext4_host.gpr"                 "ext4 byte helpers + CRC32C + Superblock"
 prove "$T/modbus_slave_host/modbus_slave_host.gpr" "Modbus framing"
 prove "$T/endian_host/endian_host.gpr"             "Endian join/split"
 

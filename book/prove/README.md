@@ -19,9 +19,16 @@ Alire toolchain (`~/.alire/bin/gnatprove`).
 
 | Unit | What | Project |
 |------|------|---------|
+| `ESP32S3.Ext4` | `Get_*`/`Put_*` byte serialization helpers | `ext4_host.gpr` |
 | `ESP32S3.Ext4.CRC32C` | ext4 metadata checksum (Castagnoli) | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Superblock` | superblock `Encode` + queries (I/O ops `Off`) | `ext4_host.gpr` |
 | `Modbus` | Modbus-TCP wire framing (MBAP + U16 pack/unpack) | `modbus_slave_host.gpr` |
 | `ESP32S3.Endian` | LE/BE byte join/split primitives | `endian_host.gpr` |
+
+Two latent bugs found by proving these: the `Put_MBAP` overflow (above), and
+`Superblock.Encode` checksumming an *absolute* `Buf (Base .. Base + …)` slice where
+the writers use `Buf'First + offset` — wrong for a non-zero-based buffer, now
+`Buf'First`-relative.
 
 Proving `Modbus` already paid for itself: GNATprove found that `Put_MBAP` could
 overflow on `PDU_Len + 1` for an unbounded `PDU_Len`, which drove the
@@ -47,17 +54,23 @@ construction and are excluded, not "not yet done":
   `Device_Error`), which is why the ext4 *serializers* above `crc32c` need SPARK_Mode
   boundaries drawn around their I/O before they can be proven — a larger, separate effort.
 
-## Next effort: the ext4 serializers (scoped, not done)
+## The constrained-index refactor (done)
 
-Proving `superblock`/`inode`/`dir` encode-decode is tractable but non-trivial. The
-pure `Encode` and `Has_*`/`Is_64Bit` operations separate cleanly from the `Read`/`Sync`
-I/O (mark those `SPARK_Mode => Off`). The real work is the shared `ESP32S3.Ext4`
-byte helpers (`Get_U32`/`Put_U32` etc.): `Byte_Array` is `array (Natural range <>)`, so
-its `'Length` can be 2**31 and overflows `Integer` — SPARK cannot discharge an
-`Off + N <= B'Length` precondition, and the `B'Last - B'First` reformulation then hits a
-base-type lower-bound wall. The fix is a **constrained buffer index subtype** (ext4
-buffers are <= one block) or a `Byte_Array` type predicate bounding `'Last`, after which
-the offset preconditions prove and cascade to the serializers. Deferred as its own pass.
+The enabler for all the ext4 proofs: `ESP32S3.Ext4.Byte_Array` was
+`array (Natural range <>)`, so its `'Length` could be 2**31 and overflowed `Integer` —
+SPARK could not discharge an `Off + N <= B'Length` precondition. Capping the index
+(`subtype Buffer_Index is Natural range 0 .. 2**24 - 1`; ext4 works one block at a time,
+16 MiB is far above any real buffer) makes `'Length` provably fit an `Integer`, so the
+clean `Off <= B'Length - N` preconditions on `Get_*`/`Put_*` discharge. The change is
+source-compatible (whole HAL compiles; ext4 host harness e2fsck-CLEAN unchanged).
+
+## Remaining ext4 (next passes)
+
+`inode`, `group_desc`, and `dir` embed their serialization *inside* the I/O ops
+(`Read`/`Write` over `Block_Cache`), so only small pure helpers are separately provable
+today. Proving their encode/decode means first factoring the pure buffer<->record step
+out of the I/O op (as `superblock` already has via `Encode`), then applying the same
+`SPARK_Mode => Off` boundary on the I/O. Tractable, incremental, one serializer at a time.
 
 The HAL-wide `Pre`/`Post` contracts (see the driver specs) use the same syntax
 SPARK consumes, so they are the foundation this proof surface builds on.
