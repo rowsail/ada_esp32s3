@@ -1,0 +1,19 @@
+--  Native project for SPARK-proving the pure DNS response parser
+--  (DNS_Client.Parse.Find_A_Record and helpers) -- no run-time errors on any
+--  malformed or malicious DNS reply (A-record extraction incl. name-compression
+--  pointers).  Only the parent DNS_Client spec is needed to typecheck the child
+--  (GNAT.Sockets comes from the native runtime); no sockets are analysed.  No main.
+project Dns_Prove is
+   for Source_Dirs use ("../../src");
+   for Object_Dir use "obj";
+   for Source_Files use
+     ("dns_client.ads",
+      "dns_client-parse.ads",
+      "dns_client-parse.adb",
+      "esp32s3.ads",
+      "esp32s3-endian.ads",
+      "esp32s3-endian.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end Dns_Prove;

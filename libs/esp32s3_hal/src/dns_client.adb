@@ -1,7 +1,7 @@
 with Ada.Streams;  use Ada.Streams;
 with GNAT.Sockets; use GNAT.Sockets;
 with Interfaces;   use Interfaces;
-with ESP32S3.Endian;
+with DNS_Client.Parse;
 
 package body DNS_Client is
 
@@ -28,9 +28,9 @@ package body DNS_Client is
       From  : aliased Sock_Addr_Type;
       Q_Id  : constant Unsigned_16 := Next_Id;
 
-      --  Decimal image of E with no leading blank ("84", not " 84").
-      function Img (Element : Stream_Element) return String is
-         Image_Str : constant String := Integer'Image (Integer (Element));
+      --  Decimal image of a byte with no leading blank ("84", not " 84").
+      function Img (Octet : Unsigned_8) return String is
+         Image_Str : constant String := Integer'Image (Integer (Octet));
       begin
          return Image_Str (Image_Str'First + 1 .. Image_Str'Last);
       end Img;
@@ -75,30 +75,6 @@ package body DNS_Client is
          QLen := Pos - Query'First;
       end Build_Query;
 
-      --  Advance Pos past a DNS name (labels, or a 0xC0 compression pointer).
-      procedure Skip_Name (Pos : in out Stream_Element_Offset) is
-         Len : Integer;
-      begin
-         loop
-            exit when Pos > RLast;   --  truncated / malformed: stop here rather
-            --  than read stale bytes or walk off Resp
-            Len := Integer (Resp (Pos));
-            if Len = 0 then
-               Pos := Pos + 1;
-               exit;
-            elsif Len >= 16#C0# then
-               --  pointer: 2 bytes, name ends here
-               Pos := Pos + 2;
-               exit;
-            else
-               Pos := Pos + 1 + Stream_Element_Offset (Len);
-            end if;
-         end loop;
-      end Skip_Name;
-
-      function U16 (Pos : Stream_Element_Offset) return Integer
-      is (Integer
-            (ESP32S3.Endian.Join_BE16 (Unsigned_8 (Resp (Pos)), Unsigned_8 (Resp (Pos + 1)))));
    begin
       Addr := Any_Inet_Addr;
       Next_Id := Next_Id + 1;             --  advance for the next caller
@@ -124,52 +100,41 @@ package body DNS_Client is
          Found : Boolean := False;
       begin
          --  Reject a datagram that isn't from the server we asked, on port 53,
-         --  echoing our transaction id, and long enough to hold a DNS header.
+         --  and long enough to hold a DNS header.  (The transaction-id echo is
+         --  checked inside the parser, against the untrusted header bytes.)
          if From.Addr /= Server
            or else From.Port /= 53
            or else RLast < Resp'First + 11
-           or else U16 (Resp'First) /= Integer (Q_Id)
          then
             Close_Socket (Sock);
             return False;
          end if;
 
+         --  Copy exactly the received bytes into the parser's bounded buffer
+         --  (index 0 .. RLast) and let the SPARK-proven Find_A_Record walk the
+         --  answer section -- it cannot overrun or hang on any malformed reply.
          declare
-            AnCount : constant Integer := U16 (Resp'First + 6);   --  answer count
-            Pos     : Stream_Element_Offset := Resp'First + 12;   --  past the header
+            Received : DNS_Client.Parse.Byte_Array (0 .. Natural (RLast));
+            Result   : DNS_Client.Parse.A_Record;
          begin
-            Skip_Name (Pos);              --  skip the question's QNAME
-            Pos := Pos + 4;               --   + QTYPE + QCLASS
-            for A in 1 .. AnCount loop
-               Skip_Name (Pos);           --  answer NAME (usually a pointer)
-               --  Bound AFTER Skip_Name: it can advance Pos past RLast, and the
-               --  fixed 10-byte RR header (type/class/ttl/rdlength) plus its
-               --  RDATA must all lie within the received bytes before we index.
-               exit when Pos + 10 > RLast;
-               declare
-                  RRType : constant Integer := U16 (Pos);
-                  RDLen  : constant Integer := U16 (Pos + 8);
-                  RData  : constant Stream_Element_Offset := Pos + 10;
-               begin
-                  exit when RData + Stream_Element_Offset (RDLen) - 1 > RLast;
-                  if RRType = 1 and then RDLen = 4 then
-                     --  an A record
-                     Addr :=
-                       Inet_Addr
-                         (Img (Resp (RData))
-                          & "."
-                          & Img (Resp (RData + 1))
-                          & "."
-                          & Img (Resp (RData + 2))
-                          & "."
-                          & Img (Resp (RData + 3)));
-                     Found := True;
-                     exit;
-                  end if;
-                  Pos := RData + Stream_Element_Offset (RDLen);
-               end;
+            for I in Received'Range loop
+               Received (I) := Unsigned_8 (Resp (Stream_Element_Offset (I)));
             end loop;
+            Result := DNS_Client.Parse.Find_A_Record (Received, Q_Id);
+            if Result.Found then
+               Addr :=
+                 Inet_Addr
+                   (Img (Result.B0)
+                    & "."
+                    & Img (Result.B1)
+                    & "."
+                    & Img (Result.B2)
+                    & "."
+                    & Img (Result.B3));
+               Found := True;
+            end if;
          end;
+
          Close_Socket (Sock);
          return Found;
       exception

@@ -13,7 +13,7 @@ package body ESP32S3.AES.GCM is
    --  (NIST SP 800-38D, the bit-by-bit "shift-right" algorithm).
    ---------------------------------------------------------------------------
 
-   function GF_Mul (X, H : Blk) return Blk is
+   function GF_Mul (X, H : Blk) return Blk with SPARK_Mode => On is
       Z   : Blk := (others => 0);   --  spec Z: the running GF(2^128) product
       V   : Blk := H;               --  spec V: H shifted right one bit per step
       Lsb : U8;                     --  bit shifted out of V this step
@@ -45,7 +45,7 @@ package body ESP32S3.AES.GCM is
    end GF_Mul;
 
    --  Y := (Y xor B) * H
-   procedure GHASH_Block (Y : in out Blk; B : Blk; H : Blk) is
+   procedure GHASH_Block (Y : in out Blk; B : Blk; H : Blk) with SPARK_Mode => On is
    begin
       for J in Blk'Range loop
          Y (J) := Y (J) xor B (J);
@@ -54,7 +54,9 @@ package body ESP32S3.AES.GCM is
    end GHASH_Block;
 
    --  Fold Data into Y in 16-byte blocks, zero-padding any final partial block.
-   procedure GHASH_Bytes (Y : in out Blk; Data : Byte_Array; H : Blk) is
+   procedure GHASH_Bytes (Y : in out Blk; Data : Byte_Array; H : Blk)
+     with SPARK_Mode => On, Pre => Data'Length <= 2 ** 24
+   is
       Off : Natural := 0;
       B   : Blk;
    begin
@@ -69,7 +71,9 @@ package body ESP32S3.AES.GCM is
    end GHASH_Bytes;
 
    --  The trailing length block: bit-lengths of AAD and ciphertext, 64-bit BE each.
-   procedure GHASH_Lengths (Y : in out Blk; AAD_Len, C_Len : Natural; H : Blk) is
+   procedure GHASH_Lengths (Y : in out Blk; AAD_Len, C_Len : Natural; H : Blk)
+     with SPARK_Mode => On
+   is
       L      : Blk := (others => 0);
       A_Bits : constant Interfaces.Unsigned_64 := Interfaces.Unsigned_64 (AAD_Len) * 8;
       C_Bits : constant Interfaces.Unsigned_64 := Interfaces.Unsigned_64 (C_Len) * 8;
@@ -86,7 +90,7 @@ package body ESP32S3.AES.GCM is
    ---------------------------------------------------------------------------
 
    --  Increment the low 32 bits (bytes 12..15, big-endian) of a counter block.
-   procedure Inc32 (CB : in out Blk) is
+   procedure Inc32 (CB : in out Blk) with SPARK_Mode => On is
    begin
       for J in reverse 12 .. 15 loop
          CB (J) := CB (J) + 1;

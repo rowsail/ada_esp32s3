@@ -1,0 +1,17 @@
+--  Native project for SPARK-proving the pure software half of AES-GCM: the
+--  GHASH GF(2^128) multiply/fold and the CTR counter increment.  The AES block
+--  cipher itself is the ESP32-S3 hardware accelerator (Encrypt_ECB) and stays
+--  SPARK_Mode => Off; only the pure GF/byte math is on the proof surface.  No
+--  main.  Depends only on Interfaces, so it is host-portable.
+project AES_GCM_Prove is
+   for Source_Dirs use ("../../src");
+   for Object_Dir use "obj";
+   for Source_Files use
+     ("esp32s3.ads",
+      "esp32s3-aes.ads",
+      "esp32s3-aes-gcm.ads",
+      "esp32s3-aes-gcm.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end AES_GCM_Prove;

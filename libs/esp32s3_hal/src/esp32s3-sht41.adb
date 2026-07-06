@@ -21,7 +21,7 @@ package body ESP32S3.SHT41 is
    --  CRC-8 (polynomial 0x31, init 0xFF) over the two data bytes of a word.
    ---------------------------------------------------------------------------
 
-   function CRC8 (Hi, Lo : Byte) return Byte is
+   function CRC8 (Hi, Lo : Byte) return Byte with SPARK_Mode => On is
       Crc : Unsigned_8 := 16#FF#;
 
       procedure Add (Data_Byte : Unsigned_8) is
@@ -47,12 +47,14 @@ package body ESP32S3.SHT41 is
    ---------------------------------------------------------------------------
 
    function Ticks (Hi, Lo : Byte) return LLI
-   is (LLI (Hi) * 256 + LLI (Lo));
+   is (LLI (Hi) * 256 + LLI (Lo))
+   with SPARK_Mode => On;
 
    function To_Temp_MC (Hi, Lo : Byte) return Integer
-   is (Integer (-45_000 + (175_000 * Ticks (Hi, Lo)) / 65_535));
+   is (Integer (-45_000 + (175_000 * Ticks (Hi, Lo)) / 65_535))
+   with SPARK_Mode => On;
 
-   function To_Hum_MRH (Hi, Lo : Byte) return Integer is
+   function To_Hum_MRH (Hi, Lo : Byte) return Integer with SPARK_Mode => On is
       Milli_RH : LLI := -6_000 + (125_000 * Ticks (Hi, Lo)) / 65_535;
    begin
       if Milli_RH < 0 then
@@ -86,14 +88,20 @@ package body ESP32S3.SHT41 is
    end Transact;
 
    --  True iff every 3-byte (word + CRC) group in Data checks out.
-   function CRC_Good (Data : Byte_Array) return Boolean is
-      I : Natural := Data'First;
+   function CRC_Good (Data : Byte_Array) return Boolean
+     with SPARK_Mode => On,
+          Pre => Data'First >= 0 and then Data'Last <= Natural'Last - 3
+   is
+      Groups : constant Natural := Data'Length / 3;   --  whole 3-byte groups
    begin
-      while I + 2 <= Data'Last loop
-         if CRC8 (Data (I), Data (I + 1)) /= Data (I + 2) then
-            return False;
-         end if;
-         I := I + 3;
+      for K in 0 .. Groups - 1 loop
+         declare
+            Base : constant Natural := Data'First + K * 3;   --  group start
+         begin
+            if CRC8 (Data (Base), Data (Base + 1)) /= Data (Base + 2) then
+               return False;
+            end if;
+         end;
       end loop;
       return True;
    end CRC_Good;

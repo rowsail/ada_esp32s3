@@ -56,7 +56,9 @@ package body ESP32S3.SD_SPI is
    --  CRC7 of a command frame's first 5 bytes, returned already shifted into the
    --  frame's trailing byte (<<1 | stop bit).  Required for CMD0/CMD8; harmless
    --  (ignored by the card) for the rest, which run with CRC checking off.
-   function CRC7_Frame (Cmd : Unsigned_8; Arg : Unsigned_32) return Unsigned_8 is
+   function CRC7_Frame (Cmd : Unsigned_8; Arg : Unsigned_32) return Unsigned_8
+     with SPARK_Mode => On
+   is
       Crc : Unsigned_8 := 0;
 
       procedure Add (B : Unsigned_8) is

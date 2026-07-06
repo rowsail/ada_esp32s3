@@ -46,11 +46,22 @@ prove () {  #  $1 = project file, $2 = label
 prove "$T/ext4_host/ext4_host.gpr"                   "ext4 (helpers/CRC32C/Superblock/Inode/Group_Desc/Bitmap/Block_Map/Dir/File)"
 prove "$T/x509_prove/x509_prove.gpr"                 "X509 DER + certificate parser (untrusted input)"
 prove "$T/nmea_prove/nmea_prove.gpr"                 "NMEA GPS-sentence parser (untrusted input)"
+prove "$T/dns_prove/dns_prove.gpr"                   "DNS response parser (untrusted input)"
 prove "$T/modbus_slave_host/modbus_slave_host.gpr"   "Modbus slave (framing + Process)"
 prove "$T/modbus_master_host/modbus_master_host.gpr" "Modbus master (PDU build/parse)"
 prove "$T/ntp_prove/ntp_prove.gpr"                   "NTP To_UTC civil-date math"
 prove "$T/net_routes_prove/net_routes_prove.gpr"     "Net_Routes longest-prefix match"
+prove "$T/aes_gcm_prove/aes_gcm_prove.gpr"           "AES-GCM GHASH GF(2^128) + CTR"
+prove "$T/sht41_prove/sht41_prove.gpr"               "SHT41 CRC-8 + datasheet conversions"
+prove "$T/sd_spi_prove/sd_spi_prove.gpr"             "SD_SPI CRC-7 command frame"
 prove "$T/endian_host/endian_host.gpr"               "Endian join/split"
+
+#  Cert chain-walking (libs/tls/chain_verify) is also proven silver, but via the
+#  CROSS tls.gpr (target xtensa) + the SPARKNaCl closure -- slow to re-verify, so it
+#  is not in this fast native pass.  To check it:
+#    source export.sh; export ESP32S3_RTS_PROFILE=embedded \
+#      XTENSA_GNU_CONFIG=.../xtensa_esp32s3.so
+#    gnatprove -P libs/tls/tls.gpr --level=1 --prover=z3 -j0 -u chain_verify.adb
 
 echo "PROVE_EXIT: $fail"
 exit $fail

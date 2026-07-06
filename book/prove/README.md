@@ -30,15 +30,22 @@ Alire toolchain (`~/.alire/bin/gnatprove`).
 | `ESP32S3.Ext4.File` | EOF-clamped read/chunk size math | `ext4_host.gpr` |
 | `X509.DER` + `X509` | DER TLV reader **and the certificate parser** — **untrusted input** | `x509_prove.gpr` |
 | `ESP32S3.GPS.NMEA` | NMEA-0183 GPS-sentence parser — **untrusted input** | `nmea_prove.gpr` |
+| `DNS_Client.Parse` | DNS response parser incl. name-compression — **untrusted input** | `dns_prove.gpr` |
+| `Chain_Verify` | cert chain-walking (sig checks `Off`) — **untrusted input** | `tls.gpr` (cross) |
 | `Modbus` / `.Slave` / `.Master` | wire framing, slave `Process` dispatch, master PDU build/parse | `modbus_*_host.gpr` |
 | `NTP_Client.To_UTC` | SNTP → UTC civil-date math | `ntp_prove.gpr` |
 | `Net_Routes` | IPv4 longest-prefix-match routing | `net_routes_prove.gpr` |
+| `ESP32S3.AES.GCM` | GHASH GF(2^128) multiply + CTR increment (block cipher HW `Off`) | `aes_gcm_prove.gpr` |
+| `ESP32S3.SHT41` | CRC-8 + datasheet integer conversions | `sht41_prove.gpr` |
+| `ESP32S3.SD_SPI` | CRC-7 command-frame checksum | `sd_spi_prove.gpr` |
 | `ESP32S3.Endian` | LE/BE byte join/split primitives | `endian_host.gpr` |
 
-**~650 run-time checks discharged, 0 unproved.** The **untrusted-input parsers** are the
-highest-value proofs — `X509` (certificates), `NMEA` (GPS sentences), and the `Modbus`
-slave/master (peer PDUs) all now provably have **no buffer overrun or overflow on any
-malformed or malicious input**, a real security property rather than a crash guard.
+**~740 run-time checks discharged, 0 unproved.** The **untrusted-input parsers** are the
+highest-value proofs — `X509` (certificates), `NMEA` (GPS sentences), `DNS` (resolver
+replies, incl. self-referential name-compression pointers), `Chain_Verify` (cert chains),
+and the `Modbus` slave/master (peer PDUs) all now provably have **no buffer overrun,
+overflow, or infinite loop on any malformed or malicious input** — a real security
+property rather than a crash guard.
 
 ### Bugs / hardening found by proving
 
@@ -48,6 +55,13 @@ malformed or malicious input**, a real security property rather than a crash gua
   writers use `Buf'First + offset` — wrong for a non-zero-based buffer; now `Buf'First`-relative.
 - `X509.Host_Matches`/`Name_Matches` could index out of range on a hostile `Certificate`
   whose SAN slices don't match the buffer or whose `SAN_Count > Max_SAN` — now guarded.
+- `Chain_Verify.Validate` dereferenced `Chain(I).Data.all` with no null/empty guard — a
+  caller-supplied chain with a null or zero-length cert `Data` would crash; now treated as
+  `Malformed`.
+- `SHT41.CRC_Good`'s `while I + 2 <= Data'Last` overflowed in the guard and underflowed on
+  an empty buffer — rewritten as a group-count loop.
+
+Five real defects surfaced by proving — all on the untrusted-input / malformed-input paths.
 
 ## Adding a unit
 
