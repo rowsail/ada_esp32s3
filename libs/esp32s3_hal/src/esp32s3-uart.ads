@@ -147,9 +147,14 @@ package ESP32S3.UART is
    with Pre => Is_Held (S);
 
    --  Re-route the held port's lines to physical pads (same semantics as
-   --  Configure's pin parameters; sets the FULL flow-control + inversion state,
-   --  so a reconfigure without a line also turns that line/flow off).  ALL
-   --  optional.
+   --  Configure's pin parameters).  ALL optional.
+   --
+   --  A named output line MOVES: the pad it used to drive is released back to a
+   --  pulled-up input, so it stops transmitting.  (The GPIO matrix selects an
+   --  output per PAD, not per signal, so without that release the old pad would
+   --  keep driving TXD alongside the new one.)  No_Pin means "leave this line's
+   --  routing alone", which is what Acquire's defaults rely on -- but it still
+   --  turns that line's FLOW CONTROL off, since the enable bits are set in full.
    --  The *_Invert flags set each line's polarity (see Set_Inversion); default
    --  False = active-high / standard idle-high UART.
    procedure Configure_Pins

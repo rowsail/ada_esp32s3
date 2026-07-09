@@ -254,14 +254,43 @@ package body ESP32S3.I2C.Engine is
    -- Configure_Pins --
    --------------------
 
+   --  Which pad each host's SCL/SDA currently drive.  OUT_SEL is per PAD, not per
+   --  signal, so re-routing a host to different pads would otherwise leave the old
+   --  pads still driven by the controller -- two live SDA lines on one bus.
+   Driven_Scl : array (I2C_Host) of G.Optional_Pin := (others => G.No_Pin);
+   Driven_Sda : array (I2C_Host) of G.Optional_Pin := (others => G.No_Pin);
+
+   --  Hand a pad back: plain GPIO (output index 256), driver off, open-drain off,
+   --  input with the pull-up -- i.e. an idle, released I2C line.  GPIO.Configure
+   --  does not touch PAD_DRIVER, so clear it here.
+   procedure Release_Pad (Pad : G.Optional_Pin) is
+      use type ESP32S3.GPIO.Pad_Number;
+   begin
+      if Pad /= G.No_Pin then
+         G.Configure (G.Pin_Id (Pad), Mode => G.Input, Pull => G.Pull_Up);
+         GR.GPIO_Periph.PIN (Natural (Pad)).PAD_DRIVER := False;
+      end if;
+   end Release_Pad;
+
    procedure Configure_Pins (B : Bus; Scl : G.Pin_Id; Sda : G.Pin_Id) is
+      use type ESP32S3.GPIO.Pad_Number;
       Host_Sigs : constant Sig := Signals (B.Host);   --  GPIO-matrix signal ids for this host
    begin
       if not B.Valid then
          return;
       end if;
+      --  Release first, so re-routing onto a pad the other line used to hold still
+      --  ends up claimed, not released.
+      if Driven_Scl (B.Host) /= Scl then
+         Release_Pad (Driven_Scl (B.Host));
+      end if;
+      if Driven_Sda (B.Host) /= Sda then
+         Release_Pad (Driven_Sda (B.Host));
+      end if;
       Route_Line (Scl, Host_Sigs.Scl);
       Route_Line (Sda, Host_Sigs.Sda);
+      Driven_Scl (B.Host) := Scl;
+      Driven_Sda (B.Host) := Sda;
    end Configure_Pins;
 
    --  How a loaded command sequence ended.  Paused = it hit an END opcode: the

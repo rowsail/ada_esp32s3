@@ -188,6 +188,44 @@ package body ESP32S3.SPI.Engine is
       end if;
    end Set_Mode;
 
+   --  Which pad each host's OUTPUT signals currently drive.  OUT_SEL is per PAD,
+   --  not per signal, so pointing a second pad at SCLK does not move SCLK: it fans
+   --  it out to both.  Acquire re-routes per device (see the spec), so without
+   --  this a second device on different pads leaves the FIRST device's clock and
+   --  data pads still toggling.  (Inputs need no table: FUNC_IN_SEL_CFG is per
+   --  SIGNAL, so re-routing MISO really moves it.)
+   Driven_Sclk : array (SPI_Host) of ESP32S3.GPIO.Optional_Pin := (others => No_Pin);
+   Driven_Mosi : array (SPI_Host) of ESP32S3.GPIO.Optional_Pin := (others => No_Pin);
+   Driven_Cs   : array (SPI_Host) of ESP32S3.GPIO.Optional_Pin := (others => No_Pin);
+
+   --  Hand a pad back: plain-GPIO output (index 256), driver off, pulled up, so it
+   --  is high-impedance to whatever else shares the net.
+   procedure Release_Pad (Pad : ESP32S3.GPIO.Optional_Pin) is
+      use type ESP32S3.GPIO.Pad_Number;
+   begin
+      if Pad /= No_Pin then
+         ESP32S3.GPIO.Configure
+           (ESP32S3.GPIO.Pin_Id (Pad),
+            Mode => ESP32S3.GPIO.Input, Pull => ESP32S3.GPIO.Pull_Up);
+      end if;
+   end Release_Pad;
+
+   --  Claim Pad for Signal, releasing whatever pad Held was driving.  Release
+   --  first, so re-claiming the SAME pad (or a single-pad self-loopback) works.
+   procedure Claim
+     (Held : in out ESP32S3.GPIO.Optional_Pin;
+      Pad  : ESP32S3.GPIO.Pin_Id;
+      Sig  : Natural)
+   is
+      use type ESP32S3.GPIO.Pad_Number;
+   begin
+      if Held /= Pad then
+         Release_Pad (Held);
+      end if;
+      Drive_Out (Pad, Sig);
+      Held := Pad;
+   end Claim;
+
    procedure Configure_Pins
      (B    : Bus;
       Sclk : ESP32S3.GPIO.Optional_Pin;
@@ -202,18 +240,19 @@ package body ESP32S3.SPI.Engine is
          return;
       end if;
       --  Each Optional_Pin that is a real pin converts to Pin_Id here (the
-      --  /= No_Pin guard guarantees the predicate holds).
+      --  /= No_Pin guard guarantees the predicate holds).  No_Pin means "leave
+      --  this line alone" -- Acquire's shared-bus default.
       if Sclk /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Sclk), Host_Sigs.Clk);
+         Claim (Driven_Sclk (B.Host), ESP32S3.GPIO.Pin_Id (Sclk), Host_Sigs.Clk);
       end if;
       if Mosi /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Mosi), Host_Sigs.Mosi_Out);
+         Claim (Driven_Mosi (B.Host), ESP32S3.GPIO.Pin_Id (Mosi), Host_Sigs.Mosi_Out);
       end if;
       if Miso /= No_Pin then
          Route_In (Host_Sigs.Miso_In, ESP32S3.GPIO.Pin_Id (Miso), As_Input => True);
       end if;
       if Cs /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Cs), Host_Sigs.Cs);
+         Claim (Driven_Cs (B.Host), ESP32S3.GPIO.Pin_Id (Cs), Host_Sigs.Cs);
       end if;
    end Configure_Pins;
 
@@ -223,7 +262,9 @@ package body ESP32S3.SPI.Engine is
       if not B.Valid then
          return;
       end if;
-      Drive_Out (Pad, Host_Sigs.Mosi_Out);
+      --  Through Claim, so a later Configure_Pins releases this pad instead of
+      --  leaving it driving MOSI.
+      Claim (Driven_Mosi (B.Host), Pad, Host_Sigs.Mosi_Out);
       Route_In (Host_Sigs.Miso_In, Pad, As_Input => False);
    end Enable_Loopback;
 

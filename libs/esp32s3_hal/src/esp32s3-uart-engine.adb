@@ -203,6 +203,25 @@ package body ESP32S3.UART.Engine is
          others => <>);
    end Route_In;
 
+   --  Which pad each port's OUTPUT signals currently drive.  OUT_SEL is per PAD,
+   --  not per signal, so pointing a second pad at TXD does not move TXD: it fans
+   --  it out to both, and the old pad keeps transmitting forever.  (Inputs need no
+   --  such table: FUNC_IN_SEL_CFG is per SIGNAL, so re-routing RX really moves it.)
+   --  Startup/reconfigure only, single-threaded -- same contract as Configure_Pins.
+   Driven_Tx  : array (UART_Port) of ESP32S3.GPIO.Optional_Pin := (others => G.No_Pin);
+   Driven_Rts : array (UART_Port) of ESP32S3.GPIO.Optional_Pin := (others => G.No_Pin);
+
+   --  Hand a pad back: point it at the plain-GPIO output (index 256), disable its
+   --  driver, and leave it pulled up -- an idle UART line, and high-impedance to
+   --  whatever else is on the net.
+   procedure Release_Pad (Pad : ESP32S3.GPIO.Optional_Pin) is
+      use type ESP32S3.GPIO.Pad_Number;
+   begin
+      if Pad /= G.No_Pin then
+         G.Configure (G.Pin_Id (Pad), Mode => G.Input, Pull => G.Pull_Up);
+      end if;
+   end Release_Pad;
+
    procedure Configure_Pins
      (B                 : Bus;
       Tx                : ESP32S3.GPIO.Optional_Pin;
@@ -218,8 +237,16 @@ package body ESP32S3.UART.Engine is
       if not B.Valid then
          return;
       end if;
+      --  A named line MOVES: release the pad it used to drive, then claim the new
+      --  one.  Release first, so Tx and Rx on the SAME pad (the single-pad
+      --  self-loopback below) still works.  No_Pin means "leave this line alone",
+      --  which is what Acquire's defaults rely on.
       if Tx /= G.No_Pin then
+         if Driven_Tx (B.Port) /= Tx then
+            Release_Pad (Driven_Tx (B.Port));
+         end if;
          Drive_Out (G.Pin_Id (Tx), Data_Sig);
+         Driven_Tx (B.Port) := Tx;
       end if;
       if Rx /= G.No_Pin then
          Route_In (Data_Sig, G.Pin_Id (Rx));
@@ -229,7 +256,11 @@ package body ESP32S3.UART.Engine is
       --  sends while the peer asserts CTS.  Configure_Pins sets the FULL flow
       --  state, so a reconfigure without these pins also turns flow control off.
       if Rts /= G.No_Pin then
+         if Driven_Rts (B.Port) /= Rts then
+            Release_Pad (Driven_Rts (B.Port));
+         end if;
          Drive_Out (G.Pin_Id (Rts), Flow_Sig);
+         Driven_Rts (B.Port) := Rts;
          B.Regs.MEM_CONF.RX_FLOW_THRHD :=
            MEM_CONF_RX_FLOW_THRHD_Field (Natural'Min (127, Natural'Max (1, Rx_Flow_Threshold)));
       end if;
