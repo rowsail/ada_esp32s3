@@ -10,6 +10,8 @@ a chapter that treats it properly, the entry points there.
   tests for an Ada implementation. This project runs them on real silicon
   (Chapter~\ref{ch:acats-sweep}).
 
+\item[ACK polling] Probing an I2C device's address until it answers. An EEPROM stops acknowledging while it programs a page, so the master polls instead of sleeping the worst case (Section~\ref{storage:eeprom}).
+
 \item[ADU] \emph{Application Data Unit} -- a complete Modbus message as it travels: the \texttt{MBAP} header (TCP) or address+CRC (RTU) wrapping a \texttt{PDU} (Chapter~\ref{ch:modbus}).
 
 \item[Alire] The Ada package manager (\texttt{alr}). It supplies the
@@ -64,6 +66,8 @@ a chapter that treats it properly, the entry points there.
 \item[ECC] \emph{Elliptic-Curve Cryptography} -- public-key cryptography over elliptic curves; smaller keys than RSA for equal strength (Chapter~\ref{ch:tls}).
 
 \item[ECDH] \emph{Elliptic-Curve Diffie--Hellman} -- ECC key agreement; \texttt{ECDHE} is its ephemeral, forward-secret form (Chapter~\ref{ch:tls}).
+
+\item[EEPROM] \emph{Electrically Erasable Programmable Read-Only Memory} -- small, byte-addressable non-volatile memory needing no erase before a write. The 24C family speaks I2C (Section~\ref{storage:eeprom}).
 
 \item[ELF] \emph{Executable and Linkable Format} -- the object/executable file format GNAT emits, converted to a flash image for the board.
 
@@ -185,6 +189,8 @@ a chapter that treats it properly, the entry points there.
 \item[restriction profile] A named bundle of \texttt{pragma Restrictions} (e.g.
   Jorvik) that the compiler enforces, trading language features for analysability
   and footprint (Chapter~\ref{ch:profiles}).
+
+\item[repeated START] A second I2C START issued without an intervening STOP, so the slave sees one command rather than two. It is how a master writes a register address and then reads that register (\texttt{ESP32S3.I2C.Write\_Read}, Section~\ref{driver:end-opcode}).
 
 \item[RFC] \emph{Request For Comments} -- the IETF document series specifying the internet protocols (TCP, TLS, DHCP, FTP\,\dots).
 

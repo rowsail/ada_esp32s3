@@ -386,6 +386,9 @@ procedure Write (S : Session; Addr : Slave_Address; Data : Byte_Array;
                  Success : out Boolean; Check_Ack : Boolean := True);
 procedure Read  (S : Session; Addr : Slave_Address; Data : out Byte_Array;
                  Success : out Boolean);
+procedure Write_Read (S : Session; Addr : Slave_Address;
+                      Tx : Byte_Array; Rx : out Byte_Array;
+                      Success : out Boolean);
 \end{lstlisting}
 
 \textbf{Parameters.}
@@ -399,11 +402,23 @@ procedure Read  (S : Session; Addr : Slave_Address; Data : out Byte_Array;
   (\texttt{Slave\_Address}).
 \item[\texttt{Data}] the bytes to write, or the \texttt{out} buffer to read into
   (\texttt{Byte\_Array}: its length sets the count).
+\item[\texttt{Tx}, \texttt{Rx}] (\texttt{Write\_Read}) the bytes to send, then the
+  buffer to read back, in one transaction.
 \item[\texttt{Success}] \texttt{out Boolean}, \texttt{True} if the slave
   acknowledged.
 \item[\texttt{Check\_Ack}] (\texttt{Write}) require an ACK on each byte; default
   \texttt{True}.
 \end{description}
+
+Payload length is not capped. The controller moves 32 bytes per FIFO load, and the
+driver refills or drains that FIFO mid-transaction without letting go of the bus.
+So a transfer of any size still reaches the wire as one \texttt{START..STOP}.
+Section~\ref{driver:end-opcode} tells that story.
+
+\texttt{Write\_Read} is the third operation, and it is not the same as a
+\texttt{Write} followed by a \texttt{Read}. It puts a \emph{repeated} START
+between the two halves, with no STOP. The slave therefore sees one command, which
+is what a ``name the register, then read it'' device expects.
 
 \lstexample{Write a register on a sensor at address \texttt{16\#68\#}.}
 \begin{lstlisting}
@@ -419,7 +434,7 @@ begin
 end I2C_Write_Reg;
 \end{lstlisting}
 
-\lstexample{Register read (write the address, then read).}
+\lstexample{Register read: name the register, then read it back.}
 \begin{lstlisting}
 with ESP32S3.I2C; use ESP32S3.I2C;
 procedure I2C_Read_Reg is
@@ -430,10 +445,15 @@ begin
    Setup (I2C0, Clock_Hz => 400_000);
    Configure_Pins (I2C0, Scl => 9, Sda => 8);
    Acquire (S, I2C0);
-   Write (S, 16#68#, (1 => 16#75#), Ok);     --  point at WHO_AM_I register
-   Read  (S, 16#68#, Who, Ok);               --  read it back
+   --  One transaction: START, 16#75#, repeated START, read, STOP.
+   Write_Read (S, 16#68#, Tx => (1 => 16#75#), Rx => Who, Success => Ok);
 end I2C_Read_Reg;
 \end{lstlisting}
+
+\noindent Two separate calls, a \texttt{Write} and then a \texttt{Read}, put a
+STOP between the register address and the data. Many parts tolerate that, and
+some do not: the STOP ends the command. Reach for \texttt{Write\_Read} whenever
+the datasheet draws a repeated START.
 
 \section{UART: asynchronous serial}\index{UART driver}
 

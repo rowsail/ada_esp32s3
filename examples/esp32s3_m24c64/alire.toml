@@ -1,0 +1,17 @@
+name = "esp32s3_m24c64"
+description = "Bare-metal Ada M24C64 I2C EEPROM driver demo on the ESP32-S3 Jorvik runtime"
+version = "0.1.0-dev"
+
+authors = ["D. Howells"]
+maintainers = ["D. Howells <dhowells@motium.us>"]
+licenses = "Apache-2.0 WITH LLVM-exception"
+tags = ["embedded", "esp32s3", "i2c", "eeprom", "driver", "example"]
+
+project-files = ["m24c64.gpr"]
+
+[[depends-on]]
+esp32s3_rts = "*"
+
+[[pins]]
+esp32s3_rts = { path = "../../crates/esp32s3_rts" }
+xtensa_dynconfig       = { path = "../../crates/xtensa-dynconfig" }

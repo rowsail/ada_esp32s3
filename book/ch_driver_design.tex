@@ -256,6 +256,84 @@ calling \texttt{State.Owned (S)}, and \texttt{Owned} is the one place that check
 A maintainer adding a new operation tomorrow has no choice but to go through the
 same door. There is no \texttt{Bus} in scope to grab any other way.
 
+\section{Case study: the engine outgrows the FIFO}
+\label{driver:end-opcode}\index{END opcode}\index{repeated START}\index{I2C driver}
+
+The three layers earn their keep when the engine has to change. Here is the
+I2C driver's own history, which makes the case better than any argument.
+
+The first engine was a \emph{single-segment} master. One command sequence, one
+FIFO load, one \texttt{START..STOP} on the wire. The controller's FIFO holds 32
+bytes, and the slave address rides in it too, so \texttt{Write} accepted 31 data
+bytes. \texttt{Read}'s precondition allowed 32, on the reasoning that a read fills
+the FIFO from the other direction.
+
+That reasoning was wrong, and the hardware said so. A 32-byte read does not
+truncate: it NACKs on the wire. Worse, the aborted read leaves the slave holding
+SDA low, and the bus stays wedged until someone power-cycles it. Calling
+\texttt{Setup} again does not help, because \texttt{Setup} never clocks SCL.
+
+\begin{quote}
+A precondition is a claim about the world. This one was a claim about silicon,
+made from a datasheet, and it was false. Measure the claim.
+\end{quote}
+
+\cnote{An IDF driver would silently truncate here, or return
+\texttt{ESP\_ERR\_INVALID\_SIZE}. The Ada precondition turns the same mistake into
+an \texttt{Assertion\_Error} at the call site, before a single bit reaches the
+bus.}
+
+So much for the bug. The deeper problem was that a 32-byte EEPROM page write
+needs 35 bytes in one segment: the slave address, two address bytes, and the page.
+It could not be expressed at all. Neither could a \emph{repeated START}, the
+turnaround a device uses to say ``I named the register, now give me its value''
+without ending the command.
+
+The silicon had the answer the whole time. The command state machine understands
+an \texttt{END} opcode alongside \texttt{RSTART}, \texttt{WRITE}, \texttt{READ}
+and \texttt{STOP}. \texttt{END} halts the machine \emph{without} a STOP: SCL stays
+low, the slave waits, and an \texttt{END\_DETECT} interrupt fires. Refill the
+FIFO, trigger the sequence again, and the same transaction picks up where it
+stopped. The engine had been clearing \texttt{END\_DETECT} for years without ever
+using it.
+
+That turns a transaction into a chain of \emph{phases}. Each phase moves any
+number of bytes in FIFO-sized bursts joined by \texttt{END}. The engine grew two
+of them, and the three public operations fell out as compositions:
+
+\begin{lstlisting}
+--  Write_Phase : START, (Addr | W), payload ... closing with STOP or END
+--  Read_Phase  : (repeated) START, (Addr | R), payload ... closing with STOP
+
+Write      =  Write_Phase (closing with STOP)
+Read       =  Read_Phase
+Write_Read =  Write_Phase (closing with END) then Read_Phase
+\end{lstlisting}
+
+Read that last line again. A write phase parked on an \texttt{END} leaves the bus
+held, so the read phase's opening \texttt{RSTART} \emph{is} the repeated START.
+\texttt{Write\_Read} is not a third code path. It is what chaining the two phases
+already means.
+
+The engine's \texttt{Run\_Sequence} now answers \texttt{Completed}, \texttt{Paused}
+or \texttt{Failed} instead of a bare Boolean, so a caller can tell an \texttt{END}
+park from a STOP. \texttt{Read\_Phase} NACKs only the final byte of the whole
+phase, not the last byte of each burst, so a long read crosses a refill without
+the slave letting go early.
+
+Now the point of the chapter. That rewrite replaced most of the engine body, and
+it touched \textbf{no driver above it}. Six device drivers sit on this bus:
+SHT41, QMI8658C, PCF85063A, TCA9555, CH422G and ES8311. None of them was edited,
+re-reviewed, or even reopened. Their calls go through \texttt{State.Owned}, the
+\texttt{Session} still means what it always meant, and not one of them ever held a
+\texttt{Bus}. Sealing the registers in a private child is what turned a wholesale
+change to the register code into a local event.
+
+The payoff was real. A page write became one transaction instead of two, and a
+1024-byte bulk write to an M24C64 EEPROM fell from 239\,ms to 131\,ms: 32 program
+cycles instead of 64. Reads of any length became one transaction instead of a
+sequence of re-addressed chunks.
+
 \section{The limited-handle variant}
 
 If the engine's \texttt{Bus} is a \emph{limited} type (typically because it

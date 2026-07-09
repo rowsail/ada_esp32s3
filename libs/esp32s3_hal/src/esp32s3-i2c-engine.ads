@@ -23,20 +23,33 @@ private package ESP32S3.I2C.Engine is
    procedure Configure_Pins (B : Bus; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id)
    with Pre => Is_Open (B);
 
-   --  One START..STOP master write transaction.  Success := slave ACKed addr +
-   --  every data byte (when Check_Ack).  Data length 0 is an address-only probe.
+   --  One START..STOP master write transaction of ANY length.  Success := slave
+   --  ACKed addr + every data byte (when Check_Ack).  Data length 0 is an
+   --  address-only probe.  Payloads past the FIFO are sent in bursts joined by
+   --  the command FSM's END opcode, which pauses it WITHOUT a STOP (see the body).
    procedure Write
      (B         : Bus;
       Addr      : Slave_Address;
       Data      : Byte_Array;
       Success   : out Boolean;
       Check_Ack : Boolean := True)
-   with Pre => Is_Open (B) and then Data'Length <= Max_Transfer - 1;
+   with Pre => Is_Open (B);
 
-   --  One START..STOP master read transaction (ACK all but last byte).
-   --  Success := slave ACKed the address.
+   --  One START..STOP master read transaction of ANY length (ACK all but the last
+   --  byte).  Success := slave ACKed the address.  Zero length is rejected.
    procedure Read (B : Bus; Addr : Slave_Address; Data : out Byte_Array; Success : out Boolean)
-   with Pre => Is_Open (B) and then Data'Length <= Max_Transfer;
+   with Pre => Is_Open (B);
+
+   --  One combined transaction: START, write Tx, REPEATED START, read Rx, STOP --
+   --  no STOP between the phases, so the slave sees a single command.  Both
+   --  lengths are unbounded (Rx must be >= 1).
+   procedure Write_Read
+     (B       : Bus;
+      Addr    : Slave_Address;
+      Tx      : Byte_Array;
+      Rx      : out Byte_Array;
+      Success : out Boolean)
+   with Pre => Is_Open (B);
 
    procedure Close (B : in out Bus);
 

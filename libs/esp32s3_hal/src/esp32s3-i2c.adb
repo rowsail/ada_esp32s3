@@ -135,6 +135,20 @@ package body ESP32S3.I2C is
       E.Read (State.Owned (S), Addr, Data, Success);
    end Read;
 
+   ----------------
+   -- Write_Read --
+   ----------------
+
+   procedure Write_Read
+     (S       : Session;
+      Addr    : Slave_Address;
+      Tx      : Byte_Array;
+      Rx      : out Byte_Array;
+      Success : out Boolean) is
+   begin
+      E.Write_Read (State.Owned (S), Addr, Tx, Rx, Success);
+   end Write_Read;
+
    -------------
    -- Release --
    -------------

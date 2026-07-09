@@ -15,10 +15,12 @@ with ESP32S3.GPIO;
 --  OUTSIDE the protected lock -- the lock only arbitrates ownership, never held
 --  across the bus busy-wait.
 --
---  This first cut is a polled, single-segment master: each Write / Read is one
---  complete START..STOP transaction.  Read takes up to 32 data bytes (the RX
---  FIFO depth); Write takes up to 31, because the address byte shares the 32-deep
---  TX FIFO with the payload.  Requires a tasking runtime (Jorvik or richer).
+--  This is a polled master.  Write / Read are each one complete START..STOP
+--  transaction, and Write_Read is one START..STOP with a REPEATED START between
+--  its write and read phases.  All three take payloads of any length: the driver
+--  refills (or drains) the 32-deep FIFO mid-transaction without releasing the bus,
+--  so length is not visible on the wire.  Requires a tasking runtime (Jorvik or
+--  richer).
 
 package ESP32S3.I2C is
 
@@ -31,7 +33,8 @@ package ESP32S3.I2C is
    type Byte is new Interfaces.Unsigned_8;
    type Byte_Array is array (Natural range <>) of Byte;
 
-   --  Largest single-transaction payload (the controller's TX/RX FIFO depth).
+   --  The controller's FIFO depth -- the most that moves between refills, NOT a
+   --  limit on a transaction: Write / Read / Write_Read all take any length.
    Max_Transfer : constant := 32;
 
    --  An exclusive hold on a host.  Limited (cannot be copied) and CONTROLLED:
@@ -84,20 +87,44 @@ package ESP32S3.I2C is
    --  iff the slave ACKed the address and every byte.  Data length 0 sends an
    --  address-only probe (useful for bus scanning).  Blocking.  Raises
    --  Not_Owned unless S currently holds a host.
+   --
+   --  Data may be ANY length: a payload longer than the FIFO is sent in bursts
+   --  joined by the command FSM's END opcode, which pauses it with the bus still
+   --  held, so the whole write remains ONE START..STOP transaction.  That matters
+   --  for devices where a STOP means end-of-command -- an EEPROM page write, say,
+   --  which must arrive as one segment however long it is.
    procedure Write
      (S         : Session;
       Addr      : Slave_Address;
       Data      : Byte_Array;
       Success   : out Boolean;
       Check_Ack : Boolean := True)
-   with Pre => Is_Held (S) and then Data'Length <= Max_Transfer - 1;
+   with Pre => Is_Held (S);
 
    --  Master read: START, (Addr<<1 | R), read Data'Length bytes (ACK all but
    --  the last, NACK the last), STOP.  Success is True iff the slave ACKed the
    --  address.  Blocking.  Raises Not_Owned unless S currently holds a host.
+   --
+   --  Data may be any length >= 1 (a longer read drains the FIFO mid-transaction,
+   --  as Write refills it); zero length returns Success => False.
    procedure Read
      (S : Session; Addr : Slave_Address; Data : out Byte_Array; Success : out Boolean)
-   with Pre => Is_Held (S) and then Data'Length <= Max_Transfer;
+   with Pre => Is_Held (S);
+
+   --  Master combined transfer: START, (Addr<<1 | W), Tx bytes, REPEATED START,
+   --  (Addr<<1 | R), Rx bytes, STOP.  No STOP separates the two phases, so the
+   --  slave sees ONE command -- which is what a "write the register index, then
+   --  read it back" device requires, and what two back-to-back Write + Read calls
+   --  cannot express.  Success is True iff the slave ACKed throughout.  Both
+   --  lengths are unbounded; Rx'Length = 0 returns Success => False.  Blocking.
+   --  Raises Not_Owned unless S currently holds a host.
+   procedure Write_Read
+     (S       : Session;
+      Addr    : Slave_Address;
+      Tx      : Byte_Array;
+      Rx      : out Byte_Array;
+      Success : out Boolean)
+   with Pre => Is_Held (S);
 
    --  Relinquish ownership (lets a waiting task proceed).  Harmless if already
    --  released.  Always release a Session you Acquired.
