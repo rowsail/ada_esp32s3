@@ -231,12 +231,16 @@ package body ESP32S3.GDMA is
    --------------------------------------------------------------------------
    --  Interrupt-driven completion.  A transfer arms its channel's EOF
    --  interrupt; the waiting task suspends and the GDMA EOF interrupt (every
-   --  channel routed to CPU_INT 19 = Device_L2_0) wakes it -- so the core is
+   --  channel routed to CPU_INT 20 = Device_L2_1) wakes it -- so the core is
    --  free for the whole transfer instead of busy-polling.  A short spin first
    --  absorbs tiny transfers without paying the interrupt + context-switch cost.
    --------------------------------------------------------------------------
 
-   GDMA_CPU_Int : constant := 19;   --  Device_L2_0
+   --  NOT Device_L2_0 (19): the UART's buffered-RX ISR attaches there, and it is
+   --  the more timing-sensitive of the two (a modem's bytes arrive asynchronously,
+   --  where a DMA EOF is awaited).  Two Attach_Handlers on one Interrupt_ID raise
+   --  Program_Error at elaboration, so they must not collide.
+   GDMA_CPU_Int : constant := 20;   --  Device_L2_1
 
    --  One completion signal per channel and direction.  A channel is owned by
    --  one task at a time, so at most one task ever waits on each.
@@ -260,10 +264,10 @@ package body ESP32S3.GDMA is
    protected Completion
      with Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority
    is
-      procedure Route;     --  one-time: map every DMA channel int to CPU_INT 19
+      procedure Route;     --  one-time: map every DMA channel int to CPU_INT 20
    private
       procedure Handler
-      with Attach_Handler => Ada.Interrupts.Names.Device_L2_0;
+      with Attach_Handler => Ada.Interrupts.Names.Device_L2_1;
       Routed : Boolean := False;
    end Completion;
 
