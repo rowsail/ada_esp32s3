@@ -1,7 +1,8 @@
 # M24C64 EEPROM — a bare-metal Ada I2C driver (ESP32-S3)
 
-Demo for the reusable **`ESP32S3.M24C64`** driver (in `libs/esp32s3_hal`). Same
-shape as the SHT41/RTC/IMU drivers — a `Device` set up with the I2C wiring, each
+Demo for the reusable **`ESP32S3.M24C64`** driver (in `libs/esp32s3_hal`) — an
+instantiation of the family generic **`ESP32S3.EEPROM_24C`**. Same shape as the
+SHT41/RTC/IMU drivers — a `Device` set up with the I2C wiring, each
 operation opening a short-lived, auto-released `ESP32S3.I2C` `Session` — so the
 ST M24C64 64-Kbit (8 KiB) serial EEPROM shares the bus safely with the other I2C
 devices. No interrupt: it is read and written on request.
@@ -75,6 +76,36 @@ per segment it took **239 ms**.
 
 A `Write` holds the I2C host across every page and program cycle, so a multi-page
 write is atomic with respect to other tasks sharing the bus.
+
+## Other parts in the family
+
+`ESP32S3.M24C64` is three lines:
+
+```ada
+package ESP32S3.M24C64 is new ESP32S3.EEPROM_24C
+  (Capacity_Bytes => 8_192, Page_Bytes => 32, Word_Address_Bytes => 2);
+```
+
+The generic derives the rest, including how many chip-enable straps survive. Parts
+below 32 Kbit take a one-byte word address and fold their high address bits into
+the device-select byte, eating a strap each (E0 first) — a 24C16 folds all three,
+so it has no strap at all and only one can sit on a bus. `Setup`'s precondition
+enforces that per instance: `24C16.Setup (…, A0 => High)` raises.
+
+| | `Capacity_Bytes` | `Page_Bytes` | `Word_Address_Bytes` | devices/bus |
+|---|---|---|---|---|
+| 24C02 | 256 | 8 (ST: 16) | 1 | 8 |
+| 24C04 | 512 | 16 | 1 | 4 |
+| 24C08 | 1024 | 16 | 1 | 2 |
+| 24C16 | 2048 | 16 | 1 | 1 |
+| 24C64 | 8192 | 32 | 2 | 8 |
+| 24C256 | 32768 | 64 | 2 | 8 |
+| M24M01 | 131072 | 256 | 2 | 4 |
+| M24M02 | 262144 | 256 | 2 | 2 |
+
+Microchip's 24LC1025/1026 additionally cannot read across their 512-Kbit block, so
+they pass `Max_Read_Span => 65_536`. Only the M24C64 instance is hardware-verified
+here; the others rest on the datasheets alone.
 
 ## Build & run
 
