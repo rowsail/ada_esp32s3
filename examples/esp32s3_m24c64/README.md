@@ -79,33 +79,33 @@ write is atomic with respect to other tasks sharing the bus.
 
 ## Other parts in the family
 
-`ESP32S3.M24C64` is three lines:
+Every part is one `Geometry` in the catalogue `ESP32S3.EEPROM_24C`, instantiated as
+a child unit, so `with`ing one part costs one part:
 
 ```ada
-package ESP32S3.M24C64 is new ESP32S3.EEPROM_24C
-  (Capacity_Bytes => 8_192, Page_Bytes => 32, Word_Address_Bytes => 2);
+with ESP32S3.EEPROM_24C.M24M01;
+...
+Rom : ESP32S3.EEPROM_24C.M24M01.Device;
 ```
 
-The generic derives the rest, including how many chip-enable straps survive. Parts
-below 32 Kbit take a one-byte word address and fold their high address bits into
-the device-select byte, eating a strap each (E0 first) — a 24C16 folds all three,
-so it has no strap at all and only one can sit on a bus. `Setup`'s precondition
-enforces that per instance: `24C16.Setup (…, A0 => High)` raises.
+Shipped: `M24C01` `M24C02` `M24C04` `M24C08` `M24C16` `M24C32` `M24C64` `M24128`
+`M24256` `M24512` `M24M01` `M24M02`, plus `AT24C01`/`AT24C02` (Atmel and Microchip
+1K/2K parts have an **8**-byte page where ST's have 16 — guessing wrong corrupts
+data silently) and `LC1026` (Microchip 24LC1026, whose sequential read cannot cross
+its 512-Kbit block). Microchip's 24LC1025 puts its block bit in the *high*
+select-byte position and is deliberately absent — the driver's addressing model
+cannot express it.
 
-| | `Capacity_Bytes` | `Page_Bytes` | `Word_Address_Bytes` | devices/bus |
-|---|---|---|---|---|
-| 24C02 | 256 | 8 (ST: 16) | 1 | 8 |
-| 24C04 | 512 | 16 | 1 | 4 |
-| 24C08 | 1024 | 16 | 1 | 2 |
-| 24C16 | 2048 | 16 | 1 | 1 |
-| 24C64 | 8192 | 32 | 2 | 8 |
-| 24C256 | 32768 | 64 | 2 | 8 |
-| M24M01 | 131072 | 256 | 2 | 4 |
-| M24M02 | 262144 | 256 | 2 | 2 |
+**Only `M24C64` is hardware-verified.** The others are transcribed from datasheets;
+each instance exports `Hardware_Verified : constant Boolean` and says so in a banner
+at the top of its spec. Flip `M24xxx_Part` to `Verified` in the catalogue once you
+have run one.
 
-Microchip's 24LC1025/1026 additionally cannot read across their 512-Kbit block, so
-they pass `Max_Read_Span => 65_536`. Only the M24C64 instance is hardware-verified
-here; the others rest on the datasheets alone.
+The generic derives the strap budget rather than taking it: a part whose array
+outruns its word address folds the surplus bits into the *low* bits of its
+device-select byte, eating a chip-enable pin each (E0 first). A 24C16 folds all
+three, so it has no strap and only one can sit on a bus — `M24C16.Setup (…, A0 =>
+High)` raises.
 
 ## Build & run
 

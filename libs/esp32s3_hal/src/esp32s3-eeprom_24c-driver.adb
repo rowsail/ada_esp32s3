@@ -1,11 +1,12 @@
 with Ada.Real_Time; use Ada.Real_Time;
 
-package body ESP32S3.EEPROM_24C is
+package body ESP32S3.EEPROM_24C.Driver is
 
    package Bus renames ESP32S3.I2C;
 
    --  How far a sequential read may run before it must be re-addressed.
-   Read_Span : constant Positive := (if Max_Read_Span = 0 then Capacity else Max_Read_Span);
+   Read_Span : constant Positive :=
+     (if Part.Max_Read_Span = 0 then Capacity else Part.Max_Read_Span);
 
    --  Internal program cycle: ~5 ms (datasheet t_W).  Poll for the part's ACK
    --  rather than sleeping the worst case blindly, but give up eventually.
@@ -226,6 +227,6 @@ begin
    pragma Assert (Capacity mod Page_Size = 0, "Capacity must be a whole number of pages");
    pragma Assert (Blocks = 1 or else Blocks * Word_Span = Capacity,
                   "Capacity must be a power of two");
-   pragma Assert (Max_Read_Span = 0 or else Capacity mod Max_Read_Span = 0,
+   pragma Assert (Part.Max_Read_Span = 0 or else Capacity mod Part.Max_Read_Span = 0,
                   "Max_Read_Span must divide Capacity");
-end ESP32S3.EEPROM_24C;
+end ESP32S3.EEPROM_24C.Driver;

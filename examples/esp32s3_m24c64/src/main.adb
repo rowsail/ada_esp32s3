@@ -29,7 +29,7 @@ with Ada.Real_Time; use Ada.Real_Time;
 with Interfaces;    use Interfaces;
 
 with ESP32S3.I2C;
-with ESP32S3.M24C64;
+with ESP32S3.EEPROM_24C.M24C64;
 with ESP32S3.Log; use ESP32S3.Log;
 
 --  Pull the SMP slave-start entry into the link closure (glue.c calls it after
@@ -38,7 +38,7 @@ with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
-   package EEPROM renames ESP32S3.M24C64;
+   package EEPROM renames ESP32S3.EEPROM_24C.M24C64;
    package Bus renames ESP32S3.I2C;
    use type EEPROM.Status;
    use type EEPROM.Pin_State;

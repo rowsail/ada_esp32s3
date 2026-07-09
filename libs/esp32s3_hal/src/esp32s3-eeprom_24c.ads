@@ -1,168 +1,152 @@
-with ESP32S3.GPIO;
 with ESP32S3.I2C;
 
 --  The 24C family of I2C serial EEPROMs (ST M24Cxx, Microchip 24AAxx/24LCxx,
---  Atmel AT24Cxx, onsemi CAT24Cxx).  Instantiate it for a part; see
---  ESP32S3.M24C64 for the worked example.
+--  Atmel AT24Cxx, onsemi CAT24Cxx) -- the catalogue.
 --
---  Every part in the family speaks the same protocol -- device-type code 1010, a
+--  Every part in the family speaks the same protocol: device-type code 1010, a
 --  big-endian word address, page writes that WRAP inside the page instead of
 --  advancing, a ~5 ms program cycle that NACKs everything until it finishes, and
 --  a random read that writes the word address and turns the bus around on a
---  repeated START.  All of that is handled here, so Read and Write take an
---  arbitrary Byte_Array at an arbitrary address.
+--  repeated START.  ESP32S3.EEPROM_24C.Driver implements all of that once.
 --
---  What differs between parts is exactly three things, which is what the generic
---  formals capture:
+--  A part is therefore nothing but a Geometry, and this package holds them all.
+--  Each is instantiated as a child unit -- ESP32S3.EEPROM_24C.M24C64,
+--  ESP32S3.EEPROM_24C.M24M01, ... -- so `with`ing one part costs you one part,
+--  not the whole catalogue.
 --
---    * ADDRESS_BYTES -- one word-address byte up to 16 Kbit, two from 32 Kbit up.
---    * PAGE_SIZE     -- 8 (Microchip/Atmel 1K-2K), 16 (ST 1K-2K, all 4K-16K),
---                       32 (32K-64K), 64 (128K-256K), 128 (512K), 256 (1M-2M).
---    * The high memory-address bits that do not fit in the word address, which
---      the part folds into the LOW bits of its own device-select byte, eating a
---      chip-enable pin each (E0 first, then E1, then E2).  A 24C16 folds three
---      (A10..A8) and therefore has NO usable strap: only one can sit on a bus.
---      Derived below as Blocks / Max_Devices -- do not pass it in.
+--     with ESP32S3.EEPROM_24C.M24C64;
+--     ...
+--     Rom : ESP32S3.EEPROM_24C.M24C64.Device;
+--     ESP32S3.EEPROM_24C.M24C64.Setup (Rom, Sda => 41, Scl => 40);
 --
---  Sample instantiations (Capacity, Page_Size, Address_Bytes):
+--  TESTED vs UNTESTED: only the parts marked Verified below have been exercised
+--  against real silicon.  The rest are transcribed from datasheets -- the
+--  protocol is shared, so they are very likely right, but nobody has watched them
+--  on a scope.  Each instance re-exports its status as Hardware_Verified, and its
+--  spec says so in a banner.  Please flip a part to Verified (and say on what
+--  board) once you have run it.
 --
---     24C02  (2 Kbit)   :  256, ST 16 / Microchip 8, 1      -- 8 devices
---     24C16  (16 Kbit)  : 2048,           16,        1      -- 1 device
---     24C64  (64 Kbit)  : 8192,           32,        2      -- 8 devices
---     24C256 (256 Kbit) : 32768,          64,        2      -- 8 devices
---     M24M01 (1 Mbit)   : 131072,        256,        2      -- 4 devices (A16 eats E0)
---     M24M02 (2 Mbit)   : 262144,        256,        2      -- 2 devices (A17,A16)
+--  Two traps worth knowing before you add a part:
 --
---  Max_Read_Span exists for the ONE part family that restricts sequential reads:
---  Microchip's 24LC1025/24LC1026 cannot read across their 512-Kbit block
---  boundary ("It is not possible to sequentially read across device
---  boundaries"), so those instantiate with Max_Read_Span => 65_536 and Read
---  splits there.  Everywhere else the read pointer spans the whole array and the
---  default (0 = no limit) is right -- a 24C16 does read straight across its
---  256-byte block boundaries.  Those parts differ in control-byte layout too and
---  are NOT interchangeable with each other; check the datasheet before assuming.
+--   * PAGE SIZE VARIES BY VENDOR at the low end.  ST's M24C01/M24C02 have a
+--     16-byte page; Atmel's and Microchip's 1K/2K parts have 8.  Guessing wrong
+--     does not fail loudly -- the part wraps within the page and silently
+--     overwrites what you just wrote.  Hence separate AT24C01 / AT24C02 entries.
 --
---  Note the WC (ST) / WP (everyone else) pin is wiring, not software: HIGH
---  inhibits writes on every part in the family.  Tie it low to allow them.
+--   * THE HIGH ADDRESS BITS EAT CHIP-ENABLE PINS.  A part whose array outruns its
+--     word address folds the surplus address bits into the LOW bits of its own
+--     device-select byte (b1 first, then b2, then b3), so each one costs a strap:
+--     E0, then E1, then E2.  A 24C16 folds three (A10..A8) and has no strap left
+--     -- only one can sit on a bus.  The Driver derives this from Capacity_Bytes
+--     and Word_Address_Bytes; do not encode it here.
 --
---  Uses the controlled I2C Session (finalization) => embedded / full profiles.
-
-generic
-   --  Array size in bytes, a power of two, and a whole number of pages.
-   Capacity_Bytes : Positive;
-
-   --  Page-write granularity in bytes.  A write may not cross this boundary.
-   Page_Bytes : Positive;
-
-   --  Word-address bytes the part expects before the data: 1 or 2.
-   Word_Address_Bytes : Positive;
-
-   --  Device-type code 1010 -> 0x50 for the memory array on every part.  (ST's
-   --  "-D"/"E" variants put an Identification Page at 1011 -> 0x58.)
-   Base_Slave_Address : ESP32S3.I2C.Slave_Address := 16#50#;
-
-   --  Longest run a sequential read may cross, or 0 for "the whole array".
-   Max_Read_Span : Natural := 0;
+--     Microchip's 24LC1025 is the family's one part that does NOT follow that
+--     rule -- its block bit sits in the HIGH position (1010 B0 A1 A0) rather than
+--     the low one, and pin A2 is strapped to Vcc.  The Driver's addressing model
+--     cannot express it, so it is deliberately absent below.  Its sibling the
+--     24LC1026 (1010 A2 A1 B0) does fit, and is present.
 
 package ESP32S3.EEPROM_24C is
 
-   --  The formals, re-exported: a generic formal object is not visible through
-   --  the instance, and a caller wants the part's geometry (see the demo's
-   --  "boot counter in the last cell", Capacity - 1).
-   Capacity      : constant Positive := Capacity_Bytes;
-   Page_Size     : constant Positive := Page_Bytes;
-   Address_Bytes : constant Positive := Word_Address_Bytes;
+   --  Has this geometry been run against a real part on real hardware?
+   type Verification is (Verified, Untested);
 
-   Base_Address : constant ESP32S3.I2C.Slave_Address := Base_Slave_Address;
+   type Geometry is record
+      --  Array size in bytes: a power of two, and a whole number of pages.
+      Capacity_Bytes : Positive;
 
-   subtype Memory_Address is Natural range 0 .. Capacity - 1;
+      --  Page-write granularity.  A write may not cross this boundary.
+      Page_Bytes : Positive;
 
-   --  Level strapped on a chip-enable pin (tied to VCC or VSS on the board).
-   type Pin_State is (Low, High);
+      --  Word-address bytes the part expects before the data: 1 up to 16 Kbit,
+      --  2 from 32 Kbit up.
+      Word_Address_Bytes : Positive;
 
-   --  Bytes reachable by the word address alone (256 or 65536), and how many such
-   --  blocks the array spans.  Blocks > 1 means the part folds log2(Blocks) high
-   --  address bits into its device-select byte, so it answers to that many
-   --  consecutive slave addresses -- and each folded bit costs a chip-enable pin.
-   Word_Span   : constant Positive := 2 ** (8 * Address_Bytes);
-   Blocks      : constant Positive := (Capacity + Word_Span - 1) / Word_Span;
-   Max_Devices : constant Positive := 8 / Blocks;
+      --  Longest run a sequential read may cross, or 0 for "the whole array".
+      --  Only Microchip's 24LC102x need this.
+      Max_Read_Span : Natural := 0;
 
-   --  The slave address of block 0 for the given straps.  A part that folds
-   --  address bits also answers on the Blocks-1 addresses above this one; the
-   --  driver picks the right one per access.
-   function Device_Address
-     (A0 : Pin_State; A1 : Pin_State; A2 : Pin_State) return ESP32S3.I2C.Slave_Address
-   is (Base_Address
-       + (if A0 = High then 1 else 0)
-       + (if A1 = High then 2 else 0)
-       + (if A2 = High then 4 else 0));
+      --  Device-type code 1010 -> 0x50 for the memory array on every part.  (ST's
+      --  "-D"/"E" variants put an Identification Page at 1011 -> 0x58.)
+      Base_Slave_Address : ESP32S3.I2C.Slave_Address := 16#50#;
 
-   --  Result of a memory operation.  Bus_Error: the part did not ACK (absent,
-   --  mis-strapped, or write-protected via WC/WP).  Write_Timeout: it never came
-   --  back from an internal program cycle.
-   type Status is (OK, Bus_Error, Write_Timeout);
-
-   type Device is limited private;
-
-   ----------------------------------------------------------------------------
-   --  One-time configuration -- call once per device at startup.
-   ----------------------------------------------------------------------------
-
-   --  Record the wiring and the chip-enable straps, then bring the I2C host up.
-   --  A0/A1/A2 must match how the pins are tied on the board; all-Low is the
-   --  single-chip default.  A strap the part has swallowed for a high address bit
-   --  (E0 first) does not exist as a pin, and must be left Low -- the
-   --  precondition says so, per instance.  No pin defaults for Sda/Scl.
-   procedure Setup
-     (Dev      : out Device;
-      Sda      : ESP32S3.GPIO.Pin_Id;
-      Scl      : ESP32S3.GPIO.Pin_Id;
-      A0       : Pin_State := Low;
-      A1       : Pin_State := Low;
-      A2       : Pin_State := Low;
-      Host     : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
-      Clock_Hz : Positive := 400_000)
-   with Pre => (if Blocks >= 2 then A0 = Low)
-               and then (if Blocks >= 4 then A1 = Low)
-               and then (if Blocks >= 8 then A2 = Low);
-
-   --  The 7-bit slave address of Dev's block 0 (see Device_Address).
-   function Address (Dev : Device) return ESP32S3.I2C.Slave_Address;
-
-   --  True if the part ACKs an address-only probe: present, powered, strapped as
-   --  configured, and not mid-program-cycle.
-   function Is_Present (Dev : Device) return Boolean;
-
-   ----------------------------------------------------------------------------
-   --  Memory access.
-   ----------------------------------------------------------------------------
-
-   --  Read Data'Length bytes starting at From.  A zero-length read is a no-op.
-   procedure Read
-     (Dev : Device; From : Memory_Address; Data : out ESP32S3.I2C.Byte_Array; Result : out Status)
-   with Pre => Data'Length <= Capacity - From;
-
-   --  Write Data at To, splitting on page boundaries and waiting out each program
-   --  cycle.  A zero-length write is a no-op.  On Bus_Error or Write_Timeout the
-   --  pages before the failure are already committed.
-   procedure Write
-     (Dev : Device; To : Memory_Address; Data : ESP32S3.I2C.Byte_Array; Result : out Status)
-   with Pre => Data'Length <= Capacity - To;
-
-   procedure Read_Byte
-     (Dev : Device; From : Memory_Address; Value : out ESP32S3.I2C.Byte; Result : out Status);
-
-   procedure Write_Byte
-     (Dev : Device; To : Memory_Address; Value : ESP32S3.I2C.Byte; Result : out Status);
-
-private
-   type Device is record
-      Host  : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
-      Strap : Natural range 0 .. 7 := 0;   --  E2*4 + E1*2 + E0, as strapped
+      Tested : Verification := Untested;
    end record;
 
-   function Address (Dev : Device) return ESP32S3.I2C.Slave_Address
-   is (Base_Address + Dev.Strap);
+   ---------------------------------------------------------------------------
+   --  ST M24Cxx.  Straps: 3 usable up to M24C02, then one lost per folded
+   --  address bit (M24C04 -> 2, M24C08 -> 1, M24C16 -> 0), 3 again from M24C32
+   --  (two word-address bytes), down to 2 for M24M01 and 1 for M24M02.
+   ---------------------------------------------------------------------------
+
+   M24C01_Part : constant Geometry :=
+     (Capacity_Bytes => 128, Page_Bytes => 16, Word_Address_Bytes => 1, others => <>);
+
+   M24C02_Part : constant Geometry :=
+     (Capacity_Bytes => 256, Page_Bytes => 16, Word_Address_Bytes => 1, others => <>);
+
+   M24C04_Part : constant Geometry :=
+     (Capacity_Bytes => 512, Page_Bytes => 16, Word_Address_Bytes => 1, others => <>);
+
+   M24C08_Part : constant Geometry :=
+     (Capacity_Bytes => 1_024, Page_Bytes => 16, Word_Address_Bytes => 1, others => <>);
+
+   M24C16_Part : constant Geometry :=
+     (Capacity_Bytes => 2_048, Page_Bytes => 16, Word_Address_Bytes => 1, others => <>);
+
+   M24C32_Part : constant Geometry :=
+     (Capacity_Bytes => 4_096, Page_Bytes => 32, Word_Address_Bytes => 2, others => <>);
+
+   --  The one part this driver was written against: ST M24C64 on I2C0 of the
+   --  esp32s3_m24c64 example board (SDA = IO41, SCL = IO40).
+   M24C64_Part : constant Geometry :=
+     (Capacity_Bytes     => 8_192,
+      Page_Bytes         => 32,
+      Word_Address_Bytes => 2,
+      Tested             => Verified,
+      others             => <>);
+
+   M24128_Part : constant Geometry :=
+     (Capacity_Bytes => 16_384, Page_Bytes => 64, Word_Address_Bytes => 2, others => <>);
+
+   M24256_Part : constant Geometry :=
+     (Capacity_Bytes => 32_768, Page_Bytes => 64, Word_Address_Bytes => 2, others => <>);
+
+   M24512_Part : constant Geometry :=
+     (Capacity_Bytes => 65_536, Page_Bytes => 128, Word_Address_Bytes => 2, others => <>);
+
+   --  A16 folds into the select byte and costs E0: 4 devices per bus.
+   M24M01_Part : constant Geometry :=
+     (Capacity_Bytes => 131_072, Page_Bytes => 256, Word_Address_Bytes => 2, others => <>);
+
+   --  A17,A16 fold in and cost E0 and E1: 2 devices per bus.
+   M24M02_Part : constant Geometry :=
+     (Capacity_Bytes => 262_144, Page_Bytes => 256, Word_Address_Bytes => 2, others => <>);
+
+   ---------------------------------------------------------------------------
+   --  Atmel / Microchip, where they differ from ST.
+   --
+   --  Only the 1K and 2K parts need their own entry: an 8-byte page instead of
+   --  ST's 16.  From 4K up (24LC04B .. 24LC16B) the geometry matches ST's, so use
+   --  the M24Cxx instances above; likewise 24LC32A/64/128/256/512 and AT24Cxx.
+   ---------------------------------------------------------------------------
+
+   AT24C01_Part : constant Geometry :=
+     (Capacity_Bytes => 128, Page_Bytes => 8, Word_Address_Bytes => 1, others => <>);
+
+   AT24C02_Part : constant Geometry :=
+     (Capacity_Bytes => 256, Page_Bytes => 8, Word_Address_Bytes => 1, others => <>);
+
+   --  Microchip 24LC1026: 1 Mbit, but its sequential read cannot cross the
+   --  512-Kbit block boundary ("It is not possible to sequentially read across
+   --  device boundaries"), so reads are split there.  Its select byte is
+   --  1010 A2 A1 B0, which is the family's normal low-position fold.
+   --  Its sibling 24LC1025 puts B0 in the HIGH position and is NOT supported.
+   LC1026_Part : constant Geometry :=
+     (Capacity_Bytes     => 131_072,
+      Page_Bytes         => 128,
+      Word_Address_Bytes => 2,
+      Max_Read_Span      => 65_536,
+      others             => <>);
 
 end ESP32S3.EEPROM_24C;
