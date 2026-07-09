@@ -60,6 +60,7 @@ project ESP32S3_HAL is
             "esp32s3-qmi8658c-interrupts.ads",
             "esp32s3-qmi8658c-interrupts.adb",
             "esp32s3-sht41.ads",        "esp32s3-sht41.adb",
+            "esp32s3-m24c64.ads",       "esp32s3-m24c64.adb",
             "esp32s3-tca9555.ads",      "esp32s3-tca9555.adb",
             "esp32s3-tca9555-interrupts.ads",
             "esp32s3-tca9555-interrupts.adb",
