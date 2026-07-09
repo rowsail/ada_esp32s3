@@ -23,6 +23,10 @@ package body ESP32S3.I2C.Engine is
    Op_WRITE  : constant := 1;
    Op_READ   : constant := 3;
    Op_STOP   : constant := 2;
+   --  END: halt the command FSM without releasing the bus (SCL stays low, no
+   --  STOP).  Raises END_DETECT; reloading COMD and re-triggering TRANS_START
+   --  resumes the SAME transaction.  This is what lets a payload outrun the FIFO.
+   Op_END    : constant := 4;
 
    --  GPIO-matrix signal indices, per host (gpio_sig_map.h).  In and out share
    --  the same index for each line (the matrix is bidirectional per pad).
@@ -260,10 +264,13 @@ package body ESP32S3.I2C.Engine is
       Route_Line (Sda, Host_Sigs.Sda);
    end Configure_Pins;
 
-   --  Reset both FIFOs, clear stale interrupts, kick off the loaded command
-   --  sequence and spin until it completes (or times out / loses arbitration).
-   --  Returns True if the slave ACKed everything expected.
-   procedure Run_Sequence (Regs : Periph_Ref; Acked : out Boolean) is
+   --  How a loaded command sequence ended.  Paused = it hit an END opcode: the
+   --  bus is still held and the transaction resumes on the next TRANS_START.
+   type Seq_Outcome is (Completed, Paused, Failed);
+
+   --  Clear stale interrupts, kick off the loaded command sequence and spin until
+   --  it completes, pauses at an END, or fails (NACK / timeout / lost arbitration).
+   procedure Run_Sequence (Regs : Periph_Ref; Outcome : out Seq_Outcome) is
    begin
       --  Clear all latched interrupt status.
       Regs.INT_CLR :=
@@ -291,6 +298,7 @@ package body ESP32S3.I2C.Engine is
             begin
                exit when
                  Ints.TRANS_COMPLETE_INT_RAW
+                 or else Ints.END_DETECT_INT_RAW
                  or else Ints.NACK_INT_RAW
                  or else Ints.TIME_OUT_INT_RAW
                  or else Ints.ARBITRATION_LOST_INT_RAW;
@@ -299,11 +307,25 @@ package body ESP32S3.I2C.Engine is
             Guard := Guard - 1;
          end loop;
 
-         Acked :=
-           Guard > 0
-           and then not (Regs.INT_RAW.NACK_INT_RAW
-                         or else Regs.INT_RAW.TIME_OUT_INT_RAW
-                         or else Regs.INT_RAW.ARBITRATION_LOST_INT_RAW);
+         if Guard = 0 then
+            Outcome := Failed;      --  FSM never started / never finished
+            return;
+         end if;
+
+         declare
+            Ints : constant INT_RAW_Register := Regs.INT_RAW;
+         begin
+            if Ints.NACK_INT_RAW
+              or else Ints.TIME_OUT_INT_RAW
+              or else Ints.ARBITRATION_LOST_INT_RAW
+            then
+               Outcome := Failed;
+            elsif Ints.TRANS_COMPLETE_INT_RAW then
+               Outcome := Completed;
+            else
+               Outcome := Paused;   --  END_DETECT: bus held, awaiting a refill
+            end if;
+         end;
       end Done;
    end Run_Sequence;
 
@@ -320,6 +342,146 @@ package body ESP32S3.I2C.Engine is
       Regs.DATA := (FIFO_RDATA => ESP32S3_Registers.Byte (Value), others => <>);
    end Push;
 
+   ---------------------------------------------------------------------------
+   --  Phases.
+   --
+   --  A transaction is a START, one or more addressed phases, and a STOP.  Each
+   --  phase moves an arbitrary number of bytes in FIFO-sized bursts joined by the
+   --  END opcode: the FSM parks with the bus still held, we refill (or drain) the
+   --  FIFO, and TRANS_START resumes the SAME transaction.  A phase that is not
+   --  the last leaves the FSM parked, so the next phase simply opens with another
+   --  RSTART -- which on the wire IS the repeated START.  Hence:
+   --
+   --     Write       = Write_Phase (closing with STOP)
+   --     Read        = Read_Phase
+   --     Write_Read  = Write_Phase (closing with END) then Read_Phase
+   --
+   --  A read burst tops out at Max_Transfer-1 (= 31), not 32: the FIFO RAM is
+   --  shared with the address byte the phase begins by writing.  Measured -- a
+   --  32-byte read NACKs, and the aborted transfer leaves the slave driving SDA
+   --  low, wedging the bus until it is power-cycled.
+   ---------------------------------------------------------------------------
+
+   Max_Read_Burst : constant := Max_Transfer - 1;
+
+   --  A write phase's wire stream is the address byte followed by the payload;
+   --  Stream_Byte indexes it as one sequence so the burst loop needn't
+   --  special-case the head.  (The address byte's R/W bit is 0: a write.)
+   function Stream_Byte (Addr : Slave_Address; Data : Byte_Array; I : Natural) return Byte
+   is (if I = 0 then Byte (Addr * 2) else Data (Data'First + I - 1));
+
+   --  START, (Addr<<1 | W), Data.  Closes with STOP if Close is set, else parks
+   --  the FSM on an END for the next phase (Outcome = Paused).
+   --
+   --  Check_Ack drives per-byte ACK checking: on a real bus leave it True so a
+   --  missing/!ACK device aborts the write; the single-pad write self-test turns
+   --  it off (the slave's ACK can't reach the master when both only read one pad).
+   procedure Write_Phase
+     (Regs      : Periph_Ref;
+      Addr      : Slave_Address;
+      Data      : Byte_Array;
+      Check_Ack : Boolean;
+      Close     : Boolean;
+      Outcome   : out Seq_Outcome)
+   is
+      Total : constant Natural := 1 + Data'Length;   --  address byte + payload
+      Sent  : Natural := 0;                          --  stream bytes the FSM has taken
+      First : Boolean := True;                       --  the burst that carries the START
+   begin
+      loop
+         declare
+            Burst : constant Natural := Natural'Min (Max_Transfer, Total - Sent);
+            Last  : constant Boolean := Sent + Burst = Total;
+            Slot  : Natural := 0;                    --  next free COMD register
+         begin
+            for I in 0 .. Burst - 1 loop
+               Push (Regs, Stream_Byte (Addr, Data, Sent + I));
+            end loop;
+
+            if First then
+               Regs.COMD (Slot).COMMAND := Cmd (Op_RSTART);
+               Slot := Slot + 1;
+            end if;
+            Regs.COMD (Slot).COMMAND := Cmd (Op_WRITE, Bytes => Burst, Ack_Check => Check_Ack);
+            Slot := Slot + 1;
+            Regs.COMD (Slot).COMMAND := Cmd (if Last and then Close then Op_STOP else Op_END);
+
+            Run_Sequence (Regs, Outcome);
+
+            if Last then
+               return;                       --  Completed (STOP), Paused (END) or Failed
+            elsif Outcome /= Paused then
+               return;                       --  NACKed / wedged part-way
+            end if;
+
+            Sent := Sent + Burst;
+            First := False;
+         end;
+      end loop;
+   end Write_Phase;
+
+   --  (Repeated) START, (Addr<<1 | R), Data'Length bytes -- ACK all but the very
+   --  last, NACK that one -- STOP.  Data is filled only on Completed.
+   procedure Read_Phase
+     (Regs : Periph_Ref; Addr : Slave_Address; Data : out Byte_Array; Outcome : out Seq_Outcome)
+   is
+      Len   : constant Natural := Data'Length;   --  >= 1, checked by the callers
+      Got   : Natural := 0;                      --  bytes already drained into Data
+      First : Boolean := True;                   --  the burst that addresses the slave
+   begin
+      loop
+         declare
+            Burst : constant Natural := Natural'Min (Max_Read_Burst, Len - Got);
+            Last  : constant Boolean := Got + Burst = Len;
+            Slot  : Natural := 0;
+         begin
+            if First then
+               Regs.COMD (Slot).COMMAND := Cmd (Op_RSTART);
+               Slot := Slot + 1;
+               Push (Regs, Byte (Addr * 2 + 1));   --  address byte, R/W = 1
+               Regs.COMD (Slot).COMMAND := Cmd (Op_WRITE, Bytes => 1, Ack_Check => True);
+               Slot := Slot + 1;
+            end if;
+
+            if Last then
+               --  Only the final byte of the whole phase is NACKed -- that is what
+               --  tells the slave to stop driving.
+               if Burst > 1 then
+                  Regs.COMD (Slot).COMMAND :=
+                    Cmd (Op_READ, Bytes => Burst - 1, Ack_Val => False);
+                  Slot := Slot + 1;
+               end if;
+               Regs.COMD (Slot).COMMAND := Cmd (Op_READ, Bytes => 1, Ack_Val => True);
+               Slot := Slot + 1;
+               Regs.COMD (Slot).COMMAND := Cmd (Op_STOP);
+            else
+               Regs.COMD (Slot).COMMAND := Cmd (Op_READ, Bytes => Burst, Ack_Val => False);
+               Slot := Slot + 1;
+               Regs.COMD (Slot).COMMAND := Cmd (Op_END);
+            end if;
+
+            Run_Sequence (Regs, Outcome);
+
+            --  A burst must end exactly as its command sequence asked: STOP ->
+            --  Completed, END -> Paused.  Anything else is a fault.
+            if Outcome /= (if Last then Completed else Paused) then
+               Outcome := Failed;
+               return;
+            end if;
+
+            --  Drain this burst's bytes before resuming: the FIFO must be empty
+            --  before the FSM refills it.
+            for I in 0 .. Burst - 1 loop
+               Data (Data'First + Got + I) := Byte (Regs.DATA.FIFO_RDATA);
+            end loop;
+            Got := Got + Burst;
+
+            exit when Last;
+            First := False;
+         end;
+      end loop;
+   end Read_Phase;
+
    -----------
    -- Write --
    -----------
@@ -331,35 +493,17 @@ package body ESP32S3.I2C.Engine is
       Success   : out Boolean;
       Check_Ack : Boolean := True)
    is
-      Regs : constant Periph_Ref := B.Regs;
-      Len  : constant Natural := Data'Length;
+      Regs    : constant Periph_Ref := B.Regs;
+      Outcome : Seq_Outcome;
    begin
       Success := False;
-      --  A write shares the TX FIFO between the address byte and the payload, so
-      --  the payload tops out at Max_Transfer-1 (= 31); accepting Max_Transfer
-      --  would push 1+32 = 33 bytes into the 32-deep FIFO and silently drop the
-      --  last data byte (FIFO_PRT_EN) while still reporting Success.
-      if not B.Valid or else Len > Max_Transfer - 1 then
+      if not B.Valid then
          return;
       end if;
 
       Reset_FIFOs (Regs);
-
-      --  TX FIFO: address byte (R/W = 0) followed by the payload.
-      Push (Regs, Byte (Addr * 2));
-      for D of Data loop
-         Push (Regs, D);
-      end loop;
-
-      --  Command sequence: START, WRITE(addr + data), STOP.  Check_Ack drives
-      --  per-byte ACK checking: on a real bus leave it True so a missing/!ACK
-      --  device aborts the write; the single-pad write self-test turns it off
-      --  (the slave's ACK can't reach the master when both only read one pad).
-      Regs.COMD (0).COMMAND := Cmd (Op_RSTART);
-      Regs.COMD (1).COMMAND := Cmd (Op_WRITE, Bytes => 1 + Len, Ack_Check => Check_Ack);
-      Regs.COMD (2).COMMAND := Cmd (Op_STOP);
-
-      Run_Sequence (Regs, Success);
+      Write_Phase (Regs, Addr, Data, Check_Ack, Close => True, Outcome => Outcome);
+      Success := Outcome = Completed;
    end Write;
 
    ----------
@@ -367,40 +511,51 @@ package body ESP32S3.I2C.Engine is
    ----------
 
    procedure Read (B : Bus; Addr : Slave_Address; Data : out Byte_Array; Success : out Boolean) is
-      Regs : constant Periph_Ref := B.Regs;
-      Len  : constant Natural := Data'Length;
+      Regs    : constant Periph_Ref := B.Regs;
+      Outcome : Seq_Outcome;
    begin
       Success := False;
-      if not B.Valid or else Len = 0 or else Len > Max_Transfer then
+      if not B.Valid or else Data'Length = 0 then
+         return;
+      end if;
+
+      Reset_FIFOs (Regs);
+      Read_Phase (Regs, Addr, Data, Outcome);
+      Success := Outcome = Completed;
+   end Read;
+
+   ----------------
+   -- Write_Read --
+   ----------------
+
+   procedure Write_Read
+     (B       : Bus;
+      Addr    : Slave_Address;
+      Tx      : Byte_Array;
+      Rx      : out Byte_Array;
+      Success : out Boolean)
+   is
+      Regs    : constant Periph_Ref := B.Regs;
+      Outcome : Seq_Outcome;
+   begin
+      Success := False;
+      if not B.Valid or else Rx'Length = 0 then
          return;
       end if;
 
       Reset_FIFOs (Regs);
 
-      --  TX FIFO: address byte with R/W = 1.
-      Push (Regs, Byte (Addr * 2 + 1));
-
-      --  Command sequence: START, WRITE(addr, ACK-checked),
-      --  [READ(len-1, ACK)], READ(1, NACK), STOP.
-      Regs.COMD (0).COMMAND := Cmd (Op_RSTART);
-      Regs.COMD (1).COMMAND := Cmd (Op_WRITE, Bytes => 1, Ack_Check => True);
-      if Len > 1 then
-         Regs.COMD (2).COMMAND := Cmd (Op_READ, Bytes => Len - 1, Ack_Val => False);
-         Regs.COMD (3).COMMAND := Cmd (Op_READ, Bytes => 1, Ack_Val => True);
-         Regs.COMD (4).COMMAND := Cmd (Op_STOP);
-      else
-         Regs.COMD (2).COMMAND := Cmd (Op_READ, Bytes => 1, Ack_Val => True);
-         Regs.COMD (3).COMMAND := Cmd (Op_STOP);
+      --  Write phase closes on an END, NOT a STOP: the bus stays held, so the
+      --  read phase's RSTART is a repeated START.  The slave never sees the
+      --  transaction end, which is what a register-then-data device requires.
+      Write_Phase (Regs, Addr, Tx, Check_Ack => True, Close => False, Outcome => Outcome);
+      if Outcome /= Paused then
+         return;
       end if;
 
-      Run_Sequence (Regs, Success);
-
-      if Success then
-         for I in Data'Range loop
-            Data (I) := Byte (Regs.DATA.FIFO_RDATA);
-         end loop;
-      end if;
-   end Read;
+      Read_Phase (Regs, Addr, Rx, Outcome);
+      Success := Outcome = Completed;
+   end Write_Read;
 
    procedure Close (B : in out Bus) is
    begin
