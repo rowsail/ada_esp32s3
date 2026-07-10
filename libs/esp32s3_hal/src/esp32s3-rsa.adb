@@ -10,11 +10,22 @@ package body ESP32S3.RSA is
 
    --  Wall-clock bound on the accelerator polls below, rather than an iteration
    --  count (which the optimiser collapses to microseconds at -O2, giving up
-   --  before the operation finishes).  Memory-init and a modexp each complete in
-   --  milliseconds; 1 s is a generous worst case that still escapes a wedged
-   --  accelerator instead of spinning.  Same rationale as the SDMMC driver.
+   --  before the operation finishes).  Escapes a wedged accelerator instead of
+   --  spinning.  Same rationale as the SDMMC driver.
+   --
+   --  A modexp does NOT complete in "milliseconds": the time grows with the square
+   --  of the operand length.  Measured on this silicon, CONSTANT_TIME enabled:
+   --
+   --      2048-bit (N =  64 words):   220 ms
+   --      4096-bit (N = 128 words):  1718 ms
+   --
+   --  The old 1 s bound sat between the two, so every 4096-bit modexp "timed out"
+   --  and Mod_Exp reported failure -- which is what a certificate chain anchored
+   --  at a 4096-bit root (ISRG Root X1, for one) needs.  It failed as
+   --  Untrusted_Root, silently, as if the root were wrong.  5 s is ~3x the
+   --  measured 4096-bit worst case and still bounded.
    use type Ada.Real_Time.Time;
-   RSA_Timeout : constant Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (1000);
+   RSA_Timeout : constant Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (5_000);
    function Past (D : Ada.Real_Time.Time) return Boolean
    is (Ada.Real_Time.Clock >= D);
 
