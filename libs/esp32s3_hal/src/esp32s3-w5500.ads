@@ -109,6 +109,37 @@ package ESP32S3.W5500 is
    function Phy (Dev : Device) return Phy_Status;
 
    ---------------------------------------------------------------------------
+   --  Low power (PHY power-down)
+   --
+   --  The W5500's power saving is at the Ethernet PHY.  In Power_Down the PHY is
+   --  off -- the link drops and no frames move -- and that PHY (the 100BASE-TX
+   --  line driver) is the bulk of the chip's current, so this is the meaningful
+   --  low-power state.  The host interface, MAC, registers and the 32 KiB socket
+   --  buffers stay powered and intact: configuration and any buffered data
+   --  survive, only the wire goes quiet.
+   --
+   --  Set_Power (Normal) brings the PHY back with all-capable auto-negotiation;
+   --  the link then re-negotiates, so give it a moment and poll Link before using
+   --  the network.  Both directions apply the change by pulsing the PHY reset, as
+   --  the datasheet requires.
+   --
+   --  This is a LINK-LAYER sleep, not a chip reset: the socket REGISTERS survive,
+   --  but an open TCP connection does not survive the link dropping -- so
+   --  re-establish connections after waking.
+   --
+   --  Power is entirely the APPLICATION's to manage.  After Setup/Reset the PHY is
+   --  powered and running (the default), and the driver never changes that on its
+   --  own: call Set_Power (Dev, Power_Down) when you know you will not use the wire
+   --  for a while, and Set_Power (Dev, Normal) before you next need it (then wait
+   --  for Link to come Up).  Note a Reset re-wakes the PHY, so re-apply Power_Down
+   --  after any reset if you want it to stay down.
+   ---------------------------------------------------------------------------
+   type Power_Mode is (Normal, Power_Down);
+
+   procedure Set_Power (Dev : in out Device; Mode : Power_Mode);
+   function Power (Dev : Device) return Power_Mode;   --  read back from PHYCFGR
+
+   ---------------------------------------------------------------------------
    --  Low-level transport -- one VDM frame per call, the SPI host serialised for
    --  its duration.  These are what the socket layer builds on; Addr is the 16-bit
    --  offset within the selected Block and auto-increments across the data.

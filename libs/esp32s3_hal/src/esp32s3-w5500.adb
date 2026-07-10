@@ -24,6 +24,16 @@ package body ESP32S3.W5500 is
    PHY_SPD : constant Byte := 16#02#;             --  1 = 100 Mbps
    PHY_DPX : constant Byte := 16#04#;             --  1 = full duplex
 
+   --  PHYCFGR config bits.  RST (bit 7) is active-low: pulsing it 1->0->1 applies
+   --  an OPMD/OPMDC change.  OPMD (bit 6) = 1 means the PHY mode is taken from the
+   --  OPMDC field (bits 5..3) rather than the hardware pins.  OPMDC 110 = power
+   --  down; 111 = all-capable with auto-negotiation (the normal running mode).
+   PHY_RST   : constant Byte := 16#80#;           --  bit 7: 0 = PHY in reset
+   PHY_OPMD  : constant Byte := 16#40#;           --  bit 6: configure from OPMDC
+   PHY_OPMDC : constant Byte := 16#38#;           --  bits 5..3: mode field mask
+   PHY_PDOWN : constant Byte := 16#30#;           --  OPMDC = 110 : power down
+   PHY_ALLA  : constant Byte := 16#38#;           --  OPMDC = 111 : all-capable ANeg
+
    --  One SPI frame's scratch (3-byte header + up to Chunk_Size data), one pair
    --  per host so the held Session serialises a host's use of its buffers.  As a
    --  library-level object it lands in .bss = internal SRAM, which GDMA can reach
@@ -257,5 +267,30 @@ package body ESP32S3.W5500 is
 
    function Link (Dev : Device) return Link_State
    is (Phy (Dev).Link);
+
+   ---------------------------------------------------------------------------
+   --  Low power (PHY power-down)
+   ---------------------------------------------------------------------------
+
+   procedure Set_Power (Dev : in out Device; Mode : Power_Mode) is
+      --  OPMD=1 so the PHY takes its mode from OPMDC; 110 = power down, 111 = the
+      --  normal all-capable auto-negotiating mode.
+      Cfg : constant Byte :=
+        PHY_OPMD or (if Mode = Power_Down then PHY_PDOWN else PHY_ALLA);
+   begin
+      --  Latch the mode (RST high = out of reset), then pulse RST low->high so the
+      --  PHY re-initialises into it, per the datasheet.
+      Write_U8 (Dev, Common_Regs, PHYCFGR, Cfg or PHY_RST);
+      Write_U8 (Dev, Common_Regs, PHYCFGR, Cfg);              --  RST=0: assert reset
+      delay until Clock + Microseconds (600);                 --  hold the reset
+      Write_U8 (Dev, Common_Regs, PHYCFGR, Cfg or PHY_RST);   --  RST=1: apply
+      delay until Clock + Milliseconds (2);                   --  let the PHY settle
+   end Set_Power;
+
+   function Power (Dev : Device) return Power_Mode is
+      Regs : constant Byte := Read_U8 (Dev, Common_Regs, PHYCFGR);
+   begin
+      return (if (Regs and PHY_OPMDC) = PHY_PDOWN then Power_Down else Normal);
+   end Power;
 
 end ESP32S3.W5500;

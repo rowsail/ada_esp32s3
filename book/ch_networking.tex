@@ -87,6 +87,56 @@ unreachable --- the bounded poll is what makes the timeout actually fire. Everyt
 above inherits it, so a \texttt{GNAT.Sockets.Connect\_Socket} to an unreachable host
 returns \texttt{Socket\_Error} instead of wedging the task.
 
+\section{Low power: putting the PHY to sleep}\index{W5500!power-down}\index{power saving}
+\label{ch:net:lowpower}
+
+Where a cellular modem has several graduated sleep modes, the W5500 has exactly one
+lever, and it is a blunt one: power the Ethernet PHY down.
+That is not a small thing to switch off --- the 100BASE-TX line driver is the bulk
+of the chip's current --- so it is the power saving that matters. What it costs you
+is the link: with the PHY off there is no carrier, the switch port goes dark, and no
+frames move. Everything on the host side of the PHY --- the SPI interface, the MAC,
+every register, and the 32\,KB of socket buffers --- stays powered, so your
+configuration and any buffered data survive the nap untouched. It is a
+\emph{link-layer} sleep, not a chip reset.
+
+The whole mode is one register, \texttt{PHYCFGR}. Its top bit is an active-low PHY
+reset; bit~6 says ``take the PHY mode from my register bits, not the hardware
+strapping pins''; and a three-bit field selects the mode, of which \texttt{110} is
+power-down and \texttt{111} is the normal all-capable auto-negotiating mode. The one
+subtlety the datasheet insists on is that a mode change only takes effect when you
+\emph{pulse} the reset bit, so the driver writes the new mode, drives reset low,
+waits, and releases it. All of that hides behind a two-value enumeration:
+
+\begin{lstlisting}
+type Power_Mode is (Normal, Power_Down);
+
+procedure Set_Power (Dev : in out Device; Mode : Power_Mode);
+function  Power (Dev : Device) return Power_Mode;   --  reads it back
+\end{lstlisting}
+
+\begin{lstlisting}
+Net.Set_Power (Dev, Net.Power_Down);   --  PHY off: link drops, chip stays configured
+--  ... the low-current interval ...
+Net.Set_Power (Dev, Net.Normal);       --  PHY back: the link re-negotiates
+--  auto-negotiation takes a moment, so wait for it before using the network:
+while Net.Link (Dev) /= Net.Up loop delay until Clock + Milliseconds (250); end loop;
+\end{lstlisting}
+
+Because \texttt{Power} reads the mode back out of \texttt{PHYCFGR}, you can confirm
+the chip accepted the command even with no cable attached --- which is exactly how
+\texttt{esp32s3\_w5500\_lowpower} verifies it on the bench: it cycles the PHY down
+and up three times and reads the mode back each time. With a cable in a live switch
+you additionally see \texttt{Link} track \texttt{Up}\,$\to$\,\texttt{down}\,$\to$\,\texttt{Up}
+and the port LED blink out and back.
+
+\textbf{What sleeps, and what does not.} An open TCP connection does \emph{not}
+survive the PHY sleeping --- the link dropping tears it down --- but the socket
+\emph{registers} do. So treat this like a brief cable-unplug: sleep the PHY when
+idle, and on wake re-establish connections once \texttt{Link} reports \texttt{Up}
+again. If you need to stay reachable \emph{while} saving power, that is a job for the
+cellular link's eDRX, not for the wired PHY, which is all-or-nothing.
+
 \section{What GNAT.Sockets provides}\index{GNAT.Sockets}\index{socket}
 \label{ch:net:gnatsockets}
 
@@ -337,6 +387,14 @@ No static IP: the board leases one. It calls \texttt{DHCP.Maintain} with a
 library-level \texttt{On\_Bound} callback that prints each (re)bind, then the
 background task acquires and keeps the lease for the life of the program. After the
 first bind the chip is configured, so the socket engine and the facade are ready.
+
+\subsection{\texttt{esp32s3\_w5500\_lowpower}: sleeping the PHY}\index{power saving}
+
+The low-power lever of \S\ref{ch:net:lowpower}. It brings the chip up, then cycles
+the PHY down and back up three times, reading the mode back with \texttt{Power} and
+watching \texttt{Link} each round. With no cable it still proves the chip took the
+command (the read-back flips \texttt{Normal}\,$\leftrightarrow$\,\texttt{Power\_Down});
+with a cable in a live switch you watch the link, and the port LED, drop and return.
 
 \section{Tying it together: the current weather}
 \label{ch:net:weather}
