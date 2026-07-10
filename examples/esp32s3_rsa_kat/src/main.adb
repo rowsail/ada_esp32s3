@@ -36,6 +36,7 @@
 --    is no committed script to cite, and these are not a published NIST count.)
 --    The soft-R2 path independently recomputes R^2 from M on-chip, so it also
 --    serves as a cross-check that R2 below is the correct Montgomery constant.
+with Interfaces;
 with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.RSA;   use ESP32S3.RSA;
 with ESP32S3.RNG;
@@ -334,7 +335,7 @@ begin
    delay until Clock + Milliseconds (200);
    ESP32S3.RNG.Enable_Entropy_Source;            --  CSPRNG entropy (RF-free target)
 
-   Put_Line ("[rsa] ESP32-S3 RSA accelerator KAT (X^65537 mod M, 2048-bit)");
+   Put_Line ("[rsa] ESP32-S3 RSA accelerator KAT (2048-bit, then 4096-bit)");
 
    --  (1) HW modexp with a host-precomputed Montgomery constant R^2.
    Mod_Exp (X => X_Base, Y => Y_Exp, M => M_Mod, R2 => R2, Z => Result, Ok => Ok);
@@ -351,6 +352,63 @@ begin
    else
       Put_Line ("[rsa] soft-R2 : " & (if Eq (Result, Z_Want) then "PASS" else "FAIL"));
    end if;
+   ---------------------------------------------------------------------------
+   --  (3) 4096-bit.  The 2048-bit vectors above cannot catch a bound that is too
+   --  short for a LONGER operand, and a modexp's time grows with the square of the
+   --  operand length -- so a driver timeout can sit between the two sizes and fail
+   --  only the big one.  That is exactly what happened: 1 s, against 220 ms at
+   --  2048-bit and 1718 ms at 4096-bit.  A certificate chain anchored at a
+   --  4096-bit root (ISRG Root X1) then failed as if the root were wrong.
+   --
+   --  No external vector is needed: pick M = 2**4096 - 5 (odd, as Montgomery
+   --  requires) and compute 12345**3, which is far smaller than M, so the modular
+   --  reduction is the identity and the answer is exactly 12345**3.
+   ---------------------------------------------------------------------------
+   declare
+      subtype U64 is Interfaces.Unsigned_64;
+      use type Interfaces.Unsigned_64;
+      Words_4096 : constant := 128;
+
+      M4 : Word_Array (0 .. Words_4096 - 1) := (others => 16#FFFF_FFFF#);
+      X4 : Word_Array (0 .. Words_4096 - 1) := (others => 0);
+      Y4 : Word_Array (0 .. Words_4096 - 1) := (others => 0);
+      Z4 : Word_Array (0 .. Words_4096 - 1);
+      Ok4 : Boolean;
+
+      Cube  : constant U64 := 12_345**3;   --  1_881_365_963_625 < 2**64
+      T0    : Time;
+      Ms    : Integer;
+      Match : Boolean;
+   begin
+      M4 (0) := 16#FFFF_FFFB#;      --  M = 2**4096 - 5, odd
+      X4 (0) := 12_345;
+      Y4 (0) := 3;
+
+      Put_Line ("[rsa] 4096-bit: 12345**3 mod (2**4096 - 5)");
+      T0 := Clock;
+      Mod_Exp (X => X4, Y => Y4, M => M4, Z => Z4, Ok => Ok4);
+      Ms := Integer (To_Duration (Clock - T0) * 1000.0);
+
+      if not Ok4 then
+         Put ("[rsa] 4096-bit: hardware did not complete (timeout) after ");
+         Put (Ms, 0);
+         Put_Line (" ms   FAIL");
+      else
+         --  Low 64 bits must be the cube; every other limb must be zero.
+         Match := U64 (Z4 (0)) + U64 (Z4 (1)) * 2**32 = Cube;
+         for I in 2 .. Words_4096 - 1 loop
+            if Z4 (I) /= 0 then
+               Match := False;
+            end if;
+         end loop;
+         Put ("[rsa] 4096-bit: ");
+         Put (if Match then "PASS" else "FAIL");
+         Put ("  (");
+         Put (Ms, 0);
+         Put_Line (" ms, includes software R^2)");
+      end if;
+   end;
+
    Put_Line ("[rsa] done");
 
    --  Nothing more to do; idle forever so the console output stays readable.
