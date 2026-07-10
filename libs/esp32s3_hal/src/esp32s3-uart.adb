@@ -44,6 +44,9 @@ package body ESP32S3.UART is
       --  been made yet.  Idempotent -- a later Acquire of the port reuses it.
       procedure Ensure (Port : UART_Port);
 
+      --  Enable interrupt-driven RX on a port (port-level config, not per-hold).
+      procedure Enable_Rx (Port : UART_Port; Buf : Rx_Buffer_Access);
+
       --  The held port's raw bus -- the one gateway to the registers.
       --  Raises Not_Owned unless S currently holds a port.
       function Owned (S : Session) return E.Bus;
@@ -63,6 +66,15 @@ package body ESP32S3.UART is
          end if;
       end Ensure;
 
+      procedure Enable_Rx (Port : UART_Port; Buf : Rx_Buffer_Access) is
+      begin
+         --  The port need not have been Acquired yet, and there is no Setup any
+         --  more, so bring the bus up first: E.Enable_Buffered_Rx silently does
+         --  nothing on an unopened Bus.
+         Ensure (Port);
+         E.Enable_Buffered_Rx (Buses (Port), Buf);
+      end Enable_Rx;
+
       function Owned (S : Session) return E.Bus is
       begin
          if not S.Active then
@@ -71,6 +83,15 @@ package body ESP32S3.UART is
          return Buses (S.Port);
       end Owned;
    end State;
+
+   ------------------------
+   -- Enable_Buffered_Rx --
+   ------------------------
+
+   procedure Enable_Buffered_Rx (Port : UART_Port; Buffer : Rx_Buffer_Access) is
+   begin
+      State.Enable_Rx (Port, Buffer);
+   end Enable_Buffered_Rx;
 
    -------------
    -- Acquire --

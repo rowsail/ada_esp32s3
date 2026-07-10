@@ -32,6 +32,9 @@ package ESP32S3.UART is
    type Byte is new Interfaces.Unsigned_8;
    type Byte_Array is array (Natural range <>) of Byte;
 
+   --  Caller-owned storage for interrupt-driven RX (see Enable_Buffered_Rx).
+   type Rx_Buffer_Access is access all Byte_Array;
+
    --  An exclusive hold on a port.  Limited (cannot be copied) and CONTROLLED:
    --  releases the port automatically on scope exit, including during exception
    --  unwinding, so a fault between Acquire and Release can't leak the lock.
@@ -43,6 +46,19 @@ package ESP32S3.UART is
    --  the ownership guard that every transfer and configuration call relies on
    --  (each raises Not_Owned unless S is active).
    function Is_Held (S : Session) return Boolean;
+
+   --  Switch a Setup port to INTERRUPT-DRIVEN RX: an RX interrupt (FIFO-full +
+   --  byte-timeout) drains the 128-byte hardware FIFO into Buffer the instant
+   --  bytes arrive, so a burst never overflows the FIFO and is never lost between
+   --  Reads -- essential for a device that streams asynchronously (a modem, GPS).
+   --  Read and Available then serve from Buffer.
+   --
+   --  Buffer is CALLER-OWNED and sets the ring depth: declare one ALIASED at
+   --  library level, ANY size, and it must outlive the port.  The RX ISR writes
+   --  it, so it must be library-level (not a stack object).  Call once at startup
+   --  (single-threaded), before any task Acquires the port; it brings the port up
+   --  itself if no Acquire has yet.
+   procedure Enable_Buffered_Rx (Port : UART_Port; Buffer : Rx_Buffer_Access);
 
    ----------------------------------------------------------------------------
    --  Concurrent, mutually-exclusive use.  A port is configured and used ONLY

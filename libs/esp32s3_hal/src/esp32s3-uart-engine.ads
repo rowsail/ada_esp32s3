@@ -64,8 +64,13 @@ private package ESP32S3.UART.Engine is
    with Pre => Is_Open (B);
 
    --  Read up to Data'Length bytes (bounded wait per byte); Count = received.
+   --  Serves from the interrupt-filled ring if buffered RX is enabled.
    procedure Read (B : Bus; Data : out Byte_Array; Count : out Natural)
    with Pre => Is_Open (B);
+
+   --  Turn on interrupt-driven RX: the RX ISR drains the FIFO into Buf so nothing
+   --  is lost between Reads.  Read/Rx_Available then serve from Buf.
+   procedure Enable_Buffered_Rx (B : Bus; Buf : Rx_Buffer_Access);
 
    procedure Close (B : in out Bus);
 

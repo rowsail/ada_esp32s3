@@ -4,10 +4,52 @@ with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.IO_MUX;
 with ESP32S3_Registers.SYSTEM;
 with ESP32S3.GPIO_Signals;
+with ESP32S3_Registers.INTERRUPT_CORE0;
+with Ada.Interrupts.Names;
 
 package body ESP32S3.UART.Engine is
 
    package Sigs renames ESP32S3.GPIO_Signals;
+   package IC renames ESP32S3_Registers.INTERRUPT_CORE0;
+
+   --  Free runtime device-interrupt slot.  The runtime dispatches level-2 slots
+   --  19/20/21 (Device_L2_0/1/2) and the single level-3 slot 23 (GPIO uses it);
+   --  level-3 slot 27 is defined but NOT dispatched.
+   --
+   --  Device_L2_0 (19).  GDMA used to attach here too, which raises Program_Error
+   --  at ELABORATION (s-bbinte.adb) -- a boot loop, not a runtime error -- in any
+   --  app that pulls in SPI (which withs GDMA) alongside buffered UART RX.  GDMA
+   --  moved to Device_L2_1; do not move the UART here, it is the latency-critical
+   --  one (modem bytes arrive asynchronously).
+   RX_CPU_Int : constant := 19;   --  Device_L2_0
+
+   ---------------------------------------------------------------------------
+   --  Interrupt-driven RX.  One protected object owns a software ring per port
+   --  (the caller's buffer); its Handler (RX FIFO-full / byte-timeout / over-
+   --  flow) drains the hardware FIFO into the ring so nothing is lost between
+   --  Reads.  Handler (producer) and Take (consumer) are both protected actions,
+   --  so the ring is SMP-safe with no lock-free trickery.
+   ---------------------------------------------------------------------------
+
+   type Ring_Buf_Array is array (UART_Port) of Rx_Buffer_Access;
+   type Ring_Idx_Array is array (UART_Port) of Natural;
+
+   protected Rx_Ctrl
+     with Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority
+   is
+      procedure Attach (Port : UART_Port; Buf : Rx_Buffer_Access);
+      function  Has_Buffer (Port : UART_Port) return Boolean;
+      function  Avail (Port : UART_Port) return Natural;
+      procedure Take (Port : UART_Port; Data : out Byte_Array; Count : out Natural);
+   private
+      procedure Handler with Attach_Handler => Ada.Interrupts.Names.Device_L2_0;
+
+      Buf  : Ring_Buf_Array := (others => null);
+      Head : Ring_Idx_Array := (others => 0);  --  producer
+      Tail : Ring_Idx_Array := (others => 0);  --  consumer
+      Cnt  : Ring_Idx_Array := (others => 0);  --  bytes buffered
+   end Rx_Ctrl;
+
    package GR renames ESP32S3_Registers.GPIO;    --  GPIO matrix register layer
    package MX renames ESP32S3_Registers.IO_MUX;  --  IO_MUX (per-pad config)
    package G renames ESP32S3.GPIO;              --  valid-pad subtype
@@ -337,8 +379,105 @@ package body ESP32S3.UART.Engine is
    -- Rx_Available --
    ------------------
 
-   function Rx_Available (B : Bus) return Natural
-   is (if B.Valid then Natural (B.Regs.STATUS.RXFIFO_CNT) else 0);
+   protected body Rx_Ctrl is
+
+      procedure Attach (Port : UART_Port; Buf : Rx_Buffer_Access) is
+      begin
+         Rx_Ctrl.Buf (Port) := Buf;
+         Head (Port) := 0;
+         Tail (Port) := 0;
+         Cnt  (Port) := 0;
+      end Attach;
+
+      function Has_Buffer (Port : UART_Port) return Boolean is
+        (Buf (Port) /= null);
+
+      function Avail (Port : UART_Port) return Natural is (Cnt (Port));
+
+      procedure Take
+        (Port : UART_Port; Data : out Byte_Array; Count : out Natural)
+      is
+         Bf : constant Rx_Buffer_Access := Buf (Port);
+      begin
+         Count := 0;
+         if Bf = null then
+            return;
+         end if;
+         while Count < Data'Length and then Cnt (Port) > 0 loop
+            Data (Data'First + Count) := Bf (Bf'First + Tail (Port));
+            Tail (Port) := (Tail (Port) + 1) mod Bf'Length;
+            Cnt (Port)  := Cnt (Port) - 1;
+            Count := Count + 1;
+         end loop;
+      end Take;
+
+      procedure Handler is
+      begin
+         for Port in UART_Port loop
+            if Buf (Port) /= null then
+               declare
+                  R   : constant Periph_Ref      := Regs_Of (Port);
+                  Raw : constant INT_RAW_Register := R.INT_RAW;
+                  Bf  : constant Rx_Buffer_Access := Buf (Port);
+               begin
+                  if Raw.RXFIFO_FULL_INT_RAW or else Raw.RXFIFO_TOUT_INT_RAW
+                    or else Raw.RXFIFO_OVF_INT_RAW
+                  then
+                     --  drain the hardware FIFO into the ring
+                     while Natural (R.STATUS.RXFIFO_CNT) > 0 loop
+                        declare
+                           Bt : constant Byte := Byte (R.FIFO.RXFIFO_RD_BYTE);
+                        begin
+                           if Cnt (Port) < Bf'Length then
+                              Bf (Bf'First + Head (Port)) := Bt;
+                              Head (Port) := (Head (Port) + 1) mod Bf'Length;
+                              Cnt (Port)  := Cnt (Port) + 1;
+                           end if;   --  ring full -> drop (shouldn't happen)
+                        end;
+                     end loop;
+                     R.INT_CLR :=
+                       (RXFIFO_FULL_INT_CLR => True,
+                        RXFIFO_TOUT_INT_CLR => True,
+                        RXFIFO_OVF_INT_CLR  => True,
+                        others              => <>);
+                  end if;
+               end;
+            end if;
+         end loop;
+      end Handler;
+
+   end Rx_Ctrl;
+
+   procedure Enable_Buffered_Rx (B : Bus; Buf : Rx_Buffer_Access) is
+   begin
+      if not B.Valid or else Buf = null then
+         return;
+      end if;
+      Rx_Ctrl.Attach (B.Port, Buf);
+      --  Fire the RX interrupt as soon as ANY byte is in the FIFO, so short
+      --  replies are delivered immediately (the ISR then drains the whole burst).
+      --  A byte-timeout is also enabled as a backstop.
+      B.Regs.CONF1.RXFIFO_FULL_THRHD := 1;
+      B.Regs.MEM_CONF.RX_TOUT_THRHD  := 10;
+      B.Regs.CONF1.RX_TOUT_EN        := True;
+      B.Regs.INT_ENA.RXFIFO_FULL_INT_ENA := True;
+      B.Regs.INT_ENA.RXFIFO_TOUT_INT_ENA := True;
+      B.Regs.INT_ENA.RXFIFO_OVF_INT_ENA  := True;
+      --  Route this port's interrupt source to the RX ISR's CPU interrupt slot.
+      case B.Port is
+         when UART0 =>
+            IC.INTERRUPT_CORE0_Periph.UART_INTR_MAP.UART_INTR_MAP   := RX_CPU_Int;
+         when UART1 =>
+            IC.INTERRUPT_CORE0_Periph.UART1_INTR_MAP.UART1_INTR_MAP := RX_CPU_Int;
+         when UART2 =>
+            IC.INTERRUPT_CORE0_Periph.UART2_INTR_MAP.UART2_INTR_MAP := RX_CPU_Int;
+      end case;
+   end Enable_Buffered_Rx;
+
+   function Rx_Available (B : Bus) return Natural is
+     (if not B.Valid then 0
+      elsif Rx_Ctrl.Has_Buffer (B.Port) then Rx_Ctrl.Avail (B.Port)
+      else Natural (B.Regs.STATUS.RXFIFO_CNT));
 
    ----------
    -- Read --
@@ -350,8 +489,22 @@ package body ESP32S3.UART.Engine is
       if not B.Valid then
          return;
       end if;
+
+      --  Buffered RX: the ISR fills the ring; serve from it.
+      if Rx_Ctrl.Has_Buffer (B.Port) then
+         declare
+            Guard : Natural := 5_000_000;
+         begin
+            while Rx_Ctrl.Avail (B.Port) = 0 and then Guard > 0 loop
+               Guard := Guard - 1;
+            end loop;
+         end;
+         Rx_Ctrl.Take (B.Port, Data, Count);
+         return;
+      end if;
+
+      --  Unbuffered: poll the hardware FIFO, bounded wait per byte.
       for I in Data'Range loop
-         --  Wait (bounded) for a byte; short-read on timeout.
          declare
             Guard : Natural := 5_000_000;
          begin
