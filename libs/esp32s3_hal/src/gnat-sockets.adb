@@ -516,6 +516,17 @@ package body GNAT.Sockets is
       Last := Item'First + Stream_Element_Offset (Count) - 1;
    end Receive_Socket;
 
+   function Inet_Addr (Octets : Net_Devices.IPv4_Address) return Inet_Addr_Type
+   is (Inet_Addr_Type'(B => Octets));
+
+   function Device_For (Dest : Inet_Addr_Type) return Net_Devices.Device_Access is
+      Id    : Interface_Id;
+      Found : Boolean;
+   begin
+      Resolve_Iface (Dest.B, Id, Found);
+      return (if Found then Registry (Id) else null);
+   end Device_For;
+
    procedure Close_Socket (Socket : in out Socket_Type) is
    begin
       if Socket.Bound and then Socket.Index in Sock_Index then

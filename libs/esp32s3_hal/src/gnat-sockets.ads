@@ -57,6 +57,11 @@ package GNAT.Sockets is
 
    type Inet_Addr_Type is private;
    function Inet_Addr (Image : String) return Inet_Addr_Type;   --  "a.b.c.d"
+
+   --  Build an address from raw octets.  Inet_Addr_Type is private, so a device
+   --  backend (or Net_Resolver, handing back what a device's own resolver found)
+   --  has no other way to make one.
+   function Inet_Addr (Octets : Net_Devices.IPv4_Address) return Inet_Addr_Type;
    function Image (Value : Inet_Addr_Type) return String         --  -> "a.b.c.d"
    with Post => Image'Result'Length in 7 .. 15;
    Any_Inet_Addr : constant Inet_Addr_Type;                      --  0.0.0.0
@@ -120,6 +125,12 @@ package GNAT.Sockets is
       Last   : out Ada.Streams.Stream_Element_Offset;
       From   : access Sock_Addr_Type := null)
    with Post => Last <= Item'Last;
+
+   --  Which device would carry traffic to Dest?  The routing table's answer (or
+   --  the default interface when no routes are configured), or null if nothing
+   --  live can reach it.  Net_Resolver uses this to ask a device whether it can
+   --  resolve names itself before falling back to a DNS query over UDP.
+   function Device_For (Dest : Inet_Addr_Type) return Net_Devices.Device_Access;
 
    procedure Close_Socket (Socket : in out Socket_Type);
 

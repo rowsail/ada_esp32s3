@@ -121,6 +121,7 @@ project ESP32S3_HAL is
             "esp32s3-w5500-net_device.ads", "esp32s3-w5500-net_device.adb",
             "net_devices.ads",
             "net_routes.ads",          "net_routes.adb",
+            "net_resolver.ads",        "net_resolver.adb",
             "gnat-sockets.ads",        "gnat-sockets.adb",
             "dns_client.ads",          "dns_client.adb",
             "ntp_client.ads",          "ntp_client.adb",
