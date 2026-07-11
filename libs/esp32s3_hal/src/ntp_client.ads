@@ -17,12 +17,15 @@ package NTP_Client with SPARK_Mode => On is
    --  the server does not answer within Timeout or the reply is unusable.
    --
    --  Timeout caps the wait for the reply (via the Receive_Timeout socket option);
-   --  0.0, the default, blocks indefinitely.  Local_Port is the UDP source port.
+   --  0.0, the default, blocks indefinitely.  Local_Port is the UDP source port;
+   --  0, the default, picks a fresh dynamic-range port per query -- a fixed
+   --  source port lets a soured NAT flow blackhole every retry (see the note
+   --  on DNS_Client.Resolve, where this was measured on cellular).
    function Query
      (Server     : GNAT.Sockets.Inet_Addr_Type;
       Unix_Time  : out Interfaces.Integer_64;
       Timeout    : Duration := 0.0;
-      Local_Port : GNAT.Sockets.Port_Type := 12_300) return Boolean
+      Local_Port : GNAT.Sockets.Port_Type := 0) return Boolean
    with SPARK_Mode => Off;
 
    --  Break a Unix time (seconds since 1970-01-01 UTC) into UTC calendar fields

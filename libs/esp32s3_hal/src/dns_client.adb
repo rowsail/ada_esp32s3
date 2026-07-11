@@ -11,12 +11,20 @@ package body DNS_Client is
    --  "accept any datagram on the port" cache-poisoning the old fixed id allowed.
    Next_Id : Unsigned_16 := 16#1234#;
 
+   --  Rotates the default source port through the IANA dynamic range, one per
+   --  query, for the reasons on the spec: spoofing resistance, and so a retry
+   --  is a NEW network flow rather than a refresh of one a NAT has soured on.
+   Port_Lo   : constant := 49_664;
+   Port_Span : constant := 15_872;   --  49_664 .. 65_535 (NTP_Client rotates below)
+   Next_Port : Natural := 0;
+
    function Resolve
-     (Server     : Inet_Addr_Type;
-      Name       : String;
-      Addr       : out Inet_Addr_Type;
-      Timeout    : Duration := 0.0;
-      Local_Port : Port_Type := 13_001) return Boolean
+     (Server      : Inet_Addr_Type;
+      Name        : String;
+      Addr        : out Inet_Addr_Type;
+      Timeout     : Duration := 0.0;
+      Local_Port  : Port_Type := 0;
+      Server_Port : Port_Type := 53) return Boolean
    is
       Sock  : Socket_Type;
       Query : Stream_Element_Array (0 .. 511);
@@ -24,7 +32,7 @@ package body DNS_Client is
       Resp  : Stream_Element_Array (0 .. 511);
       RLast : Stream_Element_Offset;
       SLast : Stream_Element_Offset;
-      To    : aliased Sock_Addr_Type := (Family_Inet, Server, 53);
+      To    : aliased Sock_Addr_Type := (Family_Inet, Server, Server_Port);
       From  : aliased Sock_Addr_Type;
       Q_Id  : constant Unsigned_16 := Next_Id;
 
@@ -80,7 +88,14 @@ package body DNS_Client is
       Next_Id := Next_Id + 1;             --  advance for the next caller
       Build_Query;
       Create_Socket (Sock, Family_Inet, Socket_Datagram);
-      Bind_Socket (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
+      if Local_Port = 0 then
+         Bind_Socket
+           (Sock,
+            (Family_Inet, Any_Inet_Addr, Port_Type (Port_Lo + Next_Port)));
+         Next_Port := (Next_Port + 1) mod Port_Span;
+      else
+         Bind_Socket (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
+      end if;
       if Timeout > 0.0 then
          Set_Socket_Option (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
       end if;
@@ -99,11 +114,11 @@ package body DNS_Client is
       declare
          Found : Boolean := False;
       begin
-         --  Reject a datagram that isn't from the server we asked, on port 53,
+         --  Reject a datagram that isn't from the server (and port) we asked,
          --  and long enough to hold a DNS header.  (The transaction-id echo is
          --  checked inside the parser, against the untrusted header bytes.)
          if From.Addr /= Server
-           or else From.Port /= 53
+           or else From.Port /= Server_Port
            or else RLast < Resp'First + 11
          then
             Close_Socket (Sock);

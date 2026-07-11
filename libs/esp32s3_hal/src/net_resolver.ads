@@ -19,8 +19,14 @@ package Net_Resolver is
    --  A public resolver, asked when the caller does not name one.
    Default_DNS : constant String := "8.8.8.8";
 
-   --  True with Addr set on success.  On failure Addr is Any_Inet_Addr, matching
-   --  DNS_Client's contract.
+   --  Asked on an ALTERNATE port (443) when the first query fails: OpenDNS
+   --  answers there, and a carrier that swallows port-53 UDP (measured; see
+   --  the body) does not touch it.
+   Fallback_DNS : constant String := "208.67.222.222";
+
+   --  True with Addr set on success -- via DNS_Server first, then the
+   --  port-443 fallback.  On failure Addr is Any_Inet_Addr, matching
+   --  DNS_Client's contract.  Worst case takes about two Timeouts.
    function Resolve
      (Name       : String;
       Addr       : out GNAT.Sockets.Inet_Addr_Type;

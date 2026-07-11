@@ -7,11 +7,17 @@ package body NTP_Client with SPARK_Mode => On is
 
    NTP_Unix : constant := 2_208_988_800;   --  seconds from 1900-01-01 to 1970-01-01
 
+   --  Rotates the default source port (see the spec: a retry must be a new
+   --  network flow, not a refresh of one a NAT has soured on).
+   Port_Lo   : constant := 49_152;   --  49_152 .. 49_663, below DNS_Client's slice
+   Port_Span : constant := 512;
+   Next_Port : Natural := 0;
+
    function Query
      (Server     : Inet_Addr_Type;
       Unix_Time  : out Interfaces.Integer_64;
       Timeout    : Duration := 0.0;
-      Local_Port : Port_Type := 12_300) return Boolean
+      Local_Port : Port_Type := 0) return Boolean
    with SPARK_Mode => Off
    is
       Sock : Socket_Type;
@@ -25,7 +31,14 @@ package body NTP_Client with SPARK_Mode => On is
    begin
       Unix_Time := 0;
       Create_Socket (Sock, Family_Inet, Socket_Datagram);
-      Bind_Socket (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
+      if Local_Port = 0 then
+         Bind_Socket
+           (Sock,
+            (Family_Inet, Any_Inet_Addr, Port_Type (Port_Lo + Next_Port)));
+         Next_Port := (Next_Port + 1) mod Port_Span;
+      else
+         Bind_Socket (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
+      end if;
       if Timeout > 0.0 then
          Set_Socket_Option (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
       end if;
