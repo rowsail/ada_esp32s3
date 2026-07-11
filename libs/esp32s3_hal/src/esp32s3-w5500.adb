@@ -13,11 +13,25 @@ package body ESP32S3.W5500 is
    SUBR     : constant Unsigned_16 := 16#0005#;   --  Subnet mask       (4)
    SHAR     : constant Unsigned_16 := 16#0009#;   --  Source MAC        (6)
    SIPR     : constant Unsigned_16 := 16#000F#;   --  Source IP         (4)
+   IR_REG   : constant Unsigned_16 := 16#0015#;   --  common interrupt (status)
+   IMR_REG  : constant Unsigned_16 := 16#0016#;   --  common interrupt mask
+   RTR_REG  : constant Unsigned_16 := 16#0019#;   --  retransmission time (100us)
+   RCR_REG  : constant Unsigned_16 := 16#001B#;   --  retransmission count
+   UIPR_REG : constant Unsigned_16 := 16#0028#;   --  unreachable IP    (4)
+   UPORT_REG : constant Unsigned_16 := 16#002C#;  --  unreachable port  (2)
    PHYCFGR  : constant Unsigned_16 := 16#002E#;   --  PHY config/status
    VERSIONR : constant Unsigned_16 := 16#0039#;   --  Chip version (= 0x04)
 
    MR_RST    : constant Byte := 16#80#;          --  MR software-reset bit
+   MR_WOL    : constant Byte := 16#20#;          --  MR Wake-on-LAN enable
+   MR_PB     : constant Byte := 16#10#;          --  MR ping-block enable
+   MR_FARP   : constant Byte := 16#02#;          --  MR force-ARP enable
    W5500_VER : constant Byte := 16#04#;          --  VERSIONR constant value
+
+   --  Common interrupt bits (IR / IMR share the layout).
+   IR_CONFLICT : constant Byte := 16#80#;        --  IP address conflict
+   IR_UNREACH  : constant Byte := 16#40#;        --  destination unreachable
+   IR_MAGIC    : constant Byte := 16#10#;        --  WoL magic packet received
 
    --  PHYCFGR status bits.
    PHY_LNK : constant Byte := 16#01#;             --  1 = link up
@@ -33,6 +47,11 @@ package body ESP32S3.W5500 is
    PHY_OPMDC : constant Byte := 16#38#;           --  bits 5..3: mode field mask
    PHY_PDOWN : constant Byte := 16#30#;           --  OPMDC = 110 : power down
    PHY_ALLA  : constant Byte := 16#38#;           --  OPMDC = 111 : all-capable ANeg
+   --  Fixed-mode OPMDC values (auto-negotiation off), already in bits 5..3.
+   PHY_10H   : constant Byte := 16#00#;           --  OPMDC = 000 : 10BT half
+   PHY_10F   : constant Byte := 16#08#;           --  OPMDC = 001 : 10BT full
+   PHY_100H  : constant Byte := 16#10#;           --  OPMDC = 010 : 100BT half
+   PHY_100F  : constant Byte := 16#18#;           --  OPMDC = 011 : 100BT full
 
    --  One SPI frame's scratch (3-byte header + up to Chunk_Size data), one pair
    --  per host so the held Session serialises a host's use of its buffers.  As a
@@ -272,19 +291,21 @@ package body ESP32S3.W5500 is
    --  Low power (PHY power-down)
    ---------------------------------------------------------------------------
 
-   procedure Set_Power (Dev : in out Device; Mode : Power_Mode) is
-      --  OPMD=1 so the PHY takes its mode from OPMDC; 110 = power down, 111 = the
-      --  normal all-capable auto-negotiating mode.
-      Cfg : constant Byte :=
-        PHY_OPMD or (if Mode = Power_Down then PHY_PDOWN else PHY_ALLA);
+   --  Apply an OPMDC value: OPMD=1 so the PHY takes its mode from the register,
+   --  then pulse RST low->high so the PHY re-initialises into it (datasheet).
+   procedure Apply_Phy (Dev : Device; OPMDC : Byte) is
+      Cfg : constant Byte := PHY_OPMD or OPMDC;
    begin
-      --  Latch the mode (RST high = out of reset), then pulse RST low->high so the
-      --  PHY re-initialises into it, per the datasheet.
-      Write_U8 (Dev, Common_Regs, PHYCFGR, Cfg or PHY_RST);
+      Write_U8 (Dev, Common_Regs, PHYCFGR, Cfg or PHY_RST);   --  latch, out of reset
       Write_U8 (Dev, Common_Regs, PHYCFGR, Cfg);              --  RST=0: assert reset
       delay until Clock + Microseconds (600);                 --  hold the reset
       Write_U8 (Dev, Common_Regs, PHYCFGR, Cfg or PHY_RST);   --  RST=1: apply
       delay until Clock + Milliseconds (2);                   --  let the PHY settle
+   end Apply_Phy;
+
+   procedure Set_Power (Dev : in out Device; Mode : Power_Mode) is
+   begin
+      Apply_Phy (Dev, (if Mode = Power_Down then PHY_PDOWN else PHY_ALLA));
    end Set_Power;
 
    function Power (Dev : Device) return Power_Mode is
@@ -292,5 +313,113 @@ package body ESP32S3.W5500 is
    begin
       return (if (Regs and PHY_OPMDC) = PHY_PDOWN then Power_Down else Normal);
    end Power;
+
+   procedure Set_Link_Mode (Dev : in out Device; Mode : Link_Mode) is
+   begin
+      Apply_Phy
+        (Dev,
+         (case Mode is
+             when Auto      => PHY_ALLA,
+             when M10_Half  => PHY_10H,
+             when M10_Full  => PHY_10F,
+             when M100_Half => PHY_100H,
+             when M100_Full => PHY_100F));
+   end Set_Link_Mode;
+
+   ---------------------------------------------------------------------------
+   --  Mode-register options
+   ---------------------------------------------------------------------------
+
+   --  Read-modify-write one MR bit.  MR.RST reads back 0, so an RMW never
+   --  re-asserts a reset.
+   procedure Set_MR_Bit (Dev : Device; Mask : Byte; On : Boolean) is
+      V : constant Byte := Read_U8 (Dev, Common_Regs, MR);
+   begin
+      Write_U8 (Dev, Common_Regs, MR, (if On then V or Mask else V and not Mask));
+   end Set_MR_Bit;
+
+   procedure Set_Wake_On_LAN (Dev : in out Device; On : Boolean) is
+   begin
+      Set_MR_Bit (Dev, MR_WOL, On);
+   end Set_Wake_On_LAN;
+
+   function Magic_Packet_Pending (Dev : Device) return Boolean
+   is ((Read_U8 (Dev, Common_Regs, IR_REG) and IR_MAGIC) /= 0);
+
+   procedure Clear_Magic_Packet (Dev : in out Device) is
+   begin
+      Write_U8 (Dev, Common_Regs, IR_REG, IR_MAGIC);   --  write 1 to clear
+   end Clear_Magic_Packet;
+
+   procedure Set_Ping_Block (Dev : in out Device; Blocked : Boolean) is
+   begin
+      Set_MR_Bit (Dev, MR_PB, Blocked);
+   end Set_Ping_Block;
+
+   procedure Set_Force_ARP (Dev : in out Device; On : Boolean) is
+   begin
+      Set_MR_Bit (Dev, MR_FARP, On);
+   end Set_Force_ARP;
+
+   ---------------------------------------------------------------------------
+   --  Retransmission
+   ---------------------------------------------------------------------------
+
+   procedure Set_Retransmission
+     (Dev : in out Device; Timeout : Duration; Retries : Natural)
+   is
+      Ticks : Integer := Integer (Timeout * 10_000.0);   --  100 us units
+   begin
+      if Ticks < 1 then
+         Ticks := 1;
+      elsif Ticks > 65_535 then
+         Ticks := 65_535;
+      end if;
+      Write_U16 (Dev, Common_Regs, RTR_REG, Unsigned_16 (Ticks));
+      Write_U8  (Dev, Common_Regs, RCR_REG, Byte (Natural'Min (Retries, 255)));
+   end Set_Retransmission;
+
+   procedure Get_Retransmission
+     (Dev : Device; Timeout : out Duration; Retries : out Natural) is
+   begin
+      Timeout := Duration (Read_U16 (Dev, Common_Regs, RTR_REG)) / 10_000.0;
+      Retries := Natural (Read_U8 (Dev, Common_Regs, RCR_REG));
+   end Get_Retransmission;
+
+   ---------------------------------------------------------------------------
+   --  Diagnostics / common interrupts
+   ---------------------------------------------------------------------------
+
+   procedure Read_Faults
+     (Dev : in out Device; Report : out Fault_Report; Clear : Boolean := True)
+   is
+      IR : constant Byte := Read_U8 (Dev, Common_Regs, IR_REG);
+   begin
+      Report := (others => <>);
+      Report.IP_Conflict      := (IR and IR_CONFLICT) /= 0;
+      Report.Dest_Unreachable := (IR and IR_UNREACH) /= 0;
+      if Report.Dest_Unreachable then
+         Read (Dev, Common_Regs, UIPR_REG, Report.Unreach_IP);
+         Report.Unreach_Port := Read_U16 (Dev, Common_Regs, UPORT_REG);
+      end if;
+      if Clear then
+         --  Write 1 to clear only the bits we handled -- leave Magic_Packet et al.
+         Write_U8 (Dev, Common_Regs, IR_REG, IR and (IR_CONFLICT or IR_UNREACH));
+      end if;
+   end Read_Faults;
+
+   procedure Set_Common_Interrupts
+     (Dev              : in out Device;
+      IP_Conflict      : Boolean := False;
+      Dest_Unreachable : Boolean := False;
+      Magic_Packet     : Boolean := False)
+   is
+      V : Byte := 0;
+   begin
+      if IP_Conflict      then V := V or IR_CONFLICT; end if;
+      if Dest_Unreachable then V := V or IR_UNREACH;  end if;
+      if Magic_Packet     then V := V or IR_MAGIC;    end if;
+      Write_U8 (Dev, Common_Regs, IMR_REG, V);
+   end Set_Common_Interrupts;
 
 end ESP32S3.W5500;

@@ -95,7 +95,7 @@ code, caught at the call, not a runtime reply to interpret.
 \section{Pinning, and a note on host-testing}
 
 Both sides take an \emph{optional} pin. A multi-homed board (\S\ref{ch:net:multinic})
-may need a slave's traffic confined to one link: the wired NIC, never cellular. The
+may need a slave's traffic confined to one link: this NIC, never another. The
 master accepts a closure-free \texttt{Configure} hook called on the fresh socket, and
 the application's hook does the pinning:
 

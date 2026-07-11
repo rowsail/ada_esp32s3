@@ -90,9 +90,8 @@ returns \texttt{Socket\_Error} instead of wedging the task.
 \section{Low power: putting the PHY to sleep}\index{W5500!power-down}\index{power saving}
 \label{ch:net:lowpower}
 
-Where a cellular modem has several graduated sleep modes, the W5500 has exactly one
-lever, and it is a blunt one: power the Ethernet PHY down.
-That is not a small thing to switch off --- the 100BASE-TX line driver is the bulk
+The W5500 has exactly one power lever, and it is a blunt one: power the Ethernet
+PHY down. That is not a small thing to switch off --- the 100BASE-TX line driver is the bulk
 of the chip's current --- so it is the power saving that matters. What it costs you
 is the link: with the PHY off there is no carrier, the switch port goes dark, and no
 frames move. Everything on the host side of the PHY --- the SPI interface, the MAC,
@@ -134,8 +133,63 @@ and the port LED blink out and back.
 survive the PHY sleeping --- the link dropping tears it down --- but the socket
 \emph{registers} do. So treat this like a brief cable-unplug: sleep the PHY when
 idle, and on wake re-establish connections once \texttt{Link} reports \texttt{Up}
-again. If you need to stay reachable \emph{while} saving power, that is a job for the
-cellular link's eDRX, not for the wired PHY, which is all-or-nothing.
+again. There is no lighter, still-reachable sleep on the wired PHY --- it is
+all-or-nothing --- so a node that must stay reachable keeps the PHY up (waking the
+host on \texttt{INTn} instead) rather than sleeping it.
+
+\section{Tuning the chip: the control registers}\index{W5500!control registers}
+\label{ch:net:control}
+
+Power is one knob among many. The hardwired stack is configurable through its
+registers, and the driver surfaces the useful ones as small, app-controlled calls
+in the same style as \texttt{Set\_Power} --- each writes (or reads back) exactly one
+register field, nothing implicit. They fall into a few groups.
+
+\textbf{Link.} Beyond auto-negotiation you can pin the PHY:
+\texttt{Set\_Link\_Mode (Dev, M10\_Half)} forces 10BASE-T, which draws less than
+100BASE-TX --- the companion to power-down for a device that must stay reachable but
+sip current --- or fixes a speed/duplex a stubborn switch will not negotiate. Like
+\texttt{Set\_Power} it re-inits the PHY, so wait for \texttt{Link} afterward.
+
+\textbf{Mode-register switches.} Three independent behaviours, each off by default:
+\texttt{Set\_Wake\_On\_LAN} arms the chip to raise its magic-packet interrupt (the
+wired analogue of the server-wake pattern --- keep the PHY up, sleep the host, wake
+on the packet); \texttt{Set\_Ping\_Block} stops it auto-answering ICMP echo for a
+quieter presence; \texttt{Set\_Force\_ARP} makes it announce its MAC on every send.
+
+\textbf{Retransmission.} \texttt{Set\_Retransmission (Dev, Timeout, Retries)} governs
+how long, and how many times, TCP and ARP retry before giving up as
+\texttt{Timed\_Out} (default 200\,ms\,$\times$\,8). Shorten it for a snappier
+\texttt{Connect} timeout on a dead peer; lengthen it to ride out a lossy link. It is
+the one control with an easy on-chip proof --- set it, \texttt{Get} it back --- which
+is how \texttt{esp32s3\_w5500\_control} verifies the whole register path on hardware.
+
+\textbf{Per-socket options.} Set on an open \texttt{Socket}:
+\texttt{Open\_TCP (\dots, No\_Delay => True)} disables the delayed-ACK batching for
+latency-sensitive request/response (Modbus); \texttt{Set\_Keepalive} overrides the
+default 60\,s probe (it holds a NAT binding open and detects a vanished peer);
+\texttt{Set\_TTL} / \texttt{Set\_Type\_Of\_Service} stamp the IP header;
+\texttt{Set\_Max\_Segment\_Size} caps the TCP MSS; and \texttt{Set\_Buffer\_Sizes}
+re-allocates this socket's slice of the chip's 16\,KB-per-direction pool --- hand a
+bulk transfer 8 or 16\,KB and reclaim it from sockets you do not use (the
+per-direction totals must stay within 16\,KB).
+
+\textbf{Diagnostics.} \texttt{Read\_Faults} returns what the common interrupt
+register latched: an IP-address conflict (a duplicate of your address appeared on the
+LAN) or a destination-unreachable, the latter with the offending IP and port from the
+\texttt{UIPR}/\texttt{UPORTR} registers --- so a UDP send that bounced tells you where
+it went. \texttt{Set\_Common\_Interrupts} routes any of these (and the magic packet)
+to the \texttt{INTn} pin.
+
+\textbf{Multicast and raw frames.} \texttt{Open\_UDP\_Multicast} joins an IPv4 group
+(the driver derives the multicast MAC --- one of the few genuine bit-transforms here,
+so it is pinned by a known-answer test in \texttt{repclause\_host}) and thereafter
+\texttt{Receive\_From} delivers the group's datagrams; this is what mDNS or SSDP would
+need. At the far end of the spectrum, \texttt{Open\_MACRAW} (socket~0 only) hands you
+whole Ethernet frames and bypasses the offloaded stack entirely --- the escape hatch
+for a protocol the chip does not do natively, or your own layer-2 code. Using MACRAW
+means giving up the very thing that makes a W5500 pleasant, so it is a deliberate,
+last-resort mode, not a default.
 
 \section{What GNAT.Sockets provides}\index{GNAT.Sockets}\index{socket}
 \label{ch:net:gnatsockets}
@@ -701,8 +755,8 @@ the server.
 \section{Multiple interfaces: routing, metrics, and pinning}
 \label{ch:net:multinic}\index{routing}\index{interface!multiple}\index{failover}
 
-A board may carry more than one way onto a network: two W5500s, or a wired NIC
-plus a cellular modem. The registry of \S\ref{ch:net:netdevice} already allows it:
+A board may carry more than one way onto a network --- two W5500s, say a primary and
+a backup. The registry of \S\ref{ch:net:netdevice} already allows it:
 \texttt{Add\_Interface} registers several \texttt{Net\_Devices.Device}s, and a
 \texttt{Socket\_Type} records which one it is on. What that section left open
 (its own comment said routing was \emph{``not wired yet''}) is the policy: which
@@ -721,9 +775,9 @@ table of \S\ref{ch:net:vfs}, a neutral interface plus a table that maps a key (h
 a destination address) to a backend (here an interface):
 
 \begin{lstlisting}
-Net_Routes.Set_Default (Eth,  Metric => 10);    -- 0.0.0.0/0 out the wired NIC
-Net_Routes.Set_Default (Cell, Metric => 100);   -- ... or cellular, less preferred
-Net_Routes.Add_Route ((10,0,0,0), (255,0,0,0), Eth, Metric => 10);  -- 10/8 is wired
+Net_Routes.Set_Default (Eth0, Metric => 10);    -- 0.0.0.0/0 out the primary NIC
+Net_Routes.Set_Default (Eth1, Metric => 100);   -- ... or the backup, less preferred
+Net_Routes.Add_Route ((10,0,0,0), (255,0,0,0), Eth0, Metric => 10);  -- 10/8 is primary
 \end{lstlisting}
 
 A destination is resolved in a fixed order: among routes that \emph{match} and whose
@@ -732,13 +786,13 @@ metric}. The two keys do different jobs. Prefix length is specificity: a
 \texttt{10.0.0.0/8} route beats a \texttt{0.0.0.0/0} default regardless of metric, so
 ``LAN traffic goes out the wired port'' is expressed by a more specific route, not a
 number. Metric breaks ties \emph{among equally-specific routes}: two defaults, one
-per interface, are decided by metric, so the wired default (10) wins over the
-cellular default (100). ``Cellular is billed, always last'' is a metric.
+per interface, are decided by metric, so the primary default (10) wins over the
+backup default (100). ``The backup link, always last'' is a metric.
 
 The \texttt{Is\_Up} filter is what turns preference into \textbf{failover}. Give both
-interfaces a default route, wired cheaper; normally the wired default wins. Unplug the
-wired link and its routes drop out of consideration, so the cellular default takes
-over, automatically, no application code. Plug it back in and it preempts again
+interfaces a default route, the primary cheaper; normally the primary default wins.
+Unplug the primary and its routes drop out of consideration, so the backup default
+takes over, automatically, no application code. Plug it back in and it preempts again
 (lower metric, and now up). One subtlety worth stating: an existing connection stays
 on the interface it was opened on (the socket remembers it); failover re-routes only
 \emph{new} connections. You cannot migrate a live TCP socket between interfaces, and
@@ -788,18 +842,18 @@ destination back to the default when its specific route (\texttt{eth1}/24) is do
 the live \texttt{eth0}: the routing table, liveness, and fail-closed pinning, all
 on hardware.
 
-\subsection{Beyond W5500: cellular and friends}
+\subsection{Beyond one chip: the interface contract}
 
-The reason a cellular modem slots in here is that \texttt{Net\_Devices.Device} is a
-\emph{socket-level} contract (\texttt{Connect}/\texttt{Listen}/\texttt{Send} by
-address and port), not a packet-level one. A hardware-offload NIC like the W5500 and a
-firmware-stack modem driven by AT commands both implement it directly, with no on-chip
-TCP/IP stack: the modem's \texttt{Connect} issues an AT command, the W5500's writes
-a socket register, and the facade above neither knows nor cares. A new interface
-(another W5500, or \texttt{Cell\_Modem.Net\_Device}) is one more
-\texttt{Add\_Interface} call and a route or two; nothing above the facade changes. (A
-raw Ethernet MAC or Wi-Fi part would \emph{not} fit so cleanly: those are packet-level
-and would need a software IP stack beneath this interface.)
+What lets a second interface slot in so cleanly is that \texttt{Net\_Devices.Device}
+is a \emph{socket-level} contract (\texttt{Connect}/\texttt{Listen}/\texttt{Send} by
+address and port), not a packet-level one. An offloaded-socket NIC like the W5500
+implements it directly, with no on-chip TCP/IP stack to run on the host: its
+\texttt{Connect} writes a socket register, and the facade above neither knows nor
+cares which interface is underneath. Any other offloaded-socket interface fits the
+same way --- one more \texttt{Add\_Interface} call and a route or two, and nothing
+above the facade changes. (A raw Ethernet MAC or Wi-Fi part would \emph{not} fit so
+cleanly: those are packet-level and would need a software IP stack beneath this
+interface.)
 
 \section{Where the MAC addresses come from}
 \label{ch:net:mac}\index{MAC address}\index{eFuse}

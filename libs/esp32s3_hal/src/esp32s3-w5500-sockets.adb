@@ -10,8 +10,14 @@ package body ESP32S3.W5500.Sockets is
    Sn_IR     : constant Unsigned_16 := 16#02#;
    Sn_SR     : constant Unsigned_16 := 16#03#;
    Sn_PORT   : constant Unsigned_16 := 16#04#;
+   Sn_DHAR   : constant Unsigned_16 := 16#06#;    --  dest MAC (multicast group MAC)
    Sn_DIPR   : constant Unsigned_16 := 16#0C#;
    Sn_DPORT  : constant Unsigned_16 := 16#10#;
+   Sn_MSSR   : constant Unsigned_16 := 16#12#;    --  max segment size
+   Sn_TOS    : constant Unsigned_16 := 16#15#;    --  IP type-of-service
+   Sn_TTL    : constant Unsigned_16 := 16#16#;    --  IP time-to-live
+   Sn_RXBUF  : constant Unsigned_16 := 16#1E#;    --  RX buffer size (KB)
+   Sn_TXBUF  : constant Unsigned_16 := 16#1F#;    --  TX buffer size (KB)
    Sn_TX_FSR : constant Unsigned_16 := 16#20#;
    Sn_TX_WR  : constant Unsigned_16 := 16#24#;
    Sn_RX_RSR : constant Unsigned_16 := 16#26#;
@@ -23,9 +29,12 @@ package body ESP32S3.W5500.Sockets is
    --  so a peer that vanished without a FIN doesn't wedge a blocked reader forever.
    KPALV_60s : constant Byte := 12;
 
-   --  Sn_MR protocol.
-   MR_TCP : constant Byte := 16#01#;
-   MR_UDP : constant Byte := 16#02#;
+   --  Sn_MR protocol + flags.
+   MR_TCP    : constant Byte := 16#01#;
+   MR_UDP    : constant Byte := 16#02#;
+   MR_MACRAW : constant Byte := 16#04#;   --  socket 0 only
+   MR_ND     : constant Byte := 16#20#;   --  TCP: no delayed-ACK (low latency)
+   MR_MULTI  : constant Byte := 16#80#;   --  UDP: multicast (join a group)
 
    --  Sn_CR commands.
    Cmd_Open    : constant Byte := 16#01#;
@@ -50,6 +59,7 @@ package body ESP32S3.W5500.Sockets is
    SR_ESTABLISHED : constant Byte := 16#17#;
    SR_CLOSE_WAIT  : constant Byte := 16#1C#;
    SR_UDP         : constant Byte := 16#22#;
+   SR_MACRAW      : constant Byte := 16#42#;
 
    ---------------------------------------------------------------------------
    --  Register helpers (one socket's register block)
@@ -123,14 +133,15 @@ package body ESP32S3.W5500.Sockets is
       S          : in out Socket;
       Index      : Socket_Id;
       Local_Port : Port_Number;
-      Result     : out Status) is
+      Result     : out Status;
+      No_Delay   : Boolean := False) is
    begin
       S.Dev := Dev;
       S.Index := Index;
       S.Proto := TCP_Proto;
       S.Is_Open := False;
       Issue (S, Cmd_Close);
-      W8 (S, Sn_MR, MR_TCP);
+      W8 (S, Sn_MR, MR_TCP or (if No_Delay then MR_ND else 0));
       W16 (S, Sn_PORT, Local_Port);
       W8 (S, Sn_KPALVTR, KPALV_60s);   --  auto keep-alive once established
       Issue (S, Cmd_Open);
@@ -164,6 +175,82 @@ package body ESP32S3.W5500.Sockets is
          Result := Error;
       end if;
    end Open_UDP;
+
+   procedure Open_UDP_Multicast
+     (Dev        : Device_Access;
+      S          : in out Socket;
+      Index      : Socket_Id;
+      Group      : IPv4_Address;
+      Port       : Port_Number;
+      Result     : out Status)
+   is
+      --  IPv4 multicast MAC: 01:00:5E then the low 23 bits of the group address
+      --  (so the top bit of the second octet is cleared).
+      Group_Mac : constant MAC_Address :=
+        (16#01#, 16#00#, 16#5E#, Group (1) and 16#7F#, Group (2), Group (3));
+   begin
+      S.Dev := Dev;
+      S.Index := Index;
+      S.Proto := UDP_Proto;
+      S.Is_Open := False;
+      Issue (S, Cmd_Close);
+      Write (S.Dev.all, Socket_Regs (S.Index), Sn_DHAR, Group_Mac);   --  group MAC
+      Write (S.Dev.all, Socket_Regs (S.Index), Sn_DIPR, Group);       --  group IP
+      W16 (S, Sn_DPORT, Port);
+      W16 (S, Sn_PORT, Port);                       --  listen on the group port
+      W8 (S, Sn_MR, MR_UDP or MR_MULTI);
+      Issue (S, Cmd_Open);
+      if R8 (S, Sn_SR) = SR_UDP then
+         S.Is_Open := True;
+         Result := OK;
+      else
+         Result := Error;
+      end if;
+   end Open_UDP_Multicast;
+
+   ---------------------------------------------------------------------------
+   --  Per-socket options
+   ---------------------------------------------------------------------------
+
+   procedure Set_Keepalive (S : Socket; Period : Duration) is
+      Units : Integer := Integer (Period / 5.0);   --  Sn_KPALVTR unit = 5 s
+   begin
+      if Units < 0 then
+         Units := 0;
+      elsif Units > 255 then
+         Units := 255;
+      end if;
+      W8 (S, Sn_KPALVTR, Byte (Units));
+   end Set_Keepalive;
+
+   procedure Set_TTL (S : Socket; TTL : Natural) is
+   begin
+      W8 (S, Sn_TTL, Byte (Natural'Min (TTL, 255)));
+   end Set_TTL;
+
+   procedure Set_Type_Of_Service (S : Socket; TOS : Natural) is
+   begin
+      W8 (S, Sn_TOS, Byte (Natural'Min (TOS, 255)));
+   end Set_Type_Of_Service;
+
+   procedure Set_Max_Segment_Size (S : Socket; MSS : Natural) is
+   begin
+      W16 (S, Sn_MSSR, Unsigned_16 (Natural'Min (MSS, 65_535)));
+   end Set_Max_Segment_Size;
+
+   procedure Set_Buffer_Sizes (S : Socket; RX, TX : Buffer_KB) is
+      function KB (K : Buffer_KB) return Byte
+      is (case K is
+             when KB_0  => 0,
+             when KB_1  => 1,
+             when KB_2  => 2,
+             when KB_4  => 4,
+             when KB_8  => 8,
+             when KB_16 => 16);
+   begin
+      W8 (S, Sn_RXBUF, KB (RX));
+      W8 (S, Sn_TXBUF, KB (TX));
+   end Set_Buffer_Sizes;
 
    procedure Close (S : in out Socket) is
    begin
@@ -267,6 +354,9 @@ package body ESP32S3.W5500.Sockets is
 
          when SR_UDP         =>
             return Udp;
+
+         when SR_MACRAW      =>
+            return Macraw;
 
          when others         =>
             return Other;
@@ -552,5 +642,104 @@ package body ESP32S3.W5500.Sockets is
       Count := Copy_Len;
       Result := OK;
    end Receive_From;
+
+   ---------------------------------------------------------------------------
+   --  MACRAW (raw layer 2, socket 0)
+   ---------------------------------------------------------------------------
+
+   procedure Open_MACRAW
+     (Dev : Device_Access; S : in out Socket; Result : out Status) is
+   begin
+      S.Dev := Dev;
+      S.Index := 0;                 --  MACRAW is socket 0 only
+      S.Proto := Raw_Proto;
+      S.Is_Open := False;
+      Issue (S, Cmd_Close);
+      W8 (S, Sn_MR, MR_MACRAW);
+      Issue (S, Cmd_Open);
+      if R8 (S, Sn_SR) = SR_MACRAW then
+         S.Is_Open := True;
+         Result := OK;
+      else
+         Result := Error;
+      end if;
+   end Open_MACRAW;
+
+   procedure Send_Raw
+     (S : in out Socket; Frame : Byte_Array; Sent : out Natural; Result : out Status)
+   is
+      Free : Unsigned_16;
+      WR   : Unsigned_16;
+   begin
+      if not S.Is_Open then
+         Sent := 0;
+         Result := Not_Open;
+         return;
+      end if;
+      if Frame'Length = 0 then
+         Sent := 0;
+         Result := OK;
+         return;
+      end if;
+      Free := R16_Stable (S, Sn_TX_FSR);
+      if Natural (Free) < Frame'Length then       --  a frame is all-or-nothing
+         Sent := 0;
+         Result := No_Space;
+         return;
+      end if;
+      WR := R16 (S, Sn_TX_WR);
+      Write (S.Dev.all, Socket_TX (S.Index), WR, Frame);
+      W16 (S, Sn_TX_WR, WR + Unsigned_16 (Frame'Length));
+      if Flush_Send (S) then
+         Sent := Frame'Length;
+         Result := OK;
+      else
+         Sent := Frame'Length;         --  committed to the chip; report as sent
+         Result := Timed_Out;
+      end if;
+   end Send_Raw;
+
+   procedure Receive_Raw
+     (S : in out Socket; Into : out Byte_Array; Count : out Natural; Result : out Status)
+   is
+      RSR         : Unsigned_16;
+      RD          : Unsigned_16;
+      Hdr         : Byte_Array (0 .. 1);
+      Frame_Len   : Natural;   --  the chip's 2-byte prefix (INCLUDES the prefix)
+      Payload_Len : Natural;
+      Copy_Len    : Natural;
+   begin
+      Count := 0;
+      if not S.Is_Open then
+         Result := Not_Open;
+         return;
+      end if;
+      RSR := R16_Stable (S, Sn_RX_RSR);
+      if RSR < 2 then                 --  no length prefix yet
+         Result := OK;
+         return;
+      end if;
+      RD := R16 (S, Sn_RX_RD);
+      Read (S.Dev.all, Socket_RX (S.Index), RD, Hdr);
+      Frame_Len := Natural (ESP32S3.Endian.Join_BE16 (Unsigned_8 (Hdr (0)), Unsigned_8 (Hdr (1))));
+      if Frame_Len < 2 or else Unsigned_16 (Frame_Len) > RSR then
+         --  corrupt/partial length: drop the whole buffer to resynchronise.
+         W16 (S, Sn_RX_RD, RD + RSR);
+         Issue (S, Cmd_Recv);
+         Result := Error;
+         return;
+      end if;
+      RD := RD + 2;
+      Payload_Len := Frame_Len - 2;
+      Copy_Len := Natural'Min (Into'Length, Payload_Len);
+      if Copy_Len > 0 then
+         Read (S.Dev.all, Socket_RX (S.Index), RD, Into (Into'First .. Into'First + Copy_Len - 1));
+      end if;
+      RD := RD + Unsigned_16 (Payload_Len);   --  skip the whole frame
+      W16 (S, Sn_RX_RD, RD);
+      Issue (S, Cmd_Recv);
+      Count := Copy_Len;
+      Result := OK;
+   end Receive_Raw;
 
 end ESP32S3.W5500.Sockets;

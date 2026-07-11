@@ -165,6 +165,39 @@ procedure Repcheck is
    end Check_W5500;
 
    ------------------------------------------------------------------
+   --  ESP32S3.W5500.Sockets  --  IPv4 -> multicast MAC (Open_UDP_Multicast)
+   --  01:00:5E : (octet1 and 0x7F) : octet2 : octet3.  Checked against the
+   --  STANDARD mappings (a known-answer test, not a re-derivation): this catches
+   --  masking the wrong octet or the wrong bit.
+   ------------------------------------------------------------------
+   type Octet is mod 2 ** 8;
+   type Mac6  is array (0 .. 5) of Octet;
+
+   --  The driver's derivation, mirrored.
+   function Mcast_Mac (O0, O1, O2, O3 : Octet) return Mac6 is
+     (16#01#, 16#00#, 16#5E#, O1 and 16#7F#, O2, O3);
+
+   procedure Check_W5500_Mcast is
+      F : Natural := 0;
+      procedure Expect (O0, O1, O2, O3 : Octet; M : Mac6) is
+      begin
+         if Mcast_Mac (O0, O1, O2, O3) /= M then
+            F := F + 1;
+         end if;
+      end Expect;
+   begin
+      --  224.0.0.1 (all-hosts), 224.0.0.251 (mDNS), 239.255.255.250 (SSDP),
+      --  and a case where the second-octet high bit must be dropped (233.130..).
+      Expect (224, 0,   0,   1,   (16#01#, 16#00#, 16#5E#, 16#00#, 16#00#, 16#01#));
+      Expect (224, 0,   0,   251, (16#01#, 16#00#, 16#5E#, 16#00#, 16#00#, 16#FB#));
+      Expect (239, 255, 255, 250, (16#01#, 16#00#, 16#5E#, 16#7F#, 16#FF#, 16#FA#));
+      Expect (233, 130, 1,   2,   (16#01#, 16#00#, 16#5E#, 16#02#, 16#01#, 16#02#));
+      Fails := Fails + F;
+      Put_Line ("  w5500 multicast MAC ... "
+                & (if F = 0 then "PASS (4 cases)" else "FAIL"));
+   end Check_W5500_Mcast;
+
+   ------------------------------------------------------------------
    --  ESP32S3.PCNT  --  16-bit counter sign extension
    ------------------------------------------------------------------
    function To_S16 is new Ada.Unchecked_Conversion (Unsigned_16, Integer_16);
@@ -244,6 +277,7 @@ begin
    Check_RINTSTS;
    Check_TWAI;
    Check_W5500;
+   Check_W5500_Mcast;
    Check_PCNT;
    if Fails = 0 then
       Put_Line ("All rep-clause encoders match the old arithmetic.");

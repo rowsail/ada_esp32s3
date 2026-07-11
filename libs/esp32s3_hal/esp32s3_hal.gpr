@@ -51,7 +51,7 @@ project ESP32S3_HAL is
    --  source directory (not visible under light-tasking at all).
    case Profile is
       when "light-tasking" =>
-         for Source_Dirs use ("src", "svd");
+         for Source_Dirs use ("src", "src/eeprom", "svd");
          for Excluded_Source_Files use
            ("esp32s3-pcf85063a.ads",   "esp32s3-pcf85063a.adb",
             "esp32s3-pcf85063a-interrupts.ads",
@@ -130,7 +130,7 @@ project ESP32S3_HAL is
             "modbus-master.ads",       "modbus-master.adb",
             "modbus-slave.ads",        "modbus-slave.adb");
       when "embedded" | "full" =>
-         for Source_Dirs use ("src", "svd", "src/ext4");
+         for Source_Dirs use ("src", "src/eeprom", "svd", "src/ext4");
    end case;
 
    package Compiler is

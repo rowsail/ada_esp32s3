@@ -140,6 +140,72 @@ package ESP32S3.W5500 is
    function Power (Dev : Device) return Power_Mode;   --  read back from PHYCFGR
 
    ---------------------------------------------------------------------------
+   --  Link mode
+   --
+   --  By default the PHY auto-negotiates (Auto).  You can pin it: to 10BASE-T for
+   --  lower PHY current (the companion to Power_Down when you must stay reachable),
+   --  or to a fixed speed/duplex when a stubborn switch will not negotiate.
+   --  Applied by pulsing the PHY reset like Set_Power, so the link re-establishes
+   --  -- wait for Link afterwards.  Set_Link_Mode (Auto) is the same as
+   --  Set_Power (Normal).
+   ---------------------------------------------------------------------------
+   type Link_Mode is (Auto, M10_Half, M10_Full, M100_Half, M100_Full);
+   procedure Set_Link_Mode (Dev : in out Device; Mode : Link_Mode);
+
+   ---------------------------------------------------------------------------
+   --  Mode-register options (each off by default after Reset).
+   ---------------------------------------------------------------------------
+
+   --  Wake-on-LAN: the chip raises its Magic_Packet interrupt on receiving a WoL
+   --  magic packet addressed to it (the PHY must be up to hear it).  Route it to
+   --  the INTn pin with Set_Common_Interrupts if you want it to wake the host.
+   procedure Set_Wake_On_LAN (Dev : in out Device; On : Boolean);
+   function  Magic_Packet_Pending (Dev : Device) return Boolean;
+   procedure Clear_Magic_Packet (Dev : in out Device);
+
+   --  Ping block: stop the chip auto-replying to ICMP echo (a quieter presence on
+   --  the LAN; it still answers ARP, so it stays reachable).
+   procedure Set_Ping_Block (Dev : in out Device; Blocked : Boolean);
+
+   --  Force-ARP: send an ARP request on every SEND rather than trusting the ARP
+   --  cache -- announces/refreshes the chip's MAC on switches that age entries.
+   procedure Set_Force_ARP (Dev : in out Device; On : Boolean);
+
+   ---------------------------------------------------------------------------
+   --  Retransmission (governs TCP and ARP): the time per try and the number of
+   --  tries before an operation gives up as Timed_Out.  Defaults are 200 ms x 8.
+   --  Shorter/fewer => fail fast on a dead peer (a snappier Connect timeout);
+   --  longer/more => tolerate a lossy link.  Timeout is quantised to 100 us.
+   ---------------------------------------------------------------------------
+   procedure Set_Retransmission
+     (Dev : in out Device; Timeout : Duration; Retries : Natural);
+   procedure Get_Retransmission
+     (Dev : Device; Timeout : out Duration; Retries : out Natural);
+
+   ---------------------------------------------------------------------------
+   --  Diagnostics from the common interrupt register (IR).
+   ---------------------------------------------------------------------------
+   type Fault_Report is record
+      IP_Conflict      : Boolean := False;   --  a duplicate of our IP is on the LAN
+      Dest_Unreachable : Boolean := False;   --  a UDP send bounced (ICMP unreachable)
+      Unreach_IP       : IPv4_Address := (others => 0);   --  the unreachable host ...
+      Unreach_Port     : Interfaces.Unsigned_16 := 0;     --  ... and its port
+   end record;
+
+   --  Read (and by default clear) the pending faults.  Leaves the Magic_Packet
+   --  bit alone -- read that with Magic_Packet_Pending.
+   procedure Read_Faults
+     (Dev : in out Device; Report : out Fault_Report; Clear : Boolean := True);
+
+   --  Choose which common interrupts drive the INTn pin (all masked off by
+   --  default).  Enabling Magic_Packet here is what makes Wake-on-LAN wake the host.
+   procedure Set_Common_Interrupts
+     (Dev              : in out Device;
+      IP_Conflict      : Boolean := False;
+      Dest_Unreachable : Boolean := False;
+      Magic_Packet     : Boolean := False);
+
+   ---------------------------------------------------------------------------
    --  Low-level transport -- one VDM frame per call, the SPI host serialised for
    --  its duration.  These are what the socket layer builds on; Addr is the 16-bit
    --  offset within the selected Block and auto-increments across the data.
