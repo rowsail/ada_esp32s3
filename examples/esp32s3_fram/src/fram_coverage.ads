@@ -1,0 +1,18 @@
+pragma Warnings (Off);   --  a with-all coverage unit; unreferenced withs are the point
+with ESP32S3.FRAM_I2C.KBIT_128;
+with ESP32S3.FRAM_I2C.KBIT_16;
+with ESP32S3.FRAM_I2C.KBIT_256;
+with ESP32S3.FRAM_I2C.KBIT_4;
+with ESP32S3.FRAM_I2C.KBIT_512;
+with ESP32S3.FRAM_I2C.KBIT_64;
+with ESP32S3.FRAM_I2C.MBIT_1;
+with ESP32S3.FRAM_SPI.KBIT_128;
+with ESP32S3.FRAM_SPI.KBIT_16;
+with ESP32S3.FRAM_SPI.KBIT_256;
+with ESP32S3.FRAM_SPI.KBIT_4;
+with ESP32S3.FRAM_SPI.KBIT_512;
+with ESP32S3.FRAM_SPI.KBIT_64;
+with ESP32S3.FRAM_SPI.MBIT_1;
+with ESP32S3.FRAM_SPI.MBIT_2;
+with ESP32S3.FRAM_SPI.MBIT_4;
+package Fram_Coverage is end Fram_Coverage;

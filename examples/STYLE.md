@@ -50,11 +50,21 @@ needs it). **`esp32s3_gpio0_blink`** is the minimal end.
    (NMEA `GGA`/`RMC`). When in doubt, write it out. The same goes for a package
    rename: `package Expander renames ESP32S3.CH422G;` beats `package CH ...`.
 
-6. **Put the "why" in the code, not only the README.** If understanding a line
+6. **No mysterious names.** A name must say what the thing *is* or *does*, so a
+   reader never has to hunt for its meaning. No opaque placeholders (`Data`,
+   `Tmp`, `Thing`, `X`, `Val2`), no single letters outside a loop index, and no
+   invented codename or tag whose meaning lives only in your head or in another
+   file. The test: if learning what a name refers to means scrolling away, opening
+   the datasheet, or running the code to watch what it holds, it is mysterious —
+   rename it to the thing it actually is. (This is the flip side of rule 5:
+   rule 5 forbids *shortening* a real name; this forbids a name that carries *no
+   meaning* to shorten.)
+
+7. **Put the "why" in the code, not only the README.** If understanding a line
    needs a fact (why this address means PSRAM, why this delay, why this order),
    state it inline. The example should stand alone.
 
-7. **Don't change documented output to suit the rewrite.** Console strings that
+8. **Don't change documented output to suit the rewrite.** Console strings that
    the example's README quotes are a contract — preserve them verbatim. Improve
    the code around them.
 

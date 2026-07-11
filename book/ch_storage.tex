@@ -7,8 +7,9 @@ The final layer is mass storage: block drivers for SD cards and for a raw SPI NO
 flash chip, and a complete pure-Ada ext2/3/4 filesystem (a reimplementation of
 lwext4) that sits on top of them: mounting real \texttt{mkfs.ext4} cards,
 \emph{and} wear-leveling and formatting a bare flash chip entirely on-device.
-The chapter closes with the smallest storage of all, a serial EEPROM, and with a
-generic that drives a whole family of them.
+The chapter closes with the smallest storage of all --- a serial EEPROM and its
+faster, wear-free cousin FRAM --- and with a generic that drives a whole catalogue
+of each.
 
 \section{SD\_SPI: an SD card over the SPI master}\index{SD card}\index{SD\_SPI}\index{SPI SD mode}
 
@@ -577,9 +578,9 @@ Word_Span   : constant Positive := 2 ** (8 * Address_Bytes);   --  256 or 65536
 Blocks      : constant Positive := (Capacity + Word_Span - 1) / Word_Span;
 Max_Devices : constant Positive := 8 / Blocks;
 
---  and the slave address for cell A is simply:
-function Slave_Of (Dev : Device; A : Memory_Address) return Slave_Address
-is (Base_Address + Dev.Strap + A / Word_Span);
+--  and the slave address for the byte at Location is simply:
+function Slave_Of (Dev : Device; Location : Memory_Address) return Slave_Address
+is (Base_Address + Dev.Strap + Location / Word_Span);
 \end{lstlisting}
 
 The folded bits and the straps never collide, because a strap the part has
@@ -619,6 +620,58 @@ Its sibling the 24LC1026 folds normally, and is there.
 \noindent The on-target example \texttt{esp32s3\_m24c64} probes the strapped
 address, keeps a boot counter across resets, and writes a pattern across a page
 boundary to prove the split.
+
+\section{FRAM: the same catalogue, without the wait}
+\label{storage:fram}\index{FRAM}\index{ferroelectric RAM}
+
+FRAM (ferroelectric RAM) fills the same kilobytes-of-non-volatile niche as the 24C
+EEPROM, and its driver is built the same way --- a generic over a catalogue of
+parts (Section~\ref{storage:eeprom}). So this section is mostly about what FRAM
+does \emph{not} need. It behaves like RAM that keeps its contents: byte-writable,
+effectively unlimited endurance ($10^{12}$ writes and more), and no erase. Two of
+the three EEPROM traps simply vanish. There is no page boundary, so a
+\texttt{Write} of any length is one transaction with no split; and there is no
+program cycle --- a byte is committed as it is clocked in --- so there is no 5\,ms
+wait and no ACK polling. FRAM's \texttt{Write} is the EEPROM's with the two hardest
+parts deleted. What survives is the addressing.
+
+\textbf{Two buses, two families.} FRAM comes on I2C (Fujitsu MB85RC, Cypress FM24)
+and on SPI (Fujitsu MB85RS, Cypress FM25), so there are two catalogues,
+\texttt{ESP32S3.FRAM\_I2C} and \texttt{ESP32S3.FRAM\_SPI}, each a generic over its
+own \texttt{Geometry}. The I2C side reuses the 24C addressing wholesale; the SPI
+side is the small standard SPI-memory command set (\texttt{WREN}, then
+\texttt{WRITE}/\texttt{READ} with a one-, two-, or three-byte address).
+
+\textbf{Keyed by density, not by part number.} The read/write protocol is identical
+across manufacturers --- a fact the datasheets made emphatic --- so a part is
+nothing but its geometry, and the catalogue names instances by density rather than
+by vendor SKU:
+
+\begin{lstlisting}
+with ESP32S3.FRAM_I2C.Kbit_256;
+...
+   package Ram_Part renames ESP32S3.FRAM_I2C.Kbit_256;   --  MB85RC256V, FM24W256, ...
+   Ram : Ram_Part.Device;
+begin
+   Ram_Part.Setup (Ram, Sda => 41, Scl => 40);   --  clock defaults per geometry
+   Ram_Part.Write (Ram, 16#0100#, Buf, St);       --  one transaction, no split
+\end{lstlisting}
+
+\noindent One \texttt{Kbit\_256} covers the Fujitsu MB85RC256V and the Cypress
+FM24W256 alike; its banner lists the part numbers. Each geometry also carries its
+own default bus clock --- FRAM runs faster than a 24C part --- which \texttt{Setup}
+uses as the default for \texttt{Clock\_Hz}.
+
+\textbf{Identify, do not verify.} Because FRAM can report a Device ID, it is
+tempting to read it back and confirm the populated part matches the geometry you
+compiled for. The datasheets killed that idea: the Device ID command is \emph{not}
+implemented on most parts --- the manufacturer datasheets confirm the 16/64/128
+\,Kbit MB85RC parts carry none --- so a part that reports nothing is the common
+case, not an error. The driver therefore keeps \texttt{Read\_Device\_ID} and
+\texttt{Identify} (Fujitsu / Cypress / Unknown) as \emph{informational} only; the
+geometry is fixed at compile time by the chosen instance, and trusted. As with the
+24C parts, every FRAM geometry is datasheet-derived and marked \texttt{STATUS:
+UNTESTED} until it is run on real silicon.
 
 \vfill
 \noindent\rule{\linewidth}{0.4pt}\\[4pt]

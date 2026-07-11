@@ -51,7 +51,7 @@ project ESP32S3_HAL is
    --  source directory (not visible under light-tasking at all).
    case Profile is
       when "light-tasking" =>
-         for Source_Dirs use ("src", "src/eeprom", "svd");
+         for Source_Dirs use ("src", "src/eeprom", "src/fram", "svd");
          for Excluded_Source_Files use
            ("esp32s3-pcf85063a.ads",   "esp32s3-pcf85063a.adb",
             "esp32s3-pcf85063a-interrupts.ads",
@@ -78,6 +78,28 @@ project ESP32S3_HAL is
             "esp32s3-eeprom_24c-m24c64.ads",
             "esp32s3-eeprom_24c-m24m01.ads",
             "esp32s3-eeprom_24c-m24m02.ads",
+            "esp32s3-fram_i2c.ads",
+            "esp32s3-fram_i2c-driver.ads",
+            "esp32s3-fram_i2c-driver.adb",
+            "esp32s3-fram_i2c-kbit_4.ads",
+            "esp32s3-fram_i2c-kbit_16.ads",
+            "esp32s3-fram_i2c-kbit_64.ads",
+            "esp32s3-fram_i2c-kbit_128.ads",
+            "esp32s3-fram_i2c-kbit_256.ads",
+            "esp32s3-fram_i2c-kbit_512.ads",
+            "esp32s3-fram_i2c-mbit_1.ads",
+            "esp32s3-fram_spi.ads",
+            "esp32s3-fram_spi-driver.ads",
+            "esp32s3-fram_spi-driver.adb",
+            "esp32s3-fram_spi-kbit_4.ads",
+            "esp32s3-fram_spi-kbit_16.ads",
+            "esp32s3-fram_spi-kbit_64.ads",
+            "esp32s3-fram_spi-kbit_128.ads",
+            "esp32s3-fram_spi-kbit_256.ads",
+            "esp32s3-fram_spi-kbit_512.ads",
+            "esp32s3-fram_spi-mbit_1.ads",
+            "esp32s3-fram_spi-mbit_2.ads",
+            "esp32s3-fram_spi-mbit_4.ads",
             "esp32s3-tca9555.ads",      "esp32s3-tca9555.adb",
             "esp32s3-tca9555-interrupts.ads",
             "esp32s3-tca9555-interrupts.adb",
@@ -130,7 +152,7 @@ project ESP32S3_HAL is
             "modbus-master.ads",       "modbus-master.adb",
             "modbus-slave.ads",        "modbus-slave.adb");
       when "embedded" | "full" =>
-         for Source_Dirs use ("src", "src/eeprom", "svd", "src/ext4");
+         for Source_Dirs use ("src", "src/eeprom", "src/fram", "svd", "src/ext4");
    end case;
 
    package Compiler is

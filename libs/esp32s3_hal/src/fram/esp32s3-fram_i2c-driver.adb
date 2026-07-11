@@ -1,72 +1,36 @@
-with Ada.Real_Time; use Ada.Real_Time;
-
-package body ESP32S3.EEPROM_24C.Driver is
+package body ESP32S3.FRAM_I2C.Driver is
 
    package Bus renames ESP32S3.I2C;
 
-   --  How far a sequential read may run before it must be re-addressed.
-   Read_Span : constant Positive :=
-     (if Part.Max_Read_Span = 0 then Capacity else Part.Max_Read_Span);
-
-   --  Internal program cycle: ~5 ms (datasheet t_W).  Poll for the part's ACK
-   --  rather than sleeping the worst case blindly, but give up eventually.
-   Write_Cycle_Limit : constant Time_Span := Milliseconds (10);
-   Poll_Interval     : constant Time_Span := Microseconds (200);
+   --  Reserved slave address for the Device ID sequence (0xF8 >> 1).
+   Reserved_ID_Slave : constant Bus.Slave_Address := 16#7C#;
 
    ---------------------------------------------------------------------------
    --  Addressing.
    ---------------------------------------------------------------------------
 
    --  The slave address that answers for the byte at Location: the strapped base,
-   --  plus the high address bits the part folds into its device-select byte.  For a
-   --  part that folds nothing (Blocks = 1) this is just the base.
+   --  plus the high address bits the part folds into its device-select byte.
    function Slave_Of (Dev : Device; Location : Memory_Address) return Bus.Slave_Address
    is (Base_Address + Dev.Strap + Location / Word_Span);
 
-   --  The word address, big-endian, as the part expects it: the low bits of Location
-   --  that fit in Address_Bytes.  Word'Length must be Address_Bytes.
+   --  The word address, big-endian: the low bits of Location that fit in Address_Bytes.
    procedure Put_Word_Address (Word : out Bus.Byte_Array; Location : Memory_Address) is
       Offset : constant Natural := Location mod Word_Span;   --  position within the block
    begin
       if Address_Bytes = 1 then
          Word (Word'First) := Bus.Byte (Offset);
       else
-         Word (Word'First) := Bus.Byte (Offset / 256);
+         Word (Word'First)     := Bus.Byte (Offset / 256);
          Word (Word'First + 1) := Bus.Byte (Offset mod 256);
       end if;
    end Put_Word_Address;
 
-   --  Bytes left in the page that Location falls in: a write must stop here or the part
-   --  wraps to the start of the page instead of advancing.
-   function Page_Remaining (Location : Memory_Address) return Positive
-   is (Page_Size - Location mod Page_Size)
-   with SPARK_Mode => On;
-
-   --  Bytes left in the run that Location falls in, for the rare part whose sequential
-   --  read cannot cross a block (24LC1025/26).  Read_Span = Capacity otherwise,
-   --  so this never splits a read.
-   function Span_Remaining (Location : Memory_Address) return Positive
-   is (Read_Span - Location mod Read_Span)
-   with SPARK_Mode => On;
-
-   --  ACK-poll the part back from an internal program cycle: it NACKs its own
-   --  address until the cycle completes.  A zero-length write is an address-only
-   --  probe.
-   procedure Wait_Ready (Session : Bus.Session; Slave : Bus.Slave_Address; Result : out Status) is
-      Deadline : constant Time := Clock + Write_Cycle_Limit;
-      Acked    : Boolean;
-   begin
-      Result := Write_Timeout;
-      loop
-         delay until Clock + Poll_Interval;
-         Bus.Write (Session, Slave, Bus.Byte_Array'(1 .. 0 => 0), Acked);
-         if Acked then
-            Result := OK;
-            exit;
-         end if;
-         exit when Clock >= Deadline;
-      end loop;
-   end Wait_Ready;
+   --  Bytes left in the block that Location falls in: a transfer must re-address at a block
+   --  boundary because that boundary is a change of slave address, not just of the
+   --  word counter.  For a part that folds nothing (Blocks = 1) this never splits.
+   function Block_Remaining (Location : Memory_Address) return Positive
+   is (Word_Span - Location mod Word_Span);
 
    -----------
    -- Setup --
@@ -80,7 +44,7 @@ package body ESP32S3.EEPROM_24C.Driver is
       A1       : Pin_State := Low;
       A2       : Pin_State := Low;
       Host     : ESP32S3.I2C.I2C_Host := ESP32S3.I2C.I2C0;
-      Clock_Hz : Positive := 400_000) is
+      Clock_Hz : Positive := Max_Clock) is
    begin
       Dev :=
         (Host  => Host,
@@ -108,11 +72,9 @@ package body ESP32S3.EEPROM_24C.Driver is
    -- Read --
    ----------
 
-   --  The datasheet's random read, exactly as written there: send the word
-   --  address, then a REPEATED START into the read -- no STOP in between, so the
-   --  part never sees the command end and its address counter cannot drift.  The
-   --  host handles any length, so this is one transaction per readable run, and
-   --  the counter walks the array for us.
+   --  The datasheet's random read: word address, REPEATED START into the read,
+   --  no STOP between.  FRAM has no read-run limit, so the only split is a block
+   --  boundary on a folded part.
    procedure Read
      (Dev : Device; From : Memory_Address; Data : out ESP32S3.I2C.Byte_Array; Result : out Status)
    is
@@ -130,7 +92,7 @@ package body ESP32S3.EEPROM_24C.Driver is
          declare
             Target : constant Memory_Address := From + Offset;
             Chunk  : constant Positive :=
-              Natural'Min (Span_Remaining (Target), Data'Length - Offset);
+              Natural'Min (Block_Remaining (Target), Data'Length - Offset);
             First  : constant Natural := Data'First + Offset;
             Word   : Bus.Byte_Array (0 .. Address_Bytes - 1);
          begin
@@ -150,6 +112,9 @@ package body ESP32S3.EEPROM_24C.Driver is
    -- Write --
    -----------
 
+   --  Word address then the whole payload in one segment.  No page boundary and no
+   --  program cycle: FRAM commits each byte as it is clocked in, so there is
+   --  nothing to wait for after the STOP.  The only split is a block boundary.
    procedure Write
      (Dev : Device; To : Memory_Address; Data : ESP32S3.I2C.Byte_Array; Result : out Status)
    is
@@ -162,33 +127,22 @@ package body ESP32S3.EEPROM_24C.Driver is
          return;
       end if;
 
-      --  Held across every page and program cycle: a multi-page Write is atomic
-      --  with respect to other tasks sharing the host.
       Bus.Acquire (Session, Dev.Host);
       while Offset < Data'Length loop
          declare
             Target : constant Memory_Address := To + Offset;
             Chunk  : constant Positive :=
-              Natural'Min (Page_Remaining (Target), Data'Length - Offset);
+              Natural'Min (Block_Remaining (Target), Data'Length - Offset);
             First  : constant Natural := Data'First + Offset;
-            Slave  : constant Bus.Slave_Address := Slave_Of (Dev, Target);
-
-            --  Word address then payload, one segment.  A page never straddles a
-            --  block, so Slave is right for the whole frame.
-            Frame : Bus.Byte_Array (0 .. Address_Bytes + Chunk - 1);
+            Frame  : Bus.Byte_Array (0 .. Address_Bytes + Chunk - 1);
          begin
             Put_Word_Address (Frame (0 .. Address_Bytes - 1), Target);
             Frame (Address_Bytes .. Address_Bytes + Chunk - 1) :=
               Data (First .. First + Chunk - 1);
 
-            Bus.Write (Session, Slave, Frame, Acked);
+            Bus.Write (Session, Slave_Of (Dev, Target), Frame, Acked);
             if not Acked then
                Result := Bus_Error;
-               return;
-            end if;
-
-            Wait_Ready (Session, Slave, Result);
-            if Result /= OK then
                return;
             end if;
             Offset := Offset + Chunk;
@@ -219,14 +173,56 @@ package body ESP32S3.EEPROM_24C.Driver is
       Write (Dev, To, Bus.Byte_Array'(0 => Value), Result);
    end Write_Byte;
 
+   --------------------
+   -- Read_Device_ID --
+   --------------------
+
+   --  Reserved-slave-ID sequence: START, 0xF8 (write) + the device's own 8-bit
+   --  write address as the one data byte, REPEATED START, 0xF9 (read), 3 bytes.
+   --  Bus.Write_Read drives exactly that (same slave 0x7C for both phases).
+   --  The 24 bits are Manufacturer[11..0], Density[3..0], Product[7..0].
+   procedure Read_Device_ID (Dev : Device; ID : out Device_ID; Result : out Status) is
+      Session     : Bus.Session;
+      Acked : Boolean;
+      Tx    : constant Bus.Byte_Array (0 .. 0) := (0 => Bus.Byte (Address (Dev) * 2));
+      ID_Bytes   : Bus.Byte_Array (0 .. 2) := (others => 0);
+   begin
+      ID := (others => 0);
+      Bus.Acquire (Session, Dev.Host);
+      Bus.Write_Read (Session, Reserved_ID_Slave, Tx, ID_Bytes, Acked);
+      if not Acked then
+         Result := Bus_Error;
+         return;
+      end if;
+      ID.Manufacturer := Natural (ID_Bytes (0)) * 16 + Natural (ID_Bytes (1)) / 16;
+      ID.Density      := Natural (ID_Bytes (1)) mod 16;
+      ID.Product      := Natural (ID_Bytes (2));
+      Result := OK;
+   end Read_Device_ID;
+
+   --------------
+   -- Identify --
+   --------------
+
+   function Identify (Dev : Device) return Vendor is
+      ID  : Device_ID;
+      Result : Status;
+   begin
+      Read_Device_ID (Dev, ID, Result);
+      if Result /= OK then
+         return Unknown;
+      end if;
+      case ID.Manufacturer is
+         when Fujitsu_Manufacturer => return Fujitsu;
+         when Cypress_Manufacturer => return Cypress;
+         when others               => return Unknown;
+      end case;
+   end Identify;
+
+
 begin
-   --  Instance sanity, checked once at elaboration (the formals are not static,
-   --  so this cannot be a compile-time check).  A wrong Page_Size corrupts data
-   --  silently, which is exactly the failure this family is notorious for.
-   pragma Assert (Address_Bytes in 1 .. 2, "24C parts take one or two word-address bytes");
-   pragma Assert (Capacity mod Page_Size = 0, "Capacity must be a whole number of pages");
+   --  Instance sanity, checked once at elaboration (the formals are not static).
+   pragma Assert (Address_Bytes in 1 .. 2, "FRAM parts take one or two word-address bytes");
    pragma Assert (Blocks = 1 or else Blocks * Word_Span = Capacity,
                   "Capacity must be a power of two");
-   pragma Assert (Part.Max_Read_Span = 0 or else Capacity mod Part.Max_Read_Span = 0,
-                  "Max_Read_Span must divide Capacity");
-end ESP32S3.EEPROM_24C.Driver;
+end ESP32S3.FRAM_I2C.Driver;
