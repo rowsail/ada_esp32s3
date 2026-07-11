@@ -70,7 +70,7 @@ zero, half, and full-scale references, which must come back as $0$, $2048$ and
 $4095$ regardless of any external voltage. The loopback examples (\texttt{uart},
 \texttt{i2c}, \texttt{i2s}, \texttt{rmt}, \texttt{twai}) wire a peripheral's output
 back to its own input and check that what went out came back. The GDMA example copies
-a buffer to itself and compares. When the BG95 modem refused to answer
+a buffer to itself and compares. When a UART device refused to answer
 (Chapter~\ref{ch:debug}), it was a UART single-pad loopback, output and input on the
 same physical pin, that proved the transmit path was sound and put the fault on the
 board, not the firmware. A self-test that passes proves the wiring, not just the
