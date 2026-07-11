@@ -134,32 +134,13 @@ package Net_Devices is
    is abstract
    with Pre'Class => Index < Socket_Count (Self);
 
-   ---------------------------------------------------------------------------
-   --  Optional: a device that resolves names itself.
-   --
-   --  Some interfaces carry a resolver.  A cellular modem asks the network's DNS
-   --  on your behalf (AT+QIDNSGIP), because the operator handed it a nameserver
-   --  with the PDP context; a hardwired Ethernet chip does not.
-   --
-   --  A Device cannot simply grow an optional primitive: an interface's operations
-   --  must be abstract (every implementer must supply one) or a null procedure.
-   --  So this is a SECOND interface, implemented only by devices that can do it:
-   --
-   --     type Instance is limited new Device and Name_Resolver with private;
-   --
-   --  Net_Resolver tests for it with a class-wide membership test and prefers it,
-   --  falling back to a portable DNS query over UDP for devices that lack it.
-   ---------------------------------------------------------------------------
-
-   type Name_Resolver is limited interface;
-
-   --  Resolve Name to its first IPv4 address.  Ok is False (and Addr unspecified)
-   --  if the device's resolver does not answer, or the name does not exist.
-   procedure Resolve_Host
-     (Self : in out Name_Resolver;
-      Name : String;
-      Addr : out IPv4_Address;
-      Ok   : out Boolean)
-   is abstract;
+   --  There is deliberately no "device resolves names itself" interface here.
+   --  There used to be one (Name_Resolver), for modems that carry their own
+   --  resolver -- but the one device that implemented it (the BG95, via
+   --  AT+QIDNSGIP) could not be trusted: it silently refused DNS answers it
+   --  did not like the shape of, such as a CNAME chain onto several A records.
+   --  Every interface now resolves the same way: a real DNS query over UDP,
+   --  through this facade, by the stack's own proven DNS_Client (Net_Resolver
+   --  wraps that in one call).
 
 end Net_Devices;

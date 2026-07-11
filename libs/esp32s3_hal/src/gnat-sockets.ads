@@ -62,6 +62,11 @@ package GNAT.Sockets is
    --  backend (or Net_Resolver, handing back what a device's own resolver found)
    --  has no other way to make one.
    function Inet_Addr (Octets : Net_Devices.IPv4_Address) return Inet_Addr_Type;
+
+   --  ... and the raw octets back out: for a caller that resolves through the
+   --  facade (Net_Resolver / DNS_Client) but then drives a device's own socket
+   --  layer directly, as the raw-AT BG95 examples do.
+   function Octets_Of (Value : Inet_Addr_Type) return Net_Devices.IPv4_Address;
    function Image (Value : Inet_Addr_Type) return String         --  -> "a.b.c.d"
    with Post => Image'Result'Length in 7 .. 15;
    Any_Inet_Addr : constant Inet_Addr_Type;                      --  0.0.0.0
@@ -163,6 +168,9 @@ private
       B : Net_Devices.IPv4_Address := (0, 0, 0, 0);
    end record;
    Any_Inet_Addr : constant Inet_Addr_Type := (B => (0, 0, 0, 0));
+
+   function Octets_Of (Value : Inet_Addr_Type) return Net_Devices.IPv4_Address
+   is (Value.B);
 
    --  A socket, when Bound, names a registered interface (Iface) and one of its
    --  sockets (Index); an unbound socket has no identity.  When Pinned it routes
