@@ -444,8 +444,7 @@ package body GNAT.Sockets is
    procedure Send_Socket
      (Socket : Socket_Type;
       Item   : Ada.Streams.Stream_Element_Array;
-      Last   : out Ada.Streams.Stream_Element_Offset;
-      To     : access Sock_Addr_Type := null)
+      Last   : out Ada.Streams.Stream_Element_Offset)
    is
       Id   : constant Interface_Id := If_Of (Socket);
       J    : constant Sock_Index := Ix_Of (Socket);
@@ -453,20 +452,64 @@ package body GNAT.Sockets is
       Sent : Natural;
    begin
       Ensure_Open (Id, J);
-      if To /= null then
-         Registry (Id).Send_To (J, To.Addr.B, Net_Devices.Port_Number (To.Port), Item, St);
-         if St /= Net_Devices.OK then
-            raise Socket_Error;
-         end if;
-         Last := Item'Last;                       --  a datagram is all-or-nothing
-
-      else
-         Registry (Id).Send (J, Item, Sent, St);
-         if St /= Net_Devices.OK and then St /= Net_Devices.No_Space then
-            raise Socket_Error;
-         end if;
-         Last := Item'First + Stream_Element_Offset (Sent) - 1;
+      Registry (Id).Send (J, Item, Sent, St);
+      if St /= Net_Devices.OK and then St /= Net_Devices.No_Space then
+         raise Socket_Error;
       end if;
+      Last := Item'First + Stream_Element_Offset (Sent) - 1;
+   end Send_Socket;
+
+   procedure Send_Socket
+     (Socket : in out Socket_Type;
+      Item   : Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      To     : access Sock_Addr_Type)
+   is
+      St : Net_Devices.Status;
+   begin
+      --  Route the datagram.  Create_Socket parks every socket on the default
+      --  interface; TCP is re-homed by Connect_Socket, and an unpinned UDP
+      --  socket must follow the routing table the same way HERE, per
+      --  destination -- otherwise a multi-interface board sends its datagrams
+      --  out whatever interface happens to be index 0, live or not (found the
+      --  hard way: DNS queries leaving a dead Ethernet while cellular was up).
+      if To /= null and then not Socket.Pinned then
+         declare
+            Target : Interface_Id;
+            Found  : Boolean;
+         begin
+            Resolve_Iface (To.Addr.B, Target, Found);
+            if not Found then
+               raise Socket_Error;                --  no live route to To
+            end if;
+            Move_To (Socket, Target);             --  no-op when already there
+         end;
+      end if;
+
+      declare
+         Id : constant Interface_Id := If_Of (Socket);
+         J  : constant Sock_Index := Ix_Of (Socket);
+      begin
+         Ensure_Open (Id, J);
+         if To /= null then
+            Registry (Id).Send_To (J, To.Addr.B, Net_Devices.Port_Number (To.Port), Item, St);
+            if St /= Net_Devices.OK then
+               raise Socket_Error;
+            end if;
+            Last := Item'Last;                    --  a datagram is all-or-nothing
+
+         else
+            declare
+               Sent : Natural;
+            begin
+               Registry (Id).Send (J, Item, Sent, St);
+               if St /= Net_Devices.OK and then St /= Net_Devices.No_Space then
+                  raise Socket_Error;
+               end if;
+               Last := Item'First + Stream_Element_Offset (Sent) - 1;
+            end;
+         end if;
+      end;
    end Send_Socket;
 
    function Available (Socket : Socket_Type) return Natural is

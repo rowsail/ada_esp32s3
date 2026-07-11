@@ -112,13 +112,25 @@ package GNAT.Sockets is
 
    procedure Connect_Socket (Socket : in out Socket_Type; Server : Sock_Addr_Type);
 
-   --  Send Item; Last is the index of the last element sent (Item'First - 1 if
-   --  none).  To /= null sends a UDP datagram to that address.
+   --  Send Item on a connected (TCP) socket; Last is the index of the last
+   --  element sent (Item'First - 1 if none).
    procedure Send_Socket
      (Socket : Socket_Type;
       Item   : Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset)
+   with Post => Last <= Item'Last;
+
+   --  Send Item as a UDP datagram to To -- and ROUTE it: an unpinned datagram
+   --  socket follows the routing table per destination, exactly as
+   --  Connect_Socket does for TCP, so datagrams leave a LIVE interface on a
+   --  multi-interface board.  Socket is in out because that may re-home it
+   --  onto the routed interface; call sites read the same either way, and
+   --  code shared with desktop GNAT.Sockets stays source-compatible.
+   procedure Send_Socket
+     (Socket : in out Socket_Type;
+      Item   : Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
-      To     : access Sock_Addr_Type := null)
+      To     : access Sock_Addr_Type)
    with Post => Last <= Item'Last;
 
    --  Block until data arrives, then fill Item; Last is the last index written

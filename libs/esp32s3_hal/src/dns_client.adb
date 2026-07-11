@@ -87,24 +87,33 @@ package body DNS_Client is
       Addr := Any_Inet_Addr;
       Next_Id := Next_Id + 1;             --  advance for the next caller
       Build_Query;
-      Create_Socket (Sock, Family_Inet, Socket_Datagram);
-      if Local_Port = 0 then
-         Bind_Socket
-           (Sock,
-            (Family_Inet, Any_Inet_Addr, Port_Type (Port_Lo + Next_Port)));
-         Next_Port := (Next_Port + 1) mod Port_Span;
-      else
-         Bind_Socket (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
-      end if;
-      if Timeout > 0.0 then
-         Set_Socket_Option (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
-      end if;
-      Send_Socket (Sock, Query (Query'First .. QLen - 1), SLast, To => To'Access);
       begin
+         Create_Socket (Sock, Family_Inet, Socket_Datagram);
+      exception
+         when Socket_Error =>
+            return False;                 --  pool exhausted / no interface
+      end;
+      begin
+         --  Everything that touches the network sits inside the handler:
+         --  Bind (opens the datagram socket) and Send (a dead route, an ARP
+         --  timeout to the gateway) can raise, and an unhandled Socket_Error
+         --  here is a crash, not a failed lookup.
+         if Local_Port = 0 then
+            Bind_Socket
+              (Sock,
+               (Family_Inet, Any_Inet_Addr, Port_Type (Port_Lo + Next_Port)));
+            Next_Port := (Next_Port + 1) mod Port_Span;
+         else
+            Bind_Socket (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
+         end if;
+         if Timeout > 0.0 then
+            Set_Socket_Option (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
+         end if;
+         Send_Socket (Sock, Query (Query'First .. QLen - 1), SLast, To => To'Access);
          Receive_Socket (Sock, Resp, RLast, From => From'Access);
       exception
          when Socket_Error =>
-            --  no reply within Timeout
+            --  no reply within Timeout (or the bind/send itself failed)
             Close_Socket (Sock);
             return False;
       end;

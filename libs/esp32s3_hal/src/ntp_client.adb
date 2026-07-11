@@ -30,27 +30,33 @@ package body NTP_Client with SPARK_Mode => On is
       Secs : Unsigned_32;
    begin
       Unix_Time := 0;
-      Create_Socket (Sock, Family_Inet, Socket_Datagram);
-      if Local_Port = 0 then
-         Bind_Socket
-           (Sock,
-            (Family_Inet, Any_Inet_Addr, Port_Type (Port_Lo + Next_Port)));
-         Next_Port := (Next_Port + 1) mod Port_Span;
-      else
-         Bind_Socket (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
-      end if;
-      if Timeout > 0.0 then
-         Set_Socket_Option (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
-      end if;
       begin
-         --  Send inside the handler too: Send_Socket can raise (e.g. an ARP
-         --  timeout to the server) and a leaked datagram socket would drain the
-         --  8-slot pool over repeated failures.
+         Create_Socket (Sock, Family_Inet, Socket_Datagram);
+      exception
+         when Socket_Error =>
+            return False;                 --  pool exhausted / no interface
+      end;
+      begin
+         --  Everything that touches the network sits inside the handler:
+         --  Bind (opens the datagram socket) and Send (e.g. an ARP timeout to
+         --  the server) can raise, and a leaked datagram socket would drain
+         --  the socket pool over repeated failures.
+         if Local_Port = 0 then
+            Bind_Socket
+              (Sock,
+               (Family_Inet, Any_Inet_Addr, Port_Type (Port_Lo + Next_Port)));
+            Next_Port := (Next_Port + 1) mod Port_Span;
+         else
+            Bind_Socket (Sock, (Family_Inet, Any_Inet_Addr, Local_Port));
+         end if;
+         if Timeout > 0.0 then
+            Set_Socket_Option (Sock, Socket_Level, (Receive_Timeout, Timeout => Timeout));
+         end if;
          Send_Socket (Sock, Req, Last, To => To'Access);
          Receive_Socket (Sock, Resp, Last, From => From'Access);
       exception
          when Socket_Error =>
-            --  no reply within Timeout (or send failed)
+            --  no reply within Timeout (or the bind/send itself failed)
             Close_Socket (Sock);
             return False;
       end;
