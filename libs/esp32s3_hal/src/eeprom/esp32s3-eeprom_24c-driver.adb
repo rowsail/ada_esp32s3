@@ -17,16 +17,16 @@ package body ESP32S3.EEPROM_24C.Driver is
    --  Addressing.
    ---------------------------------------------------------------------------
 
-   --  The slave address that answers for cell A: the strapped base, plus the high
-   --  address bits the part folds into its device-select byte.  For a part that
-   --  folds nothing (Blocks = 1) this is just the base.
-   function Slave_Of (Dev : Device; A : Memory_Address) return Bus.Slave_Address
-   is (Base_Address + Dev.Strap + A / Word_Span);
+   --  The slave address that answers for the byte at Location: the strapped base,
+   --  plus the high address bits the part folds into its device-select byte.  For a
+   --  part that folds nothing (Blocks = 1) this is just the base.
+   function Slave_Of (Dev : Device; Location : Memory_Address) return Bus.Slave_Address
+   is (Base_Address + Dev.Strap + Location / Word_Span);
 
-   --  The word address, big-endian, as the part expects it: the low bits of A
+   --  The word address, big-endian, as the part expects it: the low bits of Location
    --  that fit in Address_Bytes.  Word'Length must be Address_Bytes.
-   procedure Put_Word_Address (Word : out Bus.Byte_Array; A : Memory_Address) is
-      Offset : constant Natural := A mod Word_Span;   --  position within the block
+   procedure Put_Word_Address (Word : out Bus.Byte_Array; Location : Memory_Address) is
+      Offset : constant Natural := Location mod Word_Span;   --  position within the block
    begin
       if Address_Bytes = 1 then
          Word (Word'First) := Bus.Byte (Offset);
@@ -36,30 +36,30 @@ package body ESP32S3.EEPROM_24C.Driver is
       end if;
    end Put_Word_Address;
 
-   --  Bytes left in the page that A falls in: a write must stop here or the part
+   --  Bytes left in the page that Location falls in: a write must stop here or the part
    --  wraps to the start of the page instead of advancing.
-   function Page_Remaining (A : Memory_Address) return Positive
-   is (Page_Size - A mod Page_Size)
+   function Page_Remaining (Location : Memory_Address) return Positive
+   is (Page_Size - Location mod Page_Size)
    with SPARK_Mode => On;
 
-   --  Bytes left in the run that A falls in, for the rare part whose sequential
+   --  Bytes left in the run that Location falls in, for the rare part whose sequential
    --  read cannot cross a block (24LC1025/26).  Read_Span = Capacity otherwise,
    --  so this never splits a read.
-   function Span_Remaining (A : Memory_Address) return Positive
-   is (Read_Span - A mod Read_Span)
+   function Span_Remaining (Location : Memory_Address) return Positive
+   is (Read_Span - Location mod Read_Span)
    with SPARK_Mode => On;
 
    --  ACK-poll the part back from an internal program cycle: it NACKs its own
    --  address until the cycle completes.  A zero-length write is an address-only
    --  probe.
-   procedure Wait_Ready (S : Bus.Session; Slave : Bus.Slave_Address; Result : out Status) is
+   procedure Wait_Ready (Session : Bus.Session; Slave : Bus.Slave_Address; Result : out Status) is
       Deadline : constant Time := Clock + Write_Cycle_Limit;
       Acked    : Boolean;
    begin
       Result := Write_Timeout;
       loop
          delay until Clock + Poll_Interval;
-         Bus.Write (S, Slave, Bus.Byte_Array'(1 .. 0 => 0), Acked);
+         Bus.Write (Session, Slave, Bus.Byte_Array'(1 .. 0 => 0), Acked);
          if Acked then
             Result := OK;
             exit;
@@ -96,11 +96,11 @@ package body ESP32S3.EEPROM_24C.Driver is
    ----------------
 
    function Is_Present (Dev : Device) return Boolean is
-      S     : Bus.Session;
+      Session     : Bus.Session;
       Acked : Boolean;
    begin
-      Bus.Acquire (S, Dev.Host);
-      Bus.Write (S, Slave_Of (Dev, 0), Bus.Byte_Array'(1 .. 0 => 0), Acked);
+      Bus.Acquire (Session, Dev.Host);
+      Bus.Write (Session, Slave_Of (Dev, 0), Bus.Byte_Array'(1 .. 0 => 0), Acked);
       return Acked;
    end Is_Present;
 
@@ -116,7 +116,7 @@ package body ESP32S3.EEPROM_24C.Driver is
    procedure Read
      (Dev : Device; From : Memory_Address; Data : out ESP32S3.I2C.Byte_Array; Result : out Status)
    is
-      S      : Bus.Session;
+      Session      : Bus.Session;
       Acked  : Boolean;
       Offset : Natural := 0;   --  bytes already read
    begin
@@ -125,7 +125,7 @@ package body ESP32S3.EEPROM_24C.Driver is
          return;
       end if;
 
-      Bus.Acquire (S, Dev.Host);
+      Bus.Acquire (Session, Dev.Host);
       while Offset < Data'Length loop
          declare
             Target : constant Memory_Address := From + Offset;
@@ -136,7 +136,7 @@ package body ESP32S3.EEPROM_24C.Driver is
          begin
             Put_Word_Address (Word, Target);
             Bus.Write_Read
-              (S, Slave_Of (Dev, Target), Word, Data (First .. First + Chunk - 1), Acked);
+              (Session, Slave_Of (Dev, Target), Word, Data (First .. First + Chunk - 1), Acked);
             if not Acked then
                Result := Bus_Error;
                return;
@@ -153,7 +153,7 @@ package body ESP32S3.EEPROM_24C.Driver is
    procedure Write
      (Dev : Device; To : Memory_Address; Data : ESP32S3.I2C.Byte_Array; Result : out Status)
    is
-      S      : Bus.Session;
+      Session      : Bus.Session;
       Acked  : Boolean;
       Offset : Natural := 0;   --  bytes already committed
    begin
@@ -164,7 +164,7 @@ package body ESP32S3.EEPROM_24C.Driver is
 
       --  Held across every page and program cycle: a multi-page Write is atomic
       --  with respect to other tasks sharing the host.
-      Bus.Acquire (S, Dev.Host);
+      Bus.Acquire (Session, Dev.Host);
       while Offset < Data'Length loop
          declare
             Target : constant Memory_Address := To + Offset;
@@ -181,13 +181,13 @@ package body ESP32S3.EEPROM_24C.Driver is
             Frame (Address_Bytes .. Address_Bytes + Chunk - 1) :=
               Data (First .. First + Chunk - 1);
 
-            Bus.Write (S, Slave, Frame, Acked);
+            Bus.Write (Session, Slave, Frame, Acked);
             if not Acked then
                Result := Bus_Error;
                return;
             end if;
 
-            Wait_Ready (S, Slave, Result);
+            Wait_Ready (Session, Slave, Result);
             if Result /= OK then
                return;
             end if;
@@ -203,10 +203,10 @@ package body ESP32S3.EEPROM_24C.Driver is
    procedure Read_Byte
      (Dev : Device; From : Memory_Address; Value : out ESP32S3.I2C.Byte; Result : out Status)
    is
-      One : Bus.Byte_Array (0 .. 0) := (others => 0);
+      One_Byte : Bus.Byte_Array (0 .. 0) := (others => 0);
    begin
-      Read (Dev, From, One, Result);
-      Value := (if Result = OK then One (0) else 0);
+      Read (Dev, From, One_Byte, Result);
+      Value := (if Result = OK then One_Byte (0) else 0);
    end Read_Byte;
 
    ----------------
