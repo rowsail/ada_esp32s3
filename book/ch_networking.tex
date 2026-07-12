@@ -823,7 +823,7 @@ socket to a specific interface's own address pins it the same way, so a server c
 made to listen on just one interface. Inbound is otherwise pinned for free: a
 listener lives on the chip it was created on.
 
-\subsection{How a connect chooses}
+\subsection{How traffic chooses an interface}
 
 For an \emph{unpinned} socket, \texttt{Connect\_Socket} resolves the destination
 through the table and then re-homes the socket onto the chosen interface before it
@@ -832,6 +832,15 @@ construction: with no routes configured the resolver returns the default interfa
 and the re-home is a no-op, so every existing client (the weather fetch, the FTP
 client, DNS) behaves exactly as before. Only once routes exist does a destination
 with no live route raise \texttt{Socket\_Error} instead of leaking out some default.
+
+UDP follows the same rule, \emph{per datagram}: the \texttt{To}-form of
+\texttt{Send\_Socket} resolves its destination through the table and re-homes an
+unpinned datagram socket before sending (which is why that overload takes the
+socket \texttt{in out}). This was learned on the first Ethernet-plus-cellular
+board: \texttt{Create\_Socket} parks every socket on the default interface, and
+before datagrams routed, DNS queries left whatever interface happened to be
+index~0 --- live or not --- while the standby carried nothing. A bound listener,
+or any pinned socket, stays where it was put.
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_multinic} brings up two W5500s:
 the primary by DHCP, a second on \texttt{CS=IO40} whose reset is shared on
