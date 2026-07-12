@@ -361,6 +361,40 @@ function Resolve (Server : Inet_Addr_Type; Name : String;
                   Server_Port : Port_Type := 53) return Boolean;
 \end{lstlisting}
 
+\subsection{Four transports for one protocol}\index{DNS!transports}\index{DoT}\index{DoH}
+
+UDP on port~53 is the default, but it is also the most interfered-with
+traffic class on the internet: carriers, hotels and national firewalls all
+tamper with it, and this project's own cellular bearer swallows it for hours
+at a stretch while everything else flows. DNS was designed with escape
+hatches for exactly that, and the SDK implements all of them --- one proven
+message layer (\texttt{DNS\_Client.Wire} builds the query, validating the RFC
+1035 name bounds; \texttt{DNS\_Client.Parse} walks the reply, SPARK-proven
+against any malformed input) under four carriages:
+
+\begin{itemize}
+\item \textbf{UDP} (\texttt{Resolve}) --- one datagram out, one in.
+\item \textbf{TCP} (\texttt{Resolve\_TCP}, RFC~7766) --- the same message
+  behind a two-byte length prefix; the standard recourse to a truncated
+  (TC-flagged) UDP answer, and the one transport that survived every measured
+  cellular blackout.
+\item \textbf{DoT} (\texttt{DNS\_TLS.Resolve\_DoT}, RFC~7858, port~853) ---
+  that same TCP framing, inside a TLS~1.3 session.
+\item \textbf{DoH} (\texttt{DNS\_TLS.Resolve\_DoH}, RFC~8484, port~443) ---
+  the query as the body of an HTTP/1.1 \texttt{POST} of
+  \texttt{application/dns-message}, in TLS.
+\end{itemize}
+
+The encrypted pair (\texttt{libs/tls}, target-only like the rest of the TLS
+stack) is the real answer to interference: DoT and DoH are designed to be
+indistinguishable from ordinary TLS and HTTPS, so a port-53 interceptor
+cannot even see them. As with every TLS user here, the application owns the
+session and its trust anchor; \texttt{DNS\_TLS} only supplies the framing.
+\texttt{Net\_Resolver} climbs a ladder --- UDP:53, then UDP:443 to an off-port
+resolver, then TCP:53 --- each rung dodging a failure the one above it was
+measured to have. The \texttt{esp32s3\_dns\_secure} example resolves one name
+all four ways over Ethernet.
+
 \textbf{DHCP} is the opposite kind of protocol: its job is to \emph{bootstrap} the
 interface: it must talk before an address exists and then program the obtained
 IP, mask and gateway into the NIC. Both are operations outside the sockets API on
