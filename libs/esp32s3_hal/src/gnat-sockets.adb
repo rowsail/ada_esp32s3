@@ -7,6 +7,7 @@ with ESP32S3.Strings;
 
 package body GNAT.Sockets is
 
+   use type Ada.Real_Time.Time;
    use type Net_Devices.Status;
    use type Net_Devices.Device_Access;
    use type Net_Devices.Interface_Id;
@@ -33,8 +34,20 @@ package body GNAT.Sockets is
    --  exact 4-tuple on every reconnect to the same server, so the SYN was
    --  rejected while the server side was still in TIME_WAIT.  Hand out a fresh
    --  port each connect, cycling the IANA dynamic range (49152 .. 65535).
+   --
+   --  The STARTING point is randomised per boot (RFC 6056).  Starting every run
+   --  at the bottom of the range meant the board's first-ever connection always
+   --  left from port 49152 -- which home NAT routers and UPnP very often already
+   --  occupy or hold a stale mapping for, so the reply was dropped or misrouted
+   --  and only the first connection after each reset failed (subsequent ones,
+   --  on 49153+, worked).  Hardware-confirmed on a W5500: from 49152 an
+   --  off-subnet (NAT-traversing) connect established and sent but never received
+   --  its reply, while the same target from 49153/50000 worked and an on-subnet
+   --  peer worked even from 49152.  Seeding the sequence from the boot clock
+   --  moves the first port off the contended bottom and varies it run to run.
    Ephemeral_Lo   : constant := 49_152;
    Ephemeral_Hi   : constant := 65_535;
+   Ephemeral_Seeded : Boolean := False;
    Next_Ephemeral : Natural := Ephemeral_Lo;
    Modes        : array (Interface_Id, Sock_Index) of Mode_Type :=
      (others => (others => Socket_Stream));
@@ -427,6 +440,23 @@ package body GNAT.Sockets is
          J  : constant Sock_Index := Ix_Of (Socket);
          St : Net_Devices.Status;
       begin
+         if not Ephemeral_Seeded then
+            --  Randomise the starting port once, from the sub-second jitter of
+            --  when this first connect lands (link/DHCP bring-up timing varies
+            --  run to run) -- portable, needing no hardware RNG.
+            Ephemeral_Seeded := True;
+            declare
+               Since  : constant Duration :=
+                 Ada.Real_Time.To_Duration
+                   (Ada.Real_Time.Clock - Ada.Real_Time.Time_First);
+               Micros : constant Long_Long_Integer :=
+                 Long_Long_Integer (Since * 1_000_000);
+               Span   : constant Long_Long_Integer :=
+                 Ephemeral_Hi - Ephemeral_Lo + 1;
+            begin
+               Next_Ephemeral := Ephemeral_Lo + Natural (Micros mod Span);
+            end;
+         end if;
          if Local_Ports (Id, J) = 0 then
             --  pick the next ephemeral local port (fresh 4-tuple per reconnect)
             Local_Ports (Id, J) := Net_Devices.Port_Number (Next_Ephemeral);

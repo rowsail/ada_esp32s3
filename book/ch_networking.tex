@@ -393,15 +393,34 @@ session and its trust anchor; \texttt{DNS\_TLS} only supplies the framing.
 \texttt{Net\_Resolver} climbs a ladder --- UDP:53, then UDP:443 to an off-port
 resolver, then TCP:53 --- each rung dodging a failure the one above it was
 measured to have. The \texttt{esp32s3\_dns\_secure} example resolves one name
-all four ways against Google Public DNS over Ethernet, and is worth reading
-for one hardware wart it documents: the \emph{first} W5500 TCP connection
-after bring-up completes its connect and its send but never receives the
-reply --- the response read times out, and the second connection (and every
-one after) works at once. It is measurably \emph{not} ARP (UDP to off-subnet
-hosts succeeds before it) and not the connect (which establishes); it is
-specific to the chip's first TCP socket use, and the root cause is not yet
-pinned down. A throwaway connection absorbs it --- and any retry does, which
-\texttt{Net\_Resolver}'s ladder and any reconnect loop already provide.
+all four ways against Google Public DNS over Ethernet.
+
+This example is also where a stubborn ``first connection fails'' bug was finally
+run to ground, and the chase is instructive because the symptom pointed
+everywhere except the culprit. After bring-up, the \emph{first} TCP connection
+would establish and send but never receive its reply --- the read timed out ---
+while the second connection and every one after worked at once. It looked like a
+W5500 silicon wart: register-level tracing confirmed the connect handshake
+completed (\texttt{Sn\_SR} = ESTABLISHED), the query went out with the correct
+bytes, yet \texttt{Sn\_RX\_RSR} never left zero. On-subnet connections were
+immune; UDP was immune; the failure was hard (no recovery in thirty seconds).
+The tell came from a throwaway probe that fixed a \emph{different} destination:
+whatever state the first connection primed was not per-destination, so it could
+not be the remote server or a NAT conntrack entry keyed on it. Bisecting the one
+thing that changes between the first facade connection and the second --- the
+ephemeral source port --- landed it. The facade handed out ports from the bottom
+of the IANA dynamic range, so the board's first-ever connection always left from
+port \textbf{49152}, and this network's NAT router mishandled exactly that port:
+a connection from 49152 traversing the gateway established and sent but its reply
+was dropped, while the identical target from 49153 or 50000 worked, and an
+on-subnet peer (no NAT) worked even from 49152. Nothing to do with the W5500 at
+all. The fix is one every hardened TCP stack already applies (RFC 6056):
+randomise the starting ephemeral port per boot, seeded here from the sub-second
+jitter of the first connect, so the board neither camps on the contended bottom
+of the range nor reuses the same 4-tuple across resets. The lesson is the older
+one --- a symptom at the chip does not mean the cause is at the chip --- and it
+is why the resolver ladder and every reconnect loop retry regardless: a fresh
+port is drawn each attempt.
 
 \textbf{DHCP} is the opposite kind of protocol: its job is to \emph{bootstrap} the
 interface: it must talk before an address exists and then program the obtained
@@ -487,9 +506,10 @@ TLS~1.3 session to \texttt{dns.google} and validates the full served chain up
 to a pinned P-384 ECC root before a query byte is sent --- the anchor step
 verifying an ECDSA-P384-SHA384 signature with the pure-Ada \texttt{P384}
 package; the plain pair is two calls.
-Reading it also earns you the cold-start note above --- the first W5500 TCP
-connect to an off-subnet host after bring-up fails once on the gateway ARP, and
-a retry succeeds --- which the example absorbs with a throwaway priming connect.
+Reading it alongside the debugging tale above also shows why the first
+connection used to fail --- the facade once handed out ephemeral port 49152,
+which this network's NAT mishandled --- and how randomising the ephemeral base
+(RFC 6056) fixed it for good, with no per-example workaround.
 
 \subsection{\texttt{esp32s3\_w5500\_dhcp}: a self-configuring address}
 
