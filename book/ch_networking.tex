@@ -483,8 +483,10 @@ end if;
 The same name resolved four ways against Google Public DNS --- UDP, TCP, DoT
 and DoH (\S\ref{ch:net:dns-dhcp}) --- so the four carriages over the one proven
 message layer can be watched side by side. The encrypted pair stands up a real
-TLS~1.3 session to \texttt{dns.google} and authenticates its leaf under a pinned
-P-256 intermediate before a query byte is sent; the plain pair is two calls.
+TLS~1.3 session to \texttt{dns.google} and validates the full served chain up
+to a pinned P-384 ECC root before a query byte is sent --- the anchor step
+verifying an ECDSA-P384-SHA384 signature with the pure-Ada \texttt{P384}
+package; the plain pair is two calls.
 Reading it also earns you the cold-start note above --- the first W5500 TCP
 connect to an off-subnet host after bring-up fails once on the gateway ARP, and
 a retry succeeds --- which the example absorbs with a throwaway priming connect.

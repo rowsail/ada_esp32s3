@@ -19,11 +19,9 @@
 --    them, let alone block them.
 --
 --    All four legs speak to Google Public DNS.  The DoT/DoH legs pin its
---    P-256 issuing intermediate (DoT_Anchor.WE2_DER) and authenticate the
---    leaf under it.  Pinning the intermediate rather than a root is a demo
---    simplification: the public DoT roots are P-384 ECC, which this TLS
---    stack does not verify yet; the leaf verifies under WE2 with
---    ECDSA-P256-SHA256, which it does.
+--    P-384 ECC ROOT (DoT_Anchor.Root_DER, GTS Root R4) and validate the full
+--    served path up to it: leaf <- WE2 (ECDSA-P256-SHA256) <- GTS Root R4
+--    (ECDSA-P384-SHA384).  The P-384 anchor step exercises libs/tls/p384.
 --
 --  Build & run:  ./x run esp32s3_dns_secure       (or ./build.sh, ./flash.sh)
 --
@@ -102,7 +100,7 @@ procedure Main is
    is
       use Chain_Verify;
       Anchors : constant Cert_List :=
-        (1 => (Data => DoT_Anchor.WE2_DER'Access));
+        (1 => (Data => DoT_Anchor.Root_DER'Access));
       Verdict : Result;
    begin
       Ready := False;
@@ -123,15 +121,15 @@ procedure Main is
          return;
       end if;
 
+      --  Add the served leaf and intermediate (WE2), and validate the whole
+      --  path up to the pinned P-384 root: leaf <- WE2 (ECDSA-P256-SHA256),
+      --  then WE2 <- GTS Root R4 (ECDSA-P384-SHA384, the anchor step).  The
+      --  served root itself is not added -- the anchor is pinned, not taken
+      --  from the wire.
       Chain_Buffers.Reset;
-      if TLS_Client.Server_Cert_Count (Session) >= 1 then
-         Chain_Buffers.Add (TLS_Client.Server_Chain_Cert (Session, 1));
-      end if;
-      --  Add ONLY the leaf and validate it directly under the pinned WE2
-      --  intermediate.  Google serves the full path down to a P-384 ECC root
-      --  this TLS stack does not parse; feeding that root to the validator
-      --  yields Malformed, and it is not needed -- the leaf verifies under
-      --  WE2 with ECDSA-P256-SHA256.
+      for I in 1 .. Natural'Min (2, TLS_Client.Server_Cert_Count (Session)) loop
+         Chain_Buffers.Add (TLS_Client.Server_Chain_Cert (Session, I));
+      end loop;
       Verdict := Validate (Chain_Buffers.Chain, Anchors, DoH_Host, Now);
 
       if Verdict = Valid

@@ -35,6 +35,12 @@ package Cert_Verify is
    function ECDSA_P256_SHA256 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean;
    function ECDSA_P256_SHA384 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean;
 
+   --  Verify an ECDSA/P-384 signature over Message (Sig_DER the DER
+   --  ECDSA-Sig-Value; Pub_X, Pub_Y the 48-byte big-endian coordinates).  The
+   --  digest is the full 48-byte SHA-384 (qlen = hlen = 384, no truncation) --
+   --  the scheme the public DoT/DoH roots sign with.  Pure-Ada P384.
+   function ECDSA_P384_SHA384 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean;
+
    --  Verify an Ed25519 (RFC 8032 / PureEdDSA) signature over Message.  Signature
    --  is the 64-byte detached signature, Pub_Key the 32-byte raw public key as it
    --  appears in an Ed25519 certificate.  True iff the signature verifies.

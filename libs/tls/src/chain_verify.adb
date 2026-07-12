@@ -90,13 +90,25 @@ package body Chain_Verify with SPARK_Mode => On is
                           Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last));
 
          when X509.Sig_ECDSA_SHA384 =>
-            return
-              Iss.Key_Kind = X509.Key_EC_P256
-              and then Cert_Verify.ECDSA_P256_SHA384
-                         (TBS,
-                          Sig,
-                          Iss_Buf (Iss.EC_X.First .. Iss.EC_X.Last),
-                          Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last));
+            --  Same signature OID, two issuer key sizes: a P-256 issuer signs
+            --  ECDSA-with-SHA384 (SHA-384 left-truncated to 256 bits), and a
+            --  P-384 issuer -- the public DoT/DoH roots -- signs with the full
+            --  384-bit digest.  Dispatch on the issuer's key curve.
+            if Iss.Key_Kind = X509.Key_EC_P256 then
+               return Cert_Verify.ECDSA_P256_SHA384
+                        (TBS,
+                         Sig,
+                         Iss_Buf (Iss.EC_X.First .. Iss.EC_X.Last),
+                         Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last));
+            elsif Iss.Key_Kind = X509.Key_EC_P384 then
+               return Cert_Verify.ECDSA_P384_SHA384
+                        (TBS,
+                         Sig,
+                         Iss_Buf (Iss.EC_X.First .. Iss.EC_X.Last),
+                         Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last));
+            else
+               return False;
+            end if;
 
          when others                =>
             return False;

@@ -1,0 +1,10 @@
+project P384_Host is
+   for Source_Dirs use (".", "../../src");
+   for Object_Dir use "obj";
+   for Exec_Dir use ".";
+   for Main use ("p384_host.adb");
+   for Source_Files use ("p384_host.adb", "p384.ads", "p384.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-g", "-O2", "-gnat2022");
+   end Compiler;
+end P384_Host;

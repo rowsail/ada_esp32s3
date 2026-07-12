@@ -86,6 +86,8 @@ package body X509 with SPARK_Mode => On is
      (16#2A#, 16#86#, 16#48#, 16#CE#, 16#3D#, 16#02#, 16#01#);
    OID_P256_Curve   : constant Byte_Array :=          --  1.2.840.10045.3.1.7 prime256v1
      (16#2A#, 16#86#, 16#48#, 16#CE#, 16#3D#, 16#03#, 16#01#, 16#07#);
+   OID_P384_Curve   : constant Byte_Array :=          --  1.3.132.0.34 secp384r1
+     (16#2B#, 16#81#, 16#04#, 16#00#, 16#22#);
    OID_RSA_SHA256   : constant Byte_Array :=          --  1.2.840.113549.1.1.11
      (16#2A#, 16#86#, 16#48#, 16#86#, 16#F7#, 16#0D#, 16#01#, 16#01#, 16#0B#);
    OID_ECDSA_SHA256 : constant Byte_Array :=          --  1.2.840.10045.4.3.2
@@ -389,6 +391,8 @@ package body X509 with SPARK_Mode => On is
                      Expect (Cert, Alg_Pos, AlgId.Content.Last, 16#06#, Curve, Ok);
                      if Ok and then OID_Match (Cert, Curve.Content, OID_P256_Curve) then
                         Result.Key_Kind := Key_EC_P256;
+                     elsif Ok and then OID_Match (Cert, Curve.Content, OID_P384_Curve) then
+                        Result.Key_Kind := Key_EC_P384;
                      else
                         Ok := False;                       --  unsupported curve
                      end if;
@@ -427,6 +431,15 @@ package body X509 with SPARK_Mode => On is
                --  BIT STRING content = unused-bits(1) || 0x04 || X(32) || Y(32).
                Result.EC_X := (First => Bits.Content.First + 2, Last => Bits.Content.First + 33);
                Result.EC_Y := (First => Bits.Content.First + 34, Last => Bits.Content.First + 65);
+
+            elsif Ok
+              and then Result.Key_Kind = Key_EC_P384
+              and then Length (Bits.Content) >= 98
+              and then Cert (Bits.Content.First + 1) = 16#04#   --  uncompressed point
+            then
+               --  BIT STRING content = unused-bits(1) || 0x04 || X(48) || Y(48).
+               Result.EC_X := (First => Bits.Content.First + 2, Last => Bits.Content.First + 49);
+               Result.EC_Y := (First => Bits.Content.First + 50, Last => Bits.Content.First + 97);
 
             elsif Ok and then Result.Key_Kind = Key_Ed25519 and then Length (Bits.Content) >= 33
             then

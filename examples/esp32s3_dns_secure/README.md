@@ -30,18 +30,18 @@ try again.)
 DoT/DoH need trusted time for the certificate-validity check, so the clock
 sync is retried a few times.
 
-## The pinned anchor
+## The pinned root
 
-DoT/DoH authenticate `dns.google`'s leaf under a pinned intermediate,
-`DoT_Anchor.WE2_DER` (Google Trust Services "WE2", P-256). Pinning the
-issuing intermediate rather than a root is a demo simplification: the public
-DoT roots are P-384 ECC, which the current TLS stack does not verify yet; the
-leaf verifies under WE2 with ECDSA-P256-SHA256, which it does. Regenerate the
-anchor when WE2 rotates:
+DoT/DoH validate the full served chain up to a pinned P-384 **root**,
+`DoT_Anchor.Root_DER` (Google Trust Services GTS Root R4): leaf ← WE2
+(ECDSA-P256-SHA256) ← GTS Root R4 (ECDSA-P384-SHA384). The P-384 anchor step
+exercises `libs/tls/p384` — ECDSA verification on the NIST P-384 curve, in
+pure Ada — which is what lets a P-384 root be pinned at all (the major public
+DoT roots are P-384 ECC). Regenerate the anchor when R4 rotates:
 
     echo | openssl s_client -connect 8.8.8.8:853 -servername dns.google \
         -showcerts 2>/dev/null > chain.pem
-    # take the SECOND certificate (the intermediate), convert to DER, and
+    # take the THIRD certificate (the root), convert to DER, and
     # reformat as the Ada byte array in dot_anchor.ads.
 
 ## Build & run

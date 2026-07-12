@@ -33,7 +33,8 @@ package X509 with SPARK_Mode => On is
    --  Public-key algorithm of the certificate's subject key, and the algorithm the
    --  certificate's issuer used to sign it -- the parser classifies both so the
    --  verifier can dispatch RSA vs ECDSA without re-walking the DER.
-   type Key_Algorithm is (Key_RSA, Key_EC_P256, Key_Ed25519, Key_Other);
+   type Key_Algorithm is
+     (Key_RSA, Key_EC_P256, Key_EC_P384, Key_Ed25519, Key_Other);
    type Sig_Algorithm is
      (Sig_RSA_SHA256,
       Sig_RSA_SHA384,
@@ -77,8 +78,9 @@ package X509 with SPARK_Mode => On is
       Key_Kind     : Key_Algorithm := Key_Other;  --  subject public-key algorithm
       RSA_Modulus  : Slice;            --  SubjectPublicKeyInfo RSA modulus  (big-endian INTEGER)
       RSA_Exponent : Slice;            --  RSA public exponent
-      EC_X         : Slice;            --  P-256 public-key affine X (32 bytes) when Key_EC_P256
-      EC_Y         : Slice;            --  P-256 public-key affine Y (32 bytes)
+      EC_X         : Slice;            --  EC public-key affine X (32 bytes for
+                                       --  Key_EC_P256, 48 for Key_EC_P384)
+      EC_Y         : Slice;            --  EC public-key affine Y (32 or 48 bytes)
       Ed_Pub       : Slice;            --  Ed25519 public key (32 bytes) when Key_Ed25519
       SAN          : Slice_Array;      --  subjectAltName dNSName entries
       SAN_Count    : Natural := 0;

@@ -5,6 +5,7 @@ with SPARKNaCl.Hashing.SHA384;
 with SPARKNaCl.Hashing.SHA512;
 with SPARKNaCl.Sign;
 with P256;
+with P384;
 
 package body Cert_Verify is
 
@@ -494,6 +495,80 @@ package body Cert_Verify is
 
    function ECDSA_P256_SHA384 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean
    is (ECDSA_Core (SHA384_BA_32 (Message), Sig_DER, Pub_X, Pub_Y));
+
+   ---------------------------------------------------------------------------
+   --  ECDSA/P-384.  Mirrors ECDSA_Core, widened to 48-byte values; the digest
+   --  is the full 48-byte SHA-384 (no truncation).
+   ---------------------------------------------------------------------------
+   function To_P384 (B : Byte_Array) return P384.Bytes_48 is
+      Result : P384.Bytes_48;
+   begin
+      for I in 0 .. 47 loop
+         Result (I) := P384.Byte (B (B'First + I));
+      end loop;
+      return Result;
+   end To_P384;
+
+   --  Read a DER INTEGER into a 48-byte right-aligned big-endian value.
+   procedure DER_Int_48
+     (Buf   : Byte_Array;
+      Pos   : in out Natural;
+      Last  : Natural;
+      Out48 : out P384.Bytes_48;
+      Ok    : in out Boolean)
+   is
+      Len, First, Vlen : Natural;
+   begin
+      Out48 := (others => 0);
+      if not Ok or else Pos + 1 > Last or else Buf (Pos) /= 16#02# then
+         Ok := False;
+         return;
+      end if;
+      Len := Natural (Buf (Pos + 1));               --  r, s < 128 bytes
+      Pos := Pos + 2;
+      if Len = 0 or else Pos + Len - 1 > Last then
+         Ok := False;
+         return;
+      end if;
+      First := Pos;
+      Vlen := Len;
+      while Vlen > 0 and then Buf (First) = 0 loop   --  drop leading zero bytes
+         First := First + 1;
+         Vlen := Vlen - 1;
+      end loop;
+      if Vlen > 48 then
+         Ok := False;
+         return;
+      end if;
+      for I in 0 .. Vlen - 1 loop
+         Out48 (48 - Vlen + I) := P384.Byte (Buf (First + I));
+      end loop;
+      Pos := Pos + Len;
+   end DER_Int_48;
+
+   function ECDSA_P384_SHA384 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean
+   is
+      Hash48   : constant Byte_Array := SHA384_BA (Message);
+      Pos      : Natural;
+      Ok       : Boolean := True;
+      R48, S48 : P384.Bytes_48;
+   begin
+      if Sig_DER'Length < 8
+        or else Pub_X'Length /= 48
+        or else Pub_Y'Length /= 48
+        or else Sig_DER (Sig_DER'First) /= 16#30#
+      then
+         return False;
+      end if;
+      Pos := Sig_DER'First + 2;                      --  past SEQUENCE tag + length
+      DER_Int_48 (Sig_DER, Pos, Sig_DER'Last, R48, Ok);
+      DER_Int_48 (Sig_DER, Pos, Sig_DER'Last, S48, Ok);
+      if not Ok then
+         return False;
+      end if;
+      return P384.Verify
+        (To_P384 (Pub_X), To_P384 (Pub_Y), To_P384 (Hash48), R48, S48);
+   end ECDSA_P384_SHA384;
 
    ---------------------------------------------------------------------------
    --  Ed25519 (RFC 8032)
