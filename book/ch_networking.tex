@@ -474,6 +474,17 @@ if DNS_Client.Resolve (Inet_Addr ("8.8.8.8"), "example.com", Addr, Timeout => 3.
 end if;
 \end{lstlisting}
 
+\subsection{\texttt{esp32s3\_dns\_secure}: one name, four transports}\index{DNS!transports}
+
+The same name resolved four ways against Google Public DNS --- UDP, TCP, DoT
+and DoH (\S\ref{ch:net:dns-dhcp}) --- so the four carriages over the one proven
+message layer can be watched side by side. The encrypted pair stands up a real
+TLS~1.3 session to \texttt{dns.google} and authenticates its leaf under a pinned
+P-256 intermediate before a query byte is sent; the plain pair is two calls.
+Reading it also earns you the cold-start note above --- the first W5500 TCP
+connect to an off-subnet host after bring-up fails once on the gateway ARP, and
+a retry succeeds --- which the example absorbs with a throwaway priming connect.
+
 \subsection{\texttt{esp32s3\_w5500\_dhcp}: a self-configuring address}
 
 No static IP: the board leases one. It calls \texttt{DHCP.Maintain} with a
