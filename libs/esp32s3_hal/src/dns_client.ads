@@ -48,4 +48,21 @@ package DNS_Client is
         Post =>
           (if not Resolve'Result then Addr = GNAT.Sockets.Any_Inet_Addr);
 
+   --  The same query over TCP (RFC 7766: two-byte length prefix, same
+   --  message bytes) -- DNS's own designed escape hatch when UDP is being
+   --  mangled, which port-53 UDP famously is: middleboxes, fragmentation,
+   --  and carrier interceptors (measured on cellular: every UDP form dead
+   --  for hours while TCP flowed).  Also the standard recourse to a
+   --  truncated (TC) UDP answer.  Costs a handshake per lookup; use it as
+   --  the ladder's last rung, not its first (Net_Resolver does).
+   function Resolve_TCP
+     (Server      : GNAT.Sockets.Inet_Addr_Type;
+      Name        : String;
+      Addr        : out GNAT.Sockets.Inet_Addr_Type;
+      Timeout     : Duration := 0.0;
+      Server_Port : GNAT.Sockets.Port_Type := 53) return Boolean
+   with Pre  => Name'Length > 0,
+        Post =>
+          (if not Resolve_TCP'Result then Addr = GNAT.Sockets.Any_Inet_Addr);
+
 end DNS_Client;

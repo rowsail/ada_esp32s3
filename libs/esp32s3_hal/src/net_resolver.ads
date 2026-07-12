@@ -24,9 +24,11 @@ package Net_Resolver is
    --  the body) does not touch it.
    Fallback_DNS : constant String := "208.67.222.222";
 
-   --  True with Addr set on success -- via DNS_Server first, then the
-   --  port-443 fallback.  On failure Addr is Any_Inet_Addr, matching
-   --  DNS_Client's contract.  Worst case takes about two Timeouts.
+   --  True with Addr set on success -- a three-rung ladder: UDP to
+   --  DNS_Server on 53, UDP to the fallback on 443, then TCP to DNS_Server
+   --  on 53 (RFC 7766), each rung dodging a measured carrier failure mode
+   --  (see the body).  On failure Addr is Any_Inet_Addr, matching
+   --  DNS_Client's contract.  Worst case takes about three Timeouts.
    function Resolve
      (Name       : String;
       Addr       : out GNAT.Sockets.Inet_Addr_Type;

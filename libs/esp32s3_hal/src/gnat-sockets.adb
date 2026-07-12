@@ -559,6 +559,18 @@ package body GNAT.Sockets is
       Last := Item'First + Stream_Element_Offset (Count) - 1;
    end Receive_Socket;
 
+   procedure Receive_Socket
+     (Socket : Socket_Type;
+      Item   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      From   : out Sock_Addr_Type)
+   is
+      Sender : aliased Sock_Addr_Type;
+   begin
+      Receive_Socket (Socket, Item, Last, From => Sender'Access);
+      From := Sender;
+   end Receive_Socket;
+
    function Inet_Addr (Octets : Net_Devices.IPv4_Address) return Inet_Addr_Type
    is (Inet_Addr_Type'(B => Octets));
 

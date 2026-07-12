@@ -152,6 +152,16 @@ package GNAT.Sockets is
       From   : access Sock_Addr_Type := null)
    with Post => Last <= Item'Last;
 
+   --  The datagram form desktop GNAT.Sockets uses (From : out, not access),
+   --  so datagram code -- DNS_Client, NTP_Client -- compiles unchanged both
+   --  here and natively for the host tests.  Delegates to the form above.
+   procedure Receive_Socket
+     (Socket : Socket_Type;
+      Item   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      From   : out Sock_Addr_Type)
+   with Post => Last <= Item'Last;
+
    --  Which device would carry traffic to Dest?  The routing table's answer (or
    --  the default interface when no routes are configured), or null if nothing
    --  live can reach it.  Net_Resolver uses this to ask a device whether it can

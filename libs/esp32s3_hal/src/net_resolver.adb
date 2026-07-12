@@ -19,20 +19,26 @@ package body Net_Resolver is
          return False;                       --  nothing live can reach a resolver
       end if;
 
-      --  Ask the caller's nameserver ourselves, over UDP, through the facade.
+      --  The ladder.  Each rung dodges a failure mode the one above it was
+      --  measured to have, on a real carrier:
+      --
+      --   1. UDP to the caller's nameserver on 53 -- the cheap common case.
+      --   2. UDP to a resolver that does NOT listen on 53 (OpenDNS on 443):
+      --      rides out an interceptor that swallows port-53 traffic
+      --      regardless of source port or nameserver.
+      --   3. TCP on 53 -- DNS's own designed escape hatch (RFC 7766), for
+      --      the stretches where EVERY UDP form is dead while TCP flows.
+      --      A handshake per lookup, so it is the last rung, not the first.
       if DNS_Client.Resolve (DNS_Server, Name, Addr, Timeout => Timeout) then
          return True;
       end if;
-
-      --  Then a resolver that does NOT listen on port 53.  Measured on
-      --  cellular (1NCE Cat-M1): stretches where every port-53 query is
-      --  swallowed -- by whatever intercepts DNS in the carrier core --
-      --  regardless of source port or nameserver, while the same query to
-      --  OpenDNS on 443 answers at once.  A fallback that shares the port
-      --  shares the fate, so this one deliberately does not.
-      return DNS_Client.Resolve
+      if DNS_Client.Resolve
         (GNAT.Sockets.Inet_Addr (Fallback_DNS), Name, Addr,
-         Timeout => Timeout, Server_Port => 443);
+         Timeout => Timeout, Server_Port => 443)
+      then
+         return True;
+      end if;
+      return DNS_Client.Resolve_TCP (DNS_Server, Name, Addr, Timeout => Timeout);
    end Resolve;
 
 end Net_Resolver;
