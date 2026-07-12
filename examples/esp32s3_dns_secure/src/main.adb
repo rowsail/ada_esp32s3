@@ -162,25 +162,6 @@ begin
    end if;
    ESP32S3.W5500.Interrupts.Enable (W5500_Dev.Dev);
 
-   --  Warm up the first TCP connection.  Characterised on this board: the
-   --  FIRST W5500 TCP connection after bring-up completes its connect and
-   --  send, then never receives the reply -- its response read times out,
-   --  and the connection is closed.  The SECOND connection, and every one
-   --  after, works at once.  It is not ARP (UDP to off-subnet hosts has
-   --  already succeeded by here) and not the connect (which establishes);
-   --  it is specific to the chip's first TCP socket use.  A throwaway
-   --  connection with a short timeout absorbs it, so the reported TCP leg
-   --  below is the second.  (A real application gets this for free: any
-   --  reconnect loop, and Net_Resolver's own retry ladder, tries again.)
-   declare
-      Warm   : Inet_Addr_Type;
-      Primed : constant Boolean :=
-        DNS_Client.Resolve_TCP (Public_DNS, Query_Name, Warm, Timeout => 2.0);
-      pragma Unreferenced (Primed);
-   begin
-      null;
-   end;
-
    --  Trusted UTC for the certificate-validity checks (DoT/DoH), retried:
    --  a single UDP round trip to a public NTP server can be lost.
    declare
