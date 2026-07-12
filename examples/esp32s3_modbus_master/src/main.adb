@@ -21,6 +21,7 @@ with W5500_Dev;
 with Net_Pin;
 
 with System.BB.CPU_Primitives.Multiprocessors;
+with ESP32S3.Strings;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
@@ -38,11 +39,8 @@ procedure Main is
    Result  : MM.Status;
    Exc     : Exception_Code;
 
-   function Img (N : Integer) return String is
-      Str : constant String := Integer'Image (N);
-   begin
-      return (if N < 0 then Str else Str (Str'First + 1 .. Str'Last));
-   end Img;
+   function Img (N : Integer) return String
+     renames ESP32S3.Strings.Image_Signed;
 begin
    delay until Clock + Milliseconds (200);
    Put_Line ("[modbus] Modbus TCP master (pinned to the W5500)");

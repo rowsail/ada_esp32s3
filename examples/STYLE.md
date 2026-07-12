@@ -68,6 +68,30 @@ needs it). **`esp32s3_gpio0_blink`** is the minimal end.
    the example's README quotes are a contract — preserve them verbatim. Improve
    the code around them.
 
+## Libraries: two conventions the examples rely on
+
+These bind library APIs (`libs/`), which the examples then get to trust.
+
+9. **One error vocabulary per layer.** A library API reports failure through a
+   **status enumeration** (`MQTT.Client.Status`, `Net_Devices.Status`) — an enum
+   names *what* went wrong and lets a caller `case` over it. A bare `Boolean`
+   out-value is allowed only for a genuinely binary fact (`Resolve` either
+   produced an address or did not); the moment two failure causes exist that a
+   caller might treat differently, it must be an enum. **Exceptions are confined
+   to the `GNAT.Sockets` facade**, whose contract mirrors desktop GNAT.Sockets
+   (`Socket_Error`) so the same sources compile natively — and every library
+   sitting on the facade must therefore catch `Socket_Error` on *every* socket
+   call path, send included: unhandled, it is a board reset, not an error
+   report. (Measured: a dead route once escaped `DNS_Client` through an
+   unguarded `Send_Socket` and reboot-looped the board mid-failover.)
+
+10. **State the concurrency contract at the spec.** Bare-metal code often
+   relies on "one task owns this object" — fine, but write it down: what may
+   be shared, what needs external serialisation, and what the library locks
+   internally (the BG95's transaction lock; the socket pool's protected
+   claim/release). If a package keeps benign global state (a port rotor, a
+   transaction-id counter), say what concurrent use does to it.
+
 ## Before you commit
 
 - Build it: `./x build <name>` (and on its real profile if non-default).

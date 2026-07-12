@@ -1,9 +1,8 @@
 with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.SPI;
-with ESP32S3.W5500;
-with ESP32S3.W5500.DHCP;
+with ESP32S3.Strings;
 with ESP32S3.W5500.Net_Device;
-with ESP32S3.Log;   use ESP32S3.Log;
+with ESP32S3.Log; use ESP32S3.Log;
 
 package body W5500_Dev is
    package Net renames ESP32S3.W5500;
@@ -12,25 +11,25 @@ package body W5500_Dev is
 
    MAC : constant Net.MAC_Address := (16#00#, 16#08#, 16#DC#, 16#01#, 16#02#, 16#03#);
 
-   --  Natural'Image without its leading space.
-   function Img (N : Natural) return String is
-      Str : constant String := Natural'Image (N);
-   begin
-      return Str (Str'First + 1 .. Str'Last);
-   end Img;
+   --  The static form's fixed address -- edit for your LAN.
+   Static_IP      : constant Net.IPv4_Address := Net.IPv4 (192, 168, 1, 50);
+   Static_Subnet  : constant Net.IPv4_Address := Net.IPv4 (255, 255, 255, 0);
+   Static_Gateway : constant Net.IPv4_Address := Net.IPv4 (192, 168, 1, 254);
 
-   function Image (A : ESP32S3.W5500.IPv4_Address) return String
-   is (Img (Natural (A (0)))
-       & "."
-       & Img (Natural (A (1)))
-       & "."
-       & Img (Natural (A (2)))
-       & "."
-       & Img (Natural (A (3))));
+   function Img (Value : Natural) return String
+     renames ESP32S3.Strings.Image;
 
-   function Bring_Up
-     (Settings : IP_Settings := DHCP_Config; Lease : out DHCP.Lease_Info) return Boolean
-   is
+   function Image (Address : ESP32S3.W5500.IPv4_Address) return String
+   is (Img (Natural (Address (0)))
+       & "."
+       & Img (Natural (Address (1)))
+       & "."
+       & Img (Natural (Address (2)))
+       & "."
+       & Img (Natural (Address (3))));
+
+   --  SPI + reset + identity check, shared by both forms.
+   function Init_Chip return Boolean is
       Ok : Boolean;
    begin
       Net.Setup
@@ -46,22 +45,36 @@ package body W5500_Dev is
       Net.Reset (Dev, Ok);
       if not Ok then
          Put_Line ("[w5500] not found (VERSIONR /= 0x04 -- check wiring)");
-         return False;
       end if;
+      return Ok;
+   end Init_Chip;
 
+   --  PHY auto-negotiation takes a couple of seconds; wait, bounded.
+   procedure Await_Link is
+   begin
       for Try in 1 .. 40 loop
-         --  PHY auto-neg takes ~secs
          exit when Net.Link (Dev) = Net.Up;
          delay until Clock + Milliseconds (250);
       end loop;
+   end Await_Link;
+
+   function Bring_Up
+     (Settings : IP_Settings := DHCP_Config;
+      Lease    : out DHCP.Lease_Info) return Boolean is
+   begin
+      if not Init_Chip then
+         return False;
+      end if;
+
+      Await_Link;
       if Net.Link (Dev) /= Net.Up then
          Put_Line ("[w5500] link DOWN -- check the cable");
          return False;
       end if;
 
       if Settings.Use_DHCP then
-         --  DORA: on success the chip is programmed with the leased IP / subnet /
-         --  gateway, and Lease carries them (plus the DNS server).
+         --  DORA: on success the chip is programmed with the leased IP /
+         --  subnet / gateway, and Lease carries them (plus the DNS server).
          if not DHCP.Acquire_Lease (Dev'Access, MAC, Lease) then
             Put_Line ("[w5500] DHCP: no lease (is there a DHCP server?)");
             return False;
@@ -94,4 +107,25 @@ package body W5500_Dev is
          & (if Settings.Use_DHCP then " (DHCP)" else " (static)"));
       return True;
    end Bring_Up;
+
+   function Bring_Up return Boolean is
+   begin
+      if not Init_Chip then
+         return False;
+      end if;
+      Net.Configure
+        (Dev,
+         MAC     => MAC,
+         IP      => Static_IP,
+         Subnet  => Static_Subnet,
+         Gateway => Static_Gateway);
+      Await_Link;
+      Put_Line
+        (if Net.Link (Dev) = Net.Up
+         then "[w5500] link up, IP 192.168.1.50"
+         else "[w5500] link DOWN -- check the cable");
+      ESP32S3.W5500.Net_Device.Register_Default (Dev'Access);
+      return True;
+   end Bring_Up;
+
 end W5500_Dev;
