@@ -18,8 +18,17 @@ with Net_Devices;
 --      (the W5500 listener *becomes* the connection); to accept again, re-Listen.
 --
 --  Multiple interfaces: register each with Add_Interface (the first registered is
---  the default).  Per-destination routing across interfaces is not wired yet --
---  for now every socket uses the default interface.
+--  the default).  With routes configured (Net_Routes), an unpinned socket follows
+--  the table per destination -- TCP at Connect_Socket, UDP per datagram at the
+--  To-form of Send_Socket; Set_Interface pins a socket to one interface,
+--  fail-closed.  With no routes, everything uses the default interface.
+--
+--  Concurrency contract: a Socket_Type value has ONE owning task -- nothing
+--  serialises concurrent operations on the same socket, and the routing forms
+--  may re-home it mid-call.  Different sockets may be driven from different
+--  tasks: slot claim/release is a protected object, and the per-socket state
+--  touched by an operation belongs to that socket alone.  Register interfaces
+--  and configure routes during bring-up, before tasks start using sockets.
 --
 --  Requires the embedded or full profile (the socket engine uses controlled
 --  handles + Ada.Real_Time).

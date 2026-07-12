@@ -5,6 +5,7 @@ with ESP32S3.Ext4;
 with ESP32S3.Ext4.FS;
 with ESP32S3.Ext4.Inode;
 with ESP32S3.Ext4.VFS;
+with ESP32S3.Strings;
 
 package body FTP_Server is
 
@@ -134,11 +135,8 @@ package body FTP_Server is
       return Result;
    end Upper;
 
-   function Img (N : Natural) return String is
-      Image_Str : constant String := Natural'Image (N);
-   begin
-      return Image_Str (Image_Str'First + 1 .. Image_Str'Last);
-   end Img;
+   function Img (N : Natural) return String
+     renames ESP32S3.Strings.Image;
 
    --  Normalised absolute path of Arg, resolved against Cwd (handles "/", "..",
    --  ".", "//", trailing "/").  Result has no trailing slash except "/".

@@ -8,6 +8,12 @@ with GNAT.Sockets;
 --  Use it with one `with DNS_Client;`.  GNAT.Sockets must already be usable (on the
 --  W5500, call GNAT.Sockets.Initialize (Device) once during bring-up; on a desktop
 --  it always is).
+--
+--  Concurrency: Resolve keeps two benign package-global rotors (the transaction
+--  id and the default source port).  Concurrent calls from several tasks do not
+--  corrupt anything, but two in-flight queries can land on the same source port
+--  and one then fails its reply check -- a failed lookup, not an error.  If you
+--  resolve from more than one task, serialise the calls or accept the retry.
 
 package DNS_Client is
 

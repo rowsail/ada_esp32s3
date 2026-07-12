@@ -3,6 +3,7 @@ with Ada.Real_Time;
 with Ada.Streams; use Ada.Streams;
 with Net_Devices;
 with Net_Routes;
+with ESP32S3.Strings;
 
 package body GNAT.Sockets is
 
@@ -84,8 +85,10 @@ package body GNAT.Sockets is
       return Socket.Index;
    end Ix_Of;
 
-   --  Pick the interface a new socket binds to.  Routing per destination is not
-   --  wired yet, so for now this is always the first (default) interface.
+   --  Where a new socket parks until a destination routes it (Connect_Socket
+   --  for TCP, the To-form of Send_Socket per datagram): the first registered
+   --  interface -- and, on a board with no routes configured, the only one
+   --  anything uses.
    function Default_Iface return Interface_Id is
    begin
       if N_Ifaces = 0 then
@@ -223,11 +226,8 @@ package body GNAT.Sockets is
    end Inet_Addr;
 
    function Image (Value : Inet_Addr_Type) return String is
-      function Img (Octet : Net_Devices.Octet) return String is
-         Image_Str : constant String := Integer'Image (Integer (Octet));
-      begin
-         return Image_Str (Image_Str'First + 1 .. Image_Str'Last);   --  drop the leading space
-      end Img;
+      function Img (Octet : Net_Devices.Octet) return String
+      is (ESP32S3.Strings.Image (Natural (Octet)));
    begin
       return
         Img (Value.B (0))

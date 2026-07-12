@@ -2,6 +2,7 @@ with Ada.Streams;  use Ada.Streams;
 with GNAT.Sockets; use GNAT.Sockets;
 with Interfaces;   use Interfaces;
 with DNS_Client.Parse;
+with ESP32S3.Strings;
 
 package body DNS_Client is
 
@@ -37,11 +38,8 @@ package body DNS_Client is
       Q_Id  : constant Unsigned_16 := Next_Id;
 
       --  Decimal image of a byte with no leading blank ("84", not " 84").
-      function Img (Octet : Unsigned_8) return String is
-         Image_Str : constant String := Integer'Image (Integer (Octet));
-      begin
-         return Image_Str (Image_Str'First + 1 .. Image_Str'Last);
-      end Img;
+      function Img (Octet : Unsigned_8) return String
+      is (ESP32S3.Strings.Image (Natural (Octet)));
 
       --  Build a standard recursive A-record query for Name into Query.
       procedure Build_Query is

@@ -9,6 +9,10 @@ with GNAT.Sockets;
 --
 --  Use it with one `with NTP_Client;`.  GNAT.Sockets must already be usable (on the
 --  W5500, call GNAT.Sockets.Initialize (Device) once during bring-up).
+--
+--  Concurrency: Query rotates a benign package-global source-port counter --
+--  concurrent queries from several tasks corrupt nothing, but may briefly
+--  share a port and fail a reply check; serialise or accept the retry.
 
 package NTP_Client with SPARK_Mode => On is
 
