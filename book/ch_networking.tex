@@ -394,10 +394,14 @@ session and its trust anchor; \texttt{DNS\_TLS} only supplies the framing.
 resolver, then TCP:53 --- each rung dodging a failure the one above it was
 measured to have. The \texttt{esp32s3\_dns\_secure} example resolves one name
 all four ways against Google Public DNS over Ethernet, and is worth reading
-for one hardware wart it documents: the \emph{first} W5500 TCP connect to an
-off-subnet host after bring-up can fail once, the chip failing a SYN sent
-before the gateway's ARP entry exists rather than waiting for it --- a retry
-(which \texttt{Net\_Resolver} and any reconnect loop already do) succeeds.
+for one hardware wart it documents: the \emph{first} W5500 TCP connection
+after bring-up completes its connect and its send but never receives the
+reply --- the response read times out, and the second connection (and every
+one after) works at once. It is measurably \emph{not} ARP (UDP to off-subnet
+hosts succeeds before it) and not the connect (which establishes); it is
+specific to the chip's first TCP socket use, and the root cause is not yet
+pinned down. A throwaway connection absorbs it --- and any retry does, which
+\texttt{Net\_Resolver}'s ladder and any reconnect loop already provide.
 
 \textbf{DHCP} is the opposite kind of protocol: its job is to \emph{bootstrap} the
 interface: it must talk before an address exists and then program the obtained

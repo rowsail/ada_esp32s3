@@ -164,17 +164,21 @@ begin
    end if;
    ESP32S3.W5500.Interrupts.Enable (W5500_Dev.Dev);
 
-   --  The FIRST W5500 TCP connect to an off-subnet host after bring-up can
-   --  fail once: the chip fails a SYN sent before the gateway's ARP entry is
-   --  established, rather than waiting for ARP.  Prime that entry with a
-   --  throwaway connect so the first REPORTED transport is not the one that
-   --  eats the cold start.  (Resolve itself is fine on a retry -- this is a
-   --  demo tidiness, not a workaround for anything filtered.)
+   --  Warm up the first TCP connection.  Characterised on this board: the
+   --  FIRST W5500 TCP connection after bring-up completes its connect and
+   --  send, then never receives the reply -- its response read times out,
+   --  and the connection is closed.  The SECOND connection, and every one
+   --  after, works at once.  It is not ARP (UDP to off-subnet hosts has
+   --  already succeeded by here) and not the connect (which establishes);
+   --  it is specific to the chip's first TCP socket use.  A throwaway
+   --  connection with a short timeout absorbs it, so the reported TCP leg
+   --  below is the second.  (A real application gets this for free: any
+   --  reconnect loop, and Net_Resolver's own retry ladder, tries again.)
    declare
-      Warm : Inet_Addr_Type;
-      Ignored : constant Boolean :=
-        DNS_Client.Resolve_TCP (Public_DNS, Query_Name, Warm, Timeout => 5.0);
-      pragma Unreferenced (Ignored);
+      Warm   : Inet_Addr_Type;
+      Primed : constant Boolean :=
+        DNS_Client.Resolve_TCP (Public_DNS, Query_Name, Warm, Timeout => 2.0);
+      pragma Unreferenced (Primed);
    begin
       null;
    end;

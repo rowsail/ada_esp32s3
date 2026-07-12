@@ -16,13 +16,15 @@ differs.
 
 ## Two hardware notes
 
-**Cold-start TCP.** The first W5500 TCP connect to an off-subnet host after
-bring-up can fail once — the chip fails a SYN sent before the gateway's ARP
-entry exists, rather than waiting for ARP; a retry succeeds. The example
-primes that entry with a throwaway connect before the reported legs, so the
-first result is not the one that eats the cold start. (An application would
-normally get this for free: `Net_Resolver` retries, and any real reconnect
-loop retries.)
+**Cold-start TCP.** The first W5500 TCP *connection* after bring-up completes
+its connect and its send but never receives the reply — the response read
+times out, and the second connection (and every one after) works at once.
+It is measurably *not* ARP (UDP to off-subnet hosts succeeds before it) and
+*not* the connect (which establishes); it is specific to the chip's first TCP
+socket use, and the root cause is not yet pinned down. The example absorbs it
+with a throwaway priming connection before the reported legs. (An application
+gets this for free: `Net_Resolver`'s retry ladder, and any reconnect loop,
+try again.)
 
 **NTP.** A single UDP round trip to a public NTP server can be lost, and
 DoT/DoH need trusted time for the certificate-validity check, so the clock
