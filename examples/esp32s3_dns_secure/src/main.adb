@@ -18,11 +18,12 @@
 --    indistinguishable from ordinary TLS, so an interceptor cannot even see
 --    them, let alone block them.
 --
---    The DoT/DoH legs speak to Google Public DNS (dns.google, 8.8.8.8) and
---    pin its P-256 issuing intermediate (DoT_Anchor.WE2_DER).  Pinning the
---    intermediate rather than a root is a demo simplification: the public
---    DoT roots are P-384 ECC, which this TLS stack does not verify yet; the
---    leaf verifies under WE2 with ECDSA-P256-SHA256, which it does.
+--    All four legs speak to Google Public DNS.  The DoT/DoH legs pin its
+--    P-256 issuing intermediate (DoT_Anchor.WE2_DER) and authenticate the
+--    leaf under it.  Pinning the intermediate rather than a root is a demo
+--    simplification: the public DoT roots are P-384 ECC, which this TLS
+--    stack does not verify yet; the leaf verifies under WE2 with
+--    ECDSA-P256-SHA256, which it does.
 --
 --  Build & run:  ./x run esp32s3_dns_secure       (or ./build.sh, ./flash.sh)
 --
@@ -59,16 +60,11 @@ pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
 procedure Main is
 
-   --  The name to resolve.  The plain UDP/TCP legs use the network's OWN
-   --  resolver (from the DHCP lease): reachable by both, and not subject to
-   --  the common policy of filtering external port-53 traffic.  The DoT/DoH
-   --  legs go to Google Public DNS, which those legs are precisely designed
-   --  to reach THROUGH such filtering.
+   --  All four legs speak to Google Public DNS: UDP and TCP to 8.8.8.8:53,
+   --  DoT to 8.8.8.8:853, DoH to dns.google:443.  One server, four ways in.
    Query_Name  : constant String := "example.com";
    Public_DNS  : constant Inet_Addr_Type := Inet_Addr ("8.8.8.8");
    DoH_Host    : constant String := "dns.google";   --  TLS SNI + HTTP Host
-
-   Plain_DNS   : Inet_Addr_Type;   --  the lease's resolver, set at bring-up
 
    Lease   : ESP32S3.W5500.DHCP.Lease_Info;
    Now     : X509.Time_64;
@@ -167,32 +163,55 @@ begin
       end loop;
    end if;
    ESP32S3.W5500.Interrupts.Enable (W5500_Dev.Dev);
-   Plain_DNS := Inet_Addr (W5500_Dev.Image (Lease.DNS));
 
-   --  Trusted UTC for the certificate-validity checks (DoT/DoH).
+   --  The FIRST W5500 TCP connect to an off-subnet host after bring-up can
+   --  fail once: the chip fails a SYN sent before the gateway's ARP entry is
+   --  established, rather than waiting for ARP.  Prime that entry with a
+   --  throwaway connect so the first REPORTED transport is not the one that
+   --  eats the cold start.  (Resolve itself is fine on a retry -- this is a
+   --  demo tidiness, not a workaround for anything filtered.)
+   declare
+      Warm : Inet_Addr_Type;
+      Ignored : constant Boolean :=
+        DNS_Client.Resolve_TCP (Public_DNS, Query_Name, Warm, Timeout => 5.0);
+      pragma Unreferenced (Ignored);
+   begin
+      null;
+   end;
+
+   --  Trusted UTC for the certificate-validity checks (DoT/DoH), retried:
+   --  a single UDP round trip to a public NTP server can be lost.
    declare
       Unix : Interfaces.Integer_64;
       Y, Mo, D, H, Mi, S : Integer;
+      Synced : Boolean := False;
    begin
-      if NTP_Client.Query (Inet_Addr ("162.159.200.1"), Unix, Timeout => 8.0) then
-         NTP_Client.To_UTC (Unix, Y, Mo, D, H, Mi, S);
-         Now := X509.Pack_Time (Y, Mo, D, H, Mi, S);
-         Put_Line ("[dns] clock synced from NTP");
-      else
-         Put_Line ("[dns] NTP failed -- DoT/DoH cert dates cannot be checked");
-      end if;
+      for Attempt in 1 .. 4 loop
+         if NTP_Client.Query
+           (Inet_Addr ("162.159.200.1"), Unix, Timeout => 5.0)
+         then
+            NTP_Client.To_UTC (Unix, Y, Mo, D, H, Mi, S);
+            Now := X509.Pack_Time (Y, Mo, D, H, Mi, S);
+            Synced := True;
+            exit;
+         end if;
+         delay until Clock + Seconds (2);
+      end loop;
+      Put_Line
+        (if Synced then "[dns] clock synced from NTP"
+         else "[dns] NTP failed -- DoT/DoH cert dates cannot be checked");
    end;
 
    ---------------------------------------------------------------------------
    --  1. UDP on 53.
    ---------------------------------------------------------------------------
-   Ok := DNS_Client.Resolve (Plain_DNS, Query_Name, Addr, Timeout => 5.0);
+   Ok := DNS_Client.Resolve (Public_DNS, Query_Name, Addr, Timeout => 5.0);
    Report ("UDP  (53) ", Ok, Addr);
 
    ---------------------------------------------------------------------------
    --  2. TCP on 53.
    ---------------------------------------------------------------------------
-   Ok := DNS_Client.Resolve_TCP (Plain_DNS, Query_Name, Addr, Timeout => 5.0);
+   Ok := DNS_Client.Resolve_TCP (Public_DNS, Query_Name, Addr, Timeout => 5.0);
    Report ("TCP  (53) ", Ok, Addr);
 
    ---------------------------------------------------------------------------

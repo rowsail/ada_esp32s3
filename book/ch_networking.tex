@@ -393,7 +393,11 @@ session and its trust anchor; \texttt{DNS\_TLS} only supplies the framing.
 \texttt{Net\_Resolver} climbs a ladder --- UDP:53, then UDP:443 to an off-port
 resolver, then TCP:53 --- each rung dodging a failure the one above it was
 measured to have. The \texttt{esp32s3\_dns\_secure} example resolves one name
-all four ways over Ethernet.
+all four ways against Google Public DNS over Ethernet, and is worth reading
+for one hardware wart it documents: the \emph{first} W5500 TCP connect to an
+off-subnet host after bring-up can fail once, the chip failing a SYN sent
+before the gateway's ARP entry exists rather than waiting for it --- a retry
+(which \texttt{Net\_Resolver} and any reconnect loop already do) succeeds.
 
 \textbf{DHCP} is the opposite kind of protocol: its job is to \emph{bootstrap} the
 interface: it must talk before an address exists and then program the obtained
