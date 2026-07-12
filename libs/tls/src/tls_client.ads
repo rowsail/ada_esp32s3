@@ -151,6 +151,7 @@ private
       Flight         : Boolean := False;
       Fin_OK         : Boolean := False;   --  server Finished verified
       CV_OK          : Boolean := False;   --  server CertificateVerify verified
+      Cert_Req_Seen  : Boolean := False;   --  server sent a CertificateRequest
       --  Client side: handshake + application traffic keys.
       HS_Secret      : Key32 := (others => 0);   --  Handshake Secret (-> Master)
       Client_Key     : Byte_Array (0 .. 15) := (others => 0);  --  client handshake key

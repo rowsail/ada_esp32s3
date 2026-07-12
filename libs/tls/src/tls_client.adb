@@ -273,11 +273,12 @@ package body TLS_Client is
 
       --  signature_algorithms
       P16 (B, 13);
+      P16 (B, 10);
       P16 (B, 8);
-      P16 (B, 6);
-      P16 (B, 16#0401#);
-      P16 (B, 16#0804#);
-      P16 (B, 16#0403#);
+      P16 (B, 16#0401#);   --  rsa_pkcs1_sha256
+      P16 (B, 16#0804#);   --  rsa_pss_rsae_sha256
+      P16 (B, 16#0403#);   --  ecdsa_secp256r1_sha256
+      P16 (B, 16#0503#);   --  ecdsa_secp384r1_sha384  (P-384 leaf certs)
 
       --  supported_versions: TLS 1.3
       P16 (B, 43);
@@ -767,6 +768,13 @@ package body TLS_Client is
                   end if;
                end;
                S.CV_End := Pos + 4 + MLen;            --  transcript point for Finished
+            elsif MType = 13 then
+               --  CertificateRequest: the server wants (optional) client auth.
+               --  We hold no client certificate, but RFC 8446 4.4.2 still
+               --  requires us to answer with an (empty) Certificate message
+               --  before Finished -- else the server aborts with
+               --  unexpected_message.  Complete_Handshake does that.
+               S.Cert_Req_Seen := True;
             elsif MType = 20 then
                --  Finished
                S.Fin_First := Pos + 4;
@@ -791,6 +799,7 @@ package body TLS_Client is
       Fin        : Boolean := False;
    begin
       Ok := False;
+      S.Cert_Req_Seen := False;   --  fresh per handshake (reused session slots)
       HSB_Len := 0;
       for Attempt in 1 .. 16 loop
          Recv_Record (Sock, CType, Frag, Len, Rec_OK);
@@ -892,7 +901,8 @@ package body TLS_Client is
         or else Sig_Len <= 0
         or else S.Cert_End = 0
         or else (S.CV_Alg /= 16#0804#               --  rsa_pss_rsae_sha256
-                 and then S.CV_Alg /= 16#0403#)      --  ecdsa_secp256r1_sha256
+                 and then S.CV_Alg /= 16#0403#       --  ecdsa_secp256r1_sha256
+                 and then S.CV_Alg /= 16#0503#)      --  ecdsa_secp384r1_sha384
       then
          return;
       end if;
@@ -935,11 +945,22 @@ package body TLS_Client is
                        Signature => Sig,
                        Modulus   => CertBuf (Cert.RSA_Modulus.First .. Cert.RSA_Modulus.Last),
                        Exponent  => CertBuf (Cert.RSA_Exponent.First .. Cert.RSA_Exponent.Last));
-      else
+      elsif S.CV_Alg = 16#0403# then
          --  ecdsa_secp256r1_sha256
          S.CV_OK :=
            Cert.Key_Kind = X509.Key_EC_P256
            and then Cert_Verify.ECDSA_P256_SHA256
+                      (Message => Signed,
+                       Sig_DER => Sig,
+                       Pub_X   => CertBuf (Cert.EC_X.First .. Cert.EC_X.Last),
+                       Pub_Y   => CertBuf (Cert.EC_Y.First .. Cert.EC_Y.Last));
+      else
+         --  ecdsa_secp384r1_sha384 (P-384 leaf; the Signed message still
+         --  carries the SHA-256 transcript hash -- only the CertVerify digest
+         --  is SHA-384).
+         S.CV_OK :=
+           Cert.Key_Kind = X509.Key_EC_P384
+           and then Cert_Verify.ECDSA_P384_SHA384
                       (Message => Signed,
                        Sig_DER => Sig,
                        Pub_X   => CertBuf (Cert.EC_X.First .. Cert.EC_X.Last),
@@ -1021,6 +1042,11 @@ package body TLS_Client is
       Derived2, Master, C_Ap, S_Ap : SHA.Digest;
       CCS                          : constant Byte_Array :=
         (16#14#, 16#03#, 16#03#, 16#00#, 16#01#, 16#01#);
+      --  An empty client Certificate handshake message (RFC 8446 4.4.2):
+      --  type 11, len 4, empty certificate_request_context (0), empty
+      --  certificate_list (0).  Sent only if the server asked for one.
+      Empty_Cert                   : constant Byte_Array :=
+        (16#0B#, 16#00#, 16#00#, 16#04#, 16#00#, 16#00#, 16#00#, 16#00#);
    begin
       for I in 0 .. TR_Len - 1 loop
          Msg (N32 (I)) := Byte (TR (I));
@@ -1028,10 +1054,33 @@ package body TLS_Client is
       for I in 0 .. HSB_Len - 1 loop
          Msg (N32 (TR_Len + I)) := Byte (HSB (I));
       end loop;
-      TH := SHA.Hash (Msg);
-      for I in 0 .. 31 loop
-         TH_BA (I) := U8 (TH (Index_32 (I)));
-      end loop;
+      TH := SHA.Hash (Msg);                --  Transcript-Hash(CH .. server Finished)
+
+      --  The client Finished transcript ALSO covers our client Certificate when
+      --  the server requested one (RFC 8446 4.4).  The application traffic
+      --  secrets, in contrast, are keyed to TH above (CH .. server Finished) --
+      --  so compute the Finished's hash separately here.
+      if S.Cert_Req_Seen then
+         declare
+            Msg_F : Byte_Seq (0 .. N32 (TLen + Empty_Cert'Length) - 1);
+            TH_F  : SHA.Digest;
+         begin
+            for I in 0 .. TLen - 1 loop
+               Msg_F (N32 (I)) := Msg (N32 (I));
+            end loop;
+            for I in Empty_Cert'Range loop
+               Msg_F (N32 (TLen + (I - Empty_Cert'First))) := Byte (Empty_Cert (I));
+            end loop;
+            TH_F := SHA.Hash (Msg_F);
+            for I in 0 .. 31 loop
+               TH_BA (I) := U8 (TH_F (Index_32 (I)));
+            end loop;
+         end;
+      else
+         for I in 0 .. 31 loop
+            TH_BA (I) := U8 (TH (Index_32 (I)));
+         end loop;
+      end if;
 
       --  client Finished
       for I in 0 .. 31 loop
@@ -1074,17 +1123,27 @@ package body TLS_Client is
       S.S_App_Seq := 0;
 
       --  resumption_master_secret = Derive-Secret(Master, "res master",
-      --  Transcript-Hash(ClientHello .. client Finished)).
+      --  Transcript-Hash(ClientHello .. client Finished)) -- including our
+      --  client Certificate when the server asked for one.
       declare
-         RM  : Byte_Seq (0 .. N32 (TLen + Fin'Length) - 1);
+         Extra : constant Natural :=
+           (if S.Cert_Req_Seen then Empty_Cert'Length else 0);
+         RM  : Byte_Seq (0 .. N32 (TLen + Extra + Fin'Length) - 1);
          RTH : SHA.Digest;
          Res : SHA.Digest;
+         P   : Natural := TLen;
       begin
          for I in 0 .. TLen - 1 loop
             RM (N32 (I)) := Msg (N32 (I));
          end loop;
+         if S.Cert_Req_Seen then
+            for I in Empty_Cert'Range loop
+               RM (N32 (P + (I - Empty_Cert'First))) := Byte (Empty_Cert (I));
+            end loop;
+            P := P + Empty_Cert'Length;
+         end if;
          for I in Fin'Range loop
-            RM (N32 (TLen + (I - Fin'First))) := Byte (Fin (I));
+            RM (N32 (P + (I - Fin'First))) := Byte (Fin (I));
          end loop;
          RTH := SHA.Hash (RM);
          Res := Derive_Secret (Master, "res master", RTH);
@@ -1095,7 +1154,14 @@ package body TLS_Client is
       end;
 
       Send_Bytes (Sock, CCS);                                    --  middlebox-compat
-      Send_Encrypted (Sock, S.Client_Key, S.Client_IV, 0, Fin, 22);  --  our Finished
+      if S.Cert_Req_Seen then
+         --  Answer the CertificateRequest with an empty Certificate, then our
+         --  Finished (client handshake key, sequence 0 then 1).
+         Send_Encrypted (Sock, S.Client_Key, S.Client_IV, 0, Empty_Cert, 22);
+         Send_Encrypted (Sock, S.Client_Key, S.Client_IV, 1, Fin, 22);
+      else
+         Send_Encrypted (Sock, S.Client_Key, S.Client_IV, 0, Fin, 22);  --  our Finished
+      end if;
       S.Open := True;
    end Complete_Handshake;
 
