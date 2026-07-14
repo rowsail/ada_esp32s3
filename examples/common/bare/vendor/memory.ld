@@ -54,10 +54,13 @@ MEMORY
    * NOTE (noidf): rom_config_instruction_cache_mode brings up a 32 KB I-cache on
    * this path (occupies 0x40370000-0x40377FFF), so our code/vectors must live
    * ABOVE that -- start at 0x40378000 (_diram_i_start, the D/IRAM region the
-   * cache never touches).  We reserve the first 32 KB of D/IRAM for code; the
-   * matching DRAM view (0x3FC88000-0x3FC90000) is therefore NOT data-usable, so
-   * dram0_0_seg below begins at 0x3FC90000 to avoid aliasing our code. */
-  iram0_0_seg (RX) : org = 0x40378000, len = 0x8000
+   * cache never touches).  We reserve the first 64 KB of D/IRAM for code; the
+   * matching DRAM view (0x3FC88000-0x3FC98000) is therefore NOT data-usable, so
+   * dram0_0_seg below begins at 0x3FC98000 to avoid aliasing our code.
+   * (Was 32 KB; raised to 64 KB so the Espressif Wi-Fi blobs' IRAM-resident
+   * lower-MAC/ISR code fits -- .iram0.text overflowed 32 KB.  Costs 32 KB of the
+   * 384 KB DRAM, leaving 352 KB, still ample for the examples' heaps.) */
+  iram0_0_seg (RX) : org = 0x40378000, len = 0x10000
   /* Flash mapped instruction data */
   iram0_2_seg (RX) : org = 0x42000020, len = 0x800000-0x20
   /**
@@ -71,7 +74,7 @@ MEMORY
    * Shared data RAM, excluding memory reserved for ROM bss/data/stack.
    * Enabling Bluetooth & Trace Memory features in menuconfig will decrease the amount of RAM available.
    */
-  dram0_0_seg (RW) : org = (0x3FC90000), len = ((0x403E0000 - (0x40378000 - 0x3FC88000)) - 0x3FC90000)
+  dram0_0_seg (RW) : org = (0x3FC98000), len = ((0x403E0000 - (0x40378000 - 0x3FC88000)) - 0x3FC98000)
   /* Flash mapped constant data */
   drom0_0_seg (R) : org = 0x3C000020, len = 0x2000000-0x20
   /* (See iram0_2_seg for meaning of 0x20 offset in the above.) */
