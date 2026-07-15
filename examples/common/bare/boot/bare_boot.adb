@@ -8,7 +8,8 @@ with ESP32S3_Registers.SYSTIMER;        use ESP32S3_Registers.SYSTIMER;
 package body Bare_Boot is
 
    --  The CPU interrupt the cross-core IPI poke is routed to.
-   POKE_CPU_INT : constant := 31;
+   POKE_CPU_INT  : constant := 31;
+   ALARM_CPU_INT : constant := 26;   --  SYSTIMER alarm -> level-5 CPU int
 
    --  Vendored Xtensa asm: enable a set of interrupts (was the esp_cpu.h inline).
    procedure Xt_Ints_On (Mask : Unsigned_32)
@@ -122,8 +123,30 @@ package body Bare_Boot is
    procedure Native_Setup_Poke_Core1 is
    begin
       INTERRUPT_CORE1_Periph.CPU_INTR_FROM_CPU_3_MAP.CPU_INTR_FROM_CPU_3_MAP := POKE_CPU_INT;
-      Esp_Cpu_Intr_Enable (Shift_Left (1, POKE_CPU_INT) or Shift_Left (1, 16));
+      Esp_Cpu_Intr_Enable (Shift_Left (1, POKE_CPU_INT));
    end Native_Setup_Poke_Core1;
+
+   procedure Native_Setup_Systimer_Core0 is
+   begin
+      --  Route SYSTIMER_TARGET0 (matrix source 57) to core 0's CPU_INT 26,
+      --  arm the comparator + its interrupt.  Sources left at the reset map
+      --  default (16) are parked on the now-disabled old tick int -> harmless.
+      INTERRUPT_CORE0_Periph.SYSTIMER_TARGET0_INT_MAP.SYSTIMER_TARGET0_INT_MAP :=
+        ALARM_CPU_INT;
+      SYSTIMER_Periph.CONF.TARGET0_WORK_EN := True;
+      SYSTIMER_Periph.INT_ENA.TARGET0_INT_ENA := True;
+      Esp_Cpu_Intr_Enable (Shift_Left (1, ALARM_CPU_INT));
+   end Native_Setup_Systimer_Core0;
+
+   procedure Native_Setup_Systimer_Core1 is
+   begin
+      --  TARGET1 (matrix source 58) -> core 1's CPU_INT 26.
+      INTERRUPT_CORE1_Periph.SYSTIMER_TARGET1_INT_MAP.SYSTIMER_TARGET1_INT_MAP :=
+        ALARM_CPU_INT;
+      SYSTIMER_Periph.CONF.TARGET1_WORK_EN := True;
+      SYSTIMER_Periph.INT_ENA.TARGET1_INT_ENA := True;
+      Esp_Cpu_Intr_Enable (Shift_Left (1, ALARM_CPU_INT));
+   end Native_Setup_Systimer_Core1;
 
    -------------------
    -- Native_Core_Id --
