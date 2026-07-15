@@ -131,4 +131,37 @@ package ESP32S3.WiFi is
    type Frame_Handler is access procedure (Data : System.Address; Len : Natural);
    procedure Set_Frame_Handler (Handler : Frame_Handler);
 
+   --  --- PHY RF-calibration persistence -----------------------------------
+   --
+   --  By default the radio runs a FULL RF calibration on every bring-up (~tens
+   --  of ms + a burst of analog activity).  Register storage hooks to persist
+   --  the calibration result across boots: when a valid stored blob is loaded,
+   --  the driver runs a fast PARTIAL calibration (temperature compensation off
+   --  the stored baseline) instead of a full one.
+   --
+   --  The SDK owns the FULL/PARTIAL decision; the application owns the storage
+   --  (main-flash partition, external SPI flash, ...), so this does not bind the
+   --  driver to any particular non-volatile medium.  With no hooks registered,
+   --  behaviour is unchanged (FULL cal every boot).
+   --
+   --  The blob is opaque (esp_phy_calibration_data_t); it carries its own
+   --  version + the chip MAC, which the driver checks before trusting a loaded
+   --  blob (so an image moved to another chip recalibrates).  Persist it verbatim
+   --  and hand it back verbatim.
+   Cal_Blob_Size : constant := 1904;
+   type Cal_Blob is array (0 .. Cal_Blob_Size - 1) of Interfaces.Unsigned_8;
+
+   --  Fill Blob from non-volatile storage.  Return True iff a stored blob was
+   --  produced (its validity is then re-checked by the driver).  Must be a
+   --  closure-free, library-level function (No_Implicit_Dynamic_Code).
+   type Cal_Load_Hook is access function (Blob : out Cal_Blob) return Boolean;
+
+   --  Persist Blob (called once, right after a FULL calibration).  Must be
+   --  closure-free and library-level.
+   type Cal_Store_Hook is access procedure (Blob : Cal_Blob);
+
+   --  Register the pair.  Call before Initialize (the first Phy_Enable reads
+   --  them).  Either may be null (e.g. Store only, to capture a baseline once).
+   procedure Set_Cal_Store (Load : Cal_Load_Hook; Store : Cal_Store_Hook);
+
 end ESP32S3.WiFi;

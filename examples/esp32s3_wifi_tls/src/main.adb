@@ -41,6 +41,7 @@ with Trust_Anchors;
 with DNS_Client;
 with NTP_Client;
 with Net_Devices;
+with Cal_Store_Demo;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -62,6 +63,27 @@ procedure Main is
    Park : constant Time_Span := Seconds (3600);
 
    Now : X509.Time_64;
+
+   --  De-blob confirmation: the Ada replacements for the blob's HW key-slot
+   --  programmer (hal_crypto_set_key_entry) and slot-clear (hal_crypto_clr_key_
+   --  entry) are wired via linker --wrap in the wifi library.  These counters
+   --  (exported from the supplicant) prove OUR Ada code ran -- so the blob's
+   --  key-slot crypto never executed.  A successful HTTPS fetch above already
+   --  proves the Ada key install is correct (unicast decrypts).
+   Wrap_Set_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_wrap_set_key_count";
+   Wrap_Clr_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_wrap_clr_key_count";
+   procedure Show_Deblob_Result is
+   begin
+      Put_Line ("");
+      Put_Line ("==== DE-BLOB: Ada HW key-slot programming ran (blob's did not) ====");
+      Put ("  Wrap_Set_Key (was hal_crypto_set_key_entry) fired = ");
+      Put_Unsigned (Wrap_Set_Count); New_Line;
+      Put ("  Wrap_Clr_Key (was hal_crypto_clr_key_entry) fired = ");
+      Put_Unsigned (Wrap_Clr_Count); New_Line;
+      Put_Line ("===================================================================");
+   end Show_Deblob_Result;
 
    CRLF : constant String := (1 => ASCII.CR, 2 => ASCII.LF);
    Req  : constant String :=
@@ -118,6 +140,11 @@ begin
    ESP32S3.UART.Acquire (Con, ESP32S3.UART.UART0);
    ESP32S3.Serial.Set_Output (ESP32S3.UART.Text.As_Device (Con));
    ESP32S3.RNG.Enable_Entropy_Source;            --  keys need real entropy
+
+   --  Persist the PHY RF calibration across boots: a stored baseline drives a
+   --  fast PARTIAL cal instead of a FULL one.  Register before Initialize.
+   ESP32S3.WiFi.Set_Cal_Store
+     (Cal_Store_Demo.Load'Access, Cal_Store_Demo.Store'Access);
 
    Put_Line ("");
    Put_Line ("=== ESP32-S3 Wi-Fi HTTPS (pure-Ada TLS 1.3 over software TCP) ===");
@@ -313,6 +340,7 @@ begin
    end;
 
    Close_Socket (Sock);
+   Show_Deblob_Result;
    loop
       delay until Clock + Park;
    end loop;

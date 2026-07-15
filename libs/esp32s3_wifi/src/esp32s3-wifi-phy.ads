@@ -6,4 +6,9 @@
 private package ESP32S3.WiFi.PHY is
    procedure Phy_Enable  with Convention => C;
    procedure Phy_Disable with Convention => C;
+
+   --  Register the RF-calibration persistence hooks (forwarded from the public
+   --  ESP32S3.WiFi.Set_Cal_Store).  When a valid blob is loaded, the first
+   --  Phy_Enable does a PARTIAL calibration off it instead of a FULL one.
+   procedure Set_Cal_Store (Load : Cal_Load_Hook; Store : Cal_Store_Hook);
 end ESP32S3.WiFi.PHY;

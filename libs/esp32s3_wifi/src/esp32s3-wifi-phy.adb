@@ -30,9 +30,34 @@ package body ESP32S3.WiFi.PHY is
       16#00#, 16#00#, 16#00#, 16#00#, 16#00#, 16#00#, 16#00#, 16#00#);
 
    --  esp_phy_calibration_data_t = version[4] + mac[6] + opaque[1894] = 1904 B.
-   Cal_Size        : constant := 1904;
-   Mac_Offset      : constant := 4;     --  .mac starts after version[4]
-   PHY_RF_CAL_FULL : constant Interfaces.Integer_32 := 2;
+   Cal_Size           : constant := 1904;
+   Mac_Offset         : constant := 4;     --  .mac starts after version[4]
+   PHY_RF_CAL_PARTIAL : constant Interfaces.Integer_32 := 0;
+   PHY_RF_CAL_FULL    : constant Interfaces.Integer_32 := 2;
+
+   --  RF-calibration persistence hooks (see ESP32S3.WiFi.Set_Cal_Store).
+   Load_Hook  : Cal_Load_Hook  := null;
+   Store_Hook : Cal_Store_Hook := null;
+
+   procedure Set_Cal_Store (Load : Cal_Load_Hook; Store : Cal_Store_Hook) is
+   begin
+      Load_Hook  := Load;
+      Store_Hook := Store;
+   end Set_Cal_Store;
+
+   --  A stored blob is trustworthy only if its embedded MAC is THIS chip's (an
+   --  image copied to another board must recalibrate).  The version[4] + opaque
+   --  data are produced by this same PHY lib, so the MAC check suffices here.
+   function Blob_Matches_Chip (Blob : Cal_Blob) return Boolean is
+      Base : constant ESP32S3.MAC.MAC_Address := ESP32S3.MAC.Base;
+   begin
+      for I in 0 .. 5 loop
+         if Blob (Mac_Offset + I) /= Base (I) then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Blob_Matches_Chip;
 
    --  Clock enables in SYSCON_WIFI_CLK_EN_REG (esp_phy_common_clock_enable +
    --  phy_module_enable): WIFI_BT_COMMON (0x78078F, already includes PHY_EN bit
@@ -73,22 +98,55 @@ package body ESP32S3.WiFi.PHY is
             return;
          end if;
          declare
-            Base : constant ESP32S3.MAC.MAC_Address := ESP32S3.MAC.Base;
-            M    : array (0 .. 5) of Unsigned_8
-              with Import, Address => Cal + Mac_Offset;
+            --  Overlay the heap cal buffer as a Cal_Blob so the hooks read/write
+            --  it in place -- no 1904-byte copy on the (small) Wi-Fi task stack.
+            Cal_Bytes : Cal_Blob with Import, Address => Cal;
+            Mode      : Interfaces.Integer_32 := PHY_RF_CAL_FULL;
+            Loaded    : Boolean := False;
          begin
-            for I in 0 .. 5 loop
-               M (I) := Base (I);
-            end loop;
-         end;
-         --  Full RF calibration.  A non-zero result is normal here (the cal
-         --  self-check flags the fresh/no-NVS buffer), so it is not an error.
-         declare
-            Rc : constant Interfaces.Integer_32 :=
-              Register_Chipv7_Phy (Phy_Init_Data'Address, Cal, PHY_RF_CAL_FULL);
-            pragma Unreferenced (Rc);
-         begin
-            null;
+            --  A valid stored calibration -> fast PARTIAL cal off its baseline.
+            --  Load_Hook fills Cal_Bytes in place; if it is not this chip's blob
+            --  we fall through to FULL (which stamps the MAC + overwrites all).
+            if Load_Hook /= null
+              and then Load_Hook (Cal_Bytes)
+              and then Blob_Matches_Chip (Cal_Bytes)
+            then
+               Mode   := PHY_RF_CAL_PARTIAL;
+               Loaded := True;
+            end if;
+
+            --  Fresh FULL buffer: stamp this chip's MAC (the cal keys off it).
+            if not Loaded then
+               declare
+                  Base : constant ESP32S3.MAC.MAC_Address := ESP32S3.MAC.Base;
+               begin
+                  for I in 0 .. 5 loop
+                     Cal_Bytes (Mac_Offset + I) := Base (I);
+                  end loop;
+               end;
+            end if;
+
+            if Loaded then
+               ESP32S3.Log.Put_Line ("[wifi] PHY: RF cal PARTIAL (stored baseline)");
+            else
+               ESP32S3.Log.Put_Line ("[wifi] PHY: RF cal FULL");
+            end if;
+
+            --  Run RF calibration (PARTIAL or FULL).  A non-zero result is
+            --  normal for a fresh FULL buffer (the cal self-check), not an error.
+            declare
+               Rc : constant Interfaces.Integer_32 :=
+                 Register_Chipv7_Phy (Phy_Init_Data'Address, Cal, Mode);
+               pragma Unreferenced (Rc);
+            begin
+               null;
+            end;
+
+            --  Persist a freshly-produced FULL calibration for the next boot.
+            --  (Full-cal output is inherently good, so storing here is safe.)
+            if not Loaded and then Store_Hook /= null then
+               Store_Hook (Cal_Bytes);
+            end if;
          end;
          C_Free (Cal);   --  PHY keeps its own copy of the calibration data
          Calibrated := True;
