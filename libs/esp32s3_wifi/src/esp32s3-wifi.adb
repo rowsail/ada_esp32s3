@@ -10,6 +10,7 @@ with ESP32S3.WiFi.OS_Adapter;
 with ESP32S3.WiFi.RTOS;
 with ESP32S3.WiFi.Port;
 with ESP32S3.WiFi.Supplicant;
+with ESP32S3.WiFi.PHY;
 with ESP32S3.WiFi.Core_Shim;   --  provides the retired libcore.a symbols
 pragma Unreferenced (ESP32S3.WiFi.Core_Shim);
 
@@ -95,6 +96,11 @@ package body ESP32S3.WiFi is
    begin
       Frame_Sink := Handler;
    end Set_Frame_Handler;
+
+   procedure Set_Cal_Store (Load : Cal_Load_Hook; Store : Cal_Store_Hook) is
+   begin
+      PHY.Set_Cal_Store (Load, Store);
+   end Set_Cal_Store;
 
    --  Count of RX-callback firings (diagnostic).
    Rx_Cb_Calls : Natural := 0;
