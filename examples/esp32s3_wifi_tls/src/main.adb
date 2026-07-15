@@ -41,6 +41,7 @@ with Trust_Anchors;
 with DNS_Client;
 with NTP_Client;
 with Net_Devices;
+with Cal_Store_Demo;
 
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
@@ -139,6 +140,11 @@ begin
    ESP32S3.UART.Acquire (Con, ESP32S3.UART.UART0);
    ESP32S3.Serial.Set_Output (ESP32S3.UART.Text.As_Device (Con));
    ESP32S3.RNG.Enable_Entropy_Source;            --  keys need real entropy
+
+   --  Persist the PHY RF calibration across boots: a stored baseline drives a
+   --  fast PARTIAL cal instead of a FULL one.  Register before Initialize.
+   ESP32S3.WiFi.Set_Cal_Store
+     (Cal_Store_Demo.Load'Access, Cal_Store_Demo.Store'Access);
 
    Put_Line ("");
    Put_Line ("=== ESP32-S3 Wi-Fi HTTPS (pure-Ada TLS 1.3 over software TCP) ===");

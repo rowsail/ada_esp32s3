@@ -126,6 +126,12 @@ package body ESP32S3.WiFi.PHY is
                end;
             end if;
 
+            if Loaded then
+               ESP32S3.Log.Put_Line ("[wifi] PHY: RF cal PARTIAL (stored baseline)");
+            else
+               ESP32S3.Log.Put_Line ("[wifi] PHY: RF cal FULL");
+            end if;
+
             --  Run RF calibration (PARTIAL or FULL).  A non-zero result is
             --  normal for a fresh FULL buffer (the cal self-check), not an error.
             declare
