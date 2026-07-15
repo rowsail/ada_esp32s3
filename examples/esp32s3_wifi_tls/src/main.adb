@@ -63,6 +63,27 @@ procedure Main is
 
    Now : X509.Time_64;
 
+   --  De-blob confirmation: the Ada replacements for the blob's HW key-slot
+   --  programmer (hal_crypto_set_key_entry) and slot-clear (hal_crypto_clr_key_
+   --  entry) are wired via linker --wrap in the wifi library.  These counters
+   --  (exported from the supplicant) prove OUR Ada code ran -- so the blob's
+   --  key-slot crypto never executed.  A successful HTTPS fetch above already
+   --  proves the Ada key install is correct (unicast decrypts).
+   Wrap_Set_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_wrap_set_key_count";
+   Wrap_Clr_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_wrap_clr_key_count";
+   procedure Show_Deblob_Result is
+   begin
+      Put_Line ("");
+      Put_Line ("==== DE-BLOB: Ada HW key-slot programming ran (blob's did not) ====");
+      Put ("  Wrap_Set_Key (was hal_crypto_set_key_entry) fired = ");
+      Put_Unsigned (Wrap_Set_Count); New_Line;
+      Put ("  Wrap_Clr_Key (was hal_crypto_clr_key_entry) fired = ");
+      Put_Unsigned (Wrap_Clr_Count); New_Line;
+      Put_Line ("===================================================================");
+   end Show_Deblob_Result;
+
    CRLF : constant String := (1 => ASCII.CR, 2 => ASCII.LF);
    Req  : constant String :=
      "GET /v1/forecast?latitude=" & Latitude & "&longitude=" & Longitude
@@ -313,6 +334,7 @@ begin
    end;
 
    Close_Socket (Sock);
+   Show_Deblob_Result;
    loop
       delay until Clock + Park;
    end loop;

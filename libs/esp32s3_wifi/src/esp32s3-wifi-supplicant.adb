@@ -31,6 +31,126 @@ package body ESP32S3.WiFi.Supplicant is
    In_HS : Boolean := False;
    Install_Pending : Boolean := False;   --  install PTK on next EAPOL tx-done
 
+   --  ----------------------------------------------------------------------
+   --  De-blob the HW crypto key install (goal: no crypto in a blob).  The blob's
+   --  key-slot programmer hal_crypto_set_key_entry and slot-clear
+   --  hal_crypto_clr_key_entry are the only blob functions that touch the cipher
+   --  engine's KEY RAM (measured: every SW-crypto primitive stays at 0 on our
+   --  path -- see research CRYPTO_DEBLOB_MEASURE.md).  We retire them: the linker
+   --  --wrap redirects both to the Ada Wrap_* below, which program / clear the HW
+   --  slot themselves and never call __real_ (the blob leaf never runs).  The key
+   --  material comes from OUR globals (Pending), never from blob C.
+   --
+   --  Slot base S = 0x60034400 + slot*40; S+0 = peer MAC[0..3] LE, S+4 =
+   --  MAC[4..5] | (control<<16), S+8..23 = 16-byte key, 0x60033814 = per-slot
+   --  enable bitmap.  control is fixed per cipher for WPA2-CCMP-128 (pairwise
+   --  0x086c, group 0x48cc -- captured from a working blob install; only the MAC
+   --  low half varies per AP).  hal_crypto_enable (engine-MODE regs 0x60033800/
+   --  04/10, no key material) is left to the blob for now.
+   CTRL_PAIRWISE : constant Interfaces.Unsigned_16 := 16#086C#;
+   CTRL_GROUP    : constant Interfaces.Unsigned_16 := 16#48CC#;
+
+   type Pending_Slot is record
+      Valid      : Boolean := False;
+      Mac        : Bytes (0 .. 5) := (others => 0);
+      Key        : Bytes (0 .. 15) := (others => 0);
+      Control_Hi : Interfaces.Unsigned_16 := 0;
+   end record;
+   Pending : array (0 .. 15) of Pending_Slot;
+
+   --  De-blob confirmation counters (read by the wifi_tls example): each time our
+   --  Ada wrap runs, the blob's key-slot leaf did NOT.
+   Wrap_Set_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_wrap_set_key_count";
+   Wrap_Clr_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_wrap_clr_key_count";
+
+   --  Program HW key slot Slot fully in Ada (replaces hal_crypto_set_key_entry).
+   procedure Install_Slot
+     (Slot : Natural; Mac : Bytes; Key : Bytes; Control_Hi : Interfaces.Unsigned_16)
+   is
+      use type Interfaces.Unsigned_32;
+      Base : constant Interfaces.Unsigned_32 :=
+        16#6003_4400# + Interfaces.Unsigned_32 (Slot) * 40;
+      function LE32 (B : Bytes; I : Natural) return Interfaces.Unsigned_32 is
+        (Interfaces.Unsigned_32 (B (B'First + I))
+         or Shift_Left (Interfaces.Unsigned_32 (B (B'First + I + 1)), 8)
+         or Shift_Left (Interfaces.Unsigned_32 (B (B'First + I + 2)), 16)
+         or Shift_Left (Interfaces.Unsigned_32 (B (B'First + I + 3)), 24));
+      procedure Poke (Off : Interfaces.Unsigned_32; V : Interfaces.Unsigned_32) is
+         Cell : Interfaces.Unsigned_32 with Import, Volatile,
+           Address => System'To_Address (Base + Off);
+      begin
+         Cell := V;
+      end Poke;
+      En : Interfaces.Unsigned_32 with Import, Volatile,
+        Address => System'To_Address (16#6003_3814#);
+   begin
+      Poke (0, LE32 (Mac, 0));                                    --  S+0  MAC[0..3]
+      Poke (4, Interfaces.Unsigned_32 (Mac (Mac'First + 4))       --  S+4  MAC[4..5]
+              or Shift_Left (Interfaces.Unsigned_32 (Mac (Mac'First + 5)), 8)
+              or Shift_Left (Interfaces.Unsigned_32 (Control_Hi), 16));  --  |ctrl
+      for W in 0 .. 3 loop                                        --  S+8  key
+         Poke (8 + Interfaces.Unsigned_32 (W) * 4, LE32 (Key, W * 4));
+      end loop;
+      En := En or Shift_Left (Interfaces.Unsigned_32 (1), Slot); --  enable slot
+   end Install_Slot;
+
+   --  Zero HW key slot Slot + drop its enable bit (replaces hal_crypto_clr_key_entry).
+   procedure Clear_Slot (Slot : Natural) is
+      use type Interfaces.Unsigned_32;
+      Base : constant Interfaces.Unsigned_32 :=
+        16#6003_4400# + Interfaces.Unsigned_32 (Slot) * 40;
+      En : Interfaces.Unsigned_32 with Import, Volatile,
+        Address => System'To_Address (16#6003_3814#);
+   begin
+      En := En and not Shift_Left (Interfaces.Unsigned_32 (1), Slot);
+      for W in 0 .. 9 loop
+         declare
+            Cell : Interfaces.Unsigned_32 with Import, Volatile,
+              Address => System'To_Address (Base + Interfaces.Unsigned_32 (W) * 4);
+         begin
+            Cell := 0;
+         end;
+      end loop;
+   end Clear_Slot;
+
+   --  __wrap_hal_crypto_set_key_entry: the blob's key-slot programmer, retired.
+   --  Called synchronously from within esp_wifi_set_sta_key_internal (which we
+   --  hand a DUMMY zero key).  We ignore the blob's (zeroed) key + descriptor and
+   --  install the REAL key from Pending(Slot) -- so no key byte ever reaches blob C
+   --  and the blob leaf never executes.
+   function Wrap_Set_Key
+     (Slot : Interfaces.Unsigned_32; Keyptr : System.Address;
+      Keylen : Interfaces.Unsigned_32; Desc : System.Address)
+      return Interfaces.Unsigned_32
+     with Export, Convention => C,
+          External_Name => "__wrap_hal_crypto_set_key_entry";
+   function Wrap_Set_Key
+     (Slot : Interfaces.Unsigned_32; Keyptr : System.Address;
+      Keylen : Interfaces.Unsigned_32; Desc : System.Address)
+      return Interfaces.Unsigned_32
+   is
+      pragma Unreferenced (Keyptr, Keylen, Desc);
+      S : constant Natural := Natural (Slot and 16#F#);
+   begin
+      Wrap_Set_Count := Wrap_Set_Count + 1;
+      if Pending (S).Valid then
+         Install_Slot (S, Pending (S).Mac, Pending (S).Key, Pending (S).Control_Hi);
+      end if;
+      return 0;
+   end Wrap_Set_Key;
+
+   function Wrap_Clr (Slot : Interfaces.Unsigned_32) return Interfaces.Unsigned_32
+     with Export, Convention => C,
+          External_Name => "__wrap_hal_crypto_clr_key_entry";
+   function Wrap_Clr (Slot : Interfaces.Unsigned_32) return Interfaces.Unsigned_32 is
+   begin
+      Wrap_Clr_Count := Wrap_Clr_Count + 1;
+      Clear_Slot (Natural (Slot and 16#F#));
+      return 0;
+   end Wrap_Clr;
+
    --  --- blob entry points -------------------------------------------------
    function C_Tx (Ifx : Interfaces.Integer_32; Buf : System.Address;
                   Len : Interfaces.Unsigned_32) return Interfaces.Integer_32
@@ -122,7 +242,8 @@ package body ESP32S3.WiFi.Supplicant is
    --  write the slot, then 0x2D (MODIFY|PAIRWISE|RX|TX) to enable TX.  It leaves
    --  the HW slot-4 material zero exactly like the single 0x2C (both reach the
    --  same hal_crypto_set_key_entry leaf), so it does NOT help.  Kept here to
-   --  document the dead end; see Write_HW_Pairwise_Key for what actually works.
+   --  document the dead end; see Install_Slot for what actually works (we now own
+   --  that leaf via --wrap and program the slot in Ada).
    KF_PTK_SET       : constant := 16#24#;   --  PAIRWISE|RX  (does not land material)
    KF_PTK_TX        : constant := 16#2D#;   --  MODIFY|PAIRWISE|RX|TX (idem)
    KF_GTK           : constant := 16#14#;   --  GROUP|RX
@@ -413,30 +534,6 @@ package body ESP32S3.WiFi.Supplicant is
       end loop;
    end AES_Unwrap;
 
-   --  Write a 16-byte key straight into HW key slot Slot's material words
-   --  (0x60034400 + Slot*40 + 8), little-endian -- the same trick as
-   --  Write_HW_Pairwise_Key, for the group key (the blob's C_Set_Key leaves the
-   --  GTK material unlanded exactly like the pairwise key).
-   procedure Write_HW_Group_Key (Slot : Natural; Key : Bytes) is
-      use type Interfaces.Unsigned_32;
-      Base : constant Interfaces.Unsigned_32 :=
-        16#6003_4400# + Interfaces.Unsigned_32 (Slot) * 40 + 8;
-      function LE_Word (Byte : Natural) return Interfaces.Unsigned_32 is
-        (Interfaces.Unsigned_32 (Key (Key'First + Byte))
-         or Shift_Left (Interfaces.Unsigned_32 (Key (Key'First + Byte + 1)), 8)
-         or Shift_Left (Interfaces.Unsigned_32 (Key (Key'First + Byte + 2)), 16)
-         or Shift_Left (Interfaces.Unsigned_32 (Key (Key'First + Byte + 3)), 24));
-   begin
-      for Word in 0 .. 3 loop
-         declare
-            Cell : Interfaces.Unsigned_32 with Import, Volatile,
-              Address => System'To_Address (Base + Interfaces.Unsigned_32 (Word) * 4);
-         begin
-            Cell := LE_Word (Word * 4);
-         end;
-      end loop;
-   end Write_HW_Group_Key;
-
    --  Unwrap msg 3's key_data, locate the GTK KDE (00-0F-AC type 1), and install
    --  the group key.  Msg is the whole EAPOL-Key body handed to us.
    procedure Install_Gtk_From_Msg3 (Msg : Bytes) is
@@ -487,16 +584,20 @@ package body ESP32S3.WiFi.Supplicant is
                      --  addr = the AP's MAC (AA), exactly as the ESP supplicant
                      --  does (wpa.c wpa_supplicant_install_gtk passes sm->bssid,
                      --  NOT broadcast -- the commented-out ff:ff:.. is a trap).
-                     --  De-blob (keys never touch the blob): pass a DUMMY zero
-                     --  key.  C_Set_Key still sets the slot metadata + the
-                     --  keyid->slot map, but never sees the real GTK; we install
-                     --  the real material into the group HW slot (keyid k -> slot
-                     --  k-1) ourselves -- the blob leaves it unlanded exactly like
-                     --  the pairwise key (measured: s0mat/s1mat = 0 after C_Set_Key).
+                     --  De-blob: stash the REAL GTK in Pending(Slot); C_Set_Key is
+                     --  still called (dummy zero key) for its non-crypto
+                     --  bookkeeping + keyid->slot map + hal_crypto_enable, but its
+                     --  key-slot leaf is now our Wrap_Set_Key, which installs the
+                     --  real material from Pending.  Install_Slot again afterwards
+                     --  as the authoritative overlay (any blob clr during
+                     --  C_Set_Key can't leave the slot zeroed).  No GTK byte ever
+                     --  reaches blob C; the blob's key-slot code never runs.
+                     Pending (Slot) := (Valid => True, Mac => AA, Key => Gtk,
+                                        Control_Hi => CTRL_GROUP);
                      Gtk_Rc := C_Set_Key (WPA_ALG_CCMP, AA'Address, Key_Id,
                                           Set_Tx, Rsc'Address, 6, Zero_Key'Address,
                                           16, KF_GTK);
-                     Write_HW_Group_Key (Slot, Gtk);
+                     Install_Slot (Slot, AA, Gtk, CTRL_GROUP);
                      return;
                   end;
                end if;
@@ -651,33 +752,6 @@ package body ESP32S3.WiFi.Supplicant is
       end if;
    end Force_Port_Open;
 
-   --  Write the raw 16-byte pairwise key (TK) into the hardware crypto key RAM
-   --  for slot 4.  The blob's key-install leaf sets the slot MAC and keyvalid
-   --  bit but skips the material copy in our bare-metal port, so we do it here.
-   --  Slot s keeps its key material at 0x60034400 + s*40 + 8, as raw key
-   --  little-endian words.  The pairwise transient key lives in slot 4.
-   procedure Write_HW_Pairwise_Key (Key : Bytes) is
-      use type Interfaces.Unsigned_32;
-      Slot4_Material : constant Interfaces.Unsigned_32 := 16#600344A8#;
-
-      --  The little-endian 32-bit word made of the 4 key bytes at offset Byte.
-      function Little_Endian_Word (Byte : Natural) return Interfaces.Unsigned_32
-      is
-        (Interfaces.Unsigned_32 (Key (Key'First + Byte))
-         or Shift_Left (Interfaces.Unsigned_32 (Key (Key'First + Byte + 1)), 8)
-         or Shift_Left (Interfaces.Unsigned_32 (Key (Key'First + Byte + 2)), 16)
-         or Shift_Left (Interfaces.Unsigned_32 (Key (Key'First + Byte + 3)), 24));
-   begin
-      for Word in 0 .. 3 loop
-         declare
-            Cell : Interfaces.Unsigned_32 with Import, Volatile,
-              Address => System'To_Address
-                (Slot4_Material + Interfaces.Unsigned_32 (Word) * 4);
-         begin
-            Cell := Little_Endian_Word (Word * 4);
-         end;
-      end loop;
-   end Write_HW_Pairwise_Key;
 
    procedure On_Eapol_Txdone is
       Zero_Seq : Bytes (0 .. 5) := (others => 0);
@@ -687,29 +761,22 @@ package body ESP32S3.WiFi.Supplicant is
       if Install_Pending then
          Install_Pending := False;
          In_HS := False;
-         --  Install the pairwise key now that msg4 has left the radio.  This
-         --  call sets the HW slot-4 MAC address and keyvalid bit, and populates
-         --  the software key object (PN tracking and TX encap need it).  But in
-         --  our stubbed bare-metal port the blob never lands the 16-byte key
-         --  material in the HW crypto key RAM: hal_crypto_enable, at the tail of
-         --  wDev_Insert_KeyEntry, appears to clear the slot again in our context.
-         --  A two-board sniffer plus a full HW-key-RAM scan proved it: the SW
-         --  keyobj held the key, HW slot-4 material stayed zero, so the radio
-         --  encrypted unicast with the wrong bytes and the AP dropped every
-         --  frame (no DHCP OFFER).  The canonical two-step blob install
-         --  (KF_PTK_SET then KF_PTK_TX) was tried too and leaves it zero the same
-         --  way, so do NOT retry that; write the material ourselves below.
-         --  De-blob (keys never touch the blob): hand C_Set_Key a DUMMY zero
-         --  key.  It still sets up the HW slot metadata (MAC, valid) and the
-         --  blob's SW key object (PN / TX-encap bookkeeping), but the real TK is
-         --  never passed into blob C -- we derive it in Ada (PTK) and write the
-         --  real 16-byte material straight into the HW slot below.
+         --  Install the pairwise key now that msg4 has left the radio.
+         --  De-blob (no crypto in a blob): stash the REAL TK in Pending(4).  We
+         --  still call C_Set_Key with a DUMMY zero key -- it does its non-crypto
+         --  bookkeeping (node metadata) + hal_crypto_enable (engine MODE regs) --
+         --  but its key-slot leaf hal_crypto_set_key_entry is now our
+         --  Wrap_Set_Key, which programs slot 4 (MAC, control, real TK, enable)
+         --  from Pending.  The blob's key-slot/clear code never executes and no TK
+         --  byte ever reaches blob C.  We then Install_Slot(4) again as the
+         --  authoritative overlay: the historical "slot goes zero" bug was the
+         --  blob's set_key landing the (zero) key we passed AND a blob clr firing
+         --  after it; with our Ada owning both leaves, the final write wins.
+         Pending (4) := (Valid => True, Mac => AA, Key => TK,
+                         Control_Hi => CTRL_PAIRWISE);
          Ptk_Rc := C_Set_Key (WPA_ALG_CCMP, AA'Address, 0, 1,
                               Zero_Seq'Address, 6, Zero_Key'Address, 16, KF_PTK);
-         --  Write the raw TK straight into the slot-4 key-material words.  Layout
-         --  from blob RE (hal_crypto_set_key_entry): slot s key material lives at
-         --  0x60034400 + s*40 + 8, as little-endian words; pairwise is slot 4.
-         Write_HW_Pairwise_Key (TK);
+         Install_Slot (4, AA, TK, CTRL_PAIRWISE);
          C_Auth_Done;   --  4-way done: authorise the port + post CONNECTED
          --  Record the controlled-port byte auth_done left, then force it open
          --  so the 802.3 data path can transmit (node[36] := 0).
