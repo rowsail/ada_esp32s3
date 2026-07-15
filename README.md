@@ -7,6 +7,15 @@ Ada and Xtensa assembly. **FreeRTOS never runs** (its scheduler isn't even
 linked) and there is **no ESP-IDF** in the build: every example compiles with
 Alire GNAT alone and boots through our own minimal 2nd-stage bootloader.
 
+The one exception is the **optional Wi-Fi driver** ([`libs/esp32s3_wifi`](libs/esp32s3_wifi)):
+the radio's lower-MAC and PHY are only shipped by Espressif as **binaries**, so it
+links their Wi-Fi/PHY libraries — which are **Apache-2.0** and *fetched, not
+committed* ([`tools/fetch-wifi-blobs.sh`](tools/fetch-wifi-blobs.sh) pins them to
+exact upstream commits and verifies each by sha256). Everything around them —
+the OS adapter (which maps the blob's RTOS calls onto our Jorvik tasks, so
+FreeRTOS still never runs), the WPA2 supplicant, and the whole TCP/IP + TLS
+stack — is pure Ada.
+
 ## Hardware validation — full-board retest (2026-06-24)
 
 Every driver and the whole runtime were re-verified on real silicon, on a
@@ -164,6 +173,17 @@ All 31 examples share the same FreeRTOS-free bare boot
 | `esp32s3_full_tasking` | `full` profile: dynamic tasks, master wait, `abort` |
 | `esp32s3_rendezvous` | `full` profile: a server task with entries served by selective `accept` |
 | `esp32s3_full_intr` | `full` profile: `pragma Attach_Handler` / `Ada.Interrupts` on HW |
+
+**Wi-Fi** (link the fetched Apache-2.0 Espressif blobs — run
+[`tools/fetch-wifi-blobs.sh`](tools/fetch-wifi-blobs.sh) once, or set `IDF_PATH`;
+put your network in the gitignored `src/wifi_credentials.ads`)
+| Example | What it is |
+|---|---|
+| `esp32s3_wifi_scan` | Bring up the radio and list nearby access points |
+| `esp32s3_wifi_sniff` | Promiscuous-mode 802.11 packet capture |
+| `esp32s3_wifi_dns` | Associate + resolve a hostname (`DNS_Client`) |
+| `esp32s3_wifi_http` | GET a URL over the pure-Ada software TCP stack |
+| `esp32s3_wifi_tls` | **Pure-Ada TLS 1.3 HTTPS** end-to-end: assoc → DHCP → DNS → NTP → TLS handshake → chain-validate to ISRG Root X1 → live fetch |
 
 **Diagnostics**
 | Example | What it is |
