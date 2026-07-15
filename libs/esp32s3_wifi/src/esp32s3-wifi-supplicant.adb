@@ -4,6 +4,7 @@ with Ada.Unchecked_Conversion;
 with System;
 with System.Storage_Elements; use System.Storage_Elements;
 with ESP32S3.SHA;
+with ESP32S3.RNG;
 with ESP32S3.MAC;
 with ESP32S3.AES;
 with ESP32S3.Log;
@@ -290,15 +291,18 @@ package body ESP32S3.WiFi.Supplicant is
    Appie_Buf : Bytes (0 .. 23) :=
      (0, 0) & RSN_IE;
 
-   --  Rough entropy for SNonce (connectivity, not strong randomness).
+   --  SNonce from the hardware RNG.  The 4-way handshake's security leans on an
+   --  unpredictable SNonce, so use the real entropy source (main enables it via
+   --  ESP32S3.RNG.Enable_Entropy_Source) rather than a clock-seeded PRNG.
    procedure Fill_SNonce is
-      T : constant Unsigned_64 :=
-        Unsigned_64 (To_Duration (Clock - Time_First) * 1_000_000.0);
-      S : Unsigned_32 := Unsigned_32 (T and 16#FFFF_FFFF#) xor 16#5A5A_1234#;
+      W : Unsigned_32;
    begin
-      for I in SNonce'Range loop
-         S := S * 1_103_515_245 + 12_345;
-         SNonce (I) := U8 (Shift_Right (S, 24) and 16#FF#);
+      for I in 0 .. SNonce'Length / 4 - 1 loop
+         W := Unsigned_32 (ESP32S3.RNG.Read);
+         SNonce (SNonce'First + 4 * I)     := U8 (W and 16#FF#);
+         SNonce (SNonce'First + 4 * I + 1) := U8 (Shift_Right (W, 8) and 16#FF#);
+         SNonce (SNonce'First + 4 * I + 2) := U8 (Shift_Right (W, 16) and 16#FF#);
+         SNonce (SNonce'First + 4 * I + 3) := U8 (Shift_Right (W, 24) and 16#FF#);
       end loop;
    end Fill_SNonce;
 
