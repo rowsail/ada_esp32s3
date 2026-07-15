@@ -1,0 +1,14 @@
+# Espressif Wi-Fi + PHY binary blobs for the esp32s3_wifi driver.
+#
+# Pinned to exact upstream commits (matching ESP-IDF v5.4.4) and verified by
+# sha256.  Fetched -- not committed -- by tools/fetch-wifi-blobs.sh; the .a files
+# are Apache-2.0 (see LICENSE.esp32-wifi-lib / LICENSE.esp-phy-lib) so they may be
+# redistributed in a release archive.
+#
+# Fields (whitespace-separated):  <github_repo>  <commit>  <src_path>  <sha256>
+# The destination file name is the basename of <src_path>.
+
+espressif/esp32-wifi-lib  7bd1599468d0912b7773ba225a6ef05252633e88  esp32s3/libcore.a       9ef944e99b85c5f73fd1e46d8ce2e347f3d9aae9e45a0a075bffc2022f7a3e23
+espressif/esp32-wifi-lib  7bd1599468d0912b7773ba225a6ef05252633e88  esp32s3/libnet80211.a   ea3cac08b9e78d3c5f8a02c630de3f43c196aa0391f06d3dd3d8d15c4e50dd53
+espressif/esp32-wifi-lib  7bd1599468d0912b7773ba225a6ef05252633e88  esp32s3/libpp.a         9dc25144de0cee1409fa0687926712f55526a788df14cff97c7838590af07bb9
+espressif/esp-phy-lib     ac744ff2c5c39c63f8cdd503d4074905647fdbb6  esp32s3/libphy.a        29dcc18a035801bd41486d5d59f3caeb62f8ed153533c488828bffef1abb99fd

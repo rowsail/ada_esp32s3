@@ -5,14 +5,14 @@
 --                                                                          --
 --  Xtensa LX7 (ESP32-S3) port.                                            --
 --                                                                          --
---  Clock/alarm use the Xtensa CCOUNT (free-running cycle counter) and      --
---  CCOMPARE0 (internal timer 0 -> interrupt 6, level 1).  ESP-IDF's        --
---  FreeRTOS tick runs off the systimer, so all CCOMPAREn are free.  The    --
---  CCOMPARE0 interrupt is registered through ESP-IDF's low-level CPU        --
---  interrupt dispatch (esp_cpu_intr_set_handler, in glue.c) and routed to  --
---  System.BB.Interrupts.Interrupt_Wrapper, which runs the alarm handler    --
---  and performs the context switch on return.  (Coexistence step toward    --
---  a full FreeRTOS handoff.)                                               --
+--  The clock reads the shared 16 MHz SYSTIMER UNIT0 count (Read_Clock, x15    --
+--  into the 240 MHz Time unit).  The alarm is a SYSTIMER UNIT0 comparator --
+--  per core (TARGET0/core 0, TARGET1/core 1) whose matrix interrupt is       --
+--  routed to CPU_INT 26 (level 5) -> our level-5 vector (xt_highint5) ->      --
+--  __gnat_timer_interrupt -> Interrupt_Wrapper.  The systimer keeps counting  --
+--  while a core idles in waiti, so the alarm still fires when the whole       --
+--  system is idle; CCOUNT/CCOMPARE2 (the old tick) halted in waiti and could  --
+--  deadlock a fully-idle system, so it is no longer used.                     --
 ------------------------------------------------------------------------------
 
 pragma Restrictions (No_Elaboration_Code);
@@ -28,14 +28,17 @@ package body System.BB.Board_Support is
 
    use System.Multiprocessors;
 
-   Alarm_Interrupt_ID : constant System.BB.Interrupts.Interrupt_ID := 16;
-   --  CCOMPARE2 raises Xtensa internal interrupt 16 (level 5).  We OWN the
-   --  level-5 vector (xt_highint5, in the application's startup glue), so the
-   --  interrupt entry/exit and the context switch are fully native (no
-   --  ESP-IDF interrupt dispatch).  The vector saves the interrupted context,
-   --  calls __gnat_timer_interrupt below, then restores + RFE.
+   Alarm_Interrupt_ID : constant System.BB.Interrupts.Interrupt_ID := 26;
+   --  The alarm is a SYSTIMER UNIT0 comparator (TARGET0 on core 0, TARGET1 on
+   --  core 1) whose matrix interrupt is routed to CPU_INT 26 (level 5) on each
+   --  core -- see native_setup_systimer_core* in bare_boot.adb.  We use the
+   --  systimer (a free-running 16 MHz counter that keeps ticking while the CPU
+   --  idles in waiti) rather than CCOMPARE2, whose CCOUNT halts in waiti so its
+   --  alarm can never fire once both cores are idle (a fully-idle system would
+   --  deadlock).  CPU_INT 26 is level 5, so it still enters our own level-5
+   --  vector (xt_highint5) -> __gnat_timer_interrupt, same as the old int 16.
 
-   Alarm_Interrupt_Bit  : constant Unsigned_32 := 2 ** 16;  --  CCOMPARE2/int16
+   Alarm_Interrupt_Bit  : constant Unsigned_32 := 2 ** 26;  --  SYSTIMER/int26
    Poke_Interrupt_Bit   : constant Unsigned_32 := 2 ** 31;  --  CPU_INT 31 (L5)
    Device_Interrupt_Id  : constant := 23;                   --  CPU_INT 23 (L3)
    Device_Interrupt_Bit : constant Unsigned_32 := 2 ** Device_Interrupt_Id;
@@ -62,6 +65,31 @@ package body System.BB.Board_Support is
      Address => System'To_Address (16#600C_003C#);
    --  SYSTEM_CPU_INTR_FROM_CPU_3_REG: poke target core 1.
 
+   --  SYSTIMER (base 0x6002_3000) UNIT0 comparators used as the tickless alarm.
+   --  Core 0 arms TARGET0, core 1 arms TARGET1; each comparator's matrix
+   --  interrupt is routed to CPU_INT 26 on its own core.  WORK_EN + INT_ENA and
+   --  the matrix routing are done once by native_setup_systimer_core* here we
+   --  only load the deadline (Set_Alarm) and ack it (Clear_Alarm_Interrupt).
+   Systimer_Target0_Hi   : Reg32 with Volatile, Import,
+     Address => System'To_Address (16#6002_301C#);
+   Systimer_Target0_Lo   : Reg32 with Volatile, Import,
+     Address => System'To_Address (16#6002_3020#);
+   Systimer_Target0_Conf : Reg32 with Volatile, Import,
+     Address => System'To_Address (16#6002_3034#);
+   Systimer_Comp0_Load   : Reg32 with Volatile, Import,
+     Address => System'To_Address (16#6002_3050#);
+   Systimer_Target1_Hi   : Reg32 with Volatile, Import,
+     Address => System'To_Address (16#6002_3024#);
+   Systimer_Target1_Lo   : Reg32 with Volatile, Import,
+     Address => System'To_Address (16#6002_3028#);
+   Systimer_Target1_Conf : Reg32 with Volatile, Import,
+     Address => System'To_Address (16#6002_3038#);
+   Systimer_Comp1_Load   : Reg32 with Volatile, Import,
+     Address => System'To_Address (16#6002_3054#);
+   Systimer_Int_Clr      : Reg32 with Volatile, Import,
+     Address => System'To_Address (16#6002_306C#);
+   --  INT_CLR: TARGET0 = bit 0, TARGET1 = bit 1 (write-1-to-clear).
+
    --  Preemptive context-switch deferral (Option A; see s-bbcppr +
    --  context_switch.S __gnat_preempt_dispatch).  A switch requested inside a
    --  native interrupt is deferred (Context_Switch sets Switch_Pending); the
@@ -86,9 +114,15 @@ package body System.BB.Board_Support is
    --  Called from the level-5 vector: run the alarm handler, then context
    --  switch if a higher-priority task became ready (interrupt epilogue).
 
-   procedure Native_Enable_Tick
-     with Import, Convention => C, External_Name => "native_enable_tick";
-   --  Enables int 16 (esp_cpu_intr_enable) once the handler is attached.
+   procedure Native_Setup_Systimer_Core0
+     with Import, Convention => C,
+          External_Name => "native_setup_systimer_core0";
+   procedure Native_Setup_Systimer_Core1
+     with Import, Convention => C,
+          External_Name => "native_setup_systimer_core1";
+   --  Per-core: route the SYSTIMER TARGETx interrupt to CPU_INT 26, enable that
+   --  comparator + its interrupt, and unmask the CPU int (core 0 -> TARGET0,
+   --  core 1 -> TARGET1).  Defined in bare_boot.adb (typed SVD access).
 
    procedure Native_Enable_Cpu_Int (N : Integer)
      with Import, Convention => C, External_Name => "native_enable_cpu_int";
@@ -125,12 +159,19 @@ package body System.BB.Board_Support is
 
    procedure Park_Alarm is
    begin
-      Asm ("rsr.ccount a3"     & ASCII.LF & ASCII.HT &
-           "addi a3, a3, -1"   & ASCII.LF & ASCII.HT &
-           "wsr.ccompare2 a3"  & ASCII.LF & ASCII.HT &
-           "rsync",
-           Clobber  => "a3",
-           Volatile => True);
+      --  Load a far-future deadline into both comparators and clear any stale
+      --  interrupt, so neither fires before the first real Set_Alarm.  Runs
+      --  before native_setup_systimer_core* sets WORK_EN, so it is purely
+      --  defensive (COMPx_LOAD latches the target regardless of WORK_EN).
+      Systimer_Target0_Hi := 16#F_FFFF#;
+      Systimer_Target0_Lo := 16#FFFF_FFFF#;
+      Systimer_Target0_Conf := 0;
+      Systimer_Comp0_Load := 1;
+      Systimer_Target1_Hi := 16#F_FFFF#;
+      Systimer_Target1_Lo := 16#FFFF_FFFF#;
+      Systimer_Target1_Conf := 0;
+      Systimer_Comp1_Load := 1;
+      Systimer_Int_Clr := 16#3#;   --  clear TARGET0 + TARGET1
    end Park_Alarm;
 
    --------------------
@@ -168,8 +209,8 @@ package body System.BB.Board_Support is
          System.BB.CPU_Primitives.Multiprocessors.Poke_Handler;
       end if;
 
-      --  Timer alarm (CCOMPARE2 / int 16): the attached Alarm_Handler re-arms
-      --  CCOMPARE2, which clears int 16.
+      --  Timer alarm (SYSTIMER TARGETx / CPU_INT 26): the attached Alarm_Handler
+      --  calls Clear_Alarm_Interrupt (write-1-clear) then re-arms via Set_Alarm.
       if (Pending and Alarm_Interrupt_Bit) /= 0 then
          System.BB.Interrupts.Interrupt_Wrapper (Alarm_Interrupt_ID);
       end if;
@@ -291,26 +332,10 @@ package body System.BB.Board_Support is
 
    package body Time is
 
-      function Read_Count return Timer_Interval;
-      pragma Inline (Read_Count);
-
       function Native_Systimer_Count return Unsigned_64
         with Import, Convention => C,
              External_Name => "native_systimer_count";
       --  Raw shared 16 MHz SYSTIMER UNIT0 count (same value on both cores).
-
-      ----------------
-      -- Read_Count --
-      ----------------
-
-      function Read_Count return Timer_Interval is
-         Count : Timer_Interval;
-      begin
-         Asm ("rsr.ccount %0",
-              Outputs  => Timer_Interval'Asm_Output ("=r", Count),
-              Volatile => True);
-         return Count;
-      end Read_Count;
 
       ----------------
       -- Read_Clock --
@@ -342,34 +367,37 @@ package body System.BB.Board_Support is
       ---------------
 
       procedure Set_Alarm (Ticks : Timer_Interval) is
-         Small    : constant Boolean := Ticks < 2 ** 20;
-         Margin   : Timer_Interval := (if Ticks = 0 then 1 else Ticks);
-         Deadline : Timer_Interval;
+         Core     : constant Integer :=
+           Integer (Multiprocessors.Current_CPU) - 1;   --  0 = core0, 1 = core1
+         Now      : constant Unsigned_64 := Native_Systimer_Count;
+         --  Ticks is in 240 MHz Time-units (Read_Clock = systimer count x15);
+         --  convert back to raw 16 MHz systimer ticks.  Floor at 1 so a 0/tiny
+         --  interval still lands strictly ahead of "now".  Unlike CCOMPARE2 the
+         --  systimer comparator fires on count >= target, so a deadline that is
+         --  already in the past fires immediately -- no widening-margin dance
+         --  and no lost-alarm CXD8002 desync.
+         St_Delta : constant Unsigned_64 :=
+           Unsigned_64'Max (1, Unsigned_64 (Ticks) / 15);
+         Deadline : constant Unsigned_64 := Now + St_Delta;
+         Hi       : constant Reg32 :=
+           Reg32 (Shift_Right (Deadline, 32) and 16#F_FFFF#);
+         Lo       : constant Reg32 := Reg32 (Deadline and 16#FFFF_FFFF#);
       begin
-         --  Arm CCOMPARE2 = CCOUNT + Margin.  The Xtensa CCOMPARE interrupt
-         --  fires ONLY on the exact CCOUNT = CCOMPARE2 match, so a deadline
-         --  that is already in the past when written is MISSED and will not
-         --  fire until CCOUNT wraps a full 2**32 (~17.9 s).  This bites tiny
-         --  intervals: Update_Alarm programs Time_Difference = 1 whenever an
-         --  alarm is due, and CCOUNT advances past CCOUNT+1 between Read_Count
-         --  and the wsr.  A lost alarm desynchronises the alarm bookkeeping
-         --  (Pending_Alarm), so a delayed task then wakes only on the next
-         --  periodic clock update ~Max_Sleep later (ACATS CXD8002 measured
-         --  15.47 s for an 8 us delay).  For a small interval, re-arm with a
-         --  widening margin until the deadline is provably still ahead of
-         --  CCOUNT (modular forward distance in 1 .. 2**31-1).  A large
-         --  interval is billions of ticks ahead and cannot be missed, so arm
-         --  it once -- which also avoids the past/future ambiguity for
-         --  deadlines more than 2**31 ticks away (e.g. Max_Sleep = 7/8*2**32).
-         loop
-            Deadline := Read_Count + Margin;
-            Asm ("wsr.ccompare2 %0" & ASCII.LF & ASCII.HT & "rsync",
-                 Inputs   => Timer_Interval'Asm_Input ("r", Deadline),
-                 Volatile => True);
-            exit when not Small
-              or else Deadline - Read_Count - 1 < 2 ** 31 - 1;
-            Margin := Margin + 64;
-         end loop;
+         --  Arm this core's UNIT0 comparator (one-shot).  COMPx_LOAD latches
+         --  HI/LO/CONF atomically into the live comparator; CONF = 0 selects
+         --  UNIT0 + one-shot (period_mode off).  Runs under Enter_Kernel, so
+         --  the store sequence is not preempted by our own alarm interrupt.
+         if Core = 0 then
+            Systimer_Target0_Hi := Hi;
+            Systimer_Target0_Lo := Lo;
+            Systimer_Target0_Conf := 0;
+            Systimer_Comp0_Load := 1;
+         else
+            Systimer_Target1_Hi := Hi;
+            Systimer_Target1_Lo := Lo;
+            Systimer_Target1_Conf := 0;
+            Systimer_Comp1_Load := 1;
+         end if;
       end Set_Alarm;
 
       -------------------------
@@ -377,14 +405,16 @@ package body System.BB.Board_Support is
       -------------------------
 
       procedure Clear_Alarm_Interrupt is
-         --  Writing CCOMPARE0 clears the pending int 6.  Park it almost a full
-         --  period ahead so it does not immediately re-fire; the next
-         --  Set_Alarm programs the real deadline.
-         Park : constant Timer_Interval := Read_Count - 1;
+         Core : constant Integer := Integer (Multiprocessors.Current_CPU) - 1;
       begin
-         Asm ("wsr.ccompare2 %0" & ASCII.LF & ASCII.HT & "rsync",
-              Inputs   => Timer_Interval'Asm_Input ("r", Park),
-              Volatile => True);
+         --  Ack this core's comparator (write-1-to-clear its INT_RAW).  The
+         --  one-shot has already fired and will not re-latch until the next
+         --  Set_Alarm re-loads a target (Alarm_Handler calls us then re-arms).
+         if Core = 0 then
+            Systimer_Int_Clr := 16#1#;   --  TARGET0_INT_CLR (bit 0)
+         else
+            Systimer_Int_Clr := 16#2#;   --  TARGET1_INT_CLR (bit 1)
+         end if;
       end Clear_Alarm_Interrupt;
 
       ---------------------------
@@ -397,7 +427,7 @@ package body System.BB.Board_Support is
       begin
          System.BB.Interrupts.Attach_Handler
            (Handler, Alarm_Interrupt_ID, Interrupt_Priority'Last);
-         Native_Enable_Tick;   --  safe to let int 6 fire now
+         Native_Setup_Systimer_Core0;   --  route/enable core 0's TARGET0 alarm
       end Install_Alarm_Handler;
 
    end Time;
@@ -546,7 +576,8 @@ package body System.BB.Board_Support is
          --  the first tick/poke can drive a context switch.
          CPU_Primitives.Disable_Interrupts;
          CPU_Primitives.Initialize_CPU;   --  enable the FPU on core 1
-         Native_Setup_Poke_Core1;   --  enable poke (int 31) + timer (int 16)
+         Native_Setup_Poke_Core1;      --  enable poke (int 31)
+         Native_Setup_Systimer_Core1;  --  route/enable core 1's TARGET1 alarm
          Initialize_Slave (Current_CPU);
       end Core1_Entry;
 

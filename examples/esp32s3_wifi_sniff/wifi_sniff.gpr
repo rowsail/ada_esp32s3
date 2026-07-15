@@ -1,0 +1,31 @@
+--  Wi-Fi scan example: exercises ESP32S3.WiFi (libs/esp32s3_wifi) on hardware.
+--  Runtime/HAL come from ADA_ESP32S3; the Wi-Fi driver from this repo's
+--  libs/esp32s3_wifi (added to GPR_PROJECT_PATH by build.sh).  The bare-boot
+--  link adds the Espressif Wi-Fi/PHY blobs via EXTRA_OBJS (see build.sh).
+with "esp32s3_rts.gpr";   --  runtime crate (from ADA_ESP32S3, via GPR_PROJECT_PATH)
+with "esp32s3_hal.gpr";   --  ESP32S3.Log + GPIO/UART (from ADA_ESP32S3)
+with "esp32s3_wifi.gpr";  --  the Wi-Fi driver (this repo: libs/esp32s3_wifi)
+
+project Wifi_Sniff is
+   for Target use "xtensa-esp32-elf";
+   for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;
+   for Source_Dirs use ("src");
+   for Object_Dir use "obj";
+   for Main use ("main.adb");
+
+   package Builder is
+      for Executable ("main.adb") use "ada_app.o";
+   end Builder;
+
+   package Binder is
+      for Switches ("Ada") use ("-D8k", "-Q2", "-Mada_main");
+   end Binder;
+
+   package Compiler is
+      for Switches ("Ada") use ("-O2", "-g", "-gnata");
+   end Compiler;
+
+   package Linker is
+      for Default_Switches ("Ada") use ("-Wl,-r", "-nostdlib");
+   end Linker;
+end Wifi_Sniff;

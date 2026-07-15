@@ -45,6 +45,16 @@ package Bare_Boot is
    procedure Native_Setup_Poke_Core1
    with Export, Convention => C, External_Name => "native_setup_poke_core1";
 
+   --  Route each core's SYSTIMER UNIT0 comparator interrupt (TARGET0 on core 0,
+   --  TARGET1 on core 1) to CPU_INT 26 (level 5), enable the comparator + its
+   --  interrupt, and unmask the CPU int.  The systimer keeps counting while the
+   --  CPU idles in waiti, so unlike CCOMPARE2 this alarm wakes a fully-idle core.
+   procedure Native_Setup_Systimer_Core0
+   with Export, Convention => C, External_Name => "native_setup_systimer_core0";
+
+   procedure Native_Setup_Systimer_Core1
+   with Export, Convention => C, External_Name => "native_setup_systimer_core1";
+
    --  Xtensa CPU special registers (rsr/wsr): the core id (PRID), the cycle
    --  counter (CCOUNT), and the exception vector base (VECBASE).  These are not
    --  memory-mapped, so System.Machine_Code asm rather than svd.  (The one-shot
