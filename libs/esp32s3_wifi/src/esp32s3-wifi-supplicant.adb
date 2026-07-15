@@ -643,6 +643,7 @@ package body ESP32S3.WiFi.Supplicant is
 
    procedure On_Eapol_Txdone is
       Zero_Seq : Bytes (0 .. 5) := (others => 0);
+      Zero_Key : Bytes (0 .. 15) := (others => 0);   --  dummy key for the blob
    begin
       Txdone_Count := Txdone_Count + 1;
       if Install_Pending then
@@ -660,8 +661,13 @@ package body ESP32S3.WiFi.Supplicant is
          --  frame (no DHCP OFFER).  The canonical two-step blob install
          --  (KF_PTK_SET then KF_PTK_TX) was tried too and leaves it zero the same
          --  way, so do NOT retry that; write the material ourselves below.
+         --  De-blob (keys never touch the blob): hand C_Set_Key a DUMMY zero
+         --  key.  It still sets up the HW slot metadata (MAC, valid) and the
+         --  blob's SW key object (PN / TX-encap bookkeeping), but the real TK is
+         --  never passed into blob C -- we derive it in Ada (PTK) and write the
+         --  real 16-byte material straight into the HW slot below.
          Ptk_Rc := C_Set_Key (WPA_ALG_CCMP, AA'Address, 0, 1,
-                              Zero_Seq'Address, 6, TK'Address, 16, KF_PTK);
+                              Zero_Seq'Address, 6, Zero_Key'Address, 16, KF_PTK);
          --  Write the raw TK straight into the slot-4 key-material words.  Layout
          --  from blob RE (hal_crypto_set_key_entry): slot s key material lives at
          --  0x60034400 + s*40 + 8, as little-endian words; pairwise is slot 4.
