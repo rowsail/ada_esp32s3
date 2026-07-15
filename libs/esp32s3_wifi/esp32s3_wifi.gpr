@@ -1,0 +1,17 @@
+--  ESP32-S3 Wi-Fi driver (ESP32S3.WiFi.*).  Pure-Ada OS adapter / PHY / interrupt
+--  glue and software network stack that drives the radio through Espressif's
+--  binary lower-MAC + PHY libraries (fetched, not committed -- see blobs/ and
+--  tools/fetch-wifi-blobs.sh).  Wi-Fi is surfaced to the network stack as a
+--  Net_Device (a NIC).  Child units of ESP32S3, so it withs the HAL.  Built
+--  cross only, against the embedded (Jorvik) runtime; each example's bare-boot
+--  image adds the Wi-Fi blobs to its vendor link.  See BRINGUP.md.
+with "esp32s3_hal.gpr";
+
+project Esp32s3_Wifi is
+   for Source_Dirs use ("src");
+   for Object_Dir use "obj";
+
+   package Compiler is
+      for Default_Switches ("Ada") use ("-g", "-O2", "-gnat2022");
+   end Compiler;
+end Esp32s3_Wifi;
