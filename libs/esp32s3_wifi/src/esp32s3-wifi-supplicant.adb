@@ -409,6 +409,30 @@ package body ESP32S3.WiFi.Supplicant is
       end loop;
    end AES_Unwrap;
 
+   --  Write a 16-byte key straight into HW key slot Slot's material words
+   --  (0x60034400 + Slot*40 + 8), little-endian -- the same trick as
+   --  Write_HW_Pairwise_Key, for the group key (the blob's C_Set_Key leaves the
+   --  GTK material unlanded exactly like the pairwise key).
+   procedure Write_HW_Group_Key (Slot : Natural; Key : Bytes) is
+      use type Interfaces.Unsigned_32;
+      Base : constant Interfaces.Unsigned_32 :=
+        16#6003_4400# + Interfaces.Unsigned_32 (Slot) * 40 + 8;
+      function LE_Word (Byte : Natural) return Interfaces.Unsigned_32 is
+        (Interfaces.Unsigned_32 (Key (Key'First + Byte))
+         or Shift_Left (Interfaces.Unsigned_32 (Key (Key'First + Byte + 1)), 8)
+         or Shift_Left (Interfaces.Unsigned_32 (Key (Key'First + Byte + 2)), 16)
+         or Shift_Left (Interfaces.Unsigned_32 (Key (Key'First + Byte + 3)), 24));
+   begin
+      for Word in 0 .. 3 loop
+         declare
+            Cell : Interfaces.Unsigned_32 with Import, Volatile,
+              Address => System'To_Address (Base + Interfaces.Unsigned_32 (Word) * 4);
+         begin
+            Cell := LE_Word (Word * 4);
+         end;
+      end loop;
+   end Write_HW_Group_Key;
+
    --  Unwrap msg 3's key_data, locate the GTK KDE (00-0F-AC type 1), and install
    --  the group key.  Msg is the whole EAPOL-Key body handed to us.
    procedure Install_Gtk_From_Msg3 (Msg : Bytes) is
@@ -451,14 +475,24 @@ package body ESP32S3.WiFi.Supplicant is
                      Gtk    : Bytes (0 .. 15) := Plain (I + 8 .. I + 23);
                      Rsc    : Bytes (0 .. 5)  := Msg (Msg'First + O_RSC ..
                                                       Msg'First + O_RSC + 5);
+                     Zero_Key : Bytes (0 .. 15) := (others => 0);
+                     Slot     : constant Natural :=
+                       Natural (Interfaces.Integer_32'Max (1, Key_Id)) - 1;
                   begin
                      Gtk_Found := True;
                      --  addr = the AP's MAC (AA), exactly as the ESP supplicant
                      --  does (wpa.c wpa_supplicant_install_gtk passes sm->bssid,
                      --  NOT broadcast -- the commented-out ff:ff:.. is a trap).
+                     --  De-blob (keys never touch the blob): pass a DUMMY zero
+                     --  key.  C_Set_Key still sets the slot metadata + the
+                     --  keyid->slot map, but never sees the real GTK; we install
+                     --  the real material into the group HW slot (keyid k -> slot
+                     --  k-1) ourselves -- the blob leaves it unlanded exactly like
+                     --  the pairwise key (measured: s0mat/s1mat = 0 after C_Set_Key).
                      Gtk_Rc := C_Set_Key (WPA_ALG_CCMP, AA'Address, Key_Id,
-                                          Set_Tx, Rsc'Address, 6, Gtk'Address,
+                                          Set_Tx, Rsc'Address, 6, Zero_Key'Address,
                                           16, KF_GTK);
+                     Write_HW_Group_Key (Slot, Gtk);
                      return;
                   end;
                end if;
