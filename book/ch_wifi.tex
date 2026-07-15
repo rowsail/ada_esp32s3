@@ -1,0 +1,274 @@
+\chapter{Wi-Fi: a pure-Ada driver over a binary radio}\index{Wi-Fi}\index{WiFi}\index{802.11}
+\label{ch:wifi}
+
+The networking chapter (\ref{ch:networking}) gave the application a wired NIC and
+the standard \texttt{GNAT.Sockets} API; the TLS chapter (\ref{ch:tls}) put HTTPS
+over it. This chapter gives a \emph{wireless} NIC --- the ESP32-S3's on-chip
+radio --- and the reward is almost anticlimactic: the same socket stack and the
+same TLS client run over it unchanged. The \texttt{esp32s3\_wifi\_tls} example is
+the wired \texttt{esp32s3\_tls\_weather} with one line swapped underneath.
+
+But Wi-Fi is unlike every other driver in this book in one honest way, and it is
+worth stating plainly up front. Every peripheral so far --- SPI, I2C, the W5500,
+the SD card, the crypto accelerators --- we drove ourselves, register by
+register, in Ada. The 802.11 \emph{lower MAC} (the microsecond-scale timing of
+acknowledgements, back-off and rate control) and the \emph{PHY} (RF calibration
+for a specific silicon revision) are not ours to write: Espressif ships them only
+as binaries, and there is no public source to reimplement from. So this is the
+one driver in the book that links a blob. The interesting engineering is what
+surrounds that blob --- all of which \emph{is} ours, and all of which is Ada.
+
+\cnote{On ESP-IDF, Wi-Fi is \texttt{esp\_wifi} standing on these same blobs,
+scheduled by FreeRTOS and feeding lwIP's BSD sockets. We keep the blobs (there is
+no alternative) but throw the rest away: no FreeRTOS, no lwIP. The blob's RTOS
+calls land on our Jorvik tasks, and its frames land on the pure-Ada stack from
+Chapter~\ref{ch:networking}.}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[node distance=2mm]
+\node[layer, fill=blue!9] (app)  {Your application: portable \texttt{GNAT.Sockets} + \texttt{DNS\_Client} + \texttt{TLS\_Client}};
+\node[layer, below=of app]  (fac)  {\texttt{GNAT.Sockets} facade / \texttt{Net\_Devices.Device'Class} (Chapters \ref{ch:networking}, \ref{ch:tls})};
+\node[layer, below=of fac]  (nd)   {\texttt{ESP32S3.WiFi.Net\_Device}: the radio as a NIC backend};
+\node[layer, below=of nd]   (ip)   {\texttt{ESP32S3.WiFi.IP}: pure-Ada Ethernet/ARP/IPv4/UDP/TCP};
+\node[layer, below=of ip]   (drv)  {\texttt{ESP32S3.WiFi} + \texttt{.Supplicant} + \texttt{.Port}: bring-up, WPA2, tx/rx};
+\node[layer, below=of drv, fill=red!8]  (blob) {\textbf{Espressif blobs}: \texttt{libnet80211}, \texttt{libpp}, \texttt{libcore}, \texttt{libphy}};
+\node[layer, below=of blob] (os)   {\texttt{ESP32S3.WiFi.RTOS}: the OS adapter --- the blob's FreeRTOS, re-implemented on Jorvik};
+\end{tikzpicture}
+\caption{The Wi-Fi stack. Everything except the one red layer is Ada. Above
+\texttt{Net\_Devices.Device'Class} nothing changes from the wired chapters; the
+blob is boxed in between a thin Ada driver above it and an Ada OS adapter beneath
+it.}
+\label{fig:wifi-layers}
+\end{figure}
+
+\section{The one place we link a blob}\index{Wi-Fi!blobs}\index{blob!fetching}
+\label{ch:wifi:blobs}
+
+Four archives make up the radio firmware, pinned to ESP-IDF v5.4.4:
+\texttt{libnet80211.a} (the MLME: scanning, association, the state machine),
+\texttt{libpp.a} (the lower-MAC ``packet processor''), \texttt{libcore.a} (the
+\texttt{esp\_wifi} entry points) and \texttt{libphy.a} (RF calibration). Together
+they are about 2.3\,MB.
+
+We do not commit them. A repository of pure-Ada source should not carry megabytes
+of someone else's binaries, and it does not need to: both upstream libraries
+(\texttt{espressif/esp32-wifi-lib} and \texttt{espressif/esp-phy-lib}) are
+\textbf{Apache-2.0} licensed and live at stable Git commits. So the SDK ships a
+manifest and a fetch script instead:
+
+\begin{lstlisting}[language=bash]
+$ tools/fetch-wifi-blobs.sh
+fetch  libnet80211.a  <-  espressif/esp32-wifi-lib@7bd1599
+  verified + installed
+...
+\end{lstlisting}
+
+The script reads \texttt{libs/esp32s3\_wifi/blobs/MANIFEST.lock}, downloads each
+archive from its pinned commit, and verifies it against a recorded SHA-256 before
+installing it. The \texttt{.a} files are \texttt{.gitignore}d; only the manifest,
+the two Apache-2.0 licence texts and a provenance note are tracked. A build with
+no local ESP-IDF fetches once and caches; a developer who \emph{does} have
+ESP-IDF sets \texttt{IDF\_PATH} and links their own copies. Either way the result
+is bit-identical --- that is what the checksum guarantees.
+
+\cnote{This is the standard ``vendored binary'' pattern: pin an exact upstream
+commit, record a checksum, fetch on demand. It keeps history free of binaries
+\emph{and} makes the build reproducible and tamper-evident --- an unpinned
+``download the latest'' would be neither.}
+
+\section{Teaching a FreeRTOS blob to live on Jorvik}\index{Wi-Fi!OS adapter}\index{FreeRTOS}
+\label{ch:wifi:osadapter}
+
+The blob was compiled expecting an operating system. It calls \texttt{task\_create}
+to spawn its worker; it pushes received frames through \texttt{queue\_send} and
+blocks the worker on \texttt{queue\_recv}; it takes recursive mutexes around MAC
+state; it arms one-shot timers for retransmission; it calls \texttt{malloc} for
+frame buffers. On a stock system those are FreeRTOS. Here they are a few hundred
+lines of Ada --- the \emph{OS adapter}, \texttt{ESP32S3.WiFi.RTOS} --- and every
+one of them is a Jorvik construct in disguise.
+
+The blob's ``tasks'' are the clearest example. Ravenscar forbids creating tasks
+dynamically, so instead of honouring \texttt{task\_create} literally we hand the
+blob one of a fixed pool of \emph{worker} tasks, each parked on a mailbox waiting
+for a procedure to run:
+
+\begin{lstlisting}
+task type Worker with Priority => Worker_Prio,
+                      CPU      => Wifi_CPU,      --  pin to the ISR's core
+                      Storage_Size => Worker_Stk;
+
+task body Worker is
+   Idx  : Natural;
+   F, P : System.Address;
+begin
+   Allocator.Claim_Worker (Idx);          --  take a pool slot
+   loop
+      Mailboxes (Idx).Wait (F, P);        --  block until task_create hands us one
+      if F /= System.Null_Address then
+         To_Entry (F) (P);                --  run the blob's "task body" -- forever
+      end if;
+   end loop;
+end Worker;
+\end{lstlisting}
+
+\texttt{task\_create} finds a free worker, posts the blob's entry point to its
+mailbox, and returns the mailbox address as the ``task handle'' --- which matters,
+because the blob later compares handles to decide whether it is running
+\emph{on} the Wi-Fi task, and the OS adapter must give back exactly what it
+handed out. Queues become protected objects with a bounded ring and a
+\texttt{when Count > 0} barrier; a blocking \texttt{queue\_recv} is a Jorvik
+entry call, an interrupt-context \texttt{queue\_send\_from\_isr} is a protected
+procedure. Mutexes are protected objects with an ownership count. Timers are a
+single high-priority \texttt{Timer\_Task} servicing a small table. \texttt{malloc}
+maps onto the DMA-capable internal-RAM heap. The blob thinks it is on FreeRTOS;
+FreeRTOS is not linked.
+
+\cnote{A recursive mutex over 802.11 state, taken and released thousands of times
+a second, must be genuinely cheap. A Jorvik protected object is: enter, touch a
+field, exit --- no kernel call, priority-ceiling locking on a single core. The
+adapter is not a compatibility shim bolted on the side; it \emph{is} the RTOS the
+blob runs on.}
+
+\section{Bring-up: from reset to a scan}\index{Wi-Fi!bring-up}\index{PHY}\index{WPA2}
+\label{ch:wifi:bringup}
+
+With the OS adapter in place, bring-up follows the sequence the blob expects:
+initialise the \texttt{esp\_wifi} core, run PHY calibration (the reason
+\texttt{libphy} exists --- the radio must be tuned to \emph{this} chip and
+antenna), start the MAC, and route the WMAC interrupt. That last step is pure
+Ada: the lower MAC raises a hardware interrupt when a frame arrives, and GNARL
+delivers it to a protected handler like any other device interrupt.
+
+\begin{lstlisting}
+protected WMAC_ISR
+  with Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority
+is
+   procedure Handler
+     with Attach_Handler => Ada.Interrupts.Names.Device_L2_1;
+end WMAC_ISR;
+
+protected body WMAC_ISR is
+   procedure Handler is
+   begin
+      if Blob_Isr /= System.Null_Address then
+         To_Isr (Blob_Isr) (Blob_Arg);   --  hand the frame to the blob's ISR
+      end if;
+   end Handler;
+end WMAC_ISR;
+\end{lstlisting}
+
+The blob's ISR is closure-free and library-level, exactly as
+Chapter~\ref{ch:interrupts} requires --- a captured environment here would fault
+on the trampoline the ESP32-S3 cannot execute.
+
+Scanning drops out of this for free: \texttt{ESP32S3.WiFi.Scan} asks the MLME to
+sweep the channels and reads back the results. Connecting adds the
+\emph{supplicant} --- the WPA2 four-way handshake in \texttt{ESP32S3.WiFi.Supplicant}
+--- which derives the pairwise key and installs it into the hardware AES-CCMP
+engine so that frames are decrypted in silicon. (Getting that key to the right
+slot of the crypto engine was, for the record, the single most stubborn bug in
+the whole bring-up; JTAG earned its keep.)
+
+\section{Wi-Fi as just another NIC}\index{Wi-Fi!Net\_Device}\index{Net\_Devices}
+\label{ch:wifi:netdevice}
+
+Here is the payoff for all the interface discipline of
+Chapter~\ref{ch:networking}. The blob hands us decrypted Ethernet frames and
+accepts frames to transmit; that is precisely a NIC. So
+\texttt{ESP32S3.WiFi.Net\_Device} implements the same
+\texttt{Net\_Devices.Device'Class} the W5500 does, and feeds a small pure-Ada IP
+stack (\texttt{ESP32S3.WiFi.IP}: Ethernet framing, ARP, IPv4, UDP and a
+stop-and-wait TCP). Above the \texttt{Device'Class} line, \emph{nothing knows it
+is talking to a radio}:
+
+\begin{lstlisting}
+--  esp32s3_wifi_tls, after association + DHCP:
+Session : TLS_Client.Session;
+...
+Connect (Wifi_Credentials.SSID, Wifi_Credentials.Pass, Result => St);
+...  --  DHCP, then DNS, then:
+TLS_Client.Handshake (Session, Host => "api.open-meteo.com", Port => 443);
+\end{lstlisting}
+
+That \texttt{TLS\_Client}, that \texttt{DNS\_Client}, that TCP --- all of it is
+the code from the previous two chapters, unmodified. The full pipeline runs on
+hardware against a live access point and the real \texttt{api.open-meteo.com}:
+associate, DHCP-lease an address, resolve the name, fetch the time over NTP (TLS
+needs a wall clock to judge certificate validity), complete a TLS 1.3 handshake,
+RSA-PSS-verify the server's \texttt{CertificateVerify}, validate the chain up to
+the real ISRG Root X1, and GET the forecast. Pure-Ada HTTPS, over a pure-Ada
+stack, over a radio we do not have the source to.
+
+\section{A war story: the system that slept forever}\index{Wi-Fi!deadlock}\index{waiti}\index{CCOUNT}\index{SYSTIMER}
+\label{ch:wifi:deadlock}
+
+Wi-Fi is the reason a subtle runtime bug finally surfaced, and the hunt is worth
+telling because it is exactly the kind of thing bare-metal throws at you.
+
+The TLS-over-Wi-Fi example built cleanly and then hung during boot --- before its
+first line of output. No crash, no exception: a \emph{silent} hang, the worst
+kind. Under OpenOCD and GDB, \texttt{info tasks} told the story at a glance: the
+environment task and the Wi-Fi timer task were both in \texttt{Delay Sleep}, the
+worker tasks were idle on their mailboxes, and \emph{both} CPU cores were sitting
+in \texttt{waiti}. Nothing was running, nothing was ready, and nothing was going
+to change that. Reading the cycle counter twice, a second apart, gave the
+diagnosis: \texttt{CCOUNT} was frozen.
+
+The runtime clocked its alarm off the Xtensa \texttt{CCOUNT}/\texttt{CCOMPARE2}
+timer --- and \texttt{CCOUNT stops advancing while the core sits in
+\texttt{waiti}}. As long as \emph{something} ran, that was invisible. But the
+Wi-Fi example, during elaboration, reached a moment where every task was blocked
+on a timed delay before any device interrupt existed to wake a core. Both cores
+idled, \texttt{CCOUNT} froze, the alarm deadline was never reached, and the only
+thing that could have re-armed the alarm was the alarm itself. A fully-idle
+system could never wake. (The same latent flaw had been mis-diagnosed for months
+as delays occasionally waking ``about fifteen seconds late'' --- that fifteen
+seconds is exactly how long \texttt{CCOUNT} takes to wrap all the way around.)
+
+The fix moves the alarm off \texttt{CCOUNT} and onto the \emph{SYSTIMER}, a
+free-running 16\,MHz counter that keeps ticking through \texttt{waiti}. Each core
+arms one of its comparators; the comparator's interrupt is routed to a level-5
+CPU interrupt, so the existing vector and dispatch (Chapter~\ref{ch:interrupts})
+are untouched --- only the timer underneath changed:
+
+\begin{lstlisting}
+procedure Set_Alarm (Ticks : Timer_Interval) is
+   Core     : constant Integer := Integer (Current_CPU) - 1;
+   Now      : constant Unsigned_64 := Native_Systimer_Count;   --  free-running
+   Deadline : constant Unsigned_64 := Now + Unsigned_64'Max (1, U64 (Ticks) / 15);
+begin
+   --  Arm this core's SYSTIMER comparator (one-shot); it fires on
+   --  count >= target, so even a past deadline fires at once -- no exact-match
+   --  miss, unlike CCOMPARE2.
+   Arm_Comparator (Core, Deadline);
+end Set_Alarm;
+\end{lstlisting}
+
+It is a runtime-wide change --- it is now the timer behind \emph{every}
+\texttt{delay until} in the system --- so it was validated well beyond Wi-Fi: an
+SMP example, and a dedicated \texttt{esp32s3\_delay\_test} that measures the
+error of a delay taken from a fully-idle system and finds it exact. The lesson is
+an old one, sharpened: a clock that stops when the CPU rests is not a clock you
+can set an alarm by.
+
+\section{The examples}\index{Wi-Fi!examples}
+\label{ch:wifi:examples}
+
+\begin{itemize}[nosep]
+\item \texttt{esp32s3\_wifi\_scan} --- bring up the radio and list nearby access
+points with channel, RSSI and BSSID.
+\item \texttt{esp32s3\_wifi\_sniff} --- promiscuous-mode 802.11 capture, the MAC
+handed raw frames off the air.
+\item \texttt{esp32s3\_wifi\_dns} --- associate and resolve a name through
+\texttt{DNS\_Client}.
+\item \texttt{esp32s3\_wifi\_http} --- a plain HTTP GET over the software TCP
+stack.
+\item \texttt{esp32s3\_wifi\_tls} --- the capstone: full TLS 1.3 HTTPS end to end,
+described above.
+\end{itemize}
+
+Each needs the blobs (\texttt{tools/fetch-wifi-blobs.sh}, or \texttt{IDF\_PATH})
+and your network in the git-ignored \texttt{src/wifi\_credentials.ads} --- copy
+the \texttt{.template} and fill in the SSID and passphrase. The radio is not
+ours; everything you can read is.
