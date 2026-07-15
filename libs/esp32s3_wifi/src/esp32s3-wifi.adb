@@ -10,6 +10,8 @@ with ESP32S3.WiFi.OS_Adapter;
 with ESP32S3.WiFi.RTOS;
 with ESP32S3.WiFi.Port;
 with ESP32S3.WiFi.Supplicant;
+with ESP32S3.WiFi.Core_Shim;   --  provides the retired libcore.a symbols
+pragma Unreferenced (ESP32S3.WiFi.Core_Shim);
 
 package body ESP32S3.WiFi is
 

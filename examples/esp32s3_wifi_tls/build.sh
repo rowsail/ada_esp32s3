@@ -24,7 +24,10 @@ else
     [ -f "$W/libnet80211.a" ] || bash "$REPO/tools/fetch-wifi-blobs.sh"
 fi
 # --start-group: the archives cross-reference, so order-independent resolution.
-export EXTRA_OBJS="-Wl,--start-group $W/libnet80211.a $W/libpp.a $W/libcore.a $P/libphy.a -Wl,--end-group"
+# libcore.a (misc_nvs.o) is RETIRED -- its 6 referenced symbols are provided in
+# Ada by ESP32S3.WiFi.Core_Shim (misc NVS is dormant on our NVS-disabled port).
+# One fewer Espressif blob.  See research/wifi-re.
+export EXTRA_OBJS="-Wl,--start-group $W/libnet80211.a $W/libpp.a $P/libphy.a -Wl,--end-group"
 
 # DE-BLOB (no crypto in a blob): retire the blob's HW key-slot crypto by
 # redirecting it to our Ada replacements in libs/esp32s3_wifi (Wrap_Set_Key /
