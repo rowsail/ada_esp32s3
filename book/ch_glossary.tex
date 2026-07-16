@@ -56,6 +56,8 @@ a chapter that treats it properly, the entry points there.
 
 \item[DDR] \emph{Double Data Rate} -- transferring on both clock edges to double throughput, as in octal (\texttt{OPI}) PSRAM/flash timing.
 
+\item[din tuning] Calibrating the read-data (\emph{data-in}) sampling phase --- the \texttt{din\_mode} knob --- that an octal PSRAM controller needs at 80\,MHz DDR. Its correct value is not knowable from source (it varies by chip, controller and temperature) and a wrong one hangs the CPU on a cache read with no recovery, so the bootloader measures it at boot with a bounded SPI1 sweep and takes the centre of the passing window (Chapter~\ref{ch:psram}).
+
 \item[DRAM / IRAM] The data-bus and instruction-bus \emph{views} of the same
   internal SRAM. Code runs from the IRAM view; data lives in the DRAM view
   (\S\ref{ch:bootloader}).
