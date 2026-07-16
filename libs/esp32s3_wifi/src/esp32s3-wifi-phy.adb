@@ -397,6 +397,101 @@ package body ESP32S3.WiFi.PHY is
       Poke (16#6001_C400#, Peek (16#6001_C400#) or 16#0000_6000#);
    end Wrap_Bb_Reg_Init;
 
+   --  Batch 6: channel-dump cfg, RX sensitivity, RF-RX-sat reset, TX state,
+   --  hw-set-freq enable/disable, freq-set busy wait.
+   Ports6_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports6_count";
+
+   procedure Wrap_Chan_Dump_Cfg (A, B, C, D, E : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_chan_dump_cfg";
+   procedure Wrap_Chan_Dump_Cfg (A, B, C, D, E : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6001_CD0C#, (Peek (16#6001_CD0C#) and 16#FFFF_FFF7#) or Shift_Left (A and 1, 3));
+      Poke (16#6001_CD0C#, (Peek (16#6001_CD0C#) and 16#FFFF_FF0F#) or Shift_Left (B and 16#F#, 4));
+      Poke (16#6001_CD0C#, (Peek (16#6001_CD0C#) and 16#FFFF_FFFD#) or Shift_Left (C and 1, 1));
+      Poke (16#6001_CD0C#, (Peek (16#6001_CD0C#) and 16#FFFF_FFFE#) or (D and 1));
+      Poke (16#6001_CD0C#, (Peek (16#6001_CD0C#) and 16#FFFF_FFFB#) or Shift_Left (E and 1, 2));
+   end Wrap_Chan_Dump_Cfg;
+
+   procedure Wrap_Rx_Sense_Set (S : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_rx_sense_set";
+   procedure Wrap_Rx_Sense_Set (S : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      V : constant Interfaces.Unsigned_32 := S and 16#FF#;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6001_C010#, (Peek (16#6001_C010#) and 16#7F_FFFF#) or Shift_Left (V, 23));
+      Poke (16#6001_C014#, (Peek (16#6001_C014#) and 16#7F_FFFF#) or Shift_Left (V, 23));
+      Poke (16#6001_C044#, (Peek (16#6001_C044#) and 16#FFFF_FF00#) or V);
+      if V /= 0 then
+         Poke (16#6001_C108#, Peek (16#6001_C108#) and 16#FFFF_FDFF#);
+      else
+         Poke (16#6001_C108#, Peek (16#6001_C108#) or 16#200#);
+      end if;
+   end Wrap_Rx_Sense_Set;
+
+   procedure Wrap_Rfrx_Sat_Rst (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_rfrx_sat_rst";
+   procedure Wrap_Rfrx_Sat_Rst (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6001_C068#, 16#404#);
+      if (En and 16#FF#) /= 0 then
+         Poke (16#6001_C05C#, Peek (16#6001_C05C#) or 16#D108_0000#);
+         Poke (16#6001_C05C#, (Peek (16#6001_C05C#) and 16#FFF8_0000#) or 16#800#);
+      else
+         Poke (16#6001_C05C#, Peek (16#6001_C05C#) and 16#2EF7_FFFF#);
+         Poke (16#6001_C05C#, (Peek (16#6001_C05C#) and 16#FFF8_0000#) or 16#400#);
+      end if;
+   end Wrap_Rfrx_Sat_Rst;
+
+   procedure Wrap_Tx_State_Set (A : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_tx_state_set";
+   procedure Wrap_Tx_State_Set (A : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      V : constant Interfaces.Unsigned_32 := A and 16#FF#;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6000_60B0#, (Peek (16#6000_60B0#) and 16#3F3F_3F3F#) or 16#0040_4000#);
+      Poke (16#6000_60B4#, (Peek (16#6000_60B4#) and 16#3F3F_3F3F#) or Shift_Left (V, 30));
+      Poke (16#6000_60B8#, (Shift_Left (V, 6) and 16#C0C0_C0C0#)
+                            or (Peek (16#6000_60B8#) and 16#3F3F_3F3F#));
+      Poke (16#6000_60BC#, Peek (16#6000_60BC#) and 16#FFFF_FF3F#);
+   end Wrap_Tx_State_Set;
+
+   procedure Wrap_En_Hw_Set_Freq
+     with Export, Convention => C, External_Name => "__wrap_ram_phy_en_hw_set_freq";
+   procedure Wrap_En_Hw_Set_Freq is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6000_E0C4#, Peek (16#6000_E0C4#) and 16#FDFF_FFFF#);
+   end Wrap_En_Hw_Set_Freq;
+
+   procedure Wrap_Dis_Hw_Set_Freq
+     with Export, Convention => C, External_Name => "__wrap_ram_phy_dis_hw_set_freq";
+   procedure Wrap_Dis_Hw_Set_Freq is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6000_E0C4#, Peek (16#6000_E0C4#) or 16#0200_0000#);
+      Ets_Delay_Us (2);
+   end Wrap_Dis_Hw_Set_Freq;
+
+   procedure Wrap_Wait_Freq_Set_Busy
+     with Export, Convention => C, External_Name => "__wrap_wait_freq_set_busy";
+   procedure Wrap_Wait_Freq_Set_Busy is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      while (Peek (16#6000_E168#) and 16#8000_0000#) /= 0 loop
+         null;   --  poll the busy bit (self-timed, as the blob does)
+      end loop;
+   end Wrap_Wait_Freq_Set_Busy;
+
    --  ---- g_phyFuns resolver -------------------------------------------------
    --  Some ported functions are invoked by the PHY ROM through the g_phyFuns
    --  function-pointer table, which --wrap can't redirect (the table is filled
