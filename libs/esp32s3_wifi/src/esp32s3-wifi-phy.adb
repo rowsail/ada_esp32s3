@@ -84,6 +84,693 @@ package body ESP32S3.WiFi.PHY is
 
    Calibrated : Boolean := False;
 
+   --  ---- libphy de-blob: first transpiled function (proof of method) --------
+   --  force_txrx_off(en): a self-contained libphy primitive -- a read-modify-
+   --  write of the TX/RX force register 0x60006110 (bits 9/11) with 1 us settling
+   --  gaps, no i2c / g_phyFuns / ROM.  Faithful Ada port of the disassembly,
+   --  wired in by linker --wrap so the blob's version never runs.  A wrong TX/RX
+   --  force sequence disrupts the radio, so "still associates + fetches" proves
+   --  the port.  See research/wifi-re/PHY_BOUNDARY.md.
+   procedure Ets_Delay_Us (Us : Interfaces.Unsigned_32)
+     with Import, Convention => C, External_Name => "ets_delay_us";
+
+   Force_Txrx_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_force_txrx_count";
+
+   procedure Wrap_Force_Txrx_Off (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_force_txrx_off";
+   procedure Wrap_Force_Txrx_Off (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      Reg  : Interfaces.Unsigned_32 with Import, Volatile,
+        Address => System'To_Address (16#6000_6110#);
+      Mask : constant Interfaces.Unsigned_32 := 16#FFFF_F0FF#;  --  clear bits 8..11
+      Final : Interfaces.Unsigned_32;
+   begin
+      Force_Txrx_Count := Force_Txrx_Count + 1;
+      if (En and 16#FF#) /= 0 then
+         --  Force TX/RX off: set bit 11, settle, then set bits 9+11.
+         Reg := (Reg and Mask) or 16#0000_0800#;
+         Ets_Delay_Us (1);
+         Final := (Reg and Mask) or 16#0000_0A00#;
+      else
+         --  Release: set bit 9, settle, then clear bits 8..11.
+         Reg := (Reg and Mask) or 16#0000_0200#;
+         Ets_Delay_Us (1);
+         Final := Reg and Mask;
+      end if;
+      Reg := Final;
+      Ets_Delay_Us (1);
+   end Wrap_Force_Txrx_Off;
+
+   --  Batch 2: three more self-contained baseband/SYSCON RMW primitives (0x6001c
+   --  low-rate mode, 0x60026 wifi-enable).  Same faithful-port pattern.
+   Ports2_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports2_count";
+
+   procedure Poke (Addr, Val : Interfaces.Unsigned_32) is
+      Cell : Interfaces.Unsigned_32 with Import, Volatile,
+        Address => System'To_Address (Addr);
+   begin
+      Cell := Val;
+   end Poke;
+   function Peek (Addr : Interfaces.Unsigned_32) return Interfaces.Unsigned_32 is
+      Cell : Interfaces.Unsigned_32 with Import, Volatile,
+        Address => System'To_Address (Addr);
+   begin
+      return Cell;
+   end Peek;
+
+   procedure Wrap_Disable_Low_Rate
+     with Export, Convention => C, External_Name => "__wrap_phy_disable_low_rate";
+   procedure Wrap_Disable_Low_Rate is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports2_Count := Ports2_Count + 1;
+      Poke (16#6001_C860#, Peek (16#6001_C860#) and 16#FFFF_FBFF#);  --  clr bit10
+      Poke (16#6001_C860#, Peek (16#6001_C860#) and 16#FFFF_F7FF#);  --  clr bit11
+      Poke (16#6001_C87C#, Peek (16#6001_C87C#) and 16#FFFF_F7FF#);  --  clr bit11
+   end Wrap_Disable_Low_Rate;
+
+   procedure Wrap_Enable_Low_Rate
+     with Export, Convention => C, External_Name => "__wrap_phy_enable_low_rate";
+   procedure Wrap_Enable_Low_Rate is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports2_Count := Ports2_Count + 1;
+      Poke (16#6001_C860#, Peek (16#6001_C860#) or 16#0000_0400#);   --  set bit10
+      Poke (16#6001_C860#, Peek (16#6001_C860#) or 16#0000_0800#);   --  set bit11
+      Poke (16#6001_C87C#, Peek (16#6001_C87C#) or 16#0000_0800#);   --  set bit11
+   end Wrap_Enable_Low_Rate;
+
+   procedure Wrap_Wifi_Enable_Set (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_wifi_enable_set";
+   procedure Wrap_Wifi_Enable_Set (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      V : constant Interfaces.Unsigned_32 := Peek (16#6002_600C#);
+   begin
+      Ports2_Count := Ports2_Count + 1;
+      if (En and 16#FF#) /= 0 then
+         Poke (16#6002_600C#, V or 16#0000_0002#);   --  set bit1
+      else
+         Poke (16#6002_600C#, V and 16#FFFF_FFFD#);  --  clear bit1
+      end if;
+   end Wrap_Wifi_Enable_Set;
+
+   --  Batch 3: five more self-contained 0x6001c (baseband) RMW primitives --
+   --  antenna default, WiFi AGC enable/disable, TX scrambler seed, RIFS mode.
+   Ports3_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports3_count";
+
+   procedure Wrap_Ant_Dft_Cfg (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_ant_dft_cfg";
+   procedure Wrap_Ant_Dft_Cfg (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports3_Count := Ports3_Count + 1;
+      Poke (16#6001_C11C#,
+            (Peek (16#6001_C11C#) and 16#FFFF_F7FF#)
+            or Shift_Left (En and 1, 11));                --  bit11 = En
+   end Wrap_Ant_Dft_Cfg;
+
+   procedure Wrap_Enable_Wifi_Agc
+     with Export, Convention => C, External_Name => "__wrap_ram_enable_wifi_agc";
+   procedure Wrap_Enable_Wifi_Agc is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports3_Count := Ports3_Count + 1;
+      Poke (16#6001_C080#, Peek (16#6001_C080#) and 16#FFFF_FFFE#);
+      Poke (16#6001_C01C#,
+            (Peek (16#6001_C01C#) and 16#FF00_FFFF#) or 16#0020_0000#);
+      Poke (16#6001_C034#, Peek (16#6001_C034#) or 16#0000_0080#);
+   end Wrap_Enable_Wifi_Agc;
+
+   procedure Wrap_Disable_Wifi_Agc
+     with Export, Convention => C, External_Name => "__wrap_ram_disable_wifi_agc";
+   procedure Wrap_Disable_Wifi_Agc is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports3_Count := Ports3_Count + 1;
+      Poke (16#6001_C01C#,
+            (Peek (16#6001_C01C#) and 16#FF00_FFFF#) or 16#007F_0000#);
+      Poke (16#6001_C034#, Peek (16#6001_C034#) or 16#0000_0080#);
+      Poke (16#6001_C080#, Peek (16#6001_C080#) or 16#0000_0001#);
+   end Wrap_Disable_Wifi_Agc;
+
+   procedure Wrap_Set_Tx_Seed (Seed : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_set_tx_seed";
+   procedure Wrap_Set_Tx_Seed (Seed : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports3_Count := Ports3_Count + 1;
+      Poke (16#6001_C400#,
+            (Peek (16#6001_C400#) and 16#FFFF_FF80#) or (Seed and 16#7F#));
+   end Wrap_Set_Tx_Seed;
+
+   procedure Wrap_Rifs_Mode_En (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_wifi_rifs_mode_en";
+   procedure Wrap_Rifs_Mode_En (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports3_Count := Ports3_Count + 1;
+      Poke (16#6001_C0F4#,
+            (Peek (16#6001_C0F4#) and 16#FFFF_FFFE#) or (En and 1));
+   end Wrap_Rifs_Mode_En;
+
+   --  Batch 4: baseband getters (noise floor, CCA) + more RMW writers (CCA-cnt,
+   --  antenna TX, 11b-LR rx, tsens power).  Getters are read-only (cannot affect
+   --  the radio); writers follow the same faithful-port pattern.
+   Ports4_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports4_count";
+
+   --  As Integer_32 (bit pattern) -- these return signed dBm-ish values.
+   function Wrap_Get_Noise_Floor return Interfaces.Integer_32
+     with Export, Convention => C, External_Name => "__wrap_phy_get_noise_floor";
+   function Wrap_Get_Noise_Floor return Interfaces.Integer_32 is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      return Interfaces.Integer_32 ((Peek (16#6001_C050#) and 16#3FF#)) - 16#400#;
+   end Wrap_Get_Noise_Floor;
+
+   function Wrap_Read_Hw_Noisefloor return Interfaces.Integer_32
+     with Export, Convention => C, External_Name => "__wrap_read_hw_noisefloor";
+   function Wrap_Read_Hw_Noisefloor return Interfaces.Integer_32 is
+      use type Interfaces.Unsigned_32;
+      V : constant Interfaces.Unsigned_32 :=
+        (Peek (16#6001_C08C#) and 16#FFF#) - 16#1000#;   --  12-bit two's-complement
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      return Interfaces.Integer_32 (Shift_Right_Arithmetic (V, 2));
+   end Wrap_Read_Hw_Noisefloor;
+
+   function Wrap_Get_Cca return Interfaces.Unsigned_32
+     with Export, Convention => C, External_Name => "__wrap_phy_get_cca";
+   function Wrap_Get_Cca return Interfaces.Unsigned_32 is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      return Peek (16#6001_C01C#) and 16#FF#;
+   end Wrap_Get_Cca;
+
+   function Wrap_Get_Fetx_Delay return Interfaces.Unsigned_32
+     with Export, Convention => C, External_Name => "__wrap_phy_get_fetx_delay";
+   function Wrap_Get_Fetx_Delay return Interfaces.Unsigned_32 is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      if (Peek (16#6000_6070#) and 16#4000_0000#) /= 0 then   --  bit30 set -> 0
+         return 0;
+      end if;
+      return Peek (16#6000_6090#) and 16#1FF#;
+   end Wrap_Get_Fetx_Delay;
+
+   --  phy_get_cca_cnt(uint32 *out): out[0]/out[1] = 27-bit counters, returns 5-bit field.
+   function Wrap_Get_Cca_Cnt (Out_Ptr : System.Address) return Interfaces.Unsigned_32
+     with Export, Convention => C, External_Name => "__wrap_phy_get_cca_cnt";
+   function Wrap_Get_Cca_Cnt (Out_Ptr : System.Address) return Interfaces.Unsigned_32 is
+      use type Interfaces.Unsigned_32;
+      Outs : array (0 .. 1) of Interfaces.Unsigned_32
+        with Import, Volatile, Address => Out_Ptr;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Outs (0) := Peek (16#6001_D05C#) and 16#7FF_FFFF#;
+      Outs (1) := Peek (16#6001_D060#) and 16#7FF_FFFF#;
+      return Shift_Right (Peek (16#6001_D05C#) and 16#800_0000#, 27);
+   end Wrap_Get_Cca_Cnt;
+
+   procedure Wrap_Set_Cca_Cnt (Val, Flag : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_set_cca_cnt";
+   procedure Wrap_Set_Cca_Cnt (Val, Flag : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Poke (16#6001_D058#,
+            (Peek (16#6001_D058#) and 16#F800_0000#) or (Val and 16#7FF_FFFF#));
+      if (Flag and 16#FF#) /= 0 then
+         Poke (16#6001_D058#, Peek (16#6001_D058#) or 16#1800_0000#);
+      end if;
+   end Wrap_Set_Cca_Cnt;
+
+   procedure Wrap_Ant_Wifitx_Cfg (A, B : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_ant_wifitx_cfg";
+   procedure Wrap_Ant_Wifitx_Cfg (A, B : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Poke (16#6000_60B0#,
+            (Peek (16#6000_60B0#) and 16#FFFF_00FF#) or Shift_Left (A and 16#FF#, 8));
+      Poke (16#6000_60B0#,
+            (Peek (16#6000_60B0#) and 16#FF00_FFFF#) or Shift_Left (B and 16#FF#, 16));
+   end Wrap_Ant_Wifitx_Cfg;
+
+   procedure Wrap_Ant_Bttx_Cfg (A, B : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_ant_bttx_cfg";
+   procedure Wrap_Ant_Bttx_Cfg (A, B : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Poke (16#6000_60B4#,
+            (Peek (16#6000_60B4#) and 16#00FF_FFFF#) or Shift_Left (A and 16#FF#, 24));
+      Poke (16#6000_60B8#,
+            (Peek (16#6000_60B8#) and 16#FFFF_FF00#) or (B and 16#FF#));
+   end Wrap_Ant_Bttx_Cfg;
+
+   procedure Wrap_Rx11blr_Cfg (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_rx11blr_cfg";
+   procedure Wrap_Rx11blr_Cfg (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      B10 : constant Interfaces.Unsigned_32 := Shift_Left (En, 10) and 16#400#;
+      B11 : constant Interfaces.Unsigned_32 := Shift_Left (En, 11) and 16#800#;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Poke (16#6001_C860#, (Peek (16#6001_C860#) and 16#FFFF_FBFF#) or B10);
+      Poke (16#6001_C860#, (Peek (16#6001_C860#) and 16#FFFF_F7FF#) or B11);
+      Poke (16#6001_C87C#, (Peek (16#6001_C87C#) and 16#FFFF_F7FF#) or B11);
+   end Wrap_Rx11blr_Cfg;
+
+   procedure Wrap_Set_Tsens_Power (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_set_tsens_power";
+   procedure Wrap_Set_Tsens_Power (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      Bits : constant Interfaces.Unsigned_32 :=
+        (if (En and 16#FF#) /= 0 then 16#C0_0000# else 0);
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Poke (16#6000_8850#, (Peek (16#6000_8850#) and 16#FF3F_FFFF#) or Bits);
+   end Wrap_Set_Tsens_Power;
+
+   --  Batch 5: three more baseband writers -- AGC saturation gain, FFT-scale
+   --  force, and the BB register init (a magic-constant write).
+   Ports5_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports5_count";
+
+   procedure Wrap_Agc_Sat_Gain (G : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_rom_wifi_agc_sat_gain";
+   procedure Wrap_Agc_Sat_Gain (G : Interfaces.Unsigned_32) is
+   begin
+      Ports5_Count := Ports5_Count + 1;
+      Poke (16#6001_C064#, G);
+      Poke (16#6001_C114#, G);
+   end Wrap_Agc_Sat_Gain;
+
+   procedure Wrap_Fft_Scale_Force (A, B : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_fft_scale_force";
+   procedure Wrap_Fft_Scale_Force (A, B : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports5_Count := Ports5_Count + 1;
+      --  bits 20..27 = B; then bit19 = A(bit0).
+      Poke (16#6001_CC00#,
+            (Peek (16#6001_CC00#) and 16#F00F_FFFF#) or Shift_Left (B and 16#FF#, 20));
+      Poke (16#6001_CC00#, Peek (16#6001_CC00#) and 16#FFF7_FFFF#);
+      Poke (16#6001_CC00#,
+            (Peek (16#6001_CC00#) and 16#FFF7_FFFF#) or (Shift_Left (A, 19) and 16#8_0000#));
+   end Wrap_Fft_Scale_Force;
+
+   procedure Wrap_Bb_Reg_Init
+     with Export, Convention => C, External_Name => "__wrap_ram_bb_reg_init";
+   procedure Wrap_Bb_Reg_Init is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports5_Count := Ports5_Count + 1;
+      Poke (16#6001_CC48#, 16#1704_33AF#);
+      Poke (16#6001_C400#, Peek (16#6001_C400#) or 16#0000_6000#);
+   end Wrap_Bb_Reg_Init;
+
+   --  Batch 6: channel-dump cfg, RX sensitivity, RF-RX-sat reset, TX state,
+   --  hw-set-freq enable/disable, freq-set busy wait.
+   Ports6_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports6_count";
+
+   procedure Wrap_Chan_Dump_Cfg (A, B, C, D, E : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_chan_dump_cfg";
+   procedure Wrap_Chan_Dump_Cfg (A, B, C, D, E : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6001_CD0C#, (Peek (16#6001_CD0C#) and 16#FFFF_FFF7#) or Shift_Left (A and 1, 3));
+      Poke (16#6001_CD0C#, (Peek (16#6001_CD0C#) and 16#FFFF_FF0F#) or Shift_Left (B and 16#F#, 4));
+      Poke (16#6001_CD0C#, (Peek (16#6001_CD0C#) and 16#FFFF_FFFD#) or Shift_Left (C and 1, 1));
+      Poke (16#6001_CD0C#, (Peek (16#6001_CD0C#) and 16#FFFF_FFFE#) or (D and 1));
+      Poke (16#6001_CD0C#, (Peek (16#6001_CD0C#) and 16#FFFF_FFFB#) or Shift_Left (E and 1, 2));
+   end Wrap_Chan_Dump_Cfg;
+
+   procedure Wrap_Rx_Sense_Set (S : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_rx_sense_set";
+   procedure Wrap_Rx_Sense_Set (S : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      V : constant Interfaces.Unsigned_32 := S and 16#FF#;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6001_C010#, (Peek (16#6001_C010#) and 16#7F_FFFF#) or Shift_Left (V, 23));
+      Poke (16#6001_C014#, (Peek (16#6001_C014#) and 16#7F_FFFF#) or Shift_Left (V, 23));
+      Poke (16#6001_C044#, (Peek (16#6001_C044#) and 16#FFFF_FF00#) or V);
+      if V /= 0 then
+         Poke (16#6001_C108#, Peek (16#6001_C108#) and 16#FFFF_FDFF#);
+      else
+         Poke (16#6001_C108#, Peek (16#6001_C108#) or 16#200#);
+      end if;
+   end Wrap_Rx_Sense_Set;
+
+   procedure Wrap_Rfrx_Sat_Rst (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_rfrx_sat_rst";
+   procedure Wrap_Rfrx_Sat_Rst (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6001_C068#, 16#404#);
+      if (En and 16#FF#) /= 0 then
+         Poke (16#6001_C05C#, Peek (16#6001_C05C#) or 16#D108_0000#);
+         Poke (16#6001_C05C#, (Peek (16#6001_C05C#) and 16#FFF8_0000#) or 16#800#);
+      else
+         Poke (16#6001_C05C#, Peek (16#6001_C05C#) and 16#2EF7_FFFF#);
+         Poke (16#6001_C05C#, (Peek (16#6001_C05C#) and 16#FFF8_0000#) or 16#400#);
+      end if;
+   end Wrap_Rfrx_Sat_Rst;
+
+   procedure Wrap_Tx_State_Set (A : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_tx_state_set";
+   procedure Wrap_Tx_State_Set (A : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      V : constant Interfaces.Unsigned_32 := A and 16#FF#;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6000_60B0#, (Peek (16#6000_60B0#) and 16#3F3F_3F3F#) or 16#0040_4000#);
+      Poke (16#6000_60B4#, (Peek (16#6000_60B4#) and 16#3F3F_3F3F#) or Shift_Left (V, 30));
+      Poke (16#6000_60B8#, (Shift_Left (V, 6) and 16#C0C0_C0C0#)
+                            or (Peek (16#6000_60B8#) and 16#3F3F_3F3F#));
+      Poke (16#6000_60BC#, Peek (16#6000_60BC#) and 16#FFFF_FF3F#);
+   end Wrap_Tx_State_Set;
+
+   procedure Wrap_En_Hw_Set_Freq
+     with Export, Convention => C, External_Name => "__wrap_ram_phy_en_hw_set_freq";
+   procedure Wrap_En_Hw_Set_Freq is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6000_E0C4#, Peek (16#6000_E0C4#) and 16#FDFF_FFFF#);
+   end Wrap_En_Hw_Set_Freq;
+
+   procedure Wrap_Dis_Hw_Set_Freq
+     with Export, Convention => C, External_Name => "__wrap_ram_phy_dis_hw_set_freq";
+   procedure Wrap_Dis_Hw_Set_Freq is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      Poke (16#6000_E0C4#, Peek (16#6000_E0C4#) or 16#0200_0000#);
+      Ets_Delay_Us (2);
+   end Wrap_Dis_Hw_Set_Freq;
+
+   procedure Wrap_Wait_Freq_Set_Busy
+     with Export, Convention => C, External_Name => "__wrap_wait_freq_set_busy";
+   procedure Wrap_Wait_Freq_Set_Busy is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports6_Count := Ports6_Count + 1;
+      while (Peek (16#6000_E168#) and 16#8000_0000#) /= 0 loop
+         null;   --  poll the busy bit (self-timed, as the blob does)
+      end loop;
+   end Wrap_Wait_Freq_Set_Busy;
+
+   --  Batch 7: eFuse MAC read, antenna init, BT filter reg, i2c-XPD open.
+   Ports7_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports7_count";
+
+   procedure Wrap_Efuse_Get_Mac (Out_Ptr : System.Address)
+     with Export, Convention => C, External_Name => "__wrap_esp_phy_efuse_get_mac";
+   procedure Wrap_Efuse_Get_Mac (Out_Ptr : System.Address) is
+      use type Interfaces.Unsigned_32;
+      Outs : array (0 .. 1) of Interfaces.Unsigned_32
+        with Import, Volatile, Address => Out_Ptr;
+   begin
+      Ports7_Count := Ports7_Count + 1;
+      Outs (0) := Peek (16#6000_7044#);
+      Outs (1) := Peek (16#6000_7048#);
+   end Wrap_Efuse_Get_Mac;
+
+   procedure Wrap_Phy_Ant_Init
+     with Export, Convention => C, External_Name => "__wrap_rom_phy_ant_init";
+   procedure Wrap_Phy_Ant_Init is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports7_Count := Ports7_Count + 1;
+      Poke (16#6001_C11C#, Peek (16#6001_C11C#) and 16#FFFF_E800#);
+      Poke (16#6001_C030#, (Peek (16#6001_C030#) and 16#FFFC_07FF#) or 16#1_A000#);
+      Poke (16#6001_C120#, (Peek (16#6001_C120#) and 16#00FF_00FF#) or 16#1E00_1E00#);
+   end Wrap_Phy_Ant_Init;
+
+   procedure Wrap_Bt_Filter_Reg
+     with Export, Convention => C, External_Name => "__wrap_rom_bt_filter_reg";
+   procedure Wrap_Bt_Filter_Reg is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports7_Count := Ports7_Count + 1;
+      Poke (16#6001_104C#, Peek (16#6001_104C#) or 16#10#);
+      Poke (16#6000_6100#, Peek (16#6000_6100#) or 16#40_0000#);
+      Poke (16#6000_6100#, Peek (16#6000_6100#) or 16#200_0000#);
+      Poke (16#6000_6100#, (Peek (16#6000_6100#) and 16#FE7F_FFFF#) or 16#80_0000#);
+   end Wrap_Bt_Filter_Reg;
+
+   procedure Wrap_Open_I2c_Xpd
+     with Export, Convention => C, External_Name => "__wrap_rom_open_i2c_xpd";
+   procedure Wrap_Open_I2c_Xpd is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports7_Count := Ports7_Count + 1;
+      Poke (16#6000_8034#, Peek (16#6000_8034#) or 16#F800_0000#);
+      Poke (16#6000_8000#, Peek (16#6000_8000#) or 16#80#);
+   end Wrap_Open_I2c_Xpd;
+
+   --  Batch 8: antenna BT-rx/wifi-rx cfg, wifi/BT TX digital-gain regs (byte-
+   --  array args), bbpll cal.
+   Ports8_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports8_count";
+
+   procedure Wrap_Ant_Btrx_Cfg (A, B, C : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_ant_btrx_cfg";
+   procedure Wrap_Ant_Btrx_Cfg (A, B, C : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports8_Count := Ports8_Count + 1;
+      Poke (16#6001_C11C#, (Peek (16#6001_C11C#) and 16#FFFF_FFF7#) or Shift_Left (A and 1, 3));
+      Poke (16#6000_60B8#, (Peek (16#6000_60B8#) and 16#FFFF_00FF#) or Shift_Left (B and 16#FF#, 8));
+      Poke (16#6000_60B8#, (Peek (16#6000_60B8#) and 16#FF00_FFFF#) or Shift_Left (B and 16#FF#, 16));
+      Poke (16#6000_60B8#, (Peek (16#6000_60B8#) and 16#00FF_FFFF#) or Shift_Left (C and 16#FF#, 24));
+      Poke (16#6000_60BC#, (Peek (16#6000_60BC#) and 16#FFFF_FF00#) or (C and 16#FF#));
+   end Wrap_Ant_Btrx_Cfg;
+
+   procedure Wrap_Ant_Wifirx_Cfg (A, B, C : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_ant_wifirx_cfg";
+   procedure Wrap_Ant_Wifirx_Cfg (A, B, C : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports8_Count := Ports8_Count + 1;
+      Poke (16#6001_C11C#, (Peek (16#6001_C11C#) and 16#FFFF_FFFD#) or Shift_Left (A and 1, 1));
+      Poke (16#6000_60B0#, (Peek (16#6000_60B0#) and 16#00FF_FFFF#) or Shift_Left (B and 16#FF#, 24));
+      Poke (16#6000_60B4#, (Peek (16#6000_60B4#) and 16#FFFF_FF00#) or (B and 16#FF#));
+      Poke (16#6000_60B4#, (Peek (16#6000_60B4#) and 16#FFFF_00FF#) or Shift_Left (C and 16#FF#, 8));
+      Poke (16#6000_60B4#, (Peek (16#6000_60B4#) and 16#FF00_FFFF#) or Shift_Left (C and 16#FF#, 16));
+   end Wrap_Ant_Wifirx_Cfg;
+
+   --  little-endian 32-bit word from 4 bytes of a C byte array at Ptr+Off.
+   function LE32 (Ptr : System.Address; Off : Natural) return Interfaces.Unsigned_32 is
+      use type Interfaces.Unsigned_32;
+      B : array (0 .. 3) of Interfaces.Unsigned_8
+        with Import, Address => Ptr + System.Storage_Elements.Storage_Offset (Off);
+   begin
+      return Interfaces.Unsigned_32 (B (0))
+        or Shift_Left (Interfaces.Unsigned_32 (B (1)), 8)
+        or Shift_Left (Interfaces.Unsigned_32 (B (2)), 16)
+        or Shift_Left (Interfaces.Unsigned_32 (B (3)), 24);
+   end LE32;
+
+   procedure Wrap_Wifi_Tx_Dig_Gain_Reg (Ptr : System.Address)
+     with Export, Convention => C, External_Name => "__wrap_ram_wifi_tx_dig_gain_reg";
+   procedure Wrap_Wifi_Tx_Dig_Gain_Reg (Ptr : System.Address) is
+      use type Interfaces.Unsigned_32;
+      B12 : array (0 .. 1) of Interfaces.Unsigned_8
+        with Import, Address => Ptr + 12;
+      Hi : constant Interfaces.Unsigned_32 := Interfaces.Unsigned_32 (B12 (1));
+   begin
+      Ports8_Count := Ports8_Count + 1;
+      Poke (16#6000_6024#, LE32 (Ptr, 0));
+      Poke (16#6000_6028#, LE32 (Ptr, 4));
+      Poke (16#6000_602C#, LE32 (Ptr, 8));
+      --  byte0 = p[12], bytes 1..3 = p[13] (the sign-extension the blob does is
+      --  masked away byte-by-byte, so this is exact).
+      Poke (16#6000_6030#, Interfaces.Unsigned_32 (B12 (0))
+                            or Shift_Left (Hi, 8) or Shift_Left (Hi, 16) or Shift_Left (Hi, 24));
+   end Wrap_Wifi_Tx_Dig_Gain_Reg;
+
+   procedure Wrap_Bt_Tx_Dig_Gain (Ptr : System.Address)
+     with Export, Convention => C, External_Name => "__wrap_rom_bt_tx_dig_gain";
+   procedure Wrap_Bt_Tx_Dig_Gain (Ptr : System.Address) is
+   begin
+      Ports8_Count := Ports8_Count + 1;
+      Poke (16#6000_6014#, LE32 (Ptr, 0));
+      Poke (16#6000_6018#, LE32 (Ptr, 4));
+      Poke (16#6000_601C#, LE32 (Ptr, 8));
+      Poke (16#6000_6020#, LE32 (Ptr, 12));
+   end Wrap_Bt_Tx_Dig_Gain;
+
+   procedure Wrap_Phy_Bbpll_Cal (A : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_rom_phy_bbpll_cal";
+   procedure Wrap_Phy_Bbpll_Cal (A : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      Bits : constant Interfaces.Unsigned_32 := (if (A and 16#FF#) /= 0 then 8 else 4);
+   begin
+      Ports8_Count := Ports8_Count + 1;
+      Poke (16#6000_E040#, (Peek (16#6000_E040#) and 16#FFFF_FFF3#) or Bits);
+   end Wrap_Phy_Bbpll_Cal;
+
+   --  Batch 9: channel filter set, close-PA, AGC register init.
+   Ports9_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports9_count";
+
+   procedure Wrap_Chan_Filt_Set (A, B : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_chan_filt_set";
+   procedure Wrap_Chan_Filt_Set (A, B : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports9_Count := Ports9_Count + 1;
+      if (A and 16#FF#) /= 0 then
+         Poke (16#6001_CD04#, Peek (16#6001_CD04#) and 16#EFFF_FFFF#);
+         Poke (16#6001_CD08#, Peek (16#6001_CD08#) and 16#EFFF_FFFF#);
+      else
+         Poke (16#6001_CD04#, Peek (16#6001_CD04#) or 16#1000_0000#);
+         Poke (16#6001_CD08#, Peek (16#6001_CD08#) or 16#1000_0000#);
+         Poke (16#6001_CD08#, Peek (16#6001_CD08#) and 16#FFFF_FFF8#);
+         Poke (16#6001_CD04#, Peek (16#6001_CD04#) and 16#FFFF_FFF8#);
+      end if;
+      if (B and 16#FF#) /= 0 then
+         Poke (16#6001_C074#, Peek (16#6001_C074#) and 16#FFFF_DFFF#);
+      else
+         Poke (16#6001_C074#, Peek (16#6001_C074#) or 16#2000#);
+      end if;
+   end Wrap_Chan_Filt_Set;
+
+   procedure Wrap_Close_Pa (A : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_close_pa";
+   procedure Wrap_Close_Pa (A : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports9_Count := Ports9_Count + 1;
+      if (A and 16#FF#) /= 0 then
+         Poke (16#6000_6110#, (Peek (16#6000_6110#) and 16#FFFF_F3FF#) or 16#800#);
+         Poke (16#6000_610C#, Peek (16#6000_610C#) and 16#FFFF_FFFB#);
+         Poke (16#6000_610C#, Peek (16#6000_610C#) and 16#FFFF_FFEF#);
+      end if;
+   end Wrap_Close_Pa;
+
+   procedure Wrap_Agc_Reg_Init (A, B : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_rom_agc_reg_init";
+   procedure Wrap_Agc_Reg_Init (A, B : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      V : constant Interfaces.Unsigned_32 := (A - 3) and 16#7F#;
+   begin
+      Ports9_Count := Ports9_Count + 1;
+      Poke (16#6001_C13C#, (Peek (16#6001_C13C#) and 16#FE03_FFFF#) or Shift_Left (V, 18));
+      Poke (16#6001_C094#, (Peek (16#6001_C094#) and 16#FFFF_FE03#) or Shift_Left (V, 2));
+      Poke (16#6001_C0A4#, Shift_Left (B and 16#FF#, 15) or 16#2346#);
+      Poke (16#6001_C02C#, (Shift_Left (A and 16#FF#, 8) and 16#CD00_7F00#)
+                            or (Peek (16#6001_C02C#) and 16#7F_80FF#) or 16#3280_0000#);
+      Poke (16#6001_C02C#, Peek (16#6001_C02C#) and 16#FF7F_FFFF#);
+      Poke (16#6001_C05C#, (Peek (16#6001_C05C#) and 16#FFF8_0000#) or 16#BB8#);
+   end Wrap_Agc_Reg_Init;
+
+   --  ---- g_phyFuns resolver -------------------------------------------------
+   --  Some ported functions are invoked by the PHY ROM through the g_phyFuns
+   --  function-pointer table, which --wrap can't redirect (the table is filled
+   --  by ROM at init).  After register_chipv7_phy has populated it, scan the
+   --  table and rewrite any slot that still points at a blob version of a
+   --  function we've ported (__real_X) to our Ada (__wrap_X).  Then ROM
+   --  dispatches through the table land in our Ada too.  Exact-address match, so
+   --  ROM-only slots (kept) are never touched.
+   G_Phy_Funs : System.Address
+     with Import, Convention => C, External_Name => "g_phyFuns";
+   Resolver_Patched : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_resolver_patched";
+   Resolver_Already : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_resolver_already";
+   Resolver_Nonnull : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_resolver_nonnull";
+
+   --  __real_X = the original blob function (created by --wrap).
+   procedure R_Force_Txrx_Off      with Import, Convention => C, External_Name => "__real_force_txrx_off";
+   procedure R_Disable_Low_Rate    with Import, Convention => C, External_Name => "__real_phy_disable_low_rate";
+   procedure R_Enable_Low_Rate     with Import, Convention => C, External_Name => "__real_phy_enable_low_rate";
+   procedure R_Wifi_Enable_Set     with Import, Convention => C, External_Name => "__real_phy_wifi_enable_set";
+   procedure R_Ant_Dft_Cfg         with Import, Convention => C, External_Name => "__real_ant_dft_cfg";
+   procedure R_Enable_Wifi_Agc     with Import, Convention => C, External_Name => "__real_ram_enable_wifi_agc";
+   procedure R_Disable_Wifi_Agc    with Import, Convention => C, External_Name => "__real_ram_disable_wifi_agc";
+   procedure R_Set_Tx_Seed         with Import, Convention => C, External_Name => "__real_phy_set_tx_seed";
+   procedure R_Rifs_Mode_En        with Import, Convention => C, External_Name => "__real_wifi_rifs_mode_en";
+   procedure R_Get_Noise_Floor     with Import, Convention => C, External_Name => "__real_phy_get_noise_floor";
+   procedure R_Read_Hw_Noisefloor  with Import, Convention => C, External_Name => "__real_read_hw_noisefloor";
+   procedure R_Get_Cca             with Import, Convention => C, External_Name => "__real_phy_get_cca";
+   procedure R_Get_Fetx_Delay      with Import, Convention => C, External_Name => "__real_phy_get_fetx_delay";
+   procedure R_Get_Cca_Cnt         with Import, Convention => C, External_Name => "__real_phy_get_cca_cnt";
+   procedure R_Set_Cca_Cnt         with Import, Convention => C, External_Name => "__real_phy_set_cca_cnt";
+   procedure R_Ant_Wifitx_Cfg      with Import, Convention => C, External_Name => "__real_ant_wifitx_cfg";
+   procedure R_Ant_Bttx_Cfg        with Import, Convention => C, External_Name => "__real_ant_bttx_cfg";
+   procedure R_Rx11blr_Cfg         with Import, Convention => C, External_Name => "__real_phy_rx11blr_cfg";
+   procedure R_Set_Tsens_Power     with Import, Convention => C, External_Name => "__real_phy_set_tsens_power";
+   procedure R_Agc_Sat_Gain        with Import, Convention => C, External_Name => "__real_rom_wifi_agc_sat_gain";
+   procedure R_Fft_Scale_Force     with Import, Convention => C, External_Name => "__real_phy_fft_scale_force";
+   procedure R_Bb_Reg_Init         with Import, Convention => C, External_Name => "__real_ram_bb_reg_init";
+
+   type Redirect is record
+      From_Blob, To_Ada : System.Address;
+   end record;
+   Ported : constant array (Positive range <>) of Redirect :=
+     ((R_Force_Txrx_Off'Address,     Wrap_Force_Txrx_Off'Address),
+      (R_Disable_Low_Rate'Address,   Wrap_Disable_Low_Rate'Address),
+      (R_Enable_Low_Rate'Address,    Wrap_Enable_Low_Rate'Address),
+      (R_Wifi_Enable_Set'Address,    Wrap_Wifi_Enable_Set'Address),
+      (R_Ant_Dft_Cfg'Address,        Wrap_Ant_Dft_Cfg'Address),
+      (R_Enable_Wifi_Agc'Address,    Wrap_Enable_Wifi_Agc'Address),
+      (R_Disable_Wifi_Agc'Address,   Wrap_Disable_Wifi_Agc'Address),
+      (R_Set_Tx_Seed'Address,        Wrap_Set_Tx_Seed'Address),
+      (R_Rifs_Mode_En'Address,       Wrap_Rifs_Mode_En'Address),
+      (R_Get_Noise_Floor'Address,    Wrap_Get_Noise_Floor'Address),
+      (R_Read_Hw_Noisefloor'Address, Wrap_Read_Hw_Noisefloor'Address),
+      (R_Get_Cca'Address,            Wrap_Get_Cca'Address),
+      (R_Get_Fetx_Delay'Address,     Wrap_Get_Fetx_Delay'Address),
+      (R_Get_Cca_Cnt'Address,        Wrap_Get_Cca_Cnt'Address),
+      (R_Set_Cca_Cnt'Address,        Wrap_Set_Cca_Cnt'Address),
+      (R_Ant_Wifitx_Cfg'Address,     Wrap_Ant_Wifitx_Cfg'Address),
+      (R_Ant_Bttx_Cfg'Address,       Wrap_Ant_Bttx_Cfg'Address),
+      (R_Rx11blr_Cfg'Address,        Wrap_Rx11blr_Cfg'Address),
+      (R_Set_Tsens_Power'Address,    Wrap_Set_Tsens_Power'Address),
+      (R_Agc_Sat_Gain'Address,       Wrap_Agc_Sat_Gain'Address),
+      (R_Fft_Scale_Force'Address,    Wrap_Fft_Scale_Force'Address),
+      (R_Bb_Reg_Init'Address,        Wrap_Bb_Reg_Init'Address));
+
+   procedure Resolve_Phy_Table is
+      use type System.Address;
+      Base : constant System.Address := G_Phy_Funs;   --  the table base pointer
+      Slots : constant := 200;
+      Table : array (0 .. Slots - 1) of System.Address
+        with Import, Volatile, Address => Base;
+   begin
+      if Base = System.Null_Address then
+         return;
+      end if;
+      for I in Table'Range loop
+         if Table (I) /= System.Null_Address then
+            Resolver_Nonnull := Resolver_Nonnull + 1;
+         end if;
+         for P of Ported loop
+            if Table (I) = P.From_Blob then
+               Table (I) := P.To_Ada;
+               Resolver_Patched := Resolver_Patched + 1;
+            elsif Table (I) = P.To_Ada then
+               Resolver_Already := Resolver_Already + 1;
+            end if;
+         end loop;
+      end loop;
+   end Resolve_Phy_Table;
+
    procedure Phy_Enable is
       Cal : System.Address;
       Clk : Unsigned_32 with Import, Volatile,
@@ -149,6 +836,9 @@ package body ESP32S3.WiFi.PHY is
             end if;
          end;
          C_Free (Cal);   --  PHY keeps its own copy of the calibration data
+         --  register_chipv7_phy has now populated g_phyFuns; redirect any table
+         --  slot still pointing at a blob version of a ported function to Ada.
+         Resolve_Phy_Table;
          Calibrated := True;
       else
          Phy_Wakeup_Init;
