@@ -64,6 +64,8 @@ package body ESP32S3.WiFi.Supplicant is
      with Export, Convention => C, External_Name => "ada_wrap_set_key_count";
    Wrap_Clr_Count : Interfaces.Unsigned_32 := 0
      with Export, Convention => C, External_Name => "ada_wrap_clr_key_count";
+   Wrap_En_Count  : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_wrap_enable_count";
 
    --  Program HW key slot Slot fully in Ada (replaces hal_crypto_set_key_entry).
    procedure Install_Slot
@@ -150,6 +152,53 @@ package body ESP32S3.WiFi.Supplicant is
       Clear_Slot (Natural (Slot and 16#F#));
       return 0;
    end Wrap_Clr;
+
+   --  __wrap_hal_crypto_enable: the blob's cipher-ENGINE-mode programmer, retired
+   --  (the last blob crypto touchpoint on the WPA2-PSK path).  A faithful Ada
+   --  port of the disassembly -- it writes only the three engine-mode registers
+   --  0x60033800/04/10 (mode/enable bits; no key material, no cipher algorithm --
+   --  the AES rounds are silicon), reproducing the exact bit logic for whatever
+   --  arguments esp_wifi_set_sta_key_internal passes.  Arg2 (A2) is unused by the
+   --  blob, matching its 4-arg C signature.
+   function Wrap_Crypto_Enable
+     (A0, A1, A2, A3 : Interfaces.Unsigned_32) return Interfaces.Unsigned_32
+     with Export, Convention => C, External_Name => "__wrap_hal_crypto_enable";
+   function Wrap_Crypto_Enable
+     (A0, A1, A2, A3 : Interfaces.Unsigned_32) return Interfaces.Unsigned_32
+   is
+      use type Interfaces.Unsigned_32;
+      pragma Unreferenced (A2);
+      Arg0 : constant Interfaces.Unsigned_32 := A0 and 16#FF#;
+      Arg1 : constant Interfaces.Unsigned_32 := A1 and 16#FF#;
+      Arg3 : constant Interfaces.Unsigned_32 := A3 and 16#FF#;
+      --  arg0 selects the control register: 1 -> 0x60033804, else 0x60033800.
+      En_Addr : constant Interfaces.Unsigned_32 :=
+        (if Arg0 = 1 then 16#6003_3804# else 16#6003_3800#);
+      En   : Interfaces.Unsigned_32 with Import, Volatile,
+        Address => System'To_Address (En_Addr);
+      R810 : Interfaces.Unsigned_32 with Import, Volatile,
+        Address => System'To_Address (16#6003_3810#);
+      Mode : Interfaces.Unsigned_32;
+   begin
+      Wrap_En_Count := Wrap_En_Count + 1;
+      --  Base mode word: arg1 with bit2 masked == 1 selects 0x10030103.
+      Mode := (if (Arg1 and not Interfaces.Unsigned_32 (4)) = 1
+               then 16#1003_0103# else 16#0003_0103#);
+      if Arg3 /= 0 then
+         Mode := Mode or 16#0000_0200#;
+      end if;
+      En := Mode;
+      if Arg1 = 4 then
+         --  Enable: set the 0x810 mask + engine-run bit (31) in the mode reg.
+         R810 := R810 or 16#003F_FFC0#;
+         En   := (En and 16#3FFF_FFFF#) or 16#8000_0000#;
+      else
+         --  Disable: clear the 0x810 mask bits + the top control bits.
+         R810 := R810 and 16#FFC0_003F#;
+         En   := En and 16#3FFF_FFFF#;
+      end if;
+      return 0;
+   end Wrap_Crypto_Enable;
 
    --  --- blob entry points -------------------------------------------------
    function C_Tx (Ifx : Interfaces.Integer_32; Buf : System.Address;

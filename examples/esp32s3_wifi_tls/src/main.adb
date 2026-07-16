@@ -74,15 +74,19 @@ procedure Main is
      with Import, Convention => C, External_Name => "ada_wrap_set_key_count";
    Wrap_Clr_Count : Interfaces.Unsigned_32
      with Import, Convention => C, External_Name => "ada_wrap_clr_key_count";
+   Wrap_En_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_wrap_enable_count";
    procedure Show_Deblob_Result is
    begin
       Put_Line ("");
-      Put_Line ("==== DE-BLOB: Ada HW key-slot programming ran (blob's did not) ====");
-      Put ("  Wrap_Set_Key (was hal_crypto_set_key_entry) fired = ");
+      Put_Line ("==== DE-BLOB: Ada cipher-engine programming ran (blob's did not) ====");
+      Put ("  Wrap_Set_Key    (was hal_crypto_set_key_entry) fired = ");
       Put_Unsigned (Wrap_Set_Count); New_Line;
-      Put ("  Wrap_Clr_Key (was hal_crypto_clr_key_entry) fired = ");
+      Put ("  Wrap_Clr_Key    (was hal_crypto_clr_key_entry) fired = ");
       Put_Unsigned (Wrap_Clr_Count); New_Line;
-      Put_Line ("===================================================================");
+      Put ("  Wrap_Crypto_Enable (was hal_crypto_enable)     fired = ");
+      Put_Unsigned (Wrap_En_Count); New_Line;
+      Put_Line ("====================================================================");
    end Show_Deblob_Result;
 
    CRLF : constant String := (1 => ASCII.CR, 2 => ASCII.LF);
