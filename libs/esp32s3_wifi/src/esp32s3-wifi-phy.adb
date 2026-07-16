@@ -623,6 +623,61 @@ package body ESP32S3.WiFi.PHY is
       Poke (16#6000_E040#, (Peek (16#6000_E040#) and 16#FFFF_FFF3#) or Bits);
    end Wrap_Phy_Bbpll_Cal;
 
+   --  Batch 9: channel filter set, close-PA, AGC register init.
+   Ports9_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports9_count";
+
+   procedure Wrap_Chan_Filt_Set (A, B : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_chan_filt_set";
+   procedure Wrap_Chan_Filt_Set (A, B : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports9_Count := Ports9_Count + 1;
+      if (A and 16#FF#) /= 0 then
+         Poke (16#6001_CD04#, Peek (16#6001_CD04#) and 16#EFFF_FFFF#);
+         Poke (16#6001_CD08#, Peek (16#6001_CD08#) and 16#EFFF_FFFF#);
+      else
+         Poke (16#6001_CD04#, Peek (16#6001_CD04#) or 16#1000_0000#);
+         Poke (16#6001_CD08#, Peek (16#6001_CD08#) or 16#1000_0000#);
+         Poke (16#6001_CD08#, Peek (16#6001_CD08#) and 16#FFFF_FFF8#);
+         Poke (16#6001_CD04#, Peek (16#6001_CD04#) and 16#FFFF_FFF8#);
+      end if;
+      if (B and 16#FF#) /= 0 then
+         Poke (16#6001_C074#, Peek (16#6001_C074#) and 16#FFFF_DFFF#);
+      else
+         Poke (16#6001_C074#, Peek (16#6001_C074#) or 16#2000#);
+      end if;
+   end Wrap_Chan_Filt_Set;
+
+   procedure Wrap_Close_Pa (A : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_close_pa";
+   procedure Wrap_Close_Pa (A : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports9_Count := Ports9_Count + 1;
+      if (A and 16#FF#) /= 0 then
+         Poke (16#6000_6110#, (Peek (16#6000_6110#) and 16#FFFF_F3FF#) or 16#800#);
+         Poke (16#6000_610C#, Peek (16#6000_610C#) and 16#FFFF_FFFB#);
+         Poke (16#6000_610C#, Peek (16#6000_610C#) and 16#FFFF_FFEF#);
+      end if;
+   end Wrap_Close_Pa;
+
+   procedure Wrap_Agc_Reg_Init (A, B : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_rom_agc_reg_init";
+   procedure Wrap_Agc_Reg_Init (A, B : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      V : constant Interfaces.Unsigned_32 := (A - 3) and 16#7F#;
+   begin
+      Ports9_Count := Ports9_Count + 1;
+      Poke (16#6001_C13C#, (Peek (16#6001_C13C#) and 16#FE03_FFFF#) or Shift_Left (V, 18));
+      Poke (16#6001_C094#, (Peek (16#6001_C094#) and 16#FFFF_FE03#) or Shift_Left (V, 2));
+      Poke (16#6001_C0A4#, Shift_Left (B and 16#FF#, 15) or 16#2346#);
+      Poke (16#6001_C02C#, (Shift_Left (A and 16#FF#, 8) and 16#CD00_7F00#)
+                            or (Peek (16#6001_C02C#) and 16#7F_80FF#) or 16#3280_0000#);
+      Poke (16#6001_C02C#, Peek (16#6001_C02C#) and 16#FF7F_FFFF#);
+      Poke (16#6001_C05C#, (Peek (16#6001_C05C#) and 16#FFF8_0000#) or 16#BB8#);
+   end Wrap_Agc_Reg_Init;
+
    --  ---- g_phyFuns resolver -------------------------------------------------
    --  Some ported functions are invoked by the PHY ROM through the g_phyFuns
    --  function-pointer table, which --wrap can't redirect (the table is filled
