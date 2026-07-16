@@ -94,6 +94,8 @@ procedure Main is
      with Import, Convention => C, External_Name => "ada_phy_resolver_nonnull";
    Phy_Ports6_Count : Interfaces.Unsigned_32
      with Import, Convention => C, External_Name => "ada_phy_ports6_count";
+   Phy_Ports7_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports7_count";
    procedure Show_Deblob_Result is
    begin
       Put_Line ("");
@@ -116,6 +118,8 @@ procedure Main is
       Put_Unsigned (Phy_Ports5_Count); New_Line;
       Put ("  libphy batch-6 (chan-dump/rx-sense/tx-state, 7) fired = ");
       Put_Unsigned (Phy_Ports6_Count); New_Line;
+      Put ("  libphy batch-7 (efuse-mac/ant-init/bt-filt, 4)  fired = ");
+      Put_Unsigned (Phy_Ports7_Count); New_Line;
       Put ("  g_phyFuns resolver: patched=");
       Put_Unsigned (Phy_Resolver_Patched);
       Put (" already-Ada=");

@@ -492,6 +492,55 @@ package body ESP32S3.WiFi.PHY is
       end loop;
    end Wrap_Wait_Freq_Set_Busy;
 
+   --  Batch 7: eFuse MAC read, antenna init, BT filter reg, i2c-XPD open.
+   Ports7_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports7_count";
+
+   procedure Wrap_Efuse_Get_Mac (Out_Ptr : System.Address)
+     with Export, Convention => C, External_Name => "__wrap_esp_phy_efuse_get_mac";
+   procedure Wrap_Efuse_Get_Mac (Out_Ptr : System.Address) is
+      use type Interfaces.Unsigned_32;
+      Outs : array (0 .. 1) of Interfaces.Unsigned_32
+        with Import, Volatile, Address => Out_Ptr;
+   begin
+      Ports7_Count := Ports7_Count + 1;
+      Outs (0) := Peek (16#6000_7044#);
+      Outs (1) := Peek (16#6000_7048#);
+   end Wrap_Efuse_Get_Mac;
+
+   procedure Wrap_Phy_Ant_Init
+     with Export, Convention => C, External_Name => "__wrap_rom_phy_ant_init";
+   procedure Wrap_Phy_Ant_Init is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports7_Count := Ports7_Count + 1;
+      Poke (16#6001_C11C#, Peek (16#6001_C11C#) and 16#FFFF_E800#);
+      Poke (16#6001_C030#, (Peek (16#6001_C030#) and 16#FFFC_07FF#) or 16#1_A000#);
+      Poke (16#6001_C120#, (Peek (16#6001_C120#) and 16#00FF_00FF#) or 16#1E00_1E00#);
+   end Wrap_Phy_Ant_Init;
+
+   procedure Wrap_Bt_Filter_Reg
+     with Export, Convention => C, External_Name => "__wrap_rom_bt_filter_reg";
+   procedure Wrap_Bt_Filter_Reg is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports7_Count := Ports7_Count + 1;
+      Poke (16#6001_104C#, Peek (16#6001_104C#) or 16#10#);
+      Poke (16#6000_6100#, Peek (16#6000_6100#) or 16#40_0000#);
+      Poke (16#6000_6100#, Peek (16#6000_6100#) or 16#200_0000#);
+      Poke (16#6000_6100#, (Peek (16#6000_6100#) and 16#FE7F_FFFF#) or 16#80_0000#);
+   end Wrap_Bt_Filter_Reg;
+
+   procedure Wrap_Open_I2c_Xpd
+     with Export, Convention => C, External_Name => "__wrap_rom_open_i2c_xpd";
+   procedure Wrap_Open_I2c_Xpd is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports7_Count := Ports7_Count + 1;
+      Poke (16#6000_8034#, Peek (16#6000_8034#) or 16#F800_0000#);
+      Poke (16#6000_8000#, Peek (16#6000_8000#) or 16#80#);
+   end Wrap_Open_I2c_Xpd;
+
    --  ---- g_phyFuns resolver -------------------------------------------------
    --  Some ported functions are invoked by the PHY ROM through the g_phyFuns
    --  function-pointer table, which --wrap can't redirect (the table is filled
