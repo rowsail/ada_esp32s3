@@ -17,6 +17,7 @@ project Bare_Boot is
      ("bare_boot.ads", "bare_boot.adb",
       "bare_mem.ads", "bare_mem.adb",      --  Ada freestanding mem* (was bare_libc.c)
       "bare_crt.ads", "bare_crt.adb",      --  Ada strlen/atoi/write/abort/... (was bare_libc.c)
+      "tlsf_math.ads", "tlsf_math.adb",    --  SPARK-proved size-class + bit math
       "tlsf_core.ads", "tlsf_core.adb",    --  O(1) allocator core
       "bare_heap.ads", "bare_heap.adb",    --  Ada malloc/free/... (was bare_heap.c)
       "esp32s3_registers.ads",
