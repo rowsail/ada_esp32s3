@@ -29,13 +29,12 @@ fi
 # One fewer Espressif blob.  See research/wifi-re.
 export EXTRA_OBJS="-Wl,--start-group $W/libnet80211.a $W/libpp.a $P/libphy.a -Wl,--end-group"
 
-# DE-BLOB (no crypto in a blob): retire the blob's HW key-slot crypto by
-# redirecting it to our Ada replacements in libs/esp32s3_wifi (Wrap_Set_Key /
-# Wrap_Clr).  The blob's hal_crypto_set_key_entry / hal_crypto_clr_key_entry then
-# never execute; our Ada programs the cipher-engine key slots instead, and no key
-# byte reaches blob C.  (hal_crypto_enable = engine-MODE regs, no key material,
-# left to the blob for now.)
-WRAP_CRYPTO="hal_crypto_set_key_entry hal_crypto_clr_key_entry"
+# DE-BLOB (no crypto in a blob): retire ALL blob cipher-engine programming by
+# redirecting it to Ada replacements in libs/esp32s3_wifi.  hal_crypto_set_key_
+# entry / hal_crypto_clr_key_entry (key slots) -> Wrap_Set_Key / Wrap_Clr;
+# hal_crypto_enable (engine-mode regs) -> Wrap_Crypto_Enable.  None of the blob's
+# crypto functions execute, and no key byte reaches blob C.
+WRAP_CRYPTO="hal_crypto_set_key_entry hal_crypto_clr_key_entry hal_crypto_enable"
 for fn in $WRAP_CRYPTO; do EXTRA_OBJS="$EXTRA_OBJS -Wl,--wrap=$fn"; done
 
 # ROM symbol addresses the blobs call (lower-MAC/PHY/newlib routines in ROM).
