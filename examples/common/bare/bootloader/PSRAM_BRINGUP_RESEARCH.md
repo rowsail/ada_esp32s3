@@ -385,3 +385,82 @@ same window** (`0xc3` -> mode 0) — confirming it tracks a real, stable chip+co
 property, not a per-board fluke. The size is now decoded from the density mode-register
 (no longer hardcoded), so the bring-up self-describes the part it finds (vendor, density,
 voltage, read/write latency) and would adapt to a different-size octal PSRAM.
+
+## Pure-Ada port (2026-07-15): the from-source C rewritten in Ada
+
+The three from-source bring-up files (`psram_boot.c`, `psram_impl_src.c`,
+`mspi_timing_src.c`, ~380 lines) were rewritten as one pure-Ada ZFP package
+`src/boot_psram.adb` (`Boot_Psram`), completing the SDK's pure-Ada goal for the
+bootloader.  It exports the C symbol `psram_bringup`, so `boot_main.adb` is
+unchanged.  Only ROM functions (`esp_rom_opiflash_exec_cmd`, `Cache_*`,
+`esp_rom_spi_set_dtr_swap_mode`, `esp_rom_printf`) and the freestanding libc
+(`psram_glue.c`: memcpy/memset/memcmp/abort) remain C.  `BOARD_PSRAM_PAGES` is
+passed via a generated `board_cfg.ads` (build.sh) on the gpr source path
+(`BOOT_GEN_DIR`).  The three C files are deleted.
+
+**Validated equivalent to the C, HW (ESP32-S3 dev board, AP Memory 8 MB octal):**
+the Ada bring-up produces byte-identical mode registers
+(`MR0=28 MR1=0d MR2=93 MR3=60 MR4=40 MR8=05`), `octal PSRAM up rc=0 8 MB`,
+`mapped rc=0`, `din tuned passmask=0xff -> mode 1`.  Cross-checked by stashing the
+Ada and rebuilding with the original C bootloader on the same board: **identical
+output** (same MRs, same rc=0, same din, and the same `big.adb` sustained-access
+hang) -- confirming the Ada is a faithful port, and that this particular board's
+mode-1 din marginality under sustained access (predicted above: "corrupts a
+heap-heavy app") is a board/din property, not a port defect.  On the boards with a
+real SPI1 window (Meshnology / DevKitC, `0xc3 -> mode 0`) `big.adb` checksums
+clean; those remain the checksum-validation vehicles.
+
+## Cache-din eye measurement (2026-07-15): why the sweep can't be trusted, and mode 1 is right
+
+Open question carried through the whole doc: the SPI1 sweep (step 10) picks a din
+(e.g. mode 4 / a centre in `{0,1,6,7}`) that the **cache** read path rejects, so
+`Enter_High_Speed`'s FIX 2 hardcodes mode 1 and the sweep result is then *overridden*.
+That looked like a fudge.  It is not — the sweep simply measures the **wrong din
+path**.  Directly measured on the tight-eye Meshnology board:
+
+| din mode | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| **SPI1 manual sweep** (host 1, `0x600020C0`) | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
+| **cache path** (SPI0 `0x600030C0`) | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+The sweep reads through **SPI1**'s din latch; the cache reads through **SPI0**'s.
+Their eyes differ (SPI1 `{0,1,6,7}` ⊋ cache `{0,1}`), so the sweep's "middle of the
+longest run" can land on mode 6/7 — **cache-BAD**.  Mode 1 sits inside the *measured*
+cache eye on every octal chip tested, so the FIX-2 override is correct, not a hack.
+
+**How the cache eye was measured (hang-safe), and why it can't run at boot.**
+Reading the SPI0 din path is dangerous: a wrong din makes the cache's synchronous
+*burst* read hang the CPU uncatchably.  The only hang-safe probe is the ROM async
+D-cache preload:
+
+```
+Cache_Start_DCache_Preload = 0x40001770   Cache_DCache_Preload_Done = 0x4000177c
+Cache_End_DCache_Preload   = 0x40001788   Cache_Invalidate_DCache_All = 0x400016e0
+```
+Per mode: apply din → invalidate → `Start_Preload(addr,size)` → poll `Preload_Done`
+with a **bounded counter** → `End_Preload`.  Only if it *completed* read the line
+back and compare; a bad din **never completes** (poll hits the timeout) so the
+synchronous read is skipped and the CPU never stalls.  Result on Meshnology:
+modes 0,1 complete in ~2 polls with correct data; modes 2–7 time out.  Clean eye.
+
+**But the measurement is a one-off diagnostic, NOT a boot step.** Two dead ends
+prove it can't be productised:
+1. *Cache-preload probe wedges the shared MSPI.* A stalled bad-din burst leaves the
+   SPI0/MSPI FSM stuck.  `Cache_End_Preload` lets the bootloader limp to the app
+   jump, but the app inherits the degraded controller and faults with **no output**.
+   The obvious recovery — `Cache_Disable_DCache` → re-config → enable — **hangs**,
+   because SPI0 also serves **flash XIP**: you cannot reset/disable the cache path
+   the bootloader is running from.  This is the same "Cache_Disable then hangs after
+   a wedge" seen from the app context; the boot context doesn't escape it.
+2. *Host-0 manual read doesn't work.* Issuing the read as a bounded SPI0 manual
+   transaction (`esp_rom_opiflash_exec_cmd` with `spi=0`, same `0x600030C0` din) to
+   dodge the stall returns **garbage for all 8 modes** (`eye=0x00`) and corrupts
+   SPI0 so the app stops checksumming — the ROM helper can't drive SPI0 (the cache
+   engine) the way it drives SPI1.
+
+**Conclusion (shipped).** `Tune_Din` keeps the safe **SPI1 sweep proxy** (host 1,
+never touches SPI0's flash-critical path, bad din returns garbage not a hang) and
+**prefers mode 1** whenever the sweep shows it in-window — now justified by the
+direct cache-eye measurement rather than trial-and-error.  The din *is* measured
+(SPI1 eye) and the selection *is* validated (cache probe); it just can't re-probe
+the cache eye on every boot, by a hard property of the shared MSPI.

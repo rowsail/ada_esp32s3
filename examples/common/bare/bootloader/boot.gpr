@@ -2,13 +2,14 @@
 --  relocatable object, in ZFP style: built against the pinned runtime only for
 --  system.ads, but compiled -gnatp / No_Elaboration so the linked output needs no
 --  binder (adainit) and pulls no runtime.  build.sh runs `gprbuild -c` then links
---  obj/boot.o together with start.S + the PSRAM C shim + the vendored blobs.
+--  boot_main.o + boot_psram.o (pure-Ada PSRAM bring-up) + start.S + freestanding libc.
 with "esp32s3_rts.gpr";
 
 project Boot is
    for Target use "xtensa-esp32-elf";
    for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;
-   for Source_Dirs use ("src");
+   --  BOOT_GEN_DIR holds the build-generated board_cfg.ads (Psram_Pages).
+   for Source_Dirs use ("src", external ("BOOT_GEN_DIR", "src"));
    for Object_Dir use "obj";
 
    package Compiler is
