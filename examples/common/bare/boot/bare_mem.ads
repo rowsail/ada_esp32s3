@@ -17,21 +17,27 @@ with Interfaces.C;
 
 package Bare_Mem is
 
+   --  Weak, so a profile whose runtime already defines these (light-tasking's
+   --  System.Memory_* provide STRONG memcpy/memmove) wins and there is no
+   --  multiple-definition clash; where the runtime omits them (embedded/full, or
+   --  memset/memcmp under light-tasking) these are the definition.  pragma
+   --  Weak_External marks the EXPORTED C symbol weak (pragma Machine_Attribute
+   --  "weak" did not -- the emitted "memcpy" etc. stayed strong).
    function Memcpy (Dest, Src : System.Address; N : Interfaces.C.size_t) return System.Address;
    pragma Export (C, Memcpy, "memcpy");
-   pragma Machine_Attribute (Memcpy, "weak");
+   pragma Weak_External (Memcpy);
 
    function Memmove (Dest, Src : System.Address; N : Interfaces.C.size_t) return System.Address;
    pragma Export (C, Memmove, "memmove");
-   pragma Machine_Attribute (Memmove, "weak");
+   pragma Weak_External (Memmove);
 
    function Memset
      (Dest : System.Address; C : Interfaces.C.int; N : Interfaces.C.size_t) return System.Address;
    pragma Export (C, Memset, "memset");
-   pragma Machine_Attribute (Memset, "weak");
+   pragma Weak_External (Memset);
 
    function Memcmp (S1, S2 : System.Address; N : Interfaces.C.size_t) return Interfaces.C.int;
    pragma Export (C, Memcmp, "memcmp");
-   pragma Machine_Attribute (Memcmp, "weak");
+   pragma Weak_External (Memcmp);
 
 end Bare_Mem;

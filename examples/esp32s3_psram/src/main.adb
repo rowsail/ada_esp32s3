@@ -2,8 +2,13 @@ pragma Warnings (Off);
 with Ada.Real_Time; use Ada.Real_Time;
 with Big;
 
---  Pull the SMP slave-start entry (__gnat_start_slave_cpus, called from glue.c
---  after elaboration) into the link closure so core 1 is brought up.
+--  PSRAM d-bus mapping (bare_board_init) + freestanding abort, in Ada -- pull it
+--  into the link closure (was psram/glue.c).
+with Psram_Board;
+pragma Unreferenced (Psram_Board);
+
+--  Pull the SMP slave-start entry (__gnat_start_slave_cpus) into the link closure
+--  so the shared bare boot brings up core 1.
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 
