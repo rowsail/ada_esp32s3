@@ -97,6 +97,16 @@ prove "$ROOT/examples/common/bare/boot/heap_guard_prove.gpr" \
 #    source export.sh; export ESP32S3_RTS_PROFILE=embedded \
 #      XTENSA_GNU_CONFIG=.../xtensa_esp32s3.so
 #    gnatprove -P libs/tls/tls.gpr --level=1 --prover=z3 -j0 -u chain_verify.adb
+#
+#  P256 (libs/tls/p256) is SPARK_Mode On: its P-256 field + point arithmetic
+#  (modular add/sub, Montgomery multiply/inverse, Jacobian double/add, scalar-mul,
+#  byte conversions) proves silver -- 0 unproved run-time checks.  Verify / On_Curve
+#  (and the out-parameter Public_Key/ECDH/Sign + the SPARKNaCl hashing glue) carry
+#  SPARK_Mode => Off: proving Verify's composition needs postcondition contracts on
+#  the primitives so the prover reasons from contracts instead of inlining the
+#  nonlinear modular arithmetic -- a dedicated lemma-level effort, deferred.  Runs
+#  on the same CROSS tls.gpr (not the fast native pass):
+#    gnatprove -P libs/tls/tls.gpr --level=2 --prover=z3,cvc5,altergo -j0 -u p256.adb
 
 echo "PROVE_EXIT: $fail"
 exit $fail

@@ -9,7 +9,7 @@ with Interfaces;
 --  order arithmetic is Montgomery (CIOS), with all Montgomery constants derived on
 --  the fly from the hard-coded curve parameters.  Point arithmetic is Jacobian.
 
-package P256 is
+package P256 with SPARK_Mode => On is
 
    subtype Byte is Interfaces.Unsigned_8;
    type Bytes is array (Natural range <>) of Byte;
@@ -31,9 +31,14 @@ package P256 is
    --  NOTE: the scalar multiplication here is variable-time.  TLS ECDHE uses a fresh
    --  ephemeral scalar per handshake, which limits exposure, but a constant-time
    --  ladder is the proper hardening and is left as a follow-up.
-   function Public_Key (Priv : Bytes_32; Pub_X, Pub_Y : out Bytes_32) return Boolean;
+   --  These return via out-parameters, which a SPARK *function* may not have, so
+   --  they carry SPARK_Mode => Off; the field/point arithmetic they call is proved
+   --  on its own (every SPARK_Mode => On body is analysed regardless of caller).
+   function Public_Key (Priv : Bytes_32; Pub_X, Pub_Y : out Bytes_32) return Boolean
+     with SPARK_Mode => Off;
    function ECDH
-     (Priv : Bytes_32; Peer_X, Peer_Y : Bytes_32; Shared_X : out Bytes_32) return Boolean;
+     (Priv : Bytes_32; Peer_X, Peer_Y : Bytes_32; Shared_X : out Bytes_32) return Boolean
+     with SPARK_Mode => Off;
 
    --  Produce an ECDSA signature (R, S) over the 32-byte message digest Hash with
    --  the private key Priv (a 32-byte big-endian scalar in [1, n-1]).  The nonce is
@@ -41,6 +46,9 @@ package P256 is
    --  same inputs always yield the same signature and no RNG is required -- which
    --  also removes the catastrophic nonce-reuse failure mode.  R and S are 32-byte
    --  big-endian.  Returns False only if Priv is out of range.
-   function Sign (Priv, Hash : Bytes_32; R, S : out Bytes_32) return Boolean;
+   --  RFC-6979 deterministic-nonce signing calls SPARKNaCl HMAC-SHA256; its body
+   --  is outside this AoRTE proof (the field/point arithmetic it builds on is in).
+   function Sign (Priv, Hash : Bytes_32; R, S : out Bytes_32) return Boolean
+     with SPARK_Mode => Off;
 
 end P256;
