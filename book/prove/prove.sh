@@ -14,7 +14,8 @@
 #  Currently proven (silver, 0 unproved checks):
 #    ext4      -- Get_*/Put_* byte helpers, CRC32C, and Superblock/Inode/Group_Desc
 #                 /Bitmap/Block_Map/Dir/File serialization + validation; plus the
-#                 mkfs single-group layout geometry (bounded + internally consistent)
+#                 mkfs single-group layout geometry (bounded + internally consistent);
+#                 and the '/'-separated path-component scanner (untrusted input)
 #    X509      -- the DER TLV reader AND the certificate parser (untrusted input)
 #    Der_Sig   -- the ECDSA-Sig-Value DER r/s parse (untrusted input): no over-read
 #    NMEA      -- the NMEA-0183 GPS-sentence parser (untrusted input)
@@ -55,6 +56,7 @@ prove () {  #  $1 = project file, $2 = label, $3 = gnatprove tuning (optional)
 
 prove "$T/ext4_host/ext4_host.gpr"                   "ext4 (helpers/CRC32C/Superblock/Inode/Group_Desc/Bitmap/Block_Map/Dir/File)"
 prove "$T/mkfs_math_prove/mkfs_math_prove.gpr"       "ext4 mkfs single-group layout (geometry bounded + consistent)"
+prove "$T/path_scan_prove/path_scan_prove.gpr"       "ext4 path-component scanner (untrusted path, in-bounds)"
 prove "$T/x509_prove/x509_prove.gpr"                 "X509 DER + certificate parser (untrusted input)"
 prove "$ROOT/libs/tls/der_sig_prove.gpr"             "ECDSA DER r/s signature parse (untrusted input)"
 prove "$T/nmea_prove/nmea_prove.gpr"                 "NMEA GPS-sentence parser (untrusted input)"

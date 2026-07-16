@@ -29,6 +29,7 @@ Alire toolchain (`~/.alire/bin/gnatprove`).
 | `ESP32S3.Ext4.Dir` | dir-entry header decode + name copy | `ext4_host.gpr` |
 | `ESP32S3.Ext4.File` | EOF-clamped read/chunk size math | `ext4_host.gpr` |
 | `ESP32S3.Ext4.Mkfs.Math` | mkfs single-group layout: inode count / table size / block positions bounded + consistent | `mkfs_math_prove.gpr` |
+| `ESP32S3.Ext4.Path_Scan` | `/`-separated path-component scanner (untrusted input): never slices outside the string | `path_scan_prove.gpr` |
 | `X509.DER` + `X509` | DER TLV reader **and the certificate parser** — **untrusted input** | `x509_prove.gpr` |
 | `ESP32S3.GPS.NMEA` | NMEA-0183 GPS-sentence parser — **untrusted input** | `nmea_prove.gpr` |
 | `DNS_Client.Parse` | DNS response parser incl. name-compression — **untrusted input** | `dns_prove.gpr` |

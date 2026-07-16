@@ -1,0 +1,17 @@
+--  Native project for SPARK-proving the pure '/'-separated path-component
+--  scanner (ESP32S3.Ext4.Path_Scan): for any input string it never indexes or
+--  slices outside the string, and it terminates.  Both ESP32S3.Ext4.Path and
+--  ESP32S3.Ext4.VFS resolve untrusted paths through it.  Pure String logic --
+--  no I/O, no target layer -- so it proves natively.  No main.
+project Path_Scan_Prove is
+   for Source_Dirs use ("../../src", "../../src/ext4");
+   for Object_Dir use "obj";
+   for Source_Files use
+     ("esp32s3.ads",
+      "esp32s3-ext4.ads",
+      "esp32s3-ext4-path_scan.ads",
+      "esp32s3-ext4-path_scan.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end Path_Scan_Prove;

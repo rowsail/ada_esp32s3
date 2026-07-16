@@ -1,5 +1,6 @@
 with ESP32S3.Ext4.Inode;
 with ESP32S3.Ext4.Dir;
+with ESP32S3.Ext4.Path_Scan;
 
 package body ESP32S3.Ext4.Path is
 
@@ -11,24 +12,16 @@ package body ESP32S3.Ext4.Path is
       Inode.Read (V, Cur, Cur_I);
 
       while I <= Path'Last loop
-         --  Skip run of '/'.
-         while I <= Path'Last and then Path (I) = '/' loop
-            I := I + 1;
-         end loop;
-         exit when I > Path'Last;
-
-         --  Component spans [Start .. J-1].
+         --  Next '/'-separated component (the scan is proved in-bounds; see
+         --  ESP32S3.Ext4.Path_Scan).
          declare
-            Start : constant Integer := I;
-            J     : Integer := I;
+            C : constant Path_Scan.Component := Path_Scan.Next_Component (Path, I);
          begin
-            while J <= Path'Last and then Path (J) /= '/' loop
-               J := J + 1;
-            end loop;
-            I := J;
+            I := C.Next;
+            exit when C.Last < C.First;        --  only '/' left -- done
 
             declare
-               Comp : constant String := Path (Start .. J - 1);
+               Comp : constant String := Path (C.First .. C.Last);
                Next : Inode_Number;
             begin
                if Comp = "." then
