@@ -1,19 +1,15 @@
 with Ada.Unchecked_Conversion;
 with Interfaces; use Interfaces;
 
+--  The pure size-class + bit math (geometry constants, FLS/FFS, Round_Up,
+--  Mapping/Mapping_Search) lives in Tlsf_Math, SPARK-proved (tlsf_math_prove.gpr:
+--  the bucket indices are proved always in range).  This body supplies only the
+--  raw-address / free-list plumbing that is outside SPARK's memory model.
+with Tlsf_Math; use Tlsf_Math;
+
 package body Tlsf_Core is
 
    use type System.Address;
-
-   ---------------------------------------------------------------------------
-   --  Parameters
-   ---------------------------------------------------------------------------
-   Align       : constant Storage_Count := 16;
-   SL_Log2     : constant := 5;
-   SL_Count    : constant := 2**SL_Log2;       --  32 second-level lists
-   FL_Shift    : constant := SL_Log2 + 4;         --  align-log2 = 4
-   Small_Block : constant Storage_Count := 2**FL_Shift;   --  512
-   FL_Count    : constant := 25;                  --  first-level classes
 
    ---------------------------------------------------------------------------
    --  Block layout: a header (physical-prev pointer + payload size + free flag)
@@ -34,9 +30,6 @@ package body Tlsf_Core is
    end record;
    type Links_Acc is access all Links;
    function To_Links is new Ada.Unchecked_Conversion (System.Address, Links_Acc);
-
-   function Round_Up (X : Storage_Count) return Storage_Count
-   is (((X + (Align - 1)) / Align) * Align);
 
    --  Header size -- MUST be a compile-time static (a record-Object_Size based
    --  value is elaborated into .bss and, with no adainit in this ZFP boot, never
@@ -101,67 +94,8 @@ package body Tlsf_Core is
    function Prev_Free (B : System.Address) return System.Address
    is (To_Links (Payload (B)).Prev_Free);
 
-   ---------------------------------------------------------------------------
-   --  Bit scans (bounded loops -> O(1))
-   ---------------------------------------------------------------------------
-   function FLS (X : Unsigned_64) return Integer is
-      V : Unsigned_64 := X;
-      N : Integer := -1;
-   begin
-      while V /= 0 loop
-         V := Shift_Right (V, 1);
-         N := N + 1;
-      end loop;
-      return N;
-   end FLS;
-
-   function FFS (X : Unsigned_32) return Integer is
-      V : Unsigned_32 := X;
-      N : Integer := 0;
-   begin
-      if V = 0 then
-         return -1;
-      end if;
-      while (V and 1) = 0 loop
-         V := Shift_Right (V, 1);
-         N := N + 1;
-      end loop;
-      return N;
-   end FFS;
-
-   ---------------------------------------------------------------------------
-   --  size class mapping
-   ---------------------------------------------------------------------------
-   procedure Mapping (Size : Storage_Count; FL, SL : out Integer) is
-      S : constant Unsigned_64 := Unsigned_64 (Size);
-   begin
-      if Size < Small_Block then
-         FL := 0;
-         SL := Integer (S / Unsigned_64 (Small_Block / SL_Count));
-      else
-         declare
-            F : constant Integer := FLS (S);
-         begin
-            SL := Integer (Shift_Right (S, F - SL_Log2) and Unsigned_64 (SL_Count - 1));
-            FL := F - FL_Shift + 1;
-         end;
-      end if;
-   end Mapping;
-
-   --  Round the request up so any block in the chosen bucket is big enough.
-   procedure Mapping_Search (Size : in out Storage_Count; FL, SL : out Integer) is
-   begin
-      if Size >= Small_Block then
-         declare
-            F     : constant Integer := FLS (Unsigned_64 (Size));
-            Round : constant Storage_Count :=
-              Storage_Count (Shift_Left (Unsigned_64 (1), F - SL_Log2)) - 1;
-         begin
-            Size := Size + Round;
-         end;
-      end if;
-      Mapping (Size, FL, SL);
-   end Mapping_Search;
+   --  Bit scans (FLS/FFS), size-class Mapping/Mapping_Search and Round_Up come
+   --  from Tlsf_Math (SPARK-proved); see the context clause above.
 
    function Find_Suitable (FL0, SL0 : Integer; FL, SL : out Integer) return Boolean is
       Sl_Map : Unsigned_32 := SL_Bitmap (FL0) and Shift_Left (Unsigned_32'Last, SL0);

@@ -20,6 +20,8 @@
 #    NTP       -- To_UTC civil-date math
 #    Net_Routes-- IPv4 longest-prefix-match routing
 #    Endian    -- LE/BE byte join/split
+#    TLSF      -- allocator size-class + bit math; bucket indices PROVABLY in
+#                 range (beyond silver: functional postconditions, --level=4)
 #
 #  gnatprove is provided by the Alire toolchain (~/.alire/bin/gnatprove).
 export PATH="$HOME/.alire/bin:$PATH"
@@ -27,18 +29,20 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 T="$ROOT/libs/esp32s3_hal/test"
 fail=0
 
-prove () {  #  $1 = project file, $2 = label
+prove () {  #  $1 = project file, $2 = label, $3 = gnatprove tuning (optional)
    echo "=== prove: $2 ==="
+   local tune="${3:---level=1 --prover=z3 --timeout=10}"
    local out
-   out="$(gnatprove -P "$1" --level=1 --prover=z3 --timeout=10 -j0 --report=fail --output=oneline 2>&1)"
+   out="$(gnatprove -P "$1" $tune -j0 --report=fail --output=oneline 2>&1)"
    if echo "$out" | grep -qiE "medium:|high:|: *error:"; then
       echo "$out" | grep -iE "medium:|high:|: *error:"
       fail=1
    else
       echo "  no unproved run-time checks"
    fi
+   #  the object dir varies per project (obj / obj-prove); glob for the report.
    sed -n '/SPARK Analysis results/,/^Total/p' \
-      "$(dirname "$1")/obj/gnatprove/gnatprove.out" 2>/dev/null \
+      "$(dirname "$1")"/obj*/gnatprove/gnatprove.out 2>/dev/null \
       | grep -iE "Run-time Checks|^Total"
    echo
 }
@@ -63,6 +67,13 @@ prove "$T/ledc_math_prove/ledc_math_prove.gpr"       "LEDC clock divider"
 prove "$T/rmt_math_prove/rmt_math_prove.gpr"         "RMT tick divider"
 prove "$T/mcpwm_math_prove/mcpwm_math_prove.gpr"     "MCPWM period/prescale/dead-time"
 prove "$T/endian_host/endian_host.gpr"               "Endian join/split"
+
+#  TLSF allocator locate-math lives with the bare boot support, not the HAL, and
+#  proves BEYOND silver -- the functional postcondition that Mapping/Mapping_Search
+#  always yield in-range bucket indices needs --level=4 + the full prover set.
+prove "$ROOT/examples/common/bare/boot/tlsf_math_prove.gpr" \
+      "TLSF allocator size-class + bit math (bucket indices in range)" \
+      "--level=4 --prover=z3,cvc5,altergo --timeout=60"
 
 #  Cert chain-walking (libs/tls/chain_verify) is also proven silver, but via the
 #  CROSS tls.gpr (target xtensa) + the SPARKNaCl closure -- slow to re-verify, so it

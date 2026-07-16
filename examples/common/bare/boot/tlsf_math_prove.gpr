@@ -1,0 +1,13 @@
+--  Native project for SPARK-proving the pure size-class + bit math of the TLSF
+--  allocator (Tlsf_Math).  The allocator body proper (tlsf_core.adb) manipulates
+--  raw addresses and is outside SPARK's memory model, so it is not part of this
+--  project; this proves the O(1)-locate arithmetic that keeps the bucket indices
+--  in range.  Host-portable (no register/target layer); no main.
+project Tlsf_Math_Prove is
+   for Source_Dirs use (".");
+   for Object_Dir use "obj-prove";
+   for Source_Files use ("tlsf_math.ads", "tlsf_math.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end Tlsf_Math_Prove;
