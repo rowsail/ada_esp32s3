@@ -165,19 +165,27 @@ was extractable. What remains is genuinely out of reach:
   volatile), the hardware crypto accelerators (SHA/AES-ECB/RSA), controlled-type bus sessions
   (`Finalize`), access-to-subprogram callbacks, `fonts` (`Unchecked_Conversion` to access),
   `mac` (needs the EFUSE register layer), `stack_usage` (`System.Address` ordering).
-- **Provable in principle, but non-converging** — `p256.Verify` (ECDSA): SPARK-legal and gnatprove
-  runs, but the vendored **SPARKNaCl** elliptic-curve contract closure did not discharge under a
-  long budget. A dedicated, lemma-level effort, not a harvest.
+- **Partially proved — `p256` field/point arithmetic done, `Verify`/`On_Curve` deferred.** The
+  P-256 primitives (modular add/sub, Montgomery multiply/inverse, Jacobian double/add, scalar-mul,
+  byte conversions) are `SPARK_Mode => On` and prove silver (0 unproved run-time checks, via the
+  cross `tls.gpr`). `Verify`/`On_Curve` — and the `out`-parameter `Public_Key`/`ECDH`/`Sign` plus
+  the SPARKNaCl hashing glue — carry `SPARK_Mode => Off`: see the Crypto / TLS note below.
 
-## Crypto / TLS (scouted; expensive, not done)
+## Crypto / TLS
 
-`libs/tls/p256.Verify` (ECDSA-P256 signature check) is SPARK-legal and gnatprove runs
-against the *cross* `tls.gpr` directly (target setup works) — but proving it pulls in
-the whole vendored **SPARKNaCl** elliptic-curve contract closure and did not converge in
-200 s. Two gotchas noted for a dedicated pass: SPARK forbids `out` parameters on
-functions (`Public_Key`/`ECDH`/`Sign` must be `SPARK_Mode => Off` or become procedures),
-and the proof needs SPARKNaCl's lemmas to line up. High-value but a real time budget,
-not a quick add. `cert_verify`'s RSA path is hardware (ESP32-S3 RSA accelerator) → `Off`.
+`libs/tls/p256` is `SPARK_Mode => On` and its P-256 **field and point arithmetic proves silver**
+(0 unproved run-time checks) against the *cross* `tls.gpr` — the modular/Montgomery field ops,
+Jacobian point double/add, scalar multiply, and the big-endian byte conversions can raise no
+run-time error. What stays `Off`, and why:
+- `Verify` / `On_Curve` — each chains dozens of `Mont_Mul`/`FMul`/point calls. The primitives are
+  proved individually, but proving the *composition* needs postcondition contracts on them so the
+  prover reasons from contracts instead of inlining the nonlinear modular arithmetic (otherwise it
+  does not converge). That is a dedicated lemma-level effort — deferred, not a harvest.
+- `Public_Key`/`ECDH`/`Sign` — SPARK forbids `out` parameters on *functions*, so these must be
+  `Off` (or become procedures); `Sign` also uses the SPARKNaCl HMAC/SHA-256 hashing glue.
+- `cert_verify`'s RSA path is hardware (ESP32-S3 RSA accelerator) → `Off`.
+
+To re-check: `gnatprove -P libs/tls/tls.gpr --level=2 --prover=z3,cvc5,altergo -j0 -u p256.adb`.
 
 The HAL-wide `Pre`/`Post` contracts (see the driver specs) use the same syntax
 SPARK consumes, so they are the foundation this proof surface builds on.
