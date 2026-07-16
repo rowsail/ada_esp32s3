@@ -18,4 +18,11 @@ is
      with Pre  => Freq >= 16,
           Post => Clock_Divider'Result in 256 .. 2**18 - 1;
 
+   --  Duty count for Percent of full scale: Max * Percent / 100, clamped to the
+   --  step count Max = 2**Bits (Bits in 1 .. 14 -> Max in 2 .. 16384).  The
+   --  Float scaling is proved free of range/overflow error for every legal
+   --  Percent (0 .. 100); Set_Duty writes the returned count to the DUTY field.
+   function Duty_Count (Bits : Resolution; Percent : Duty_Percent) return Natural
+     with Post => Duty_Count'Result <= 16_384;
+
 end ESP32S3.LEDC.Math;

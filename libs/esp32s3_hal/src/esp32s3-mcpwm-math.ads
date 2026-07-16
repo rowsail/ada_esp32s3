@@ -33,4 +33,13 @@ is
      with Pre  => Dead_Time_Ns <= 13_000_000,
           Post => Dead_Time_Ticks'Result <= 65_535;
 
+   --  Comparator value for Percent duty: Period * Percent / 100, clamped so it
+   --  can never exceed the period nor the 16-bit comparator field (65_535).
+   --  The Pre bounds Period to its real domain (Configure stores Period_Ticks,
+   --  <= Max_Peak) so the Float scaling has no range error.  Set_Duty writes the
+   --  result to the comparator register.
+   function Duty_Compare (Period : Natural; Percent : Duty_Percent) return Natural
+     with Pre  => Period <= Max_Peak,
+          Post => Duty_Compare'Result <= 65_535;
+
 end ESP32S3.MCPWM.Math;

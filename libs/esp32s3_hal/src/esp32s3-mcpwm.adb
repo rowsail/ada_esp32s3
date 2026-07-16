@@ -414,11 +414,11 @@ package body ESP32S3.MCPWM is
       Regs    : constant Periph_Ref := Regs_Of (C.U);
       Period  : constant Natural := Periods (C.U, C.Idx);
       --  The comparator field is 16-bit (max 65535), but a period can be the full
-      --  Max_Peak = 65536 (Freq ~ 2441 Hz); at 100% duty Min(Period,Period) would be 65536
-      --  and overflow the field -> Constraint_Error.  Cap at 65535 -- for every
-      --  smaller period the comparator = Period is unchanged and still yields 100%.
-      Compare : constant Natural :=
-        Natural'Min (65535, Natural'Min (Period, Natural (Float (Period) * Percent / 100.0)));
+      --  Max_Peak = 65536 (Freq ~ 2441 Hz); at 100% duty Min(Period,Period) would be
+      --  65536 and overflow the field -> Constraint_Error.  Duty_Compare (proved free
+      --  of range error) caps at 65535 -- for every smaller period the comparator =
+      --  Period is unchanged and still yields 100%.
+      Compare : constant Natural := Math.Duty_Compare (Period, Percent);
    begin
       if not C.Held then
          return;

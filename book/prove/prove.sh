@@ -25,6 +25,8 @@
 #                 range (beyond silver: functional postconditions, --level=4)
 #    Heap_Guard-- malloc/calloc request-size + overflow guards; a wrapping size
 #                 request can never yield a live under-sized buffer
+#    LEDC/MCPWM-- Set_Duty Float duty scaling: the Float->count conversion has no
+#                 range error / NaN for any Percent (0 .. 100)
 #
 #  gnatprove is provided by the Alire toolchain (~/.alire/bin/gnatprove).
 export PATH="$HOME/.alire/bin:$PATH"
@@ -67,9 +69,9 @@ prove "$T/qmi8658c_prove/qmi8658c_prove.gpr"         "QMI8658C IMU sign/sensitiv
 prove "$T/tlv2556_prove/tlv2556_prove.gpr"           "TLV2556 ADC count->mV"
 prove "$T/es8311_prove/es8311_prove.gpr"             "ES8311 codec volume register"
 prove "$T/twai_math_prove/twai_math_prove.gpr"       "TWAI CAN baud prescaler"
-prove "$T/ledc_math_prove/ledc_math_prove.gpr"       "LEDC clock divider"
+prove "$T/ledc_math_prove/ledc_math_prove.gpr"       "LEDC clock divider + Float duty scaling"
 prove "$T/rmt_math_prove/rmt_math_prove.gpr"         "RMT tick divider"
-prove "$T/mcpwm_math_prove/mcpwm_math_prove.gpr"     "MCPWM period/prescale/dead-time"
+prove "$T/mcpwm_math_prove/mcpwm_math_prove.gpr"     "MCPWM period/prescale/dead-time + Float duty"
 prove "$T/endian_host/endian_host.gpr"               "Endian join/split"
 
 #  TLSF allocator locate-math lives with the bare boot support, not the HAL, and
