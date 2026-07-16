@@ -1,0 +1,15 @@
+--  Console routing for a project -- the one clearly-named place to choose the
+--  serial port the console (ESP32S3.Log, Ada.Text_IO) uses.
+--
+--  To use it: copy this file and console.adb.template into your project's src/
+--  as console.ads / console.adb; add these two lines to your main:
+--
+--     with Console;
+--     pragma Unreferenced (Console);
+--
+--  and edit console.adb to pick the port.  The body runs at elaboration, BEFORE
+--  the app, so nothing else in the app changes.  Omit the file entirely to keep
+--  the default (the built-in USB-Serial/JTAG console).
+package Console is
+   pragma Elaborate_Body;
+end Console;
