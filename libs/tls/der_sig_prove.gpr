@@ -1,0 +1,12 @@
+--  Native project for SPARK-proving the untrusted DER-INTEGER / ECDSA-Sig-Value
+--  parse (Der_Sig): it never reads outside the signature buffer nor writes
+--  outside the fixed-width output, for any attacker-controlled input.  Pure byte
+--  logic -- no crypto, no target layer -- so it proves natively.  No main.
+project Der_Sig_Prove is
+   for Source_Dirs use ("src");
+   for Object_Dir use "obj-prove";
+   for Source_Files use ("der_sig.ads", "der_sig.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end Der_Sig_Prove;
