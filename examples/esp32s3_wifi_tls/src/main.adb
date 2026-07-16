@@ -80,6 +80,8 @@ procedure Main is
      with Import, Convention => C, External_Name => "ada_force_txrx_count";
    Phy_Ports2_Count : Interfaces.Unsigned_32
      with Import, Convention => C, External_Name => "ada_phy_ports2_count";
+   Phy_Ports3_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports3_count";
    procedure Show_Deblob_Result is
    begin
       Put_Line ("");
@@ -94,6 +96,8 @@ procedure Main is
       Put_Unsigned (Force_Txrx_Count); New_Line;
       Put ("  libphy batch-2 (low_rate/wifi_enable, 3 fns)   fired = ");
       Put_Unsigned (Phy_Ports2_Count); New_Line;
+      Put ("  libphy batch-3 (ant/agc/tx_seed/rifs, 5 fns)   fired = ");
+      Put_Unsigned (Phy_Ports3_Count); New_Line;
       Put_Line ("====================================================================");
    end Show_Deblob_Result;
 

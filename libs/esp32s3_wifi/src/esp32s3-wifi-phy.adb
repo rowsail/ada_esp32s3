@@ -176,6 +176,66 @@ package body ESP32S3.WiFi.PHY is
       end if;
    end Wrap_Wifi_Enable_Set;
 
+   --  Batch 3: five more self-contained 0x6001c (baseband) RMW primitives --
+   --  antenna default, WiFi AGC enable/disable, TX scrambler seed, RIFS mode.
+   Ports3_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports3_count";
+
+   procedure Wrap_Ant_Dft_Cfg (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_ant_dft_cfg";
+   procedure Wrap_Ant_Dft_Cfg (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports3_Count := Ports3_Count + 1;
+      Poke (16#6001_C11C#,
+            (Peek (16#6001_C11C#) and 16#FFFF_F7FF#)
+            or Shift_Left (En and 1, 11));                --  bit11 = En
+   end Wrap_Ant_Dft_Cfg;
+
+   procedure Wrap_Enable_Wifi_Agc
+     with Export, Convention => C, External_Name => "__wrap_ram_enable_wifi_agc";
+   procedure Wrap_Enable_Wifi_Agc is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports3_Count := Ports3_Count + 1;
+      Poke (16#6001_C080#, Peek (16#6001_C080#) and 16#FFFF_FFFE#);
+      Poke (16#6001_C01C#,
+            (Peek (16#6001_C01C#) and 16#FF00_FFFF#) or 16#0020_0000#);
+      Poke (16#6001_C034#, Peek (16#6001_C034#) or 16#0000_0080#);
+   end Wrap_Enable_Wifi_Agc;
+
+   procedure Wrap_Disable_Wifi_Agc
+     with Export, Convention => C, External_Name => "__wrap_ram_disable_wifi_agc";
+   procedure Wrap_Disable_Wifi_Agc is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports3_Count := Ports3_Count + 1;
+      Poke (16#6001_C01C#,
+            (Peek (16#6001_C01C#) and 16#FF00_FFFF#) or 16#007F_0000#);
+      Poke (16#6001_C034#, Peek (16#6001_C034#) or 16#0000_0080#);
+      Poke (16#6001_C080#, Peek (16#6001_C080#) or 16#0000_0001#);
+   end Wrap_Disable_Wifi_Agc;
+
+   procedure Wrap_Set_Tx_Seed (Seed : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_set_tx_seed";
+   procedure Wrap_Set_Tx_Seed (Seed : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports3_Count := Ports3_Count + 1;
+      Poke (16#6001_C400#,
+            (Peek (16#6001_C400#) and 16#FFFF_FF80#) or (Seed and 16#7F#));
+   end Wrap_Set_Tx_Seed;
+
+   procedure Wrap_Rifs_Mode_En (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_wifi_rifs_mode_en";
+   procedure Wrap_Rifs_Mode_En (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports3_Count := Ports3_Count + 1;
+      Poke (16#6001_C0F4#,
+            (Peek (16#6001_C0F4#) and 16#FFFF_FFFE#) or (En and 1));
+   end Wrap_Rifs_Mode_En;
+
    procedure Phy_Enable is
       Cal : System.Address;
       Clk : Unsigned_32 with Import, Volatile,

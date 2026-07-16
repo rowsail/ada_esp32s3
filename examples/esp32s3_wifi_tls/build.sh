@@ -40,7 +40,8 @@ for fn in $WRAP_CRYPTO; do EXTRA_OBJS="$EXTRA_OBJS -Wl,--wrap=$fn"; done
 # DE-BLOB libphy (recreate in Ada, proof of method): the first transpiled PHY
 # primitive.  force_txrx_off -> ESP32S3.WiFi.PHY.Wrap_Force_Txrx_Off (faithful
 # port of its 0x60006110 read-modify-write).  ROM stays; only this .a fn moves.
-WRAP_PHY="force_txrx_off phy_disable_low_rate phy_enable_low_rate phy_wifi_enable_set"
+WRAP_PHY="force_txrx_off phy_disable_low_rate phy_enable_low_rate phy_wifi_enable_set \
+ant_dft_cfg ram_enable_wifi_agc ram_disable_wifi_agc phy_set_tx_seed wifi_rifs_mode_en"
 for fn in $WRAP_PHY; do EXTRA_OBJS="$EXTRA_OBJS -Wl,--wrap=$fn"; done
 
 # ROM symbol addresses the blobs call (lower-MAC/PHY/newlib routines in ROM).
