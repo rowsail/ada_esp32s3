@@ -84,6 +84,44 @@ package body ESP32S3.WiFi.PHY is
 
    Calibrated : Boolean := False;
 
+   --  ---- libphy de-blob: first transpiled function (proof of method) --------
+   --  force_txrx_off(en): a self-contained libphy primitive -- a read-modify-
+   --  write of the TX/RX force register 0x60006110 (bits 9/11) with 1 us settling
+   --  gaps, no i2c / g_phyFuns / ROM.  Faithful Ada port of the disassembly,
+   --  wired in by linker --wrap so the blob's version never runs.  A wrong TX/RX
+   --  force sequence disrupts the radio, so "still associates + fetches" proves
+   --  the port.  See research/wifi-re/PHY_BOUNDARY.md.
+   procedure Ets_Delay_Us (Us : Interfaces.Unsigned_32)
+     with Import, Convention => C, External_Name => "ets_delay_us";
+
+   Force_Txrx_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_force_txrx_count";
+
+   procedure Wrap_Force_Txrx_Off (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_force_txrx_off";
+   procedure Wrap_Force_Txrx_Off (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      Reg  : Interfaces.Unsigned_32 with Import, Volatile,
+        Address => System'To_Address (16#6000_6110#);
+      Mask : constant Interfaces.Unsigned_32 := 16#FFFF_F0FF#;  --  clear bits 8..11
+      Final : Interfaces.Unsigned_32;
+   begin
+      Force_Txrx_Count := Force_Txrx_Count + 1;
+      if (En and 16#FF#) /= 0 then
+         --  Force TX/RX off: set bit 11, settle, then set bits 9+11.
+         Reg := (Reg and Mask) or 16#0000_0800#;
+         Ets_Delay_Us (1);
+         Final := (Reg and Mask) or 16#0000_0A00#;
+      else
+         --  Release: set bit 9, settle, then clear bits 8..11.
+         Reg := (Reg and Mask) or 16#0000_0200#;
+         Ets_Delay_Us (1);
+         Final := Reg and Mask;
+      end if;
+      Reg := Final;
+      Ets_Delay_Us (1);
+   end Wrap_Force_Txrx_Off;
+
    procedure Phy_Enable is
       Cal : System.Address;
       Clk : Unsigned_32 with Import, Volatile,

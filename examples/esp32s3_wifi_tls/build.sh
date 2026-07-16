@@ -37,6 +37,12 @@ export EXTRA_OBJS="-Wl,--start-group $W/libnet80211.a $W/libpp.a $P/libphy.a -Wl
 WRAP_CRYPTO="hal_crypto_set_key_entry hal_crypto_clr_key_entry hal_crypto_enable"
 for fn in $WRAP_CRYPTO; do EXTRA_OBJS="$EXTRA_OBJS -Wl,--wrap=$fn"; done
 
+# DE-BLOB libphy (recreate in Ada, proof of method): the first transpiled PHY
+# primitive.  force_txrx_off -> ESP32S3.WiFi.PHY.Wrap_Force_Txrx_Off (faithful
+# port of its 0x60006110 read-modify-write).  ROM stays; only this .a fn moves.
+WRAP_PHY="force_txrx_off"
+for fn in $WRAP_PHY; do EXTRA_OBJS="$EXTRA_OBJS -Wl,--wrap=$fn"; done
+
 # ROM symbol addresses the blobs call (lower-MAC/PHY/newlib routines in ROM).
 export EXTRA_LD="$HERE/wifi_rom.ld"
 
