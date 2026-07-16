@@ -122,6 +122,60 @@ package body ESP32S3.WiFi.PHY is
       Ets_Delay_Us (1);
    end Wrap_Force_Txrx_Off;
 
+   --  Batch 2: three more self-contained baseband/SYSCON RMW primitives (0x6001c
+   --  low-rate mode, 0x60026 wifi-enable).  Same faithful-port pattern.
+   Ports2_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports2_count";
+
+   procedure Poke (Addr, Val : Interfaces.Unsigned_32) is
+      Cell : Interfaces.Unsigned_32 with Import, Volatile,
+        Address => System'To_Address (Addr);
+   begin
+      Cell := Val;
+   end Poke;
+   function Peek (Addr : Interfaces.Unsigned_32) return Interfaces.Unsigned_32 is
+      Cell : Interfaces.Unsigned_32 with Import, Volatile,
+        Address => System'To_Address (Addr);
+   begin
+      return Cell;
+   end Peek;
+
+   procedure Wrap_Disable_Low_Rate
+     with Export, Convention => C, External_Name => "__wrap_phy_disable_low_rate";
+   procedure Wrap_Disable_Low_Rate is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports2_Count := Ports2_Count + 1;
+      Poke (16#6001_C860#, Peek (16#6001_C860#) and 16#FFFF_FBFF#);  --  clr bit10
+      Poke (16#6001_C860#, Peek (16#6001_C860#) and 16#FFFF_F7FF#);  --  clr bit11
+      Poke (16#6001_C87C#, Peek (16#6001_C87C#) and 16#FFFF_F7FF#);  --  clr bit11
+   end Wrap_Disable_Low_Rate;
+
+   procedure Wrap_Enable_Low_Rate
+     with Export, Convention => C, External_Name => "__wrap_phy_enable_low_rate";
+   procedure Wrap_Enable_Low_Rate is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports2_Count := Ports2_Count + 1;
+      Poke (16#6001_C860#, Peek (16#6001_C860#) or 16#0000_0400#);   --  set bit10
+      Poke (16#6001_C860#, Peek (16#6001_C860#) or 16#0000_0800#);   --  set bit11
+      Poke (16#6001_C87C#, Peek (16#6001_C87C#) or 16#0000_0800#);   --  set bit11
+   end Wrap_Enable_Low_Rate;
+
+   procedure Wrap_Wifi_Enable_Set (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_wifi_enable_set";
+   procedure Wrap_Wifi_Enable_Set (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      V : constant Interfaces.Unsigned_32 := Peek (16#6002_600C#);
+   begin
+      Ports2_Count := Ports2_Count + 1;
+      if (En and 16#FF#) /= 0 then
+         Poke (16#6002_600C#, V or 16#0000_0002#);   --  set bit1
+      else
+         Poke (16#6002_600C#, V and 16#FFFF_FFFD#);  --  clear bit1
+      end if;
+   end Wrap_Wifi_Enable_Set;
+
    procedure Phy_Enable is
       Cal : System.Address;
       Clk : Unsigned_32 with Import, Volatile,

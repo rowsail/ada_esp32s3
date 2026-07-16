@@ -78,6 +78,8 @@ procedure Main is
      with Import, Convention => C, External_Name => "ada_wrap_enable_count";
    Force_Txrx_Count : Interfaces.Unsigned_32
      with Import, Convention => C, External_Name => "ada_force_txrx_count";
+   Phy_Ports2_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports2_count";
    procedure Show_Deblob_Result is
    begin
       Put_Line ("");
@@ -90,6 +92,8 @@ procedure Main is
       Put_Unsigned (Wrap_En_Count); New_Line;
       Put ("  Wrap_Force_Txrx_Off (was libphy force_txrx_off) fired = ");
       Put_Unsigned (Force_Txrx_Count); New_Line;
+      Put ("  libphy batch-2 (low_rate/wifi_enable, 3 fns)   fired = ");
+      Put_Unsigned (Phy_Ports2_Count); New_Line;
       Put_Line ("====================================================================");
    end Show_Deblob_Result;
 
