@@ -1,6 +1,7 @@
 pragma Warnings (Off);
 with Ada.Interrupts.Names;
 with System;
+with Intr_Vector_Test; use Intr_Vector_Test;   --  Clear_L2 / Clear_L3 (was glue.c)
 
 --  L2/L3 interrupt handlers for the vector regression test.  Two library-level
 --  protected objects attach to the L2 and L3 device interrupts; on the S3 each
@@ -18,10 +19,6 @@ with System;
 
 package body Blink is
 
-   procedure Clear_L2;
-   pragma Import (C, Clear_L2, "ada_clear_l2");
-   procedure Clear_L3;
-   pragma Import (C, Clear_L3, "ada_clear_l3");
 
    --  L2 = Device_L2_0 = CPU_INT 19.
    protected L2_PO

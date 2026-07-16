@@ -2,6 +2,7 @@ pragma Warnings (Off);
 with Interfaces.C;  use Interfaces.C;
 with Ada.Real_Time; use Ada.Real_Time;
 with Blink;
+with Intr_Vector_Test; use Intr_Vector_Test;   --  L2/L3 fire + THREADPTR + Log (was glue.c)
 
 --  What it demonstrates
 --  --------------------
@@ -44,18 +45,6 @@ with Blink;
 --  FROM_CPU interrupt-matrix sources -- no external wiring.
 
 procedure Example is
-   procedure Log (Marker : Interfaces.C.int);
-   pragma Import (C, Log, "ada_log");
-   procedure Setup;
-   pragma Import (C, Setup, "ada_setup_l2l3");
-   procedure Fire_L2;
-   pragma Import (C, Fire_L2, "ada_fire_l2");
-   procedure Fire_L3;
-   pragma Import (C, Fire_L3, "ada_fire_l3");
-   function Get_TP return Interfaces.C.unsigned;
-   pragma Import (C, Get_TP, "ada_get_tp");
-   procedure Set_TP (Value : Interfaces.C.unsigned);
-   pragma Import (C, Set_TP, "ada_set_tp");
 
    --  Console-marker bases: the C ada_log prints the integer as "[intr] <n>",
    --  so adding the live count to one of these tags the line (1xxxxx / 2xxxxx /

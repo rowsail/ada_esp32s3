@@ -7,7 +7,7 @@ with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
 project Example is
    for Target use "xtensa-esp32-elf";
    for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;
-   for Source_Dirs use ("src");
+   for Source_Dirs use ("src", "../common/src");
    for Object_Dir use "obj";
    for Main use ("example.adb");
 
