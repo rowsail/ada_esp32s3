@@ -28,6 +28,7 @@ Alire toolchain (`~/.alire/bin/gnatprove`).
 | `ESP32S3.Ext4.Block_Map` | direct/indirect + extent-node decode/validate | `ext4_host.gpr` |
 | `ESP32S3.Ext4.Dir` | dir-entry header decode + name copy | `ext4_host.gpr` |
 | `ESP32S3.Ext4.File` | EOF-clamped read/chunk size math | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Mkfs.Math` | mkfs single-group layout: inode count / table size / block positions bounded + consistent | `mkfs_math_prove.gpr` |
 | `X509.DER` + `X509` | DER TLV reader **and the certificate parser** — **untrusted input** | `x509_prove.gpr` |
 | `ESP32S3.GPS.NMEA` | NMEA-0183 GPS-sentence parser — **untrusted input** | `nmea_prove.gpr` |
 | `DNS_Client.Parse` | DNS response parser incl. name-compression — **untrusted input** | `dns_prove.gpr` |
@@ -154,10 +155,11 @@ The proof surface now covers **all the pure, separable logic in the HAL** — ev
 serializer, untrusted-input parser, checksum, and conversion, plus the timing/PWM arithmetic that
 was extractable. What remains is genuinely out of reach:
 
-- **Would need extraction, deferred** — ext4 `journal`/`block_dev` wear-levelling/`mkfs` bury
-  their logic in access-type buffers + `Unchecked_Deallocation` + variable-length replay. (The
-  `twai`/`ledc`/`rmt`/`mcpwm` integer timing math *and* the `ledc`/`mcpwm` `Set_Duty` Float duty
-  scaling were extracted into `*.Math` siblings and proved — see the table.)
+- **Would need extraction, deferred** — ext4 `journal`/`block_dev` wear-levelling bury their logic
+  in access-type buffers + `Unchecked_Deallocation` + variable-length replay. (The
+  `twai`/`ledc`/`rmt`/`mcpwm` integer timing math, the `ledc`/`mcpwm` `Set_Duty` Float duty scaling,
+  and the `mkfs` single-group layout geometry were all extracted into `*.Math` siblings and proved —
+  see the table. `mkfs`'s remaining code is the block-buffer serialization + I/O, which stays `Off`.)
 - **Out of the subset by construction** — the register/MMIO drivers (SPI/I2C/UART/I2S/GDMA/GPIO…,
   volatile), the hardware crypto accelerators (SHA/AES-ECB/RSA), controlled-type bus sessions
   (`Finalize`), access-to-subprogram callbacks, `fonts` (`Unchecked_Conversion` to access),

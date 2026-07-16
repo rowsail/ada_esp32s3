@@ -1,4 +1,5 @@
 with Interfaces; use Interfaces;
+with ESP32S3.Ext4.Mkfs.Math;
 
 package body ESP32S3.Ext4.Mkfs is
 
@@ -7,7 +8,6 @@ package body ESP32S3.Ext4.Mkfs is
    BS  : constant := 4096;          --  block size
    SPB : constant := BS / 512;      --  512-byte sectors per block = 8
    ISz : constant := 256;           --  inode size
-   IPB : constant := BS / ISz;      --  inodes per inode-table block = 16
    BPG : constant := 8 * BS;        --  blocks per group = 32768 (one bitmap block)
 
    Magic          : constant U16 := 16#EF53#;
@@ -87,31 +87,26 @@ package body ESP32S3.Ext4.Mkfs is
       Dev_Blocks : constant U64 := U64 (ESP32S3.Block_Dev.Sector_Count (Dev)) / SPB;
       T          : constant U32 := (if Total_Blocks /= 0 then Total_Blocks else U32 (Dev_Blocks));
 
-      --  Inode count: ~one per 16 KiB (mkfs default), rounded to a whole
-      --  inode-table block, at least 16.
-      Raw_I : constant U32 := U32'Max (16, T / 4);
-      I     : constant U32 := ((Raw_I + IPB - 1) / IPB) * IPB;   --  multiple of 16
-      IT    : constant U32 := I / IPB;                           --  inode-table blocks
-
-      --  Fixed single-group block layout (first_data_block = 0 for BS > 1024):
+      --  Fixed single-group block layout (first_data_block = 0 for BS > 1024);
+      --  everything after the inode table is sized/placed by Mkfs.Math below.
       GDT_Blk  : constant U32 := 1;
       BBmp_Blk : constant U32 := 2;
       IBmp_Blk : constant U32 := 3;
       ITbl_Blk : constant U32 := 4;
-      Root_Blk : constant U32 := ITbl_Blk + IT;     --  root directory data
-      LPF_Blk  : constant U32 := Root_Blk + 1;      --  lost+found data
 
-      --  Optional JBD2 journal: J_Blocks data blocks (J_First holds journal
-      --  block 0, the journal superblock) mapped classically -- 12 direct + one
-      --  single-indirect block (J_Ind), which addresses 1024 blocks.
-      J_First : constant U32 := LPF_Blk + 1;
-      J_Ind   : constant U32 := J_First + J_Blocks;  --  indirect block (journal only)
-      J_Total : constant U32 := (if Journal then J_Blocks + 1 else 0);  --  + indirect
+      --  Geometry, filled in from the (proved) Mkfs.Math after the size guards
+      --  pass -- so Compute_Layout is only ever called with T <= BPG, and
+      --  Free_Blocks only once T > Used_Blks (its and Free_Inodes' preconditions).
+      I         : U32;   --  inode count (s_inodes_count)
+      IT        : U32;   --  inode-table blocks
+      Root_Blk  : U32;   --  root directory data
+      LPF_Blk   : U32;   --  lost+found data
+      J_First   : U32;   --  journal block 0 (its superblock; journal only)
+      J_Ind     : U32;   --  journal single-indirect block (journal only)
+      Used_Blks : U32;   --  metadata + directory (+ journal) blocks in use
 
-      Used_Blks : constant U32 := (if Journal then J_First + J_Total else LPF_Blk + 1);
-
-      Free_Blocks : constant U32 := T - Used_Blks;
-      Free_Inodes : constant U32 := I - Used_Inodes;
+      Free_Blocks : U32;
+      Free_Inodes : U32;
 
       B : Block;
    begin
@@ -119,13 +114,28 @@ package body ESP32S3.Ext4.Mkfs is
          raise Unknown_Size with "mkfs: device size unknown, pass Total_Blocks";
       elsif T > BPG then
          raise Too_Large with "mkfs: > 1 block group not supported";
-      elsif T <= Used_Blks then
-         raise Too_Small
-           with
-             (if Journal
-              then "mkfs: device too small for a journal"
-              else "mkfs: device too small for the metadata");
       end if;
+
+      declare
+         L : constant Math.Layout := Math.Compute_Layout (T, Journal);
+      begin
+         if T <= L.Used_Blks then
+            raise Too_Small
+              with
+                (if Journal
+                 then "mkfs: device too small for a journal"
+                 else "mkfs: device too small for the metadata");
+         end if;
+         I           := L.Inodes;
+         IT          := L.Inode_Table;
+         Root_Blk    := L.Root_Blk;
+         LPF_Blk     := L.LPF_Blk;
+         J_First     := L.J_First;
+         J_Ind       := L.J_Ind;
+         Used_Blks   := L.Used_Blks;
+         Free_Blocks := Math.Free_Blocks (L, T);
+         Free_Inodes := Math.Free_Inodes (L);
+      end;
 
       ----------------------------------------------------------------------
       --  Block 0: padding (0 .. 1023) then the superblock at offset 1024.

@@ -19,6 +19,8 @@ project Mkfs_Host is
       "esp32s3-ext4.ads",
       "esp32s3-ext4-mkfs.adb",
       "esp32s3-ext4-mkfs.ads",
+      "esp32s3-ext4-mkfs-math.adb",
+      "esp32s3-ext4-mkfs-math.ads",
       "esp32s3-ext4-bitmap.adb",
       "esp32s3-ext4-bitmap.ads",
       "esp32s3-ext4-block_cache.adb",
