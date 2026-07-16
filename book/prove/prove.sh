@@ -22,6 +22,8 @@
 #    Endian    -- LE/BE byte join/split
 #    TLSF      -- allocator size-class + bit math; bucket indices PROVABLY in
 #                 range (beyond silver: functional postconditions, --level=4)
+#    Heap_Guard-- malloc/calloc request-size + overflow guards; a wrapping size
+#                 request can never yield a live under-sized buffer
 #
 #  gnatprove is provided by the Alire toolchain (~/.alire/bin/gnatprove).
 export PATH="$HOME/.alire/bin:$PATH"
@@ -74,6 +76,12 @@ prove "$T/endian_host/endian_host.gpr"               "Endian join/split"
 prove "$ROOT/examples/common/bare/boot/tlsf_math_prove.gpr" \
       "TLSF allocator size-class + bit math (bucket indices in range)" \
       "--level=4 --prover=z3,cvc5,altergo --timeout=60"
+
+#  malloc/calloc request-size guards: a wrapping size request can never yield a
+#  live under-sized buffer (the classic calloc integer-overflow class).
+prove "$ROOT/examples/common/bare/boot/heap_guard_prove.gpr" \
+      "malloc/calloc request-size + overflow guards (Heap_Guard)" \
+      "--level=3 --prover=z3,cvc5,altergo --timeout=30"
 
 #  Cert chain-walking (libs/tls/chain_verify) is also proven silver, but via the
 #  CROSS tls.gpr (target xtensa) + the SPARKNaCl closure -- slow to re-verify, so it

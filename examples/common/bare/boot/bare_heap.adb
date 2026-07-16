@@ -3,6 +3,7 @@ with System.Storage_Elements; use System.Storage_Elements;
 with System.Machine_Code;     use System.Machine_Code;
 with Interfaces;              use Interfaces;
 with Tlsf_Core;
+with Heap_Guard;   --  SPARK-proved request-size / calloc-overflow guards
 
 package body Bare_Heap is
 
@@ -79,12 +80,6 @@ package body Bare_Heap is
          Clobber  => "memory");
    end Leave_Crit;
 
-   --  Largest request the 32-bit allocator can size without wrapping: reject
-   --  anything above Storage_Count'Last (e.g. a negative C int reaching malloc as
-   --  a huge size_t) rather than wrap it into a tiny block.
-   Max_Request : constant Interfaces.C.size_t :=
-     Interfaces.C.size_t (Storage_Count'Last);
-
    Started : Boolean := False;   --  zero init -> .bss (boot-zeroed)
 
    procedure Ensure_Init is
@@ -102,11 +97,10 @@ package body Bare_Heap is
    ------------
 
    function Malloc (N : Interfaces.C.size_t) return System.Address is
-      use type Interfaces.C.size_t;
       Ps : Unsigned_32;
       R  : System.Address;
    begin
-      if N > Max_Request then
+      if not Heap_Guard.Request_Fits (N) then
          return System.Null_Address;   --  would wrap the 32-bit size arithmetic
       end if;
       Ps := Enter_Crit;
@@ -132,11 +126,10 @@ package body Bare_Heap is
    -------------
 
    function Realloc (P : System.Address; N : Interfaces.C.size_t) return System.Address is
-      use type Interfaces.C.size_t;
       Ps : Unsigned_32;
       R  : System.Address;
    begin
-      if N > Max_Request then
+      if not Heap_Guard.Request_Fits (N) then
          return System.Null_Address;   --  would wrap the 32-bit size arithmetic
       end if;
       Ps := Enter_Crit;
@@ -151,22 +144,22 @@ package body Bare_Heap is
    ------------
 
    function Calloc (Nmemb, Size : Interfaces.C.size_t) return System.Address is
-      use type Interfaces.C.size_t;
       Total : Storage_Count;
+      Ok    : Boolean;
       Ps    : Unsigned_32;
       R     : System.Address;
    begin
       --  Reject before allocating if Nmemb*Size overflows the (unsigned) size_t
       --  domain or exceeds what the 32-bit allocator can size -- otherwise the
       --  product wraps to a small value and a huge indexable "array" is returned.
-      if Size /= 0
-        and then (Nmemb > Interfaces.C.size_t'Last / Size
-                  or else Nmemb * Size > Max_Request)
-      then
+      --  Heap_Guard.Array_Bytes (SPARK-proved) does this and hands back the exact
+      --  non-wrapping byte count, handling the 0-element case without a cast that
+      --  could itself overflow.
+      Heap_Guard.Array_Bytes (Nmemb, Size, Total, Ok);
+      if not Ok then
          return System.Null_Address;
       end if;
-      Total := Storage_Count (Nmemb) * Storage_Count (Size);
-      Ps    := Enter_Crit;
+      Ps := Enter_Crit;
       Ensure_Init;
       R := T.Allocate (Total);
       Leave_Crit (Ps);

@@ -19,6 +19,7 @@ project Bare_Boot is
       "bare_crt.ads", "bare_crt.adb",      --  Ada strlen/atoi/write/abort/... (was bare_libc.c)
       "tlsf_math.ads", "tlsf_math.adb",    --  SPARK-proved size-class + bit math
       "tlsf_core.ads", "tlsf_core.adb",    --  O(1) allocator core
+      "heap_guard.ads", "heap_guard.adb",  --  SPARK-proved malloc/calloc size guards
       "bare_heap.ads", "bare_heap.adb",    --  Ada malloc/free/... (was bare_heap.c)
       "esp32s3_registers.ads",
       "esp32s3_registers-interrupt_core0.ads",
