@@ -1,0 +1,106 @@
+%  FRAM: the same catalogue idea as the 24C EEPROM, on I2C and SPI, without the
+%  page boundary or the program cycle.
+\chapter[FRAM: Non-Volatile RAM]%
+        {FRAM: Non-Volatile RAM --- the Same Catalogue, Without the Wait}
+\label{ch:fram}
+
+FRAM (ferroelectric RAM) fills the same kilobytes-of-non-volatile niche as the 24C
+EEPROM (Chapter~\ref{ch:eeprom}), and its driver is built the same way --- a
+generic over a catalogue of parts. So this chapter is mostly about what FRAM does
+\emph{not} need.\index{FRAM}\index{ferroelectric RAM}
+
+It behaves like RAM that keeps its contents: byte-writable, effectively unlimited
+endurance ($10^{12}$ writes and more), and no erase. Two of the three EEPROM traps
+simply vanish. There is no page boundary, so a \texttt{Write} of any length is one
+transaction with no split; and there is no program cycle --- a byte is committed
+as it is clocked in --- so there is no 5\,ms wait and no ACK polling. FRAM's
+\texttt{Write} is the EEPROM's with the two hardest parts deleted. What survives is
+the addressing.
+
+\section{Two buses, two families}
+
+FRAM comes on I2C (Fujitsu MB85RC, Cypress FM24) and on SPI (Fujitsu MB85RS,
+Cypress FM25), so there are two catalogues, \texttt{ESP32S3.FRAM\_I2C} and
+\texttt{ESP32S3.FRAM\_SPI}, each a generic over its own \texttt{Geometry}. The I2C
+side reuses the 24C addressing wholesale --- device-type code 1010, a big-endian
+word address, and high address bits folded into the device-select byte on the
+small parts, with the same derived \texttt{Blocks} / \texttt{Max\_Devices} and the
+same per-instance strap precondition (Chapter~\ref{ch:eeprom}). The SPI side is the
+small standard SPI-memory command set: \texttt{WREN} (0x06) to arm a write, then
+\texttt{WRITE} (0x02) / \texttt{READ} (0x03) with a big-endian address, and
+\texttt{RDID} (0x9F) for a JEDEC-style identity.
+
+\section{Keyed by density, not by part number}
+
+The read/write protocol is identical across manufacturers --- a fact the
+datasheets made emphatic --- so a part is nothing but its geometry, and the
+catalogue names instances by density rather than by vendor SKU. One
+\texttt{Kbit\_256} covers the Fujitsu MB85RC256V and the Cypress FM24W256 alike;
+its banner lists the part numbers.
+
+\begin{lstlisting}
+--  I2C FRAM
+with ESP32S3.FRAM_I2C.Kbit_256;
+...
+   package Ram_Part renames ESP32S3.FRAM_I2C.Kbit_256;   --  MB85RC256V, FM24W256, ...
+   Ram : Ram_Part.Device;
+begin
+   Ram_Part.Setup (Ram, Sda => 41, Scl => 40);   --  clock defaults per geometry
+   Ram_Part.Write (Ram, 16#0100#, Buf, St);       --  one transaction, no split
+\end{lstlisting}
+
+The I2C catalogue runs \texttt{Kbit\_4} through \texttt{Mbit\_1} (512 bytes to
+128\,KiB); the SPI catalogue \texttt{Kbit\_4} through \texttt{Mbit\_4}. Each
+geometry also carries its own default bus clock --- FRAM runs faster than a 24C
+part, up to Fast-mode Plus on I2C --- which \texttt{Setup} uses as the default for
+\texttt{Clock\_Hz}.
+
+The SPI parts take their pins and an application-driven chip select, exactly like
+the W25Q flash (Chapter~\ref{ch:storage}): a plain \texttt{CS\_Pin}, or
+\texttt{No\_Pin} plus a \texttt{CS\_CB} callback for a select behind an I/O
+expander. Because SPI has no per-transaction ACK and FRAM has no program cycle to
+fail, the SPI \texttt{Read} / \texttt{Write} carry \emph{no} \texttt{Status} at
+all --- an absent chip shows up as a bad Device ID, not as a failed transfer.
+
+\begin{lstlisting}
+--  SPI FRAM
+with ESP32S3.FRAM_SPI.Kbit_256;
+...
+   package Ram_Part renames ESP32S3.FRAM_SPI.Kbit_256;
+   Ram : Ram_Part.Device;
+begin
+   Ram_Part.Setup (Ram, Sclk => 1, Mosi => 4, Miso => 45, CS_Pin => 12);
+   Ram_Part.Write (Ram, 16#0100#, Buf);           --  WREN, then WRITE + payload
+\end{lstlisting}
+
+\section{Identify, do not verify}
+
+Because FRAM can report a Device ID, it is tempting to read it back and confirm the
+populated part matches the geometry you compiled for. The datasheets killed that
+idea. On I2C the ID is a 3-byte reply --- a 12-bit manufacturer code (Fujitsu
+\texttt{0x00A}, Cypress \texttt{0x004}), a vendor-specific density code, and an
+8-bit product code --- read from the reserved slave address \texttt{0xF8}; on SPI
+it is the JEDEC-style \texttt{RDID} reply. Either way the command is \emph{not}
+implemented on most parts --- the manufacturer datasheets confirm the 16 / 64 /
+128\,Kbit MB85RC parts carry none --- so a part that reports nothing is the common
+case, not an error.
+
+The driver therefore keeps \texttt{Read\_Device\_ID} and \texttt{Identify}
+(\texttt{Fujitsu} / \texttt{Cypress} / \texttt{Unknown}) as \emph{informational}
+only; the geometry is fixed at compile time by the chosen instance, and trusted. As
+with the 24C parts, every FRAM geometry is datasheet-derived and marked
+\texttt{STATUS: UNTESTED} until it is run on real silicon.
+
+\noindent The on-target example \texttt{esp32s3\_fram} drives an I2C
+MB85RC256V --- it reads the Device ID, writes a 100-byte pattern in one
+transaction (past the I2C FIFO, to prove there is no split), and keeps the same
+non-volatile boot counter the EEPROM demo uses. A companion \texttt{Fram\_Coverage}
+unit \texttt{with}s every instance in both families, so the whole catalogue is
+build-checked even though only one part is driven.
+
+\vfill
+\noindent\rule{\linewidth}{0.4pt}\\[4pt]
+\textit{The whole stack (runtime, peripheral HAL, and filesystem) is one coherent
+body of Ada: strong types from the register up, the same RAII and task-safety
+patterns in every driver, and a filesystem validated against the Linux kernel, all
+running on both cores of the ESP32-S3 on its own bare-metal runtime.}

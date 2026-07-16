@@ -1,0 +1,170 @@
+%  The 24C serial-EEPROM family: one generic driver over the whole catalogue.
+\chapter[Serial EEPROM: the 24C Family]%
+        {Serial EEPROM: the 24C Family --- One Driver, a Whole Catalogue}
+\label{ch:eeprom}
+
+An SD card holds gigabytes and a NOR flash holds megabytes. Sometimes you want
+kilobytes: a serial number, a calibration table, a boot counter. That is what a
+24C EEPROM is for. It is byte-addressable, needs no erase before a write, and
+survives far more write cycles than flash. It costs a few cents and speaks I2C.
+
+The family is large. ST sells the M24Cxx line, Microchip the 24LCxx and 24AAxx,
+Atmel the AT24Cxx, onsemi the CAT24Cxx. Every one of them speaks the same
+protocol. Three details make that protocol a trap for the unwary, and
+\texttt{ESP32S3.EEPROM\_24C} handles all three.\index{EEPROM}\index{24C family}
+
+\textbf{A page write wraps.}\index{page write} The part programs 32 bytes at a
+time (fewer on small parts, more on large ones). A write that runs past a page
+boundary does not advance into the next page. It wraps to the start of the
+current one and overwrites what you just sent. Nothing complains. \texttt{Write}
+splits its payload on page boundaries so this cannot happen.
+
+\textbf{A write takes 5\,ms, and the part goes deaf.}\index{ACK polling} Once a
+page write lands, the chip starts an internal program cycle. Until it finishes, it
+does not acknowledge its own address. The fix is \emph{ACK polling}: keep probing
+the address until it answers. \texttt{Write} polls rather than sleeping the worst
+case, so a fast part does not pay for a slow one.
+
+\textbf{A random read needs a repeated START.} You write the memory address, then
+turn the bus around without a STOP. A STOP would end the command. Every datasheet
+in the family draws it this way, and the driver issues it as one
+\texttt{ESP32S3.I2C.Write\_Read} (Section~\ref{driver:end-opcode}).
+
+\section{The API}
+
+What remains, once those three traps are handled inside the driver, is a plain,
+boring API. \texttt{Read} and \texttt{Write} take an arbitrary
+\texttt{Byte\_Array} at an arbitrary address; \texttt{Read\_Byte} /
+\texttt{Write\_Byte} are the single-cell shorthands. Every operation returns a
+\texttt{Status} --- \texttt{OK}, \texttt{Bus\_Error} (no ACK: absent,
+mis-strapped, or write-protected), or \texttt{Write\_Timeout} (the program cycle
+never finished). \texttt{Is\_Present} is an address-only probe.
+
+\begin{lstlisting}
+with ESP32S3.EEPROM_24C.M24C64;
+...
+   package Rom_Part renames ESP32S3.EEPROM_24C.M24C64;
+   Rom : Rom_Part.Device;
+   St  : Rom_Part.Status;
+   Buf : ESP32S3.I2C.Byte_Array (0 .. 63);
+begin
+   Rom_Part.Setup (Rom, Sda => 41, Scl => 40);   --  A0/A1/A2 strapped low
+   if Rom_Part.Is_Present (Rom) then
+      Rom_Part.Write (Rom, 16#0100#, Buf, St);    --  splits on page boundaries
+      Rom_Part.Read  (Rom, 16#0100#, Buf, St);    --  one transaction, any length
+   end if;
+\end{lstlisting}
+
+A \texttt{Read} holds the I2C host for the whole transfer; a \texttt{Write} holds
+it across every page \emph{and} its program cycle, so a multi-page \texttt{Write}
+is atomic with respect to other tasks on the bus. On a \texttt{Bus\_Error} or
+\texttt{Write\_Timeout} mid-write, the pages before the failure are already
+committed --- the array is not rolled back.
+
+The write-protect pin --- \texttt{WC} on ST parts, \texttt{WP} on everyone
+else --- is \emph{wiring, not software}: held HIGH it inhibits every write in the
+family, and there is no register for it. Tie it low to allow writes. Because the
+driver rides the controlled I2C \texttt{Session} (with finalization), it is an
+embedded-/full-profile driver.
+
+\section{A generic over the family}\index{generic package}\index{catalogue}
+
+Since all the parts share a protocol, they should share a driver. What differs is
+only geometry: how big the array is, how big a page is, and whether the word
+address takes one byte or two. So the driver is a generic, and a part is a value:
+
+\begin{lstlisting}
+type Geometry is record
+   Capacity_Bytes     : Positive;
+   Page_Bytes         : Positive;
+   Word_Address_Bytes : Positive;   --  1 up to 16 Kbit, 2 from 32 Kbit up
+   Max_Read_Span      : Natural := 0;
+   Base_Slave_Address : ESP32S3.I2C.Slave_Address := 16#50#;
+   Tested             : Verification := Untested;
+end record;
+
+M24C64_Part : constant Geometry :=
+  (Capacity_Bytes => 8_192, Page_Bytes => 32, Word_Address_Bytes => 2,
+   Tested => Verified, others => <>);
+\end{lstlisting}
+
+\texttt{ESP32S3.EEPROM\_24C} is the catalogue: one package holding a
+\texttt{Geometry} for every part. \texttt{ESP32S3.EEPROM\_24C.Driver} is the
+generic. Each part is then a child unit one line long:
+
+\begin{lstlisting}
+package ESP32S3.EEPROM_24C.M24C16 is
+  new ESP32S3.EEPROM_24C.Driver (M24C16_Part);
+\end{lstlisting}
+
+Child units, not packages nested in the catalogue. The difference is real: a
+nested instantiation would compile every part into every program that touched the
+catalogue, about 3\,kB each. As children, \texttt{with}-ing one part costs one
+part. The catalogue ships the ST line M24C01 through M24M02, the Atmel AT24C01 /
+AT24C02, and Microchip's 24LC1026 --- from 128 bytes to 256\,KiB.
+
+\section{The fourth field that is not there}\index{chip-enable strap}
+
+A 24C part carries three chip-enable pins, E2, E1 and E0, strapped high or low on
+the board. They form the low three bits of the slave address, so eight parts can
+share a bus: \texttt{16\#50\#} through \texttt{16\#57\#}.
+
+Except when they do not. A part whose array outruns its word address must put the
+surplus address bits somewhere. It puts them in the low bits of its own
+device-select byte, and each one eats a chip-enable pin, starting at E0. So a
+24C04 folds A8 and keeps two straps. A 24C16 folds A10, A9 and A8, keeps none, and
+only one 24C16 can ever sit on a bus.
+
+That could have been a fourth field in \texttt{Geometry}, and a fourth chance for
+someone to get it wrong. It is derived instead:
+
+\begin{lstlisting}
+Word_Span   : constant Positive := 2 ** (8 * Address_Bytes);   --  256 or 65536
+Blocks      : constant Positive := (Capacity + Word_Span - 1) / Word_Span;
+Max_Devices : constant Positive := 8 / Blocks;
+
+--  and the slave address for the byte at Location folds in the high bits:
+function Slave_Of (Dev : Device; Location : Memory_Address) return Slave_Address
+is (Base_Address + Dev.Strap + Location / Word_Span);
+\end{lstlisting}
+
+The folded bits and the straps never collide, because a strap the part has
+swallowed is not a pin any more. \texttt{Setup} says so in a precondition, and the
+precondition is per instance:
+
+\begin{lstlisting}
+procedure Setup (Dev : out Device; ...; A0, A1, A2 : Pin_State := Low; ...)
+with Pre => (if Blocks >= 2 then A0 = Low)
+            and then (if Blocks >= 4 then A1 = Low)
+            and then (if Blocks >= 8 then A2 = Low);
+\end{lstlisting}
+
+\noindent \texttt{M24C64.Setup (Rom, A0 => High)} is fine and gives you
+\texttt{16\#51\#}. \texttt{M24C16.Setup (Rom, A0 => High)} raises, because that pin
+does not exist on that part. One generic, two contracts, no runtime cost.
+
+\section{Marking what has not been tested}
+
+Only the M24C64 has been run against real silicon here. The rest are transcribed
+from datasheets. The protocol is shared, so they are very likely right, but
+``very likely'' is not the same as ``seen on a scope.''
+
+The catalogue says so. Each \texttt{Geometry} carries \texttt{Tested}, each
+instance re-exports \texttt{Hardware\_Verified : constant Boolean}, and each
+part's spec opens with a \texttt{STATUS: UNTESTED} banner. This is cheap honesty,
+and it beats a comment nobody updates. Flip a part to \texttt{Verified} (and say
+on what board) once you have run it.
+
+Two traps are worth naming, because both corrupt data quietly. ST's 1\,Kbit and
+2\,Kbit parts use a 16-byte page; Atmel's and Microchip's use 8. Guess wrong and
+the part wraps mid-write. Hence separate \texttt{AT24C01} and \texttt{AT24C02}
+entries. And Microchip's 24LC1025 puts its block-select bit in the \emph{high}
+position of the device-select byte, not the low one, so this driver's addressing
+model cannot express it. It is deliberately absent, rather than present and wrong.
+Its sibling the 24LC1026 folds normally, and is there --- with a
+\texttt{Max\_Read\_Span} so its sequential read is split at the 512-Kbit block
+boundary it may not cross.
+
+\noindent The on-target example \texttt{esp32s3\_m24c64} probes the strapped
+address, keeps a boot counter across resets, and writes a pattern across a page
+boundary to prove the split.
