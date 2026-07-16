@@ -590,6 +590,58 @@ end;                                            --  Session auto-released
 
 \noindent\textbf{Example:} \texttt{examples/esp32s3\_st7789}.
 
+\subsection{Proportional fonts and image assets}\index{fonts!anti-aliased}\index{gen\_font.py}\index{asset generators}\label{app:ext:fonts}
+
+The 5$\times$7 \texttt{ST7789.Text} font above is enough for labels; for real
+typography the HAL has \texttt{ESP32S3.Fonts}, a panel-independent model for
+proportional bitmap fonts at any size, anti-aliased (4-bit, 16-level coverage) or
+monochrome (1-bit). A \texttt{Font} is a light descriptor: per-glyph metrics
+(advance, width/height, bearings, a byte offset) plus a packed coverage bitmap,
+reached by address. The model carries no display dependency --- the generic
+\texttt{ESP32S3.Fonts.Render}, instantiated per panel (e.g.\
+\texttt{ESP32S3.ST7789.Fonts}), alpha-blends each glyph against the background ---
+so the same atlas renders unchanged on any panel.
+
+\begin{lstlisting}
+type Font is record
+   First, Count   : Natural;             --  code points [First .. First+Count-1]
+   Height, Ascent : Natural;             --  line advance; baseline offset
+   Bpp            : Natural;             --  1 or 4
+   Adv, W, H      : System.Address;      --  per-glyph metric arrays
+   XOff, YOff     : System.Address;      --  bearings
+   Off            : System.Address;      --  U16 offset into Bits per glyph
+   Bits           : System.Address;      --  packed coverage bytes
+end record;
+\end{lstlisting}
+
+\noindent\textbf{Build-time asset generators.} The atlas is not written by hand:
+it is produced from a TrueType font by \texttt{libs/esp32s3\_hal/tools/gen\_font.py},
+which rasterises each requested size (Pillow over FreeType) and emits, \emph{per
+size}, one pure-Ada package --- the metric arrays and packed 4-bit bitmap as
+\texttt{constant} arrays plus an \texttt{ESP32S3.Fonts.Font} over them. The
+\texttt{esp32s3\_b612} example wraps the invocation in \texttt{regen.sh} (three
+sizes of the B612 typeface). Each size is its own \texttt{-fdata-sections} unit, so
+\texttt{with}-ing only the sizes a program uses keeps the rest out of the image ---
+a size the app never names costs zero flash. A companion tool,
+\texttt{gen\_ada\_logo.py} in \texttt{esp32s3\_gps\_display}, does the same for a
+raster image: it rasterises an SVG (Inkscape + Pillow) to a 240$\times$240 RGB565
+array and emits a pure-Ada package whose \texttt{Pixels} aggregate is handed
+straight to \texttt{Draw\_Bitmap}.
+
+\noindent\textbf{Why Ada data, and why the tools stay Python.} These generators
+once emitted C headers that a per-example \texttt{glue.c} \texttt{\#include}d; they
+now emit Ada packages directly, so the examples contain no authored C at all.
+Keeping the data in Ada is free: a 57\,600-element scalar aggregate compiles in
+well under a second. The \emph{generators} themselves stay Python because they are
+host build-tools, re-run only when the font or artwork changes, and the heavy
+lifting --- TrueType and SVG rasterisation, high-quality resampling --- is
+FreeType, Inkscape and Pillow, which have no pure-Ada substitute worth writing for
+a tool that emits a committed, rarely-regenerated artefact. The build input is the
+generated Ada package, not the tool.
+
+\noindent\textbf{Examples:} \texttt{examples/esp32s3\_b612} (three anti-aliased
+sizes), \texttt{examples/esp32s3\_gps\_display} (the boot splash).
+
 \section{TLV2556: SPI 12-bit ADC}\index{TLV2556 driver}\index{ADC driver}
 \label{app:ext:tlv2556}
 
