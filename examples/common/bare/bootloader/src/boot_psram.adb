@@ -262,10 +262,18 @@ package body Boot_Psram is
          end loop;
       end if;
 
-      --  Prefer the validated-robust cache din (mode 1) whenever it passes -- the
-      --  SPI1-measured centre can be offset from the cache path's optimum (only
-      --  bites a heap-heavy app under sustained access); mode 1 always lands
-      --  inside the window on every octal chip tested.
+      --  Prefer mode 1 whenever the SPI1 sweep shows it in-window.  Why not just
+      --  trust the SPI1 centre: the sweep reads through SPI1's din, whose eye is
+      --  WIDER than and offset from the cache's own SPI0 din eye.  Directly
+      --  measured on the tight-eye board (a one-off async-preload cache probe, the
+      --  only hang-safe way to read the SPI0 din path) the cache eye is {0,1}
+      --  while SPI1 saw {0,1,6,7} -- so the SPI1 centre can land on a cache-BAD
+      --  mode (6/7).  Mode 1 sits inside the *measured* cache eye on every octal
+      --  chip tested.  That cache probe CANNOT run at every boot: a bad-din cache
+      --  burst wedges the shared MSPI (SPI0 also serves flash XIP) with no
+      --  recovery -- Cache_Disable itself then hangs -- so the SPI1 proxy plus
+      --  this validated pick is the safe production path.  (See research
+      --  PSRAM_BRINGUP_RESEARCH.md, "cache-din eye measurement".)
       if (Pass and Shift_Left (Unsigned_32 (1), 1)) /= 0 then
          Best := 1;
       end if;
