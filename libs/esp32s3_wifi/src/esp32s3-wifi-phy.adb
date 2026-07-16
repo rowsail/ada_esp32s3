@@ -359,6 +359,44 @@ package body ESP32S3.WiFi.PHY is
       Poke (16#6000_8850#, (Peek (16#6000_8850#) and 16#FF3F_FFFF#) or Bits);
    end Wrap_Set_Tsens_Power;
 
+   --  Batch 5: three more baseband writers -- AGC saturation gain, FFT-scale
+   --  force, and the BB register init (a magic-constant write).
+   Ports5_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports5_count";
+
+   procedure Wrap_Agc_Sat_Gain (G : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_rom_wifi_agc_sat_gain";
+   procedure Wrap_Agc_Sat_Gain (G : Interfaces.Unsigned_32) is
+   begin
+      Ports5_Count := Ports5_Count + 1;
+      Poke (16#6001_C064#, G);
+      Poke (16#6001_C114#, G);
+   end Wrap_Agc_Sat_Gain;
+
+   procedure Wrap_Fft_Scale_Force (A, B : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_fft_scale_force";
+   procedure Wrap_Fft_Scale_Force (A, B : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports5_Count := Ports5_Count + 1;
+      --  bits 20..27 = B; then bit19 = A(bit0).
+      Poke (16#6001_CC00#,
+            (Peek (16#6001_CC00#) and 16#F00F_FFFF#) or Shift_Left (B and 16#FF#, 20));
+      Poke (16#6001_CC00#, Peek (16#6001_CC00#) and 16#FFF7_FFFF#);
+      Poke (16#6001_CC00#,
+            (Peek (16#6001_CC00#) and 16#FFF7_FFFF#) or (Shift_Left (A, 19) and 16#8_0000#));
+   end Wrap_Fft_Scale_Force;
+
+   procedure Wrap_Bb_Reg_Init
+     with Export, Convention => C, External_Name => "__wrap_ram_bb_reg_init";
+   procedure Wrap_Bb_Reg_Init is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports5_Count := Ports5_Count + 1;
+      Poke (16#6001_CC48#, 16#1704_33AF#);
+      Poke (16#6001_C400#, Peek (16#6001_C400#) or 16#0000_6000#);
+   end Wrap_Bb_Reg_Init;
+
    procedure Phy_Enable is
       Cal : System.Address;
       Clk : Unsigned_32 with Import, Volatile,

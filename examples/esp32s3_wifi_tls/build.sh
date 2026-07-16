@@ -43,7 +43,8 @@ for fn in $WRAP_CRYPTO; do EXTRA_OBJS="$EXTRA_OBJS -Wl,--wrap=$fn"; done
 WRAP_PHY="force_txrx_off phy_disable_low_rate phy_enable_low_rate phy_wifi_enable_set \
 ant_dft_cfg ram_enable_wifi_agc ram_disable_wifi_agc phy_set_tx_seed wifi_rifs_mode_en \
 phy_get_noise_floor read_hw_noisefloor phy_get_cca phy_get_fetx_delay phy_get_cca_cnt \
-phy_set_cca_cnt ant_wifitx_cfg ant_bttx_cfg phy_rx11blr_cfg phy_set_tsens_power"
+phy_set_cca_cnt ant_wifitx_cfg ant_bttx_cfg phy_rx11blr_cfg phy_set_tsens_power \
+rom_wifi_agc_sat_gain phy_fft_scale_force ram_bb_reg_init"
 for fn in $WRAP_PHY; do EXTRA_OBJS="$EXTRA_OBJS -Wl,--wrap=$fn"; done
 
 # ROM symbol addresses the blobs call (lower-MAC/PHY/newlib routines in ROM).
