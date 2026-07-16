@@ -155,9 +155,11 @@ OBJ="$EX/.noidf"; mkdir -p "$OBJ"
 # stack with NO DRAM cost (the DRAM ada_env_stack array is then not emitted).  Safe at
 # boot: the 2nd-stage bootloader maps PSRAM BEFORE start.S sets SP=__stack_end.  The
 # default (unset) keeps the env stack in the DRAM ada_env_stack array, unchanged.
-ENV_STACK_GLUE_DEF=""
+# ENV_STACK_RESERVE = bytes the linker reserves for ada_env_stack in DRAM .bss
+# (vendor/sections.ld); 0 when ENV_STACK_PSRAM places the stack in PSRAM instead.
 STACK_START_SYM="ada_env_stack"
 STACK_END_SYM="ada_env_stack+$ENV_STACK_SIZE"
+ENV_STACK_RESERVE="$ENV_STACK_SIZE"
 PSRAM_HEAP_SIZE="${BOARD_PSRAM_SIZE:-0}"
 if [ "${ENV_STACK_PSRAM:-0}" != 0 ]; then
     [ "${BOARD_PSRAM_SIZE:-0}" -gt 0 ] \
@@ -169,12 +171,14 @@ if [ "${ENV_STACK_PSRAM:-0}" != 0 ]; then
     STACK_BOT=$(( STACK_TOP - ENV_STACK_SIZE ))
     STACK_START_SYM=$(printf '0x%x' "$STACK_BOT")
     STACK_END_SYM=$(printf '0x%x' "$STACK_TOP")
+    ENV_STACK_RESERVE=0                                 # no DRAM reservation
     PSRAM_HEAP_SIZE=$(( BOARD_PSRAM_SIZE - ENV_STACK_SIZE ))
-    ENV_STACK_GLUE_DEF="-DENV_STACK_PSRAM"
     echo "[bare]      env stack -> PSRAM top ($ENV_STACK_SIZE B @ $STACK_START_SYM..$STACK_END_SYM); PSRAM heap -> $PSRAM_HEAP_SIZE B"
 fi
 
-$GCC $CFLAGS -DADA_MAIN="$ADA_MAIN" -DENV_STACK_SIZE="$ENV_STACK_SIZE" $ENV_STACK_GLUE_DEF $SO_DEF -c "$BARE/bare_glue.c" -o "$OBJ/bare_glue.o"
+# (bare_glue.c removed: the IDF-free dual-core boot is now pure Ada, boot/bare_glue.adb,
+#  compiled below with bare_boot.gpr.  The Ada main is reached via the ada_env_main
+#  --defsym at link; the env/core1 stacks are reserved by vendor/sections.ld.)
 # (bare_log.c removed: bare_crt.adb now calls esp_rom_printf directly, in Ada.)
 # Per-example C glue is optional (examples that log via ESP32S3.Log need none).
 GLUE_OBJ=""
@@ -188,7 +192,8 @@ fi
 ( cd "$BARE/boot" && GPR_PROJECT_PATH="$REPO/crates/esp32s3_rts" \
     gprbuild -c -p -q -P bare_boot.gpr )
 cp "$BARE/boot/obj/bare_boot.o" "$OBJ/bare_boot.o"
-$GCC $CFLAGS         -c "$BARE/app_desc.c"  -o "$OBJ/app_desc.o"
+cp "$BARE/boot/obj/bare_glue.o" "$OBJ/bare_glue.o"   # the pure-Ada bare boot glue
+cp "$BARE/boot/obj/app_desc.o"  "$OBJ/app_desc.o"    # the pure-Ada app-image descriptor
 $GCC $CFLAGS $XINC   -c "$BARE/start.S"     -o "$OBJ/start.o"
 $GCC $CFLAGS $XINC   -c "$BARE/highint5.S"  -o "$OBJ/highint5.o"
 if [ -n "$SO_DEF" ]; then          # full: recoverable stack-overflow override
@@ -229,11 +234,14 @@ if [ -n "$HEAP_SIZE" ]; then
     echo "[bare]      + heap ($HEAP_SIZE B) + Ada freestanding libc + allocator (embedded/full profile)"
     #  Freestanding libc AND the malloc/free allocator are now Ada (boot/bare_*.adb
     #  + tlsf_core), compiled above by bare_boot.gpr; linked only for heap profiles.
-    cp "$BARE/boot/obj/bare_mem.o"  "$OBJ/bare_mem.o"
-    cp "$BARE/boot/obj/bare_crt.o"  "$OBJ/bare_crt.o"
-    cp "$BARE/boot/obj/tlsf_core.o" "$OBJ/tlsf_core.o"
-    cp "$BARE/boot/obj/bare_heap.o" "$OBJ/bare_heap.o"
-    LIB_OBJS=("$OBJ/bare_heap.o" "$OBJ/tlsf_core.o" "$OBJ/bare_mem.o" "$OBJ/bare_crt.o")
+    cp "$BARE/boot/obj/bare_mem.o"   "$OBJ/bare_mem.o"
+    cp "$BARE/boot/obj/bare_crt.o"   "$OBJ/bare_crt.o"
+    cp "$BARE/boot/obj/tlsf_core.o"  "$OBJ/tlsf_core.o"
+    cp "$BARE/boot/obj/tlsf_math.o"  "$OBJ/tlsf_math.o"    #  tlsf_core's size-class math
+    cp "$BARE/boot/obj/heap_guard.o" "$OBJ/heap_guard.o"   #  bare_heap's calloc/malloc guards
+    cp "$BARE/boot/obj/bare_heap.o"  "$OBJ/bare_heap.o"
+    LIB_OBJS=("$OBJ/bare_heap.o" "$OBJ/tlsf_core.o" "$OBJ/tlsf_math.o" \
+              "$OBJ/heap_guard.o" "$OBJ/bare_mem.o" "$OBJ/bare_crt.o")
 fi
 
 # Example-provided extra link inputs (esp32s3_psram: the vendored IDF
@@ -249,6 +257,8 @@ echo "[bare] 3/4  link -> app.elf"
 $GCC -nostdlib -no-pie \
     -T "$VENDOR/memory.ld" -T "$VENDOR/sections.ld" -T "$VENDOR/rom_syms.ld" $EXTRA_LD_ARGS \
     -Wl,-e,_start -Wl,-Map="$EX/app.map" \
+    -Wl,--defsym=ada_env_main=$ADA_MAIN \
+    -Wl,--defsym=__env_stack_size=$ENV_STACK_RESERVE \
     -Wl,--defsym=__stack_start=$STACK_START_SYM \
     -Wl,--defsym=__stack_end=$STACK_END_SYM \
     -Wl,--defsym=__core1_stack_end=core1_stack+8192 \
