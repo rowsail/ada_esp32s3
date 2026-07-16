@@ -6,6 +6,7 @@ with SPARKNaCl.Hashing.SHA512;
 with SPARKNaCl.Sign;
 with P256;
 with P384;
+with Der_Sig;   --  SPARK-proved untrusted DER-INTEGER (ECDSA r/s) parse
 
 package body Cert_Verify is
 
@@ -437,34 +438,10 @@ package body Cert_Verify is
       Out32 : out P256.Bytes_32;
       Ok    : in out Boolean)
    is
-      Len, First, Vlen : Natural;
+      Tmp : Der_Sig.Bytes (0 .. 31);
    begin
-      Out32 := (others => 0);
-      if not Ok or else Pos + 1 > Last or else Buf (Pos) /= 16#02# then
-         Ok := False;
-         return;
-      end if;
-      Len := Natural (Buf (Pos + 1));               --  r, s < 128 bytes => short form
-      Pos := Pos + 2;
-      if Len = 0 or else Pos + Len - 1 > Last then
-         Ok := False;
-         return;
-      end if;
-      First := Pos;
-      Vlen := Len;
-      while Vlen > 0 and then Buf (First) = 0 loop
-         --  drop leading zero bytes
-         First := First + 1;
-         Vlen := Vlen - 1;
-      end loop;
-      if Vlen > 32 then
-         Ok := False;
-         return;
-      end if;
-      for I in 0 .. Vlen - 1 loop
-         Out32 (32 - Vlen + I) := P256.Byte (Buf (First + I));
-      end loop;
-      Pos := Pos + Len;
+      Der_Sig.Read_Integer (Der_Sig.Bytes (Buf), Pos, Last, Tmp, Ok);
+      Out32 := P256.Bytes_32 (Tmp);
    end DER_Int;
 
    --  Verify ECDSA(SHA-256/384)/P-256 of Hash32 with signature Sig_DER under
@@ -517,33 +494,10 @@ package body Cert_Verify is
       Out48 : out P384.Bytes_48;
       Ok    : in out Boolean)
    is
-      Len, First, Vlen : Natural;
+      Tmp : Der_Sig.Bytes (0 .. 47);
    begin
-      Out48 := (others => 0);
-      if not Ok or else Pos + 1 > Last or else Buf (Pos) /= 16#02# then
-         Ok := False;
-         return;
-      end if;
-      Len := Natural (Buf (Pos + 1));               --  r, s < 128 bytes
-      Pos := Pos + 2;
-      if Len = 0 or else Pos + Len - 1 > Last then
-         Ok := False;
-         return;
-      end if;
-      First := Pos;
-      Vlen := Len;
-      while Vlen > 0 and then Buf (First) = 0 loop   --  drop leading zero bytes
-         First := First + 1;
-         Vlen := Vlen - 1;
-      end loop;
-      if Vlen > 48 then
-         Ok := False;
-         return;
-      end if;
-      for I in 0 .. Vlen - 1 loop
-         Out48 (48 - Vlen + I) := P384.Byte (Buf (First + I));
-      end loop;
-      Pos := Pos + Len;
+      Der_Sig.Read_Integer (Der_Sig.Bytes (Buf), Pos, Last, Tmp, Ok);
+      Out48 := P384.Bytes_48 (Tmp);
    end DER_Int_48;
 
    function ECDSA_P384_SHA384 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean

@@ -15,6 +15,7 @@
 #    ext4      -- Get_*/Put_* byte helpers, CRC32C, and Superblock/Inode/Group_Desc
 #                 /Bitmap/Block_Map/Dir/File serialization + validation
 #    X509      -- the DER TLV reader AND the certificate parser (untrusted input)
+#    Der_Sig   -- the ECDSA-Sig-Value DER r/s parse (untrusted input): no over-read
 #    NMEA      -- the NMEA-0183 GPS-sentence parser (untrusted input)
 #    Modbus    -- slave framing/dispatch (Process) and master PDU build/parse
 #    NTP       -- To_UTC civil-date math
@@ -51,6 +52,7 @@ prove () {  #  $1 = project file, $2 = label, $3 = gnatprove tuning (optional)
 
 prove "$T/ext4_host/ext4_host.gpr"                   "ext4 (helpers/CRC32C/Superblock/Inode/Group_Desc/Bitmap/Block_Map/Dir/File)"
 prove "$T/x509_prove/x509_prove.gpr"                 "X509 DER + certificate parser (untrusted input)"
+prove "$ROOT/libs/tls/der_sig_prove.gpr"             "ECDSA DER r/s signature parse (untrusted input)"
 prove "$T/nmea_prove/nmea_prove.gpr"                 "NMEA GPS-sentence parser (untrusted input)"
 prove "$T/dns_prove/dns_prove.gpr"                   "DNS response parser (untrusted input)"
 prove "$T/modbus_slave_host/modbus_slave_host.gpr"   "Modbus slave (framing + Process)"
