@@ -28,6 +28,8 @@ Alire toolchain (`~/.alire/bin/gnatprove`).
 | `ESP32S3.Ext4.Block_Map` | direct/indirect + extent-node decode/validate | `ext4_host.gpr` |
 | `ESP32S3.Ext4.Dir` | dir-entry header decode + name copy | `ext4_host.gpr` |
 | `ESP32S3.Ext4.File` | EOF-clamped read/chunk size math | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Mkfs.Math` | mkfs single-group layout: inode count / table size / block positions bounded + consistent | `mkfs_math_prove.gpr` |
+| `ESP32S3.Ext4.Path_Scan` | `/`-separated path-component scanner (untrusted input): never slices outside the string | `path_scan_prove.gpr` |
 | `X509.DER` + `X509` | DER TLV reader **and the certificate parser** — **untrusted input** | `x509_prove.gpr` |
 | `ESP32S3.GPS.NMEA` | NMEA-0183 GPS-sentence parser — **untrusted input** | `nmea_prove.gpr` |
 | `DNS_Client.Parse` | DNS response parser incl. name-compression — **untrusted input** | `dns_prove.gpr` |
@@ -43,9 +45,9 @@ Alire toolchain (`~/.alire/bin/gnatprove`).
 | `ESP32S3.TLV2556` | ADC count → millivolts | `tlv2556_prove.gpr` |
 | `ESP32S3.ES8311` | codec volume % → DAC register | `es8311_prove.gpr` |
 | `ESP32S3.TWAI.Math` | CAN baud-rate prescaler / bit-timing | `twai_math_prove.gpr` |
-| `ESP32S3.LEDC.Math` | LED-PWM clock divider (Q10.8) | `ledc_math_prove.gpr` |
+| `ESP32S3.LEDC.Math` | LED-PWM clock divider (Q10.8) + Float duty scaling | `ledc_math_prove.gpr` |
 | `ESP32S3.RMT.Math` | RMT tick divider | `rmt_math_prove.gpr` |
-| `ESP32S3.MCPWM.Math` | motor-PWM period / prescale / dead-time | `mcpwm_math_prove.gpr` |
+| `ESP32S3.MCPWM.Math` | motor-PWM period / prescale / dead-time + Float duty scaling | `mcpwm_math_prove.gpr` |
 | `ESP32S3.Endian` | LE/BE byte join/split primitives | `endian_host.gpr` |
 
 The last two groups are *pure math from hardware drivers*: the SHT41/SD_SPI/RTC/IMU/ADC/codec
@@ -140,6 +142,13 @@ bug in `superblock` (the absolute-vs-`Buf'First` CRC slice).
 - Provers stall on nonlinear ops: replace `2 ** k` with `Shift_Left (1, k)` and variable-exponent
   `10 ** p` with a closed-form `case` function.
 - SPARK forbids renaming a slice with **variable** bounds — bind the bounds as `constant`s first.
+- **`Float`→integer conversion of a nonlinear product** (e.g. `Natural (Float (Max) * Percent /
+  100.0)` in `Set_Duty`): the SMT solvers derive *neither* conversion bound from the product, will
+  not carry a *variable* `Float (Max)` bound through the conversion, and will not rule out a NaN.
+  Fix: bind the product to a local `Raw : Float`, then convert only inside a two-sided guard
+  against **static literal** bounds — `if Raw >= 0.0 and then Raw <= 16_384.0 then Natural (Raw)`.
+  The guard supplies both bounds directly and, since every comparison is False for NaN, excludes
+  NaN too; it holds for every legal input, so the saturating `else` is dead code (behaviour-neutral).
 
 ## The boundary — what is left, and why it is out of reach
 
@@ -147,10 +156,11 @@ The proof surface now covers **all the pure, separable logic in the HAL** — ev
 serializer, untrusted-input parser, checksum, and conversion, plus the timing/PWM arithmetic that
 was extractable. What remains is genuinely out of reach:
 
-- **Would need extraction, deferred** — ext4 `journal`/`block_dev` wear-levelling/`mkfs` bury
-  their logic in access-type buffers + `Unchecked_Deallocation` + variable-length replay; the
-  `Set_Duty` paths in `ledc`/`mcpwm` use `Float`. (The `twai`/`ledc`/`rmt`/`mcpwm` integer timing
-  math *was* extracted into `*.Math` siblings and proved — see the table.)
+- **Would need extraction, deferred** — ext4 `journal`/`block_dev` wear-levelling bury their logic
+  in access-type buffers + `Unchecked_Deallocation` + variable-length replay. (The
+  `twai`/`ledc`/`rmt`/`mcpwm` integer timing math, the `ledc`/`mcpwm` `Set_Duty` Float duty scaling,
+  and the `mkfs` single-group layout geometry were all extracted into `*.Math` siblings and proved —
+  see the table. `mkfs`'s remaining code is the block-buffer serialization + I/O, which stays `Off`.)
 - **Out of the subset by construction** — the register/MMIO drivers (SPI/I2C/UART/I2S/GDMA/GPIO…,
   volatile), the hardware crypto accelerators (SHA/AES-ECB/RSA), controlled-type bus sessions
   (`Finalize`), access-to-subprogram callbacks, `fonts` (`Unchecked_Conversion` to access),

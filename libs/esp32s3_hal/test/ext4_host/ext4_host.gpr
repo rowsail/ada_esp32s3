@@ -39,6 +39,8 @@ project Ext4_Host is
       "esp32s3-ext4-journal.ads",
       "esp32s3-ext4-path.adb",
       "esp32s3-ext4-path.ads",
+      "esp32s3-ext4-path_scan.adb",
+      "esp32s3-ext4-path_scan.ads",
       "esp32s3-ext4-superblock.adb",
       "esp32s3-ext4-superblock.ads",
       "esp32s3-ext4-volume.ads",

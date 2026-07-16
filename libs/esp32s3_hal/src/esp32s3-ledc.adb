@@ -225,8 +225,8 @@ package body ESP32S3.LEDC is
    --------------
 
    procedure Set_Duty (C : Channel; Percent : Duty_Percent) is
-      Max   : constant Natural := 2**C.Bits;
-      Count : constant Natural := Natural'Min (Max, Natural (Float (Max) * Percent / 100.0));
+      --  The duty scaling (proved free of range error) lives in ESP32S3.LEDC.Math.
+      Count : constant Natural := Math.Duty_Count (C.Bits, Percent);
    begin
       if not C.Held then
          return;
