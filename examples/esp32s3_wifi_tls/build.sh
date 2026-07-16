@@ -47,7 +47,8 @@ phy_set_cca_cnt ant_wifitx_cfg ant_bttx_cfg phy_rx11blr_cfg phy_set_tsens_power 
 rom_wifi_agc_sat_gain phy_fft_scale_force ram_bb_reg_init \
 phy_chan_dump_cfg phy_rx_sense_set rfrx_sat_rst tx_state_set ram_phy_en_hw_set_freq \
 ram_phy_dis_hw_set_freq wait_freq_set_busy \
-esp_phy_efuse_get_mac rom_phy_ant_init rom_bt_filter_reg rom_open_i2c_xpd"
+esp_phy_efuse_get_mac rom_phy_ant_init rom_bt_filter_reg rom_open_i2c_xpd \
+ant_btrx_cfg ant_wifirx_cfg ram_wifi_tx_dig_gain_reg rom_bt_tx_dig_gain rom_phy_bbpll_cal"
 for fn in $WRAP_PHY; do EXTRA_OBJS="$EXTRA_OBJS -Wl,--wrap=$fn"; done
 
 # ROM symbol addresses the blobs call (lower-MAC/PHY/newlib routines in ROM).

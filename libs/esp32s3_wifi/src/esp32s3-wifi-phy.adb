@@ -541,6 +541,88 @@ package body ESP32S3.WiFi.PHY is
       Poke (16#6000_8000#, Peek (16#6000_8000#) or 16#80#);
    end Wrap_Open_I2c_Xpd;
 
+   --  Batch 8: antenna BT-rx/wifi-rx cfg, wifi/BT TX digital-gain regs (byte-
+   --  array args), bbpll cal.
+   Ports8_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports8_count";
+
+   procedure Wrap_Ant_Btrx_Cfg (A, B, C : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_ant_btrx_cfg";
+   procedure Wrap_Ant_Btrx_Cfg (A, B, C : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports8_Count := Ports8_Count + 1;
+      Poke (16#6001_C11C#, (Peek (16#6001_C11C#) and 16#FFFF_FFF7#) or Shift_Left (A and 1, 3));
+      Poke (16#6000_60B8#, (Peek (16#6000_60B8#) and 16#FFFF_00FF#) or Shift_Left (B and 16#FF#, 8));
+      Poke (16#6000_60B8#, (Peek (16#6000_60B8#) and 16#FF00_FFFF#) or Shift_Left (B and 16#FF#, 16));
+      Poke (16#6000_60B8#, (Peek (16#6000_60B8#) and 16#00FF_FFFF#) or Shift_Left (C and 16#FF#, 24));
+      Poke (16#6000_60BC#, (Peek (16#6000_60BC#) and 16#FFFF_FF00#) or (C and 16#FF#));
+   end Wrap_Ant_Btrx_Cfg;
+
+   procedure Wrap_Ant_Wifirx_Cfg (A, B, C : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_ant_wifirx_cfg";
+   procedure Wrap_Ant_Wifirx_Cfg (A, B, C : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports8_Count := Ports8_Count + 1;
+      Poke (16#6001_C11C#, (Peek (16#6001_C11C#) and 16#FFFF_FFFD#) or Shift_Left (A and 1, 1));
+      Poke (16#6000_60B0#, (Peek (16#6000_60B0#) and 16#00FF_FFFF#) or Shift_Left (B and 16#FF#, 24));
+      Poke (16#6000_60B4#, (Peek (16#6000_60B4#) and 16#FFFF_FF00#) or (B and 16#FF#));
+      Poke (16#6000_60B4#, (Peek (16#6000_60B4#) and 16#FFFF_00FF#) or Shift_Left (C and 16#FF#, 8));
+      Poke (16#6000_60B4#, (Peek (16#6000_60B4#) and 16#FF00_FFFF#) or Shift_Left (C and 16#FF#, 16));
+   end Wrap_Ant_Wifirx_Cfg;
+
+   --  little-endian 32-bit word from 4 bytes of a C byte array at Ptr+Off.
+   function LE32 (Ptr : System.Address; Off : Natural) return Interfaces.Unsigned_32 is
+      use type Interfaces.Unsigned_32;
+      B : array (0 .. 3) of Interfaces.Unsigned_8
+        with Import, Address => Ptr + System.Storage_Elements.Storage_Offset (Off);
+   begin
+      return Interfaces.Unsigned_32 (B (0))
+        or Shift_Left (Interfaces.Unsigned_32 (B (1)), 8)
+        or Shift_Left (Interfaces.Unsigned_32 (B (2)), 16)
+        or Shift_Left (Interfaces.Unsigned_32 (B (3)), 24);
+   end LE32;
+
+   procedure Wrap_Wifi_Tx_Dig_Gain_Reg (Ptr : System.Address)
+     with Export, Convention => C, External_Name => "__wrap_ram_wifi_tx_dig_gain_reg";
+   procedure Wrap_Wifi_Tx_Dig_Gain_Reg (Ptr : System.Address) is
+      use type Interfaces.Unsigned_32;
+      B12 : array (0 .. 1) of Interfaces.Unsigned_8
+        with Import, Address => Ptr + 12;
+      Hi : constant Interfaces.Unsigned_32 := Interfaces.Unsigned_32 (B12 (1));
+   begin
+      Ports8_Count := Ports8_Count + 1;
+      Poke (16#6000_6024#, LE32 (Ptr, 0));
+      Poke (16#6000_6028#, LE32 (Ptr, 4));
+      Poke (16#6000_602C#, LE32 (Ptr, 8));
+      --  byte0 = p[12], bytes 1..3 = p[13] (the sign-extension the blob does is
+      --  masked away byte-by-byte, so this is exact).
+      Poke (16#6000_6030#, Interfaces.Unsigned_32 (B12 (0))
+                            or Shift_Left (Hi, 8) or Shift_Left (Hi, 16) or Shift_Left (Hi, 24));
+   end Wrap_Wifi_Tx_Dig_Gain_Reg;
+
+   procedure Wrap_Bt_Tx_Dig_Gain (Ptr : System.Address)
+     with Export, Convention => C, External_Name => "__wrap_rom_bt_tx_dig_gain";
+   procedure Wrap_Bt_Tx_Dig_Gain (Ptr : System.Address) is
+   begin
+      Ports8_Count := Ports8_Count + 1;
+      Poke (16#6000_6014#, LE32 (Ptr, 0));
+      Poke (16#6000_6018#, LE32 (Ptr, 4));
+      Poke (16#6000_601C#, LE32 (Ptr, 8));
+      Poke (16#6000_6020#, LE32 (Ptr, 12));
+   end Wrap_Bt_Tx_Dig_Gain;
+
+   procedure Wrap_Phy_Bbpll_Cal (A : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_rom_phy_bbpll_cal";
+   procedure Wrap_Phy_Bbpll_Cal (A : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      Bits : constant Interfaces.Unsigned_32 := (if (A and 16#FF#) /= 0 then 8 else 4);
+   begin
+      Ports8_Count := Ports8_Count + 1;
+      Poke (16#6000_E040#, (Peek (16#6000_E040#) and 16#FFFF_FFF3#) or Bits);
+   end Wrap_Phy_Bbpll_Cal;
+
    --  ---- g_phyFuns resolver -------------------------------------------------
    --  Some ported functions are invoked by the PHY ROM through the g_phyFuns
    --  function-pointer table, which --wrap can't redirect (the table is filled
