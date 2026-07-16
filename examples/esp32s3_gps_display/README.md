@@ -46,14 +46,12 @@ full-screen with `ESP32S3.ST7789.Draw_Bitmap` before the dashboard starts:
 - `ada_logo.svg` — the source art (a copy of `book/AdaNoText.svg`).
 - `gen_ada_logo.py` — rasterises the SVG (Inkscape) and emits the pixel
   table (Pillow). Re-run only if the art or size changes.
-- `ada_logo.h` — the generated `const unsigned short ada_logo_rgb565[]`,
-  `#include`d by `glue.c`.
-- `src/ada_logo.ads` — imports that C symbol as a `Color_Array`, so the image is
-  blitted with the normal driver call (importing the C array keeps the
-  57 600-element table out of the Ada source and compiles instantly).
+- `src/ada_logo.ads` — the generated pure-Ada package: the 57 600-element
+  `Pixels` `Color_Array` aggregate, blitted with the normal driver call (a
+  scalar aggregate this size compiles in well under a second).
 
 ```sh
-./gen_ada_logo.py     # ada_logo.svg -> ada_logo.h  (needs inkscape + Pillow)
+./gen_ada_logo.py     # ada_logo.svg -> src/ada_logo.ads  (needs inkscape + Pillow)
 ```
 
 ## How it works

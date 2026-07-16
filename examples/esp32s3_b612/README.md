@@ -23,16 +23,14 @@ panel doesn't support. Spacing is proportional (per-glyph advance).
 
 Each size is fully independent:
 
-- its glyph data is a separate C header (`b612_<sz>.h`) compiled into its
-  own `.rodata.b612_<sz>_*` linker section (`-fdata-sections`);
-- it has its own one-line Ada package (`src/b612_<sz>.ads`) exposing an
-  `ESP32S3.Fonts.Font` constant.
+- its glyph data (metrics + packed bitmap) lives in its own pure-Ada package
+  (`src/b612_<sz>.ads`) as constant arrays, in its own `-fdata-sections` section,
+  with an `ESP32S3.Fonts.Font` constant over them.
 
-So a program links a size's bytes **only if** it both `#include`s that header in
-`glue.c` *and* `with`s that package. Need only 16 px? `#include "b612_16.h"` and
-`with B612_16;` — 12/24 px are never compiled in (0 bytes). **This demo includes
-all three** to show them together; trim the `#include`s in `glue.c` and the
-`with`s in `main.adb` for a real build.
+So a program links a size's bytes **only if** it `with`s that package. Need only
+16 px? `with B612_16;` — 12/24 px are never compiled in (0 bytes). **This demo
+includes all three** to show them together; trim the `with`s in `main.adb` for a
+real build.
 
 ## The text engine (in the HAL, panel-agnostic)
 
@@ -64,7 +62,7 @@ The atlases are produced by the **shared, font-agnostic** generator
 the invocation:
 
 ```sh
-./regen.sh           # B612-Regular.ttf -> b612_<sz>.h + src/b612_<sz>.ads
+./regen.sh           # B612-Regular.ttf -> src/b612_<sz>.ads
 ```
 
 i.e. `gen_font.py --ttf B612-Regular.ttf --name b612 --sizes 12,16,24
