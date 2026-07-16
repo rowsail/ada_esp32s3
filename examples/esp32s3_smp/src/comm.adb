@@ -5,12 +5,32 @@ with Ada.Real_Time; use Ada.Real_Time;
 
 package body Comm is
 
-   procedure Log_Xfer (Value, From_Core, To_Core : Interfaces.C.int);
-   pragma Import (C, Log_Xfer, "native_log_xfer");
-   procedure Log_Rate (Gets, Posted : Interfaces.C.int);
-   pragma Import (C, Log_Rate, "native_log_rate");
    function Core_Id return Interfaces.C.int;       --  PRID-derived (0 or 1)
    pragma Import (C, Core_Id, "native_core_id");
+
+   --  Cross-core transfer log (was smp/glue.c; now Ada calling the ROM printf
+   --  directly).  esp_rom_printf keeps each line a single atomic write, so the
+   --  two cores' output (producer rate, consumer xfer) never interleaves.
+   procedure Rom_Printf3 (Fmt : System.Address; A, B, C : Interfaces.C.int);
+   pragma Import (C, Rom_Printf3, "esp_rom_printf");
+   procedure Rom_Printf2 (Fmt : System.Address; A, B : Interfaces.C.int);
+   pragma Import (C, Rom_Printf2, "esp_rom_printf");
+
+   Xfer_Fmt : constant String :=
+     "value %2d:  producer core %d  -->  consumer core %d" & ASCII.LF & ASCII.NUL;
+   Rate_Fmt : constant String :=
+     "[rate] posted %d:  consumer entry Get completed %d time(s) this period"
+     & ASCII.LF & ASCII.NUL;
+
+   procedure Log_Xfer (Value, From_Core, To_Core : Interfaces.C.int) is
+   begin
+      Rom_Printf3 (Xfer_Fmt'Address, Value, From_Core, To_Core);
+   end Log_Xfer;
+
+   procedure Log_Rate (Gets, Posted : Interfaces.C.int) is
+   begin
+      Rom_Printf2 (Rate_Fmt'Address, Posted, Gets);
+   end Log_Rate;
 
    --  Cross-core handoff via a real protected-object ENTRY.  The producer
    --  (core 1) writes the mailbox and opens the barrier; the consumer (core 0)
