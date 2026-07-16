@@ -1,20 +1,37 @@
---  Compile the IDF-free bootloader's loader core (src/boot.adb) to a single
---  relocatable object, in ZFP style: built against the pinned runtime only for
---  system.ads, but compiled -gnatp / No_Elaboration so the linked output needs no
---  binder (adainit) and pulls no runtime.  build.sh runs `gprbuild -c` then links
---  boot_main.o + boot_psram.o (pure-Ada PSRAM bring-up) + start.S + freestanding libc.
+--  Compile the IDF-free bootloader to relocatable objects, in ZFP style: built
+--  against the pinned runtime only for system.ads, but compiled -gnatp /
+--  No_Elaboration so the linked output needs no binder (adainit) and pulls no
+--  runtime.  build.sh runs `gprbuild -c` then links boot_main.o + boot_psram.o
+--  (pure-Ada PSRAM bring-up) + bare_mem.o (shared Ada freestanding mem*) +
+--  boot_glue.o (Ada abort/__assert_func) + start.S.  No C is compiled -- the
+--  bootloader is now pure Ada apart from the reset-vector asm prologue.
 with "esp32s3_rts.gpr";
 
 project Boot is
    for Target use "xtensa-esp32-elf";
    for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;
-   --  BOOT_GEN_DIR holds the build-generated board_cfg.ads (Psram_Pages).
-   for Source_Dirs use ("src", external ("BOOT_GEN_DIR", "src"));
+   --  src + the build-generated board_cfg.ads (BOOT_GEN_DIR) + ../boot for the ONE
+   --  canonical Bare_Mem (same source the app examples link -- no C duplicate).
+   for Source_Dirs use ("src", external ("BOOT_GEN_DIR", "src"), "../boot");
+   --  Restrict to our closure: ../boot also holds bare_boot/bare_crt/tlsf/heap +
+   --  svd specs we neither need nor have the include path for here.
+   for Source_Files use
+     ("boot_main.ads", "boot_main.adb",
+      "boot_psram.ads", "boot_psram.adb",
+      "boot_glue.ads", "boot_glue.adb",
+      "board_cfg.ads",
+      "bare_mem.ads", "bare_mem.adb");
    for Object_Dir use "obj";
 
    package Compiler is
       for Switches ("Ada") use
         ("-Os", "-mlongcalls", "-gnatp",
          "-ffunction-sections", "-fdata-sections");
+      --  Bare_Mem implements memcpy/memset/...; -fno-tree-loop-distribute-patterns
+      --  stops GCC turning its byte loops back into calls to those (self-recursion).
+      for Switches ("bare_mem.adb") use
+        ("-Os", "-mlongcalls", "-gnatp",
+         "-ffunction-sections", "-fdata-sections",
+         "-fno-tree-loop-distribute-patterns");
    end Compiler;
 end Boot;

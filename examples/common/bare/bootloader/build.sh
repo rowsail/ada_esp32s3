@@ -3,14 +3,15 @@
 # The loader core is ZFP-style Ada (src/boot_main.adb): compiled -gnatp /
 # No_Elaboration against the pinned runtime's system.ads into a relocatable
 # boot_main.o that needs no binder (adainit) and pulls no runtime at link, so the
-# linked output is genuinely runtime-free.  start.S is the asm prologue;
-# The octal-PSRAM bring-up is pure Ada (src/boot_psram.adb); only ROM calls + the
-#
-# freestanding libc (psram_glue.c) remain C.  PSRAM size comes from board.ads via
+# linked output is genuinely runtime-free.  start.S is the asm prologue (the only
+# non-Ada piece); the octal-PSRAM bring-up (src/boot_psram.adb), the freestanding
+# mem* (../boot/bare_mem.adb, shared with the app examples) and the abort/assert
+# stubs (src/boot_glue.adb) are all Ada -- no C is compiled.  Only ROM functions
+# remain external.  PSRAM size comes from board.ads via
 # (its own board.ads) can need its own bootloader.  These env vars let bare_build.sh
 # build a project-specific one without touching the SDK copy (all default to the
 # in-tree SDK build):
-#   BOARD_CFG_DIR  dir holding board_config.h (-I for psram_boot.c).  If it also has
+#   BOARD_CFG_DIR  dir holding board_config.h (source of BOARD_PSRAM_PAGES).  If it also has
 #                  a board.ads (the SDK default/template), it's (re)generated from it.
 #   BOOT_OBJ       intermediate objects + boot.elf/.map (default: ./obj)
 #   BOOT_OUT       output bootloader.bin (default: ./bootloader.bin)
@@ -49,23 +50,27 @@ package Board_Cfg is
 end Board_Cfg;
 EOF
 
-# 1. Loader core + pure-Ada PSRAM bring-up (boot_main.o + boot_psram.o).
+# 1. Loader core + pure-Ada PSRAM bring-up + shared Ada freestanding mem*
+#    (Bare_Mem, the same source the app examples link) + Ada abort/__assert_func
+#    (boot_glue).  gprbuild emits all four objects into ./obj.
 bash "$REPO/crates/esp32s3_rts/gen_runtime.sh" >/dev/null
 ( cd "$HERE" && BOOT_GEN_DIR="$GEN" gprbuild -c -p -q -P boot.gpr )
 BMO="$HERE/obj/boot_main.o"
 BPO="$HERE/obj/boot_psram.o"
+MEMO="$HERE/obj/bare_mem.o"    # memcpy/memset/memcmp/memmove (Ada, WEAK)
+GLUEO="$HERE/obj/boot_glue.o"  # abort/__assert_func (Ada)
 
-# 2. asm prologue + freestanding libc (memcpy/memset/memcmp/abort).  The octal-
-# PSRAM bring-up (was psram_boot.c / psram_impl_src.c / mspi_timing_src.c) is now
-# pure Ada in boot_psram.adb -- only ROM functions remain external.
+# 2. asm prologue -- the only non-Ada piece left (CPU reset vector / stack setup).
+# The former C freestanding libc (psram_glue.c) is gone: mem* -> Bare_Mem, the
+# trap stubs -> Boot_Glue.  The PSRAM bring-up is pure Ada (boot_psram.adb); only
+# ROM functions remain external.
 $GCC $CFLAGS -c "$HERE/start.S"       -o "$O/start.o"
-$GCC $CFLAGS -c "$HERE/psram_glue.c"  -o "$O/psram_glue.o"
 
 $GCC -nostdlib -no-pie \
     -T "$HERE/boot.ld" -T "$HERE/rom.ld" \
     -Wl,-e,_start -Wl,-Map="$O/boot.map" \
     -o "$O/boot.elf" \
-    "$BMO" "$BPO" "$O/start.o" "$O/psram_glue.o"
+    "$BMO" "$BPO" "$MEMO" "$GLUEO" "$O/start.o"
 
 # Package boot.elf -> bootloader.bin with our own Ada esp_elf2image (byte-identical
 # to esptool, verified) so the bootloader build needs no esptool either.  Set
