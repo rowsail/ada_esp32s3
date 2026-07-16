@@ -475,8 +475,22 @@ SECTIONS
        it into external PSRAM via its own psram.ld region (extra -T).  Empty in
        every other example, so leaving it unmatched here is harmless. */
     *(COMMON)
-    
- . = ALIGN(8); 
+
+    /* Bare-boot stacks, reserved here (was the ada_env_stack / core1_stack .bss
+       arrays in bare_glue.c; the glue is Ada now, so the linker reserves them).
+       Both land in .bss so start.S's _bss clear zeroes them, exactly as the C
+       arrays were.  __env_stack_size is --defsym'd by bare_build.sh (per-profile,
+       0 when the env stack is placed in PSRAM); default 16 KiB if unset.  The
+       env-stack/core1-stack bounds (__stack_*, __core1_stack_end) are --defsym'd
+       off these symbols. */
+    . = ALIGN(16);
+    ada_env_stack = ABSOLUTE(.);
+    . = . + (DEFINED(__env_stack_size) ? __env_stack_size : 16384);
+    . = ALIGN(16);
+    core1_stack = ABSOLUTE(.);
+    . = . + 8192;
+
+ . = ALIGN(8);
  _bss_end = ABSOLUTE(.);
   } > dram0_0_seg
   ASSERT(((_bss_end - ORIGIN(dram0_0_seg)) <= LENGTH(dram0_0_seg)),

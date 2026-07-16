@@ -15,6 +15,7 @@ project Bare_Boot is
    --  but there is no point compiling 46 peripherals to use three).
    for Source_Files use
      ("bare_boot.ads", "bare_boot.adb",
+      "bare_glue.ads", "bare_glue.adb",    --  IDF-free dual-core boot (was bare_glue.c)
       "bare_mem.ads", "bare_mem.adb",      --  Ada freestanding mem* (was bare_libc.c)
       "bare_crt.ads", "bare_crt.adb",      --  Ada strlen/atoi/write/abort/... (was bare_libc.c)
       "tlsf_math.ads", "tlsf_math.adb",    --  SPARK-proved size-class + bit math
