@@ -193,7 +193,7 @@ fi
     gprbuild -c -p -q -P bare_boot.gpr )
 cp "$BARE/boot/obj/bare_boot.o" "$OBJ/bare_boot.o"
 cp "$BARE/boot/obj/bare_glue.o" "$OBJ/bare_glue.o"   # the pure-Ada bare boot glue
-$GCC $CFLAGS         -c "$BARE/app_desc.c"  -o "$OBJ/app_desc.o"
+cp "$BARE/boot/obj/app_desc.o"  "$OBJ/app_desc.o"    # the pure-Ada app-image descriptor
 $GCC $CFLAGS $XINC   -c "$BARE/start.S"     -o "$OBJ/start.o"
 $GCC $CFLAGS $XINC   -c "$BARE/highint5.S"  -o "$OBJ/highint5.o"
 if [ -n "$SO_DEF" ]; then          # full: recoverable stack-overflow override
