@@ -10,7 +10,7 @@ a chapter that treats it properly, the entry points there.
   tests for an Ada implementation. This project runs them on real silicon
   (Chapter~\ref{ch:acats-sweep}).
 
-\item[ACK polling] Probing an I2C device's address until it answers. An EEPROM stops acknowledging while it programs a page, so the master polls instead of sleeping the worst case (Section~\ref{storage:eeprom}).
+\item[ACK polling] Probing an I2C device's address until it answers. An EEPROM stops acknowledging while it programs a page, so the master polls instead of sleeping the worst case (Chapter~\ref{ch:eeprom}).
 
 \item[ADU] \emph{Application Data Unit} -- a complete Modbus message as it travels: the \texttt{MBAP} header (TCP) or address+CRC (RTU) wrapping a \texttt{PDU} (Chapter~\ref{ch:modbus}).
 
@@ -67,7 +67,7 @@ a chapter that treats it properly, the entry points there.
 
 \item[ECDH] \emph{Elliptic-Curve Diffie--Hellman} -- ECC key agreement; \texttt{ECDHE} is its ephemeral, forward-secret form (Chapter~\ref{ch:tls}).
 
-\item[EEPROM] \emph{Electrically Erasable Programmable Read-Only Memory} -- small, byte-addressable non-volatile memory needing no erase before a write. The 24C family speaks I2C (Section~\ref{storage:eeprom}).
+\item[EEPROM] \emph{Electrically Erasable Programmable Read-Only Memory} -- small, byte-addressable non-volatile memory needing no erase before a write. The 24C family speaks I2C (Chapter~\ref{ch:eeprom}).
 
 \item[ELF] \emph{Executable and Linkable Format} -- the object/executable file format GNAT emits, converted to a flash image for the board.
 
