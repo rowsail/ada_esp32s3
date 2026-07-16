@@ -4,9 +4,9 @@
 # No_Elaboration against the pinned runtime's system.ads into a relocatable
 # boot_main.o that needs no binder (adainit) and pulls no runtime at link, so the
 # linked output is genuinely runtime-free.  start.S is the asm prologue;
-# psram_boot.c is the thin C shim over the vendored octal-PSRAM IDF blobs.
+# The octal-PSRAM bring-up is pure Ada (src/boot_psram.adb); only ROM calls + the
 #
-# The PSRAM size baked into the binary comes from board_config.h, so each PROJECT
+# freestanding libc (psram_glue.c) remain C.  PSRAM size comes from board.ads via
 # (its own board.ads) can need its own bootloader.  These env vars let bare_build.sh
 # build a project-specific one without touching the SDK copy (all default to the
 # in-tree SDK build):
@@ -39,32 +39,33 @@ OUT="${BOOT_OUT:-$HERE/bootloader.bin}"
     bash "$SDKCFG/gen_board_config.sh" "$BOARD_CFG_DIR/board.ads" "$BOARD_CFG_DIR" >/dev/null
 [ -f "$BOARD_CFG_DIR/board_config.h" ] || { echo "[boot] no board_config.h in $BOARD_CFG_DIR" >&2; exit 1; }
 
-# 1. Loader core in ZFP Ada -> obj/boot_main.o (board-INDEPENDENT, stays in ./obj).
+# Generated Ada board config (Psram_Pages) for the pure-Ada PSRAM bring-up.
+GEN="$O/gen"; mkdir -p "$GEN"
+PAGES="$(grep -oE 'BOARD_PSRAM_PAGES[[:space:]]+[0-9]+' "$BOARD_CFG_DIR/board_config.h" | grep -oE '[0-9]+')"
+cat > "$GEN/board_cfg.ads" <<EOF
+--  Generated from board.ads by build.sh -- DO NOT EDIT.
+package Board_Cfg is
+   Psram_Pages : constant := ${PAGES:-0};   --  PSRAM_Size / 64 KB
+end Board_Cfg;
+EOF
+
+# 1. Loader core + pure-Ada PSRAM bring-up (boot_main.o + boot_psram.o).
 bash "$REPO/crates/esp32s3_rts/gen_runtime.sh" >/dev/null
-( cd "$HERE" && gprbuild -c -p -q -P boot.gpr )
+( cd "$HERE" && BOOT_GEN_DIR="$GEN" gprbuild -c -p -q -P boot.gpr )
 BMO="$HERE/obj/boot_main.o"
+BPO="$HERE/obj/boot_psram.o"
 
-# 2. asm prologue + PSRAM C shim (board_config.h on its include path) + glue.
-$GCC $CFLAGS -c "$HERE/start.S"                          -o "$O/start.o"
-$GCC $CFLAGS -I "$BOARD_CFG_DIR" -c "$HERE/psram_boot.c" -o "$O/psram_boot.o"
-$GCC $CFLAGS -c "$HERE/psram_glue.c"                     -o "$O/psram_glue.o"
-# From-source MSPI clock/pin-drive config (replaces the 4 mspi_timing/gpio blobs;
-# the din "tuning" is a proven no-op -- see PSRAM_BRINGUP_RESEARCH.md).
-$GCC $CFLAGS -c "$HERE/mspi_timing_src.c"                -o "$O/mspi_timing_src.o"
-# From-source octal-PSRAM chip init (MR program + connect probe via ROM
-# esp_rom_opiflash_exec_cmd; cache phases from golden state) -- replaces the last
-# vendored blob, esp_psram_impl_octal.c.obj.
-$GCC $CFLAGS -c "$HERE/psram_impl_src.c"                 -o "$O/psram_impl_src.o"
-
-# All five vendored IDF objects are now retired; the PSRAM bring-up is from-source.
-PSRAM_OBJS=""
+# 2. asm prologue + freestanding libc (memcpy/memset/memcmp/abort).  The octal-
+# PSRAM bring-up (was psram_boot.c / psram_impl_src.c / mspi_timing_src.c) is now
+# pure Ada in boot_psram.adb -- only ROM functions remain external.
+$GCC $CFLAGS -c "$HERE/start.S"       -o "$O/start.o"
+$GCC $CFLAGS -c "$HERE/psram_glue.c"  -o "$O/psram_glue.o"
 
 $GCC -nostdlib -no-pie \
     -T "$HERE/boot.ld" -T "$HERE/rom.ld" \
     -Wl,-e,_start -Wl,-Map="$O/boot.map" \
     -o "$O/boot.elf" \
-    "$BMO" "$O/start.o" "$O/psram_boot.o" "$O/psram_glue.o" \
-    "$O/mspi_timing_src.o" "$O/psram_impl_src.o" $PSRAM_OBJS
+    "$BMO" "$BPO" "$O/start.o" "$O/psram_glue.o"
 
 # Package boot.elf -> bootloader.bin with our own Ada esp_elf2image (byte-identical
 # to esptool, verified) so the bootloader build needs no esptool either.  Set
@@ -82,4 +83,4 @@ else
     "$E2I" "$O/boot.elf" "$OUT"
 fi
 
-echo "[boot] built (ZFP-Ada loader + C PSRAM shim): $OUT"
+echo "[boot] built (pure-Ada loader + PSRAM bring-up): $OUT"

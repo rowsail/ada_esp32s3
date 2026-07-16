@@ -385,3 +385,27 @@ same window** (`0xc3` -> mode 0) — confirming it tracks a real, stable chip+co
 property, not a per-board fluke. The size is now decoded from the density mode-register
 (no longer hardcoded), so the bring-up self-describes the part it finds (vendor, density,
 voltage, read/write latency) and would adapt to a different-size octal PSRAM.
+
+## Pure-Ada port (2026-07-15): the from-source C rewritten in Ada
+
+The three from-source bring-up files (`psram_boot.c`, `psram_impl_src.c`,
+`mspi_timing_src.c`, ~380 lines) were rewritten as one pure-Ada ZFP package
+`src/boot_psram.adb` (`Boot_Psram`), completing the SDK's pure-Ada goal for the
+bootloader.  It exports the C symbol `psram_bringup`, so `boot_main.adb` is
+unchanged.  Only ROM functions (`esp_rom_opiflash_exec_cmd`, `Cache_*`,
+`esp_rom_spi_set_dtr_swap_mode`, `esp_rom_printf`) and the freestanding libc
+(`psram_glue.c`: memcpy/memset/memcmp/abort) remain C.  `BOARD_PSRAM_PAGES` is
+passed via a generated `board_cfg.ads` (build.sh) on the gpr source path
+(`BOOT_GEN_DIR`).  The three C files are deleted.
+
+**Validated equivalent to the C, HW (ESP32-S3 dev board, AP Memory 8 MB octal):**
+the Ada bring-up produces byte-identical mode registers
+(`MR0=28 MR1=0d MR2=93 MR3=60 MR4=40 MR8=05`), `octal PSRAM up rc=0 8 MB`,
+`mapped rc=0`, `din tuned passmask=0xff -> mode 1`.  Cross-checked by stashing the
+Ada and rebuilding with the original C bootloader on the same board: **identical
+output** (same MRs, same rc=0, same din, and the same `big.adb` sustained-access
+hang) -- confirming the Ada is a faithful port, and that this particular board's
+mode-1 din marginality under sustained access (predicted above: "corrupts a
+heap-heavy app") is a board/din property, not a port defect.  On the boards with a
+real SPI1 window (Meshnology / DevKitC, `0xc3 -> mode 0`) `big.adb` checksums
+clean; those remain the checksum-validation vehicles.
