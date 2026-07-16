@@ -1,6 +1,7 @@
 pragma Warnings (Off);
 with Ada.Interrupts.Names;
 with System;
+with Intr_Vector_Test; use Intr_Vector_Test;   --  Clear_L2 / Clear_L3 (was glue.c)
 
 --  L2/L3 interrupt handlers for the vector regression test.  Two library-level
 --  protected objects attach to the L2 and L3 device interrupts -- on this port
@@ -13,13 +14,6 @@ with System;
 --  which faults on this part (No_Implicit_Dynamic_Code).
 
 package body Blink is
-
-   --  Clear the level-triggered FROM_CPU source so the handler does not re-enter
-   --  the moment it returns (implemented in the example's C glue).
-   procedure Clear_L2;
-   pragma Import (C, Clear_L2, "ada_clear_l2");
-   procedure Clear_L3;
-   pragma Import (C, Clear_L3, "ada_clear_l3");
 
    protected L2_PO
      with Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority

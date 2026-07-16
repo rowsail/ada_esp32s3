@@ -38,8 +38,8 @@ with Ada.Real_Time;  use Ada.Real_Time;
 with Last_Chance;
 pragma Unreferenced (Last_Chance);
 
---  Pull the SMP slave-start entry into the link closure (glue.c calls it after
---  elaboration); core 1 just idles -- the demo runs on core 0.
+--  Pull the SMP slave-start entry into the link closure (the shared bare-boot
+--  starts core 1 after elaboration); core 1 just idles -- the demo runs on core 0.
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
 

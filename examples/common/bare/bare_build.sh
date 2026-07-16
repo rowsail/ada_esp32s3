@@ -244,6 +244,17 @@ if [ -n "$HEAP_SIZE" ]; then
               "$OBJ/heap_guard.o" "$OBJ/bare_mem.o" "$OBJ/bare_crt.o")
 fi
 
+# A non-heap (light-tasking) example can still need the freestanding Ada mem*
+# (e.g. libgcc pulls memset, which the light-tasking runtime does not provide).
+# NEED_BARE_MEM=1 links the shared Bare_Mem (boot/bare_mem.adb) WITHOUT the heap /
+# allocator or bare_crt (bare_crt drags in __register_frame, absent in light).
+# Its weak memcpy yields to the runtime's; memset/memcmp/memmove fill the gap.
+if [ -z "$HEAP_SIZE" ] && [ "${NEED_BARE_MEM:-0}" != 0 ]; then
+    cp "$BARE/boot/obj/bare_mem.o" "$OBJ/bare_mem.o"   # compiled above by bare_boot.gpr
+    LIB_OBJS=("$OBJ/bare_mem.o")
+    echo "[bare]      + shared Ada Bare_Mem (freestanding mem* for a non-heap example)"
+fi
+
 # Example-provided extra link inputs (esp32s3_psram: the vendored IDF
 # octal-PSRAM + MSPI-timing objects via $EXTRA_OBJS, and a linker fragment for the
 # PSRAM .ext_ram.bss region via $EXTRA_LD).  Unquoted on purpose (word-split paths).
