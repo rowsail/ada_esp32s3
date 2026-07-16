@@ -1,0 +1,22 @@
+--  Console port selection -- edit to taste (see console.ads).  The DEFAULT below
+--  is the built-in USB-Serial/JTAG console.  To send the console to a UART
+--  instead, use the UART block (needs the embedded or full runtime profile --
+--  light-tasking excludes the UART driver, so a UART console is embedded/full).
+
+with ESP32S3.Serial;
+--  For a UART console, also:  with ESP32S3.UART;  with ESP32S3.UART.Text;
+
+package body Console is
+   --  For a UART console, uncomment this library-level (persistent) session --
+   --  the redirected device points at it, so it must outlive startup:
+   --  Uart : aliased ESP32S3.UART.Session;
+begin
+   --  DEFAULT: the built-in USB-Serial/JTAG console.  This confirmation line is
+   --  optional -- delete it, or replace the whole body with `null;`.
+   ESP32S3.Serial.Write ("[console] USB-Serial/JTAG console" & ASCII.LF);
+
+   --  UART console (embedded/full): remove the line above and use, e.g. --
+   --  ESP32S3.UART.Acquire (Uart, ESP32S3.UART.UART1,
+   --                        Tx => 17, Rx => 16, Baud => 115_200);
+   --  ESP32S3.Serial.Set_Output (ESP32S3.UART.Text.As_Device (Uart));
+end Console;

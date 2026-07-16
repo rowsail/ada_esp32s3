@@ -357,6 +357,12 @@ cmd_new () {
     # Every project owns its board.ads (flash + PSRAM size); no global config.
     cp "$EXROOT/common/bare/config/board.ads.template" "$dir/board.ads"
 
+    # Console serial-port selection: one clearly-named file per project (the main
+    # `with`s it; edit src/console.adb to send the console to a UART).  Default is
+    # the built-in USB-Serial/JTAG console.
+    cp "$EXROOT/common/bare/config/console.ads.template" "$dir/src/console.ads"
+    cp "$EXROOT/common/bare/config/console.adb.template" "$dir/src/console.adb"
+
     cat > "$dir/alire.toml" <<EOF
 name = "$name"
 description = "Bare-metal Ada ESP32-S3 application"
@@ -411,6 +417,10 @@ with Ada.Real_Time; use Ada.Real_Time;
 --  Bring up core 1 (pull the SMP slave-start entry into the link closure).
 with System.BB.CPU_Primitives.Multiprocessors;
 pragma Unreferenced (System.BB.CPU_Primitives.Multiprocessors);
+
+--  Console serial-port selection -- edit src/console.adb to pick the port.
+with Console;
+pragma Unreferenced (Console);
 
 --  <one line: what this example demonstrates>
 --
