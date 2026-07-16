@@ -236,6 +236,129 @@ package body ESP32S3.WiFi.PHY is
             (Peek (16#6001_C0F4#) and 16#FFFF_FFFE#) or (En and 1));
    end Wrap_Rifs_Mode_En;
 
+   --  Batch 4: baseband getters (noise floor, CCA) + more RMW writers (CCA-cnt,
+   --  antenna TX, 11b-LR rx, tsens power).  Getters are read-only (cannot affect
+   --  the radio); writers follow the same faithful-port pattern.
+   Ports4_Count : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_ports4_count";
+
+   --  As Integer_32 (bit pattern) -- these return signed dBm-ish values.
+   function Wrap_Get_Noise_Floor return Interfaces.Integer_32
+     with Export, Convention => C, External_Name => "__wrap_phy_get_noise_floor";
+   function Wrap_Get_Noise_Floor return Interfaces.Integer_32 is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      return Interfaces.Integer_32 ((Peek (16#6001_C050#) and 16#3FF#)) - 16#400#;
+   end Wrap_Get_Noise_Floor;
+
+   function Wrap_Read_Hw_Noisefloor return Interfaces.Integer_32
+     with Export, Convention => C, External_Name => "__wrap_read_hw_noisefloor";
+   function Wrap_Read_Hw_Noisefloor return Interfaces.Integer_32 is
+      use type Interfaces.Unsigned_32;
+      V : constant Interfaces.Unsigned_32 :=
+        (Peek (16#6001_C08C#) and 16#FFF#) - 16#1000#;   --  12-bit two's-complement
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      return Interfaces.Integer_32 (Shift_Right_Arithmetic (V, 2));
+   end Wrap_Read_Hw_Noisefloor;
+
+   function Wrap_Get_Cca return Interfaces.Unsigned_32
+     with Export, Convention => C, External_Name => "__wrap_phy_get_cca";
+   function Wrap_Get_Cca return Interfaces.Unsigned_32 is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      return Peek (16#6001_C01C#) and 16#FF#;
+   end Wrap_Get_Cca;
+
+   function Wrap_Get_Fetx_Delay return Interfaces.Unsigned_32
+     with Export, Convention => C, External_Name => "__wrap_phy_get_fetx_delay";
+   function Wrap_Get_Fetx_Delay return Interfaces.Unsigned_32 is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      if (Peek (16#6000_6070#) and 16#4000_0000#) /= 0 then   --  bit30 set -> 0
+         return 0;
+      end if;
+      return Peek (16#6000_6090#) and 16#1FF#;
+   end Wrap_Get_Fetx_Delay;
+
+   --  phy_get_cca_cnt(uint32 *out): out[0]/out[1] = 27-bit counters, returns 5-bit field.
+   function Wrap_Get_Cca_Cnt (Out_Ptr : System.Address) return Interfaces.Unsigned_32
+     with Export, Convention => C, External_Name => "__wrap_phy_get_cca_cnt";
+   function Wrap_Get_Cca_Cnt (Out_Ptr : System.Address) return Interfaces.Unsigned_32 is
+      use type Interfaces.Unsigned_32;
+      Outs : array (0 .. 1) of Interfaces.Unsigned_32
+        with Import, Volatile, Address => Out_Ptr;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Outs (0) := Peek (16#6001_D05C#) and 16#7FF_FFFF#;
+      Outs (1) := Peek (16#6001_D060#) and 16#7FF_FFFF#;
+      return Shift_Right (Peek (16#6001_D05C#) and 16#800_0000#, 27);
+   end Wrap_Get_Cca_Cnt;
+
+   procedure Wrap_Set_Cca_Cnt (Val, Flag : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_set_cca_cnt";
+   procedure Wrap_Set_Cca_Cnt (Val, Flag : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Poke (16#6001_D058#,
+            (Peek (16#6001_D058#) and 16#F800_0000#) or (Val and 16#7FF_FFFF#));
+      if (Flag and 16#FF#) /= 0 then
+         Poke (16#6001_D058#, Peek (16#6001_D058#) or 16#1800_0000#);
+      end if;
+   end Wrap_Set_Cca_Cnt;
+
+   procedure Wrap_Ant_Wifitx_Cfg (A, B : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_ant_wifitx_cfg";
+   procedure Wrap_Ant_Wifitx_Cfg (A, B : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Poke (16#6000_60B0#,
+            (Peek (16#6000_60B0#) and 16#FFFF_00FF#) or Shift_Left (A and 16#FF#, 8));
+      Poke (16#6000_60B0#,
+            (Peek (16#6000_60B0#) and 16#FF00_FFFF#) or Shift_Left (B and 16#FF#, 16));
+   end Wrap_Ant_Wifitx_Cfg;
+
+   procedure Wrap_Ant_Bttx_Cfg (A, B : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_ant_bttx_cfg";
+   procedure Wrap_Ant_Bttx_Cfg (A, B : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Poke (16#6000_60B4#,
+            (Peek (16#6000_60B4#) and 16#00FF_FFFF#) or Shift_Left (A and 16#FF#, 24));
+      Poke (16#6000_60B8#,
+            (Peek (16#6000_60B8#) and 16#FFFF_FF00#) or (B and 16#FF#));
+   end Wrap_Ant_Bttx_Cfg;
+
+   procedure Wrap_Rx11blr_Cfg (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_rx11blr_cfg";
+   procedure Wrap_Rx11blr_Cfg (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      B10 : constant Interfaces.Unsigned_32 := Shift_Left (En, 10) and 16#400#;
+      B11 : constant Interfaces.Unsigned_32 := Shift_Left (En, 11) and 16#800#;
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Poke (16#6001_C860#, (Peek (16#6001_C860#) and 16#FFFF_FBFF#) or B10);
+      Poke (16#6001_C860#, (Peek (16#6001_C860#) and 16#FFFF_F7FF#) or B11);
+      Poke (16#6001_C87C#, (Peek (16#6001_C87C#) and 16#FFFF_F7FF#) or B11);
+   end Wrap_Rx11blr_Cfg;
+
+   procedure Wrap_Set_Tsens_Power (En : Interfaces.Unsigned_32)
+     with Export, Convention => C, External_Name => "__wrap_phy_set_tsens_power";
+   procedure Wrap_Set_Tsens_Power (En : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_32;
+      Bits : constant Interfaces.Unsigned_32 :=
+        (if (En and 16#FF#) /= 0 then 16#C0_0000# else 0);
+   begin
+      Ports4_Count := Ports4_Count + 1;
+      Poke (16#6000_8850#, (Peek (16#6000_8850#) and 16#FF3F_FFFF#) or Bits);
+   end Wrap_Set_Tsens_Power;
+
    procedure Phy_Enable is
       Cal : System.Address;
       Clk : Unsigned_32 with Import, Volatile,

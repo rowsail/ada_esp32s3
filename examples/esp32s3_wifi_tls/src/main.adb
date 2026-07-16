@@ -82,6 +82,8 @@ procedure Main is
      with Import, Convention => C, External_Name => "ada_phy_ports2_count";
    Phy_Ports3_Count : Interfaces.Unsigned_32
      with Import, Convention => C, External_Name => "ada_phy_ports3_count";
+   Phy_Ports4_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports4_count";
    procedure Show_Deblob_Result is
    begin
       Put_Line ("");
@@ -98,6 +100,8 @@ procedure Main is
       Put_Unsigned (Phy_Ports2_Count); New_Line;
       Put ("  libphy batch-3 (ant/agc/tx_seed/rifs, 5 fns)   fired = ");
       Put_Unsigned (Phy_Ports3_Count); New_Line;
+      Put ("  libphy batch-4 (noisefloor/cca/ant/tsens, 10)  fired = ");
+      Put_Unsigned (Phy_Ports4_Count); New_Line;
       Put_Line ("====================================================================");
    end Show_Deblob_Result;
 
