@@ -397,6 +397,99 @@ package body ESP32S3.WiFi.PHY is
       Poke (16#6001_C400#, Peek (16#6001_C400#) or 16#0000_6000#);
    end Wrap_Bb_Reg_Init;
 
+   --  ---- g_phyFuns resolver -------------------------------------------------
+   --  Some ported functions are invoked by the PHY ROM through the g_phyFuns
+   --  function-pointer table, which --wrap can't redirect (the table is filled
+   --  by ROM at init).  After register_chipv7_phy has populated it, scan the
+   --  table and rewrite any slot that still points at a blob version of a
+   --  function we've ported (__real_X) to our Ada (__wrap_X).  Then ROM
+   --  dispatches through the table land in our Ada too.  Exact-address match, so
+   --  ROM-only slots (kept) are never touched.
+   G_Phy_Funs : System.Address
+     with Import, Convention => C, External_Name => "g_phyFuns";
+   Resolver_Patched : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_resolver_patched";
+   Resolver_Already : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_resolver_already";
+   Resolver_Nonnull : Interfaces.Unsigned_32 := 0
+     with Export, Convention => C, External_Name => "ada_phy_resolver_nonnull";
+
+   --  __real_X = the original blob function (created by --wrap).
+   procedure R_Force_Txrx_Off      with Import, Convention => C, External_Name => "__real_force_txrx_off";
+   procedure R_Disable_Low_Rate    with Import, Convention => C, External_Name => "__real_phy_disable_low_rate";
+   procedure R_Enable_Low_Rate     with Import, Convention => C, External_Name => "__real_phy_enable_low_rate";
+   procedure R_Wifi_Enable_Set     with Import, Convention => C, External_Name => "__real_phy_wifi_enable_set";
+   procedure R_Ant_Dft_Cfg         with Import, Convention => C, External_Name => "__real_ant_dft_cfg";
+   procedure R_Enable_Wifi_Agc     with Import, Convention => C, External_Name => "__real_ram_enable_wifi_agc";
+   procedure R_Disable_Wifi_Agc    with Import, Convention => C, External_Name => "__real_ram_disable_wifi_agc";
+   procedure R_Set_Tx_Seed         with Import, Convention => C, External_Name => "__real_phy_set_tx_seed";
+   procedure R_Rifs_Mode_En        with Import, Convention => C, External_Name => "__real_wifi_rifs_mode_en";
+   procedure R_Get_Noise_Floor     with Import, Convention => C, External_Name => "__real_phy_get_noise_floor";
+   procedure R_Read_Hw_Noisefloor  with Import, Convention => C, External_Name => "__real_read_hw_noisefloor";
+   procedure R_Get_Cca             with Import, Convention => C, External_Name => "__real_phy_get_cca";
+   procedure R_Get_Fetx_Delay      with Import, Convention => C, External_Name => "__real_phy_get_fetx_delay";
+   procedure R_Get_Cca_Cnt         with Import, Convention => C, External_Name => "__real_phy_get_cca_cnt";
+   procedure R_Set_Cca_Cnt         with Import, Convention => C, External_Name => "__real_phy_set_cca_cnt";
+   procedure R_Ant_Wifitx_Cfg      with Import, Convention => C, External_Name => "__real_ant_wifitx_cfg";
+   procedure R_Ant_Bttx_Cfg        with Import, Convention => C, External_Name => "__real_ant_bttx_cfg";
+   procedure R_Rx11blr_Cfg         with Import, Convention => C, External_Name => "__real_phy_rx11blr_cfg";
+   procedure R_Set_Tsens_Power     with Import, Convention => C, External_Name => "__real_phy_set_tsens_power";
+   procedure R_Agc_Sat_Gain        with Import, Convention => C, External_Name => "__real_rom_wifi_agc_sat_gain";
+   procedure R_Fft_Scale_Force     with Import, Convention => C, External_Name => "__real_phy_fft_scale_force";
+   procedure R_Bb_Reg_Init         with Import, Convention => C, External_Name => "__real_ram_bb_reg_init";
+
+   type Redirect is record
+      From_Blob, To_Ada : System.Address;
+   end record;
+   Ported : constant array (Positive range <>) of Redirect :=
+     ((R_Force_Txrx_Off'Address,     Wrap_Force_Txrx_Off'Address),
+      (R_Disable_Low_Rate'Address,   Wrap_Disable_Low_Rate'Address),
+      (R_Enable_Low_Rate'Address,    Wrap_Enable_Low_Rate'Address),
+      (R_Wifi_Enable_Set'Address,    Wrap_Wifi_Enable_Set'Address),
+      (R_Ant_Dft_Cfg'Address,        Wrap_Ant_Dft_Cfg'Address),
+      (R_Enable_Wifi_Agc'Address,    Wrap_Enable_Wifi_Agc'Address),
+      (R_Disable_Wifi_Agc'Address,   Wrap_Disable_Wifi_Agc'Address),
+      (R_Set_Tx_Seed'Address,        Wrap_Set_Tx_Seed'Address),
+      (R_Rifs_Mode_En'Address,       Wrap_Rifs_Mode_En'Address),
+      (R_Get_Noise_Floor'Address,    Wrap_Get_Noise_Floor'Address),
+      (R_Read_Hw_Noisefloor'Address, Wrap_Read_Hw_Noisefloor'Address),
+      (R_Get_Cca'Address,            Wrap_Get_Cca'Address),
+      (R_Get_Fetx_Delay'Address,     Wrap_Get_Fetx_Delay'Address),
+      (R_Get_Cca_Cnt'Address,        Wrap_Get_Cca_Cnt'Address),
+      (R_Set_Cca_Cnt'Address,        Wrap_Set_Cca_Cnt'Address),
+      (R_Ant_Wifitx_Cfg'Address,     Wrap_Ant_Wifitx_Cfg'Address),
+      (R_Ant_Bttx_Cfg'Address,       Wrap_Ant_Bttx_Cfg'Address),
+      (R_Rx11blr_Cfg'Address,        Wrap_Rx11blr_Cfg'Address),
+      (R_Set_Tsens_Power'Address,    Wrap_Set_Tsens_Power'Address),
+      (R_Agc_Sat_Gain'Address,       Wrap_Agc_Sat_Gain'Address),
+      (R_Fft_Scale_Force'Address,    Wrap_Fft_Scale_Force'Address),
+      (R_Bb_Reg_Init'Address,        Wrap_Bb_Reg_Init'Address));
+
+   procedure Resolve_Phy_Table is
+      use type System.Address;
+      Base : constant System.Address := G_Phy_Funs;   --  the table base pointer
+      Slots : constant := 200;
+      Table : array (0 .. Slots - 1) of System.Address
+        with Import, Volatile, Address => Base;
+   begin
+      if Base = System.Null_Address then
+         return;
+      end if;
+      for I in Table'Range loop
+         if Table (I) /= System.Null_Address then
+            Resolver_Nonnull := Resolver_Nonnull + 1;
+         end if;
+         for P of Ported loop
+            if Table (I) = P.From_Blob then
+               Table (I) := P.To_Ada;
+               Resolver_Patched := Resolver_Patched + 1;
+            elsif Table (I) = P.To_Ada then
+               Resolver_Already := Resolver_Already + 1;
+            end if;
+         end loop;
+      end loop;
+   end Resolve_Phy_Table;
+
    procedure Phy_Enable is
       Cal : System.Address;
       Clk : Unsigned_32 with Import, Volatile,
@@ -462,6 +555,9 @@ package body ESP32S3.WiFi.PHY is
             end if;
          end;
          C_Free (Cal);   --  PHY keeps its own copy of the calibration data
+         --  register_chipv7_phy has now populated g_phyFuns; redirect any table
+         --  slot still pointing at a blob version of a ported function to Ada.
+         Resolve_Phy_Table;
          Calibrated := True;
       else
          Phy_Wakeup_Init;

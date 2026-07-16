@@ -86,6 +86,12 @@ procedure Main is
      with Import, Convention => C, External_Name => "ada_phy_ports4_count";
    Phy_Ports5_Count : Interfaces.Unsigned_32
      with Import, Convention => C, External_Name => "ada_phy_ports5_count";
+   Phy_Resolver_Patched : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_resolver_patched";
+   Phy_Resolver_Already : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_resolver_already";
+   Phy_Resolver_Nonnull : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_resolver_nonnull";
    procedure Show_Deblob_Result is
    begin
       Put_Line ("");
@@ -106,6 +112,12 @@ procedure Main is
       Put_Unsigned (Phy_Ports4_Count); New_Line;
       Put ("  libphy batch-5 (agc-sat/fft-scale/bb-init, 3)  fired = ");
       Put_Unsigned (Phy_Ports5_Count); New_Line;
+      Put ("  g_phyFuns resolver: patched=");
+      Put_Unsigned (Phy_Resolver_Patched);
+      Put (" already-Ada=");
+      Put_Unsigned (Phy_Resolver_Already);
+      Put (" table-nonnull=");
+      Put_Unsigned (Phy_Resolver_Nonnull); New_Line;
       Put_Line ("====================================================================");
    end Show_Deblob_Result;
 
