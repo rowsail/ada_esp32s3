@@ -70,6 +70,11 @@ package body ESP32S3.WiFi.RTOS is
    protected type Sem is
       procedure Setup (Init : Natural);
       entry     Take;
+      --  Non-blocking take: decrement and report success if a count is
+      --  available, else leave the count and report failure.  Backs the finite-
+      --  and zero-timeout Semphr_Take (which polls this to a deadline rather
+      --  than blocking on the Take entry).
+      procedure Try_Take (Got : out Boolean);
       procedure Give;
    private
       Count : Natural := 0;
@@ -85,6 +90,16 @@ package body ESP32S3.WiFi.RTOS is
       begin
          Count := Count - 1;
       end Take;
+
+      procedure Try_Take (Got : out Boolean) is
+      begin
+         if Count > 0 then
+            Count := Count - 1;
+            Got := True;
+         else
+            Got := False;
+         end if;
+      end Try_Take;
 
       procedure Give is
       begin
@@ -406,18 +421,53 @@ package body ESP32S3.WiFi.RTOS is
       return Sems (I)'Address;
    end Semphr_Create;
 
+   --  Cap for a finite timeout's millisecond count: guards Integer / Time_Span
+   --  arithmetic against an absurd Ticks (anything non-portMAX beyond an hour is
+   --  effectively forever anyway).  Block_Forever (0xFFFF_FFFF) is handled first,
+   --  before this ever applies.
+   Max_Finite_Ms : constant := 3_600_000;   --  one hour
+
    function Semphr_Take
      (H : System.Address; Ticks : Interfaces.Unsigned_32)
       return Interfaces.Integer_32
    is
-      pragma Unreferenced (Ticks);   --  TODO honour finite timeouts
-      S : constant Sem_Ptr := To_Sem (H);
+      S   : constant Sem_Ptr := To_Sem (H);
+      Got : Boolean;
    begin
       if S = null then
          return 0;
       end if;
-      S.Take;   --  block until available (portMAX_DELAY semantics)
-      return 1;
+
+      --  portMAX_DELAY: block until available (the only value the blob passes on
+      --  the scan/connect/sniff paths -- see the note below).
+      if Ticks = Block_Forever then
+         S.Take;
+         return 1;
+      end if;
+
+      --  Finite timeout (1 tick = 1 ms), including 0.  Try once; then, unless the
+      --  caller asked for a non-blocking probe (0), poll to the deadline.  This
+      --  mirrors the queue's finite-timeout handling and, unlike a bare Take,
+      --  cannot hang -- so a blob path that DOES pass a finite timeout (power
+      --  save, stop, SoftAP -- none exercised today, confirmed by on-target
+      --  instrumentation) fails cleanly instead of blocking the caller forever.
+      S.Try_Take (Got);
+      if Got or else Ticks = 0 then
+         return (if Got then 1 else 0);
+      end if;
+
+      declare
+         Ms       : constant Integer :=
+           (if Ticks > Max_Finite_Ms then Max_Finite_Ms else Integer (Ticks));
+         Deadline : constant Time := Clock + Milliseconds (Ms);
+      begin
+         loop
+            delay until Clock + Milliseconds (1);
+            S.Try_Take (Got);
+            exit when Got or else Clock >= Deadline;
+         end loop;
+      end;
+      return (if Got then 1 else 0);
    end Semphr_Take;
 
    function Semphr_Give (H : System.Address) return Interfaces.Integer_32 is
