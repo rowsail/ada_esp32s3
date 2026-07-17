@@ -15,6 +15,7 @@ with ESP32S3.RNG;
 with ESP32S3.WiFi.RTOS;
 with ESP32S3.WiFi.PHY;
 with ESP32S3.WiFi.Interrupt;
+with System.BB.Threads;
 with System.Machine_Code; use System.Machine_Code;
 with System.Storage_Elements; use System.Storage_Elements;
 
@@ -68,8 +69,14 @@ package body ESP32S3.WiFi.OS_Adapter is
    function Env_Is_Chip return Interfaces.Unsigned_8 with Convention => C;
    function Env_Is_Chip return Interfaces.Unsigned_8 is (1);   --  real silicon
 
+   --  _is_from_isr: true iff the blob is calling us from an interrupt handler,
+   --  so it can pick the ISR-safe primitive variants.  Read GNARL's own
+   --  per-thread In_Interrupt flag -- set only by the interrupt-dispatch wrapper
+   --  (s-bbinte), so it is correct even inside a wifi_int_disable software
+   --  critical section, where PS.INTLEVEL would falsely read non-zero.
    function Is_From_Isr return Interfaces.Unsigned_8 with Convention => C;
-   function Is_From_Isr return Interfaces.Unsigned_8 is (0);   --  TODO real check
+   function Is_From_Isr return Interfaces.Unsigned_8
+   is (if System.BB.Threads.Thread_Self.In_Interrupt then 1 else 0);
 
    function Esp_Timer_Get_Time return Interfaces.Integer_64 with Convention => C;
    function Esp_Timer_Get_Time return Interfaces.Integer_64 is
