@@ -77,6 +77,28 @@ package body ESP32S3.WiFi.PHY is
    procedure Phy_Wakeup_Init
      with Import, Convention => C, External_Name => "phy_wakeup_init";
 
+   --  RF power-down / temperature-sensor power-down, and PHY digital-register
+   --  save/restore.  IDF's esp_phy_disable saves the digital registers, closes
+   --  the RF and powers down the temp sensor; esp_phy_enable re-wakes the PHY and
+   --  restores the digital registers.  On the ESP32-S3 the save/restore is
+   --  required (SOC_PM_MODEM_RETENTION_BY_BACKUPDMA): without it the RF degrades
+   --  over repeated close/wake cycles.  Backup_En = 1 saves into Mem, 0 restores.
+   procedure Phy_Close_RF
+     with Import, Convention => C, External_Name => "phy_close_rf";
+   procedure Phy_Xpd_Tsens
+     with Import, Convention => C, External_Name => "phy_xpd_tsens";
+   procedure Phy_Dig_Reg_Backup
+     (Backup_En : Interfaces.Integer_32; Mem : System.Address)
+     with Import, Convention => C, External_Name => "phy_dig_reg_backup";
+
+   --  Retention store for the PHY digital registers: SOC_PHY_DIG_REGS_MEM_SIZE =
+   --  21 words (84 bytes) on the S3.  A static internal-DRAM (.bss) buffer,
+   --  4-aligned -- matches IDF's heap_caps_malloc(CAP_DMA | CAP_INTERNAL).
+   --  Dig_Regs_Stored gates the restore so the first re-wake (which follows the
+   --  first close) never loads an unwritten buffer.
+   Dig_Regs        : array (0 .. 20) of Interfaces.Unsigned_32 := (others => 0);
+   Dig_Regs_Stored : Boolean := False;
+
    function C_Calloc (N, Sz : Unsigned_32) return System.Address
      with Import, Convention => C, External_Name => "calloc";
    procedure C_Free (P : System.Address)
@@ -151,24 +173,29 @@ package body ESP32S3.WiFi.PHY is
          C_Free (Cal);   --  PHY keeps its own copy of the calibration data
          Calibrated := True;
       else
+         --  Re-wake after a Phy_Disable: wake the PHY, then restore the digital
+         --  registers saved before the RF was closed (mirrors IDF's
+         --  esp_phy_enable else-branch: phy_wakeup_init + phy_digital_regs_load).
          Phy_Wakeup_Init;
+         if Dig_Regs_Stored then
+            Phy_Dig_Reg_Backup (0, Dig_Regs'Address);   --  restore
+         end if;
       end if;
    end Phy_Enable;
 
+   --  phy_disable: power the RF down.  The lower-MAC blob drives this slot
+   --  continuously (~1/s) as its own power management, balanced against
+   --  phy_enable above -- so this is the "off" half of that cycle, matching
+   --  IDF's esp_phy_disable on the S3: save the PHY digital registers, close the
+   --  RF, power down the temperature sensor.  The WiFi/BT common clock is left
+   --  running (IDF also gates it here; leaving it on costs a little idle power
+   --  but keeps the MAC's clock domain untouched -- a separate, measured step).
    procedure Phy_Disable is
    begin
-      --  Deliberately a no-op -- NOT a missing feature.  The blob drives this
-      --  slot continuously as its own RF power management (~1/s while scanning
-      --  or associated, balanced against phy_enable, which we answer with
-      --  phy_wakeup_init above).  Honouring it -- phy_close_rf + phy_xpd_tsens
-      --  here -- was tried on silicon and keeps the link up, but IDF pairs the
-      --  close with phy_digital_regs_store/load (PHY digital-register save and
-      --  restore) that this minimal PHY path does not implement, so validated
-      --  RF quality over long runs is not established; enabling it belongs with
-      --  a measured modem-sleep power-save path, not here.  For DEEP sleep it is
-      --  unnecessary anyway: the RTC power-down cuts the whole digital + RF
-      --  domain, so entering deep sleep is itself the radio power-down.
-      null;
+      Phy_Dig_Reg_Backup (1, Dig_Regs'Address);   --  save
+      Dig_Regs_Stored := True;
+      Phy_Close_RF;                                --  power down the RF
+      Phy_Xpd_Tsens;                               --  power down the temp sensor
    end Phy_Disable;
 
 end ESP32S3.WiFi.PHY;
