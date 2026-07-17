@@ -11,6 +11,7 @@ with System;
 with Ada.Real_Time; use Ada.Real_Time;
 with ESP32S3.Log;
 with ESP32S3.MAC;
+with ESP32S3.RNG;
 with ESP32S3.WiFi.RTOS;
 with ESP32S3.WiFi.PHY;
 with ESP32S3.WiFi.Interrupt;
@@ -77,14 +78,31 @@ package body ESP32S3.WiFi.OS_Adapter is
       return Interfaces.Integer_64 (Us);
    end Esp_Timer_Get_Time;
 
-   Rng_Seed : Interfaces.Unsigned_32 := 16#DEAD_BEEF#;   --  TODO hardware RNG
-
+   --  esp_random / os_random: one fresh word from the HARDWARE RNG (was a
+   --  fixed-seed LCG).  The Wi-Fi RF is up whenever the blob calls this, so the
+   --  RNG's noise source is live and its output is fit for the blob's nonces.
    function Rand_Impl return Interfaces.Unsigned_32 with Convention => C;
-   function Rand_Impl return Interfaces.Unsigned_32 is
+   function Rand_Impl return Interfaces.Unsigned_32
+   is (Interfaces.Unsigned_32 (ESP32S3.RNG.Read));
+
+   --  os_get_random(void *buf, size_t len): fill len bytes from the hardware RNG
+   --  (was a no-op that left the blob's buffer untouched).  Returns 0 on success.
+   function Os_Get_Random
+     (Buf : System.Address; Len : Interfaces.Unsigned_32) return Interfaces.Integer_32
+     with Convention => C;
+   function Os_Get_Random
+     (Buf : System.Address; Len : Interfaces.Unsigned_32) return Interfaces.Integer_32 is
    begin
-      Rng_Seed := Rng_Seed * 1_103_515_245 + 12_345;     --  modular, wraps
-      return Rng_Seed;
-   end Rand_Impl;
+      if Len > 0 then
+         declare
+            Out_Bytes : ESP32S3.RNG.Byte_Array (0 .. Natural (Len) - 1)
+              with Import, Address => Buf;
+         begin
+            ESP32S3.RNG.Fill (Out_Bytes);
+         end;
+      end if;
+      return 0;
+   end Os_Get_Random;
 
    function Get_Free_Heap_Size return Interfaces.Unsigned_32 with Convention => C;
    function Get_Free_Heap_Size return Interfaces.Unsigned_32 is (65_536);  -- TODO
@@ -337,7 +355,7 @@ package body ESP32S3.WiFi.OS_Adapter is
          Wifi_Rtc_Enable_Iso  => Void,
          Wifi_Rtc_Disable_Iso => Void,
          Phy_Update_Country_Info => Zero,
-         Get_Random         => Void,   --  os_get_random(buf,len): TODO fill
+         Get_Random         => Os_Get_Random'Address,   --  os_get_random(buf,len)
          Get_Time           => Zero,
 
          --  memory allocators -> DMA-capable DRAM heap
