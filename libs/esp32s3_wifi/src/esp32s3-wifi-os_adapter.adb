@@ -104,8 +104,16 @@ package body ESP32S3.WiFi.OS_Adapter is
       return 0;
    end Os_Get_Random;
 
+   --  esp_get_free_heap_size: the live free-payload byte count of the app heap
+   --  (the leftover-DRAM arena behind malloc), read from Bare_Heap via its C
+   --  symbol so this library keeps no build dependency on the boot-side unit --
+   --  the same way malloc/free are resolved at link time.  (Was a fixed 65_536.)
+   function Bare_Heap_Free_Bytes return Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "__bare_heap_free_bytes";
+
    function Get_Free_Heap_Size return Interfaces.Unsigned_32 with Convention => C;
-   function Get_Free_Heap_Size return Interfaces.Unsigned_32 is (65_536);  -- TODO
+   function Get_Free_Heap_Size return Interfaces.Unsigned_32
+   is (Bare_Heap_Free_Bytes);
 
    --  _task_ms_to_tick: the Jorvik tick is 1 ms, so ticks == ms.
    function Ms_To_Tick (Ms : Interfaces.Unsigned_32) return Interfaces.Integer_32

@@ -21,6 +21,13 @@ package Tlsf_Core is
    function Reallocate (P : System.Address; N : Storage_Count) return System.Address;
    function Ready return Boolean;
 
+   --  Current total free payload -- the sum of Size_Of over every block on the
+   --  free lists, maintained O(1) in Insert_Free / Remove_Free.  Counts payload
+   --  bytes only; the per-block header of each free block is overhead and is not
+   --  included, so this slightly UNDER-states the largest request that could be
+   --  satisfied after coalescing -- the safe direction for a heap-free gauge.
+   function Free_Bytes return Storage_Count;
+
    --  Test-only: physical-chain consistency (prev-phys links, ascending,
    --  contiguous, no two adjacent free, ends at the sentinel).
    function Invariants_Hold return Boolean;
