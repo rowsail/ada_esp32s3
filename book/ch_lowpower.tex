@@ -55,14 +55,16 @@ for each:
 
 \begin{lstlisting}
 procedure Deep_Sleep_For   (Wake_After : Duration);
-procedure Deep_Sleep_Until (Pin : ESP32S3.GPIO.Pin_Id; High : Boolean := True);
+procedure Deep_Sleep_Until (Pin : ESP32S3.RTC_IO.RTC_Pin; High : Boolean := True);
 \end{lstlisting}
 
 \texttt{Deep\_Sleep\_For} arms the RTC timer and sleeps; the chip wakes after roughly
 the requested duration, counted on the always-on RTC clock. \texttt{Deep\_Sleep\_Until}
 arms an RTC GPIO and sleeps until that pin reaches the given level, which is how a
-button or a sensor's interrupt line brings the board back. Neither call returns: the
-next thing that runs is \texttt{Main}, from the top, after the wake reset.
+button or a sensor's interrupt line brings the board back. Only the RTC-capable pads
+(GPIO~0--21) can wake the chip, so the parameter is the \texttt{RTC\_Pin} subtype: a
+non-RTC pin is a caught constraint, not a silent never-wake. Neither call returns:
+the next thing that runs is \texttt{Main}, from the top, after the wake reset.
 
 The \texttt{esp32s3\_rtc\_sleep} example is the pattern in miniature. A boot counter
 lives in retained memory. Each boot it reads the wake cause, bumps the counter, and
@@ -71,6 +73,32 @@ and the wake cause turning from \texttt{Power\_On} into \texttt{Deep\_Sleep\_Tim
 is the proof that retained memory, deep sleep, and timer wake all work together.
 \texttt{esp32s3\_rtcio\_hold} shows the companion trick: holding an output pin at a
 fixed level \emph{through} the sleep, so a load stays driven while the core is off.
+
+\section{Sleeping with a radio up}\index{deep sleep!Wi-Fi}\index{Wi-Fi!deep sleep}\index{phy\_close\_rf}
+
+A radio changes none of this, which surprises people. It is tempting to think a
+connected Wi-Fi stack must be shut down --- an \texttt{esp\_wifi\_stop}, the PHY
+closed --- before it is safe to sleep. For \emph{deep} sleep it need not be: the same
+power-down that takes the CPU takes the whole digital-and-RF domain with it. The
+radio, the MAC, the baseband and their calibration all lose power exactly as the core
+does, so \textbf{entering deep sleep \emph{is} the radio power-down}. On wake the chip
+resets and the Wi-Fi stack is rebuilt from nothing --- a fresh \texttt{Initialize} and
+a fresh RF calibration --- just like every other piece of volatile state
+(Chapter~\ref{ch:wifi}).
+
+The \texttt{esp32s3\_wifi\_deepsleep} example is that loop end to end: associate to an
+access point, hold the link a moment, then \texttt{Deep\_Sleep\_For}. A boot counter in
+retained memory climbs across the sleeps, the wake cause reads
+\texttt{Deep\_Sleep\_Timer}, and the radio re-associates cleanly on each wake --- with
+no teardown call anywhere.
+
+The picture inverts for the \emph{lighter} sleep modes, where the digital domain stays
+powered and only the radio idles between beacons. There the RF \emph{must} be powered
+down explicitly and repeatedly (\texttt{phy\_close\_rf}), and the lower-MAC blob already
+does exactly that: it toggles the PHY off and on roughly once a second as its own power
+management, through the \texttt{phy\_enable} / \texttt{phy\_disable} hooks the OS adapter
+hands it (Chapter~\ref{ch:wifi}). Deep sleep needs none of that cooperation, because it
+does not leave the domain powered to begin with.
 
 \section{Holding pins, and the watchdog}\index{pin hold}\index{watchdog}
 
