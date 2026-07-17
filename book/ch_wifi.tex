@@ -266,6 +266,9 @@ handed raw frames off the air.
 stack.
 \item \texttt{esp32s3\_wifi\_tls} --- the capstone: full TLS 1.3 HTTPS end to end,
 described above.
+\item \texttt{esp32s3\_wifi\_deepsleep} --- associate, then deep-sleep: entering
+deep sleep is itself the radio power-down (the RTC cuts the RF domain), and the
+stack re-initialises on each wake (Chapter~\ref{ch:lowpower}).
 \end{itemize}
 
 Each needs the blobs (\texttt{tools/fetch-wifi-blobs.sh}, or \texttt{IDF\_PATH})
