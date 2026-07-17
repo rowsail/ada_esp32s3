@@ -157,7 +157,18 @@ package body ESP32S3.WiFi.PHY is
 
    procedure Phy_Disable is
    begin
-      null;   --  leave the RF on (continuous scanning); TODO phy_close_rf
+      --  Deliberately a no-op -- NOT a missing feature.  The blob drives this
+      --  slot continuously as its own RF power management (~1/s while scanning
+      --  or associated, balanced against phy_enable, which we answer with
+      --  phy_wakeup_init above).  Honouring it -- phy_close_rf + phy_xpd_tsens
+      --  here -- was tried on silicon and keeps the link up, but IDF pairs the
+      --  close with phy_digital_regs_store/load (PHY digital-register save and
+      --  restore) that this minimal PHY path does not implement, so validated
+      --  RF quality over long runs is not established; enabling it belongs with
+      --  a measured modem-sleep power-save path, not here.  For DEEP sleep it is
+      --  unnecessary anyway: the RTC power-down cuts the whole digital + RF
+      --  domain, so entering deep sleep is itself the radio power-down.
+      null;
    end Phy_Disable;
 
 end ESP32S3.WiFi.PHY;
