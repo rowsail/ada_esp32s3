@@ -162,6 +162,20 @@ The blob's ISR is closure-free and library-level, exactly as
 Chapter~\ref{ch:interrupts} requires --- a captured environment here would fault
 on the trampoline the ESP32-S3 cannot execute.
 
+PHY calibration is also where the radio's \emph{power management} lives. Once the
+core is up, the lower MAC does not keep the RF lit continuously: it drives the
+\texttt{phy\_enable} / \texttt{phy\_disable} hooks roughly once a second, closing
+the analog front-end whenever it has nothing to send or receive. The adapter
+honours that cycle exactly as ESP-IDF does on this chip --- \texttt{phy\_disable}
+saves the PHY digital registers (\texttt{phy\_dig\_reg\_backup}), calls
+\texttt{phy\_close\_rf} and powers down the temperature sensor; \texttt{phy\_enable}
+re-wakes the PHY with \texttt{phy\_wakeup\_init} and restores those registers. The
+save/restore is not optional on the ESP32-S3: without it the RF degrades over
+repeated close/wake cycles. The upshot is that the radio powers down between
+activity on its own, which is the groundwork for the low-power modes of
+Chapter~\ref{ch:lowpower}; the deep-sleep path there does not even need it, since
+the RTC power-down takes the whole RF domain regardless.
+
 Scanning drops out of this for free: \texttt{ESP32S3.WiFi.Scan} asks the MLME to
 sweep the channels and reads back the results. Connecting adds the
 \emph{supplicant} --- the WPA2 four-way handshake in \texttt{ESP32S3.WiFi.Supplicant}

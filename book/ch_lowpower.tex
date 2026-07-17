@@ -93,12 +93,16 @@ retained memory climbs across the sleeps, the wake cause reads
 no teardown call anywhere.
 
 The picture inverts for the \emph{lighter} sleep modes, where the digital domain stays
-powered and only the radio idles between beacons. There the RF \emph{must} be powered
-down explicitly and repeatedly (\texttt{phy\_close\_rf}), and the lower-MAC blob already
-does exactly that: it toggles the PHY off and on roughly once a second as its own power
+powered and only the radio idles between activity. There the RF \emph{must} be powered
+down explicitly and repeatedly (\texttt{phy\_close\_rf}), and the lower-MAC blob drives
+exactly that: it toggles the PHY off and on roughly once a second as its own power
 management, through the \texttt{phy\_enable} / \texttt{phy\_disable} hooks the OS adapter
-hands it (Chapter~\ref{ch:wifi}). Deep sleep needs none of that cooperation, because it
-does not leave the domain powered to begin with.
+provides (Chapter~\ref{ch:wifi}). The adapter \emph{honours} them --- \texttt{phy\_disable}
+saves the PHY digital registers, closes the RF and powers down the temperature sensor;
+\texttt{phy\_enable} re-wakes the PHY and restores those registers --- so the radio
+really powers down between activity even while the core runs, not only in deep sleep.
+Deep sleep needs none of that cooperation, because it does not leave the domain powered
+to begin with.
 
 \section{Holding pins, and the watchdog}\index{pin hold}\index{watchdog}
 
