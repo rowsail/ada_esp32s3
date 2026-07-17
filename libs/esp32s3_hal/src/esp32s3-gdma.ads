@@ -181,6 +181,20 @@ package ESP32S3.GDMA is
    procedure Start_Loop (C : Channel; Buffer : DMA_Buffer; Length : Natural)
    with Pre => Length <= Buffer'Length and then Buffer'Length mod DMA_Alignment = 0;
 
+   --  Gapless DOUBLE-BUFFERED streaming (Mem_To_Periph).  Loop the two halves of
+   --  Buffer forever -- Half_Length bytes each -- as one uninterrupted transfer
+   --  (like Start_Loop, so no inter-buffer restart gap), but fire a completion
+   --  as each half drains so a producer can refill the half the DMA has left.
+   --  Await_Half blocks until a half finishes and returns which one (0 or 1) is
+   --  now safe to overwrite; the refill is thus paced by the DMA itself, not a
+   --  timer, so a continuously-generated signal never drifts or glitches.
+   --  Half_Length in 1 .. Max_Transfer; Buffer (both halves) in internal SRAM.
+   --  Stop (C, Mem_To_Periph) ends it.
+   procedure Start_Stream (C : Channel; Buffer : System.Address; Half_Length : Natural)
+   with Pre => Half_Length = 0 or else Is_DMA_Capable (Buffer);
+
+   function Await_Half (C : Channel) return Natural;
+
    --  True once the Dir transfer has signalled success-EOF (also True for an
    --  invalid handle, so a Wait never hangs on one).
    function Done (C : Channel; Dir : Direction) return Boolean;

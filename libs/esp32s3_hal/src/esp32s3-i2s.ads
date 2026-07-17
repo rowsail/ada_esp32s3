@@ -236,6 +236,22 @@ package ESP32S3.I2S is
                and then Length <= Tx'Length
                and then Tx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
 
+   --  Gapless DOUBLE-BUFFERED streaming: loop the two halves of Samples forever
+   --  with no restart gap, refilling on demand.  Await_Half blocks until the DMA
+   --  finishes a half and returns which one (0 = first, 1 = second) is now safe
+   --  to overwrite; refilling that half keeps a continuously-generated signal
+   --  (e.g. synthesized audio) glitch-free, since the refill is paced by the DMA
+   --  itself, not a timer.  Samples'Length must be even; each half (half the
+   --  buffer) must be 1 .. 4095 bytes.  Stop ends it.
+   procedure Start_Stream (S : Session; Samples : PCM_16)
+   with Pre => Is_Held (S) and then Configured_Bits (S) = Bits_16
+               and then Samples'Length mod 2 = 0
+               and then Samples'Length in 2 .. 4094;
+   procedure Start_Stream_Raw (S : Session; Tx : System.Address; Half_Length : Natural)
+   with Pre => Is_Held (S) and then Half_Length in 1 .. 4095;
+   function Await_Half (S : Session) return Natural
+   with Pre => Is_Held (S);
+
 
    --  Stop a continuous transmit started by Start_Continuous (TX clock off).
    --  Raises Not_Owned unless S holds the port.

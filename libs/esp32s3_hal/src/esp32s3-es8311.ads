@@ -96,6 +96,16 @@ package ESP32S3.ES8311 is
    procedure Play_Continuous (O : Output; Samples : System.Address; Length : Natural)
    with Pre => Length in 1 .. 4095;
 
+   --  Gapless double-buffered STREAMING: loop the two halves of the Samples
+   --  buffer (Length total bytes; each half Length/2 must be <= 4095) forever
+   --  with no restart gap, and refill on demand.  Await_Half blocks until the
+   --  DMA finishes a half and returns which one (0/1) to refill -- so live-
+   --  generated audio (a synthesizer) stays glitch-free without a pacing timer.
+   procedure Play_Stream (O : Output; Samples : System.Address; Length : Natural)
+   with Pre => Length in 2 .. 8190 and then Length mod 2 = 0;
+
+   function Await_Half (O : Output) return Natural;
+
    --  Stop a continuous playback started by Play_Continuous.
    procedure Stop (O : Output);
 

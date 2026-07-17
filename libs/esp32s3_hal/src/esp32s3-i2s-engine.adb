@@ -460,6 +460,44 @@ package body ESP32S3.I2S.Engine is
       Regs.TX_CONF.TX_START := True;
    end Start_Continuous;
 
+   ------------------
+   -- Start_Stream --
+   ------------------
+
+   procedure Start_Stream (B : in out Bus; Tx : System.Address; Half_Length : Natural) is
+      Regs : constant Periph_Ref := B.Regs;
+   begin
+      if not B.Valid or else B.Streaming or else Half_Length = 0
+        or else Half_Length > 4095
+      then
+         return;
+      end if;
+
+      --  Same held-channel, continuously-clocked setup as Start_Continuous, but
+      --  the DMA loops TWO half-buffers and reports each half's completion.
+      GD.Claim (B.Chan, GDMA_Periph (B.Port));
+      if not GD.Is_Valid (B.Chan) then
+         return;
+      end if;
+      B.Streaming := True;
+
+      Regs.TX_CONF.TX_STOP_EN := False;
+      Regs.TX_CONF.TX_FIFO_RESET := True;
+      Regs.TX_CONF.TX_FIFO_RESET := False;
+      GD.Start_Stream (B.Chan, Tx, Half_Length);
+      Regs.TX_CONF.TX_UPDATE := True;
+      while Regs.TX_CONF.TX_UPDATE loop
+         null;
+      end loop;
+      Regs.TX_CONF.TX_START := True;
+   end Start_Stream;
+
+   ----------------
+   -- Await_Half --
+   ----------------
+
+   function Await_Half (B : Bus) return Natural is (GD.Await_Half (B.Chan));
+
    ----------
    -- Stop --
    ----------
@@ -469,6 +507,7 @@ package body ESP32S3.I2S.Engine is
       if B.Valid then
          B.Regs.TX_CONF.TX_START := False;
          if B.Streaming then
+            GD.Stop (B.Chan, GD.Mem_To_Periph);   --  halt the loop, clear its state
             GD.Release (B.Chan);          --  return the held channel to the pool
             B.Streaming := False;
          end if;
@@ -534,6 +573,7 @@ package body ESP32S3.I2S.Engine is
          B.Regs.TX_CONF.TX_START := False;
          B.Regs.RX_CONF.RX_START := False;
          if B.Streaming then
+            GD.Stop (B.Chan, GD.Mem_To_Periph);
             GD.Release (B.Chan);
             B.Streaming := False;
          end if;
