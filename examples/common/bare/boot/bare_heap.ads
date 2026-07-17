@@ -23,6 +23,14 @@ package Bare_Heap is
    function Calloc (Nmemb, Size : Interfaces.C.size_t) return System.Address;
    pragma Export (C, Calloc, "calloc");
 
+   --  Live free-payload byte count of the arena (Tlsf_Core.Free_Bytes), read
+   --  under the allocator lock.  Exported so the Wi-Fi OS adapter's
+   --  get_free_heap_size can report a real figure without the wifi library
+   --  depending on this boot-side unit (it links against the symbol, as with
+   --  malloc).
+   function Heap_Free_Bytes return Interfaces.C.size_t;
+   pragma Export (C, Heap_Free_Bytes, "__bare_heap_free_bytes");
+
    --  Free a terminated task's heap-allocated primary stack -- but only once the
    --  thread is no longer the running thread on either core (else a cross-core
    --  free could pull the stack from under a task still on it).  Bounded spin:

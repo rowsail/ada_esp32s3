@@ -60,6 +60,11 @@ package body Tlsf_Core is
    Sentinel  : System.Address := System.Null_Address;
    Inited    : Boolean := False;
 
+   --  Running sum of the payload bytes of every block currently on the free
+   --  lists; += Size_Of on Insert_Free, -= Size_Of on Remove_Free, so it is
+   --  exact at every quiescent point.  Backs Free_Bytes.
+   Free_Payload : Storage_Count := 0;
+
    ---------------------------------------------------------------------------
    --  Block accessors
    ---------------------------------------------------------------------------
@@ -126,6 +131,7 @@ package body Tlsf_Core is
       FL, SL : Integer;
       H      : System.Address;
    begin
+      Free_Payload := Free_Payload + Size_Of (B);
       Mapping (Size_Of (B), FL, SL);
       H := Heads (FL, SL);
       To_Links (Payload (B)).Next_Free := H;
@@ -143,6 +149,7 @@ package body Tlsf_Core is
       Nx     : constant System.Address := Next_Free (B);
       Pv     : constant System.Address := Prev_Free (B);
    begin
+      Free_Payload := Free_Payload - Size_Of (B);
       Mapping (Size_Of (B), FL, SL);
       if Pv /= System.Null_Address then
          To_Links (Payload (Pv)).Next_Free := Nx;
@@ -188,6 +195,13 @@ package body Tlsf_Core is
    function Ready return Boolean
    is (Inited);
 
+   ---------------
+   -- Free_Bytes --
+   ---------------
+
+   function Free_Bytes return Storage_Count
+   is (Free_Payload);
+
    ----------
    -- Init --
    ----------
@@ -202,6 +216,7 @@ package body Tlsf_Core is
       Heads := (others => (others => System.Null_Address));
       FL_Bitmap := 0;
       SL_Bitmap := (others => 0);
+      Free_Payload := 0;   --  re-init: Insert_Free (B0) below re-establishes it
 
       Set_Prev_Phys (B0, System.Null_Address);
       Set_Size (B0, Storage_Count (To_Integer (Sn) - To_Integer (B0)) - Hdr_Sz);

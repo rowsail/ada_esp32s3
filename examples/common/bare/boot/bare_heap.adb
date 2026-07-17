@@ -176,6 +176,20 @@ package body Bare_Heap is
    end Calloc;
 
    ---------------------
+   -- Heap_Free_Bytes --
+   ---------------------
+
+   function Heap_Free_Bytes return Interfaces.C.size_t is
+      Ps : constant Unsigned_32 := Enter_Crit;
+      R  : Storage_Count;
+   begin
+      Ensure_Init;
+      R := T.Free_Bytes;
+      Leave_Crit (Ps);
+      return Interfaces.C.size_t (R);
+   end Heap_Free_Bytes;
+
+   ---------------------
    -- Task_Stack_Free --
    ---------------------
 
