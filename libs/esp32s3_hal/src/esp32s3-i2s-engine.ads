@@ -51,6 +51,16 @@ private package ESP32S3.I2S.Engine is
    procedure Start_Continuous (B : in out Bus; Tx : System.Address; Length : Natural)
    with Pre => Is_Open (B) and then Length in 1 .. 4095;
 
+   --  Gapless double-buffered streaming: loop the two Half_Length-byte halves of
+   --  Tx forever with no restart gap, and refill on demand.  Await_Half blocks
+   --  until the DMA finishes a half and returns which one (0/1) to refill, so a
+   --  continuously-generated signal stays glitch-free.  Stop ends it.
+   procedure Start_Stream (B : in out Bus; Tx : System.Address; Half_Length : Natural)
+   with Pre => Is_Open (B) and then Half_Length in 1 .. 4095;
+
+   function Await_Half (B : Bus) return Natural
+   with Pre => Is_Open (B);
+
    --  Stop a continuous transmit (TX clock off) and release its held channel.
    procedure Stop (B : in out Bus)
    with Pre => Is_Open (B);

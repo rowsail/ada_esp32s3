@@ -217,6 +217,14 @@ package body ESP32S3.ES8311 is
       ESP32S3.I2S.Start_Continuous_Raw (O.Audio, Samples, Length);
    end Play_Continuous;
 
+   procedure Play_Stream (O : Output; Samples : System.Address; Length : Natural) is
+   begin
+      ESP32S3.I2S.Start_Stream_Raw (O.Audio, Samples, Length / 2);
+   end Play_Stream;
+
+   function Await_Half (O : Output) return Natural is
+     (ESP32S3.I2S.Await_Half (O.Audio));
+
    ----------
    -- Stop --
    ----------

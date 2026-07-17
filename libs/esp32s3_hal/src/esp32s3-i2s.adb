@@ -312,6 +312,24 @@ package body ESP32S3.I2S is
       Start_Continuous_Raw (S, Samples'Address, Samples'Length * Bytes_32);
    end Start_Continuous;
 
+   ------------------
+   -- Start_Stream --
+   ------------------
+
+   procedure Start_Stream_Raw (S : Session; Tx : System.Address; Half_Length : Natural)
+   is
+   begin
+      E.Start_Stream (State.Owned (S).all, Tx, Half_Length);
+   end Start_Stream_Raw;
+
+   procedure Start_Stream (S : Session; Samples : PCM_16) is
+   begin
+      Start_Stream_Raw (S, Samples'Address, (Samples'Length / 2) * Bytes_16);
+   end Start_Stream;
+
+   function Await_Half (S : Session) return Natural is
+     (E.Await_Half (State.Owned (S).all));
+
    ----------
    -- Stop --
    ----------

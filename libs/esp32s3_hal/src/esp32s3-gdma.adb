@@ -202,6 +202,13 @@ package body ESP32S3.GDMA is
    TX_Desc : array (Channel_Id) of aliased Descriptor;
    RX_Desc : array (Channel_Id) of aliased Descriptor;
 
+   --  Double-buffered streaming (Start_Stream): a two-descriptor ring per
+   --  channel, which half last completed (toggled in the interrupt), and whether
+   --  the channel is streaming (so the shared handler services its OUT_DONE).
+   Stream_Desc : array (Channel_Id, 0 .. 1) of aliased Descriptor;
+   Stream_Half : array (Channel_Id) of Natural := (others => 1);
+   Streaming   : array (Channel_Id) of Boolean := (others => False);
+
    --  A receive into PSRAM needs its cache lines invalidated AFTER the DMA writes
    --  them, but the buffer address isn't known at the Wait/Done completion point
    --  -- stash it here per channel when the RX is armed (Null when the RX target
@@ -306,6 +313,14 @@ package body ESP32S3.GDMA is
                Channels (C).OUT_INT_ENA.OUT_EOF := False;
                Set_True (Done_Signal (C, Mem_To_Periph));
             end if;
+            --  Streaming: a descriptor (one half) finished.  Clear the status but
+            --  LEAVE the enable on (the loop keeps running), note which half
+            --  completed (they alternate) and wake the producer to refill it.
+            if Streaming (C) and then Channels (C).OUT_INT_ST.OUT_DONE then
+               Channels (C).OUT_INT_CLR.OUT_DONE := True;
+               Stream_Half (C) := 1 - Stream_Half (C);
+               Set_True (Done_Signal (C, Mem_To_Periph));
+            end if;
          end loop;
       end Handler;
 
@@ -381,6 +396,8 @@ package body ESP32S3.GDMA is
       --  bytes into a reused frame.  Also drop the EOF enable.
       case Dir is
          when Mem_To_Periph =>
+            Streaming (C.Id) := False;
+            Channels (C.Id).OUT_INT_ENA.OUT_DONE := False;
             Channels (C.Id).OUT_LINK.OUTLINK_STOP := True;
             Channels (C.Id).OUT_CONF0.OUT_RST := True;
             Channels (C.Id).OUT_CONF0.OUT_RST := False;
@@ -662,6 +679,69 @@ package body ESP32S3.GDMA is
          Start_Loop (C, Buffer (Buffer'First)'Address, Length);
       end if;
    end Start_Loop;
+
+   ------------------
+   -- Start_Stream --
+   ------------------
+
+   procedure Start_Stream
+     (C : Channel; Buffer : System.Address; Half_Length : Natural) is
+   begin
+      if not C.Valid or else Half_Length = 0 or else Half_Length > Max_Transfer
+      then
+         return;
+      end if;
+
+      --  Two descriptors, one per half, linked in a ring; Suc_EOF clear so the
+      --  engine walks them forever (as Start_Loop does), and OUT_DONE fires as
+      --  each descriptor's bytes reach the FIFO -- one interrupt per half.
+      for H in 0 .. 1 loop
+         Stream_Desc (C.Id, H).W0 :=
+           (Size    => UInt12 (Half_Length),
+            Length  => UInt12 (Half_Length),
+            Suc_EOF => False,
+            Owner   => True,
+            others  => <>);
+         Stream_Desc (C.Id, H).Buffer :=
+           Buffer + Storage_Offset (H * Half_Length);
+      end loop;
+      Stream_Desc (C.Id, 0).Next := Stream_Desc (C.Id, 1)'Address;
+      Stream_Desc (C.Id, 1).Next := Stream_Desc (C.Id, 0)'Address;
+
+      Streaming (C.Id)   := True;
+      Stream_Half (C.Id) := 1;                    --  first OUT_DONE toggles to 0
+      Set_False (Done_Signal (C.Id, Mem_To_Periph));
+
+      Channels (C.Id).OUT_CONF0.OUT_AUTO_WRBACK := False;
+      Channels (C.Id).OUT_INT_CLR.OUT_DONE := True;
+      Channels (C.Id).OUT_INT_CLR.OUT_EOF := True;
+      Channels (C.Id).OUT_INT_CLR.OUT_DSCR_ERR := True;
+      Channels (C.Id).OUT_INT_ENA.OUT_DONE := True;   --  per-half interrupt
+      Asm ("memw", Volatile => True, Clobber => "memory");
+      Channels (C.Id).OUT_LINK.OUTLINK_ADDR :=
+        Link_Addr (Stream_Desc (C.Id, 0)'Address);
+      Channels (C.Id).OUT_LINK.OUTLINK_START := True;
+   end Start_Stream;
+
+   ----------------
+   -- Await_Half --
+   ----------------
+
+   function Await_Half (C : Channel) return Natural is
+      Cancelled : Boolean;
+   begin
+      if not C.Valid then
+         return 0;
+      end if;
+      --  Block until a half finishes (the interrupt sets Done_Signal); a
+      --  deadline guards against a stalled stream so this can't hang forever.
+      Set_Handler
+        (Timeout_Ev (C.Id, Mem_To_Periph), Clock + Wait_Timeout,
+         Timeout_Waker.On_Deadline'Access);
+      Suspend_Until_True (Done_Signal (C.Id, Mem_To_Periph));
+      Cancel_Handler (Timeout_Ev (C.Id, Mem_To_Periph), Cancelled);
+      return Stream_Half (C.Id);
+   end Await_Half;
 
    ----------
    -- Done --
