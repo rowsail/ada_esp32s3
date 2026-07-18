@@ -545,7 +545,7 @@ package body ESP32S3.I2S.Engine is
    -- Await_Half --
    ----------------
 
-   function Await_Half (B : Bus) return Natural is (GD.Await_Half (B.Chan));
+   function Await_Half (B : Bus) return ESP32S3.GDMA.Ring_Half is (GD.Await_Half (B.Chan));
 
    ----------
    -- Stop --
@@ -604,7 +604,7 @@ package body ESP32S3.I2S.Engine is
       Regs.RX_CONF.RX_START := True;
    end Start_Capture_Stream;
 
-   function Await_Capture_Half (B : Bus) return Natural
+   function Await_Capture_Half (B : Bus) return ESP32S3.GDMA.Ring_Half
    is (GD.Await_In_Half (B.Cap_Chan));
 
    ------------------

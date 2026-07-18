@@ -249,7 +249,7 @@ package ESP32S3.I2S is
                and then Samples'Length in 2 .. 4094;
    procedure Start_Stream_Raw (S : Session; Tx : System.Address; Half_Length : Natural)
    with Pre => Is_Held (S) and then Half_Length in 1 .. 4095;
-   function Await_Half (S : Session) return Natural
+   function Await_Half (S : Session) return ESP32S3.GDMA.Ring_Half
    with Pre => Is_Held (S);
 
 
@@ -285,7 +285,7 @@ package ESP32S3.I2S is
      (S : Session; Rx : System.Address; Half_Length : Natural)
    with Pre => Is_Held (S) and then Half_Length in 1 .. 4095;
 
-   function Await_Capture_Half (S : Session) return Natural
+   function Await_Capture_Half (S : Session) return ESP32S3.GDMA.Ring_Half
    with Pre => Is_Held (S);
 
    procedure Stop_Capture (S : Session)

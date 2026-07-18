@@ -327,7 +327,7 @@ package body ESP32S3.I2S is
       Start_Stream_Raw (S, Samples'Address, (Samples'Length / 2) * Bytes_16);
    end Start_Stream;
 
-   function Await_Half (S : Session) return Natural is
+   function Await_Half (S : Session) return ESP32S3.GDMA.Ring_Half is
      (E.Await_Half (State.Owned (S).all));
 
    ----------
@@ -363,7 +363,7 @@ package body ESP32S3.I2S is
       E.Start_Capture_Stream (State.Owned (S).all, Rx, Half_Length);
    end Start_Capture_Stream;
 
-   function Await_Capture_Half (S : Session) return Natural
+   function Await_Capture_Half (S : Session) return ESP32S3.GDMA.Ring_Half
    is (E.Await_Capture_Half (State.Owned (S).all));
 
    procedure Stop_Capture (S : Session) is
