@@ -428,17 +428,20 @@ package body ESP32S3.GDMA is
    -- Unbind --
    ------------
 
+   --  A PERI_SEL value that matches no peripheral's request line (the valid
+   --  selectors are 0 .. 9), so the direction goes inert.
+   No_Peripheral_Sel : constant UInt6 := 63;
+
    procedure Unbind (C : Channel; Dir : Direction) is
    begin
       if not C.Valid then
          return;
       end if;
-      --  63 matches no peripheral request, so this direction goes inert.
       case Dir is
          when Mem_To_Periph =>
-            Channels (C.Id).OUT_PERI_SEL.PERI_OUT_SEL := 63;
+            Channels (C.Id).OUT_PERI_SEL.PERI_OUT_SEL := No_Peripheral_Sel;
          when Periph_To_Mem =>
-            Channels (C.Id).IN_PERI_SEL.PERI_IN_SEL := 63;
+            Channels (C.Id).IN_PERI_SEL.PERI_IN_SEL := No_Peripheral_Sel;
       end case;
    end Unbind;
 
