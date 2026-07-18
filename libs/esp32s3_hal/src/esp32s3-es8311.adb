@@ -222,7 +222,7 @@ package body ESP32S3.ES8311 is
       ESP32S3.I2S.Start_Stream_Raw (O.Audio, Samples, Length / 2);
    end Play_Stream;
 
-   function Await_Half (O : Output) return Natural is
+   function Await_Half (O : Output) return ESP32S3.GDMA.Ring_Half is
      (ESP32S3.I2S.Await_Half (O.Audio));
 
    ----------
@@ -262,7 +262,7 @@ package body ESP32S3.ES8311 is
       ESP32S3.I2S.Start_Capture_Stream (O.Audio, Samples, Length / 2);
    end Capture_Stream;
 
-   function Await_Capture_Half (O : Output) return Natural
+   function Await_Capture_Half (O : Output) return ESP32S3.GDMA.Ring_Half
    is (ESP32S3.I2S.Await_Capture_Half (O.Audio));
 
    procedure Stop_Capture (O : Output) is

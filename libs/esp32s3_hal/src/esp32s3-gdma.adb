@@ -206,14 +206,14 @@ package body ESP32S3.GDMA is
    --  channel, which half last completed (toggled in the interrupt), and whether
    --  the channel is streaming (so the shared handler services its OUT_DONE).
    Stream_Desc : array (Channel_Id, 0 .. 1) of aliased Descriptor;
-   Stream_Half : array (Channel_Id) of Natural := (others => 1);
+   Stream_Half : array (Channel_Id) of Ring_Half := (others => 1);
    Streaming   : array (Channel_Id) of Boolean := (others => False);
 
    --  The receive mirror (Start_In_Stream): a two-descriptor IN ring per
    --  channel, which half was last filled, and whether the channel is capture-
    --  streaming (so the shared handler services its IN_DONE).
    In_Stream_Desc : array (Channel_Id, 0 .. 1) of aliased Descriptor;
-   In_Stream_Half : array (Channel_Id) of Natural := (others => 1);
+   In_Stream_Half : array (Channel_Id) of Ring_Half := (others => 1);
    In_Streaming   : array (Channel_Id) of Boolean := (others => False);
 
    --  A receive into PSRAM needs its cache lines invalidated AFTER the DMA writes
@@ -763,7 +763,7 @@ package body ESP32S3.GDMA is
    -- Await_Half --
    ----------------
 
-   function Await_Half (C : Channel) return Natural is
+   function Await_Half (C : Channel) return Ring_Half is
       Cancelled : Boolean;
    begin
       if not C.Valid then
@@ -830,7 +830,7 @@ package body ESP32S3.GDMA is
    -- Await_In_Half --
    -------------------
 
-   function Await_In_Half (C : Channel) return Natural is
+   function Await_In_Half (C : Channel) return Ring_Half is
       Cancelled : Boolean;
    begin
       if not C.Valid then

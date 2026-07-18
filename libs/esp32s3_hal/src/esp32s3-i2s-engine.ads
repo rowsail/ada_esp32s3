@@ -58,7 +58,7 @@ private package ESP32S3.I2S.Engine is
    procedure Start_Stream (B : in out Bus; Tx : System.Address; Half_Length : Natural)
    with Pre => Is_Open (B) and then Half_Length in 1 .. 4095;
 
-   function Await_Half (B : Bus) return Natural
+   function Await_Half (B : Bus) return ESP32S3.GDMA.Ring_Half
    with Pre => Is_Open (B);
 
    --  Stop a continuous transmit (TX clock off) and release its held channel.
@@ -81,7 +81,7 @@ private package ESP32S3.I2S.Engine is
      (B : in out Bus; Rx : System.Address; Half_Length : Natural)
    with Pre => Is_Open (B) and then Half_Length in 1 .. 4095;
 
-   function Await_Capture_Half (B : Bus) return Natural
+   function Await_Capture_Half (B : Bus) return ESP32S3.GDMA.Ring_Half
    with Pre => Is_Open (B);
 
    procedure Stop_Capture (B : in out Bus)

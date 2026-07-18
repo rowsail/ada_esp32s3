@@ -143,6 +143,9 @@ package ESP32S3.GDMA is
    --    Periph_To_Mem -> the IN (RX) path receives from the peripheral into RAM
    type Direction is (Mem_To_Periph, Periph_To_Mem);
 
+   --  Which half of a double-buffered streaming ring: only ever 0 or 1.
+   subtype Ring_Half is Natural range 0 .. 1;
+
    --  Arm a single-buffer transfer in direction Dir on channel C and kick the
    --  GDMA side.  NON-blocking: configure and start the peripheral separately;
    --  the GDMA moves data as the peripheral asserts its DMA request.  Poll Done
@@ -193,7 +196,7 @@ package ESP32S3.GDMA is
    procedure Start_Stream (C : Channel; Buffer : System.Address; Half_Length : Natural)
    with Pre => Half_Length = 0 or else Is_DMA_Capable (Buffer);
 
-   function Await_Half (C : Channel) return Natural;
+   function Await_Half (C : Channel) return Ring_Half;
 
    --  Gapless double-buffered CAPTURE (Periph_To_Mem): the receive mirror of
    --  Start_Stream.  The DMA fills the two Half_Length-byte halves of Buffer
@@ -204,7 +207,7 @@ package ESP32S3.GDMA is
    procedure Start_In_Stream (C : Channel; Buffer : System.Address; Half_Length : Natural)
    with Pre => Half_Length = 0 or else Is_DMA_Capable (Buffer);
 
-   function Await_In_Half (C : Channel) return Natural;
+   function Await_In_Half (C : Channel) return Ring_Half;
 
    --  True once the Dir transfer has signalled success-EOF (also True for an
    --  invalid handle, so a Wait never hangs on one).

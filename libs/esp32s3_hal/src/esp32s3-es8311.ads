@@ -3,6 +3,7 @@ with System;
 with ESP32S3.GPIO;
 with ESP32S3.I2C;
 with ESP32S3.I2S;
+with ESP32S3.GDMA;   --  Ring_Half
 
 --  ESP32-S3 driver for the Everest ES8311 low-power mono audio codec.
 --
@@ -104,7 +105,7 @@ package ESP32S3.ES8311 is
    procedure Play_Stream (O : Output; Samples : System.Address; Length : Natural)
    with Pre => Length in 2 .. 8190 and then Length mod 2 = 0;
 
-   function Await_Half (O : Output) return Natural;
+   function Await_Half (O : Output) return ESP32S3.GDMA.Ring_Half;
 
    --  Stop a continuous playback started by Play_Continuous.
    procedure Stop (O : Output);
@@ -133,7 +134,7 @@ package ESP32S3.ES8311 is
    procedure Capture_Stream (O : Output; Samples : System.Address; Length : Natural)
    with Pre => Length in 2 .. 8190 and then Length mod 2 = 0;
 
-   function Await_Capture_Half (O : Output) return Natural;
+   function Await_Capture_Half (O : Output) return ESP32S3.GDMA.Ring_Half;
 
    procedure Stop_Capture (O : Output);
 
