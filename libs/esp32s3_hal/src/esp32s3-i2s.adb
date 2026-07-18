@@ -353,6 +353,24 @@ package body ESP32S3.I2S is
       Capture_Raw (S, Rx (Rx'First)'Address, Length);
    end Capture_Raw;
 
+   --------------------------
+   -- Start_Capture_Stream --
+   --------------------------
+
+   procedure Start_Capture_Stream
+     (S : Session; Rx : System.Address; Half_Length : Natural) is
+   begin
+      E.Start_Capture_Stream (State.Owned (S).all, Rx, Half_Length);
+   end Start_Capture_Stream;
+
+   function Await_Capture_Half (S : Session) return Natural
+   is (E.Await_Capture_Half (State.Owned (S).all));
+
+   procedure Stop_Capture (S : Session) is
+   begin
+      E.Stop_Capture (State.Owned (S).all);
+   end Stop_Capture;
+
    procedure Capture (S : Session; Samples : out PCM_8) is
    begin
       Capture_Raw (S, Samples'Address, Samples'Length * Bytes_8);

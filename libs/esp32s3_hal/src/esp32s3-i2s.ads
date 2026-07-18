@@ -275,6 +275,21 @@ package ESP32S3.I2S is
                and then Length <= Rx'Length
                and then Rx'Length mod ESP32S3.GDMA.DMA_Alignment = 0;
 
+   --  Gapless double-buffered capture STREAMING: the receive mirror of
+   --  Start_Stream, on its own DMA channel, so it runs CONCURRENTLY with a
+   --  streaming transmit (true full duplex, no clock gap in either direction).
+   --  The DMA fills the two halves of Rx forever; Await_Capture_Half blocks
+   --  until a half is ready and returns which one (0/1) to read.  Stop_Capture
+   --  ends it.  Each half (Half_Length bytes) 1 .. 4095; Rx in internal SRAM.
+   procedure Start_Capture_Stream
+     (S : Session; Rx : System.Address; Half_Length : Natural)
+   with Pre => Is_Held (S) and then Half_Length in 1 .. 4095;
+
+   function Await_Capture_Half (S : Session) return Natural
+   with Pre => Is_Held (S);
+
+   procedure Stop_Capture (S : Session)
+   with Pre => Is_Held (S);
 
    --  Relinquish ownership (lets a waiting task proceed).  Idempotent.
    procedure Release (S : in out Session)

@@ -209,6 +209,13 @@ package body ESP32S3.GDMA is
    Stream_Half : array (Channel_Id) of Natural := (others => 1);
    Streaming   : array (Channel_Id) of Boolean := (others => False);
 
+   --  The receive mirror (Start_In_Stream): a two-descriptor IN ring per
+   --  channel, which half was last filled, and whether the channel is capture-
+   --  streaming (so the shared handler services its IN_DONE).
+   In_Stream_Desc : array (Channel_Id, 0 .. 1) of aliased Descriptor;
+   In_Stream_Half : array (Channel_Id) of Natural := (others => 1);
+   In_Streaming   : array (Channel_Id) of Boolean := (others => False);
+
    --  A receive into PSRAM needs its cache lines invalidated AFTER the DMA writes
    --  them, but the buffer address isn't known at the Wait/Done completion point
    --  -- stash it here per channel when the RX is armed (Null when the RX target
@@ -321,6 +328,12 @@ package body ESP32S3.GDMA is
                Stream_Half (C) := 1 - Stream_Half (C);
                Set_True (Done_Signal (C, Mem_To_Periph));
             end if;
+            --  Capture streaming: a receive descriptor (one half) was filled.
+            if In_Streaming (C) and then Channels (C).IN_INT_ST.IN_DONE then
+               Channels (C).IN_INT_CLR.IN_DONE := True;
+               In_Stream_Half (C) := 1 - In_Stream_Half (C);
+               Set_True (Done_Signal (C, Periph_To_Mem));
+            end if;
          end loop;
       end Handler;
 
@@ -402,12 +415,32 @@ package body ESP32S3.GDMA is
             Channels (C.Id).OUT_CONF0.OUT_RST := True;
             Channels (C.Id).OUT_CONF0.OUT_RST := False;
          when Periph_To_Mem =>
+            In_Streaming (C.Id) := False;
+            Channels (C.Id).IN_INT_ENA.IN_DONE := False;
             Channels (C.Id).IN_LINK.INLINK_STOP := True;
             Channels (C.Id).IN_CONF0.IN_RST := True;
             Channels (C.Id).IN_CONF0.IN_RST := False;
       end case;
       Disarm (C.Id, Dir);
    end Stop;
+
+   ------------
+   -- Unbind --
+   ------------
+
+   procedure Unbind (C : Channel; Dir : Direction) is
+   begin
+      if not C.Valid then
+         return;
+      end if;
+      --  63 matches no peripheral request, so this direction goes inert.
+      case Dir is
+         when Mem_To_Periph =>
+            Channels (C.Id).OUT_PERI_SEL.PERI_OUT_SEL := 63;
+         when Periph_To_Mem =>
+            Channels (C.Id).IN_PERI_SEL.PERI_IN_SEL := 63;
+      end case;
+   end Unbind;
 
    --------------------------------------------------------------------------
    --  Protected channel allocator.  Serialises Claim / Release and the
@@ -742,6 +775,71 @@ package body ESP32S3.GDMA is
       Cancel_Handler (Timeout_Ev (C.Id, Mem_To_Periph), Cancelled);
       return Stream_Half (C.Id);
    end Await_Half;
+
+   ---------------------
+   -- Start_In_Stream --
+   ---------------------
+
+   procedure Start_In_Stream
+     (C : Channel; Buffer : System.Address; Half_Length : Natural) is
+   begin
+      if not C.Valid or else Half_Length = 0 or else Half_Length > Max_Transfer
+      then
+         return;
+      end if;
+
+      --  The receive mirror of Start_Stream: two IN descriptors linked in a
+      --  ring, walked forever; IN_DONE fires as each descriptor (one half) is
+      --  filled.  The IN engine does not check the owner bit (the default), so
+      --  the ring keeps refilling even after the write-back clears it.
+      for H in 0 .. 1 loop
+         In_Stream_Desc (C.Id, H).W0 :=
+           (Size    => UInt12 (Half_Length),
+            Length  => UInt12 (Half_Length),
+            Suc_EOF => False,
+            Owner   => True,
+            others  => <>);
+         In_Stream_Desc (C.Id, H).Buffer :=
+           Buffer + Storage_Offset (H * Half_Length);
+      end loop;
+      In_Stream_Desc (C.Id, 0).Next := In_Stream_Desc (C.Id, 1)'Address;
+      In_Stream_Desc (C.Id, 1).Next := In_Stream_Desc (C.Id, 0)'Address;
+
+      In_Streaming (C.Id)   := True;
+      In_Stream_Half (C.Id) := 1;                 --  first IN_DONE toggles to 0
+      Set_False (Done_Signal (C.Id, Periph_To_Mem));
+
+      Channels (C.Id).IN_CONF0.IN_DATA_BURST_EN := False;
+      Channels (C.Id).IN_CONF0.INDSCR_BURST_EN := False;
+      RX_Sync_Buf (C.Id) := System.Null_Address;
+      Channels (C.Id).IN_INT_CLR.IN_DONE := True;
+      Channels (C.Id).IN_INT_CLR.IN_SUC_EOF := True;
+      Channels (C.Id).IN_INT_CLR.IN_DSCR_ERR := True;
+      Channels (C.Id).IN_INT_ENA.IN_DONE := True;     --  per-half interrupt
+      Asm ("memw", Volatile => True, Clobber => "memory");
+      Channels (C.Id).IN_LINK.INLINK_AUTO_RET := False;
+      Channels (C.Id).IN_LINK.INLINK_ADDR :=
+        Link_Addr (In_Stream_Desc (C.Id, 0)'Address);
+      Channels (C.Id).IN_LINK.INLINK_START := True;
+   end Start_In_Stream;
+
+   -------------------
+   -- Await_In_Half --
+   -------------------
+
+   function Await_In_Half (C : Channel) return Natural is
+      Cancelled : Boolean;
+   begin
+      if not C.Valid then
+         return 0;
+      end if;
+      Set_Handler
+        (Timeout_Ev (C.Id, Periph_To_Mem), Clock + Wait_Timeout,
+         Timeout_Waker.On_Deadline'Access);
+      Suspend_Until_True (Done_Signal (C.Id, Periph_To_Mem));
+      Cancel_Handler (Timeout_Ev (C.Id, Periph_To_Mem), Cancelled);
+      return In_Stream_Half (C.Id);
+   end Await_In_Half;
 
    ----------
    -- Done --

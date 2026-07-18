@@ -71,6 +71,22 @@ private package ESP32S3.I2S.Engine is
    procedure Capture (B : Bus; Rx : System.Address; Length : Natural)
    with Pre => Is_Open (B) and then Length in 1 .. 4095;
 
+   --  Gapless double-buffered capture STREAMING: the receive mirror of
+   --  Start_Stream, on its own DMA channel -- so it runs CONCURRENTLY with a
+   --  streaming transmit (full-duplex, e.g. play out a codec's DAC while
+   --  recording its ADC, with no clock gap in either direction).
+   --  Await_Capture_Half blocks until the DMA has filled a half of Rx and
+   --  returns which one (0/1) is ready to read.  Stop_Capture ends it.
+   procedure Start_Capture_Stream
+     (B : in out Bus; Rx : System.Address; Half_Length : Natural)
+   with Pre => Is_Open (B) and then Half_Length in 1 .. 4095;
+
+   function Await_Capture_Half (B : Bus) return Natural
+   with Pre => Is_Open (B);
+
+   procedure Stop_Capture (B : in out Bus)
+   with Pre => Is_Open (B);
+
    procedure Close (B : in out Bus);
 
 private
@@ -81,8 +97,10 @@ private
    type Bus is record
       Regs      : Periph_Ref := null;
       Chan      : ESP32S3.GDMA.Channel;   --  held only while Streaming
+      Cap_Chan  : ESP32S3.GDMA.Channel;   --  held only while Capturing
       Port      : I2S_Port := I2S0;
       Valid     : Boolean := False;     --  port configured by Open
       Streaming : Boolean := False;     --  a continuous transmit holds Chan
+      Capturing : Boolean := False;     --  a capture stream holds Cap_Chan
    end record;
 end ESP32S3.I2S.Engine;
