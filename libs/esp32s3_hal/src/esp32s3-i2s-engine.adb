@@ -211,7 +211,12 @@ package body ESP32S3.I2S.Engine is
             RX_PCM_BYPASS         => True,
             others                => <>);
       else
-         --  Both TDM (standard I2S), no PDM.
+         --  Both TDM (standard I2S), no PDM.  TX masters the clock pads; RX
+         --  slaves off the matrix input signals, which Configure_Pins feeds
+         --  from those same pads -- so external capture (a codec ADC on Din)
+         --  samples on the true on-wire clock.  SIG_LOOPBACK stays OFF here
+         --  (with it on, RX reads the TX serial output internally and never
+         --  sees the pad); Enable_Loopback turns it on for the self-test loop.
          Regs.TX_CONF :=
            (TX_TDM_EN     => True,
             TX_PDM_EN     => False,
@@ -219,7 +224,7 @@ package body ESP32S3.I2S.Engine is
             TX_MONO       => False,
             TX_STOP_EN    => True,
             TX_PCM_BYPASS => True,
-            SIG_LOOPBACK  => True,
+            SIG_LOOPBACK  => False,
             others        => <>);
          Regs.RX_CONF :=
            (RX_TDM_EN     => True,
@@ -305,6 +310,21 @@ package body ESP32S3.I2S.Engine is
       end if;
       if Din /= No_Pin then
          Route_In (Host_Sigs.Sd_In, ESP32S3.GPIO.Pin_Id (Din), As_Input => True);
+         --  The RX block runs as a SLAVE (see Open), so it takes its bit and
+         --  word clocks from the matrix INPUT signals -- feed them from the very
+         --  pads the TX master drives, so RX samples on the true on-wire clock.
+         --  (Without this, slave RX has no clock at all and external capture
+         --  never completes; the internal loopback only worked because
+         --  SIG_LOOPBACK bypasses the matrix.)  As_Input False: the pads stay
+         --  output-driven and the matrix reads them back.
+         if Bclk /= No_Pin then
+            Route_In
+              (Host_Sigs.Bck_In, ESP32S3.GPIO.Pin_Id (Bclk), As_Input => False);
+         end if;
+         if Ws /= No_Pin then
+            Route_In
+              (Host_Sigs.Ws_In, ESP32S3.GPIO.Pin_Id (Ws), As_Input => False);
+         end if;
       end if;
    end Configure_Pins;
 
@@ -318,8 +338,23 @@ package body ESP32S3.I2S.Engine is
       if not B.Valid then
          return;
       end if;
-      --  Data-out on Pad, fed back into data-in (SIG_LOOPBACK already shares the
-      --  clock/WS internally, so no clock pad is needed).
+      --  Turn on the internal self-test loop: SIG_LOOPBACK shares the TX
+      --  clock/WS with RX internally (Open leaves it OFF so ordinary capture
+      --  reads the real pads).  Re-latch both directions so it takes effect.
+      B.Regs.TX_CONF.SIG_LOOPBACK := True;
+      B.Regs.TX_CONF.TX_UPDATE := True;
+      B.Regs.RX_CONF.RX_UPDATE := True;
+      declare
+         Guard : Natural := 0;
+      begin
+         while (B.Regs.TX_CONF.TX_UPDATE or else B.Regs.RX_CONF.RX_UPDATE)
+           and then Guard < 100_000
+         loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+      --  Data-out on Pad, fed back into data-in (the clocks are shared
+      --  internally, so no clock pad is needed).
       Drive_Out (Pad, Host_Sigs.Sd_Out);
       Route_In (Host_Sigs.Sd_In, Pad, As_Input => False);
    end Enable_Loopback;

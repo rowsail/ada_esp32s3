@@ -243,6 +243,15 @@ package body ESP32S3.ES8311 is
       ESP32S3.I2S.Capture_Raw (O.Audio, Samples, Length);
    end Capture;
 
+   ------------
+   -- Duplex --
+   ------------
+
+   procedure Duplex (O : Output; Tx, Rx : System.Address; Length : Natural) is
+   begin
+      ESP32S3.I2S.Transfer_Raw (O.Audio, Tx, Rx, Length);
+   end Duplex;
+
    -------------
    -- Release --
    -------------

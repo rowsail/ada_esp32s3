@@ -117,6 +117,13 @@ package ESP32S3.ES8311 is
    procedure Capture (O : Output; Samples : System.Address; Length : Natural)
    with Pre => Length in 1 .. 4095;
 
+   --  Full-duplex: shift Tx (DAC/speaker) out and capture the ADC (mic) into Rx
+   --  simultaneously in one transfer, so the operation drives the shared clock
+   --  itself.  Both buffers are Length BYTES of interleaved 16-bit stereo; the
+   --  mono ADC fills the left slot of each captured frame.
+   procedure Duplex (O : Output; Tx, Rx : System.Address; Length : Natural)
+   with Pre => Length in 1 .. 4095;
+
    --  Relinquish the port (also done automatically on scope exit).
    procedure Release (O : in out Output);
 
