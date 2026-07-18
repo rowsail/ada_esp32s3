@@ -252,6 +252,24 @@ package body ESP32S3.ES8311 is
       ESP32S3.I2S.Transfer_Raw (O.Audio, Tx, Rx, Length);
    end Duplex;
 
+   --------------------
+   -- Capture_Stream --
+   --------------------
+
+   procedure Capture_Stream
+     (O : Output; Samples : System.Address; Length : Natural) is
+   begin
+      ESP32S3.I2S.Start_Capture_Stream (O.Audio, Samples, Length / 2);
+   end Capture_Stream;
+
+   function Await_Capture_Half (O : Output) return Natural
+   is (ESP32S3.I2S.Await_Capture_Half (O.Audio));
+
+   procedure Stop_Capture (O : Output) is
+   begin
+      ESP32S3.I2S.Stop_Capture (O.Audio);
+   end Stop_Capture;
+
    -------------
    -- Release --
    -------------

@@ -195,6 +195,17 @@ package ESP32S3.GDMA is
 
    function Await_Half (C : Channel) return Natural;
 
+   --  Gapless double-buffered CAPTURE (Periph_To_Mem): the receive mirror of
+   --  Start_Stream.  The DMA fills the two Half_Length-byte halves of Buffer
+   --  forever as one uninterrupted transfer; Await_In_Half blocks until a half
+   --  has been FILLED and returns which one (0 or 1) is ready to read -- so a
+   --  continuous consumer (a demodulator) is paced by the DMA itself and never
+   --  misses samples.  Stop (C, Periph_To_Mem) ends it.
+   procedure Start_In_Stream (C : Channel; Buffer : System.Address; Half_Length : Natural)
+   with Pre => Half_Length = 0 or else Is_DMA_Capable (Buffer);
+
+   function Await_In_Half (C : Channel) return Natural;
+
    --  True once the Dir transfer has signalled success-EOF (also True for an
    --  invalid handle, so a Wait never hangs on one).
    function Done (C : Channel; Dir : Direction) return Boolean;
@@ -210,6 +221,14 @@ package ESP32S3.GDMA is
    --  reset).  Call after a timeout so a late recovery cannot DMA into a buffer
    --  the caller has already reused.
    procedure Stop (C : Channel; Dir : Direction);
+
+   --  Detach one direction of the channel from its peripheral (PERI_SEL to an
+   --  unmatched value).  Claim binds BOTH directions, but a peripheral may only
+   --  be served by one channel per direction -- so when two channels serve the
+   --  same peripheral (e.g. one streaming TX, another streaming RX), each must
+   --  unbind the direction it does not use, or the idle binding shadows the
+   --  active one and that direction transfers nothing.
+   procedure Unbind (C : Channel; Dir : Direction);
 
 private
    type Channel is new Ada.Finalization.Limited_Controlled with record

@@ -124,6 +124,19 @@ package ESP32S3.ES8311 is
    procedure Duplex (O : Output; Tx, Rx : System.Address; Length : Natural)
    with Pre => Length in 1 .. 4095;
 
+   --  Gapless mic-capture STREAMING, the receive mirror of Play_Stream: the DMA
+   --  fills the two halves of Samples (Length total bytes; each half <= 4095)
+   --  forever on its OWN channel, so it runs concurrently with Play_Stream --
+   --  true full duplex, no clock gap in either direction.  Await_Capture_Half
+   --  blocks until a half has been filled and returns which one (0/1) to read.
+   --  Stop_Capture ends it.  Setup must have been given an Asdout pin.
+   procedure Capture_Stream (O : Output; Samples : System.Address; Length : Natural)
+   with Pre => Length in 2 .. 8190 and then Length mod 2 = 0;
+
+   function Await_Capture_Half (O : Output) return Natural;
+
+   procedure Stop_Capture (O : Output);
+
    --  Relinquish the port (also done automatically on scope exit).
    procedure Release (O : in out Output);
 

@@ -112,6 +112,9 @@ package body ESP32S3.I2S.Engine is
       if B.Valid and then B.Streaming then
          Stop (B);
       end if;
+      if B.Valid and then B.Capturing then
+         Stop_Capture (B);
+      end if;
 
       --  Module clock-gate + reset pulse.
       case Port is
@@ -271,6 +274,7 @@ package body ESP32S3.I2S.Engine is
       B.Regs := Regs;
       B.Port := Port;
       B.Streaming := False;
+      B.Capturing := False;
       B.Valid := True;
    end Open;
 
@@ -377,6 +381,14 @@ package body ESP32S3.I2S.Engine is
          --  pool momentarily exhausted
          return;
       end if;
+      --  Unbind the unused direction(s): only one channel may serve a
+      --  peripheral per direction, and an idle binding shadows the active one.
+      if not Do_Tx then
+         GD.Unbind (Chan, GD.Mem_To_Periph);
+      end if;
+      if not Do_Rx then
+         GD.Unbind (Chan, GD.Periph_To_Mem);
+      end if;
 
       if Do_Tx then
          Regs.TX_CONF.TX_FIFO_RESET := True;
@@ -479,6 +491,7 @@ package body ESP32S3.I2S.Engine is
       if not GD.Is_Valid (B.Chan) then
          return;
       end if;
+      GD.Unbind (B.Chan, GD.Periph_To_Mem);   --  TX only: free the RX binding
       B.Streaming := True;
 
       --  Clear TX_STOP_EN so a momentary FIFO underrun can never latch TX off;
@@ -514,6 +527,7 @@ package body ESP32S3.I2S.Engine is
       if not GD.Is_Valid (B.Chan) then
          return;
       end if;
+      GD.Unbind (B.Chan, GD.Periph_To_Mem);   --  TX only: free the RX binding
       B.Streaming := True;
 
       Regs.TX_CONF.TX_STOP_EN := False;
@@ -549,6 +563,64 @@ package body ESP32S3.I2S.Engine is
       end if;
    end Stop;
 
+   --------------------------
+   -- Start_Capture_Stream --
+   --------------------------
+
+   procedure Start_Capture_Stream
+     (B : in out Bus; Rx : System.Address; Half_Length : Natural)
+   is
+      Regs : constant Periph_Ref := B.Regs;
+   begin
+      if not B.Valid or else B.Capturing or else Half_Length = 0
+        or else Half_Length > 4095
+      then
+         return;
+      end if;
+
+      --  Own channel, so a concurrent streaming transmit keeps its own; the RX
+      --  block slaves off the shared on-wire clock (Configure_Pins routed it).
+      GD.Claim (B.Cap_Chan, GDMA_Periph (B.Port));
+      if not GD.Is_Valid (B.Cap_Chan) then
+         return;
+      end if;
+      GD.Unbind (B.Cap_Chan, GD.Mem_To_Periph);   --  RX only: free the TX binding
+      B.Capturing := True;
+
+      Regs.RX_CONF.RX_FIFO_RESET := True;
+      Regs.RX_CONF.RX_FIFO_RESET := False;
+      Regs.RXEOF_NUM.RX_EOF_NUM := RXEOF_NUM_RX_EOF_NUM_Field (Half_Length);
+      GD.Start_In_Stream (B.Cap_Chan, Rx, Half_Length);
+      --  Bounded latch (RX_UPDATE does not always self-clear while the shared
+      --  clock is being driven by a continuous transmit).
+      Regs.RX_CONF.RX_UPDATE := True;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.RX_CONF.RX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+      Regs.RX_CONF.RX_START := True;
+   end Start_Capture_Stream;
+
+   function Await_Capture_Half (B : Bus) return Natural
+   is (GD.Await_In_Half (B.Cap_Chan));
+
+   ------------------
+   -- Stop_Capture --
+   ------------------
+
+   procedure Stop_Capture (B : in out Bus) is
+   begin
+      if B.Valid and then B.Capturing then
+         B.Regs.RX_CONF.RX_START := False;
+         GD.Stop (B.Cap_Chan, GD.Periph_To_Mem);
+         GD.Release (B.Cap_Chan);
+         B.Capturing := False;
+      end if;
+   end Stop_Capture;
+
    -------------
    -- Capture --
    -------------
@@ -568,6 +640,7 @@ package body ESP32S3.I2S.Engine is
       if not GD.Is_Valid (Chan) then
          return;
       end if;
+      GD.Unbind (Chan, GD.Mem_To_Periph);     --  RX only: free the TX binding
 
       Regs.RX_CONF.RX_FIFO_RESET := True;
       Regs.RX_CONF.RX_FIFO_RESET := False;
@@ -611,6 +684,11 @@ package body ESP32S3.I2S.Engine is
             GD.Stop (B.Chan, GD.Mem_To_Periph);
             GD.Release (B.Chan);
             B.Streaming := False;
+         end if;
+         if B.Capturing then
+            GD.Stop (B.Cap_Chan, GD.Periph_To_Mem);
+            GD.Release (B.Cap_Chan);
+            B.Capturing := False;
          end if;
          B.Valid := False;
       end if;
