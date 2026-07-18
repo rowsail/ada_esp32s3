@@ -1,0 +1,107 @@
+\chapter{A Software Modem: DSC and NAVTEX}
+\label{ch:softmodem}\index{FSK}\index{DSC}\index{NAVTEX}\index{SITOR-B}
+
+Maritime radio still runs on two data systems designed in the 1970s and alive
+in every GMDSS installation today. Digital Selective Calling (DSC, ITU-R
+M.493) is the calling channel: a short FSK burst that addresses one station,
+carries a category and telecommands, and ends in a checksum. NAVTEX (ITU-R
+M.540, carried by SITOR-B, ITU-R M.476) is the broadcast channel: navigational
+warnings as forward-error-corrected telex on 518\,kHz. Both are 100 baud FSK
+with a 170\,Hz shift. Both repeat every character for time diversity. And both
+are small enough to implement completely --- transmitter, receiver, and the
+signal processing between --- in pure Ada on this SoC, with no DSP library, no
+lookup tables, and no recorded audio.
+
+This chapter is a case study rather than a driver manual: the stack lives in
+the \texttt{esp32s3\_speak} example (packages \texttt{FSK}, \texttt{DSC} and
+\texttt{Navtex}, each with a \texttt{Decoder} child), built on the full-duplex
+I2S streaming of Chapter~\ref{ch:hal2}. What makes it worth a chapter is the
+shape of the verification: every layer is checked on the host, the whole chain
+is checked \emph{through the air} --- the board broadcasts a message from its
+speaker and decodes what its own microphone hears --- and the protocol logic
+is formally proved free of run-time errors.
+
+\section{The modem}
+
+One package, \texttt{FSK}, owns the physical layer for both protocols. The
+transmitter is simple: collect bits, render each as one of two tones,
+phase-continuous, with a click-free fade at the ends. The receiver is where
+the design lives.
+
+\textbf{Tone detection.} Each tone gets a narrow complex one-pole resonator:
+rotate the running state by the tone frequency, shrink it by a radius, add the
+sample. The decision is the difference of the two resonator energies. This
+rejects noise and the opposite tone inherently. (A quadrature discriminator
+was tried first: its mixing image passed the weak one-pole filter and flipped
+the decision every sample.)
+
+\textbf{Carrier offset.} A slowly tracked bias on the decision absorbs a
+mistuned carrier. Slow is the design point: with a five-bit time constant the
+bias chased any long run of one tone toward zero and wrecked the timing; at
+thirty bits it removes only the static offset. Measured tolerance is
+$\pm$80\,Hz --- nearly half the shift.
+
+\textbf{Bit timing.} A transition-tracking DPLL: the bit phase advances every
+sample, and a data edge pulls it toward mid-bit, where the decision is
+sampled. It follows a $\pm$3\% baud error. Two later hardenings matter for
+real signals. Corrections are \emph{gated} by the recent tone separation --- a
+quarter-bit average, because the edge sample itself is a zero crossing and
+always looks unconfident --- so a noise burst leaves the clock coasting on its
+own period instead of random-walking it off frequency. And each edge may move
+the phase at most twelve samples, so a burst's few spurious edges can never
+add up to a bit slip.
+
+\textbf{Soft decisions.} Alongside each hard bit the demodulator reports a
+confidence: the tone separation at the sampling instant, the decision over the
+total tone energy. The ratio is dimensionless, so it is independent of signal
+level. A slow average of it is exported as a 0\,..\,255 link-quality meter:
+255 on the board's own acoustic loopback, near zero on noise. (One instructive
+dead end: an integrate-and-dump decision is textbook, but this DPLL dumps at
+\emph{mid}-bit, so the integral straddles two bits and cancels. The
+instantaneous mid-bit read is the aligned one.)
+
+\section{The protocol layers}
+
+DSC and NAVTEX share their skeleton, inherited from SITOR. Characters carry
+their own check: DSC's 10-unit code is seven information bits plus a 3-bit
+count of the zeros; NAVTEX's CCIR~476 code is seven bits of which exactly four
+are marks. Each character is transmitted twice --- the DX copy, then four
+other characters, then the RX repeat, 280\,ms of time diversity against burst
+interference. A phasing preamble lets the receiver lock both the character
+framing and the DX/RX slot parity.
+
+The receive rule is the specification's, extended one step. Print an
+unmutilated DX copy; failing that, the RX repeat; failing \emph{that} ---
+where the specification prints an error mark --- rebuild the character bit by
+bit from the two soft copies, letting whichever copy received each bit more
+cleanly win, and accept the rebuild only if its check passes. On the test
+harness, damage split across the two copies (each fails its check alone) now
+decodes cleanly; only a character whose bits are lost in \emph{both} copies is
+beyond recovery, and the checksum still catches it.
+
+Polarity solves itself, by a pleasant algebra. The complement of a valid
+10-unit character is also valid, with symbol $127-S$; the complement of a
+CCIR~476 character has three marks instead of four and is invalid. So both
+decoders hunt the phasing in true and inverted form, note which matched, and
+correct every later bit --- a receiver tuned with mark and space swapped
+decodes transparently, which real off-air reception needs.
+
+\section{Verification, in layers}
+
+The stack is exercised the way the rest of this book advocates. A native host
+harness renders a transmission into a buffer and decodes it under injected
+impairments: noise to the signal's own level, carrier offset to $\pm$80\,Hz,
+baud error to $\pm$3\%, burst corruption, split-copy corruption, swapped
+tones. The same sources then run on the board, where \texttt{decode air} and
+\texttt{navtex air} drive the full-duplex codec path: the burst goes out the
+speaker, crosses the room as sound, returns through the microphone, and
+decodes character-perfect --- a genuinely analog channel with no cable.
+
+Above the tests sits proof, using the pattern of Chapter~\ref{ch:spark}: the
+protocol layers are SPARK, proved at silver (428 run-time checks, none
+unproved) against the \texttt{FSK} spec as a contract boundary --- the Float
+signal processing stays outside the surface, verified by the harness instead.
+The prover earned its keep: it found a postcondition that was wrong for null
+string slices, an out-of-range intermediate in two bit counters, and a
+side-effecting function the subset rightly rejects. The example's
+\texttt{prove/prove.sh} reruns the whole proof in one command.
