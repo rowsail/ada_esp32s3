@@ -445,9 +445,21 @@ bring-up; pass an \texttt{Asdout} pin to also enable the ADC (microphone) captur
 path. After setup, audio is owned through a limited, controlled \texttt{Output}
 handle that holds the I2S port exclusively and releases it on scope exit, so it
 requires a tasking runtime (embedded/full profile). \texttt{Play\_Continuous}
-starts a self-looping DMA for gapless, click-free, zero-CPU playback;
-\texttt{Capture} samples the ADC underneath it without disturbing playback or the
-shared master clock.
+starts a self-looping DMA for gapless, click-free, zero-CPU playback of a
+\emph{static} buffer; \texttt{Capture} samples the ADC underneath it without
+disturbing playback or the shared master clock. For \emph{live-generated}
+audio, \texttt{Play\_Stream} loops a double-buffered ring and
+\texttt{Await\_Half} tells the producer which half to refill, paced by the DMA
+itself so the synthesis never drifts against the codec clock.
+\texttt{Capture\_Stream} is the microphone mirror on its own DMA channel: it
+records gaplessly \emph{while} \texttt{Play\_Stream} keeps playing, true full
+duplex with no clock gap in either direction (\texttt{Await\_Capture\_Half}
+returns each captured half; \texttt{Stop\_Capture} ends it).
+\texttt{Duplex} is the one-shot form: play one buffer and capture the ADC in a
+single simultaneous transfer. The capture path samples on the true on-wire
+clock (the I2S slave-RX clock routing of the previous chapter), so what the
+microphone hears lands sample-exact against what the speaker plays: enough to
+run an acoustic software-modem loopback, speaker to air to microphone.
 
 \begin{lstlisting}
 package ESP32S3.ES8311 is
@@ -474,7 +486,13 @@ package ESP32S3.ES8311 is
    procedure Acquire (O : in out Output);
    procedure Play            (O : Output; Samples : System.Address; Length : Natural);
    procedure Play_Continuous (O : Output; Samples : System.Address; Length : Natural);
+   procedure Play_Stream     (O : Output; Samples : System.Address; Length : Natural);
+   function  Await_Half      (O : Output) return Natural;  --  half to refill (0/1)
    procedure Capture         (O : Output; Samples : System.Address; Length : Natural);
+   procedure Duplex          (O : Output; Tx, Rx : System.Address; Length : Natural);
+   procedure Capture_Stream  (O : Output; Samples : System.Address; Length : Natural);
+   function  Await_Capture_Half (O : Output) return Natural;  --  half to read
+   procedure Stop_Capture    (O : Output);
    procedure Stop    (O : Output);
    procedure Release (O : in out Output);
 end ESP32S3.ES8311;

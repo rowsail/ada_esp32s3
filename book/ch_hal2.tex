@@ -14,6 +14,13 @@ procedure Copy  (C : Channel; Dst, Src : System.Address; Length : Natural);
 procedure Start (C : Channel; Dir : Direction; ...);  --  peripheral transfers
 function  Done  (C : Channel; Dir : Direction) return Boolean;
 procedure Wait  (C : Channel; Dir : Direction);
+--  Gapless double-buffered streaming, one ring per direction (see below).
+procedure Start_Stream    (C : Channel; Buffer : System.Address; Half_Length : Natural);
+function  Await_Half      (C : Channel) return Natural;   --  half to refill (0/1)
+procedure Start_In_Stream (C : Channel; Buffer : System.Address; Half_Length : Natural);
+function  Await_In_Half   (C : Channel) return Natural;   --  half to read (0/1)
+procedure Stop   (C : Channel; Dir : Direction);
+procedure Unbind (C : Channel; Dir : Direction);  --  detach an unused direction
 \end{lstlisting}
 
 \textbf{Parameters.}
@@ -73,6 +80,30 @@ runs); only a genuine fault trips the deadline, and then \texttt{Wait} returns
 rather than deadlocking the system. A timed entry call would read more directly, but
 the Ravenscar/Jorvik runtime forbids \texttt{select}, so a timing-event wake is the
 profile-legal way to put a ceiling on a \texttt{Suspend\_Until\_True}.
+
+\textbf{Streaming rings.} \texttt{Start\_Stream} services a continuous
+\emph{producer}: it links two descriptors, one per half of the caller's buffer,
+into a ring the OUT engine walks forever, and enables the per-descriptor
+completion interrupt. \texttt{Await\_Half} suspends until a half has drained
+and returns which one (0 or 1) is now safe to refill. The refill is therefore
+paced by the DMA itself, not by a timer, so live-generated audio never drifts
+against the peripheral clock. \texttt{Start\_In\_Stream} and
+\texttt{Await\_In\_Half} are the receive mirror for a continuous
+\emph{consumer} (a demodulator, a recorder): the IN engine fills the two halves
+forever, and the caller reads each half as it completes, missing no samples.
+Run one ring in each direction on two channels and you have true full duplex.
+\texttt{Stop} with the matching direction ends a ring.
+
+\textbf{One channel per direction.} \texttt{Claim} binds \emph{both}
+directions of a channel to the peripheral, but the hardware routes each
+peripheral request line to only one channel per direction. When two channels
+serve the same peripheral (one streaming TX, another streaming RX), the idle
+binding on one channel \emph{shadows} the active binding on the other, and that
+direction silently transfers nothing. (Measured: a capture stream beside a
+running I2S transmit stream delivered zero bytes until the transmit channel's
+unused IN binding was detached.) \texttt{Unbind} detaches one direction; every
+claimant that uses a channel one-way should unbind the other, and the I2S driver
+now does.
 
 \section{MCPWM: motor-control PWM}\index{MCPWM driver}
 
@@ -160,6 +191,13 @@ procedure Transfer (S : Session; Tx : PCM_16; Rx : out PCM_16)
 --  PCM_8 / PCM_32 overloads likewise (also Start_Continuous / Capture).  The
 --  *_Raw forms take a 'Address + byte Length for bytes already framed elsewhere:
 procedure Write_Raw (S : Session; Tx : System.Address; Length : Natural);
+--  Gapless double-buffered streaming, both directions (see below).
+procedure Start_Stream (S : Session; Samples : PCM_16);   --  TX ring, 2 halves
+function  Await_Half   (S : Session) return Natural;      --  half to refill (0/1)
+procedure Start_Capture_Stream (S : Session; Rx : System.Address;
+                                Half_Length : Natural);   --  RX ring, own channel
+function  Await_Capture_Half   (S : Session) return Natural;  --  half to read
+procedure Stop_Capture         (S : Session);
 \end{lstlisting}
 
 \textbf{Parameters.}
@@ -223,6 +261,54 @@ begin
    Enable_Loopback (S, Pad => 7);              --  TX folded to RX (held port)
    Transfer (S, Tx, Rx);                       --  Rx = Tx (same length checked)
 end I2S_Loopback;
+\end{lstlisting}
+
+\subsection{Gapless streaming and full duplex}
+
+A one-shot \texttt{Write} stops the clock when it finishes, and back-to-back
+writes leave an audible gap. \texttt{Start\_Continuous} closes the gap for a
+\emph{static} buffer (it replays one buffer forever), but live-generated audio
+needs to refill while playing, and pacing the refill from a CPU timer drifts
+against the I2S clock. (Measured: a timer-paced double buffer feeding a codec
+produced a beat that returned every few seconds as the two clocks slid past each
+other.) \texttt{Start\_Stream} fixes the pacing at the source: the DMA loops
+the two halves of the buffer forever, and \texttt{Await\_Half} blocks until a
+half has drained, returning which one (0 or 1) to refill. The producer is paced
+by the same clock that consumes the samples, so it can never drift.
+
+\texttt{Start\_Capture\_Stream} is the receive mirror. It claims its
+\emph{own} DMA channel, so it runs concurrently with a streaming transmit:
+play out of one ring while recording into the other, both gapless, with no
+clock interruption in either direction (true full duplex).
+\texttt{Await\_Capture\_Half} returns each captured half as the DMA fills
+it, so a continuous consumer (a recorder, a software modem) misses no samples;
+\texttt{Stop\_Capture} ends it.
+
+Two facts make external capture work, and both are invisible until they bite.
+First, the RX block runs as a \emph{slave}: it samples on the bit and word
+clocks it receives, not on clocks it generates. The driver therefore feeds the
+RX clock inputs from the very pads the TX master drives, so capture samples on
+the true on-wire clock, phase-exact with the external device. (Without that
+routing, slave RX has no clock at all and capture waits forever; the internal
+loopback self-test masks the bug, because \texttt{SIG\_LOOPBACK} bypasses the
+pads.) Second, the one-channel-per-direction rule from the GDMA section: the
+transmit stream's channel unbinds its unused RX direction and the capture
+channel unbinds its unused TX direction, or one shadows the other.
+
+\lstexample{Full duplex: synthesize live audio while recording the input.}
+\begin{lstlisting}
+Half : constant := 500;                        --  31 ms per half at 16 kHz
+Play_Ring, Capture_Ring : PCM_16 (0 .. 4 * Half - 1);
+S : Session;
+begin
+   Acquire (S, I2S0, Bclk => 4, Ws => 5, Dout => 6, Din => 7);
+   Fill (Play_Ring);                           --  prime both halves
+   Start_Stream (S, Play_Ring);
+   Start_Capture_Stream (S, Capture_Ring'Address, 2 * Half * 2);
+   loop
+      Refill  (Play_Ring,    Await_Half (S));          --  DMA-paced, no drift
+      Consume (Capture_Ring, Await_Capture_Half (S));  --  misses no samples
+   end loop;
 \end{lstlisting}
 
 \subsection{PDM mode: the hardware PCM\,$\leftrightarrow$\,PDM converters}
