@@ -1,5 +1,6 @@
 with Interfaces;             use Interfaces;
 with Ada.Unchecked_Conversion;
+with Ada.Interrupts.Names;
 with ESP32S3.GPIO;
 with ESP32S3.GPIO_Signals;
 with ESP32S3.TWAI.Math;
@@ -8,6 +9,7 @@ with ESP32S3_Registers.TWAI; use ESP32S3_Registers.TWAI;
 with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.IO_MUX;
 with ESP32S3_Registers.SYSTEM;
+with ESP32S3_Registers.INTERRUPT_CORE0;
 
 package body ESP32S3.TWAI.Engine is
 
@@ -112,6 +114,10 @@ package body ESP32S3.TWAI.Engine is
       for I in 4 .. 7 loop
          Put (I, 16#FF#);              --  acceptance mask: all bits don't-care
       end loop;
+
+      --  Start with all interrupts off; Enable_Rx_Interrupt turns RX on if the
+      --  caller wants the interrupt-driven path (else the polled path is used).
+      TWAI0_Periph.INT_ENA := (others => <>);
 
       --  Leave reset mode in the requested operating mode.
       TWAI0_Periph.MODE :=
@@ -309,5 +315,130 @@ package body ESP32S3.TWAI.Engine is
 
       TWAI0_Periph.CMD := (RELEASE_BUF => True, others => <>);
    end Receive;
+
+   --------------------------------------------------------------------------
+   --  Interrupt-driven RX.
+   --------------------------------------------------------------------------
+
+   --  Read the waiting frame (either width) into F and release the buffer.
+   --  Precondition: STATUS.RX_BUF_ST is set.  This is the width-agnostic core of
+   --  Receive above, used by the interrupt handler to drain the FIFO.
+   procedure Read_Fifo (F : out Queued_Frame) is
+      Info        : constant Frame_Info := To_Info (Get (0));
+      Data_Offset : Natural;
+   begin
+      F.Extended := Info.Extended;
+      F.Remote   := Info.Remote;
+      F.Length   := Data_Length (Natural'Min (8, Natural (Info.Length)));
+      if Info.Extended then
+         F.Id :=
+           Shift_Left (Unsigned_32 (Get (1)), 21)
+           or Shift_Left (Unsigned_32 (Get (2)), 13)
+           or Shift_Left (Unsigned_32 (Get (3)), 5)
+           or Shift_Right (Unsigned_32 (Get (4)), 3);
+         Data_Offset := 5;
+      else
+         F.Id :=
+           Shift_Left (Unsigned_32 (Get (1)), 3)
+           or Shift_Right (Unsigned_32 (Get (2)), 5);
+         Data_Offset := 3;
+      end if;
+      F.Data := (others => 0);
+      if not F.Remote then
+         for I in 0 .. F.Length - 1 loop
+            F.Data (I) := Get (Data_Offset + I);
+         end loop;
+      end if;
+      TWAI0_Periph.CMD := (RELEASE_BUF => True, others => <>);
+   end Read_Fifo;
+
+   --  On each TWAI interrupt the handler drains the WHOLE hardware FIFO into this
+   --  software ring, so a burst is captured in one shot and nothing is lost
+   --  between the application's reads; Get (a protected entry) blocks until the
+   --  ring is non-empty.  Routed to CPU interrupt Device_L2_2 (21) -- the free
+   --  level-2 slot, alongside UART (19) and GDMA (20).
+   TWAI_CPU_Int  : constant := 21;    --  = Ada.Interrupts.Names.Device_L2_2
+   Ring_Capacity : constant := 64;
+   type Ring_Index is mod Ring_Capacity;
+   type Frame_Ring is array (Ring_Index) of Queued_Frame;
+
+   protected RX_Ctrl
+     with Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority
+   is
+      procedure Enable;                    --  route + enable + flush the ring
+      entry Get (F : out Queued_Frame);    --  block until a frame is queued
+      function Overruns return Natural;
+   private
+      procedure Handler
+        with Attach_Handler => Ada.Interrupts.Names.Device_L2_2;
+      Routed : Boolean := False;
+      Ring   : Frame_Ring;
+      Head   : Ring_Index := 0;
+      Tail   : Ring_Index := 0;
+      Count  : Natural := 0;
+      Ovr    : Natural := 0;
+   end RX_Ctrl;
+
+   protected body RX_Ctrl is
+
+      procedure Enable is
+      begin
+         if not Routed then
+            ESP32S3_Registers.INTERRUPT_CORE0.INTERRUPT_CORE0_Periph
+              .CAN_INT_MAP.CAN_INT_MAP := TWAI_CPU_Int;
+            Routed := True;
+         end if;
+         Head  := 0;              --  fresh queue for this session
+         Tail  := 0;
+         Count := 0;
+         TWAI0_Periph.INT_ENA :=
+           (RX_INT_ENA => True, OVERRUN_INT_ENA => True, others => <>);
+      end Enable;
+
+      procedure Handler is
+         Ints : constant INT_RAW_Register := TWAI0_Periph.INT_RAW;  --  read = ack
+         F    : Queued_Frame;
+      begin
+         --  Drain the hardware FIFO fully; releasing each frame clears the
+         --  (level-triggered) RX interrupt once the FIFO empties.
+         while TWAI0_Periph.STATUS.RX_BUF_ST loop
+            Read_Fifo (F);
+            if Count < Ring_Capacity then
+               Ring (Head) := F;
+               Head  := Head + 1;
+               Count := Count + 1;
+            else
+               Ovr := Ovr + 1;                 --  software ring full: drop
+            end if;
+         end loop;
+         --  Hardware FIFO overran before we drained it: count it and clear.
+         if Ints.OVERRUN_INT_ST or else TWAI0_Periph.STATUS.OVERRUN_ST then
+            Ovr := Ovr + 1;
+            TWAI0_Periph.CMD := (CLR_OVERRUN => True, others => <>);
+         end if;
+      end Handler;
+
+      entry Get (F : out Queued_Frame) when Count > 0 is
+      begin
+         F     := Ring (Tail);
+         Tail  := Tail + 1;
+         Count := Count - 1;
+      end Get;
+
+      function Overruns return Natural is (Ovr);
+
+   end RX_Ctrl;
+
+   procedure Enable_Rx_Interrupt is
+   begin
+      RX_Ctrl.Enable;
+   end Enable_Rx_Interrupt;
+
+   procedure Get_Frame (F : out Queued_Frame) is
+   begin
+      RX_Ctrl.Get (F);
+   end Get_Frame;
+
+   function Rx_Overruns return Natural is (RX_Ctrl.Overruns);
 
 end ESP32S3.TWAI.Engine;
