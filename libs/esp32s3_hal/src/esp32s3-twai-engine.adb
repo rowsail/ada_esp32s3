@@ -441,4 +441,32 @@ package body ESP32S3.TWAI.Engine is
 
    function Rx_Overruns return Natural is (RX_Ctrl.Overruns);
 
+   ------------
+   -- Health --
+   ------------
+
+   function Health (B : Bus) return Bus_State is
+   begin
+      if not B.Valid then
+         return Active;
+      elsif TWAI0_Periph.STATUS.BUS_OFF_ST then
+         return Bus_Off;                          --  off the bus (too many TX errs)
+      elsif TWAI0_Periph.STATUS.ERR_ST then
+         return Warning;                          --  error counters past the limit
+      else
+         return Active;
+      end if;
+   end Health;
+
+   procedure Recover (B : Bus) is
+      M : MODE_Register := TWAI0_Periph.MODE;
+   begin
+      if B.Valid then
+         --  Bus-off forces the controller into reset mode; clearing it initiates
+         --  the recovery sequence (wait 128 x 11 recessive bits, then rejoin).
+         M.RESET_MODE := False;
+         TWAI0_Periph.MODE := M;
+      end if;
+   end Recover;
+
 end ESP32S3.TWAI.Engine;

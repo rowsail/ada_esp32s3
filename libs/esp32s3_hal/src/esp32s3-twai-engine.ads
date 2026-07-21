@@ -68,6 +68,12 @@ private package ESP32S3.TWAI.Engine is
    procedure Get_Frame (F : out Queued_Frame);
    function Rx_Overruns return Natural;
 
+   --  Error state (STATUS: bus-off / error-warning bits) and bus-off recovery.
+   --  Recover clears reset mode, which initiates the controller's bus-off
+   --  recovery (rejoin after the standard recessive-bit wait).
+   function Health (B : Bus) return Bus_State;
+   procedure Recover (B : Bus);
+
 private
    type Bus is record
       Self_Mode : Boolean := False;   --  controller is in self-test mode

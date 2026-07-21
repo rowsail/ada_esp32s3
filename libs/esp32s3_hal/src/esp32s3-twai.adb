@@ -204,6 +204,18 @@ package body ESP32S3.TWAI is
    function Rx_Overruns return Natural
    is (E.Rx_Overruns);
 
+   ------------
+   -- Health --
+   ------------
+
+   function Health (S : Session) return Bus_State
+   is (E.Health (State.Owned (S)));
+
+   procedure Recover (S : Session) is
+   begin
+      E.Recover (State.Owned (S));
+   end Recover;
+
    -------------
    -- Release --
    -------------
