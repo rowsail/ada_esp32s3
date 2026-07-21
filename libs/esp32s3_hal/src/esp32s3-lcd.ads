@@ -138,6 +138,32 @@ package ESP32S3.LCD is
    procedure Flush (S : Session; Framebuffer : System.Address; Length : Natural);
    procedure Stop_RGB (S : Session);
 
+   --  DOUBLE-BUFFERED bounce refresh: two Length-byte PSRAM framebuffers.  The
+   --  panel shows one while you draw the other (Back_Buffer); Flip shows what you
+   --  drew -- the driver switches source at the next frame boundary (tear-free)
+   --  and Flip blocks until the old front is free to draw again.  Rock-solid at
+   --  any update rate (scan-out is from SRAM), and needs no Flush or Sync.  This
+   --  is the robust way to "draw one while displaying the other".
+   procedure Start_RGB
+     (S : Session; Fb0, Fb1 : System.Address; Length : Natural);
+
+   --  DIRECT double-buffered refresh (an alternative to Start_RGB's bounce mode):
+   --  the GDMA scans Fb0 STRAIGHT from PSRAM -- near-zero CPU, no per-frame copy.
+   --  Fb0/Fb1 are two Length-byte PSRAM framebuffers.  Because the scan-out DMA
+   --  shares the PSRAM bus, all framebuffer work must happen in vertical blanking
+   --  (where the DMA is idle) or it tears.  So the per-frame loop is:
+   --      LCD.Sync (S);                        --  wait for blanking
+   --      ... draw into LCD.Back_Buffer (S) ...
+   --      LCD.Flush (S, region ...);           --  write the change back to PSRAM
+   --      LCD.Flip (S);                        --  swap buffers (tear-free here)
+   --  This suits LIGHT / incremental updates that fit the blanking window; heavy
+   --  full-frame animation wants Start_RGB (bounce).  Stop_RGB stops either mode.
+   procedure Start_RGB_Direct
+     (S : Session; Fb0, Fb1 : System.Address; Length : Natural);
+   procedure Sync (S : Session);
+   procedure Flip (S : Session);
+   function Back_Buffer (S : Session) return System.Address;
+
    procedure Release (S : in out Session);
 
 private

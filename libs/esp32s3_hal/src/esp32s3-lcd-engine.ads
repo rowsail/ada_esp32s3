@@ -39,6 +39,21 @@ private package ESP32S3.LCD.Engine is
    procedure Flush_RGB (Framebuffer : System.Address; Length : Natural);
    procedure Stop_RGB;
 
+   --  DOUBLE-BUFFERED bounce mode: like Start_RGB but two framebuffers.  Draw the
+   --  Back_Buffer, then Flip -- the refill switches source at the next frame
+   --  boundary (tear-free), Flip blocks until the old front is free.  No Flush.
+   procedure Start_RGB_DB (B : Bus; Fb0, Fb1 : System.Address; Length : Natural);
+
+   --  DIRECT double-buffered RGB: stream Fb0 straight from PSRAM (near-zero CPU),
+   --  Fb1 as the back.  Do all framebuffer work in blanking: Sync, draw
+   --  Back_Buffer, Flush_RGB it, Flip.  Fragile vs bounce (shared PSRAM bus).
+   procedure Start_RGB_Direct (B : Bus; Fb0, Fb1 : System.Address; Length : Natural);
+   procedure Sync (B : Bus);
+
+   --  Flip + Back_Buffer serve whichever mode is live (bounce-DB or direct).
+   procedure Flip (B : Bus);
+   function Back_Buffer return System.Address;
+
    --  Free-run the pixel clock continuously on Pclk_Pad (no data transaction).
    procedure Enable_Clock_Out (B : Bus; Pclk_Pad : ESP32S3.GPIO.Pin_Id);
 

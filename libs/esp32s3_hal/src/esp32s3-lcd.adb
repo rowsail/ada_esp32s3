@@ -111,6 +111,12 @@ package body ESP32S3.LCD is
       E.Start_RGB (State.Owned (S).all, Framebuffer, Length);
    end Start_RGB;
 
+   procedure Start_RGB
+     (S : Session; Fb0, Fb1 : System.Address; Length : Natural) is
+   begin
+      E.Start_RGB_DB (State.Owned (S).all, Fb0, Fb1, Length);
+   end Start_RGB;
+
    procedure Flush
      (S : Session; Framebuffer : System.Address; Length : Natural) is
    begin
@@ -127,6 +133,34 @@ package body ESP32S3.LCD is
       end if;
       E.Stop_RGB;
    end Stop_RGB;
+
+   ----------------------
+   -- Start_RGB_Direct --
+   ----------------------
+
+   procedure Start_RGB_Direct
+     (S : Session; Fb0, Fb1 : System.Address; Length : Natural) is
+   begin
+      E.Start_RGB_Direct (State.Owned (S).all, Fb0, Fb1, Length);
+   end Start_RGB_Direct;
+
+   procedure Sync (S : Session) is
+   begin
+      E.Sync (State.Owned (S).all);
+   end Sync;
+
+   procedure Flip (S : Session) is
+   begin
+      E.Flip (State.Owned (S).all);
+   end Flip;
+
+   function Back_Buffer (S : Session) return System.Address is
+   begin
+      if not S.Active then
+         raise Not_Owned with "LCD used without holding it -- Acquire first";
+      end if;
+      return E.Back_Buffer;
+   end Back_Buffer;
 
    -----------------
    -- Reconfigure --

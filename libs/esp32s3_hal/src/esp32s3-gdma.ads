@@ -203,6 +203,18 @@ package ESP32S3.GDMA is
    procedure Start_Loop_Chain (C : Channel; Buffer : DMA_Buffer; Length : Natural)
    with Pre => Length <= Buffer'Length and then Buffer'Length mod DMA_Alignment = 0;
 
+   --  Retarget the running Start_Loop_Chain ring at New_Base without restarting
+   --  the engine (the looping DMA re-reads each node from memory every pass).
+   --  Called during vertical blanking, this flips a double-buffered display to
+   --  the other framebuffer with no tear.  New_Base must be the same length as
+   --  the active chain; write-back New_Base (Flush) before flipping if it is PSRAM.
+   procedure Repoint_Chain (C : Channel; New_Base : System.Address);
+
+   --  Flush the OUT FIFO and restart the running Start_Loop_Chain ring from its
+   --  first node (next DMA byte = buffer byte 0).  Used ONCE, VSYNC-synced, to
+   --  pin the otherwise-random startup phase of a direct-from-PSRAM display.
+   procedure Restart_Loop_Chain (C : Channel);
+
    --  Write the CPU's writes to a PSRAM region back so a running DMA re-reads the
    --  new bytes (a no-op for internal SRAM).  Call after drawing into a live
    --  framebuffer that Start_Loop_Chain is streaming.
@@ -223,6 +235,14 @@ package ESP32S3.GDMA is
    with Pre => Half_Length = 0 or else Is_DMA_Capable (Buffer);
 
    function Await_Half (C : Channel) return Ring_Half;
+
+   --  Like Start_Stream, but each of the two Half_Bytes halves is covered by
+   --  SEVERAL descriptors, so a half may be much larger than the 4095-byte single-
+   --  descriptor cap -- yet still fires just ONE completion per half (Suc_EOF on
+   --  the last descriptor of each).  Big halves = a low interrupt rate the refill
+   --  hook can sustain (an LCD bounce buffer).  Buffer (both halves) in internal
+   --  SRAM; Half_Bytes any size up to the descriptor budget.  Stop ends it.
+   procedure Start_Bounce (C : Channel; Buffer : System.Address; Half_Bytes : Natural);
 
    --  Optional refill HOOK for Start_Stream.  When set, the DMA's per-half
    --  completion interrupt calls it directly -- passing the half (0/1) that just
