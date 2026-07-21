@@ -183,6 +183,27 @@ package body ESP32S3.TWAI is
          else (others => <>));
    end Receive;
 
+   -------------------------
+   -- Interrupt-driven RX --
+   -------------------------
+
+   procedure Enable_Rx_Interrupt (S : Session) is
+   begin
+      if not S.Active then
+         raise Not_Owned
+           with "TWAI Enable_Rx_Interrupt without holding it -- Acquire first";
+      end if;
+      E.Enable_Rx_Interrupt;
+   end Enable_Rx_Interrupt;
+
+   procedure Get (F : out Queued_Frame) is
+   begin
+      E.Get_Frame (F);   --  pops the software queue; no controller access
+   end Get;
+
+   function Rx_Overruns return Natural
+   is (E.Rx_Overruns);
+
    -------------
    -- Release --
    -------------

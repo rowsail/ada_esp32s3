@@ -49,6 +49,17 @@ package ESP32S3.TWAI is
       Data   : Data_Bytes := (others => 0);
    end record;
 
+   --  A frame taken from the interrupt-driven RX queue (see Enable_Rx_Interrupt).
+   --  It carries its own width so the consumer can tell a standard from an
+   --  extended frame; Id holds 11 or 29 significant bits accordingly.
+   type Queued_Frame is record
+      Extended : Boolean := False;
+      Remote   : Boolean := False;
+      Id       : Interfaces.Unsigned_32 := 0;
+      Length   : Data_Length := 0;
+      Data     : Data_Bytes := (others => 0);
+   end record;
+
    No_Pin : constant ESP32S3.GPIO.Pad_Number := ESP32S3.GPIO.No_Pin;
 
    type Session is limited private;
@@ -114,6 +125,28 @@ package ESP32S3.TWAI is
    function Is_Extended (S : Session) return Boolean;
    procedure Receive (S : Session; F : out Standard_Frame; Got : out Boolean);
    procedure Receive (S : Session; F : out Extended_Frame; Got : out Boolean);
+
+   ----------------------------------------------------------------------------
+   --  Interrupt-driven receive.
+   --
+   --  Enable_Rx_Interrupt turns on the controller's RX interrupt: from then on
+   --  a handler drains the hardware FIFO into a deep software queue the instant
+   --  a frame arrives, so bursts are not lost between polls.  Get then blocks
+   --  until a frame is queued and returns it -- the consumer task sleeps instead
+   --  of polling.  This REPLACES the Available/Receive polling path (the handler
+   --  empties the FIFO, so the poll would see nothing); use one or the other.
+   --  Needs the tasking runtime (embedded/full profile), like all interrupt use.
+   --
+   --  Enable_Rx_Interrupt touches the controller, so it needs the Session; Get
+   --  and Rx_Overruns only read the software queue (the handler is global), so a
+   --  DIFFERENT task -- typically a decode task, separate from the one that owns
+   --  the controller to transmit -- can consume without holding it.  Rx_Overruns
+   --  counts frames dropped to a full hardware FIFO or software queue (0 in
+   --  normal operation).
+   ----------------------------------------------------------------------------
+   procedure Enable_Rx_Interrupt (S : Session);
+   procedure Get (F : out Queued_Frame);
+   function Rx_Overruns return Natural;
 
    procedure Release (S : in out Session);
 

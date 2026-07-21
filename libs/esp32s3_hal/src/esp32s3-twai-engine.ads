@@ -60,6 +60,14 @@ private package ESP32S3.TWAI.Engine is
       Data          : out Data_Bytes;
       Got           : out Boolean);
 
+   --  Interrupt-driven RX.  Enable_Rx_Interrupt routes the TWAI interrupt to a
+   --  CPU interrupt and enables it; from then on the handler drains the FIFO
+   --  into a software ring.  Get_Frame blocks until a frame is queued and pops
+   --  it; Rx_Overruns counts dropped frames (full FIFO or ring).
+   procedure Enable_Rx_Interrupt;
+   procedure Get_Frame (F : out Queued_Frame);
+   function Rx_Overruns return Natural;
+
 private
    type Bus is record
       Self_Mode : Boolean := False;   --  controller is in self-test mode
