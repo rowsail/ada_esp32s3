@@ -21,6 +21,13 @@ package ESP32S3.TWAI is
    --  Self_Test transmits + self-receives without an external acknowledgement.
    type Bus_Mode is (Normal, Listen_Only, Self_Test);
 
+   --  Controller error state (driven by the CAN TX/RX error counters).  Active is
+   --  normal; Warning means a counter has passed the error-warning limit;
+   --  Bus_Off means the node took itself off the bus after too many TX errors --
+   --  classically, transmitting in Normal mode with no other node to ACK.  A
+   --  Bus_Off node neither sends nor receives until Recover rejoins it.
+   type Bus_State is (Active, Warning, Bus_Off);
+
    subtype Data_Length is Natural range 0 .. 8;
    type Data_Bytes is array (0 .. 7) of Interfaces.Unsigned_8;
 
@@ -147,6 +154,19 @@ package ESP32S3.TWAI is
    procedure Enable_Rx_Interrupt (S : Session);
    procedure Get (F : out Queued_Frame);
    function Rx_Overruns return Natural;
+
+   ----------------------------------------------------------------------------
+   --  Error state and bus-off recovery.
+   --
+   --  Health reports the controller's current error state.  On Bus_Off the node
+   --  is off the bus (it neither transmits nor receives); Recover rejoins it by
+   --  initiating the standard bus-off recovery (the controller waits out the
+   --  recessive-bit period, then becomes active).  A node with no ACK partner
+   --  will bus-off, so a real-bus application should watch Health and Recover.
+   --  Both raise Not_Owned unless S holds the controller.
+   ----------------------------------------------------------------------------
+   function Health (S : Session) return Bus_State;
+   procedure Recover (S : Session);
 
    procedure Release (S : in out Session);
 
