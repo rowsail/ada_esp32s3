@@ -202,12 +202,33 @@ package body ESP32S3.GDMA is
    TX_Desc : array (Channel_Id) of aliased Descriptor;
    RX_Desc : array (Channel_Id) of aliased Descriptor;
 
+   --  Chained looped transmit (Start_Loop_Chain): one shared N-descriptor ring
+   --  covering a large (framebuffer) buffer.  Module level -> internal SRAM (the
+   --  descriptors must be, for the 20-bit link addr); only their Buffer fields
+   --  point into PSRAM.  Shared, so one chained loop runs at a time.
+   Chain_Desc : array (0 .. Max_Chain - 1) of aliased Descriptor;
+   Chain_N    : Natural := 0;              --  live node count (for Repoint/Restart)
+   Chain_Chnk : Natural := 0;              --  bytes per node (last node may be less)
+
    --  Double-buffered streaming (Start_Stream): a two-descriptor ring per
    --  channel, which half last completed (toggled in the interrupt), and whether
    --  the channel is streaming (so the shared handler services its OUT_DONE).
    Stream_Desc : array (Channel_Id, 0 .. 1) of aliased Descriptor;
    Stream_Half : array (Channel_Id) of Ring_Half := (others => 1);
    Streaming   : array (Channel_Id) of Boolean := (others => False);
+
+   --  Optional per-channel refill hook (Set_Stream_Refill): when non-null, the
+   --  per-half completion interrupt calls it in place of the Await_Half wakeup.
+   Stream_Hook : array (Channel_Id) of Stream_Refill := (others => null);
+
+   --  Multi-descriptor bounce (Start_Bounce): a ring where each of the two halves
+   --  is covered by SEVERAL descriptors (so a half can exceed the 4095-byte single
+   --  descriptor cap), but only the LAST descriptor of each half carries Suc_EOF,
+   --  so OUT_EOF fires just ONCE per half -- a low interrupt rate the refill can
+   --  sustain.  Shared (one bounce runs at a time); descriptors in internal SRAM.
+   Max_Bounce_Desc : constant := 40;
+   Bounce_Desc     : array (0 .. Max_Bounce_Desc - 1) of aliased Descriptor;
+   Bouncing        : array (Channel_Id) of Boolean := (others => False);
 
    --  The receive mirror (Start_In_Stream): a two-descriptor IN ring per
    --  channel, which half was last filled, and whether the channel is capture-
@@ -317,16 +338,35 @@ package body ESP32S3.GDMA is
                Set_True (Done_Signal (C, Periph_To_Mem));
             end if;
             if Channels (C).OUT_INT_ST.OUT_EOF then
-               Channels (C).OUT_INT_ENA.OUT_EOF := False;
-               Set_True (Done_Signal (C, Mem_To_Periph));
+               if Bouncing (C) then
+                  --  A bounce half finished (its last, Suc_EOF descriptor).  Note
+                  --  which half (they alternate) and refill it via the hook, and
+                  --  LEAVE the enable on so the ring keeps looping.
+                  Channels (C).OUT_INT_CLR.OUT_EOF := True;
+                  Stream_Half (C) := 1 - Stream_Half (C);
+                  if Stream_Hook (C) /= null then
+                     Stream_Hook (C).all (Stream_Half (C));
+                  else
+                     Set_True (Done_Signal (C, Mem_To_Periph));
+                  end if;
+               else
+                  Channels (C).OUT_INT_ENA.OUT_EOF := False;
+                  Set_True (Done_Signal (C, Mem_To_Periph));
+               end if;
             end if;
             --  Streaming: a descriptor (one half) finished.  Clear the status but
-            --  LEAVE the enable on (the loop keeps running), note which half
-            --  completed (they alternate) and wake the producer to refill it.
+            --  LEAVE the enable on (the loop keeps running) and note which half
+            --  completed (they alternate).  Refill it in-ISR via the hook if one
+            --  is set (zero-latency, for short half periods), else wake the
+            --  Await_Half producer.
             if Streaming (C) and then Channels (C).OUT_INT_ST.OUT_DONE then
                Channels (C).OUT_INT_CLR.OUT_DONE := True;
                Stream_Half (C) := 1 - Stream_Half (C);
-               Set_True (Done_Signal (C, Mem_To_Periph));
+               if Stream_Hook (C) /= null then
+                  Stream_Hook (C).all (Stream_Half (C));
+               else
+                  Set_True (Done_Signal (C, Mem_To_Periph));
+               end if;
             end if;
             --  Capture streaming: a receive descriptor (one half) was filled.
             if In_Streaming (C) and then Channels (C).IN_INT_ST.IN_DONE then
@@ -410,7 +450,10 @@ package body ESP32S3.GDMA is
       case Dir is
          when Mem_To_Periph =>
             Streaming (C.Id) := False;
+            Bouncing (C.Id) := False;
+            Stream_Hook (C.Id) := null;
             Channels (C.Id).OUT_INT_ENA.OUT_DONE := False;
+            Channels (C.Id).OUT_INT_ENA.OUT_EOF := False;
             Channels (C.Id).OUT_LINK.OUTLINK_STOP := True;
             Channels (C.Id).OUT_CONF0.OUT_RST := True;
             Channels (C.Id).OUT_CONF0.OUT_RST := False;
@@ -716,6 +759,125 @@ package body ESP32S3.GDMA is
       end if;
    end Start_Loop;
 
+   ----------------------
+   -- Start_Loop_Chain --
+   ----------------------
+
+   procedure Start_Loop_Chain
+     (C : Channel; Buffer : System.Address; Length : Natural)
+   is
+      N     : constant Natural := (Length + Chain_Chunk - 1) / Chain_Chunk;
+      PSRAM : constant Boolean := In_PSRAM (Buffer);
+      Off   : Natural := 0;
+   begin
+      if not C.Valid or else Length = 0 or else N > Max_Chain then
+         return;
+      end if;
+
+      --  Framebuffer in PSRAM: make the CPU's writes visible to the DMA.
+      if PSRAM then
+         Cache_Sync (Buffer, Length, Invalidate => False);
+      end if;
+
+      --  Build an N-node ring covering Buffer; Suc_EOF False + OUT_AUTO_WRBACK
+      --  off keep Owner set so the engine re-reads the whole ring every frame.
+      for I in 0 .. N - 1 loop
+         declare
+            Chunk : constant Natural := Natural'Min (Chain_Chunk, Length - Off);
+         begin
+            Chain_Desc (I).W0 :=
+              (Size    => UInt12 (Chunk),
+               Length  => UInt12 (Chunk),
+               Suc_EOF => False,
+               Owner   => True,
+               others  => <>);
+            Chain_Desc (I).Buffer := Buffer + Storage_Offset (Off);
+            Chain_Desc (I).Next   := Chain_Desc ((I + 1) mod N)'Address;
+            Off := Off + Chunk;
+         end;
+      end loop;
+      Chain_N    := N;                       --  remembered for Repoint/Restart
+      Chain_Chnk := Chain_Chunk;
+
+      Channels (C.Id).OUT_CONF0.OUT_AUTO_WRBACK  := False;
+      Channels (C.Id).OUT_CONF0.OUT_DATA_BURST_EN := PSRAM;
+      Channels (C.Id).OUT_CONF0.OUTDSCR_BURST_EN  := PSRAM;
+      Channels (C.Id).OUT_INT_CLR.OUT_DONE     := True;
+      Channels (C.Id).OUT_INT_CLR.OUT_EOF      := True;
+      Channels (C.Id).OUT_INT_CLR.OUT_DSCR_ERR := True;
+      Asm ("memw", Volatile => True, Clobber => "memory");
+      Channels (C.Id).OUT_LINK.OUTLINK_ADDR  := Link_Addr (Chain_Desc (0)'Address);
+      Channels (C.Id).OUT_LINK.OUTLINK_START := True;
+   end Start_Loop_Chain;
+
+   -------------------
+   -- Repoint_Chain --
+   -------------------
+
+   procedure Repoint_Chain (C : Channel; New_Base : System.Address) is
+      Off : Natural := 0;
+   begin
+      if not C.Valid or else Chain_N = 0 then
+         return;
+      end if;
+      --  Retarget the live ring's Buffer fields at New_Base WITHOUT restarting the
+      --  engine: the looping DMA re-reads each node from memory every pass, so the
+      --  next frame streams from New_Base.  Seamless -- no OUT_RST, no FIFO reset --
+      --  so a caller that does this during vertical blanking flips buffers with no
+      --  tear.  The node sizes are unchanged (same frame length), only Buffer moves.
+      for I in 0 .. Chain_N - 1 loop
+         Chain_Desc (I).Buffer := New_Base + Storage_Offset (Off);
+         Off := Off + Chain_Chnk;
+      end loop;
+      Asm ("memw", Volatile => True, Clobber => "memory");
+   end Repoint_Chain;
+
+   ------------------------
+   -- Restart_Loop_Chain --
+   ------------------------
+
+   procedure Restart_Loop_Chain (C : Channel) is
+   begin
+      if not C.Valid then
+         return;
+      end if;
+      --  Flush the OUT FIFO and re-point the link at the ring head so the next
+      --  byte the DMA delivers is buffer byte 0 again.  OUT_RST is a self-clearing
+      --  FIFO reset that leaves the burst/wrback config bits intact; the ring
+      --  itself persists.  Used once, VSYNC-synced, to pin the startup phase.
+      Channels (C.Id).OUT_CONF0.OUT_RST := True;
+      Channels (C.Id).OUT_CONF0.OUT_RST := False;
+      Channels (C.Id).OUT_LINK.OUTLINK_ADDR := Link_Addr (Chain_Desc (0)'Address);
+      Asm ("memw", Volatile => True, Clobber => "memory");
+      Channels (C.Id).OUT_LINK.OUTLINK_START := True;
+   end Restart_Loop_Chain;
+
+   procedure Start_Loop_Chain (C : Channel; Buffer : DMA_Buffer; Length : Natural)
+   is
+   begin
+      if Length > 0 then
+         Start_Loop_Chain (C, Buffer (Buffer'First)'Address, Length);
+      end if;
+   end Start_Loop_Chain;
+
+   -----------
+   -- Flush --
+   -----------
+
+   procedure Flush (Buffer : System.Address; Length : Natural) is
+   begin
+      if Length > 0 and then In_PSRAM (Buffer) then
+         Cache_Sync (Buffer, Length, Invalidate => False);
+      end if;
+   end Flush;
+
+   procedure Flush (Buffer : DMA_Buffer; Length : Natural) is
+   begin
+      if Length > 0 then
+         Flush (Buffer (Buffer'First)'Address, Length);
+      end if;
+   end Flush;
+
    ------------------
    -- Start_Stream --
    ------------------
@@ -778,6 +940,72 @@ package body ESP32S3.GDMA is
       Cancel_Handler (Timeout_Ev (C.Id, Mem_To_Periph), Cancelled);
       return Stream_Half (C.Id);
    end Await_Half;
+
+   ------------------
+   -- Start_Bounce --
+   ------------------
+
+   procedure Start_Bounce (C : Channel; Buffer : System.Address; Half_Bytes : Natural)
+   is
+      Chunk_Max : constant := 4064;   --  <= 4095, 32-aligned; per descriptor
+      Per_Half  : constant Natural := (Half_Bytes + Chunk_Max - 1) / Chunk_Max;
+      N         : constant Natural := 2 * Per_Half;
+      Idx       : Natural := 0;
+   begin
+      if not C.Valid or else Half_Bytes = 0 or else N > Max_Bounce_Desc then
+         return;
+      end if;
+
+      --  Build a 2*Per_Half descriptor ring covering the two contiguous halves;
+      --  only the last descriptor of each half carries Suc_EOF (one OUT_EOF per
+      --  half).  Owner set + no auto-writeback => the ring loops forever.
+      for Half in 0 .. 1 loop
+         declare
+            Off : Natural := 0;
+         begin
+            for D in 0 .. Per_Half - 1 loop
+               declare
+                  Chunk : constant Natural := Natural'Min (Chunk_Max, Half_Bytes - Off);
+               begin
+                  Bounce_Desc (Idx).W0 :=
+                    (Size    => UInt12 (Chunk),
+                     Length  => UInt12 (Chunk),
+                     Suc_EOF => (D = Per_Half - 1),
+                     Owner   => True,
+                     others  => <>);
+                  Bounce_Desc (Idx).Buffer :=
+                    Buffer + Storage_Offset (Half * Half_Bytes + Off);
+                  Off := Off + Chunk;
+                  Idx := Idx + 1;
+               end;
+            end loop;
+         end;
+      end loop;
+      for I in 0 .. N - 1 loop
+         Bounce_Desc (I).Next := Bounce_Desc ((I + 1) mod N)'Address;
+      end loop;
+
+      Bouncing (C.Id)    := True;
+      Stream_Half (C.Id) := 1;                     --  first EOF (half 0) toggles to 0
+      Channels (C.Id).OUT_CONF0.OUT_AUTO_WRBACK := False;
+      Channels (C.Id).OUT_INT_CLR.OUT_EOF  := True;
+      Channels (C.Id).OUT_INT_CLR.OUT_DONE := True;
+      Channels (C.Id).OUT_INT_ENA.OUT_EOF  := True;   --  one interrupt per half
+      Asm ("memw", Volatile => True, Clobber => "memory");
+      Channels (C.Id).OUT_LINK.OUTLINK_ADDR := Link_Addr (Bounce_Desc (0)'Address);
+      Channels (C.Id).OUT_LINK.OUTLINK_START := True;
+   end Start_Bounce;
+
+   -----------------------
+   -- Set_Stream_Refill --
+   -----------------------
+
+   procedure Set_Stream_Refill (C : Channel; Hook : Stream_Refill) is
+   begin
+      if C.Valid then
+         Stream_Hook (C.Id) := Hook;
+      end if;
+   end Set_Stream_Refill;
 
    ---------------------
    -- Start_In_Stream --
