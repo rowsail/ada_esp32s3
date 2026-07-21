@@ -1,0 +1,17 @@
+name = "esp32s3_lcd"
+description = "Drive an 800x480 RGB565 panel (Waveshare ESP32-S3-Touch-LCD-7)"
+version = "0.1.0-dev"
+
+authors = ["D. Howells"]
+maintainers = ["D. Howells <dhowells@motium.us>"]
+licenses = "Apache-2.0 WITH LLVM-exception"
+tags = ["embedded", "esp32s3", "lcd", "rgb", "example"]
+
+project-files = ["lcd.gpr"]
+
+[[depends-on]]
+esp32s3_rts = "*"
+
+[[pins]]
+esp32s3_rts = { path = "../../crates/esp32s3_rts" }
+xtensa_dynconfig       = { path = "../../crates/xtensa-dynconfig" }

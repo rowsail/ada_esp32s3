@@ -25,6 +25,20 @@ private package ESP32S3.LCD.Engine is
    --  Route the data bus and pixel clock to physical pads.
    procedure Configure_Pins (B : Bus; Data : Data_Pins; Pclk : ESP32S3.GPIO.Optional_Pin);
 
+   --  Bring the LCD up in RGB mode: clock, colour depth and panel timing.  No
+   --  DMA channel or refresh is started here.  (RGB_Config / RGB_Pins are
+   --  declared in the parent and used here by child visibility.)
+   procedure Open_RGB (B : in out Bus; Config : RGB_Config);
+   procedure Configure_RGB_Pins (B : Bus; Pins : RGB_Pins);
+
+   --  Start / update / stop continuous RGB refresh.  Start_RGB claims a GDMA
+   --  channel bound to LCD_CAM and streams Framebuffer (Length bytes, may be
+   --  PSRAM) to the panel forever; Flush_RGB writes an updated framebuffer back
+   --  to PSRAM for the DMA to re-read; Stop_RGB halts and frees the channel.
+   procedure Start_RGB (B : Bus; Framebuffer : System.Address; Length : Natural);
+   procedure Flush_RGB (Framebuffer : System.Address; Length : Natural);
+   procedure Stop_RGB;
+
    --  Free-run the pixel clock continuously on Pclk_Pad (no data transaction).
    procedure Enable_Clock_Out (B : Bus; Pclk_Pad : ESP32S3.GPIO.Pin_Id);
 

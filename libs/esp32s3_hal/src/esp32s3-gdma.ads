@@ -184,6 +184,32 @@ package ESP32S3.GDMA is
    procedure Start_Loop (C : Channel; Buffer : DMA_Buffer; Length : Natural)
    with Pre => Length <= Buffer'Length and then Buffer'Length mod DMA_Alignment = 0;
 
+   --  Arm a CONTINUOUS looped transmit of a LARGE buffer -- bigger than the 4095-
+   --  byte single-descriptor limit -- on C's OUT path: build a RING of N (<=
+   --  Max_Chain) descriptors that between them cover Buffer, the last linking
+   --  back to the first, so the peripheral replays the whole buffer forever with
+   --  no gap.  This is the display-framebuffer path: stream an LCD framebuffer to
+   --  LCD_CAM continuously.  Buffer may be in PSRAM (32-byte aligned); it is
+   --  written back to PSRAM before the loop starts (and burst mode is enabled).
+   --  After the CPU DRAWS into a live framebuffer, call Flush to push the changes
+   --  to PSRAM so the running DMA re-reads them.  The descriptor ring is a single
+   --  shared, internal-SRAM array, so one chained loop runs at a time.  Length in
+   --  1 .. Max_Chain_Bytes.  No-op on an invalid handle or over-range Length.
+   Max_Chain       : constant := 256;                 --  descriptor ring capacity
+   Chain_Chunk     : constant := 4080;                --  bytes per descriptor
+   Max_Chain_Bytes : constant := Max_Chain * Chain_Chunk;   --  ~1.04 MB
+   procedure Start_Loop_Chain (C : Channel; Buffer : System.Address; Length : Natural)
+   with Pre => Length = 0 or else Is_DMA_Capable (Buffer);
+   procedure Start_Loop_Chain (C : Channel; Buffer : DMA_Buffer; Length : Natural)
+   with Pre => Length <= Buffer'Length and then Buffer'Length mod DMA_Alignment = 0;
+
+   --  Write the CPU's writes to a PSRAM region back so a running DMA re-reads the
+   --  new bytes (a no-op for internal SRAM).  Call after drawing into a live
+   --  framebuffer that Start_Loop_Chain is streaming.
+   procedure Flush (Buffer : System.Address; Length : Natural);
+   procedure Flush (Buffer : DMA_Buffer; Length : Natural)
+   with Pre => Length <= Buffer'Length;
+
    --  Gapless DOUBLE-BUFFERED streaming (Mem_To_Periph).  Loop the two halves of
    --  Buffer forever -- Half_Length bytes each -- as one uninterrupted transfer
    --  (like Start_Loop, so no inter-buffer restart gap), but fire a completion
@@ -197,6 +223,18 @@ package ESP32S3.GDMA is
    with Pre => Half_Length = 0 or else Is_DMA_Capable (Buffer);
 
    function Await_Half (C : Channel) return Ring_Half;
+
+   --  Optional refill HOOK for Start_Stream.  When set, the DMA's per-half
+   --  completion interrupt calls it directly -- passing the half (0/1) that just
+   --  drained -- INSTEAD of waking an Await_Half producer.  This removes the
+   --  task-wakeup latency, which matters when the half period is very short (an
+   --  LCD bounce buffer drains a 4 KB half in ~125 us; a task that refills it a
+   --  few us late lets the DMA lap it and re-send stale bytes -> flicker).  The
+   --  hook runs in INTERRUPT context: it must not block or allocate -- keep it a
+   --  short copy into the just-drained half.  It must be a library-level
+   --  procedure.  Set before Start_Stream; Stop clears it.
+   type Stream_Refill is access procedure (Half : Ring_Half);
+   procedure Set_Stream_Refill (C : Channel; Hook : Stream_Refill);
 
    --  Gapless double-buffered CAPTURE (Periph_To_Mem): the receive mirror of
    --  Start_Stream.  The DMA fills the two Half_Length-byte halves of Buffer

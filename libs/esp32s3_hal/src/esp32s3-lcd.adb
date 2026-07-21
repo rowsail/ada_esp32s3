@@ -41,6 +41,7 @@ package body ESP32S3.LCD is
 
    package State is
       procedure Bring_Up (S : Session; Pclk_Hz : Positive);
+      procedure Bring_Up_RGB (S : Session; Config : RGB_Config);
       function Owned (S : Session) return access E.Bus;
    end State;
 
@@ -54,6 +55,14 @@ package body ESP32S3.LCD is
          end if;
          E.Open (The_Bus, Pclk_Hz);
       end Bring_Up;
+
+      procedure Bring_Up_RGB (S : Session; Config : RGB_Config) is
+      begin
+         if not S.Active then
+            raise Not_Owned with "LCD used without holding it -- Acquire first";
+         end if;
+         E.Open_RGB (The_Bus, Config);
+      end Bring_Up_RGB;
 
       function Owned (S : Session) return access E.Bus is
       begin
@@ -78,6 +87,46 @@ package body ESP32S3.LCD is
       S.Active := True;
       Reconfigure (S, Pclk_Hz, Data, Pclk);
    end Acquire;
+
+   -----------------
+   -- Acquire_RGB --
+   -----------------
+
+   procedure Acquire_RGB (S : in out Session; Config : RGB_Config; Pins : RGB_Pins)
+   is
+   begin
+      Guard.Acquire;
+      S.Active := True;
+      State.Bring_Up_RGB (S, Config);
+      E.Configure_RGB_Pins (State.Owned (S).all, Pins);
+   end Acquire_RGB;
+
+   ---------------
+   -- Start_RGB --
+   ---------------
+
+   procedure Start_RGB
+     (S : Session; Framebuffer : System.Address; Length : Natural) is
+   begin
+      E.Start_RGB (State.Owned (S).all, Framebuffer, Length);
+   end Start_RGB;
+
+   procedure Flush
+     (S : Session; Framebuffer : System.Address; Length : Natural) is
+   begin
+      if not S.Active then
+         raise Not_Owned with "LCD used without holding it -- Acquire first";
+      end if;
+      E.Flush_RGB (Framebuffer, Length);
+   end Flush;
+
+   procedure Stop_RGB (S : Session) is
+   begin
+      if not S.Active then
+         raise Not_Owned with "LCD used without holding it -- Acquire first";
+      end if;
+      E.Stop_RGB;
+   end Stop_RGB;
 
    -----------------
    -- Reconfigure --
