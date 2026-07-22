@@ -113,13 +113,24 @@ package ESP32S3.LCD is
       Pclk_Falling    : Boolean := False;  --  latch data on the falling PCLK edge
    end record;
 
+   --  Which LCD_DATA_OUT signal (0 .. 15) drives each panel data line.  Default
+   --  is 1:1 (line i <- LCD_DATA_OUT i).  For an 8-bit (RGB332) framebuffer on a
+   --  16-bit RGB565 panel, point several panel lines at the low 8 signals to fan
+   --  the colour bits out (bit replication) -- the LCD_CAM shifts one byte/pixel
+   --  yet the panel still receives full-width RGB565.  The GPIO matrix allows one
+   --  output signal to drive many pads, so this costs nothing at run time.
+   type RGB_Signal_Map is array (0 .. 15) of Natural;
+   Identity_Signals : constant RGB_Signal_Map :=
+     (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+
    --  The RGB data lines plus the four control signals.
    type RGB_Pins is record
-      Data  : RGB_Data_Pins := (others => No_Pin);
-      Pclk  : ESP32S3.GPIO.Optional_Pin := No_Pin;
-      HSync : ESP32S3.GPIO.Optional_Pin := No_Pin;
-      VSync : ESP32S3.GPIO.Optional_Pin := No_Pin;
-      DE    : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Data    : RGB_Data_Pins := (others => No_Pin);
+      Signals : RGB_Signal_Map := Identity_Signals;
+      Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      HSync   : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      VSync   : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      DE      : ESP32S3.GPIO.Optional_Pin := No_Pin;
    end record;
 
    --  Take ownership and bring the controller up in RGB mode with Config's

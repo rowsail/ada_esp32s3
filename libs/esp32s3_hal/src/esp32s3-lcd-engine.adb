@@ -222,7 +222,10 @@ package body ESP32S3.LCD.Engine is
       end if;
       for I in Pins.Data'Range loop
          if Pins.Data (I) /= G.No_Pin then
-            Drive_Out (ESP32S3.GPIO.Pin_Id (Pins.Data (I)), Sigs.LCD_DATA_OUT0 + I);
+            --  Route line I from its mapped LCD_DATA_OUT signal (default I); a
+            --  fan-out map lets one signal drive several lines (8-bit -> RGB565).
+            Drive_Out (ESP32S3.GPIO.Pin_Id (Pins.Data (I)),
+                       Sigs.LCD_DATA_OUT0 + Pins.Signals (I));
          end if;
       end loop;
       if Pins.Pclk /= G.No_Pin then
@@ -457,7 +460,6 @@ package body ESP32S3.LCD.Engine is
       if not GD.Is_Valid (RGB_Chan) then
          return;
       end if;
-
       --  Prime both halves so the DMA has real pixels from the first clock;
       --  register the in-ISR refill hook; then start the multi-descriptor bounce.
       Fill_Half (0);
