@@ -27,18 +27,26 @@ package body ESP32S3.GPIO is
    --------------------------------------------------------------------------
    protected Lock is
       procedure Configure
-        (Pin : Pin_Id; Mode : Pin_Mode; Pull : Pull_Mode; Drive : Drive_Strength);
+        (Pin   : Pin_Id;
+         Mode  : Pin_Mode;
+         Pull  : Pull_Mode;
+         Drive : Drive_Strength);
       procedure Toggle (Pin : Pin_Id);
    end Lock;
 
    protected body Lock is
 
-      procedure Configure (Pin : Pin_Id; Mode : Pin_Mode; Pull : Pull_Mode; Drive : Drive_Strength)
+      procedure Configure
+        (Pin   : Pin_Id;
+         Mode  : Pin_Mode;
+         Pull  : Pull_Mode;
+         Drive : Drive_Strength)
       is
          Pad : Mux.GPIO_Register := Mux.IO_MUX_Periph.GPIO (Natural (Pin));
       begin
          --  IO_MUX pad config (read-modify-write the whole word).
-         Pad.MCU_SEL := 1;                     --  route through the GPIO matrix
+         Pad.MCU_SEL :=
+           1;                     --  route through the GPIO matrix
          Pad.FUN_DRV := Mux.GPIO_FUN_DRV_Field (Drive_Strength'Pos (Drive));
          Pad.FUN_IE := True;                  --  input buffer on (Read/Toggle)
          Pad.FUN_WPU := (Pull = Pull_Up);
@@ -83,7 +91,8 @@ package body ESP32S3.GPIO is
          if Pin <= 31 then
             Currently_High := (Reg.GPIO_Periph.OUT_k and Lo_Bit (Pin)) /= 0;
          else
-            Currently_High := (Reg.GPIO_Periph.OUT1.DATA_ORIG and Hi_Bit (Pin)) /= 0;
+            Currently_High :=
+              (Reg.GPIO_Periph.OUT1.DATA_ORIG and Hi_Bit (Pin)) /= 0;
          end if;
          Write (Pin, not Currently_High);
       end Toggle;

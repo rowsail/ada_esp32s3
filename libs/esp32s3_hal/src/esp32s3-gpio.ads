@@ -49,7 +49,8 @@ package ESP32S3.GPIO is
    type Pull_Mode is (Floating, Pull_Up, Pull_Down);
 
    --  IO_MUX FUN_DRV field (0 .. 3), roughly 5 / 10 / 20 / 40 mA.
-   type Drive_Strength is (Drive_Weak, Drive_Medium, Drive_Strong, Drive_Strongest);
+   type Drive_Strength is
+     (Drive_Weak, Drive_Medium, Drive_Strong, Drive_Strongest);
 
    --  Configure a pad as a plain GPIO: direction + pull + drive. The pad is
    --  always routed through the GPIO matrix as a software-controlled GPIO
@@ -65,7 +66,8 @@ package ESP32S3.GPIO is
 
    procedure Set (Pin : Pin_Id);              --  drive high  (atomic W1TS)
    procedure Clear (Pin : Pin_Id);              --  drive low   (atomic W1TC)
-   procedure Toggle (Pin : Pin_Id);              --  flip the current output level
+   procedure Toggle
+     (Pin : Pin_Id);              --  flip the current output level
    procedure Write (Pin : Pin_Id; On : Boolean);
    function Read (Pin : Pin_Id) return Boolean;  --  sample the input level
 

@@ -52,13 +52,15 @@ package body ESP32S3.Log is
       Value      : Long_Long_Integer := Long_Long_Integer (N);
    begin
       if Neg then
-         Value := -Value;                                --  in 64-bit: safe for Integer'First
+         Value :=
+           -Value;                                --  in 64-bit: safe for Integer'First
 
       end if;
       loop
          --  digits, least-significant first
          D_First := D_First - 1;
-         Digits_Buf (D_First) := Character'Val (Character'Pos ('0') + Integer (Value mod 10));
+         Digits_Buf (D_First) :=
+           Character'Val (Character'Pos ('0') + Integer (Value mod 10));
          Value := Value / 10;
          exit when Value = 0;
       end loop;
@@ -67,7 +69,8 @@ package body ESP32S3.Log is
          Digs     : constant String := Digits_Buf (D_First .. Digits_Buf'Last);
          Sign_Len : constant Natural := (if Neg then 1 else 0);
          Body_Len : constant Natural := Sign_Len + Digs'Length;
-         Pad_Len  : constant Natural := (if Width > Body_Len then Width - Body_Len else 0);
+         Pad_Len  : constant Natural :=
+           (if Width > Body_Len then Width - Body_Len else 0);
          Out_Buf  : String (1 .. Body_Len + Pad_Len);
          Pos      : Natural := 0;
       begin
@@ -107,7 +110,8 @@ package body ESP32S3.Log is
    begin
       loop
          D_First := D_First - 1;
-         Digits_Buf (D_First) := Character'Val (Character'Pos ('0') + Integer (Value mod 10));
+         Digits_Buf (D_First) :=
+           Character'Val (Character'Pos ('0') + Integer (Value mod 10));
          Value := Value / 10;
          exit when Value = 0;
       end loop;
@@ -133,7 +137,8 @@ package body ESP32S3.Log is
 
       declare
          Digs    : constant String := Digits_Buf (D_First .. Digits_Buf'Last);
-         Pad_Len : constant Natural := (if Width > Digs'Length then Width - Digs'Length else 0);
+         Pad_Len : constant Natural :=
+           (if Width > Digs'Length then Width - Digs'Length else 0);
          Out_Buf : String (1 .. Digs'Length + Pad_Len);
       begin
          for I in 1 .. Pad_Len loop
@@ -158,16 +163,20 @@ package body ESP32S3.Log is
    begin
       loop
          First := First - 1;
-         Buf (First) := Character'Val (Character'Pos ('0') + Integer (Value mod 10));
+         Buf (First) :=
+           Character'Val (Character'Pos ('0') + Integer (Value mod 10));
          Value := Value / 10;
          exit when Value = 0;
       end loop;
       Put (Buf (First .. Buf'Last));
    end Put_Nonneg;
 
-   procedure Put_Fixed (Numer : Integer; Denom : Positive; Decimals : Natural := 2) is
+   procedure Put_Fixed
+     (Numer : Integer; Denom : Positive; Decimals : Natural := 2)
+   is
       Neg       : constant Boolean := Numer < 0;
-      Numer_Abs : constant Long_Long_Integer := abs (Long_Long_Integer (Numer));
+      Numer_Abs : constant Long_Long_Integer :=
+        abs (Long_Long_Integer (Numer));
       Denom_LL  : constant Long_Long_Integer := Long_Long_Integer (Denom);
       Whole     : constant Long_Long_Integer := Numer_Abs / Denom_LL;
       Rem_M     : constant Long_Long_Integer := Numer_Abs mod Denom_LL;
@@ -179,10 +188,14 @@ package body ESP32S3.Log is
       if Neg then
          Put ("-");
       end if;
-      Put_Nonneg (Whole);              --  LLI: avoids the Integer (Whole) overflow
+      Put_Nonneg
+        (Whole);              --  LLI: avoids the Integer (Whole) overflow
       if Decimals > 0 then
          Put (".");
-         Put (Integer ((Rem_M * Scale) / Denom_LL), Width => Decimals, Pad => '0');
+         Put
+           (Integer ((Rem_M * Scale) / Denom_LL),
+            Width => Decimals,
+            Pad   => '0');
       end if;
    end Put_Fixed;
 

@@ -29,7 +29,8 @@ package ESP32S3.Serial is
    --  False (C = NUL) when none is.  The vtable procedure must be LIBRARY-LEVEL
    --  (No_Implicit_Dynamic_Code bars 'Access of a nested one).
    type Read_Proc is
-     access procedure (Ctx : System.Address; C : out Character; Available : out Boolean);
+     access procedure
+       (Ctx : System.Address; C : out Character; Available : out Boolean);
 
    --  A character-input device.  Ctx is handed back to Read.
    type In_Device is record

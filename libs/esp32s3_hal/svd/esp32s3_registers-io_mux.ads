@@ -31,29 +31,29 @@ package ESP32S3_Registers.IO_MUX is
    subtype PIN_CTRL_CLK_OUT_Element is ESP32S3_Registers.UInt4;
 
    --  PIN_CTRL_CLK_OUT array
-   type PIN_CTRL_CLK_OUT_Field_Array is array (1 .. 3)
-     of PIN_CTRL_CLK_OUT_Element
-     with Component_Size => 4, Size => 12;
+   type PIN_CTRL_CLK_OUT_Field_Array is
+     array (1 .. 3) of PIN_CTRL_CLK_OUT_Element
+   with Component_Size => 4, Size => 12;
 
    --  Type definition for PIN_CTRL_CLK_OUT
-   type PIN_CTRL_CLK_OUT_Field
-     (As_Array : Boolean := False)
-   is record
+   type PIN_CTRL_CLK_OUT_Field (As_Array : Boolean := False) is record
       case As_Array is
          when False =>
             --  CLK_OUT as a value
             Val : ESP32S3_Registers.UInt12;
+
          when True =>
             --  CLK_OUT as an array
             Arr : PIN_CTRL_CLK_OUT_Field_Array;
       end case;
    end record
-     with Unchecked_Union, Size => 12;
+   with Unchecked_Union, Size => 12;
 
-   for PIN_CTRL_CLK_OUT_Field use record
-      Val at 0 range 0 .. 11;
-      Arr at 0 range 0 .. 11;
-   end record;
+   for PIN_CTRL_CLK_OUT_Field use
+     record
+       Val at 0 range 0 .. 11;
+       Arr at 0 range 0 .. 11;
+     end record;
 
    --  Clock Output Configuration Register
    type PIN_CTRL_Register is record
@@ -61,17 +61,20 @@ package ESP32S3_Registers.IO_MUX is
       --  register to 0x0. CLK_OUT_out1 can be found in peripheral output
       --  signals.
       CLK_OUT        : PIN_CTRL_CLK_OUT_Field :=
-                        (As_Array => False, Val => 16#F#);
+        (As_Array => False, Val => 16#F#);
       --  unspecified
       Reserved_12_31 : ESP32S3_Registers.UInt20 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for PIN_CTRL_Register use record
-      CLK_OUT        at 0 range 0 .. 11;
-      Reserved_12_31 at 0 range 12 .. 31;
-   end record;
+   for PIN_CTRL_Register use
+     record
+       CLK_OUT at 0 range 0 .. 11;
+       Reserved_12_31 at 0 range 12 .. 31;
+     end record;
 
    subtype GPIO_FUN_DRV_Field is ESP32S3_Registers.UInt2;
    subtype GPIO_MCU_SEL_Field is ESP32S3_Registers.UInt3;
@@ -115,24 +118,27 @@ package ESP32S3_Registers.IO_MUX is
       --  unspecified
       Reserved_16_31 : ESP32S3_Registers.UInt16 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for GPIO_Register use record
-      MCU_OE         at 0 range 0 .. 0;
-      SLP_SEL        at 0 range 1 .. 1;
-      MCU_WPD        at 0 range 2 .. 2;
-      MCU_WPU        at 0 range 3 .. 3;
-      MCU_IE         at 0 range 4 .. 4;
-      Reserved_5_6   at 0 range 5 .. 6;
-      FUN_WPD        at 0 range 7 .. 7;
-      FUN_WPU        at 0 range 8 .. 8;
-      FUN_IE         at 0 range 9 .. 9;
-      FUN_DRV        at 0 range 10 .. 11;
-      MCU_SEL        at 0 range 12 .. 14;
-      FILTER_EN      at 0 range 15 .. 15;
-      Reserved_16_31 at 0 range 16 .. 31;
-   end record;
+   for GPIO_Register use
+     record
+       MCU_OE at 0 range 0 .. 0;
+       SLP_SEL at 0 range 1 .. 1;
+       MCU_WPD at 0 range 2 .. 2;
+       MCU_WPU at 0 range 3 .. 3;
+       MCU_IE at 0 range 4 .. 4;
+       Reserved_5_6 at 0 range 5 .. 6;
+       FUN_WPD at 0 range 7 .. 7;
+       FUN_WPU at 0 range 8 .. 8;
+       FUN_IE at 0 range 9 .. 9;
+       FUN_DRV at 0 range 10 .. 11;
+       MCU_SEL at 0 range 12 .. 14;
+       FILTER_EN at 0 range 15 .. 15;
+       Reserved_16_31 at 0 range 16 .. 31;
+     end record;
 
    --  IO MUX Configure Register for pad GPIO0
    type GPIO_Registers is array (0 .. 48) of GPIO_Register;
@@ -146,13 +152,16 @@ package ESP32S3_Registers.IO_MUX is
       --  unspecified
       Reserved_28_31 : ESP32S3_Registers.UInt4 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for DATE_Register use record
-      REG_DATE       at 0 range 0 .. 27;
-      Reserved_28_31 at 0 range 28 .. 31;
-   end record;
+   for DATE_Register use
+     record
+       REG_DATE at 0 range 0 .. 27;
+       Reserved_28_31 at 0 range 28 .. 31;
+     end record;
 
    -----------------
    -- Peripherals --
@@ -167,16 +176,17 @@ package ESP32S3_Registers.IO_MUX is
       --  IO MUX Version Control Register
       DATE     : aliased DATE_Register;
    end record
-     with Volatile;
+   with Volatile;
 
-   for IO_MUX_Peripheral use record
-      PIN_CTRL at 16#0# range 0 .. 31;
-      GPIO     at 16#4# range 0 .. 1567;
-      DATE     at 16#FC# range 0 .. 31;
-   end record;
+   for IO_MUX_Peripheral use
+     record
+       PIN_CTRL at 16#0# range 0 .. 31;
+       GPIO at 16#4# range 0 .. 1567;
+       DATE at 16#FC# range 0 .. 31;
+     end record;
 
    --  Input/Output Multiplexer
    IO_MUX_Periph : aliased IO_MUX_Peripheral
-     with Import, Address => IO_MUX_Base;
+   with Import, Address => IO_MUX_Base;
 
 end ESP32S3_Registers.IO_MUX;
