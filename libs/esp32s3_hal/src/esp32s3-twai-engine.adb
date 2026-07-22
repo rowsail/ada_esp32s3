@@ -355,9 +355,12 @@ package body ESP32S3.TWAI.Engine is
    --  On each TWAI interrupt the handler drains the WHOLE hardware FIFO into this
    --  software ring, so a burst is captured in one shot and nothing is lost
    --  between the application's reads; Get (a protected entry) blocks until the
-   --  ring is non-empty.  Routed to CPU interrupt Device_L2_2 (21) -- the free
-   --  level-2 slot, alongside UART (19) and GDMA (20).
-   TWAI_CPU_Int  : constant := 21;    --  = Ada.Interrupts.Names.Device_L2_2
+   --  ring is non-empty.  Routed to CPU interrupt Device_L2_0 (19) -- the slot
+   --  the buffered-UART RX ISR would use, so TWAI-RX and UART-RX are mutually
+   --  exclusive (no board needs both).  This leaves 21 (Device_L2_2) for the
+   --  LCD_CAM VSYNC handler, so the RGB LCD and TWAI can run together on one
+   --  board (a CAN dashboard).  GDMA keeps 20.
+   TWAI_CPU_Int  : constant := 19;    --  = Ada.Interrupts.Names.Device_L2_0
    Ring_Capacity : constant := 64;
    type Ring_Index is mod Ring_Capacity;
    type Frame_Ring is array (Ring_Index) of Queued_Frame;
@@ -370,7 +373,7 @@ package body ESP32S3.TWAI.Engine is
       function Overruns return Natural;
    private
       procedure Handler
-        with Attach_Handler => Ada.Interrupts.Names.Device_L2_2;
+        with Attach_Handler => Ada.Interrupts.Names.Device_L2_0;
       Routed : Boolean := False;
       Ring   : Frame_Ring;
       Head   : Ring_Index := 0;
