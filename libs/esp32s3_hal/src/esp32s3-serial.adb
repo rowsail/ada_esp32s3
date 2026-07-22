@@ -17,7 +17,9 @@ package body ESP32S3.Serial is
    end Console_Flush;
 
    The_Console : constant Device :=
-     (Write => Console_Write'Access, Flush => Console_Flush'Access, Ctx => System.Null_Address);
+     (Write => Console_Write'Access,
+      Flush => Console_Flush'Access,
+      Ctx   => System.Null_Address);
 
    Current : Device := The_Console;
 
@@ -53,7 +55,9 @@ package body ESP32S3.Serial is
 
    --  Input side of the mux.  Symmetric with the output side above: a default
    --  device bound to the USB Serial/JTAG console, redirectable with Set_Input.
-   procedure Console_Read (Ctx : System.Address; C : out Character; Available : out Boolean) is
+   procedure Console_Read
+     (Ctx : System.Address; C : out Character; Available : out Boolean)
+   is
       pragma Unreferenced (Ctx);
    begin
       ESP32S3.Console.Read (C, Available);
@@ -93,7 +97,10 @@ package body ESP32S3.Serial is
    pragma Convention (C, Console_Hook);
 
    procedure Install_Console_Hook (H : Console_Hook)
-   with Import, Convention => C, External_Name => "__esp32s3_install_console_hook";
+   with
+     Import,
+     Convention    => C,
+     External_Name => "__esp32s3_install_console_hook";
 
    procedure Text_IO_Sink (C : Character)
    with Convention => C;

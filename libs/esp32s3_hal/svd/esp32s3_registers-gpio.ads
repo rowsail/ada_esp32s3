@@ -36,13 +36,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for OUT1_Register use record
-      DATA_ORIG      at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for OUT1_Register use
+     record
+       DATA_ORIG at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype OUT1_W1TS_OUT1_W1TS_Field is ESP32S3_Registers.UInt22;
 
@@ -53,13 +56,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for OUT1_W1TS_Register use record
-      OUT1_W1TS      at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for OUT1_W1TS_Register use
+     record
+       OUT1_W1TS at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype OUT1_W1TC_OUT1_W1TC_Field is ESP32S3_Registers.UInt22;
 
@@ -70,13 +76,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for OUT1_W1TC_Register use record
-      OUT1_W1TC      at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for OUT1_W1TC_Register use
+     record
+       OUT1_W1TC at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype SDIO_SELECT_SDIO_SEL_Field is ESP32S3_Registers.Byte;
 
@@ -87,13 +96,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_8_31 : ESP32S3_Registers.UInt24 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for SDIO_SELECT_Register use record
-      SDIO_SEL      at 0 range 0 .. 7;
-      Reserved_8_31 at 0 range 8 .. 31;
-   end record;
+   for SDIO_SELECT_Register use
+     record
+       SDIO_SEL at 0 range 0 .. 7;
+       Reserved_8_31 at 0 range 8 .. 31;
+     end record;
 
    subtype ENABLE1_DATA_Field is ESP32S3_Registers.UInt22;
 
@@ -104,13 +116,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for ENABLE1_Register use record
-      DATA           at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for ENABLE1_Register use
+     record
+       DATA at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype ENABLE1_W1TS_ENABLE1_W1TS_Field is ESP32S3_Registers.UInt22;
 
@@ -121,13 +136,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for ENABLE1_W1TS_Register use record
-      ENABLE1_W1TS   at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for ENABLE1_W1TS_Register use
+     record
+       ENABLE1_W1TS at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype ENABLE1_W1TC_ENABLE1_W1TC_Field is ESP32S3_Registers.UInt22;
 
@@ -138,13 +156,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for ENABLE1_W1TC_Register use record
-      ENABLE1_W1TC   at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for ENABLE1_W1TC_Register use
+     record
+       ENABLE1_W1TC at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype STRAP_STRAPPING_Field is ESP32S3_Registers.UInt16;
 
@@ -155,13 +176,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_16_31 : ESP32S3_Registers.UInt16;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for STRAP_Register use record
-      STRAPPING      at 0 range 0 .. 15;
-      Reserved_16_31 at 0 range 16 .. 31;
-   end record;
+   for STRAP_Register use
+     record
+       STRAPPING at 0 range 0 .. 15;
+       Reserved_16_31 at 0 range 16 .. 31;
+     end record;
 
    subtype IN1_DATA_NEXT_Field is ESP32S3_Registers.UInt22;
 
@@ -172,13 +196,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for IN1_Register use record
-      DATA_NEXT      at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for IN1_Register use
+     record
+       DATA_NEXT at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype STATUS1_INTERRUPT_Field is ESP32S3_Registers.UInt22;
 
@@ -189,13 +216,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for STATUS1_Register use record
-      INTERRUPT      at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for STATUS1_Register use
+     record
+       INTERRUPT at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype STATUS1_W1TS_STATUS1_W1TS_Field is ESP32S3_Registers.UInt22;
 
@@ -206,13 +236,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for STATUS1_W1TS_Register use record
-      STATUS1_W1TS   at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for STATUS1_W1TS_Register use
+     record
+       STATUS1_W1TS at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype STATUS1_W1TC_STATUS1_W1TC_Field is ESP32S3_Registers.UInt22;
 
@@ -223,13 +256,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for STATUS1_W1TC_Register use record
-      STATUS1_W1TC   at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for STATUS1_W1TC_Register use
+     record
+       STATUS1_W1TC at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype PCPU_INT1_PROCPU_INT1_Field is ESP32S3_Registers.UInt22;
 
@@ -240,13 +276,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for PCPU_INT1_Register use record
-      PROCPU_INT1    at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for PCPU_INT1_Register use
+     record
+       PROCPU_INT1 at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype PCPU_NMI_INT1_PROCPU_NMI_INT1_Field is ESP32S3_Registers.UInt22;
 
@@ -258,13 +297,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31  : ESP32S3_Registers.UInt10;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for PCPU_NMI_INT1_Register use record
-      PROCPU_NMI_INT1 at 0 range 0 .. 21;
-      Reserved_22_31  at 0 range 22 .. 31;
-   end record;
+   for PCPU_NMI_INT1_Register use
+     record
+       PROCPU_NMI_INT1 at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype CPUSDIO_INT1_SDIO_INT1_Field is ESP32S3_Registers.UInt22;
 
@@ -275,13 +317,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31 : ESP32S3_Registers.UInt10;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for CPUSDIO_INT1_Register use record
-      SDIO_INT1      at 0 range 0 .. 21;
-      Reserved_22_31 at 0 range 22 .. 31;
-   end record;
+   for CPUSDIO_INT1_Register use
+     record
+       SDIO_INT1 at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype PIN_SYNC2_BYPASS_Field is ESP32S3_Registers.UInt2;
    subtype PIN_SYNC1_BYPASS_Field is ESP32S3_Registers.UInt2;
@@ -316,20 +361,23 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_18_31 : ESP32S3_Registers.UInt14 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for PIN_Register use record
-      SYNC2_BYPASS   at 0 range 0 .. 1;
-      PAD_DRIVER     at 0 range 2 .. 2;
-      SYNC1_BYPASS   at 0 range 3 .. 4;
-      Reserved_5_6   at 0 range 5 .. 6;
-      INT_TYPE       at 0 range 7 .. 9;
-      WAKEUP_ENABLE  at 0 range 10 .. 10;
-      CONFIG         at 0 range 11 .. 12;
-      INT_ENA        at 0 range 13 .. 17;
-      Reserved_18_31 at 0 range 18 .. 31;
-   end record;
+   for PIN_Register use
+     record
+       SYNC2_BYPASS at 0 range 0 .. 1;
+       PAD_DRIVER at 0 range 2 .. 2;
+       SYNC1_BYPASS at 0 range 3 .. 4;
+       Reserved_5_6 at 0 range 5 .. 6;
+       INT_TYPE at 0 range 7 .. 9;
+       WAKEUP_ENABLE at 0 range 10 .. 10;
+       CONFIG at 0 range 11 .. 12;
+       INT_ENA at 0 range 13 .. 17;
+       Reserved_18_31 at 0 range 18 .. 31;
+     end record;
 
    --  GPIO pin configuration register
    type PIN_Registers is array (0 .. 53) of PIN_Register;
@@ -344,13 +392,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_22_31         : ESP32S3_Registers.UInt10;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for STATUS_NEXT1_Register use record
-      STATUS_INTERRUPT_NEXT1 at 0 range 0 .. 21;
-      Reserved_22_31         at 0 range 22 .. 31;
-   end record;
+   for STATUS_NEXT1_Register use
+     record
+       STATUS_INTERRUPT_NEXT1 at 0 range 0 .. 21;
+       Reserved_22_31 at 0 range 22 .. 31;
+     end record;
 
    subtype FUNC_IN_SEL_CFG_IN_SEL_Field is ESP32S3_Registers.UInt6;
 
@@ -366,19 +417,22 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_8_31 : ESP32S3_Registers.UInt24 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for FUNC_IN_SEL_CFG_Register use record
-      IN_SEL        at 0 range 0 .. 5;
-      IN_INV_SEL    at 0 range 6 .. 6;
-      SEL           at 0 range 7 .. 7;
-      Reserved_8_31 at 0 range 8 .. 31;
-   end record;
+   for FUNC_IN_SEL_CFG_Register use
+     record
+       IN_SEL at 0 range 0 .. 5;
+       IN_INV_SEL at 0 range 6 .. 6;
+       SEL at 0 range 7 .. 7;
+       Reserved_8_31 at 0 range 8 .. 31;
+     end record;
 
    --  GPIO input function configuration register
-   type FUNC_IN_SEL_CFG_Registers is array (0 .. 255)
-     of FUNC_IN_SEL_CFG_Register;
+   type FUNC_IN_SEL_CFG_Registers is
+     array (0 .. 255) of FUNC_IN_SEL_CFG_Register;
 
    subtype FUNC_OUT_SEL_CFG_OUT_SEL_Field is ESP32S3_Registers.UInt9;
 
@@ -398,20 +452,23 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_12_31 : ESP32S3_Registers.UInt20 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for FUNC_OUT_SEL_CFG_Register use record
-      OUT_SEL        at 0 range 0 .. 8;
-      INV_SEL        at 0 range 9 .. 9;
-      OEN_SEL        at 0 range 10 .. 10;
-      OEN_INV_SEL    at 0 range 11 .. 11;
-      Reserved_12_31 at 0 range 12 .. 31;
-   end record;
+   for FUNC_OUT_SEL_CFG_Register use
+     record
+       OUT_SEL at 0 range 0 .. 8;
+       INV_SEL at 0 range 9 .. 9;
+       OEN_SEL at 0 range 10 .. 10;
+       OEN_INV_SEL at 0 range 11 .. 11;
+       Reserved_12_31 at 0 range 12 .. 31;
+     end record;
 
    --  GPIO output function select register
-   type FUNC_OUT_SEL_CFG_Registers is array (0 .. 53)
-     of FUNC_OUT_SEL_CFG_Register;
+   type FUNC_OUT_SEL_CFG_Registers is
+     array (0 .. 53) of FUNC_OUT_SEL_CFG_Register;
 
    --  GPIO clock gate register
    type CLOCK_GATE_Register is record
@@ -420,13 +477,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_1_31 : ESP32S3_Registers.UInt31 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for CLOCK_GATE_Register use record
-      CLK_EN        at 0 range 0 .. 0;
-      Reserved_1_31 at 0 range 1 .. 31;
-   end record;
+   for CLOCK_GATE_Register use
+     record
+       CLK_EN at 0 range 0 .. 0;
+       Reserved_1_31 at 0 range 1 .. 31;
+     end record;
 
    subtype REG_DATE_REG_DATE_Field is ESP32S3_Registers.UInt28;
 
@@ -437,13 +497,16 @@ package ESP32S3_Registers.GPIO is
       --  unspecified
       Reserved_28_31 : ESP32S3_Registers.UInt4 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for REG_DATE_Register use record
-      REG_DATE       at 0 range 0 .. 27;
-      Reserved_28_31 at 0 range 28 .. 31;
-   end record;
+   for REG_DATE_Register use
+     record
+       REG_DATE at 0 range 0 .. 27;
+       Reserved_28_31 at 0 range 28 .. 31;
+     end record;
 
    -----------------
    -- Peripherals --
@@ -524,49 +587,50 @@ package ESP32S3_Registers.GPIO is
       --  GPIO version register
       REG_DATE         : aliased REG_DATE_Register;
    end record
-     with Volatile;
+   with Volatile;
 
-   for GPIO_Peripheral use record
-      BT_SELECT        at 16#0# range 0 .. 31;
-      OUT_k            at 16#4# range 0 .. 31;
-      OUT_W1TS         at 16#8# range 0 .. 31;
-      OUT_W1TC         at 16#C# range 0 .. 31;
-      OUT1             at 16#10# range 0 .. 31;
-      OUT1_W1TS        at 16#14# range 0 .. 31;
-      OUT1_W1TC        at 16#18# range 0 .. 31;
-      SDIO_SELECT      at 16#1C# range 0 .. 31;
-      ENABLE           at 16#20# range 0 .. 31;
-      ENABLE_W1TS      at 16#24# range 0 .. 31;
-      ENABLE_W1TC      at 16#28# range 0 .. 31;
-      ENABLE1          at 16#2C# range 0 .. 31;
-      ENABLE1_W1TS     at 16#30# range 0 .. 31;
-      ENABLE1_W1TC     at 16#34# range 0 .. 31;
-      STRAP            at 16#38# range 0 .. 31;
-      IN_k             at 16#3C# range 0 .. 31;
-      IN1              at 16#40# range 0 .. 31;
-      STATUS           at 16#44# range 0 .. 31;
-      STATUS_W1TS      at 16#48# range 0 .. 31;
-      STATUS_W1TC      at 16#4C# range 0 .. 31;
-      STATUS1          at 16#50# range 0 .. 31;
-      STATUS1_W1TS     at 16#54# range 0 .. 31;
-      STATUS1_W1TC     at 16#58# range 0 .. 31;
-      PCPU_INT         at 16#5C# range 0 .. 31;
-      PCPU_NMI_INT     at 16#60# range 0 .. 31;
-      CPUSDIO_INT      at 16#64# range 0 .. 31;
-      PCPU_INT1        at 16#68# range 0 .. 31;
-      PCPU_NMI_INT1    at 16#6C# range 0 .. 31;
-      CPUSDIO_INT1     at 16#70# range 0 .. 31;
-      PIN              at 16#74# range 0 .. 1727;
-      STATUS_NEXT      at 16#14C# range 0 .. 31;
-      STATUS_NEXT1     at 16#150# range 0 .. 31;
-      FUNC_IN_SEL_CFG  at 16#154# range 0 .. 8191;
-      FUNC_OUT_SEL_CFG at 16#554# range 0 .. 1727;
-      CLOCK_GATE       at 16#62C# range 0 .. 31;
-      REG_DATE         at 16#6FC# range 0 .. 31;
-   end record;
+   for GPIO_Peripheral use
+     record
+       BT_SELECT at 16#0# range 0 .. 31;
+       OUT_k at 16#4# range 0 .. 31;
+       OUT_W1TS at 16#8# range 0 .. 31;
+       OUT_W1TC at 16#C# range 0 .. 31;
+       OUT1 at 16#10# range 0 .. 31;
+       OUT1_W1TS at 16#14# range 0 .. 31;
+       OUT1_W1TC at 16#18# range 0 .. 31;
+       SDIO_SELECT at 16#1C# range 0 .. 31;
+       ENABLE at 16#20# range 0 .. 31;
+       ENABLE_W1TS at 16#24# range 0 .. 31;
+       ENABLE_W1TC at 16#28# range 0 .. 31;
+       ENABLE1 at 16#2C# range 0 .. 31;
+       ENABLE1_W1TS at 16#30# range 0 .. 31;
+       ENABLE1_W1TC at 16#34# range 0 .. 31;
+       STRAP at 16#38# range 0 .. 31;
+       IN_k at 16#3C# range 0 .. 31;
+       IN1 at 16#40# range 0 .. 31;
+       STATUS at 16#44# range 0 .. 31;
+       STATUS_W1TS at 16#48# range 0 .. 31;
+       STATUS_W1TC at 16#4C# range 0 .. 31;
+       STATUS1 at 16#50# range 0 .. 31;
+       STATUS1_W1TS at 16#54# range 0 .. 31;
+       STATUS1_W1TC at 16#58# range 0 .. 31;
+       PCPU_INT at 16#5C# range 0 .. 31;
+       PCPU_NMI_INT at 16#60# range 0 .. 31;
+       CPUSDIO_INT at 16#64# range 0 .. 31;
+       PCPU_INT1 at 16#68# range 0 .. 31;
+       PCPU_NMI_INT1 at 16#6C# range 0 .. 31;
+       CPUSDIO_INT1 at 16#70# range 0 .. 31;
+       PIN at 16#74# range 0 .. 1727;
+       STATUS_NEXT at 16#14C# range 0 .. 31;
+       STATUS_NEXT1 at 16#150# range 0 .. 31;
+       FUNC_IN_SEL_CFG at 16#154# range 0 .. 8191;
+       FUNC_OUT_SEL_CFG at 16#554# range 0 .. 1727;
+       CLOCK_GATE at 16#62C# range 0 .. 31;
+       REG_DATE at 16#6FC# range 0 .. 31;
+     end record;
 
    --  General Purpose Input/Output
    GPIO_Periph : aliased GPIO_Peripheral
-     with Import, Address => GPIO_Base;
+   with Import, Address => GPIO_Base;
 
 end ESP32S3_Registers.GPIO;

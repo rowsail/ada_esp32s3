@@ -46,7 +46,9 @@ package body ESP32S3.Console is
       Cycle_Count : Unsigned_32;
    begin
       Asm
-        ("rsr.ccount %0", Outputs => Unsigned_32'Asm_Output ("=a", Cycle_Count), Volatile => True);
+        ("rsr.ccount %0",
+         Outputs  => Unsigned_32'Asm_Output ("=a", Cycle_Count),
+         Volatile => True);
       return Cycle_Count;
    end CCOUNT;
 
@@ -127,17 +129,20 @@ package body ESP32S3.Console is
             if not Host_Seen then
                return S'Last - I + 1;   --  no host confirmed: drop, never wait
             elsif not Wait_Ready then
-               Host_Seen := False;      --  confirmed host went away: stop blocking
+               Host_Seen :=
+                 False;      --  confirmed host went away: stop blocking
                return S'Last - I + 1;
             end if;
          elsif Pending then
-            Host_Seen := True;      --  drained since our last write => host present
+            Host_Seen :=
+              True;      --  drained since our last write => host present
          end if;
 
          --  Endpoint is free: write up to one 64-byte packet and send it.
          Packet_Len := 0;
          while I <= S'Last and then Packet_Len < Fifo_Size loop
-            USB_DEVICE_Periph.EP1 := (RDWR_BYTE => Byte (Character'Pos (S (I))), others => <>);
+            USB_DEVICE_Periph.EP1 :=
+              (RDWR_BYTE => Byte (Character'Pos (S (I))), others => <>);
             I := I + 1;
             Packet_Len := Packet_Len + 1;
          end loop;
@@ -179,7 +184,8 @@ package body ESP32S3.Console is
       begin
          loop
             First := First - 1;
-            Digit_Str (First) := Character'Val (Character'Pos ('0') + Integer (Value mod 10));
+            Digit_Str (First) :=
+              Character'Val (Character'Pos ('0') + Integer (Value mod 10));
             Value := Value / 10;
             exit when Value = 0;
          end loop;
