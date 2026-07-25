@@ -5,14 +5,14 @@
 --                                                                          --
 --  Xtensa LX7 (ESP32-S3) port.                                            --
 --                                                                          --
---  The clock reads the shared 16 MHz SYSTIMER UNIT0 count (Read_Clock, x15    --
+--  The clock reads the shared 16 MHz SYSTIMER UNIT0 count (Read_Clock, x15  --
 --  into the 240 MHz Time unit).  The alarm is a SYSTIMER UNIT0 comparator --
---  per core (TARGET0/core 0, TARGET1/core 1) whose matrix interrupt is       --
---  routed to CPU_INT 26 (level 5) -> our level-5 vector (xt_highint5) ->      --
---  __gnat_timer_interrupt -> Interrupt_Wrapper.  The systimer keeps counting  --
---  while a core idles in waiti, so the alarm still fires when the whole       --
---  system is idle; CCOUNT/CCOMPARE2 (the old tick) halted in waiti and could  --
---  deadlock a fully-idle system, so it is no longer used.                     --
+--  per core (TARGET0/core 0, TARGET1/core 1) whose matrix interrupt is      --
+--  routed to CPU_INT 26 (level 5) -> our level-5 vector (xt_highint5) ->    --
+--  __gnat_timer_interrupt -> Interrupt_Wrapper.  The systimer keeps counting--
+--  while a core idles in waiti, so the alarm still fires when the whole     --
+--  system is idle; CCOUNT/CCOMPARE2 (the old tick) halted in waiti and could--
+--  deadlock a fully-idle system, so it is no longer used.                   --
 ------------------------------------------------------------------------------
 
 pragma Restrictions (No_Elaboration_Code);
@@ -33,7 +33,7 @@ package body System.BB.Board_Support is
    --  core 1) whose matrix interrupt is routed to CPU_INT 26 (level 5) on each
    --  core -- see native_setup_systimer_core* in bare_boot.adb.  We use the
    --  systimer (a free-running 16 MHz counter that keeps ticking while the CPU
-   --  idles in waiti) rather than CCOMPARE2, whose CCOUNT halts in waiti so its
+   --  idles in waiti) not CCOMPARE2, whose CCOUNT halts in waiti so its
    --  alarm can never fire once both cores are idle (a fully-idle system would
    --  deadlock).  CPU_INT 26 is level 5, so it still enters our own level-5
    --  vector (xt_highint5) -> __gnat_timer_interrupt, same as the old int 16.
@@ -65,9 +65,9 @@ package body System.BB.Board_Support is
      Address => System'To_Address (16#600C_003C#);
    --  SYSTEM_CPU_INTR_FROM_CPU_3_REG: poke target core 1.
 
-   --  SYSTIMER (base 0x6002_3000) UNIT0 comparators used as the tickless alarm.
+   --  SYSTIMER (base 0x6002_3000) UNIT0 comparators = the tickless alarm.
    --  Core 0 arms TARGET0, core 1 arms TARGET1; each comparator's matrix
-   --  interrupt is routed to CPU_INT 26 on its own core.  WORK_EN + INT_ENA and
+   --  interrupt routed to CPU_INT 26 on its own core.  WORK_EN + INT_ENA and
    --  the matrix routing are done once by native_setup_systimer_core* here we
    --  only load the deadline (Set_Alarm) and ack it (Clear_Alarm_Interrupt).
    Systimer_Target0_Hi   : Reg32 with Volatile, Import,
@@ -120,7 +120,7 @@ package body System.BB.Board_Support is
    procedure Native_Setup_Systimer_Core1
      with Import, Convention => C,
           External_Name => "native_setup_systimer_core1";
-   --  Per-core: route the SYSTIMER TARGETx interrupt to CPU_INT 26, enable that
+   --  Per-core: route the SYSTIMER TARGETx int to CPU_INT 26, enable that
    --  comparator + its interrupt, and unmask the CPU int (core 0 -> TARGET0,
    --  core 1 -> TARGET1).  Defined in bare_boot.adb (typed SVD access).
 
@@ -209,8 +209,8 @@ package body System.BB.Board_Support is
          System.BB.CPU_Primitives.Multiprocessors.Poke_Handler;
       end if;
 
-      --  Timer alarm (SYSTIMER TARGETx / CPU_INT 26): the attached Alarm_Handler
-      --  calls Clear_Alarm_Interrupt (write-1-clear) then re-arms via Set_Alarm.
+      --  Timer alarm (SYSTIMER TARGETx / CPU_INT 26): the Alarm_Handler
+      --  calls Clear_Alarm_Interrupt (W1C) then re-arms via Set_Alarm.
       if (Pending and Alarm_Interrupt_Bit) /= 0 then
          System.BB.Interrupts.Interrupt_Wrapper (Alarm_Interrupt_ID);
       end if;
@@ -368,12 +368,12 @@ package body System.BB.Board_Support is
 
       procedure Set_Alarm (Ticks : Timer_Interval) is
          Core     : constant Integer :=
-           Integer (Multiprocessors.Current_CPU) - 1;   --  0 = core0, 1 = core1
+           Integer (Multiprocessors.Current_CPU) - 1;   --  0=core0, 1=core1
          Now      : constant Unsigned_64 := Native_Systimer_Count;
          --  Ticks is in 240 MHz Time-units (Read_Clock = systimer count x15);
          --  convert back to raw 16 MHz systimer ticks.  Floor at 1 so a 0/tiny
-         --  interval still lands strictly ahead of "now".  Unlike CCOMPARE2 the
-         --  systimer comparator fires on count >= target, so a deadline that is
+         --  interval still lands strictly ahead of "now".  Unlike CCOMPARE2,
+         --  systimer fires on count >= target, so a deadline that is
          --  already in the past fires immediately -- no widening-margin dance
          --  and no lost-alarm CXD8002 desync.
          St_Delta : constant Unsigned_64 :=
