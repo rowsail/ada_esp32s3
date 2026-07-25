@@ -42,6 +42,13 @@ package body System.BB.Board_Support is
    Poke_Interrupt_Bit   : constant Unsigned_32 := 2 ** 31;  --  CPU_INT 31 (L5)
    Device_Interrupt_Id  : constant := 23;                   --  CPU_INT 23 (L3)
    Device_Interrupt_Bit : constant Unsigned_32 := 2 ** Device_Interrupt_Id;
+   --  Second level-3 device slot (CPU_INT 27 = Device_L3_1), for a hard-real-
+   --  time source that must PREEMPT the level-2 devices -- the LCD RGB bounce
+   --  refill, which the TWAI ISR (also L2) was serialising with and starving
+   --  past its ~1 ms deadline.  Priority_Of_Interrupt already maps 27 -> L3
+   --  and attach already enables it; this vector just has to dispatch it.
+   Device_L3_1_Id  : constant := 27;                        --  CPU_INT 27 (L3)
+   Device_L3_1_Bit : constant Unsigned_32 := 2 ** Device_L3_1_Id;
 
    --  Level-2 device interrupt slots (CPU_INT 19/20/21 = Device_L2_0/1/2).
    L2_0_Id  : constant System.BB.Interrupts.Interrupt_ID := 19;
@@ -252,6 +259,10 @@ package body System.BB.Board_Support is
          --  handler runs at level-3 priority, so int 23 stays masked until it
          --  returns -- no storm despite the still-asserted source.
          System.BB.Interrupts.Interrupt_Wrapper (Device_Interrupt_Id);
+      end if;
+      if (Pending and Device_L3_1_Bit) /= 0 then
+         --  Second L3 device source (CPU_INT 27); same shape as int 23.
+         System.BB.Interrupts.Interrupt_Wrapper (Device_L3_1_Id);
       end if;
 
       if System.BB.Threads.Queues.Context_Switch_Needed then

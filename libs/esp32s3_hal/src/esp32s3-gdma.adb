@@ -271,11 +271,13 @@ package body ESP32S3.GDMA is
    --  absorbs tiny transfers without paying the interrupt + context-switch cost.
    --------------------------------------------------------------------------
 
-   --  NOT Device_L2_0 (19): the UART's buffered-RX ISR attaches there, and it is
-   --  the more timing-sensitive of the two (a modem's bytes arrive asynchronously,
-   --  where a DMA EOF is awaited).  Two Attach_Handlers on one Interrupt_ID raise
-   --  Program_Error at elaboration, so they must not collide.
-   GDMA_CPU_Int : constant := 20;   --  Device_L2_1
+   --  Device_L3_1 (CPU_INT 27, level 3), NOT a level-2 device slot: the LCD RGB
+   --  bounce refill runs from this completion ISR and has a hard ~1 ms deadline,
+   --  so it MUST preempt the level-2 device interrupts -- above all the TWAI (CAN)
+   --  ISR, which at L2 serialised with the refill and starved it past its deadline.
+   --  L3 sits above every device interrupt bar GPIO's own L3 slot (CPU_INT 23), a
+   --  different Interrupt_ID, so no Attach_Handler collision.
+   GDMA_CPU_Int : constant := 27;   --  Device_L3_1
 
    --  One completion signal per channel and direction.  A channel is owned by
    --  one task at a time, so at most one task ever waits on each.
@@ -297,12 +299,12 @@ package body ESP32S3.GDMA is
    Spin_Limit : constant := 200;
 
    protected Completion
-     with Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority
+     with Interrupt_Priority => Ada.Interrupts.Names.Device_L3_Priority
    is
-      procedure Route;     --  one-time: map every DMA channel int to CPU_INT 20
+      procedure Route;     --  one-time: map every DMA channel int to CPU_INT 27
    private
       procedure Handler
-      with Attach_Handler => Ada.Interrupts.Names.Device_L2_1;
+      with Attach_Handler => Ada.Interrupts.Names.Device_L3_1;
       Routed : Boolean := False;
    end Completion;
 

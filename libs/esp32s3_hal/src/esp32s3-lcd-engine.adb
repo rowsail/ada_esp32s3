@@ -304,7 +304,7 @@ package body ESP32S3.LCD.Engine is
    RGB_Mode : RGB_Mode_Kind := Mode_Off with Volatile;
 
    --  Direct-mode state (see Start_RGB_Direct far below).
-   DB_Relock_CPU_Int : constant := 21;   --  Device_L2_2 (GDMA owns 20)
+   DB_Relock_CPU_Int : constant := 23;   --  Device_L3_0 (L3, above the L2 TWAI)
    DB_Front  : System.Address := System.Null_Address with Volatile;
    DB_Back   : System.Address := System.Null_Address with Volatile;
    DB_Locked : Boolean := False with Volatile;    --  direct startup phase pinned?
@@ -355,12 +355,12 @@ package body ESP32S3.LCD.Engine is
    --------------------------------------------------------------------------
 
    protected Vsync
-     with Interrupt_Priority => Ada.Interrupts.Names.Device_L2_Priority
+     with Interrupt_Priority => Ada.Interrupts.Names.Device_L3_Priority
    is
-      procedure Route;   --  map LCD_CAM int -> CPU_INT 21, enable the VSYNC cause
+      procedure Route;   --  map LCD_CAM int -> CPU_INT 23, enable the VSYNC cause
    private
       procedure Handler
-      with Attach_Handler => Ada.Interrupts.Names.Device_L2_2;
+      with Attach_Handler => Ada.Interrupts.Names.Device_L3_0;
    end Vsync;
 
    protected body Vsync is
