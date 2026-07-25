@@ -101,13 +101,33 @@ package body System.BB.Board_Support is
    --  context_switch.S __gnat_preempt_dispatch).  A switch requested inside a
    --  native interrupt is deferred (Context_Switch sets Switch_Pending); the
    --  vector epilogue dispatches it with no second window spill.
+   --
+   --  NESTING-COUNTER INVARIANT (the L3-over-L2 window-corruption fix).  These
+   --  dispatch bodies only INCREMENT In_Native_Int (on entry); the matching
+   --  DECREMENT lives in the vector epilogue (highint5.S), done under a full
+   --  interrupt mask ATOMICALLY WITH the outermost-switch decision.  The
+   --  counter must stay >= 1 the whole time a native vector is executing --
+   --  including its epilogue, up to the rfi / preempt_dispatch.  If a dispatch
+   --  body decremented it to 0 before returning (as it used to), a higher-
+   --  priority native interrupt firing in the tiny window before the vector
+   --  finished its epilogue would see In_Native_Int = 0, believe itself the
+   --  OUTERMOST interrupt, consume the deferred Switch_Pending, and
+   --  __gnat_preempt_dispatch a context switch OUT OF the lower vector's half-
+   --  unwound single-window frame -- double-saving it and corrupting the
+   --  interruptee's register-window state (task later wedges in
+   --  _WindowUnderflow8; WINDOWSTART inconsistent).  Rare under the L5 tick
+   --  alone (the old intermittent CXD8002 crash), but a high-frequency L3
+   --  device interrupt (e.g. an RGB-LCD bounce refill) preempting L2 (TWAI)
+   --  hammers it.  Entry increments that CAN be preempted by a higher native
+   --  level (L2, L3) are masked; the L5 tick (top of the nest) needs no mask.
 
    type Core_Word_Array is array (0 .. 1) of Unsigned_32;
    pragma Volatile_Components (Core_Word_Array);
 
    In_Native_Int : Core_Word_Array := (0, 0);
    pragma Export (Asm, In_Native_Int, "__gnat_in_native_int");
-   --  Per-core native-interrupt nesting depth.
+   --  Per-core native-interrupt nesting depth.  Incremented here, decremented
+   --  in the masked vector epilogue (see the invariant above).
 
    Switch_Pending : Core_Word_Array := (0, 0);
    pragma Export (Asm, Switch_Pending, "__gnat_switch_pending");
@@ -233,7 +253,9 @@ package body System.BB.Board_Support is
          System.BB.CPU_Primitives.Context_Switch;
       end if;
 
-      In_Native_Int (Core) := In_Native_Int (Core) - 1;
+      --  NB no decrement here: the level-5 vector epilogue (highint5.S) does
+      --  it, masked, atomically with the outermost-switch decision (see the
+      --  In_Native_Int invariant above).
    end Timer_Interrupt;
 
    ---------------------
@@ -242,12 +264,19 @@ package body System.BB.Board_Support is
 
    procedure Level3_Dispatch is
       Pending : Unsigned_32;
+      Saved   : Unsigned_32;
       Core    : constant Integer := Integer (Multiprocessors.Current_CPU) - 1;
    begin
-      --  Same deferral as Timer_Interrupt.  NOTE: runs at INTLEVEL 3 so a
-      --  level-5 tick can preempt it; the non-atomic +1/-1 is safe only while
-      --  level 5 is the sole other native level (current coexistence config).
+      --  Enter the native interrupt.  Mask across the counter bump (like
+      --  Level2_Dispatch): L3 runs at INTLEVEL 3 so the L5 tick can preempt
+      --  it, and on an OUTERMOST L3 a tick landing mid-bump would see
+      --  In_Native_Int transiently 0 and wrongly context-switch out of this
+      --  dispatch (see the In_Native_Int invariant above).
+      Asm ("rsil %0, 15",
+           Outputs => Unsigned_32'Asm_Output ("=r", Saved), Volatile => True);
       In_Native_Int (Core) := In_Native_Int (Core) + 1;
+      Asm ("wsr.ps %0" & ASCII.LF & ASCII.HT & "rsync",
+           Inputs => Unsigned_32'Asm_Input ("r", Saved), Volatile => True);
 
       Asm ("rsr.interrupt %0",
            Outputs  => Unsigned_32'Asm_Output ("=r", Pending),
@@ -269,7 +298,9 @@ package body System.BB.Board_Support is
          System.BB.CPU_Primitives.Context_Switch;
       end if;
 
-      In_Native_Int (Core) := In_Native_Int (Core) - 1;
+      --  NB no decrement here: the level-3 vector epilogue (highint5.S) does
+      --  it, masked, atomically with the outermost-switch decision (see the
+      --  In_Native_Int invariant above).
    end Level3_Dispatch;
 
    ---------------------
@@ -281,10 +312,10 @@ package body System.BB.Board_Support is
       Saved   : Unsigned_32;
       Core    : constant Integer := Integer (Multiprocessors.Current_CPU) - 1;
    begin
-      --  Enter the native interrupt.  Unlike L3/L5, level 2 can be preempted
-      --  by a higher native level (L3 or the L5 tick) *during* this counter
-      --  bump; that could leave In_Native_Int transiently 0 and let the higher
-      --  level context-switch out of this still-active dispatch.  So mask all
+      --  Enter the native interrupt.  Level 2 can be preempted by a higher
+      --  native level (L3 or the L5 tick) *during* this counter bump; that
+      --  could leave In_Native_Int transiently 0 and let the higher level
+      --  context-switch out of this still-active dispatch.  So mask all
       --  interrupts across the bump (rsil 15) to make it atomic.
       Asm ("rsil %0, 15",
            Outputs => Unsigned_32'Asm_Output ("=r", Saved), Volatile => True);
@@ -310,11 +341,9 @@ package body System.BB.Board_Support is
          System.BB.CPU_Primitives.Context_Switch;
       end if;
 
-      Asm ("rsil %0, 15",
-           Outputs => Unsigned_32'Asm_Output ("=r", Saved), Volatile => True);
-      In_Native_Int (Core) := In_Native_Int (Core) - 1;
-      Asm ("wsr.ps %0" & ASCII.LF & ASCII.HT & "rsync",
-           Inputs => Unsigned_32'Asm_Input ("r", Saved), Volatile => True);
+      --  NB no decrement here: the level-2 vector epilogue (highint5.S) does
+      --  it, masked, atomically with the outermost-switch decision (see the
+      --  In_Native_Int invariant above).
    end Level2_Dispatch;
 
    ----------------------

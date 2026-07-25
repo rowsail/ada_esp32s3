@@ -103,10 +103,21 @@ xt_highint5:
 	   and this is the outermost native interrupt (In_Native_Int == 0), tail-jump
 	   to __gnat_preempt_dispatch from this clean single-window context (a1 = sp =
 	   our XT_STK frame; no return).  Else resume the interruptee normally. */
+	/* Mask before touching In_Native_Int: the decrement (moved here from
+	   __gnat_timer_interrupt) and the outermost-switch decision below MUST be
+	   atomic against a higher native level.  The count stays >= 1 through the
+	   whole dispatch body and drops only inside this masked window, so a
+	   higher-priority interrupt firing during a lower vector's epilogue can never
+	   see 0, mistake itself for the outermost, and preempt_dispatch out of that
+	   vector's half-unwound frame (the L3-over-L2 window-corruption bug; see
+	   s-bbbosu In_Native_Int invariant).  a2 = old PS (discarded; rfi restores). */
+	rsil	a2, 15
 	getcoreid a2
 	movi	a3, __gnat_in_native_int
 	addx4	a3, a2, a3
 	l32i	a4, a3, 0
+	addi	a4, a4, -1
+	s32i	a4, a3, 0
 	bnez	a4, .Lhi5_resume
 	movi	a3, __gnat_switch_pending
 	addx4	a3, a2, a3
@@ -204,10 +215,16 @@ __gnat_level3_vector:
 	call4	__gnat_level3_dispatch	/* Interrupt_Wrapper + context switch */
 
 	/* Same deferred-dispatch epilogue as xt_highint5 (Option A). */
+	/* Mask + decrement here (moved from __gnat_level3_dispatch), atomic with the
+	   outermost-switch decision -- see the .Lhi5 epilogue for the full rationale.
+	   a2 = old PS (discarded; rfi restores). */
+	rsil	a2, 15
 	getcoreid a2
 	movi	a3, __gnat_in_native_int
 	addx4	a3, a2, a3
 	l32i	a4, a3, 0
+	addi	a4, a4, -1
+	s32i	a4, a3, 0
 	bnez	a4, .Llv3_resume
 	movi	a3, __gnat_switch_pending
 	addx4	a3, a2, a3
@@ -277,10 +294,18 @@ __gnat_level2_vector:
 	call4	__gnat_level2_dispatch	/* Interrupt_Wrapper + context switch */
 
 	/* Same deferred-dispatch epilogue as __gnat_level3_vector. */
+	/* Mask + decrement here (moved from __gnat_level2_dispatch), atomic with the
+	   outermost-switch decision -- see the .Lhi5 epilogue for the full rationale.
+	   This is THE fix for the L3-refill-preempts-L2-TWAI freeze: L2 is the level
+	   most often preempted by a higher device interrupt during its epilogue.
+	   a2 = old PS (discarded; rfi restores). */
+	rsil	a2, 15
 	getcoreid a2
 	movi	a3, __gnat_in_native_int
 	addx4	a3, a2, a3
 	l32i	a4, a3, 0
+	addi	a4, a4, -1
+	s32i	a4, a3, 0
 	bnez	a4, .Llv2_resume
 	movi	a3, __gnat_switch_pending
 	addx4	a3, a2, a3
