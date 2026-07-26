@@ -28,18 +28,20 @@ package body System.BB.Board_Support is
 
    use System.Multiprocessors;
 
-   Alarm_Interrupt_ID : constant System.BB.Interrupts.Interrupt_ID := 26;
+   Alarm_Interrupt_ID : constant System.BB.Interrupts.Interrupt_ID := 21;
    --  The alarm is a SYSTIMER UNIT0 comparator (TARGET0 on core 0, TARGET1 on
-   --  core 1) whose matrix interrupt is routed to CPU_INT 26 (level 5) on each
-   --  core -- see native_setup_systimer_core* in bare_boot.adb.  We use the
-   --  systimer (a free-running 16 MHz counter that keeps ticking while the CPU
-   --  idles in waiti) not CCOMPARE2, whose CCOUNT halts in waiti so its
-   --  alarm can never fire once both cores are idle (a fully-idle system would
-   --  deadlock).  CPU_INT 26 is level 5, so it still enters our own level-5
-   --  vector (xt_highint5) -> __gnat_timer_interrupt, same as the old int 16.
+   --  core 1) whose matrix interrupt is routed to CPU_INT 21 (Device_L2_2,
+   --  LEVEL 2) on each core -- see native_setup_systimer_core* in bare_boot.
+   --  It was CPU_INT 26 (level 5), but a level-5 tick can preempt an L2/L3
+   --  window spill and corrupt WINDOWSTART; per the FreeRTOS model the tick
+   --  must be <= EXCM_LEVEL (3) so the spill mask covers it.  At L2 it is
+   --  dispatched by the ordinary Level2_Dispatch (the L2_2 slot already calls
+   --  its handler), so no bespoke tick vector is needed -- xt_highint5 is now
+   --  unused.  We use the systimer (a free-running 16 MHz counter that keeps
+   --  ticking in waiti), so the alarm still fires when the system is idle.
 
-   Alarm_Interrupt_Bit  : constant Unsigned_32 := 2 ** 26;  --  SYSTIMER/int26
-   Poke_Interrupt_Bit   : constant Unsigned_32 := 2 ** 31;  --  CPU_INT 31 (L5)
+   Alarm_Interrupt_Bit  : constant Unsigned_32 := 2 ** 21;  --  SYSTIMER->int21
+   Poke_Interrupt_Bit   : constant Unsigned_32 := 2 ** 29;  --  CPU_INT 29 (L3)
    Device_Interrupt_Id  : constant := 23;                   --  CPU_INT 23 (L3)
    Device_Interrupt_Bit : constant Unsigned_32 := 2 ** Device_Interrupt_Id;
    --  Second level-3 device slot (CPU_INT 27 = Device_L3_1), for a hard-real-
@@ -334,6 +336,15 @@ package body System.BB.Board_Support is
          System.BB.Interrupts.Interrupt_Wrapper (L2_1_Id);
       end if;
       if (Pending and L2_2_Bit) /= 0 then
+         --  Shared tick + cross-core poke slot (CPU_INT 21).  Both the
+         --  SYSTIMER alarm and the FROM_CPU poke route here.  Handle poke only
+         --  its FROM_CPU source is actually asserted (else it is an alarm-only
+         --  tick), then run the alarm handler -- which re-checks the clock, so
+         --  it is safe to call even if only the poke fired.
+         if (if Core = 0 then From_CPU_2 else From_CPU_3) /= 0 then
+            Clear_Poke;
+            System.BB.CPU_Primitives.Multiprocessors.Poke_Handler;
+         end if;
          System.BB.Interrupts.Interrupt_Wrapper (L2_2_Id);
       end if;
 
@@ -465,8 +476,10 @@ package body System.BB.Board_Support is
         (Handler : System.BB.Interrupts.Interrupt_Handler)
       is
       begin
+         --  Alarm is now CPU_INT 21 (level 2), so its priority is the level-2
+         --  priority ('Last - 3), not 'Last (L5) as when it was CPU_INT 26.
          System.BB.Interrupts.Attach_Handler
-           (Handler, Alarm_Interrupt_ID, Interrupt_Priority'Last);
+           (Handler, Alarm_Interrupt_ID, Interrupt_Priority'Last - 3);
          Native_Setup_Systimer_Core0;   --  route/enable core 0's TARGET0 alarm
       end Install_Alarm_Handler;
 

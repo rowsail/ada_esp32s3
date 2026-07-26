@@ -7,9 +7,21 @@ with ESP32S3_Registers.SYSTIMER;        use ESP32S3_Registers.SYSTIMER;
 
 package body Bare_Boot is
 
-   --  The CPU interrupt the cross-core IPI poke is routed to.
-   POKE_CPU_INT  : constant := 31;
-   ALARM_CPU_INT : constant := 26;   --  SYSTIMER alarm -> level-5 CPU int
+   --  The CPU interrupts the tick + cross-core poke are routed to.  BOTH are now
+   --  at level <= XCHAL_EXCM_LEVEL (3), matching the FreeRTOS model: every
+   --  interrupt that does a full context-save / can trigger a context switch
+   --  must be <= EXCM_LEVEL so the EXCM-level spill mask makes all their window
+   --  spills mutually exclusive.  Our tick used to be level 5 (> EXCM_LEVEL), so
+   --  it could preempt an L2/L3 window spill mid-rotation and corrupt WINDOWSTART
+   --  (a task then wedged in _WindowUnderflow8 under LCD-refill + TWAI load).
+   --  BOTH share CPU_INT 21 (Device_L2_2, level 2, dispatched by Level2_Dispatch)
+   --  -- the only free matrix-drivable slot at level <= 3.  The interrupt matrix
+   --  ORs both sources onto int 21; Level2_Dispatch checks the FROM_CPU register
+   --  to tell a poke from an alarm.  (CPU_INT 29 does NOT work here: it is an
+   --  internal Xtensa software interrupt that the peripheral matrix cannot
+   --  drive, so FROM_CPU -> 29 never fires and cross-core wakeups are lost.)
+   POKE_CPU_INT  : constant := 21;   --  cross-core poke -> level-2 CPU int
+   ALARM_CPU_INT : constant := 21;   --  SYSTIMER alarm -> same level-2 CPU int
 
    --  Vendored Xtensa asm: enable a set of interrupts (was the esp_cpu.h inline).
    procedure Xt_Ints_On (Mask : Unsigned_32)

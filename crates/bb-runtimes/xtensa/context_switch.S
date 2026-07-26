@@ -52,7 +52,20 @@
 __gnat_context_switch:
 	entry	a1, 32
 
-	/* SPILL_ALL_WINDOWS (hardcoded 64-areg form). a0-a3 survive. */
+	/* Mask ALL interrupts (INTLEVEL 15) across the cooperative SPILL_ALL_WINDOWS
+	   below, capturing the running thread's PS in a5 (saved as CTX_PS).  The
+	   kernel calls this from a critical section at INTLEVEL < 5, so WITHOUT the
+	   mask the level-5 systimer tick could preempt the spill mid-rotation, run
+	   its own _xt_context_save / SPILL_ALL_WINDOWS on the transient WINDOWBASE/
+	   WINDOWSTART, and corrupt the window state -- a task then wedges forever in
+	   _WindowUnderflow8 / _xt_alloca_exc (the L3-refill-over-L2-TWAI freeze, via
+	   the cooperative-switch spill; the same class the interrupt-entry spill in
+	   _xt_context_save now also masks).  a5 survives the full-circle rotation
+	   (like a0-a3).  INTLEVEL stays 15 through .Lresume until the next thread's
+	   PS is restored. */
+	rsil	a5, 15
+
+	/* SPILL_ALL_WINDOWS (hardcoded 64-areg form). a0-a3 (and a5) survive. */
 	and	a12, a12, a12
 	rotw	3
 	and	a12, a12, a12
@@ -67,8 +80,7 @@ __gnat_context_switch:
 	l32i	a4, a2, 0		/* a4 = running context buffer */
 	s32i	a1, a4, CTX_SP
 	s32i	a0, a4, CTX_A0
-	rsr.ps	a5
-	s32i	a5, a4, CTX_PS
+	s32i	a5, a4, CTX_PS		/* a5 = the thread PS captured by rsil above */
 	rsr.sar	a5
 	s32i	a5, a4, CTX_SAR
 	rsr	a5, LBEG

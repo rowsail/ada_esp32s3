@@ -189,12 +189,23 @@ _xt_context_save:
      * onto the stack, instead of the real value.
      */
     rsr     a2, PS                     /* to be restored after SPILL_ALL_WINDOWS */
-    movi    a0, PS_INTLEVEL_MASK
-    and     a3, a2, a0                 /* get the current INTLEVEL */
-    bgeui   a3, XCHAL_EXCM_LEVEL, 1f   /* calculate max(INTLEVEL, XCHAL_EXCM_LEVEL) */
-    movi    a3, XCHAL_EXCM_LEVEL
-1:
-    movi    a0, PS_UM | PS_WOE         /* clear EXCM, enable window overflow, set new INTLEVEL */
+    /* LOCAL FIX (pure-Ada GNARL port -- NOT stock ESP-IDF).  Mask ALL interrupts
+     * (INTLEVEL 15) across SPILL_ALL_WINDOWS, not just up to XCHAL_EXCM_LEVEL (3).
+     * Stock IDF raises only to EXCM_LEVEL because every interrupt that runs
+     * _xt_context_save is <= level 3 there, so the FreeRTOS tick can never preempt
+     * a spill.  OUR systimer tick is a LEVEL-5 interrupt (xt_highint5) that ALSO
+     * does a full _xt_context_save / SPILL_ALL_WINDOWS; at INTLEVEL 3 it could
+     * preempt an L2/L3 spill mid-rotation -- when WINDOWBASE/WINDOWSTART are in a
+     * transient half-spilled state -- and spill AGAIN on that inconsistent state,
+     * corrupting WINDOWSTART so a task later wedges forever in _WindowUnderflow8
+     * (the L3-refill-over-L2-TWAI freeze; the xt_highint5 window-vector defer does
+     * NOT cover the tick landing in this spill-macro code).  Masking to 15 makes
+     * the spill atomic vs the tick.  EXCM stays clear and WOE set, and window
+     * overflow exceptions are not maskable by INTLEVEL, so the spill still works;
+     * the tick is delayed only by the ~1 us spill.  a2 (saved above) keeps the
+     * entry INTLEVEL, restored after the spill. */
+    movi    a3, PS_INTLEVEL_MASK       /* INTLEVEL = 15: mask all, incl the L5 tick */
+    movi    a0, PS_UM | PS_WOE         /* clear EXCM, enable window overflow */
     or      a3, a3, a0
     wsr     a3, ps
     rsr     a0, EPC1                   /* to be restored after SPILL_ALL_WINDOWS */
