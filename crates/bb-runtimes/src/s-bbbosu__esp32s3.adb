@@ -99,6 +99,19 @@ package body System.BB.Board_Support is
      Address => System'To_Address (16#6002_306C#);
    --  INT_CLR: TARGET0 = bit 0, TARGET1 = bit 1 (write-1-to-clear).
 
+   Systimer_Conf         : Reg32 with Volatile, Import,
+     Address => System'To_Address (16#6002_3000#);
+   Target0_Work_En       : constant Reg32 := 2 ** 24;
+   Target1_Work_En       : constant Reg32 := 2 ** 25;
+   --  CONF: per-comparator WORK_EN bits.  The alarm-miss compensation (the
+   --  hardware fires immediately when the loaded target is already in the
+   --  past, SOC_SYSTIMER_ALARM_MISS_COMPENSATE) is evaluated when WORK_EN is
+   --  raised -- so arming MUST toggle it around the load, as esp-idf's
+   --  systimer_hal does.  NB the two cores each RMW their own bit of this
+   --  shared register; both do so only inside their own kernel sections, and
+   --  the arming is per-core rare, so the cross-core RMW window is accepted
+   --  for now (a shared spin lock would close it).
+
    --  Preemptive context-switch deferral (Option A; see s-bbcppr +
    --  context_switch.S __gnat_preempt_dispatch).  A switch requested inside a
    --  native interrupt is deferred (Context_Switch sets Switch_Pending); the
@@ -423,10 +436,14 @@ package body System.BB.Board_Support is
          Now      : constant Unsigned_64 := Native_Systimer_Count;
          --  Ticks is in 240 MHz Time-units (Read_Clock = systimer count x15);
          --  convert back to raw 16 MHz systimer ticks.  Floor at 1 so a 0/tiny
-         --  interval still lands strictly ahead of "now".  Unlike CCOMPARE2,
-         --  systimer fires on count >= target, so a deadline that is
-         --  already in the past fires immediately -- no widening-margin dance
-         --  and no lost-alarm CXD8002 desync.
+         --  interval still lands ahead of "now" AT COMPUTATION TIME.  The
+         --  count can still overtake the target during the multi-register
+         --  arming sequence below -- and a comparator loaded with a target
+         --  already in the past NEVER fires unless the hardware alarm-miss
+         --  compensation gets to evaluate it, which happens on the WORK_EN
+         --  rising edge (hence the toggle below).  A missed arm here killed
+         --  every "delay until" in the system, permanently, the first time
+         --  the timing-event pattern produced a near-zero re-arm delta.
          St_Delta : constant Unsigned_64 :=
            Unsigned_64'Max (1, Unsigned_64 (Ticks) / 15);
          Deadline : constant Unsigned_64 := Now + St_Delta;
@@ -434,20 +451,25 @@ package body System.BB.Board_Support is
            Reg32 (Shift_Right (Deadline, 32) and 16#F_FFFF#);
          Lo       : constant Reg32 := Reg32 (Deadline and 16#FFFF_FFFF#);
       begin
-         --  Arm this core's UNIT0 comparator (one-shot).  COMPx_LOAD latches
-         --  HI/LO/CONF atomically into the live comparator; CONF = 0 selects
-         --  UNIT0 + one-shot (period_mode off).  Runs under Enter_Kernel, so
-         --  the store sequence is not preempted by our own alarm interrupt.
+         --  Arm this core's UNIT0 comparator (one-shot), esp-idf's sequence:
+         --  WORK_EN off -> target -> CONF (0 = UNIT0, one-shot) -> LOAD ->
+         --  WORK_EN on.  The final enable is what lets the hardware fire
+         --  immediately when the target is already behind the count.  Runs
+         --  under Enter_Kernel, so the sequence is not preempted locally.
          if Core = 0 then
+            Systimer_Conf := Systimer_Conf and not Target0_Work_En;
             Systimer_Target0_Hi := Hi;
             Systimer_Target0_Lo := Lo;
             Systimer_Target0_Conf := 0;
             Systimer_Comp0_Load := 1;
+            Systimer_Conf := Systimer_Conf or Target0_Work_En;
          else
+            Systimer_Conf := Systimer_Conf and not Target1_Work_En;
             Systimer_Target1_Hi := Hi;
             Systimer_Target1_Lo := Lo;
             Systimer_Target1_Conf := 0;
             Systimer_Comp1_Load := 1;
+            Systimer_Conf := Systimer_Conf or Target1_Work_En;
          end if;
       end Set_Alarm;
 
