@@ -3,7 +3,7 @@
 
 The context switch in the previous chapter does not run by magic; something
 has to \emph{call} the scheduler. On this port that something is almost always an
-interrupt: the level-5 timer tick, or a device interrupt whose handler makes a
+interrupt: the systimer tick, or a device interrupt whose handler makes a
 higher-priority task ready. This chapter follows an interrupt from the silicon
 vector all the way to an Ada handler, and explains how \texttt{pragma
 Attach\_Handler} is supported across all three profiles, including the
@@ -21,26 +21,33 @@ one, and two of those levels are special:
 \endhead
 1     & The general \emph{exception} vector (synchronous faults). No async
         interrupt is assigned here. \\
-2--3  & Device interrupts (\texttt{\_\_gnat\_level2\_vector} /
-        \texttt{\_\_gnat\_level3\_vector}). \\
-4     & \emph{Unused}: there is no level-4 vector; \texttt{EXCSAVE\_4} is
-        borrowed as a scratch register by the level-5 vector. \\
-5     & \textbf{Kernel-reserved}: the CCOMPARE2 timer tick (interrupt 16) and the
-        cross-core IPI ``poke'' (interrupt 31). \\
+2--3  & \textbf{The OS band} (\texttt{\_\_gnat\_level2\_vector} /
+        \texttt{\_\_gnat\_level3\_vector}): every interrupt that talks to
+        the scheduler. The device interrupts live here, and so do the systimer
+        tick and the cross-core IPI ``poke'' (both share CPU interrupt 21, at
+        level 2). \\
+4--5  & \emph{Free for OS-oblivious handlers}: lean assembly that never
+        touches the scheduler. Nothing is installed today; the old level-5
+        vector (\texttt{xt\_highint5}) survives only as a park stub. \\
 6     & \texttt{DEBUGLEVEL} (debug exceptions: breakpoints and the
         \texttt{DBREAK} data watchpoints, used for stack-overflow detection). \\
 7     & \texttt{NMILEVEL} (non-maskable; not used). \\
 \bottomrule
 \end{longtable}
 
-Two architectural constants shape everything below. \texttt{XCHAL\_EXCM\_LEVEL}
-is 3, so \texttt{PS.EXCM} masks only levels 1--3; levels 4--6 are ``high-level''
-interrupts with their own dedicated vectors and their own \texttt{EPC$n$/EPS$n$}
-save registers, and they keep firing even while a low-level exception is being
-taken. And the kernel owns level 5 exclusively: no application interrupt
-priority may mask it, or it would silence the scheduler's own tick (this is why
-the Ada interrupt-priority ceilings are capped one below it; see the context-switch
-and CXD1006 discussions).
+One architectural constant shapes everything below.
+\texttt{XCHAL\_EXCM\_LEVEL} is 3, and it draws the line the whole design obeys:
+\emph{every interrupt that saves context or can trigger a task switch sits at
+or below it}. \texttt{PS.EXCM} -- which the hardware sets during every window
+over/underflow exception -- masks exactly levels 1--3. So does the raised
+\texttt{INTLEVEL} across every register-window spill. Keep all the
+scheduler-facing interrupts inside that band and no interrupt can ever observe
+a half-spilled register window. This is the FreeRTOS Xtensa port's rule, and
+this port adopted it deliberately (verified against the esp-idf source). The
+original design ran the tick at level 5, above the line -- and a level-5 tick
+can land in the middle of window-critical code and corrupt the register state.
+Levels above \texttt{EXCM\_LEVEL} remain available, but only for handlers
+that never touch the scheduler.
 
 \section{Priorities and the masking model}\index{interrupt priorities}\index{interrupt masking}
 
@@ -50,57 +57,71 @@ fixed level becomes the Ada priority its handler runs at, and conversely a task'
 ceiling becomes the \texttt{INTLEVEL} it raises while it holds a lock
 (\texttt{Enable\_Interrupts} in \texttt{s-bbcppr}). \texttt{Ada.Interrupts.Names}
 gives symbolic IDs for the slots that are free for application use:
-\texttt{Device\_L2\_0..2} (CPU interrupts 19/20/21), \texttt{Device\_L3\_0/1}
-(23/27), with ceilings \texttt{Device\_L2\_Priority} / \texttt{Device\_L3\_Priority}.
-The tick (16) and poke (31) are listed as kernel-reserved: do not attach to
-them.
+\texttt{Device\_L2\_0/1} (CPU interrupts 19/20) and \texttt{Device\_L3\_0/1}
+(23/27), with ceilings \texttt{Device\_L2\_Priority} /
+\texttt{Device\_L3\_Priority}. CPU interrupt 21 (\texttt{Device\_L2\_2}) is
+kernel-reserved: the systimer tick and the cross-core poke share it, and the
+kernel attaches its alarm handler there at start-up. Do not attach to it.
 
 \section{From silicon to handler}\index{interrupt vector}\index{interrupt wrapper}
 
 \texttt{start.S} points \texttt{VECBASE} at our vendored vector table before
-anything else runs, so every vector is ours. When a level-5 interrupt fires
-(say the tick), this is the path:
+anything else runs, so every vector is ours. The level-2 and level-3 vectors
+are two instantiations of one assembly macro (\texttt{gnat\_os\_vector} in
+\texttt{highint5.S}), and they mirror the FreeRTOS Xtensa port's
+\texttt{\_frxt\_int\_enter}/\texttt{\_frxt\_int\_exit} structure. When an
+OS-band interrupt fires (say the tick, on CPU interrupt 21), this is the path:
 
 \begin{enumerate}
-  \item \textbf{Vector entry} (\texttt{xt\_highint5}, \texttt{highint5.S}). The
-        CPU jumps to the level-5 slot. The handler first checks one thing
-        \emph{without touching the stack}: was the interruptee inside a window
-        over/underflow handler (\texttt{EPC\_5} in the window-vector range)? If so
-        its \texttt{a1}/SP is transiently invalid, so the tick is \emph{deferred}:
-        push CCOMPARE2 forward and \texttt{rfi} back, letting the window
-        handler finish (the CXD8002 fix).
-  \item \textbf{Save.} Otherwise it builds an \texttt{XT\_STK} frame on the
-        interrupted task's stack and calls \texttt{\_xt\_context\_save} to spill
-        the full register state into it. (Debug is masked across this frame build
-        so the spill cannot trip the per-task stack-overflow watchpoint; see
-        the context-switch chapter.)
-  \item \textbf{Service.} It drops to \texttt{INTLEVEL 5} and calls the Ada
-        dispatch routine: \texttt{\_\_gnat\_timer\_interrupt} for level 5,
-        \texttt{\_\_gnat\_level3\_dispatch} / \texttt{\_\_gnat\_level2\_dispatch}
-        for the device vectors. Each reads the Xtensa \texttt{INTERRUPT} register,
-        and for a pending source it owns it calls
-        \texttt{System.BB.Interrupts.Interrupt\_Wrapper (Id)}.
+  \item \textbf{Vector entry.} The CPU jumps to the level-2 slot. The
+        vector's first instruction masks to \texttt{DEBUGLEVEL}
+        (\texttt{rsil 6}): the whole prologue is now atomic against the OS
+        band, and the frame build below cannot trip the per-task
+        stack-overflow watchpoint.
+  \item \textbf{Save.} It builds an \texttt{XT\_STK} frame on the
+        interrupted stack and calls \texttt{\_xt\_context\_save} to spill the
+        full register state into it. The spill leaves
+        \texttt{WINDOWSTART = 1 << WINDOWBASE} by construction, so a plain
+        resume needs no window bookkeeping at all.
+  \item \textbf{Enter.} Still masked, it increments the per-CPU nesting
+        count (\texttt{\_\_gnat\_int\_nest}, owned entirely by the vector).
+        On the outermost entry it saves the task-side SP and hops onto the
+        per-CPU \emph{interrupt stack}, so handler frames and their spills
+        never land on task stacks.
+  \item \textbf{Service.} It sets \texttt{INTLEVEL} to
+        \texttt{XCHAL\_EXCM\_LEVEL} and calls the Ada dispatch routine
+        (\texttt{\_\_gnat\_level2\_dispatch} or
+        \texttt{\_\_gnat\_level3\_dispatch}). The dispatch reads the Xtensa
+        \texttt{INTERRUPT} register and, for each pending source it owns,
+        calls \texttt{System.BB.Interrupts.Interrupt\_Wrapper (Id)}. Because
+        every handler runs at \texttt{EXCM\_LEVEL}, OS-band handlers never
+        preempt one another; the interrupt \emph{level} decides which pending
+        source is taken first and which interrupts preempt task code.
   \item \textbf{The wrapper} (\texttt{s-bbinte.adb}) is the GNARL bridge: it
         records the interrupt being handled, raises the running task's active
-        priority to the interrupt's priority (so the ceiling protocol holds and
-        lower interrupts stay masked), runs the \emph{registered handler}, then
-        restores priority. The handler is an
-        \texttt{access procedure (Id : Interrupt\_ID)}.
-  \item \textbf{Epilogue: the deferred switch.} Back in the vector, if the
-        dispatch made a higher-priority task ready (\texttt{Context\_Switch\_-
-        Needed}) the switch is performed \emph{here}, from the vector's clean
-        single-window context, by tail-jumping \texttt{\_\_gnat\_preempt\_-
-        dispatch}. The kernel never runs the cooperative spill from interrupt
-        context: it sets a \texttt{Switch\_Pending} flag and lets the epilogue
-        do it (Option~A; the previous chapter).
-  \item \textbf{Resume.} If no switch is due, \texttt{\_xt\_context\_restore} +
-        \texttt{rfi 5} returns to the interruptee atomically (INTLEVEL stays high
-        until the very last instruction, closing the re-entrancy window).
+        priority to the interrupt's priority (so the ceiling protocol holds),
+        runs the \emph{registered handler}, then restores priority. The
+        handler is an \texttt{access procedure (Id : Interrupt\_ID)}.
+  \item \textbf{Epilogue: the one switch site.} Back in the vector, masked
+        again, the nesting count is decremented. Only the \emph{outermost}
+        exit may switch, and it decides by itself: it compares
+        \texttt{First\_Thread} with \texttt{Running\_Thread} and, if they
+        differ, tail-jumps \texttt{\_\_gnat\_preempt\_dispatch} from the
+        vector's clean single-window context. One guard applies: if the
+        interrupted PC lies inside vector text, the switch is deferred to the
+        next interrupt exit -- a half-entered vector's \texttt{EPC/EPS/%
+EXCSAVE} registers are still live in hardware and must not be stranded.
+  \item \textbf{Resume.} Otherwise \texttt{\_xt\_context\_restore} +
+        \texttt{rfi} returns to the interruptee atomically:
+        \texttt{INTLEVEL} stays high until the very last instruction, so
+        there is no re-entrancy window.
 \end{enumerate}
 
-A device interrupt at level 2 or 3 follows the identical shape one level down
-(\texttt{EPS\_3/EPC\_3}, \texttt{rfi 3}, etc.), and may itself be preempted by the
-level-5 tick.
+The level-3 vector is the same macro with \texttt{EPS\_3/EPC\_3} and
+\texttt{rfi 3}. Note what is \emph{not} here: no per-vector deferral flags,
+no software \texttt{WINDOWSTART} repair on the plain-resume path, and no
+special tick vector -- the tick is just another level-2 source, dispatched
+like any device interrupt.
 
 \section{Attaching a handler: two axes}\index{Attach\_Handler}\index{protected handler}
 
@@ -341,7 +362,7 @@ routing the \texttt{FROM\_CPU} interrupt-matrix sources (the same mechanism as t
 cross-core poke) to \texttt{Device\_L2\_0} and \texttt{Device\_L3\_0} and asserting
 them from software, while a low-priority victim task holds floating-point
 accumulators and a \texttt{THREADPTR} sentinel live in registers, continually
-preempted by those two vectors \emph{and} the level-5 tick. If any vector failed
+preempted by those two vectors \emph{and} the timer tick. If any vector failed
 to preserve the interrupted context, an accumulator or the sentinel comes back
 wrong. On hardware the handler counts climb and the corruption count stays zero,
 confirming all three vectors both dispatch correctly and preserve context.

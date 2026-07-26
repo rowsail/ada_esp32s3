@@ -189,7 +189,7 @@ which \texttt{bare\_build} honours instead of the guessed \texttt{\_ada\_c94004}
 \texttt{C94004} now PASSES.
 
 \textbf{The remaining four HUNG are documented limitations.} \texttt{CXD1006} (an
-\texttt{Interrupt\_Priority} task collides with the kernel's own Xtensa level 5),
+\texttt{Interrupt\_Priority} task runs with the kernel tick's level masked),
 \texttt{CB1010} (a large-frame recursive stack overflow the 64-byte watchpoint cannot
 catch), \texttt{C480001} (unbounded recursion / GNAT codegen), and \texttt{CXC7004}
 -- \emph{not} a deadlock but an environment-task \emph{termination} test (JTAG dual-core

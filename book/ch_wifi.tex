@@ -241,10 +241,10 @@ as delays occasionally waking ``about fifteen seconds late'' --- that fifteen
 seconds is exactly how long \texttt{CCOUNT} takes to wrap all the way around.)
 
 The fix moves the alarm off \texttt{CCOUNT} and onto the \emph{SYSTIMER}, a
-free-running 16\,MHz counter that keeps ticking through \texttt{waiti}. Each core
-arms one of its comparators; the comparator's interrupt is routed to a level-5
-CPU interrupt, so the existing vector and dispatch (Chapter~\ref{ch:interrupts})
-are untouched --- only the timer underneath changed:
+free-running 16\,MHz counter that keeps ticking through \texttt{waiti}. Each
+core arms one of its comparators. (At the time the comparator's interrupt was
+routed to the old level-5 vector; the tick has since moved into the level-2 OS
+band --- Chapter~\ref{ch:interrupts}.) Only the timer underneath changed:
 
 \begin{lstlisting}
 procedure Set_Alarm (Ticks : Timer_Interval) is
@@ -252,10 +252,12 @@ procedure Set_Alarm (Ticks : Timer_Interval) is
    Now      : constant Unsigned_64 := Native_Systimer_Count;   --  free-running
    Deadline : constant Unsigned_64 := Now + Unsigned_64'Max (1, U64 (Ticks) / 15);
 begin
-   --  Arm this core's SYSTIMER comparator (one-shot); it fires on
-   --  count >= target, so even a past deadline fires at once -- no exact-match
-   --  miss, unlike CCOMPARE2.
-   Arm_Comparator (Core, Deadline);
+   --  Arm this core's SYSTIMER comparator (one-shot).  The WORK_EN toggle is
+   --  load-bearing: the comparator checks "target already passed?" only on
+   --  the WORK_EN rising edge.  See the sequel below.
+   Work_En (Core, False);
+   Load_Comparator (Core, Deadline);
+   Work_En (Core, True);
 end Set_Alarm;
 \end{lstlisting}
 
@@ -265,6 +267,27 @@ SMP example, and a dedicated \texttt{esp32s3\_delay\_test} that measures the
 error of a delay taken from a fully-idle system and finds it exact. The lesson is
 an old one, sharpened: a clock that stops when the CPU rests is not a clock you
 can set an alarm by.
+
+\textbf{The sequel: the alarm that armed in the past.} The first version of
+this code did not toggle \texttt{WORK\_EN}, and its comment claimed the
+comparator ``fires on count \texttt{>=} target, so even a past deadline fires
+at once''. The hardware disagrees. Arming takes several register writes, and
+the deadline floor is one 16\,MHz tick --- 62.5\,ns. When a burst of timing
+events produced a near-zero re-arm delta, the free-running count overtook the
+target \emph{during the arming sequence}, and a comparator loaded with a
+target already in the past never fires. One missed arm killed the alarm chain
+outright: no tick, no expiring delay, every delaying task suspended forever ---
+while the pure-interrupt machinery (an LCD scan-out, the CAN controller)
+carried on. The result was a live screen full of dead tasks, and it surfaced
+deterministically: a J1939 demo froze exactly four seconds after boot, every
+boot. The S3 does have hardware compensation for exactly this case
+(\texttt{SOC\_SYSTIMER\_ALARM\_MISS\_COMPENSATE}: fire immediately if the
+loaded target is already behind the count) --- but it evaluates on the
+\texttt{WORK\_EN} rising edge, which is why esp-idf's \texttt{systimer\_hal}
+toggles the enable around every load, and why leaving it permanently on
+silently defeats the safety net. The sharpened lesson, twice over: read the
+vendor's HAL as documentation. The register sequence it performs is part of
+the datasheet.
 
 \section{The examples}\index{Wi-Fi!examples}
 \label{ch:wifi:examples}

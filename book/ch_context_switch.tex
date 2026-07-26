@@ -103,20 +103,23 @@ a point where the kernel is already running. The kernel calls
 runs in the task's own context, so it can do the full \texttt{SPILL\_ALL\_WINDOWS}
 and save the outgoing task in \emph{solicited} form.
 
-\textbf{Preemptive} \textemdash{} a level-5 timer or IPI interrupt fires while a
-task is running. The L5 vector (\texttt{highint5.S}) saves the interruptee with
-\texttt{\_xt\_context\_save} into a full \texttt{XT\_STK} interrupt frame, services
-the tick, and \textemdash{} if that made a higher task ready \textemdash{}
-tail-jumps \texttt{\_\_gnat\_preempt\_dispatch} to switch away. This path saves the
-outgoing task in \emph{interrupt} form.
+\textbf{Preemptive} \textemdash{} an OS-band interrupt (the tick or a device
+interrupt) fires while a task is running. The vector (\texttt{highint5.S})
+saves the interruptee with \texttt{\_xt\_context\_save} into a full
+\texttt{XT\_STK} interrupt frame and services the pending sources. At the
+\emph{outermost} interrupt exit \textemdash{} and only there \textemdash{} the
+epilogue compares \texttt{First\_Thread} with \texttt{Running\_Thread}; if
+they differ it tail-jumps \texttt{\_\_gnat\_preempt\_dispatch} to switch away.
+This path saves the outgoing task in \emph{interrupt} form.
 
 The two must not be mixed, and that is the subtle part. A cooperative
 \texttt{SPILL\_ALL\_WINDOWS} executed from inside an interrupt's borrowed window
-chain corrupts the register windows. So when the kernel decides mid-interrupt that
-a switch is needed, \texttt{Context\_Switch} does \emph{not} switch: it sets a
-per-CPU \texttt{Switch\_Pending} flag and returns. The interrupt epilogue, running
-in the vector's clean single-window context, notices the flag and performs the
-dispatch itself via \texttt{\_\_gnat\_preempt\_dispatch}. (Tracking down a bug here
+chain corrupts the register windows. So \texttt{Context\_Switch} refuses to run
+from interrupt context: while the vector's per-CPU nesting count
+(\texttt{\_\_gnat\_int\_nest}) is nonzero it simply returns. No flag is needed
+\textemdash{} the outermost epilogue re-derives the decision from the scheduler
+queues itself and performs the dispatch via
+\texttt{\_\_gnat\_preempt\_dispatch}. (Tracking down a bug here
 \textemdash{} the cooperative spill running in interrupt context, marching the
 stack pointer down one frame per tick until a window spill double-faulted
 \textemdash{} is the story behind several of the comments in \texttt{highint5.S}
@@ -134,7 +137,9 @@ Because a task can be saved either way, each \texttt{Context\_Buffer} records it
         window-underflow reloads the rest.
   \item \textbf{Interrupt} (\texttt{Frame\_Kind = 1}): the full register state is in
         an \texttt{XT\_STK} frame at \texttt{SP}. Resume by calling
-        \texttt{\_xt\_context\_restore} and returning with \texttt{rfi}.
+        \texttt{\_xt\_context\_restore} and returning with \texttt{rfi}
+        (the resume tail borrows the otherwise-unused level-5
+        \texttt{EPS/EPC} pair purely as scratch for the atomic return).
 \end{itemize}
 
 Both entry points converge on a single label, \texttt{.Lresume}: it makes

@@ -132,18 +132,23 @@ once, reuse) sidesteps the issue entirely.
         is task-safe).
 \end{itemize}
 
-\section{Architectural: \texttt{Interrupt\_Priority'Last} and the kernel tick}\index{interrupt priority}
+\section{Architectural: interrupt-priority tasks and the kernel tick}\index{interrupt priority}
 
-A task declared at \texttt{Interrupt\_Priority'Last} masks the kernel's own
-Xtensa level-5 tick and cross-core IPI, deadlocking its activation (ACATS
-\texttt{CXD1006}; see the ACATS chapter). The kernel owns the top hardware level
-and shares it with the highest Ada interrupt priority.
+The kernel tick is a level-2 interrupt (the FreeRTOS-model placement; see the
+interrupts chapter). A \emph{task} whose priority lies in the
+\texttt{Interrupt\_Priority} range therefore runs with the tick's level masked
+on its core for as long as it executes. A compute loop at any interrupt
+priority starves its core's clock, and a task \emph{declared} at an interrupt
+priority can deadlock its own activation (ACATS \texttt{CXD1006}; see the
+ACATS chapter).
 
-\textbf{Why it rarely bites.} Only the single \emph{topmost} interrupt priority
-collides. Any priority below it (including every priority the peripheral HAL
-drivers use for their device interrupts) is unaffected, and ordinary tasks use
-\texttt{Priority}, not \texttt{Interrupt\_Priority}, at all. A handler simply
-should not claim the one ceiling reserved for the scheduler.
+\textbf{Why it rarely bites.} Protected-object \emph{ceilings} in the
+interrupt range are the normal, safe case: they mask the tick only for the
+short bounded time a lock is held, and the pending tick fires the moment it is
+released. What the model asks is only that \emph{tasks} stay out of the
+interrupt-priority range -- ordinary tasks use \texttt{Priority}, and code
+that must react at interrupt priority belongs in a protected handler, not a
+task. This is the same discipline FreeRTOS asks of its users.
 
 \section{The common case is clean}
 
