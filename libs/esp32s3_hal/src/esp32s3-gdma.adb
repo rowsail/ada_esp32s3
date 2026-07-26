@@ -230,6 +230,18 @@ package body ESP32S3.GDMA is
    Bounce_Desc     : array (0 .. Max_Bounce_Desc - 1) of aliased Descriptor;
    Bouncing        : array (Channel_Id) of Boolean := (others => False);
 
+   --  Restart entry point for Restart_Bounce: a copy of ring node 0 whose
+   --  buffer starts Restart_Skip bytes in (the LCD FIFO preserves that many
+   --  bytes across a DMA reset; re-sending them would shift the picture).
+   --  Its Next already points at ring node 1, so the restarted transfer
+   --  falls straight back into the normal ring.  Built by Start_Bounce.
+   Restart_Desc  : aliased Descriptor;
+   Restart_Ready : Boolean := False;
+   Bounce_Skip   : Natural := 0 with Volatile;
+   pragma Export (Asm, Bounce_Skip, "__gdma_bounce_skip");
+   --  Exported so the restart skip can be tuned live from the debugger; the
+   --  descriptor is rebuilt from it on every Restart_Bounce.
+
    --  The receive mirror (Start_In_Stream): a two-descriptor IN ring per
    --  channel, which half was last filled, and whether the channel is capture-
    --  streaming (so the shared handler services its IN_DONE).
@@ -947,7 +959,11 @@ package body ESP32S3.GDMA is
    -- Start_Bounce --
    ------------------
 
-   procedure Start_Bounce (C : Channel; Buffer : System.Address; Half_Bytes : Natural)
+   procedure Start_Bounce
+     (C            : Channel;
+      Buffer       : System.Address;
+      Half_Bytes   : Natural;
+      Restart_Skip : Natural := 0)
    is
       Chunk_Max : constant := 4064;   --  <= 4095, 32-aligned; per descriptor
       Per_Half  : constant Natural := (Half_Bytes + Chunk_Max - 1) / Chunk_Max;
@@ -987,6 +1003,11 @@ package body ESP32S3.GDMA is
          Bounce_Desc (I).Next := Bounce_Desc ((I + 1) mod N)'Address;
       end loop;
 
+      --  Arm the restart entry point (the descriptor itself is rebuilt from
+      --  Bounce_Skip on every Restart_Bounce, so the skip is live-tunable).
+      Bounce_Skip   := Restart_Skip;
+      Restart_Ready := True;
+
       Bouncing (C.Id)    := True;
       Stream_Half (C.Id) := 1;                     --  first EOF (half 0) toggles to 0
       Channels (C.Id).OUT_CONF0.OUT_AUTO_WRBACK := False;
@@ -997,6 +1018,58 @@ package body ESP32S3.GDMA is
       Channels (C.Id).OUT_LINK.OUTLINK_ADDR := Link_Addr (Bounce_Desc (0)'Address);
       Channels (C.Id).OUT_LINK.OUTLINK_START := True;
    end Start_Bounce;
+
+   ---------------------
+   -- Out_EOF_Pending --
+   ---------------------
+
+   function Out_EOF_Pending (C : Channel) return Boolean is
+   begin
+      return C.Valid and then Channels (C.Id).OUT_INT_RAW.OUT_EOF;
+   end Out_EOF_Pending;
+
+   --------------------
+   -- Restart_Bounce --
+   --------------------
+
+   procedure Restart_Bounce (C : Channel) is
+   begin
+      if not C.Valid or else not Bouncing (C.Id) or else not Restart_Ready
+      then
+         return;
+      end if;
+
+      --  Rebuild the restart entry from ring node 0 with Bounce_Skip bytes
+      --  skipped (the LCD FIFO preserves them across the reset); its Next
+      --  (already ring node 1) re-enters the normal ring.
+      declare
+         Skip : Natural := Bounce_Skip;
+      begin
+         if Skip >= Natural (Bounce_Desc (0).W0.Length) then
+            Skip := 0;
+         end if;
+         Restart_Desc := Bounce_Desc (0);
+         Restart_Desc.Buffer := Restart_Desc.Buffer + Storage_Offset (Skip);
+         Restart_Desc.W0.Size   := Restart_Desc.W0.Size - UInt12 (Skip);
+         Restart_Desc.W0.Length := Restart_Desc.W0.Length - UInt12 (Skip);
+      end;
+
+      --  Stop and reset the channel (the esp-idf gdma_reset idiom), clear any
+      --  stale completion status so the restart cannot fire a spurious refill,
+      --  re-arm the half tracker (first EOF after restart is half 0), and
+      --  restart the transfer at the skip-adjusted ring entry.  The caller has
+      --  already reset the LCD_CAM async FIFO; both run inside the vertical
+      --  blank, so the panel sees a clean next frame.
+      Channels (C.Id).OUT_LINK.OUTLINK_STOP := True;
+      Channels (C.Id).OUT_CONF0.OUT_RST := True;
+      Channels (C.Id).OUT_CONF0.OUT_RST := False;
+      Channels (C.Id).OUT_INT_CLR.OUT_EOF  := True;
+      Channels (C.Id).OUT_INT_CLR.OUT_DONE := True;
+      Stream_Half (C.Id) := 1;              --  first EOF (half 0) toggles to 0
+      Asm ("memw", Volatile => True, Clobber => "memory");
+      Channels (C.Id).OUT_LINK.OUTLINK_ADDR := Link_Addr (Restart_Desc'Address);
+      Channels (C.Id).OUT_LINK.OUTLINK_START := True;
+   end Restart_Bounce;
 
    -----------------------
    -- Set_Stream_Refill --

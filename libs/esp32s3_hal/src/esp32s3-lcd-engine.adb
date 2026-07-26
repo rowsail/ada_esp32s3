@@ -22,6 +22,7 @@ package body ESP32S3.LCD.Engine is
 
    --  Panel geometry captured by Open_RGB, used to size the bounce halves.
    RGB_Line_Bytes : Natural := 0 with Volatile;    --  bytes per scan line
+   RGB_Px_Bytes   : Natural := 1 with Volatile;    --  bytes per pixel (1 or 2)
    RGB_V_Res      : Natural := 0 with Volatile;    --  active lines per frame
 
    procedure Drive_Out (Pad : G.Pin_Id; Sig : Natural) is
@@ -137,6 +138,7 @@ package body ESP32S3.LCD.Engine is
         Config.V_Sync + Config.V_Back + Config.V_Res + Config.V_Front;
    begin
       RGB_Line_Bytes := Config.H_Res * (if Config.Two_Byte then 2 else 1);
+      RGB_Px_Bytes   := (if Config.Two_Byte then 2 else 1);
       RGB_V_Res      := Config.V_Res;
 
       SYSTEM_Periph.PERIP_CLK_EN1.LCD_CAM_CLK_EN := True;
@@ -258,13 +260,18 @@ package body ESP32S3.LCD.Engine is
    --  two-half ring frame-aligned, which is what pins the image in place.
    --------------------------------------------------------------------------
 
-   --  Two 20-line bounce halves (800x480x2 -> 32000 B each, 64 KB total) in
-   --  internal SRAM.  Each half spans several DMA descriptors (GDMA.Start_Bounce)
-   --  but fires ONE interrupt, so the refill runs at ~24 int/frame -- a rate it
-   --  can sustain (4064-byte single-descriptor halves needed 192/frame and could
-   --  not keep up, which rolled the picture).
-   Max_Half     : constant := 32768;             --  cap on one half (>= 20 lines)
-   Bounce_Lines : constant := 20;                --  target bounce height, in lines
+   --  Two bounce halves in internal SRAM (the array below is statically the 64 KB
+   --  worst case).  Each half spans several DMA descriptors (GDMA.Start_Bounce)
+   --  but fires ONE interrupt (4064-byte single-descriptor halves needed
+   --  192/frame and could not keep up, which rolled the picture).  40-line halves
+   --  double the per-half refill budget over the earlier 20: the copy has thin
+   --  margin against PSRAM contention plus ISR start-latency (handlers dispatch
+   --  at EXCM_LEVEL and do not preempt each other), and a late refill paints a
+   --  band of stale bytes; the wider halves also halve the interrupt rate.  A
+   --  16-bit panel exceeds Max_Half at 40 lines and falls back automatically to
+   --  the largest dividing height that fits (Start_Bounce sizing loop below).
+   Max_Half     : constant := 32768;             --  cap on one half, in bytes
+   Bounce_Lines : constant := 40;                --  target bounce height, in lines
    Bounce_Buf   : array (0 .. 2 * Max_Half - 1) of aliased Unsigned_8
      with Alignment => 32;
 
@@ -273,19 +280,33 @@ package body ESP32S3.LCD.Engine is
    Half_Bytes : Natural := 0 with Volatile;        --  bytes per bounce half
    Cur_Off    : Natural := 0 with Volatile;        --  next framebuffer byte to copy
 
-   --  Phase lock (self-calibrating).  The refill runs at nearly 100% of the frame
-   --  period, so any concurrent PSRAM traffic (the app drawing into the back
-   --  buffer) can make it miss a refill deadline; it then stays permanently behind
-   --  and the whole picture slips down.  So re-lock every VSYNC: force Cur_Off back
-   --  to the phase it naturally holds when aligned.  That phase (the refill's lead
-   --  over the LCD, in bytes) isn't known a priori, so LATCH it from the settled,
-   --  undrawn startup frames, then snap to it thereafter.  A no-op when in phase;
-   --  when a draw has slipped it, one VSYNC pulls it straight (a one-line seam that
-   --  frame, then clean) -- esp-idf's CONFIG_LCD_RGB_RESTART_IN_VSYNC, done in O(1).
-   Lock_Off    : Natural := 0 with Volatile;    --  latched aligned phase, bytes
-   Lock_Frames : Natural := 0 with Volatile;    --  VSYNCs seen while calibrating
-   Locked      : Boolean := False with Volatile;
-   Settle_Frames : constant := 8;               --  let the phase settle before latch
+   --  Desync recovery, ported from esp-idf's esp_lcd_panel_rgb.c.  The LCD_CAM
+   --  scan and the GDMA bounce ring can drift apart -- a missed refill, a
+   --  merged EOF interrupt, or the peripheral's own "permanent desync" failure
+   --  mode -- and once adrift they never re-converge on their own.  esp-idf's
+   --  driver counts DMA EOFs per frame and, at every VSYNC (during vertical
+   --  blanking), restarts the DMA at the frame start whenever the count falls
+   --  short of a frame's worth -- or unconditionally, its
+   --  CONFIG_LCD_RGB_RESTART_IN_VSYNC.  The restart enters the ring through a
+   --  descriptor that skips FIFO-depth + 1 pixels: the LCD_CAM async FIFO
+   --  preserves that many across a DMA reset, and re-sending them shifts the
+   --  picture (verbatim esp-idf: "the single-frame desync this leads to is
+   --  preferable to the permanent desync that could otherwise happen").
+   Fifo_Preserve_Px : constant := 17;   --  LCD_LL_FIFO_DEPTH (16) + 1
+
+   Boot_Restart : Boolean := False with Volatile;
+   --  One forced restart on the second VSYNC after Start: pins the ring/scan
+   --  alignment to the restart geometry deterministically on every boot
+   --  (without it the priming-vs-LCD_START race can latch a per-boot offset).
+
+   BB_EOF_Count : Natural := 0 with Volatile;
+   --  Refill EOFs seen since the last VSYNC; a full frame yields
+   --  FB_Len / Half_Bytes of them.  Counted in Refill_Hook (real DMA EOFs
+   --  only -- priming calls to Fill_Half do not count).
+
+   Locked : Boolean := False with Volatile;
+   --  The pipeline has produced its first VSYNC (Calib_Done released)
+
    Calib_Done  : Suspension_Object;             --  released once the phase is latched
 
    --  Double buffering, ESP-IDF's model: the refill copies from BB_Fb (Shown);
@@ -318,16 +339,42 @@ package body ESP32S3.LCD.Engine is
    --  completion ISR (the stream-refill hook), so it must stay a plain copy -- no
    --  blocking, no allocation.  Inline 32-bit-wide copy (buffers 4-aligned): fast
    --  enough to sustain the refill, where the runtime byte memcpy was not.
+   --  Temporary JTAG-read refill-timing diagnostics (volatile, no I/O).
+   --  One 40-line bounce half at 16 MHz pclk is ~490_000 CPU cycles; the
+   --  20-line vertical blank pauses EOFs for ~245_000 more, so a healthy
+   --  Gap_Max is ~735_000.
+   Fill_Prev_CC : Unsigned_32 := 0 with Volatile;
+   Fill_Gap_Max : Unsigned_32 := 0 with Volatile;   --  max entry-to-entry gap
+   Fill_Dur_Max : Unsigned_32 := 0 with Volatile;   --  max copy duration
+   Fill_Late    : Unsigned_32 := 0 with Volatile;   --  gaps past healthy max
+
    procedure Fill_Half (H : GD.Ring_Half) is
       Count : constant Natural := Half_Bytes;
       Dst   : constant System.Address := Bounce_Buf (H * Count)'Address;
       type WA is array (0 .. Count / 4 - 1) of Unsigned_32;
       D : WA with Import, Address => Dst;
       S : WA with Import, Address => BB_Fb (Shown) + Storage_Offset (Cur_Off);
+      CC0, CC1 : Unsigned_32;
    begin
+      Asm ("rsr.ccount %0",
+           Outputs => Unsigned_32'Asm_Output ("=r", CC0), Volatile => True);
+      if Fill_Prev_CC /= 0 then
+         if CC0 - Fill_Prev_CC > Fill_Gap_Max then
+            Fill_Gap_Max := CC0 - Fill_Prev_CC;
+         end if;
+         if CC0 - Fill_Prev_CC > 900_000 then
+            Fill_Late := Fill_Late + 1;
+         end if;
+      end if;
+      Fill_Prev_CC := CC0;
       for I in D'Range loop
          D (I) := S (I);
       end loop;
+      Asm ("rsr.ccount %0",
+           Outputs => Unsigned_32'Asm_Output ("=r", CC1), Volatile => True);
+      if CC1 - CC0 > Fill_Dur_Max then
+         Fill_Dur_Max := CC1 - CC0;
+      end if;
       Cur_Off := Cur_Off + Count;
       if Cur_Off >= FB_Len then
          Cur_Off := 0;
@@ -340,6 +387,18 @@ package body ESP32S3.LCD.Engine is
          end if;
       end if;
    end Fill_Half;
+
+   --  The DMA-EOF refill hook: count the EOF for the per-frame desync check
+   --  (priming calls to Fill_Half, e.g. from the VSYNC restart, do not
+   --  count), then refill the drained half.  Library level (the GDMA hook
+   --  contract; No_Implicit_Dynamic_Code).
+   procedure Refill_Hook (H : GD.Ring_Half);
+
+   procedure Refill_Hook (H : GD.Ring_Half) is
+   begin
+      BB_EOF_Count := BB_EOF_Count + 1;
+      Fill_Half (H);
+   end Refill_Hook;
 
    --------------------------------------------------------------------------
    --  LCD_CAM VSYNC interrupt (LCD_CAM source -> CPU_INT 21 = Device_L2_2).
@@ -383,19 +442,43 @@ package body ESP32S3.LCD.Engine is
 
          case RGB_Mode is
             when Mode_Bounce =>
-               --  Re-lock the refill phase to the LCD frame (see Lock_Off above).
-               --  Cur_Off and the flip live in the GDMA refill ISR (Fill_Half);
-               --  that ISR and this one share the Device_L2 priority level, so they
-               --  serialise -- no torn read of Cur_Off here.
-               if Locked then
-                  Cur_Off := Lock_Off;
-               else
-                  Lock_Frames := Lock_Frames + 1;
-                  if Lock_Frames >= Settle_Frames then
-                     Lock_Off := Cur_Off;   --  latch the settled aligned phase
-                     Locked   := True;
-                     Set_True (Calib_Done); --  let Start_RGB return to the caller
+               --  Desync check, esp-idf's default mode: on a HEALTHY frame
+               --  touch nothing at all.  A frame delivers FB_Len / Half_Bytes
+               --  refill EOFs; the frame-boundary EOF is near-coincident with
+               --  this interrupt, so an as-yet-unserviced EOF (visible in the
+               --  raw status) counts too -- that makes the check deterministic
+               --  rather than a service-order race.  A shortfall means EOFs
+               --  were lost or merged (the refill fell behind the ring) or the
+               --  LCD/DMA pair desynced: recover O(1), with NO copying here --
+               --  reset the FIFO, restart the DMA at the frame start (ring
+               --  node 0, FIFO-preserve bytes skipped) and declare the refill
+               --  phase (both halves re-send their current content: one
+               --  glitched frame, then clean; esp-idf accepts the same trade).
+               declare
+                  Expected  : constant Natural :=
+                    (if Half_Bytes > 0 then FB_Len / Half_Bytes else 0);
+                  Effective : constant Natural :=
+                    BB_EOF_Count
+                      + (if GD.Out_EOF_Pending (RGB_Chan) then 1 else 0);
+                  Restart   : Boolean := Effective < Expected;
+               begin
+                  BB_EOF_Count := 0;
+                  if Boot_Restart then
+                     --  One-shot startup normalization (see Boot_Restart)
+                     Boot_Restart := False;
+                     Restart      := True;
                   end if;
+                  if Restart then
+                     LCD_CAM_Periph.LCD_MISC.LCD_AFIFO_RESET := True;
+                     GD.Restart_Bounce (RGB_Chan);
+                     Cur_Off := (2 * Half_Bytes) mod Natural'Max (FB_Len, 1);
+                  end if;
+               end;
+
+               if not Locked then
+                  Locked       := True;
+                  Boot_Restart := True;    --  normalize on the NEXT VSYNC
+                  Set_True (Calib_Done);   --  pipeline running; release Start
                end if;
 
             when Mode_Direct =>
@@ -450,10 +533,10 @@ package body ESP32S3.LCD.Engine is
       end;
       Cur_Off  := 0;
 
-      --  Re-arm the self-calibrating phase lock (latched over the first frames).
-      Locked      := False;
-      Lock_Frames := 0;
-      Lock_Off    := 0;
+      --  Re-arm the desync recovery (see the note above Fifo_Preserve_Px).
+      Locked       := False;
+      Boot_Restart := False;
+      BB_EOF_Count := 0;
       Set_False (Calib_Done);
 
       GD.Claim (RGB_Chan, GD.LCD_CAM);
@@ -461,12 +544,16 @@ package body ESP32S3.LCD.Engine is
          return;
       end if;
       --  Prime both halves so the DMA has real pixels from the first clock;
-      --  register the in-ISR refill hook; then start the multi-descriptor bounce.
+      --  register the in-ISR refill hook; then start the multi-descriptor
+      --  bounce, telling it how many bytes a VSYNC restart must skip (the
+      --  LCD FIFO preserves that many across a DMA reset).
       Fill_Half (0);
       Fill_Half (1);
       LCD_CAM_Periph.LCD_MISC.LCD_AFIFO_RESET := True;
-      GD.Set_Stream_Refill (RGB_Chan, Fill_Half'Access);
-      GD.Start_Bounce (RGB_Chan, Bounce_Buf'Address, Half_Bytes);
+      GD.Set_Stream_Refill (RGB_Chan, Refill_Hook'Access);
+      GD.Start_Bounce
+        (RGB_Chan, Bounce_Buf'Address, Half_Bytes,
+         Restart_Skip => Fifo_Preserve_Px * RGB_Px_Bytes);
 
       --  Let the async FIFO fill from the (fast, internal-SRAM) bounce stream
       --  before the timing generator starts, then run the LCD sequence.

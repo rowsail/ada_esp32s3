@@ -242,7 +242,32 @@ package ESP32S3.GDMA is
    --  the last descriptor of each).  Big halves = a low interrupt rate the refill
    --  hook can sustain (an LCD bounce buffer).  Buffer (both halves) in internal
    --  SRAM; Half_Bytes any size up to the descriptor budget.  Stop ends it.
-   procedure Start_Bounce (C : Channel; Buffer : System.Address; Half_Bytes : Natural);
+   --
+   --  Restart_Skip prepares the ring for Restart_Bounce (below): the restart
+   --  entry point re-sends half 0 STARTING Restart_Skip bytes in.  Rationale
+   --  (esp-idf esp_lcd_panel_rgb.c): the LCD_CAM async FIFO PRESERVES its
+   --  contents across a DMA reset -- the S3 FIFO holds 16 px, so a restarted
+   --  transfer must skip (FIFO depth + 1) pixels or those pixels are sent
+   --  twice and the picture shifts.
+   procedure Start_Bounce
+     (C            : Channel;
+      Buffer       : System.Address;
+      Half_Bytes   : Natural;
+      Restart_Skip : Natural := 0);
+
+   --  Re-align a running bounce ring to its frame start: reset the channel and
+   --  restart it at half 0 (skipping Restart_Skip bytes, see above).  Called
+   --  from the LCD VSYNC handler -- during vertical blanking -- to recover the
+   --  "permanent desync" failure mode of the LCD_CAM + GDMA pair (the panel
+   --  scan and the DMA ring drift apart and never re-converge on their own);
+   --  esp-idf performs this restart every VBlank.  Interrupt-context safe.
+   procedure Restart_Bounce (C : Channel);
+
+   --  Is a bounce OUT_EOF asserted but not yet serviced?  Lets the LCD VSYNC
+   --  handler count an in-flight EOF deterministically (the frame-boundary
+   --  EOF and VSYNC are near-coincident, so which is serviced first is
+   --  otherwise a race).
+   function Out_EOF_Pending (C : Channel) return Boolean;
 
    --  Optional refill HOOK for Start_Stream.  When set, the DMA's per-half
    --  completion interrupt calls it directly -- passing the half (0/1) that just
