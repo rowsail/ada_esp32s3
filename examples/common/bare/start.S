@@ -21,6 +21,16 @@ _start:
 	movi	a0, _vector_table
 	wsr.vecbase	a0
 	rsync
+	/* Clear any hardware break/watch state left armed across a soft reset
+	   (the FULL profile's recoverable-stack-overflow guard arms DBREAK; a
+	   stale one fires as a debuggerless DebugException on the next boot's
+	   unrelated data).  DBREAKA/IBREAKA need no clearing -- the C bits in
+	   DBREAKC / IBREAKENABLE gate them. */
+	movi	a0, 0
+	wsr.dbreakc0	a0
+	wsr.dbreakc1	a0
+	wsr.ibreakenable	a0
+	isync
 	/* PS must match what the GNARL runtime assumes for a task's window context
 	   (s-bbcppr__xtensa.adb Initial_PS = 0x0005_002F): WOE=1 (window overflow
 	   detection), CALLINC=1 (frame entered as if call4'd) and UM=1 (user vector
@@ -179,6 +189,12 @@ core1_start:
 	movi	a0, _vector_table
 	wsr.vecbase	a0
 	rsync
+	/* Clear stale break/watch state on this core too (see _start). */
+	movi	a0, 0
+	wsr.dbreakc0	a0
+	wsr.dbreakc1	a0
+	wsr.ibreakenable	a0
+	isync
 	movi	a0, 0x00040000		/* PS = WOE, kernel ring, INTLEVEL=0 */
 	wsr.ps	a0
 	rsync
@@ -209,9 +225,79 @@ core1_start:
 	.global	xt_unhandled_exception
 	.global	call_user_start
 _xt_panic:
+	movi	a3, 1
+	j	.Lpark_dump
 xt_unhandled_exception:
+	movi	a3, 2
+	j	.Lpark_dump
 call_user_start:
+	movi	a3, 3
+.Lpark_dump:
+	/* Breadcrumbs: faults under PS.INTLEVEL >= DEBUGLEVEL suppress
+	   IBREAK/DBREAK, so JTAG cannot trap them -- dump the exception
+	   state to RAM, then park.  First writer wins (magic word guards
+	   against the second core overwriting the primary evidence).
+	   a3 = entry marker (1 _xt_panic / 2 unhandled_exc / 3 user_start).
+	   a2/a3 are dead here (panic never returns). */
+	movi	a2, __gnat_panic_dump
+	l32i	a2, a2, 0
+	bnez	a2, 1f			/* already written: just park */
+	movi	a2, __gnat_panic_dump
+	s32i	a3, a2, 96		/* [24] entry marker */
+	rsr.exccause	a3
+	s32i	a3, a2, 4
+	rsr.excvaddr	a3
+	s32i	a3, a2, 8
+	rsr.epc1	a3
+	s32i	a3, a2, 12
+	rsr.depc	a3
+	s32i	a3, a2, 16
+	rsr.ps	a3
+	s32i	a3, a2, 20
+	rsr.excsave1	a3
+	s32i	a3, a2, 24
+	s32i	a0, a2, 28
+	s32i	a1, a2, 32
+	rsr.epc2	a3
+	s32i	a3, a2, 36
+	rsr.eps2	a3
+	s32i	a3, a2, 40
+	rsr.epc3	a3
+	s32i	a3, a2, 44
+	rsr.eps3	a3
+	s32i	a3, a2, 48
+	rsr.epc4	a3
+	s32i	a3, a2, 52
+	rsr.eps4	a3
+	s32i	a3, a2, 56
+	rsr.epc5	a3
+	s32i	a3, a2, 60
+	rsr.eps5	a3
+	s32i	a3, a2, 64
+	rsr.epc6	a3
+	s32i	a3, a2, 68
+	rsr.eps6	a3
+	s32i	a3, a2, 72
+	rsr.epc7	a3
+	s32i	a3, a2, 76
+	rsr.eps7	a3
+	s32i	a3, a2, 80
+	rsr.windowbase	a3
+	s32i	a3, a2, 84
+	rsr.windowstart	a3
+	s32i	a3, a2, 88
+	rsr.prid	a3
+	s32i	a3, a2, 92
+	movi	a3, 0x50414E43		/* "PANC": mark valid, first wins */
+	s32i	a3, a2, 0
 1:	j	1b
+
+	.pushsection .data
+	.align	4
+	.global	__gnat_panic_dump
+__gnat_panic_dump:
+	.space	100
+	.popsection
 
 	.align	4
 	.global	_frxt_int_enter
