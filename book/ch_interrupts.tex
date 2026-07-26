@@ -63,6 +63,80 @@ gives symbolic IDs for the slots that are free for application use:
 kernel-reserved: the systimer tick and the cross-core poke share it, and the
 kernel attaches its alarm handler there at start-up. Do not attach to it.
 
+\section{What the silicon does}\index{EPC}\index{EPS}\index{EXCSAVE}\index{VECBASE}\index{rfi}
+
+Before any of our code runs, the CPU itself performs a fixed sequence. It is
+small, and everything above depends on it, so here it is in full. When an
+enabled interrupt of level $n$ (2--7) is the highest one pending:
+
+\begin{enumerate}
+  \item The hardware copies the current \texttt{PC} into \texttt{EPC$n$} and
+        the current \texttt{PS} into \texttt{EPS$n$}. Each level has its own
+        pair, so a level-3 interrupt cannot clobber the state a level-2 entry
+        is still using.
+  \item It sets \texttt{PS.INTLEVEL} to $n$, masking level $n$ and below.
+  \item It jumps to the level's fixed slot in the vector table:
+        \texttt{VECBASE} plus a per-level offset. Nothing is pushed on any
+        stack --- there is no hardware stacking on Xtensa. The vector gets the
+        CPU exactly as the interrupted code left it, registers and all.
+\end{enumerate}
+
+That last point drives the vector's first moves. The slot has \emph{no} free
+register, so its first instruction stashes \texttt{a0} in the level's
+\texttt{EXCSAVE$n$} scratch register; only then can it start saving state
+properly. From C this is the part the NVIC did for you on a Cortex-M ---
+here the eight-instruction prologue that builds the frame is ours, in
+\texttt{highint5.S}.
+
+The return trip is one instruction: \texttt{rfi $n$} restores
+\texttt{PS} from \texttt{EPS$n$} and jumps to \texttt{EPC$n$}
+\emph{atomically}. That atomicity is load-bearing: \texttt{INTLEVEL} stays
+at $n$ until the very last instruction, so there is no window in which a
+fresh interrupt could preempt a half-restored context.
+
+Two registers complete the picture. \texttt{INTERRUPT} (read-only) shows
+which of the 32 CPU interrupts are pending right now; the dispatch reads it
+to find the sources to service. \texttt{INTENABLE} gates them per core; the
+runtime sets a bit when a handler is attached. Most sources are
+\emph{level-triggered}: the CPU-side bit stays asserted until the handler
+clears the \emph{peripheral's} status register (usually write-1-to-clear),
+which is why every HAL handler acks the device, not the CPU.
+
+\section{The interrupt matrix}\index{interrupt matrix}\index{INT\_MAP}
+
+If you come from a Cortex-M, one ESP32 idea needs installing first: peripheral
+interrupts do not have fixed CPU positions. The chip has roughly a hundred
+peripheral \emph{sources} (TWAI, each GDMA channel, the systimer comparators,
+GPIO, \dots) and each core has just 32 CPU interrupts, each with a
+\emph{fixed, hardwired} level and trigger type. Between the two sits the
+\emph{interrupt matrix}: one map register per source, per core
+(\texttt{INTERRUPT\_CORE0\_*\_INT\_MAP}), holding the number of the CPU
+interrupt that source should raise.
+
+Three consequences matter in practice:
+
+\begin{itemize}
+  \item \textbf{Routing is a design decision.} A driver picks its
+        interrupt's level by picking which CPU interrupt to map its source
+        to. That is how the LCD refill moved from level 2 to level 3, and how
+        the tick moved from level 5 to level 2 --- one store to a map
+        register each.
+  \item \textbf{Sources can share.} Several sources may map to one CPU
+        interrupt; the handler then reads the peripherals to tell them apart.
+        The kernel uses this deliberately: the systimer alarm and the
+        cross-core poke share CPU interrupt 21, and the dispatch checks the
+        \texttt{FROM\_CPU} register to distinguish them.
+  \item \textbf{Not every CPU interrupt is usable.} The 32 slots are a mixed
+        bag: some are level-triggered, some edge-triggered, some are internal
+        (software) interrupts the matrix cannot drive at all. The usable
+        level-triggered OS-band slots are few --- 19/20/21 at level 2, 23/27
+        at level 3 --- which is why the allocation in
+        \texttt{Ada.Interrupts.Names} is as tight as it is. (Two findings
+        from the field: CPU interrupt 22 is edge-triggered and will simply
+        never fire for a level source, and 29 is an internal software
+        interrupt the matrix cannot reach. Both look free on paper.)
+\end{itemize}
+
 \section{From silicon to handler}\index{interrupt vector}\index{interrupt wrapper}
 
 \texttt{start.S} points \texttt{VECBASE} at our vendored vector table before
