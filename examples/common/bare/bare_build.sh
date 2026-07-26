@@ -107,13 +107,18 @@ if [ "$(cat "$PROF_STAMP" 2>/dev/null)" != "$PROF_NOW" ]; then
 fi
 echo "$PROF_NOW" > "$PROF_STAMP"
 
-# Recoverable stack-overflow -> catchable Storage_Error.  FULL profile only: the
-# raise needs ZCX + GNARL's __gnat_stack_overflow_raise, and only full's s-taprop
-# Enter_Task arms the watchpoint.  When on, bare_glue.c gets the arming hook
-# (-DRECOVER_STACK_OVF) and stack_overflow.S (the xt_debugexception override that
-# turns the stack-limit watchpoint into the raise) is compiled + linked.
+# Recoverable stack-overflow -> catchable Storage_Error (full + embedded: both
+# propagate exceptions via ZCX, and both runtimes' Enter_Task/Initialize arm the
+# stack-limit watchpoint through the weak __gnat_arm_stack_watchpoint hook).
+# When on, stack_overflow.S (the xt_debugexception override that turns the
+# watchpoint's debug exception into the Storage_Error raise) is compiled and
+# linked.  light-tasking stays detection-only: the watchpoint still arms, but a
+# trip parks in the panic breadcrumb dump rather than raising.  SO_OFF=1
+# disables the raise (any profile).
 SO_DEF=""; SO_OBJ=""
-if [ "$PROF_NOW" = "full" ] && [ -z "${SO_OFF:-}" ]; then SO_DEF="-DRECOVER_STACK_OVF"; fi
+case "$PROF_NOW" in
+    full|embedded) [ -z "${SO_OFF:-}" ] && SO_DEF="-DRECOVER_STACK_OVF" ;;
+esac
 
 # Reusable Ada libraries (libs/*/) on GPR_PROJECT_PATH so any app can `with` them by
 # name (e.g. `with "esp32s3_hal.gpr"`).  build_ada.sh inherits this and prepends the

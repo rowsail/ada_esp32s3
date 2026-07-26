@@ -225,11 +225,17 @@ package body Bare_Glue is
    -- Gnat_Arm_Stack_Watchpoint --
    ------------------------------
 
-   Stack_Ovf_Redzone : constant := 512;
+   Stack_Ovf_Redzone : constant := 2048;
+   --  Headroom below the watchpoint: after it fires, the Storage_Error
+   --  raise and the ZCX unwinder's phase-1/2 machinery run on the faulting
+   --  task's stack BELOW the watched line, and an interrupt arriving before
+   --  the unwind completes still deposits an XT_STK frame there (the bulk
+   --  of ISR execution moves to the interrupt stack).  512 was not enough
+   --  for the unwinder alone.
 
-   --  __gnat_running_stack_bounds(void **low, void **high): weak, present only in
-   --  the full runtime.  Absent -> the arming is a no-op (never actually reached
-   --  outside full, whose s-taprop is the sole caller of this procedure).
+   --  __gnat_running_stack_bounds(void **low, void **high): weak; every GNARL
+   --  profile's s-bbthre exports it.  Absent (no tasking runtime linked) -> the
+   --  arming is a no-op.
    procedure Gnat_Running_Stack_Bounds (Low_Ptr, High_Ptr : System.Address)
    with Import, Convention => C, External_Name => "__gnat_running_stack_bounds";
    pragma Weak_External (Gnat_Running_Stack_Bounds);

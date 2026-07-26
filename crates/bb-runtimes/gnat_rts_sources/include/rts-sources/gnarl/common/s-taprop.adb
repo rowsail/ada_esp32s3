@@ -211,6 +211,24 @@ package body System.Task_Primitives.Operations is
    -- Enter_Task --
    ----------------
 
+   --  Recoverable stack overflow, stage 1 (precise detection): arm a HW
+   --  data watchpoint a redzone above the running task's stack limit, so an
+   --  overflow write faults precisely (a debug exception) instead of
+   --  silently corrupting whatever neighbours the stack.  The hook is
+   --  provided by the board glue and weak-imported: absent, arming is
+   --  skipped.  Recovery (stage 2, Stack_Overflow_Raise below) additionally
+   --  needs the build to link the xt_debugexception override; without it a
+   --  tripped watchpoint parks in the panic breadcrumb dump instead --
+   --  still a precise, attributable stop.
+
+   procedure Arm_Stack_Watchpoint_Hook;
+   pragma Import (C, Arm_Stack_Watchpoint_Hook, "__gnat_arm_stack_watchpoint");
+   pragma Weak_External (Arm_Stack_Watchpoint_Hook);
+
+   ----------------
+   -- Enter_Task --
+   ----------------
+
    procedure Enter_Task (Self_ID : ST.Task_Id) is
    begin
       --  Set lwp (for gdb)
@@ -226,7 +244,32 @@ package body System.Task_Primitives.Operations is
       --  reschedule if needed.
 
       System.OS_Interface.Set_Priority (Self_ID.Common.Base_Priority);
+
+      --  Arm this task's stack-limit watchpoint (Enter_Task runs in the
+      --  task's own context, so the running thread's bounds are its own)
+
+      if Arm_Stack_Watchpoint_Hook'Address /= System.Null_Address then
+         Arm_Stack_Watchpoint_Hook;
+      end if;
    end Enter_Task;
+
+   --------------------------
+   -- Stack_Overflow_Raise --
+   --------------------------
+
+   --  Recoverable stack overflow, stage 2: reached (via the trampoline in
+   --  stack_overflow.S, when the build links it) after the stack-limit
+   --  watchpoint fires.  Runs in the faulting task, in the redzone headroom
+   --  below the watchpoint; the raise propagates to a `when Storage_Error`
+   --  handler in that task (or reaches the last-chance handler).
+
+   procedure Stack_Overflow_Raise;
+   pragma Export (C, Stack_Overflow_Raise, "__gnat_stack_overflow_raise");
+
+   procedure Stack_Overflow_Raise is
+   begin
+      raise Storage_Error;
+   end Stack_Overflow_Raise;
 
    ----------
    -- Idle --
@@ -386,6 +429,14 @@ package body System.Task_Primitives.Operations is
               (Idle_Task.Common.Compiler_Data.Pri_Stack_Info.Size),
             Tasking.Idle_Priority, CPU'First, Success);
       end;
+
+      --  Arm the environment task's stack-limit watchpoint (Initialize runs
+      --  in the environment task's context) -- elaboration runs deep and its
+      --  overflows are otherwise the hardest to attribute.
+
+      if Arm_Stack_Watchpoint_Hook'Address /= System.Null_Address then
+         Arm_Stack_Watchpoint_Hook;
+      end if;
    end Initialize;
 
    ---------------------

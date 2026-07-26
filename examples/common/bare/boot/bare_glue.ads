@@ -56,10 +56,11 @@ package Bare_Glue is
    procedure Native_Freq_Panic (Expected, Actual : Interfaces.Unsigned_32)
    with Export, Convention => C, External_Name => "native_freq_panic", No_Return;
 
-   --  Full-profile recoverable stack overflow: arm a HW data-watchpoint a redzone
-   --  above the running thread's stack limit (s-taprop Enter_Task calls this in
-   --  the task's own context).  Inert unless the full runtime provides the
-   --  running-thread bounds (weak-imported) -- so it is safe to always link.
+   --  Recoverable stack overflow: arm a HW data-watchpoint a redzone above the
+   --  running thread's stack limit (each runtime's s-taprop calls this from
+   --  Initialize and Enter_Task, in the task's own context).  Inert unless the
+   --  runtime provides the running-thread bounds (weak-imported) -- so it is
+   --  safe to always link.
    procedure Gnat_Arm_Stack_Watchpoint
    with Export, Convention => C, External_Name => "__gnat_arm_stack_watchpoint";
 

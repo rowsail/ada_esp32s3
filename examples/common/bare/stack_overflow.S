@@ -8,12 +8,11 @@
  * EXCSAVE6), leaving the faulting window (a1..a15, SP) intact so the trampoline
  * runs in the faulting task's context.
  *
- * On OUR watchpoint (data break #1, the stack limit): point the debug return PC
- * at the trampoline and rfi -- the task resumes at the trampoline, which does a
- * proper windowed call4 (PC-relative, no scratch reg, so the faulting frame's
- * registers survive for the unwinder) into the GNAT raise.  The raise runs in
- * the redzone headroom below the watchpoint and unwinds the over-limit frames
- * to a `when Storage_Error` handler (or terminates the task if none).
+ * On OUR watchpoint (data break #1, the stack limit): emulate a call4 from the
+ * faulting instruction into the GNAT raise (see the inline comment) and rfi.
+ * The raise runs in the redzone headroom below the watchpoint and unwinds the
+ * over-limit frames to a `when Storage_Error` handler (or terminates the task
+ * if none).
  *
  * Any other debug exception falls through to the default panic path. */
 
@@ -27,9 +26,30 @@ xt_debugexception:
 	extui	a0, a0, 8, 4			/* a0 = DBNUM (bits 8..11) */
 	bnei	a0, 1, .Lso_chain		/* not data break #1 -> not our watchpoint */
 
-	/* our stack-limit watchpoint: resume at the raise trampoline */
-	movi	a0, xt_stack_overflow_tramp
-	wsr.epc6	a0
+	/* Our stack-limit watchpoint.  Emulate a call4 from the faulting
+	   instruction into the GNAT raise: set the return-address register a
+	   call4 would set (a4 of the faulting window, call4-encoded to the
+	   faulting PC) and CALLINC=1 in the resume PS, then resume at the
+	   raise procedure -- its 'entry' completes the call.  The raise thus
+	   appears as a callee of the faulting frame, and the ZCX unwinder
+	   walks only real, FDE-covered Ada frames (hand-written assembly has
+	   no FDE on Xtensa -- gas rejects CFI -- and an FDE-less frame aborts
+	   the unwind, which is why a call-through trampoline cannot work).
+	   a2/a3 of the faulting window are dead (only a0/a1 feed the unwind
+	   chain; a4 is exactly what a real call4 clobbers). */
+	rsr.epc6	a2			/* faulting PC */
+	slli	a2, a2, 2
+	srli	a2, a2, 2			/* pc & 0x3FFF_FFFF */
+	movi	a3, 0x40000000
+	or	a4, a2, a3			/* call4-encoded return address */
+	movi	a2, __gnat_stack_overflow_raise
+	wsr.epc6	a2
+	rsr.eps6	a2
+	movi	a3, ~0x00030000
+	and	a2, a2, a3			/* clear PS.CALLINC */
+	movi	a3, 0x00010000
+	or	a2, a2, a3			/* PS.CALLINC := 1 (call4) */
+	wsr.eps6	a2
 	rsr.excsave6	a0			/* restore faulting a0 */
 	rfi	6
 
@@ -42,15 +62,6 @@ xt_debugexception:
 	rsr.excsave6	a0
 	wsr.excsave1	a0
 	call0	_xt_panic			/* does not return */
-
-	.align	4
-	.global	xt_stack_overflow_tramp
-xt_stack_overflow_tramp:
-	rsil	a2, 15				/* mask interrupts across the raise (no ISR can
-						   fire and double-fault in the redzone; a2 =
-						   old PS, but this frame is unwound, not resumed) */
-	call4	__gnat_stack_overflow_raise	/* raises Storage_Error; no return */
-	ill					/* trap if it somehow returns */
 
 	/* Force this object to be linked: the IDF's WEAK xt_debugexception
 	   already satisfies the vector's reference, so without a forced pull our
