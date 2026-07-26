@@ -186,6 +186,8 @@ __gnat_vec_text_start:
 	movi	a5, __gnat_running_thread_table
 	addx4	a5, a2, a5
 	l32i	a7, a5, 0
+	beqz	a6, 2f			/* scheduler not fully up: no dispatch */
+	beqz	a7, 2f			/* (FreeRTOS's port_xSchedulerRunning guard) */
 	beq	a6, a7, 2f		/* First = Running: plain resume */
 
 	/* Guard: never dispatch away from a half-entered vector.  Its

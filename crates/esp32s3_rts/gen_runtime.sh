@@ -267,6 +267,18 @@ if [ ! -d "$RTS" ]; then
             < "$HERE/full_overlay/patches/06-s-taprob-finalize-protection.patch"
         echo "[gen_runtime] s-taprob Finalize_Protection: applied"
 
+        # Elaboration-order idle repair: the binder's Runtime_Initialize calls
+        # Tasking.Initialize BEFORE any library-unit elaboration (full-runtime
+        # exceptions need the task layer that early), so s-taprop's later body
+        # elaboration default-initialises Idle_Tasks and wipes the boot CPU's
+        # already-built idle ATCB (LL.Thread back to null; the first interrupt
+        # handler's ceiling lock then dereferences it).  Elaborate_Body orders
+        # the Ada graph; Repair_Idle_After_Elaboration (called from s-tasini's
+        # elaboration, the first point after s-taprop's) rebuilds the idle.
+        patch -p1 -d "$RTS" \
+            < "$HERE/full_overlay/patches/07-s-taprop-elab-order-idle-repair.patch"
+        echo "[gen_runtime] s-taprop elab-order idle repair: applied"
+
         # Rendezvous priority INHERITANCE (Boost_Priority) must use the caller's
         # BASE priority, not Get_Priority (the raw BB active priority).  This port
         # transiently boosts active to an internal lock CEILING (Any_Priority'Last

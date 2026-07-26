@@ -64,6 +64,7 @@ package body System.BB.CPU_Primitives is
    --------------------
 
    procedure Context_Switch is
+      use System.BB.Threads;
       use System.BB.Threads.Queues;
 
       procedure Switch_Asm (Running_Slot, First_Slot : System.Address);
@@ -76,8 +77,7 @@ package body System.BB.CPU_Primitives is
       CPU_Id : constant System.Multiprocessors.CPU :=
                  Board_Support.Multiprocessors.Current_CPU;
 
-      New_Priority : constant Integer :=
-                       First_Thread_Table (CPU_Id).Active_Priority;
+      New_Priority : Integer;
    begin
       --  Inside a native interrupt the switch is NOT performed here: the
       --  vector's outermost epilogue compares First_Thread with Running_Thread
@@ -90,9 +90,22 @@ package body System.BB.CPU_Primitives is
          return;
       end if;
 
+      --  Boot window: until the environment thread is registered and the
+      --  ready queue seeded, one of the table slots is still null.  There is
+      --  no context to save into (or none to resume), so do not switch --
+      --  the same guard the FreeRTOS port applies via port_xSchedulerRunning.
+
+      if Running_Thread_Table (CPU_Id) = null
+        or else First_Thread_Table (CPU_Id) = null
+      then
+         return;
+      end if;
+
       --  Set the board-level interrupt priority for the incoming thread
       --  (full CPU interrupt disabling is handled separately by the switch).
-      --  Mirrors the RISC-V port.
+      --  Mirrors the RISC-V port.  Read only after the null guard above.
+
+      New_Priority := First_Thread_Table (CPU_Id).Active_Priority;
 
       if New_Priority < Interrupt_Priority'Last then
          Board_Support.Interrupts.Set_Current_Priority (New_Priority);
