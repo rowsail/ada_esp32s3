@@ -42,22 +42,22 @@ package body System.BB.CPU_Primitives is
    --  area sits between).  __gnat_start_thread therefore reads the task entry
    --  point at [SP + 16] and the argument at [SP + 20].
 
-   --  Per-core flags shared with the BSP (s-bbbosu defines/exports them) and
-   --  the interrupt vector (highint5.S).  When a context switch is requested
-   --  from inside a native interrupt (In_Native_Int /= 0), Context_Switch
-   --  records it in Switch_Pending and returns; the vector epilogue then
-   --  dispatches to the next thread (__gnat_preempt_dispatch) from its clean
-   --  single-window context.  This keeps the cooperative SPILL_ALL_WINDOWS out
-   --  of interrupt context (ACATS CXD8002).
+   --  Per-core native-interrupt nesting depth, owned by the interrupt vector
+   --  asm (highint5.S): incremented in the masked vector prologue and
+   --  decremented in the masked vector epilogue, so it is nonzero exactly
+   --  while any native interrupt is being serviced on the core.  When GNARL
+   --  requests a context switch from inside an interrupt (e.g. Leave_Kernel
+   --  at the end of a protected action run by a handler), Context_Switch
+   --  simply returns: the vector's OUTERMOST epilogue performs the switch
+   --  itself, fully masked, by comparing First_Thread with Running_Thread
+   --  (__gnat_preempt_dispatch).  This keeps the cooperative
+   --  SPILL_ALL_WINDOWS out of interrupt context entirely.
 
    type Core_Word_Array is array (0 .. 1) of Interfaces.Unsigned_32;
    pragma Volatile_Components (Core_Word_Array);
 
-   In_Native_Int : Core_Word_Array;
-   pragma Import (Asm, In_Native_Int, "__gnat_in_native_int");
-
-   Switch_Pending : Core_Word_Array;
-   pragma Import (Asm, Switch_Pending, "__gnat_switch_pending");
+   Int_Nest : Core_Word_Array;
+   pragma Import (Asm, Int_Nest, "__gnat_int_nest");
 
    --------------------
    -- Context_Switch --
@@ -79,14 +79,14 @@ package body System.BB.CPU_Primitives is
       New_Priority : constant Integer :=
                        First_Thread_Table (CPU_Id).Active_Priority;
    begin
-      --  If requested from inside a native interrupt, do NOT switch here:
-      --  record it and let the interrupt vector epilogue dispatch from its
-      --  clean single-window context (__gnat_preempt_dispatch).  Running the
-      --  cooperative SPILL+retw switch from the ISR window chain corrupts the
-      --  register windows (ACATS CXD8002).
+      --  Inside a native interrupt the switch is NOT performed here: the
+      --  vector's outermost epilogue compares First_Thread with Running_Thread
+      --  itself, fully masked, and dispatches from its clean single-window
+      --  context (__gnat_preempt_dispatch).  Running the cooperative
+      --  SPILL+retw switch from the ISR window chain would corrupt the
+      --  register windows.
 
-      if In_Native_Int (Integer (CPU_Id) - 1) /= 0 then
-         Switch_Pending (Integer (CPU_Id) - 1) := 1;
+      if Int_Nest (Integer (CPU_Id) - 1) /= 0 then
          return;
       end if;
 

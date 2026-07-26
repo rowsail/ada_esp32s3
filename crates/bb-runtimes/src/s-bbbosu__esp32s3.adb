@@ -8,11 +8,14 @@
 --  The clock reads the shared 16 MHz SYSTIMER UNIT0 count (Read_Clock, x15  --
 --  into the 240 MHz Time unit).  The alarm is a SYSTIMER UNIT0 comparator --
 --  per core (TARGET0/core 0, TARGET1/core 1) whose matrix interrupt is      --
---  routed to CPU_INT 26 (level 5) -> our level-5 vector (xt_highint5) ->    --
---  __gnat_timer_interrupt -> Interrupt_Wrapper.  The systimer keeps counting--
---  while a core idles in waiti, so the alarm still fires when the whole     --
---  system is idle; CCOUNT/CCOMPARE2 (the old tick) halted in waiti and could--
---  deadlock a fully-idle system, so it is no longer used.                   --
+--  routed to CPU_INT 21 (level 2) -> the native level-2 vector             --
+--  (highint5.S) -> Level2_Dispatch -> Interrupt_Wrapper.  Per the FreeRTOS  --
+--  Xtensa model every OS-interacting interrupt sits at a level <=           --
+--  XCHAL_EXCM_LEVEL and handlers are dispatched at EXCM_LEVEL; the vector   --
+--  performs any needed context switch at its outermost exit.  The systimer  --
+--  keeps counting while a core idles in waiti, so the alarm still fires     --
+--  when the whole system is idle; CCOUNT/CCOMPARE2 (the old tick) halted    --
+--  in waiti and could deadlock a fully-idle system, so it is not used.      --
 ------------------------------------------------------------------------------
 
 pragma Restrictions (No_Elaboration_Code);
@@ -22,7 +25,6 @@ with System.Machine_Code;         use System.Machine_Code;
 with System.BB.Parameters;
 with System.BB.CPU_Primitives;
 with System.BB.CPU_Primitives.Multiprocessors;
-with System.BB.Threads.Queues;
 
 package body System.BB.Board_Support is
 
@@ -40,15 +42,14 @@ package body System.BB.Board_Support is
    --  unused.  We use the systimer (a free-running 16 MHz counter that keeps
    --  ticking in waiti), so the alarm still fires when the system is idle.
 
-   Alarm_Interrupt_Bit  : constant Unsigned_32 := 2 ** 21;  --  SYSTIMER->int21
-   Poke_Interrupt_Bit   : constant Unsigned_32 := 2 ** 29;  --  CPU_INT 29 (L3)
    Device_Interrupt_Id  : constant := 23;                   --  CPU_INT 23 (L3)
    Device_Interrupt_Bit : constant Unsigned_32 := 2 ** Device_Interrupt_Id;
-   --  Second level-3 device slot (CPU_INT 27 = Device_L3_1), for a hard-real-
-   --  time source that must PREEMPT the level-2 devices -- the LCD RGB bounce
-   --  refill, which the TWAI ISR (also L2) was serialising with and starving
-   --  past its ~1 ms deadline.  Priority_Of_Interrupt already maps 27 -> L3
-   --  and attach already enables it; this vector just has to dispatch it.
+   --  Second level-3 device slot (CPU_INT 27 = Device_L3_1), for a
+   --  hard-real-time source that must be taken AHEAD of the level-2 devices
+   --  -- the LCD RGB bounce refill, which the TWAI traffic (L2) was starving
+   --  past its ~1 ms deadline when both shared level 2.  Handlers dispatch at
+   --  EXCM_LEVEL and so do not preempt each other, but a pending level 3 is
+   --  vectored before any pending level 2 and preempts task code first.
    Device_L3_1_Id  : constant := 27;                        --  CPU_INT 27 (L3)
    Device_L3_1_Bit : constant Unsigned_32 := 2 ** Device_L3_1_Id;
 
@@ -59,11 +60,10 @@ package body System.BB.Board_Support is
    L2_0_Bit : constant Unsigned_32 := 2 ** 19;
    L2_1_Bit : constant Unsigned_32 := 2 ** 20;
    L2_2_Bit : constant Unsigned_32 := 2 ** 21;
-   --  The single level-5 vector serves both the timer (CCOMPARE2) and the
-   --  cross-core poke; Timer_Interrupt reads the INTERRUPT register to see
-   --  which fired.  The poke is a FROM_CPU matrix source routed to CPU_INT 31
-   --  on each core (set up in glue.c); CPU_INT 31 is level-triggered, so the
-   --  handler deasserts it by clearing the FROM_CPU source register.
+   --  CPU_INT 21 (L2_2) is shared by the SYSTIMER alarm and the cross-core
+   --  FROM_CPU poke (both matrix sources are mapped to it in bare_boot);
+   --  Level2_Dispatch reads the FROM_CPU register to tell them apart.  Both
+   --  sources are level-triggered, deasserted by clearing their registers.
 
    type Reg32 is mod 2 ** 32 with Size => 32;
 
@@ -112,49 +112,20 @@ package body System.BB.Board_Support is
    --  the arming is per-core rare, so the cross-core RMW window is accepted
    --  for now (a shared spin lock would close it).
 
-   --  Preemptive context-switch deferral (Option A; see s-bbcppr +
-   --  context_switch.S __gnat_preempt_dispatch).  A switch requested inside a
-   --  native interrupt is deferred (Context_Switch sets Switch_Pending); the
-   --  vector epilogue dispatches it with no second window spill.
-   --
-   --  NESTING-COUNTER INVARIANT (the L3-over-L2 window-corruption fix).  These
-   --  dispatch bodies only INCREMENT In_Native_Int (on entry); the matching
-   --  DECREMENT lives in the vector epilogue (highint5.S), done under a full
-   --  interrupt mask ATOMICALLY WITH the outermost-switch decision.  The
-   --  counter must stay >= 1 the whole time a native vector is executing --
-   --  including its epilogue, up to the rfi / preempt_dispatch.  If a dispatch
-   --  body decremented it to 0 before returning (as it used to), a higher-
-   --  priority native interrupt firing in the tiny window before the vector
-   --  finished its epilogue would see In_Native_Int = 0, believe itself the
-   --  OUTERMOST interrupt, consume the deferred Switch_Pending, and
-   --  __gnat_preempt_dispatch a context switch OUT OF the lower vector's half-
-   --  unwound single-window frame -- double-saving it and corrupting the
-   --  interruptee's register-window state (task later wedges in
-   --  _WindowUnderflow8; WINDOWSTART inconsistent).  Rare under the L5 tick
-   --  alone (the old intermittent CXD8002 crash), but a high-frequency L3
-   --  device interrupt (e.g. an RGB-LCD bounce refill) preempting L2 (TWAI)
-   --  hammers it.  Entry increments that CAN be preempted by a higher native
-   --  level (L2, L3) are masked; the L5 tick (top of the nest) needs no mask.
-
-   type Core_Word_Array is array (0 .. 1) of Unsigned_32;
-   pragma Volatile_Components (Core_Word_Array);
-
-   In_Native_Int : Core_Word_Array := (0, 0);
-   pragma Export (Asm, In_Native_Int, "__gnat_in_native_int");
-   --  Per-core native-interrupt nesting depth.  Incremented here, decremented
-   --  in the masked vector epilogue (see the invariant above).
-
-   Switch_Pending : Core_Word_Array := (0, 0);
-   pragma Export (Asm, Switch_Pending, "__gnat_switch_pending");
-   --  Per-core "a context switch was deferred" flag, consumed by the vector.
+   --  Interrupt architecture (the FreeRTOS Xtensa model; see highint5.S for
+   --  the full design note).  The vector saves the complete context, hops
+   --  onto the per-CPU interrupt stack and calls the dispatch below AT
+   --  INTLEVEL = EXCM_LEVEL, so these bodies (and every handler they run)
+   --  are never preempted by another OS-band interrupt.  They do exactly one
+   --  job -- service the pending sources.  All bookkeeping lives in the
+   --  vector: the nesting count (__gnat_int_nest, owned by the vector asm)
+   --  and the context switch, which the OUTERMOST vector epilogue performs
+   --  itself by comparing First_Thread with Running_Thread -- these bodies
+   --  never call Context_Switch (and s-bbcppr.Context_Switch refuses to
+   --  switch while __gnat_int_nest is nonzero).
 
    procedure Clear_Poke;
    --  Deassert this core's pending FROM_CPU poke source.
-
-   procedure Timer_Interrupt
-     with Export, Convention => C, External_Name => "__gnat_timer_interrupt";
-   --  Called from the level-5 vector: run the alarm handler, then context
-   --  switch if a higher-priority task became ready (interrupt epilogue).
 
    procedure Native_Setup_Systimer_Core0
      with Import, Convention => C,
@@ -162,7 +133,7 @@ package body System.BB.Board_Support is
    procedure Native_Setup_Systimer_Core1
      with Import, Convention => C,
           External_Name => "native_setup_systimer_core1";
-   --  Per-core: route the SYSTIMER TARGETx int to CPU_INT 26, enable that
+   --  Per-core: route the SYSTIMER TARGETx int to CPU_INT 21, enable that
    --  comparator + its interrupt, and unmask the CPU int (core 0 -> TARGET0,
    --  core 1 -> TARGET1).  Defined in bare_boot.adb (typed SVD access).
 
@@ -181,15 +152,14 @@ package body System.BB.Board_Support is
 
    procedure Level3_Dispatch
      with Export, Convention => C, External_Name => "__gnat_level3_dispatch";
-   --  Called from the native level-3 vector: ack the device source, run its
-   --  GNARL handler (Interrupt_Wrapper), then the interrupt-epilogue context
-   --  switch -- the same shape as Timer_Interrupt but for level 3.
+   --  Called from the native level-3 vector: service every pending level-3
+   --  device source (CPU_INT 23 and 27) through Interrupt_Wrapper.
 
    procedure Level2_Dispatch
      with Export, Convention => C, External_Name => "__gnat_level2_dispatch";
-   --  Level-2 device dispatch (CPU_INT 19/20/21).  Like Level3_Dispatch but
-   --  with an atomic native-nesting bump: L2 can be preempted by L3/L5 (which,
-   --  sitting at the top of their nests, don't need that).
+   --  Called from the native level-2 vector: service every pending level-2
+   --  source -- the device slots (CPU_INT 19/20) and the shared tick +
+   --  cross-core-poke slot (CPU_INT 21).
 
    procedure Park_Alarm;
    --  Push CCOMPARE2 ~a full period ahead so int 16 cannot fire spuriously
@@ -216,9 +186,9 @@ package body System.BB.Board_Support is
       Systimer_Int_Clr := 16#3#;   --  clear TARGET0 + TARGET1
    end Park_Alarm;
 
-   --------------------
-   -- Timer_Interrupt --
-   --------------------
+   ----------------
+   -- Clear_Poke --
+   ----------------
 
    procedure Clear_Poke is
    begin
@@ -231,68 +201,13 @@ package body System.BB.Board_Support is
       end if;
    end Clear_Poke;
 
-   procedure Timer_Interrupt is
-      Pending : Unsigned_32;
-      Core    : constant Integer := Integer (Multiprocessors.Current_CPU) - 1;
-   begin
-      --  Servicing a native interrupt: defer any context switch requested
-      --  below to the vector epilogue.  Runs at INTLEVEL 5 (masked), so this
-      --  update is not preemptible on this core.
-      In_Native_Int (Core) := In_Native_Int (Core) + 1;
-
-      Asm ("rsr.interrupt %0",
-           Outputs  => Unsigned_32'Asm_Output ("=r", Pending),
-           Volatile => True);
-
-      --  Cross-core poke (CPU_INT 31): ack the source, then run the GNARL poke
-      --  handler (this CPU's expired timing events + alarm wakeups).
-      if (Pending and Poke_Interrupt_Bit) /= 0 then
-         Clear_Poke;
-         System.BB.CPU_Primitives.Multiprocessors.Poke_Handler;
-      end if;
-
-      --  Timer alarm (SYSTIMER TARGETx / CPU_INT 26): the Alarm_Handler
-      --  calls Clear_Alarm_Interrupt (W1C) then re-arms via Set_Alarm.
-      if (Pending and Alarm_Interrupt_Bit) /= 0 then
-         System.BB.Interrupts.Interrupt_Wrapper (Alarm_Interrupt_ID);
-      end if;
-
-      --  Interrupt epilogue: switch to the highest-priority ready thread if it
-      --  differs from the one we interrupted.  Context_Switch saves the
-      --  interrupted thread "solicited" (returning here); the level-5 vector
-      --  performs the final register restore + RFE when it is resumed.
-
-      --  Context_Switch defers while In_Native_Int /= 0 (sets Switch_Pending);
-      --  the vector epilogue performs the real dispatch.
-      if System.BB.Threads.Queues.Context_Switch_Needed then
-         System.BB.CPU_Primitives.Context_Switch;
-      end if;
-
-      --  NB no decrement here: the level-5 vector epilogue (highint5.S) does
-      --  it, masked, atomically with the outermost-switch decision (see the
-      --  In_Native_Int invariant above).
-   end Timer_Interrupt;
-
    ---------------------
    -- Level3_Dispatch --
    ---------------------
 
    procedure Level3_Dispatch is
       Pending : Unsigned_32;
-      Saved   : Unsigned_32;
-      Core    : constant Integer := Integer (Multiprocessors.Current_CPU) - 1;
    begin
-      --  Enter the native interrupt.  Mask across the counter bump (like
-      --  Level2_Dispatch): L3 runs at INTLEVEL 3 so the L5 tick can preempt
-      --  it, and on an OUTERMOST L3 a tick landing mid-bump would see
-      --  In_Native_Int transiently 0 and wrongly context-switch out of this
-      --  dispatch (see the In_Native_Int invariant above).
-      Asm ("rsil %0, 15",
-           Outputs => Unsigned_32'Asm_Output ("=r", Saved), Volatile => True);
-      In_Native_Int (Core) := In_Native_Int (Core) + 1;
-      Asm ("wsr.ps %0" & ASCII.LF & ASCII.HT & "rsync",
-           Inputs => Unsigned_32'Asm_Input ("r", Saved), Volatile => True);
-
       Asm ("rsr.interrupt %0",
            Outputs  => Unsigned_32'Asm_Output ("=r", Pending),
            Volatile => True);
@@ -300,22 +215,14 @@ package body System.BB.Board_Support is
       if (Pending and Device_Interrupt_Bit) /= 0 then
          --  Run the attached handler; it clears the device source (CPU_INT 23
          --  is level-triggered, so clearing the source deasserts it).  The
-         --  handler runs at level-3 priority, so int 23 stays masked until it
-         --  returns -- no storm despite the still-asserted source.
+         --  source stays masked until the vector returns -- no storm despite
+         --  the still-asserted line.
          System.BB.Interrupts.Interrupt_Wrapper (Device_Interrupt_Id);
       end if;
       if (Pending and Device_L3_1_Bit) /= 0 then
          --  Second L3 device source (CPU_INT 27); same shape as int 23.
          System.BB.Interrupts.Interrupt_Wrapper (Device_L3_1_Id);
       end if;
-
-      if System.BB.Threads.Queues.Context_Switch_Needed then
-         System.BB.CPU_Primitives.Context_Switch;
-      end if;
-
-      --  NB no decrement here: the level-3 vector epilogue (highint5.S) does
-      --  it, masked, atomically with the outermost-switch decision (see the
-      --  In_Native_Int invariant above).
    end Level3_Dispatch;
 
    ---------------------
@@ -324,20 +231,8 @@ package body System.BB.Board_Support is
 
    procedure Level2_Dispatch is
       Pending : Unsigned_32;
-      Saved   : Unsigned_32;
       Core    : constant Integer := Integer (Multiprocessors.Current_CPU) - 1;
    begin
-      --  Enter the native interrupt.  Level 2 can be preempted by a higher
-      --  native level (L3 or the L5 tick) *during* this counter bump; that
-      --  could leave In_Native_Int transiently 0 and let the higher level
-      --  context-switch out of this still-active dispatch.  So mask all
-      --  interrupts across the bump (rsil 15) to make it atomic.
-      Asm ("rsil %0, 15",
-           Outputs => Unsigned_32'Asm_Output ("=r", Saved), Volatile => True);
-      In_Native_Int (Core) := In_Native_Int (Core) + 1;
-      Asm ("wsr.ps %0" & ASCII.LF & ASCII.HT & "rsync",
-           Inputs => Unsigned_32'Asm_Input ("r", Saved), Volatile => True);
-
       Asm ("rsr.interrupt %0",
            Outputs  => Unsigned_32'Asm_Output ("=r", Pending),
            Volatile => True);
@@ -350,24 +245,16 @@ package body System.BB.Board_Support is
       end if;
       if (Pending and L2_2_Bit) /= 0 then
          --  Shared tick + cross-core poke slot (CPU_INT 21).  Both the
-         --  SYSTIMER alarm and the FROM_CPU poke route here.  Handle poke only
-         --  its FROM_CPU source is actually asserted (else it is an alarm-only
-         --  tick), then run the alarm handler -- which re-checks the clock, so
-         --  it is safe to call even if only the poke fired.
+         --  SYSTIMER alarm and the FROM_CPU poke route here.  Handle the poke
+         --  only when its FROM_CPU source is actually asserted (else this is
+         --  an alarm-only tick), then run the alarm handler -- which
+         --  re-checks the clock, so it is safe even if only the poke fired.
          if (if Core = 0 then From_CPU_2 else From_CPU_3) /= 0 then
             Clear_Poke;
             System.BB.CPU_Primitives.Multiprocessors.Poke_Handler;
          end if;
          System.BB.Interrupts.Interrupt_Wrapper (L2_2_Id);
       end if;
-
-      if System.BB.Threads.Queues.Context_Switch_Needed then
-         System.BB.CPU_Primitives.Context_Switch;
-      end if;
-
-      --  NB no decrement here: the level-2 vector epilogue (highint5.S) does
-      --  it, masked, atomically with the outermost-switch decision (see the
-      --  In_Native_Int invariant above).
    end Level2_Dispatch;
 
    ----------------------

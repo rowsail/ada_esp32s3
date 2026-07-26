@@ -271,14 +271,15 @@ __gnat_preempt_dispatch:
 
 	/* Atomic interrupt return (CXD8002).  A plain 'wsr.ps' here lowers INTLEVEL
 	   to the resumed thread's level (0) *before* a0/a1 are reloaded and before
-	   the 'rfe', opening a window in which a fresh level-5 tick preempts this
+	   the 'rfe', opening a window in which a fresh tick preempts this
 	   half-restored thread (a1 still = the XT_STK frame, not the thread SP).  The
 	   re-entrant save then detonates later in _xt_context_save's SPILL.  Mask all
 	   interrupts for the (few-insn) restore window with rsil, set EPS_5/EPC_5,
 	   and return with 'rfi 5' which restores PS<-EPS_5 + PC<-EPC_5 atomically --
-	   INTLEVEL stays high right up to the return.  (This path is entered at
-	   INTLEVEL 5 from highint5, 3 from the level-3 vector, or the kernel level
-	   from a cooperative switch; rsil makes it correct from all three.)
+	   INTLEVEL stays high right up to the return.  (EPS_5/EPC_5 are used purely
+	   as scratch for the atomic return -- nothing is routed at level 5.  This
+	   path is entered fully masked from the vector epilogues, or at the kernel
+	   level from a cooperative switch; the rsil makes it correct from all.)
 	   a0 is scratch (the WINDOWSTART fix above already clobbered it); a8 must
 	   NOT be touched -- _xt_context_restore has reloaded it as the thread's a8. */
 	rsil	a0, 15

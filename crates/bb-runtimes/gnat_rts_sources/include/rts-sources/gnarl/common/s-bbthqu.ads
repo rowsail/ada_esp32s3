@@ -312,6 +312,21 @@ package System.BB.Threads.Queues is
    --  Consume a pending cross-CPU cancel request on the current CPU (called
    --  from the Poke handler, under the kernel lock).
 
+   function Cross_Wakeup (Thread : Thread_Id) return Boolean with
+   --  If Thread belongs to another, already-started CPU: delegate its wakeup
+   --  to that CPU (Request_Cross_Cancel + Poke) and return True.  The target
+   --  CPU's Poke handler (Run_Cross_Cancel) then performs the whole wakeup
+   --  locally, by state, serialised against the thread's own Sleep by that
+   --  CPU's kernel section.  Returns False when Thread is local (or its CPU
+   --  has not started): the caller performs the ordinary local wakeup.
+   --
+   --  Never touches Thread's descriptor: an unsynchronised cross-core write
+   --  to State / Wakeup_Signaled races the owning CPU's Sleep and queue
+   --  surgery (kernel sections mask only their OWN core) and can corrupt the
+   --  ready queue -- every cross-core wakeup must go through this delegation.
+
+     Pre => Thread /= Null_Thread_Id;
+
    -----------------
    -- Global_List --
    -----------------

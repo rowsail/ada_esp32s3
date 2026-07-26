@@ -445,7 +445,19 @@ package body System.BB.Threads is
    begin
       Protection.Enter_Kernel;
 
-      if Id.State = Suspended then
+      if Queues.Cross_Wakeup (Id) then
+
+         --  Id lives on another, already-started CPU: the whole wakeup has
+         --  been delegated to that CPU, whose Poke handler performs it
+         --  locally, by state (Run_Cross_Cancel).  NOTHING of Id's descriptor
+         --  may be touched from here: Enter_Kernel masks only THIS core, so
+         --  an unsynchronised write to Id.State / Id.Wakeup_Signaled races
+         --  the owning core's Sleep and queue surgery and can corrupt its
+         --  ready queue.
+
+         null;
+
+      elsif Id.State = Suspended then
 
          --  The thread is already waiting so that we awake it
 
@@ -458,6 +470,8 @@ package body System.BB.Threads is
 
          Queues.Insert (Id);
 
+         pragma Assert (Id.State = Runnable);
+
       else
          --  The thread is not yet waiting so that we just signal that the
          --  Wakeup command has been executed. We are waking up a task that
@@ -465,9 +479,9 @@ package body System.BB.Threads is
          --  Sleep it has been preempted by the task awaking it.
 
          Id.Wakeup_Signaled := True;
-      end if;
 
-      pragma Assert (Id.State = Runnable);
+         pragma Assert (Id.State = Runnable);
+      end if;
 
       Protection.Leave_Kernel;
    end Wakeup;
