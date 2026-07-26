@@ -257,6 +257,16 @@ if [ ! -d "$RTS" ]; then
             < "$HERE/full_overlay/patches/05-priority-d23-fifo.patch"
         echo "[gen_runtime] D.2.3 priority (CXD2001/CXD2003/CXD4005/CXD4009): applied"
 
+        # Library-level protected objects WITHOUT entries: the full profile
+        # enables finalization, so the compiler emits calls to
+        # System.Tasking.Protected_Objects.Finalize_Protection -- which the
+        # restricted bareboard s-taprob does not declare (POs WITH entries
+        # already have Finalize in s-tpoben).  Add the declaration and a
+        # no-op body: the bareboard Protection holds no dynamic resources.
+        patch -p1 -d "$RTS" \
+            < "$HERE/full_overlay/patches/06-s-taprob-finalize-protection.patch"
+        echo "[gen_runtime] s-taprob Finalize_Protection: applied"
+
         # Rendezvous priority INHERITANCE (Boost_Priority) must use the caller's
         # BASE priority, not Get_Priority (the raw BB active priority).  This port
         # transiently boosts active to an internal lock CEILING (Any_Priority'Last

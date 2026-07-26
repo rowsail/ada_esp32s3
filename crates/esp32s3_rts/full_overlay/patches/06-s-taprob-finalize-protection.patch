@@ -1,0 +1,36 @@
+--- b/gnarl/s-taprob.ads	2026-07-25 13:56:00.000000000 -0400
++++ a/gnarl/s-taprob.ads	2026-07-26 13:23:38.865131391 -0400
+@@ -220,4 +220,11 @@
+    end record;
+    pragma Suppress_Initialization (Protection);
+ 
++   procedure Finalize_Protection (Object : in out Protection);
++   --  Clean up a Protection object; the compiler generates calls to this
++   --  automatically when a library-level protected object is finalized.
++   --  The bareboard Protection holds no dynamic resources (its lock is a
++   --  plain spin lock), so there is nothing to release -- but the full
++   --  profile enables finalization, so the entry point must exist.
++
+ end System.Tasking.Protected_Objects;
+--- b/gnarl/s-taprob.adb	2026-07-25 13:56:00.000000000 -0400
++++ a/gnarl/s-taprob.adb	2026-07-26 13:24:04.225347906 -0400
+@@ -165,6 +165,19 @@
+       Set_Priority (Self_Id, Caller_Priority);
+    end Unlock;
+ 
++   -------------------------
++   -- Finalize_Protection --
++   -------------------------
++
++   procedure Finalize_Protection (Object : in out Protection) is
++      pragma Unreferenced (Object);
++   begin
++      --  Nothing to release: the bareboard lock is a plain spin lock with no
++      --  allocated state.  Mark-idempotent teardown is not needed either --
++      --  library-level protected objects live for the program's lifetime.
++      null;
++   end Finalize_Protection;
++
+ begin
+    --  Ensure that tasking is initialized when using protected objects
+ 
