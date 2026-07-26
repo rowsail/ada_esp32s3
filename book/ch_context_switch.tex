@@ -188,6 +188,24 @@ The L5 timer fires while a compute task runs:
         interrupt via \texttt{\_xt\_context\_restore} + \texttt{rfi}.
 \end{enumerate}
 
+\section{The boot window: refusing to switch too early}\index{boot window}\index{port\_xSchedulerRunning}
+
+Between reset and the moment the environment thread is registered, the thread
+tables are part-built: one slot may already hold a thread while the other is
+still null.  FreeRTOS guards this window with
+\texttt{port\_xSchedulerRunning} \textemdash{} its interrupt epilogue will not
+dispatch until the scheduler declares itself up.  This port applies the same
+rule in both entry paths.  \texttt{Context\_Switch} returns without switching
+while a native interrupt is in flight (\texttt{\_\_gnat\_int\_nest} nonzero:
+the epilogue owns dispatch there), and likewise while either
+\texttt{Running\_Thread\_Table} or \texttt{First\_Thread\_Table} is still
+null \textemdash{} there is no context to save into, or none to resume.  The
+interrupt epilogue makes the same two null checks before it compares the
+tables, and plainly resumes the interruptee when either fails.  The cost is two
+loads per switch.  The alternative, observed the hard way, is a jump through a
+zeroed context buffer: \texttt{PC = 0} with \texttt{PS.EXCM} set, a double
+exception, and a park with the evidence destroyed.
+
 \section{Starting a task that has never run}\index{task stack}\index{trampoline}
 
 A brand-new task has no spilled frames to reload, so its first dispatch cannot use

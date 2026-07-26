@@ -149,6 +149,11 @@ dynamic-priority re-apply & re-apply a \texttt{Set\_Priority} after the lock is
   released, which the bareboard unlock would otherwise undo \\
 FIFO-within-priority & implement RM~D.2.3 so a base-priority change moves a task
   to the tail of its ready queue \\
+\texttt{Finalize\_Protection} & supply the protected-object finalization hook
+  the full compiler expects (a no-op: the bareboard lock holds no dynamic
+  state) \\
+elaboration-order idle repair & rebuild the boot CPU's idle ATCB after this
+  package's own body elaboration wipes it (below) \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -156,6 +161,36 @@ FIFO-within-priority & implement RM~D.2.3 so a base-priority change moves a task
 Keeping these as diffs rather than wholesale copied files means each change is
 small, reviewable, and obviously attributable to a specific runtime behaviour,
 and it keeps \texttt{gen\_runtime.sh} readable.
+
+\subsection{A hook that runs before elaboration}\index{elaboration order}\index{Runtime\_Initialize}
+
+The last patch in the table earns a walkthrough, because the defect class is
+easy to reintroduce.  The binder's generated \texttt{adainit} calls
+\texttt{\_\_gnat\_runtime\_initialize} \emph{before the first library unit
+elaborates}, and on the full runtime that hook reaches
+\texttt{System.Tasking.Initialize}: exception occurrences need the task layer
+(thread-local storage) from the very first raise, which can happen during
+elaboration itself.  \texttt{Initialize} builds the boot CPU's idle-task ATCB
+\textemdash{} and then, much later in \texttt{adainit}, the elaboration of
+\texttt{System.Task\_Primitives.Operations}' \emph{own body}
+default-initialises the library-level \texttt{Idle\_Tasks} array and quietly
+re-defaults the ATCB that is already in service.  The wreckage is deferred and
+misleading: the idle thread's \texttt{LL.Thread} link is null again, and the
+first interrupt handler that takes a protected object's ceiling lock
+dereferences it \textemdash{} a \texttt{LoadProhibited} at offset
+\texttt{16\#38\#}, minutes of call chain away from the cause.
+
+No elaboration pragma can fix this, because the offending call is outside the
+elaboration graph entirely.  The patch does two things:
+\texttt{pragma Elaborate\_Body} on the spec pins every \emph{Ada} client
+after the body's elaboration, and a \texttt{Repair\_Idle\_After\_Elaboration}
+procedure \textemdash{} called from \texttt{System.Tasking.Initialization}'s
+elaboration, the first point after the wipe \textemdash{} rebuilds the idle
+task.  Rebuilding is safe precisely because the idle thread cannot have run
+before elaboration completes: the environment task has not blocked yet.  The
+moral for porters: on the full runtime, treat any library-level object that a
+binder-driven hook may touch as \emph{hostile to its own elaboration}, and
+re-establish it afterwards rather than trying to order around the binder.
 
 \section{Register packages from the SVD}\index{svd2ada}\index{SVD}
 

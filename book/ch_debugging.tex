@@ -230,6 +230,62 @@ two cores (or an interrupt handler and a task) might print at once, funnel
 output through one task: interleaved single-character writes have themselves been
 mistaken for bugs more than once.
 
+\section{Breadcrumbs at the panic park}\index{panic}\index{breadcrumbs}\index{double exception}\index{PRID}
+
+When a fault escalates past every handler \textemdash{} an unhandled
+exception, a double exception, a debug exception with no debugger attached
+\textemdash{} the vendored vectors funnel into \texttt{\_xt\_panic}, which
+used to be a bare \texttt{j .}: the board parked with the evidence locked in
+special registers that the next reset destroys.  \texttt{start.S} now dumps
+the machine state to a fixed block (\texttt{\_\_gnat\_panic\_dump}) before
+parking: EXCCAUSE and EXCVADDR, EPC1..EPC7 with their EPS twins, DEPC, PS,
+\texttt{a0}/\texttt{a1}, WINDOWBASE/WINDOWSTART, PRID, and a marker for which
+entry point was taken.  The first writer wins \textemdash{} a magic word gates
+the block, so when both cores pile into the park the original fault survives
+\textemdash{} and the block lives in \texttt{.data}, re-initialised at every
+boot, so a stale dump cannot masquerade as a fresh one.  One JTAG
+\texttt{mdw} reads the whole story out of a wedged board.
+
+Two decoding traps, both paid for in hours.  The double-exception vector
+\emph{overwrites} EXCCAUSE with a panic-reason code before calling
+\texttt{\_xt\_panic}, so ``cause 2'' at a double-exception park means
+\emph{double exception}, not \emph{instruction fetch error}.  And PRID does
+not name the core by its whole value: bit~13 alone does.  On the ESP32-S3,
+\texttt{16\#CDCD\#} is core~0 and \texttt{16\#ABAB\#} is core~1
+\textemdash{} misread that and every per-core deduction that follows is
+backwards.
+
+\section{Hardware watchpoints without a debugger}\index{DBREAK}\index{watchpoint}\index{debug exception}
+
+OpenOCD watchpoints have two failure modes on this chip: they cannot be armed
+early enough to catch a corruption that happens inside the first second of
+boot, and an armed watchpoint over an address the ROM itself uses turns reset
+into a watchdog loop.  The escape is to let the \emph{firmware} arm the
+watchpoint at exactly the right moment \textemdash{} three instructions:
+
+\begin{lstlisting}[style=sh]
+wsr.dbreaka0  <address>       # the word to watch
+wsr.dbreakc0  16#8000_003C#   # store-break, 4-byte mask
+isync                          # (16#4000_003C# = load-break)
+\end{lstlisting}
+
+If a debugger is attached, the hit halts the core at the offending store with
+the writer's PC on screen.  If \emph{no} debugger is attached the hit becomes
+a debug exception that funnels into \texttt{\_xt\_panic} \textemdash{} and
+the breadcrumb block's EPC6 slot (the debug level is~6) records the writer's
+PC anyway.  A store-watch armed after setup, plus one \texttt{mdw} after the
+park, identified in one boot a rogue writer that three days of halt-and-inspect
+archaeology had missed.
+
+The technique has a sting worth knowing even if you never use it: DBREAK state
+\emph{survives soft resets}.  The full runtime's stack-overflow guard arms a
+DBREAK in normal operation, so reflashing from a full-profile image to any
+other image used to inherit a live watchpoint over what is now unrelated data
+\textemdash{} and the new image died at boot with a debuggerless debug
+exception.  \texttt{start.S} therefore zeroes \texttt{DBREAKC0/1} and
+\texttt{IBREAKENABLE} on both cores before anything else runs; if you port the
+boot path elsewhere, keep that.
+
 \section{Decoding the compiler's bare-metal complaints}
 \index{No\_Implicit\_Dynamic\_Code}\index{accessibility check}\index{restrictions}
 
