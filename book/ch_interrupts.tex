@@ -197,6 +197,31 @@ no software \texttt{WINDOWSTART} repair on the plain-resume path, and no
 special tick vector -- the tick is just another level-2 source, dispatched
 like any device interrupt.
 
+\subsection{The ceiling protocol is an invariant, not a courtesy}\index{ceiling protocol}\index{Leave\_Kernel}\index{poke}
+
+The wrapper's priority raise in step~5 is easy to read as bookkeeping for
+the handler's benefit.  It is load-bearing for the \emph{vector}: every
+kernel section ends with \texttt{Leave\_Kernel}, and \texttt{Leave\_Kernel}
+re-enables interrupts to the \emph{running thread's active priority}.  With
+the raise in place that maps back into the interrupt band and the mask
+holds; without it, the first task wakeup inside a handler drops
+\texttt{INTLEVEL} to the interrupted task's band \emph{in the middle of the
+vector}, re-opening exactly the OS-band nesting the architecture above
+forbids.
+
+This port learned that the hard way.  The cross-core \emph{poke} (the IPI
+that runs a CPU's deferred wakeups) shares the level-2 slot with the tick
+and was originally serviced \emph{before} \texttt{Interrupt\_Wrapper},
+outside the ceiling -- so under a cross-core wakeup storm the system spent
+its life in the forbidden nested regime, and the symptom was intermittent,
+maddeningly untraceable register corruption in interrupt-context code (a
+stress suite reproduced in eight seconds what months of application soaking
+never hit; the fix is eleven lines wrapping the poke in the same
+\texttt{Change\_Priority} pair the wrapper uses).  The rule it bought:
+\textbf{anything that can reach \texttt{Enter\_Kernel}/\texttt{Leave\_Kernel}
+from inside a vector must run under the interrupt's ceiling} -- there is no
+harmless amount of kernel work outside it.
+
 \section{Attaching a handler: two axes}\index{Attach\_Handler}\index{protected handler}
 
 It helps to keep two \emph{independent} distinctions apart. The first is

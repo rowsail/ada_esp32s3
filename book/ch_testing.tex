@@ -102,6 +102,31 @@ crash'' and ``a crash is impossible.'' This is the subject of
 Chapter~\ref{ch:spark}; it sits above the others because it rules out what they can only
 sample.
 
+\section{Layer 7: adversarial stress}\index{stress testing}\index{esp32s3\_stress}
+
+Everything so far checks that the system does the right thing under loads
+someone imagined.  The last layer manufactures the loads nobody would:
+\texttt{esp32s3\_stress} runs a \emph{tiny-delay storm} (tasks issuing
+randomized overdue, zero-length and sub-millisecond \texttt{delay until}s,
+mixed with busy-spins so the tick preempts at arbitrary instruction
+boundaries) underneath \emph{cross-core wakeup ping-pong} (suspension-object
+and protected-entry pairs split across the cores, waking each other at tens
+of kilohertz).  Detection needs no console: every task publishes a heartbeat
+in RAM, an on-board monitor latches the first stalled slot, and a host
+script reads the verdict over USB-JTAG.  The PRNG seed is the boot cycle
+counter, published so a failing schedule can be replayed.
+
+Two rules this layer taught.  First, \emph{soak hands-off}: halting the
+chip to read heartbeats stops the cores while the system timer keeps
+counting, and the monitor will faithfully report the observer's own
+disturbance.  Arm the run, walk away, read once at the end.  Second, the
+suite earns its keep at a rate no application can match: its first two
+minutes reproduced -- and its load then narrowed to an eleven-line fix -- a
+cross-core interrupt-nesting defect that months of hours-long application
+soaks had never surfaced, because the application never sustained
+twenty-thousand cross-core wakeups a second.  Stress is not a bigger
+application test; it is a different instrument.
+
 \section{Putting the layers together}
 
 No single layer is enough, and each is cheap where the next is dear. The compiler is
@@ -111,5 +136,5 @@ but proves the foundation; and the proofs, above them all, rule out an entire cl
 run-time failure on inputs no test enumerates. A change to the filesystem runs the host
 suite against \texttt{e2fsck} in seconds, a change to the curve re-runs a KAT, a change
 to a driver re-runs its loopback on the board, a change to the runtime re-runs the
-sweep, and a change to a parser re-runs its proof. Together they are why the code in
+sweep and a stress soak, and a change to a parser re-runs its proof. Together they are why the code in
 this book can be trusted to do on silicon what the prose says it does.
