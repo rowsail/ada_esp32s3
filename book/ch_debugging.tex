@@ -208,10 +208,12 @@ The runtime helps before you reach for a tool at all:
 
 \begin{itemize}
   \item \textbf{Precise stack-overflow detection \textemdash{} and recovery.}
-        Every profile arms a hardware watchpoint a redzone above each task's
-        stack limit as the task starts, so an overflow write faults
-        \emph{precisely} (a debug exception) instead of silently corrupting a
-        neighbour.  On the \texttt{full} and \texttt{embedded} profiles the
+        Every profile guards the \emph{running} task with a hardware
+        watchpoint a redzone above its stack limit: the context switch
+        re-arms it for the incoming thread on every switch (cooperative and
+        preemptive alike), so an overflow write faults \emph{precisely} (a
+        debug exception) instead of silently corrupting a neighbour \textemdash{}
+        whichever task overflows, whenever it runs.  On the \texttt{full} and \texttt{embedded} profiles the
         build additionally links the recovery path, which turns the trip into
         a \texttt{Storage\_Error} raised in the faulting task and caught by
         an ordinary \texttt{when Storage\_Error} handler \textemdash{}
