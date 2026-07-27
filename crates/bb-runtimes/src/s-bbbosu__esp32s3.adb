@@ -25,6 +25,7 @@ with System.Machine_Code;         use System.Machine_Code;
 with System.BB.Parameters;
 with System.BB.CPU_Primitives;
 with System.BB.CPU_Primitives.Multiprocessors;
+with System.BB.Threads.Queues;
 
 package body System.BB.Board_Support is
 
@@ -251,7 +252,30 @@ package body System.BB.Board_Support is
          --  re-checks the clock, so it is safe even if only the poke fired.
          if (if Core = 0 then From_CPU_2 else From_CPU_3) /= 0 then
             Clear_Poke;
-            System.BB.CPU_Primitives.Multiprocessors.Poke_Handler;
+
+            --  The poke consumer wakes tasks, and each wakeup's
+            --  Leave_Kernel re-enables interrupts to the RUNNING thread's
+            --  active priority.  Called bare, that is the interrupted
+            --  TASK's priority -- INTLEVEL drops to the task band in the
+            --  middle of this vector, re-opening the OS-band nesting the
+            --  vector architecture forbids (under a cross-core wakeup
+            --  storm the system then lives in that forbidden regime).
+            --  Mirror Interrupt_Wrapper's ceiling protocol: raise the
+            --  interrupted thread to this interrupt's priority around the
+            --  poke so every nested Leave_Kernel stays in the masked band.
+
+            declare
+               Self_Id         : constant System.BB.Threads.Thread_Id :=
+                 System.BB.Threads.Thread_Self;
+               Caller_Priority : constant Integer :=
+                 System.BB.Threads.Get_Priority (Self_Id);
+            begin
+               System.BB.Threads.Queues.Change_Priority
+                 (Self_Id, Interrupts.Priority_Of_Interrupt (L2_2_Id));
+               System.BB.CPU_Primitives.Multiprocessors.Poke_Handler;
+               System.BB.Threads.Queues.Change_Priority
+                 (Self_Id, Caller_Priority);
+            end;
          end if;
          System.BB.Interrupts.Interrupt_Wrapper (L2_2_Id);
       end if;
@@ -317,6 +341,59 @@ package body System.BB.Board_Support is
       -- Set_Alarm --
       ---------------
 
+      Systimer_Arm_Lock : aliased Interfaces.Unsigned_32 := 0
+        with Volatile;
+      --  SYSTIMER_CONF is ONE register shared by both cores, and Set_Alarm
+      --  read-modify-writes it (the WORK_EN toggle) -- concurrently from
+      --  both cores.  A stale write-back from one core glitches the OTHER
+      --  core's WORK_EN mid-arm: re-enabling it while that core's TARGET
+      --  HI/LO are half-written makes the alarm-miss compensation evaluate
+      --  a torn target (a spurious fire -- observed as a self-sustaining
+      --  ~60 us cross-core interrupt storm), and re-disabling can kill a
+      --  just-armed comparator (a lost alarm).  Serialise the arm sequence
+      --  across cores with a S32C1I spinlock, exactly as ESP-IDF wraps its
+      --  systimer alarm operations in a cross-core critical section.  The
+      --  caller runs under Enter_Kernel (local interrupts masked), so the
+      --  holder cannot be preempted and the other core spins for at most
+      --  the ~10-write sequence.
+
+      procedure Systimer_Arm_Acquire;
+      procedure Systimer_Arm_Release;
+
+      procedure Systimer_Arm_Acquire is
+         use Interfaces;
+         Old  : Unsigned_32;
+         Zero : constant Unsigned_32 := 0;
+      begin
+         loop
+            Old := 1;
+            Asm
+              ("wsr.scompare1 %1"      & ASCII.LF & ASCII.HT &
+               "s32c1i        %0, %2, 0",
+               Outputs  => Unsigned_32'Asm_Output ("+r", Old),
+               Inputs   =>
+                 (Unsigned_32'Asm_Input ("r", Zero),
+                  System.Address'Asm_Input
+                    ("r", Systimer_Arm_Lock'Address)),
+               Volatile => True,
+               Clobber  => "memory");
+            exit when Old = 0;
+         end loop;
+      end Systimer_Arm_Acquire;
+
+      procedure Systimer_Arm_Release is
+         use Interfaces;
+         Zero : constant Unsigned_32 := 0;
+      begin
+         Asm
+           ("memw" & ASCII.LF & ASCII.HT & "s32i.n %0, %1, 0",
+            Inputs   =>
+              (Unsigned_32'Asm_Input ("r", Zero),
+               System.Address'Asm_Input ("r", Systimer_Arm_Lock'Address)),
+            Volatile => True,
+            Clobber  => "memory");
+      end Systimer_Arm_Release;
+
       procedure Set_Alarm (Ticks : Timer_Interval) is
          Core     : constant Integer :=
            Integer (Multiprocessors.Current_CPU) - 1;   --  0=core0, 1=core1
@@ -343,6 +420,7 @@ package body System.BB.Board_Support is
          --  WORK_EN on.  The final enable is what lets the hardware fire
          --  immediately when the target is already behind the count.  Runs
          --  under Enter_Kernel, so the sequence is not preempted locally.
+         Systimer_Arm_Acquire;
          if Core = 0 then
             Systimer_Conf := Systimer_Conf and not Target0_Work_En;
             Systimer_Target0_Hi := Hi;
@@ -358,6 +436,7 @@ package body System.BB.Board_Support is
             Systimer_Comp1_Load := 1;
             Systimer_Conf := Systimer_Conf or Target1_Work_En;
          end if;
+         Systimer_Arm_Release;
       end Set_Alarm;
 
       -------------------------
