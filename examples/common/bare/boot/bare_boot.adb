@@ -246,14 +246,33 @@ package body Bare_Boot is
    --------------------------
 
    function Native_Systimer_Count return Unsigned_64 is
+      Hi_First, Hi_Again : Unsigned_32;
+      Lo                 : Unsigned_32;
    begin
       SYSTIMER_Periph.UNIT0_OP.TIMER_UNIT0_UPDATE := True;        --  latch UNIT0
       while not SYSTIMER_Periph.UNIT0_OP.TIMER_UNIT0_VALUE_VALID loop
          null;
       end loop;
-      return
-        Shift_Left (Unsigned_64 (SYSTIMER_Periph.UNIT0_VALUE_HI.TIMER_UNIT0_VALUE_HI), 32)
-        or Unsigned_64 (SYSTIMER_Periph.UNIT0_VALUE_LO);
+
+      --  The UNIT0 VALUE_HI/LO latch registers are SHARED: the other core --
+      --  or this core's own tick handler preempting an unmasked task-side
+      --  Clock read -- can re-latch them BETWEEN our HI and LO reads.  If LO
+      --  wrapped across that window, a one-shot HI+LO pairing is torn by
+      --  2**32 ticks (~268 s): Set_Alarm then arms a far-past target (the
+      --  alarm-miss compensation turns that into a ~25 kHz interrupt storm)
+      --  or a far-future one (delays stop being served).  Re-read until HI
+      --  is stable around LO -- ESP-IDF's systimer HAL does the same.
+
+      loop
+         Hi_First := Unsigned_32
+           (SYSTIMER_Periph.UNIT0_VALUE_HI.TIMER_UNIT0_VALUE_HI);
+         Lo       := Unsigned_32 (SYSTIMER_Periph.UNIT0_VALUE_LO);
+         Hi_Again := Unsigned_32
+           (SYSTIMER_Periph.UNIT0_VALUE_HI.TIMER_UNIT0_VALUE_HI);
+         exit when Hi_First = Hi_Again;
+      end loop;
+
+      return Shift_Left (Unsigned_64 (Hi_Again), 32) or Unsigned_64 (Lo);
    end Native_Systimer_Count;
 
    -------------
