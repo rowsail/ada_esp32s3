@@ -32,6 +32,10 @@
 	.set	CTX_LEND,   32	/* LEND   > zero-overhead LOOP registers  */
 	.set	CTX_LCOUNT, 36	/* LCOUNT/                                 */
 	.set	CTX_KIND,   40	/* 0 = solicited, 1 = interrupt (Opt A)   */
+	.set	TD_BOTTOM,  64	/* Thread_Descriptor.Bottom_Of_Stack: the  */
+				/* context buffer (44) + ATCB + Base_CPU + */
+				/* Base_Priority + Active_Priority +       */
+				/* Top_Of_Stack (4 each; s-bbthre.ads)     */
 
 	/* XT_STK interrupt-frame offsets (xtensa_context.h; MUST match highint5.S). */
 	.set	XT_STK_PC,  4
@@ -178,6 +182,25 @@ __gnat_preempt_dispatch:
 .Lresume:
 	l32i	a7, a3, 0		/* a7 = next context buffer */
 	s32i	a7, a2, 0		/* Running_Thread_Table (CPU) := next */
+
+	/* Re-arm this core's stack-limit watchpoint (DBREAK1) for the
+	   INCOMING thread: watch a 64-byte line a redzone above its stack
+	   bottom, same policy (and constants) as the boot-time arming in
+	   bare_glue's __gnat_arm_stack_watchpoint.  Arming only at task
+	   start would leave the watchpoint on the LAST-STARTED task while
+	   any other task runs; re-arming here keeps it on the running one,
+	   on both the cooperative and the preemptive path.  a4/a5 are
+	   scratch this early in the resume. */
+	l32i	a4, a7, TD_BOTTOM
+	beqz	a4, .Lresume_nowatch	/* no recorded bounds: keep old watch */
+	addmi	a4, a4, 2048		/* + redzone (matches bare_glue) */
+	movi	a5, ~63
+	and	a4, a4, a5		/* align down to the 64-byte line */
+	wsr.dbreaka1	a4
+	movi	a5, 0x8000003F		/* store-break, 64-byte mask */
+	wsr.dbreakc1	a5
+	dsync
+.Lresume_nowatch:
 
 	l32i	a8, a7, CTX_CP
 	beqz	a8, .Lresume_nofp

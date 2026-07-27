@@ -211,15 +211,18 @@ package body System.Task_Primitives.Operations is
    -- Enter_Task --
    ----------------
 
-   --  Recoverable stack overflow, stage 1 (precise detection): arm a HW
-   --  data watchpoint a redzone above the running task's stack limit, so an
-   --  overflow write faults precisely (a debug exception) instead of
-   --  silently corrupting whatever neighbours the stack.  The hook is
-   --  provided by the board glue and weak-imported: absent, arming is
-   --  skipped.  Recovery (stage 2, Stack_Overflow_Raise below) additionally
-   --  needs the build to link the xt_debugexception override; without it a
-   --  tripped watchpoint parks in the panic breadcrumb dump instead --
-   --  still a precise, attributable stop.
+   --  Recoverable stack overflow, stage 1 (precise detection): a HW data
+   --  watchpoint a redzone above the running task's stack limit makes an
+   --  overflow write fault precisely (a debug exception) instead of
+   --  silently corrupting whatever neighbours the stack.  The context
+   --  switch re-arms it for the incoming thread on every switch
+   --  (context_switch.S .Lresume); the weak hook below covers the one
+   --  window the switch cannot -- the environment task between Initialize
+   --  and the first switch, i.e. elaboration.  Recovery (stage 2,
+   --  Stack_Overflow_Raise below) additionally needs the build to link the
+   --  xt_debugexception override; without it a tripped watchpoint parks in
+   --  the panic breadcrumb dump instead -- still a precise, attributable
+   --  stop.
 
    procedure Arm_Stack_Watchpoint_Hook;
    pragma Import (C, Arm_Stack_Watchpoint_Hook, "__gnat_arm_stack_watchpoint");
@@ -244,13 +247,6 @@ package body System.Task_Primitives.Operations is
       --  reschedule if needed.
 
       System.OS_Interface.Set_Priority (Self_ID.Common.Base_Priority);
-
-      --  Arm this task's stack-limit watchpoint (Enter_Task runs in the
-      --  task's own context, so the running thread's bounds are its own)
-
-      if Arm_Stack_Watchpoint_Hook'Address /= System.Null_Address then
-         Arm_Stack_Watchpoint_Hook;
-      end if;
    end Enter_Task;
 
    --------------------------
