@@ -147,20 +147,12 @@ package System.BB.Threads.Queues is
    --  Return the active priority of the current thread or
    --  System.Any_Priority'First if no threads are running.
 
-     Post =>
-
-         --  When no thread is ready to execute then return the lowest priority
-
-         (if Running_Thread_Table (CPU_Id) = Null_Thread_Id
-           or else Running_Thread_Table (CPU_Id).State /= Runnable
-          then
-            Current_Priority'Result = System.Any_Priority'First
-
-          --  Otherwise, return the active priority of the running thread
-
-          else
-            Current_Priority'Result =
-              Running_Thread_Table (CPU_Id).Active_Priority),
+   --  No postcondition: the obvious "Result = Running_Thread's Active_Priority
+   --  (or Any_Priority'First)" is UNSOUND on SMP.  This is called cross-CPU
+   --  (e.g. from Served for another core), and Running_Thread_Table and
+   --  Active_Priority are volatile state the other core mutates concurrently,
+   --  so a Post that re-reads them can observe a value different from the one
+   --  the body returned -- a spurious failure under -gnata.
 
      Inline => True;
 
