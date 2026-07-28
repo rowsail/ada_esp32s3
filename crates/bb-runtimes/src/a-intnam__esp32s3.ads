@@ -54,8 +54,12 @@ package Ada.Interrupts.Names is
    Device_L3_1 : constant Interrupt_ID := 27;
    SW_L3       : constant Interrupt_ID := 29;  --  software (wsr.intset)
 
-   --  Level-4 device interrupt (ceiling Device_L4_Priority):
-   Device_L4_0 : constant Interrupt_ID := 30;
+   --  Levels 4 and 5 have NO native dispatcher (only Level2_Dispatch /
+   --  Level3_Dispatch exist; level 5 parks), so no attachable name is exported
+   --  for them: a handler there would fire into an unhandled vector and crash.
+   --  Attaching to one is thus a compile error (undefined name) rather than a
+   --  field crash; a raw-literal escape is caught at elaboration by
+   --  Install_Interrupt_Handler.
 
    --  Kernel-reserved -- do NOT attach application handlers:
    Tick_Interrupt : constant Interrupt_ID := 16;  --  CCOMPARE2 (level 5)
@@ -66,7 +70,5 @@ package Ada.Interrupts.Names is
      System.Interrupt_Priority'Last - 3;
    Device_L3_Priority : constant System.Interrupt_Priority :=
      System.Interrupt_Priority'Last - 2;
-   Device_L4_Priority : constant System.Interrupt_Priority :=
-     System.Interrupt_Priority'Last - 1;
 
 end Ada.Interrupts.Names;
