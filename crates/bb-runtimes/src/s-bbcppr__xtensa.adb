@@ -308,6 +308,35 @@ package body System.BB.CPU_Primitives is
       end case;
    end Enable_Interrupts;
 
+   ---------------------------------
+   -- Save_And_Disable_Interrupts --
+   ---------------------------------
+
+   function Save_And_Disable_Interrupts return Integer is
+      Old : Integer;
+   begin
+      --  rsil reads the whole PS (with the old INTLEVEL) and raises INTLEVEL
+      --  to 15 in a single instruction, so Old is the exact state to hand to
+      --  Restore_Interrupts.
+      Asm ("rsil %0, 15",
+           Outputs  => Integer'Asm_Output ("=r", Old),
+           Volatile => True);
+      return Old;
+   end Save_And_Disable_Interrupts;
+
+   ------------------------
+   -- Restore_Interrupts --
+   ------------------------
+
+   procedure Restore_Interrupts (State : Integer) is
+   begin
+      --  Write back the saved PS and rsync so the masking change takes effect
+      --  before the next instruction.
+      Asm ("wsr.ps %0" & ASCII.LF & ASCII.HT & "rsync",
+           Inputs   => Integer'Asm_Input ("r", State),
+           Volatile => True);
+   end Restore_Interrupts;
+
    --------------------
    -- Initialize_CPU --
    --------------------

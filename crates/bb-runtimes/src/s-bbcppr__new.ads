@@ -89,6 +89,16 @@ package System.BB.CPU_Primitives is
    pragma Inline (Enable_Interrupts);
    --  Interrupts are enabled if they are above the value given by Level
 
+   function Save_And_Disable_Interrupts return Integer;
+   pragma Inline (Save_And_Disable_Interrupts);
+   --  Mask all maskable interrupts and return the previous interrupt state,
+   --  to be handed back to Restore_Interrupts.  Makes a short critical section
+   --  atomic against interrupts regardless of the caller's masking level.
+
+   procedure Restore_Interrupts (State : Integer);
+   pragma Inline (Restore_Interrupts);
+   --  Restore the interrupt state saved by Save_And_Disable_Interrupts.
+
    procedure Initialize_CPU;
    pragma Inline (Initialize_CPU);
 
