@@ -259,8 +259,8 @@ one 32\,MB external data-bus window (\texttt{16\#3C00\_0000\#}--\texttt{16\#3E00
 \_0000\#}) that the cache MMU partitions. This project maps flash from the
 bottom and PSRAM at \texttt{16\#3D00\_0000\#}, the PSRAM's actual extent set by
 the fitted device. Placement pins objects where they belong: RTC memory for
-state that survives sleep, internal SRAM for DMA buffers (PSRAM cannot be a DMA
-source), flash for constants.}
+state that survives sleep, internal SRAM for hot DMA buffers (DMA reaches PSRAM
+only cache-line-aligned, through the data cache), flash for constants.}
 \label{tab:memmap}
 \end{table}
 

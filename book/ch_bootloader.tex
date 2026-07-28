@@ -181,6 +181,7 @@ First, executable code must live in (or be reached through) an instruction-bus
 window: that is why the full profile relocates GCC's nested-subprogram
 trampolines to the IRAM alias rather than leaving them on the data-view stack
 (\S\ref{ch:runtime-build}). Second, PSRAM is reachable only after the loader maps
-it, and it cannot be a DMA source, which is why DMA-capable scratch buffers are
-carved from internal SRAM even when the task stack itself lives in PSRAM (the SD
-and filesystem drivers rely on this).
+it, and DMA reaches it only through the data cache, under a cache-line alignment
+contract (\S\ref{ch:perf}). Small DMA scratch buffers are simpler and faster in
+internal SRAM, which is what the SD and filesystem drivers use even when the
+task stack itself lives in PSRAM.

@@ -52,18 +52,21 @@ hard constraint bounds how much you can move: the 2nd-stage bootloader expects t
 image to present exactly two flash-mapped segments (IROM and DROM), so the bulk of
 the code must stay in flash; IRAM is for the hot slivers, not the program.
 
-\section{PSRAM: large, slower, and not DMA-able}\index{PSRAM}\index{DMA}
+\section{PSRAM: large, slower, and DMA only on its terms}\index{PSRAM}\index{DMA}
 
 External PSRAM gives you megabytes where SRAM gives you kilobytes, but it comes with
 two performance caveats. It is reached through the cache and the octal SPI bus, so it
 is slower than internal SRAM: fine for an interpreter's heap arena or a filesystem
-block cache, not where you want a hot inner loop's working set. And, decisively, \emph{it
-cannot be a DMA endpoint}: the GDMA controller reaches only internal SRAM. So even
-when a task's stack lives in PSRAM (the \texttt{ENV\_STACK\_PSRAM} option of
-Chapter~\ref{ch:static-mem}), any buffer handed to DMA (an SD-card transfer, an
-I2S sample block) must be carved from internal SRAM. The SD and filesystem drivers
-do exactly this: their scratch buffers are internal even when the rest of the data
-structure is not.
+block cache, not where you want a hot inner loop's working set. And DMA reaches it
+only on strict terms. The GDMA controller sees PSRAM \emph{through the data
+cache}, so a PSRAM buffer must be cache-line (32-byte) aligned, and ideally
+whole-line sized. The GDMA driver then keeps it coherent, writing back and
+invalidating the cache around each transfer, and the LCD driver streams its
+framebuffers from PSRAM exactly this way. Internal SRAM needs none of that
+ceremony and is faster besides. So small, hot scratch buffers stay internal:
+the SD and filesystem drivers do exactly this, their scratch buffers internal
+even when the rest of the data structure \textemdash{} or the task's own stack
+(\texttt{ENV\_STACK\_PSRAM}, Chapter~\ref{ch:static-mem}) \textemdash{} is not.
 
 \section{Measuring, not guessing}\index{CCOUNT}\index{cycle counter}
 
