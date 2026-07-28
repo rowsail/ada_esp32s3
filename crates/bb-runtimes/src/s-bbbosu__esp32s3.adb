@@ -534,6 +534,20 @@ package body System.BB.Board_Support is
       is
          pragma Unreferenced (Prio);
       begin
+         --  Only Xtensa levels 2 and 3 have a native dispatcher
+         --  (Level2_Dispatch / Level3_Dispatch); levels 4 and 5 do not
+         --  (level 5 parks -- highint5.S).  Priority_Of_Interrupt maps a
+         --  dispatched level to at most Interrupt_Priority'Last - 2; any
+         --  higher value means this CPU interrupt would fire into an
+         --  unhandled vector and crash.  Fail loudly at elaboration, not
+         --  silently in the field the first time it asserts -- the class
+         --  of trap the RGB-LCD level-3 promotion sprang on the ceiling.
+         if Priority_Of_Interrupt (Interrupt)
+           > Interrupt_Priority'Last - 2
+         then
+            raise Program_Error with "interrupt level has no dispatcher";
+         end if;
+
          --  Enable the CPU interrupt on this core.  Its dedicated vector (the
          --  level of CPU_INT Interrupt) routes to our native dispatch; matrix
          --  routing for a real device source is done by the caller / glue.
