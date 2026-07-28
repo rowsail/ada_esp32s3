@@ -35,7 +35,7 @@ while [ $SECONDS -lt $END ]; do
     ROUNDV=$(read_words "$ROUND" 1 | awk '{print $1}')
     if [ "${STALLV:-0}" != "00000000" ] && [ -n "${STALLV:-}" ]; then
         echo "FAIL: heartbeat stalled, slot 0x$STALLV (see stress_state.ads)"
-        echo "beats: $(read_words "$BEATS" 12 | tr '\n' ' ')"
+        echo "beats: $(read_words "$BEATS" 13 | tr '\n' ' ')"
         exit 1
     fi
     if [ -n "$LAST_ROUND" ] && [ "$ROUNDV" = "$LAST_ROUND" ]; then
@@ -43,6 +43,6 @@ while [ $SECONDS -lt $END ]; do
         exit 1
     fi
     LAST_ROUND="$ROUNDV"
-    echo "t=${SECONDS}s round=0x$ROUNDV beats: $(read_words "$BEATS" 12 | tr '\n' ' ')"
+    echo "t=${SECONDS}s round=0x$ROUNDV beats: $(read_words "$BEATS" 13 | tr '\n' ' ')"
 done
 echo "PASS: ${DUR}s, no stalls"

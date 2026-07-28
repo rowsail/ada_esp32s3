@@ -9,8 +9,9 @@ with Interfaces;    use Interfaces;
 with Stress_State;
 with Stress_Storm;
 with Stress_Pingpong;
+with Stress_L3;
 with Stress_Monitor;
-pragma Unreferenced (Stress_Storm, Stress_Pingpong, Stress_Monitor);
+pragma Unreferenced (Stress_Storm, Stress_Pingpong, Stress_L3, Stress_Monitor);
 
 procedure Main is
 begin
