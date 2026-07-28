@@ -182,7 +182,13 @@ package body System.BB.Threads.Queues is
          --  THREAD is the highest priority thread, so put it in the front of
          --  the queue.
 
-         Thread.Next := Head;
+         --  Skip when THREAD is already the head: a removal defeated by a
+         --  mid-operation preemption could leave Head = Thread, and then
+         --  Thread.Next := Head would self-loop (defence in depth, matching
+         --  the re-insert guard below).
+         if Head /= Thread then
+            Thread.Next := Head;
+         end if;
          Head := Thread;
       else
 
@@ -644,10 +650,14 @@ package body System.BB.Threads.Queues is
             Aux_Pointer := Aux_Pointer.Next;
          end loop;
 
-         --  Insert the thread after the Aux_Pointer
+         --  Insert the thread after the Aux_Pointer -- but not after itself:
+         --  skip if THREAD is already there, else the splice self-loops
+         --  (defence in depth, as in Change_Priority's re-insert).
 
-         Thread.Next := Aux_Pointer.Next;
-         Aux_Pointer.Next := Thread;
+         if Aux_Pointer.Next /= Thread then
+            Thread.Next := Aux_Pointer.Next;
+            Aux_Pointer.Next := Thread;
+         end if;
       end if;
 
    end Yield;
