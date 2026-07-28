@@ -222,6 +222,24 @@ never hit; the fix is eleven lines wrapping the poke in the same
 from inside a vector must run under the interrupt's ceiling} -- there is no
 harmless amount of kernel work outside it.
 
+There is a second edge to the same invariant: the ceiling must be raised
+\emph{high enough}.  Wrapping the poke in \texttt{Change\_Priority} fixed
+\emph{where} the raise happens, but it raised to the poke slot's own level-2
+priority -- correct only while level~2 was the highest interrupt in play.
+Once the RGB-LCD bounce refill was promoted to a level-3 source (to beat its
+\textasciitilde1\,ms deadline), the \texttt{Leave\_Kernel} inside
+\texttt{Poke\_Handler} re-enabled interrupts to that level-2 band and left the
+level-3 refill \emph{unmasked}; it preempted the ceiling-restore
+\texttt{Change\_Priority} mid-requeue and self-looped a CPU's ready queue
+(\texttt{idle.Next := idle}), freezing the core -- the panel showed one
+repeated strip as \texttt{LCD\_CAM} kept cycling a stale bounce buffer.  The
+corrected ceiling is \texttt{Interrupt\_Priority'Last}, masking \emph{every}
+OS-band interrupt across the poke.  The sharpened rule: \textbf{a from-vector
+ceiling must dominate the highest interrupt level that can fire, not merely
+the level being serviced.}  A dedicated stressor now fires a software
+level-3 interrupt at \textasciitilde25\,kHz beneath the cross-core ping-pong
+to hold that regression shut.
+
 \section{Attaching a handler: two axes}\index{Attach\_Handler}\index{protected handler}
 
 It helps to keep two \emph{independent} distinctions apart. The first is
