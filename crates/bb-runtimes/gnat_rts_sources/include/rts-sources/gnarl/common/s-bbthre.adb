@@ -323,13 +323,26 @@ package body System.BB.Threads is
       --  another thread within the Ravenscar profile, so that is why
       --  Running_Thread is used.
 
-      --  Priority changes are only possible as a result of inheriting the
-      --  ceiling priority of a protected object. Hence, it can never be set
-      --  a priority which is lower than the base priority of the thread.
+      --  Priority changes are ceiling inheritance on a PO (raise to the
+      --  ceiling, restore afterwards), so the set priority is normally >= the
+      --  thread's base.  It can be LOWER only for a thread whose kernel base
+      --  is stale-high: Activate_Tasks (s-tassta) creates a thread at
+      --  max (declared base, activator's active priority), so a task activated
+      --  while an unspecified-ceiling lock is held (default ceiling
+      --  Any_Priority'Last) is born with that elevated value as its BB base,
+      --  above its real (language-level) base.  That base is written once at
+      --  Initialize_Thread and never corrected (Change_Priority touches only
+      --  Active_Priority; the cross-task base re-assertion in s-taprop does
+      --  nothing at kernel level).  Reconcile it here: the first restore to
+      --  the real base lowers the stale base to it.  A no-op in all normal
+      --  operation (Priority >= Base), and it keeps the ceiling-locking
+      --  invariant (Active >= Base) true afterwards.
 
-      pragma Assert
-        (Queues.Running_Thread /= Null_Thread_Id
-          and then Priority >= Queues.Running_Thread.Base_Priority);
+      if Queues.Running_Thread /= Null_Thread_Id
+        and then Priority < Queues.Running_Thread.Base_Priority
+      then
+         Queues.Running_Thread.Base_Priority := Priority;
+      end if;
 
       Queues.Change_Priority (Queues.Running_Thread, Priority);
 
