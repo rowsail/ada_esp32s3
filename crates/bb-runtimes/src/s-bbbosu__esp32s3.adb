@@ -293,6 +293,14 @@ package body System.BB.Board_Support is
             begin
                System.BB.Threads.Queues.Change_Priority
                  (Self_Id, System.Interrupt_Priority'Last);
+               --  The ceiling raise MUST take effect before Poke_Handler: its
+               --  Leave_Kernel sets INTLEVEL from Self_Id's priority, which
+               --  must mask every OS-band interrupt.  The engmon freeze was
+               --  this ceiling left too low (an L3 refill preempted the
+               --  requeue).  Dev/-gnata only; stripped on the board.
+               pragma Assert
+                 (System.BB.Threads.Get_Priority (Self_Id) =
+                    System.Interrupt_Priority'Last);
                System.BB.CPU_Primitives.Multiprocessors.Poke_Handler;
                System.BB.Threads.Queues.Change_Priority
                  (Self_Id, Caller_Priority);
@@ -436,12 +444,21 @@ package body System.BB.Board_Support is
            Reg32 (Shift_Right (Deadline, 32) and 16#F_FFFF#);
          Lo       : constant Reg32 := Reg32 (Deadline and 16#FFFF_FFFF#);
       begin
+         --  The St_Delta floor must keep the target ahead of "now" at
+         --  computation time; a target already behind the count never fires.
+         --  A near-zero re-arm delta once killed every "delay until" -- assert
+         --  the floor held (dev/-gnata only; stripped on the board).
+         pragma Assert (Deadline > Now);
+
          --  Arm this core's UNIT0 comparator (one-shot), esp-idf's sequence:
          --  WORK_EN off -> target -> CONF (0 = UNIT0, one-shot) -> LOAD ->
          --  WORK_EN on.  The final enable is what lets the hardware fire
          --  immediately when the target is already behind the count.  Runs
          --  under Enter_Kernel, so the sequence is not preempted locally.
          Systimer_Arm_Acquire;
+
+         --  Cross-core CONF RMW below is serialised: the lock must be held.
+         pragma Assert (Systimer_Arm_Lock /= 0);
          if Core = 0 then
             Systimer_Conf := Systimer_Conf and not Target0_Work_En;
             Systimer_Target0_Hi := Hi;

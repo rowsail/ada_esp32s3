@@ -123,6 +123,54 @@ package body System.BB.Threads.Queues is
       return True;
    end Ready_Queue_Well_Formed;
 
+   ------------------------------
+   -- Alarm_Queue_Well_Formed --
+   ------------------------------
+
+   function Alarm_Queue_Well_Formed
+     (CPU_Id : System.Multiprocessors.CPU) return Boolean
+   with Ghost;
+   --  Dev-only invariant of one CPU's alarm queue (the Next_Alarm chain from
+   --  Alarms_Table (CPU_Id)): acyclic, and Alarm_Time non-decreasing head to
+   --  tail (head is the soonest).  The alarm queue is a second intrusive
+   --  ordered list -- a self-loop or mis-order here silently loses or fires
+   --  timers spuriously, the hardest class to debug.  Same Ghost + pragma
+   --  Assert gating as Ready_Queue_Well_Formed.
+
+   function Alarm_Queue_Well_Formed
+     (CPU_Id : System.Multiprocessors.CPU) return Boolean
+   is
+      Slow : Thread_Id := Alarms_Table (CPU_Id);
+      Fast : Thread_Id := Alarms_Table (CPU_Id);
+   begin
+      --  Floyd tortoise/hare over Next_Alarm: catch a cycle.
+      while Fast /= Null_Thread_Id
+        and then Fast.Next_Alarm /= Null_Thread_Id
+      loop
+         Slow := Slow.Next_Alarm;
+         Fast := Fast.Next_Alarm.Next_Alarm;
+         if Slow = Fast then
+            return False;
+         end if;
+      end loop;
+
+      --  Acyclic here, so this walk terminates: Alarm_Time must not decrease.
+      declare
+         Cur : Thread_Id := Alarms_Table (CPU_Id);
+      begin
+         while Cur /= Null_Thread_Id
+           and then Cur.Next_Alarm /= Null_Thread_Id
+         loop
+            if Cur.Next_Alarm.Alarm_Time < Cur.Alarm_Time then
+               return False;
+            end if;
+            Cur := Cur.Next_Alarm;
+         end loop;
+      end;
+
+      return True;
+   end Alarm_Queue_Well_Formed;
+
    ---------------------
    -- Change_Priority --
    ---------------------
@@ -501,6 +549,8 @@ package body System.BB.Threads.Queues is
 
          Is_First := False;
       end if;
+
+      pragma Assert (Alarm_Queue_Well_Formed (CPU_Id));
    end Insert_Alarm;
 
    --------------------
@@ -545,6 +595,8 @@ package body System.BB.Threads.Queues is
       end loop;
 
       --  Note: the caller (BB.Time.Alarm_Handler) must set the next alarm
+
+      pragma Assert (Alarm_Queue_Well_Formed (CPU_Id));
    end Wakeup_Expired_Alarms;
 
    ------------------
@@ -585,6 +637,10 @@ package body System.BB.Threads.Queues is
       Thread.Next_Alarm := Null_Thread_Id;
       Thread.State      := Runnable;
 
+      --  Alarm queue is now consistent (Thread unlinked); check before the
+      --  ready-queue Insert, which has its own Ready_Queue_Well_Formed assert.
+      pragma Assert (Alarm_Queue_Well_Formed (CPU_Id));
+
       Insert (Thread);
    end Cancel_Alarm;
 
@@ -602,6 +658,7 @@ package body System.BB.Threads.Queues is
          Cross_Cancel_Count (C) := Cross_Cancel_Count (C) + 1;
          Cross_Cancel (C, Cross_Cancel_Count (C)) := Thread;
       end if;
+      pragma Assert (Cross_Cancel_Count (C) <= Cross_Cancel_Max);
       Unlock (Cross_Cancel_Lock);
    end Request_Cross_Cancel;
 
@@ -644,6 +701,8 @@ package body System.BB.Threads.Queues is
       --  CPU's ready/alarm queues (already under the kernel lock), never
       --  Cross_Cancel_Lock, so there is no nested-lock hazard.
       Lock (Cross_Cancel_Lock);
+
+      pragma Assert (Cross_Cancel_Count (CPU_Id) <= Cross_Cancel_Max);
 
       for I in 1 .. Cross_Cancel_Count (CPU_Id) loop
          T := Cross_Cancel (CPU_Id, I);
