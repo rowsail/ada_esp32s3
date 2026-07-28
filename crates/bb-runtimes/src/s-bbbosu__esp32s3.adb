@@ -261,8 +261,17 @@ package body System.BB.Board_Support is
             --  vector architecture forbids (under a cross-core wakeup
             --  storm the system then lives in that forbidden regime).
             --  Mirror Interrupt_Wrapper's ceiling protocol: raise the
-            --  interrupted thread to this interrupt's priority around the
-            --  poke so every nested Leave_Kernel stays in the masked band.
+            --  interrupted thread around the poke so every nested
+            --  Leave_Kernel stays in the masked band.
+            --
+            --  The ceiling MUST reach Interrupt_Priority'Last, not merely
+            --  L2_2's own (level-2) priority.  A level-3 device source
+            --  (CPU_INT 23/27 -- notably the RGB-LCD bounce refill) sits
+            --  ABOVE this level-2 slot, so an L2_2 ceiling leaves INTLEVEL at
+            --  the level-2 band after Poke_Handler's Leave_Kernel; the L3
+            --  refill then preempts the restore Change_Priority below
+            --  mid-requeue and corrupts this CPU's ready queue (idle left
+            --  mis-ranked at the head -> eventual idle.Next self-loop).
 
             declare
                Self_Id         : constant System.BB.Threads.Thread_Id :=
@@ -271,7 +280,7 @@ package body System.BB.Board_Support is
                  System.BB.Threads.Get_Priority (Self_Id);
             begin
                System.BB.Threads.Queues.Change_Priority
-                 (Self_Id, Interrupts.Priority_Of_Interrupt (L2_2_Id));
+                 (Self_Id, System.Interrupt_Priority'Last);
                System.BB.CPU_Primitives.Multiprocessors.Poke_Handler;
                System.BB.Threads.Queues.Change_Priority
                  (Self_Id, Caller_Priority);

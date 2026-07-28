@@ -75,47 +75,6 @@ package body System.BB.Threads.Queues is
    --  Enter_Kernel only masks local interrupts, so it cannot protect this
    --  shared queue against the other CPU.
 
-   --  TEMPORARY ready-queue corruption trap (JTAG diagnosis).  Queue_Check
-   --  walks the CPU's ready queue with a hard cap; a cycle (or impossible
-   --  length) parks the core right here with the culprit operation recorded
-   --  in the exported variables -- read them with the debugger.  Called at
-   --  the entry and exit of every queue-mutating operation, so the FIRST
-   --  operation that leaves the queue insane is caught, not a later victim.
-
-   Trap_Where  : Natural := 0 with Volatile;
-   pragma Export (Asm, Trap_Where, "__gnat_qtrap_where");
-   --  0 = never fired.  Else: tens digit = operation (1 Insert, 2 Extract,
-   --  3 Change_Priority, 4 Yield); units digit = 1 at entry, 2 at exit.
-
-   Trap_Thread : Thread_Id := Null_Thread_Id with Volatile;
-   pragma Export (Asm, Trap_Thread, "__gnat_qtrap_thread");
-   --  The thread the trapped operation was working on
-
-   procedure Queue_Check
-     (Where : Natural; Thread : Thread_Id; CPU_Id : CPU);
-   --  Park (recording Where/Thread) if CPU_Id's ready queue is insane
-
-   procedure Queue_Check
-     (Where : Natural; Thread : Thread_Id; CPU_Id : CPU)
-   is
-      Cap : constant := 16;   --  far above any legitimate queue length
-      P   : Thread_Id := First_Thread_Table (CPU_Id);
-   begin
-      for I in 1 .. Cap loop
-         exit when P = Null_Thread_Id;
-
-         if P.Next = P or else I = Cap then
-            Trap_Where  := Where;
-            Trap_Thread := Thread;
-            loop
-               null;   --  park; state is frozen for the debugger
-            end loop;
-         end if;
-
-         P := P.Next;
-      end loop;
-   end Queue_Check;
-
    ---------------------
    -- Change_Priority --
    ---------------------
@@ -139,8 +98,6 @@ package body System.BB.Threads.Queues is
       if Thread.Active_Priority = Priority then
          return;
       end if;
-
-      Queue_Check (31, Thread, CPU_Id);
 
       --  Change the active priority. The base priority does not change
 
@@ -229,21 +186,39 @@ package body System.BB.Threads.Queues is
          Head := Thread;
       else
 
-         --  Search the right place in the queue.
+         --  Search the right place in the queue.  Also stop if we reach
+         --  THREAD itself.  The removal above normally unlinks THREAD, so this
+         --  never matches -- it is a belt-and-suspenders guard against an
+         --  interrupt preempting this operation mid-requeue and leaving THREAD
+         --  still linked: splicing it in after its own predecessor would set
+         --  THREAD.Next := THREAD, a one-node cycle that wedges the scheduler.
 
          Prev_Pointer := Head;
          while Prev_Pointer.Next /= Null_Thread_Id
+           and then Prev_Pointer.Next /= Thread
            and then Priority < Prev_Pointer.Next.Active_Priority
          loop
             Prev_Pointer := Prev_Pointer.Next;
          end loop;
+
+         --  If THREAD is still linked here, unlink it before re-splicing
+         --  (mirrors Insert's already-in-queue handling), then walk on to its
+         --  correct place.
+
+         if Prev_Pointer.Next = Thread then
+            Prev_Pointer.Next := Thread.Next;
+            while Prev_Pointer.Next /= Null_Thread_Id
+              and then Priority < Prev_Pointer.Next.Active_Priority
+            loop
+               Prev_Pointer := Prev_Pointer.Next;
+            end loop;
+         end if;
 
          Thread.Next := Prev_Pointer.Next;
          Prev_Pointer.Next := Thread;
       end if;
 
       First_Thread_Table (CPU_Id) := Head;
-      Queue_Check (32, Thread, CPU_Id);
    end Change_Priority;
 
    ---------------------------
@@ -287,10 +262,8 @@ package body System.BB.Threads.Queues is
 
       pragma Assert (CPU_Id = Current_CPU);
 
-      Queue_Check (21, Thread, CPU_Id);
       First_Thread_Table (CPU_Id) := Thread.Next;
       Thread.Next := Null_Thread_Id;
-      Queue_Check (22, Thread, CPU_Id);
    end Extract;
 
    ------------------
@@ -332,7 +305,6 @@ package body System.BB.Threads.Queues is
       CPU_Id      : constant CPU := Get_CPU (Thread);
 
    begin
-      Queue_Check (11, Thread, CPU_Id);
       --  Cross-core insert onto an already-STARTED CPU (e.g. a task created
       --  post-elaboration -- declared inside a subprogram -- and pinned to
       --  another core).  That CPU's ready queue is private to it, so we cannot
@@ -420,7 +392,6 @@ package body System.BB.Threads.Queues is
          Aux_Pointer.Next := Thread;
       end if;
 
-      Queue_Check (12, Thread, CPU_Id);
    end Insert;
 
    ------------------
@@ -659,8 +630,6 @@ package body System.BB.Threads.Queues is
 
       pragma Assert (CPU_Id = Current_CPU);
 
-      Queue_Check (41, Thread, CPU_Id);
-
       if Thread.Next /= Null_Thread_Id
         and then Thread.Next.Active_Priority = Prio
       then
@@ -681,7 +650,6 @@ package body System.BB.Threads.Queues is
          Aux_Pointer.Next := Thread;
       end if;
 
-      Queue_Check (42, Thread, CPU_Id);
    end Yield;
 
    ------------------
