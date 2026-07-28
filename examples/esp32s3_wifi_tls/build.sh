@@ -37,6 +37,21 @@ export EXTRA_OBJS="-Wl,--start-group $W/libnet80211.a $W/libpp.a $P/libphy.a -Wl
 WRAP_CRYPTO="hal_crypto_set_key_entry hal_crypto_clr_key_entry hal_crypto_enable"
 for fn in $WRAP_CRYPTO; do EXTRA_OBJS="$EXTRA_OBJS -Wl,--wrap=$fn"; done
 
+# DE-BLOB libphy (recreate in Ada, proof of method): the first transpiled PHY
+# primitive.  force_txrx_off -> ESP32S3.WiFi.PHY.Wrap_Force_Txrx_Off (faithful
+# port of its 0x60006110 read-modify-write).  ROM stays; only this .a fn moves.
+WRAP_PHY="force_txrx_off phy_disable_low_rate phy_enable_low_rate phy_wifi_enable_set \
+ant_dft_cfg ram_enable_wifi_agc ram_disable_wifi_agc phy_set_tx_seed wifi_rifs_mode_en \
+phy_get_noise_floor read_hw_noisefloor phy_get_cca phy_get_fetx_delay phy_get_cca_cnt \
+phy_set_cca_cnt ant_wifitx_cfg ant_bttx_cfg phy_rx11blr_cfg phy_set_tsens_power \
+rom_wifi_agc_sat_gain phy_fft_scale_force ram_bb_reg_init \
+phy_chan_dump_cfg phy_rx_sense_set rfrx_sat_rst tx_state_set ram_phy_en_hw_set_freq \
+ram_phy_dis_hw_set_freq wait_freq_set_busy \
+esp_phy_efuse_get_mac rom_phy_ant_init rom_bt_filter_reg rom_open_i2c_xpd \
+ant_btrx_cfg ant_wifirx_cfg ram_wifi_tx_dig_gain_reg rom_bt_tx_dig_gain rom_phy_bbpll_cal \
+phy_chan_filt_set phy_close_pa rom_agc_reg_init"
+for fn in $WRAP_PHY; do EXTRA_OBJS="$EXTRA_OBJS -Wl,--wrap=$fn"; done
+
 # ROM symbol addresses the blobs call (lower-MAC/PHY/newlib routines in ROM).
 export EXTRA_LD="$HERE/wifi_rom.ld"
 

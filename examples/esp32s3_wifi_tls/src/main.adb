@@ -76,6 +76,30 @@ procedure Main is
      with Import, Convention => C, External_Name => "ada_wrap_clr_key_count";
    Wrap_En_Count : Interfaces.Unsigned_32
      with Import, Convention => C, External_Name => "ada_wrap_enable_count";
+   Force_Txrx_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_force_txrx_count";
+   Phy_Ports2_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports2_count";
+   Phy_Ports3_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports3_count";
+   Phy_Ports4_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports4_count";
+   Phy_Ports5_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports5_count";
+   Phy_Resolver_Patched : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_resolver_patched";
+   Phy_Resolver_Already : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_resolver_already";
+   Phy_Resolver_Nonnull : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_resolver_nonnull";
+   Phy_Ports6_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports6_count";
+   Phy_Ports7_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports7_count";
+   Phy_Ports8_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports8_count";
+   Phy_Ports9_Count : Interfaces.Unsigned_32
+     with Import, Convention => C, External_Name => "ada_phy_ports9_count";
    procedure Show_Deblob_Result is
    begin
       Put_Line ("");
@@ -86,6 +110,30 @@ procedure Main is
       Put_Unsigned (Wrap_Clr_Count); New_Line;
       Put ("  Wrap_Crypto_Enable (was hal_crypto_enable)     fired = ");
       Put_Unsigned (Wrap_En_Count); New_Line;
+      Put ("  Wrap_Force_Txrx_Off (was libphy force_txrx_off) fired = ");
+      Put_Unsigned (Force_Txrx_Count); New_Line;
+      Put ("  libphy batch-2 (low_rate/wifi_enable, 3 fns)   fired = ");
+      Put_Unsigned (Phy_Ports2_Count); New_Line;
+      Put ("  libphy batch-3 (ant/agc/tx_seed/rifs, 5 fns)   fired = ");
+      Put_Unsigned (Phy_Ports3_Count); New_Line;
+      Put ("  libphy batch-4 (noisefloor/cca/ant/tsens, 10)  fired = ");
+      Put_Unsigned (Phy_Ports4_Count); New_Line;
+      Put ("  libphy batch-5 (agc-sat/fft-scale/bb-init, 3)  fired = ");
+      Put_Unsigned (Phy_Ports5_Count); New_Line;
+      Put ("  libphy batch-6 (chan-dump/rx-sense/tx-state, 7) fired = ");
+      Put_Unsigned (Phy_Ports6_Count); New_Line;
+      Put ("  libphy batch-7 (efuse-mac/ant-init/bt-filt, 4)  fired = ");
+      Put_Unsigned (Phy_Ports7_Count); New_Line;
+      Put ("  libphy batch-8 (ant-rx/tx-dig-gain/bbpll, 5)   fired = ");
+      Put_Unsigned (Phy_Ports8_Count); New_Line;
+      Put ("  libphy batch-9 (chan-filt/close-pa/agc-init, 3) fired = ");
+      Put_Unsigned (Phy_Ports9_Count); New_Line;
+      Put ("  g_phyFuns resolver: patched=");
+      Put_Unsigned (Phy_Resolver_Patched);
+      Put (" already-Ada=");
+      Put_Unsigned (Phy_Resolver_Already);
+      Put (" table-nonnull=");
+      Put_Unsigned (Phy_Resolver_Nonnull); New_Line;
       Put_Line ("====================================================================");
    end Show_Deblob_Result;
 
