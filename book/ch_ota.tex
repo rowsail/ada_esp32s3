@@ -120,8 +120,9 @@ Put together, the application side is a small state machine over the pieces abov
 \begin{enumerate}
 \item \textbf{Fetch} the new image over HTTPS into the inactive slot, writing it
   through the IRAM flash-program critical section as it streams (no need to buffer
-  the whole image: a sector at a time, with internal SRAM as the DMA staging
-  buffer, since PSRAM cannot be a DMA endpoint, Chapter~\ref{ch:perf}).
+  the whole image: a sector at a time, with internal SRAM as the staging
+  buffer \textemdash{} flash programming runs with the cache disabled, and
+  PSRAM is unreachable while the cache is off, Chapter~\ref{ch:psram}).
 \item \textbf{Verify} the written slot in place: re-hash it from flash and check the
   signature, so a truncated or tampered download is caught \emph{before} it can be
   selected.

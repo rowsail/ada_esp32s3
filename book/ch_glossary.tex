@@ -174,7 +174,8 @@ a chapter that treats it properly, the entry points there.
   exclusion and condition synchronisation (\S\ref{ch:encap}).
 
 \item[PSRAM] Pseudo-static external RAM, mapped at \texttt{16\#3D00\_0000\#} by the
-  bootloader. Not DMA-capable.
+  bootloader. DMA reaches it only through the data cache, cache-line aligned
+  (\S\ref{ch:perf}).
 
 \item[PSS] \emph{Probabilistic Signature Scheme} -- the modern randomised RSA signature padding (RSASSA-PSS), used for the TLS CertificateVerify (Chapter~\ref{ch:tls}).
 
