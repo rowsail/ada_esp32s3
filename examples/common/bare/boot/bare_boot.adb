@@ -141,21 +141,28 @@ package body Bare_Boot is
    procedure Native_Setup_Systimer_Core0 is
    begin
       --  Route SYSTIMER_TARGET0 (matrix source 57) to core 0's CPU_INT 26,
-      --  arm the comparator + its interrupt.  Sources left at the reset map
-      --  default (16) are parked on the now-disabled old tick int -> harmless.
+      --  arm the interrupt.  Sources left at the reset map default (16) are
+      --  parked on the now-disabled old tick int -> harmless.
+      --  Do NOT set CONF.TARGET0_WORK_EN here: CONF is one register shared by
+      --  both cores, and this init RMW is unlocked while the other core may
+      --  already be running Set_Alarm's locked CONF RMW (a lost-update race
+      --  that tears the other core's WORK_EN -> spurious fire or lost alarm).
+      --  Set_Alarm establishes WORK_EN under Systimer_Arm_Lock on the first
+      --  arm, and no alarm can be pending before then.
       INTERRUPT_CORE0_Periph.SYSTIMER_TARGET0_INT_MAP.SYSTIMER_TARGET0_INT_MAP :=
         ALARM_CPU_INT;
-      SYSTIMER_Periph.CONF.TARGET0_WORK_EN := True;
       SYSTIMER_Periph.INT_ENA.TARGET0_INT_ENA := True;
       Esp_Cpu_Intr_Enable (Shift_Left (1, ALARM_CPU_INT));
    end Native_Setup_Systimer_Core0;
 
    procedure Native_Setup_Systimer_Core1 is
    begin
-      --  TARGET1 (matrix source 58) -> core 1's CPU_INT 26.
+      --  TARGET1 (matrix source 58) -> core 1's CPU_INT 26.  As with core 0,
+      --  CONF.TARGET1_WORK_EN is left for Set_Alarm to set under the lock:
+      --  this init runs on core 1 while core 0 is already live, so an unlocked
+      --  CONF RMW here would race core 0's Set_Alarm on the shared register.
       INTERRUPT_CORE1_Periph.SYSTIMER_TARGET1_INT_MAP.SYSTIMER_TARGET1_INT_MAP :=
         ALARM_CPU_INT;
-      SYSTIMER_Periph.CONF.TARGET1_WORK_EN := True;
       SYSTIMER_Periph.INT_ENA.TARGET1_INT_ENA := True;
       Esp_Cpu_Intr_Enable (Shift_Left (1, ALARM_CPU_INT));
    end Native_Setup_Systimer_Core1;
