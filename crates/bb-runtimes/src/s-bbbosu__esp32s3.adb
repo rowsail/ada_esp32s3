@@ -54,6 +54,13 @@ package body System.BB.Board_Support is
    Device_L3_1_Id  : constant := 27;                        --  CPU_INT 27 (L3)
    Device_L3_1_Bit : constant Unsigned_32 := 2 ** Device_L3_1_Id;
 
+   SW_L3_Id  : constant System.BB.Interrupts.Interrupt_ID := 29;
+   SW_L3_Bit : constant Unsigned_32 := 2 ** SW_L3_Id;
+   --  CPU_INT 29 = software-triggered level-3 source (wsr.intset bit 29).
+   --  A handler attached to it (Ada.Interrupts.Names.SW_L3) is cleared by the
+   --  wrapper acking wsr.intclr; used by the stress suite to fire L3 over the
+   --  cross-core poke path.
+
    --  Level-2 device interrupt slots (CPU_INT 19/20/21 = Device_L2_0/1/2).
    L2_0_Id  : constant System.BB.Interrupts.Interrupt_ID := 19;
    L2_1_Id  : constant System.BB.Interrupts.Interrupt_ID := 20;
@@ -223,6 +230,11 @@ package body System.BB.Board_Support is
       if (Pending and Device_L3_1_Bit) /= 0 then
          --  Second L3 device source (CPU_INT 27); same shape as int 23.
          System.BB.Interrupts.Interrupt_Wrapper (Device_L3_1_Id);
+      end if;
+      if (Pending and SW_L3_Bit) /= 0 then
+         --  Software-triggered L3 source (CPU_INT 29); the handler must ack it
+         --  (wsr.intclr bit 29) so it does not re-fire on return.
+         System.BB.Interrupts.Interrupt_Wrapper (SW_L3_Id);
       end if;
    end Level3_Dispatch;
 
