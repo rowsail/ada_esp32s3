@@ -21,8 +21,9 @@ package Stress_State is
    Beat_Ping_B2   : constant := 10;   --  SO pair 2, core 1
    Beat_Entry_A   : constant := 11;   --  entry pair, core 0
    Beat_Entry_B   : constant := 12;   --  entry pair, core 1
+   Beat_L3        : constant := 13;   --  SW-L3 (int 29) handler, core 0
 
-   Beat_Count : constant := 12;
+   Beat_Count : constant := 13;
 
    type Beat_Array is array (1 .. Beat_Count) of Interfaces.Unsigned_32
      with Atomic_Components;
