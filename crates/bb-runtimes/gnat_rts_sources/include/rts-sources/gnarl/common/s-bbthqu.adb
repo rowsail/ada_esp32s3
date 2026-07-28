@@ -75,6 +75,54 @@ package body System.BB.Threads.Queues is
    --  Enter_Kernel only masks local interrupts, so it cannot protect this
    --  shared queue against the other CPU.
 
+   -----------------------------
+   -- Ready_Queue_Well_Formed --
+   -----------------------------
+
+   function Ready_Queue_Well_Formed
+     (CPU_Id : System.Multiprocessors.CPU) return Boolean
+   with Ghost;
+   --  Dev-only invariant of one CPU's ready queue: the .Next chain from
+   --  First_Thread_Table (CPU_Id) is acyclic and its Active_Priority is
+   --  non-increasing head-to-tail.  Guards the ready-queue splices against the
+   --  self-loop / mis-order corruption class (idle.Next := idle from a
+   --  mid-splice preemption).  Ghost + pragma Assert: compiled out on the
+   --  board (no -gnata), active on host/dev builds.
+
+   function Ready_Queue_Well_Formed
+     (CPU_Id : System.Multiprocessors.CPU) return Boolean
+   is
+      Slow : Thread_Id := First_Thread_Table (CPU_Id);
+      Fast : Thread_Id := First_Thread_Table (CPU_Id);
+   begin
+      --  Floyd tortoise/hare: if Fast overtakes Slow the chain has a cycle.
+      while Fast /= Null_Thread_Id
+        and then Fast.Next /= Null_Thread_Id
+      loop
+         Slow := Slow.Next;
+         Fast := Fast.Next.Next;
+         if Slow = Fast then
+            return False;
+         end if;
+      end loop;
+
+      --  Acyclic here, so this second walk terminates: priority must not rise.
+      declare
+         Cur : Thread_Id := First_Thread_Table (CPU_Id);
+      begin
+         while Cur /= Null_Thread_Id
+           and then Cur.Next /= Null_Thread_Id
+         loop
+            if Cur.Active_Priority < Cur.Next.Active_Priority then
+               return False;
+            end if;
+            Cur := Cur.Next;
+         end loop;
+      end;
+
+      return True;
+   end Ready_Queue_Well_Formed;
+
    ---------------------
    -- Change_Priority --
    ---------------------
@@ -225,6 +273,8 @@ package body System.BB.Threads.Queues is
       end if;
 
       First_Thread_Table (CPU_Id) := Head;
+
+      pragma Assert (Ready_Queue_Well_Formed (CPU_Id));
    end Change_Priority;
 
    ---------------------------
@@ -270,6 +320,8 @@ package body System.BB.Threads.Queues is
 
       First_Thread_Table (CPU_Id) := Thread.Next;
       Thread.Next := Null_Thread_Id;
+
+      pragma Assert (Ready_Queue_Well_Formed (CPU_Id));
    end Extract;
 
    ------------------
@@ -398,6 +450,7 @@ package body System.BB.Threads.Queues is
          Aux_Pointer.Next := Thread;
       end if;
 
+      pragma Assert (Ready_Queue_Well_Formed (CPU_Id));
    end Insert;
 
    ------------------
@@ -660,7 +713,15 @@ package body System.BB.Threads.Queues is
          end if;
       end if;
 
+      pragma Assert (Ready_Queue_Well_Formed (CPU_Id));
    end Yield;
+
+   --  Upper bound on ready-queue length used to keep the Ghost queue walks
+   --  below from looping forever if the .Next chain is ever corrupt (cyclic).
+   --  Far above any realistic ready-thread count on this target; a walk that
+   --  reaches it treats the queue as malformed so the -gnata contract fails
+   --  cleanly instead of hanging.
+   Max_Ready_Nodes : constant := 1024;
 
    ------------------
    -- Queue_Length --
@@ -671,7 +732,7 @@ package body System.BB.Threads.Queues is
       T   : Thread_Id := First_Thread_Table (Current_CPU);
 
    begin
-      while T /= null loop
+      while T /= null and then Res <= Max_Ready_Nodes loop
          Res := Res + 1;
          T := T.Next;
       end loop;
@@ -684,8 +745,9 @@ package body System.BB.Threads.Queues is
    -------------------
 
    function Queue_Ordered return Boolean is
-      T : Thread_Id := First_Thread_Table (Current_CPU);
-      N : Thread_Id;
+      T     : Thread_Id := First_Thread_Table (Current_CPU);
+      N     : Thread_Id;
+      Guard : Natural   := 0;
 
    begin
       if T = Null_Thread_Id then
@@ -701,6 +763,13 @@ package body System.BB.Threads.Queues is
          end if;
 
          if T.Active_Priority < N.Active_Priority then
+            return False;
+         end if;
+
+         Guard := Guard + 1;
+         if Guard > Max_Ready_Nodes then
+            --  Cyclic or impossibly long chain -> treat as not ordered so a
+            --  -gnata contract fails cleanly rather than looping forever.
             return False;
          end if;
 
