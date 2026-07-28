@@ -104,9 +104,9 @@ unit as the wall clock, so a task's share of an interval is a plain ratio.
 
 Arming it costs one \texttt{with}.  The package's elaboration installs the
 \texttt{Scheduling\_Event} hook, so a build whose closure never names it pays
-nothing \textemdash{} the accounting simply does not exist.  The engine-monitor
-example in the companion collection turns this into a run-statistics harness
-(\texttt{ENGMON\_DEBUG=yes}): every five seconds, one line per registered task
+nothing \textemdash{} the accounting simply does not exist.  An engine-monitor
+application built on this SDK turns this into a run-statistics harness in its
+debug build: every five seconds, one line per registered task
 with its CPU share, core affinity and stack high-water, and a closing line for
 interrupt time:
 

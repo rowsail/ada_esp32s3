@@ -474,8 +474,8 @@ One contract in that loop is easy to miss: \texttt{Send\_Socket} is a
 It writes what fits in the socket's 2\,KB transmit buffer and reports the last
 element written (\texttt{Sent} above). The small payloads in these examples
 always fit, so they read clean. A bulk sender must loop until \texttt{Sent}
-reaches the end of the slice. Forgetting that cost a real bug in the
-companion collection's SSH server: a key-exchange reply truncated at the
+reaches the end of the slice. Forgetting that cost a real bug in an
+SSH server built over this socket layer: a key-exchange reply truncated at the
 buffer boundary, and the client reported a bad MAC three messages later.
 
 \subsection{\texttt{esp32s3\_w5500\_http}: HTTP GET (TCP client)}

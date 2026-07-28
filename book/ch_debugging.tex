@@ -231,8 +231,8 @@ The runtime helps before you reach for a tool at all:
         \texttt{Storage\_Error} it set out to measure.  Nothing is lost by
         stopping short: a task that ever reached the redzone would take
         \texttt{Storage\_Error} anyway, so the usable stack \emph{is} what
-        lies above it.  (The engine-monitor example's run-statistics harness
-        is a worked example of both the technique and the trap.)
+        lies above it.  (The run-statistics harness of \S\ref{ch:perf} is a
+        worked example of both the technique and the trap.)
 
         The recovery path has one design constraint worth recording: the
         debug-exception handler cannot simply call the raise through an

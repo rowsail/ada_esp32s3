@@ -34,7 +34,7 @@ listing that stops compiling stops the book from building.
 Much of the system is pure logic over an interface, and pure logic does not need the
 board. The TLSF allocator (\texttt{tlsf\_core}, Chapter~\ref{ch:heap}), the ext4 block
 logic (Chapter~\ref{ch:storage}), the Modbus framing (Chapter~\ref{ch:modbus}), the
-routing table, and the language interpreters in the companion examples collection
+routing table, and the language interpreters built on this SDK
 (LISP, Lua, MicroPython, Forth) are all written target-free, so the identical Ada compiles and runs on
 the host (x86) as an ordinary program. There it can be tested fast, in a debugger,
 and against an \emph{oracle}: a second, independent implementation that is already

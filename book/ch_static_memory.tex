@@ -25,7 +25,7 @@ exception machinery needs more headroom, so the heavier profiles start larger). 
 build turns the number into the linker symbols \texttt{\_\_stack\_start} and
 \texttt{\_\_stack\_end} that \texttt{start.S} loads into the stack pointer; an
 example that recurses deeply just exports a bigger value (the SIMD example sets
-128\,KiB; the interpreter examples in the companion collection go bigger still).
+128\,KiB; the language interpreters built on this SDK go bigger still).
 
 \begin{lstlisting}[style=sh]
 export ENV_STACK_SIZE=131072    # 128 KiB env-task stack for this example
@@ -60,8 +60,8 @@ stack \emph{dynamically}, at activation.\index{task!stack in PSRAM}
 heap (so with \texttt{HEAP\_PSRAM=1} it lands in PSRAM along with everything
 else). For finer control the runtime first probes a weak hook,
 \texttt{\_\_gnat\_task\_stack\_alloc(size)}: define that symbol in your
-application and every task stack comes from wherever you say. The
-engine-monitor example in the companion collection uses exactly this split
+application and every task stack comes from wherever you say. An
+engine-monitor application built on this SDK uses exactly this split
 \textemdash{} task stacks from a dedicated PSRAM arena, while the heap (and
 its secondary stacks) stay in internal DRAM. If the hook, or the heap, cannot
 satisfy a request, \texttt{Create\_Task} fails cleanly and activation raises
@@ -101,7 +101,7 @@ fragmentation, described in full in Chapter~\ref{ch:heap}. Its arena is placed b
 the build: by default the leftover internal DRAM after \texttt{.data},
 \texttt{.bss} and the stacks (a couple of hundred KiB), or, with
 \texttt{HEAP\_PSRAM=1}, the 8\,MB PSRAM for programs that need real room (the ext4
-block cache and the examples-collection interpreter heaps live there).
+block cache and the language interpreters' heaps live there).
 
 \begin{lstlisting}[style=sh]
 export HEAP_SIZE=1 HEAP_PSRAM=1   # heap arena in PSRAM, not internal DRAM

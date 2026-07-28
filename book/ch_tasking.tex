@@ -720,8 +720,7 @@ every new thread to the core that created it
 stays there for life.  Since the environment task elaborates library-level
 tasks on core~0, a program that never writes a \texttt{CPU} aspect runs
 \emph{entirely} on core~0 while core~1 idles \textemdash{} plainly visible in
-the engine-monitor example's run-statistics affinity column
-(\S\ref{ch:perf}).  The \texttt{CPU} aspect is therefore not an optimisation
+the affinity column of the run-statistics harness of \S\ref{ch:perf}.  The \texttt{CPU} aspect is therefore not an optimisation
 hint; it is the only way work reaches the second core.
 
 \textbf{Share data with a protected object.} It works \emph{across} cores, not
