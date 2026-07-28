@@ -496,3 +496,18 @@ and L3 handler counts climb together with the clean-batch counter, with zero
 context-loss and zero faults. So on \texttt{full}, too, the portable
 \texttt{Ada.Interrupts} protected-handler form dispatches correctly and preserves
 the preempted context.
+
+A third, lighter trigger sits alongside these. \texttt{SW\_L3}
+(\texttt{CPU\_INT}~29) is a \emph{software} interrupt at level~3 --
+\texttt{wsr.intset} makes it pending and the handler acks with
+\texttt{wsr.intclear} -- so, unlike the external device slots (23/27, driven
+by the interrupt matrix), it needs no source at all: any code can synthesize
+a level-3 interrupt on demand, at whatever rate it likes. That makes it the
+cleanest way to \emph{manufacture} an OS-band coincidence for testing ---
+\texttt{esp32s3\_stress} fires it at \textasciitilde25\,kHz to land a level-3
+interrupt inside the cross-core poke window and hold the ceiling fix above
+shut. The same primitive generalizes to escalating work to interrupt
+priority from a lower context: set the bit and the handler runs preemptively,
+with bounded latency, the instant \texttt{INTLEVEL} permits -- the
+self-directed counterpart to the cross-core poke, which signals the
+\emph{other} core.
