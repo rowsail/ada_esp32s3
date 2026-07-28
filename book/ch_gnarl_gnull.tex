@@ -273,6 +273,31 @@ the restricted profile: a thread is either eligible to run, blocked on an entry,
 or waiting out a delay. There is no ``zombie,'' no ``joining,'' no dynamic
 priority band because the profile forbids the features that would need them.
 
+\texttt{Base\_Priority} deserves a warning: it exists \emph{twice}, once here
+and once in the ATCB, and the two can legitimately disagree for a
+while.\index{Base\_Priority}\index{priority!base vs active} GNARL creates a
+task's thread at an \emph{elevated} priority \textemdash{} the activator's
+active priority, if that is higher than the declared base \textemdash{}
+because the ACATS-mandated activation handshake needs the new task to hold
+its activator's level until activation completes. \texttt{Initialize\_Thread}
+records that elevated value as the kernel's \texttt{Base\_Priority}, and
+nothing corrects it at the moment activation ends. If the activator held a
+default-ceiling lock (ceiling \texttt{Any\_Priority'Last}, 255), a task
+declared at priority 125 starts life with a kernel base of 255. The kernel's
+\texttt{Set\_Priority} therefore performs a \emph{lazy sync}: when a task
+sets its own priority \emph{below} the recorded kernel base \textemdash{}
+something ceiling locking can never legitimately ask for \textemdash{} the
+kernel adopts the lower value as the corrected base. Fixing it ``properly''
+at creation instead deadlocks full-profile activation; the descent from the
+activation elevation is the one point where the correction is both safe and
+certain to run. The bug hid for as long as it did because the guarding
+assertion only exists when the runtime itself is compiled with checks
+(\texttt{BUILD=Assert}); building the whole RTS with \texttt{-gnata} is what
+surfaced it \textemdash{} and, in the same sweep, a
+\texttt{Current\_Priority} postcondition that re-read scheduler state another
+core mutates concurrently, which no sound contract can express and which is
+now simply documentation.
+
 \section{Three profiles, one boundary}\index{runtime profile}\index{Ravenscar}\index{protected object}
 
 This repository builds three runtime profiles, and the GNARL/GNULL split is the

@@ -267,14 +267,31 @@ the block, so when both cores pile into the park the original fault survives
 boot, so a stale dump cannot masquerade as a fresh one.  One JTAG
 \texttt{mdw} reads the whole story out of a wedged board.
 
-Two decoding traps, both paid for in hours.  The double-exception vector
+Three decoding traps, each paid for in hours.  The double-exception vector
 \emph{overwrites} EXCCAUSE with a panic-reason code before calling
 \texttt{\_xt\_panic}, so ``cause 2'' at a double-exception park means
-\emph{double exception}, not \emph{instruction fetch error}.  And PRID does
+\emph{double exception}, not \emph{instruction fetch error}.  PRID does
 not name the core by its whole value: bit~13 alone does.  On the ESP32-S3,
 \texttt{16\#CDCD\#} is core~0 and \texttt{16\#ABAB\#} is core~1
 \textemdash{} misread that and every per-core deduction that follows is
 backwards.
+
+The third trap is the most seductive: a halted PC is not always a fault.  The
+runtime parks \emph{deliberately} in several places \textemdash{} the panic
+park above, and the interrupt vectors' stack sanity net
+(\S\ref{ch:interrupts}), which parks with its evidence in
+\texttt{\_\_gnat\_bad\_sp}.\index{\_\_gnat\_bad\_sp}  At a deliberate park the
+special registers are \emph{stale}: EXCCAUSE and EPC1 still hold whatever the
+last handled exception left there, and on the sanity-net path the vector has
+even reused \texttt{sp} to hold the interrupted PC.  Read those registers as
+if they described a live fault and they will tell you a detailed, coherent,
+wrong story.  We once diagnosed ``register-window corruption on PSRAM
+stacks'' from exactly such a read \textemdash{} stale EXCCAUSE, a
+flash-address ``SP'' \textemdash{} when the truth was the sanity net itself
+parking on a then-unrecognised (and perfectly valid) PSRAM stack address.  So
+before decoding anything: symbolise the halted PC.  If it sits on a park loop,
+identify \emph{which} park, and trust only the breadcrumbs that park wrote
+deliberately.
 
 \section{Hardware watchpoints without a debugger}\index{DBREAK}\index{watchpoint}\index{debug exception}
 

@@ -72,6 +72,19 @@ Crucially the compile-and-archive step is guarded: it runs only when
 already built is therefore nearly instant, but it is also the source of a trap
 (\S\ref{sec:stale-cache}).
 
+One build knob is worth knowing before you need it.\index{BUILD=Assert}
+\index{-gnata!runtime} The compile step honours \texttt{BUILD=Assert}, which
+compiles the \emph{runtime itself} with assertions enabled
+(\texttt{-gnata}, no \texttt{-gnatp}): every internal
+\texttt{pragma Assert}, precondition and invariant in GNARL and the kernel
+becomes live code. It is slower and bigger, and it is the single most
+effective torture test the runtime has \textemdash{} an assertion-enabled RTS
+surfaced two latent kernel bugs (a stale base priority and an SMP-unsound
+postcondition, \S\ref{ch:gnarl-gnull}) that production builds had silently
+tolerated for months. All three profiles build and run this way on hardware,
+the full profile included. Develop against it when you touch the runtime;
+ship \texttt{Production}.
+
 \section{Three profiles, three \texttt{system.ads}}\index{runtime profile}
 
 What actually distinguishes the profiles is mostly one file: \texttt{system.ads},
