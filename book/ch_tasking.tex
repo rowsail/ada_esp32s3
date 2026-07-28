@@ -738,3 +738,22 @@ at once, so funnel diagnostics through one task. With those in mind, an SMP
 application is just ordinary tasks, pinned where you want them, sharing through
 protected objects.
 
+A shared timer also means \emph{shared control registers}, and those bite in a
+subtler way. The \texttt{SYSTIMER\_CONF} register holds the alarm-enable bit for
+\emph{both} cores' comparators (\texttt{TARGET0\_WORK\_EN}, \texttt{TARGET1\_WORK\_EN})
+in one 32-bit word, so every write to it is a read-modify-write over state the
+other core owns half of. The runtime serialises the arming sequence
+(\texttt{Set\_Alarm}) behind an \texttt{s32c1i} spinlock for exactly this reason:
+two cores re-arming at once would each read the word, flip their own bit, and
+write back --- and the second writer would restore a stale copy of the
+\emph{first} core's bit, either killing a just-armed comparator (a lost
+\texttt{delay until}, permanently) or re-enabling one mid-arm over a half-written
+target (a spurious fire that in practice became a self-sustaining
+\textasciitilde60\,\textmu s cross-core interrupt storm). The lesson generalises:
+if a peripheral packs per-core control into one register, \emph{every} writer must
+take the same lock --- including one-time setup code. This port learned it when
+core~1's boot-time systimer initialisation, which set its \texttt{WORK\_EN} bit
+without the lock, was found racing core~0's already-running \texttt{Set\_Alarm}
+during bring-up; the fix was to drop the unlocked init write entirely and let the
+first locked \texttt{Set\_Alarm} establish the bit.
+
