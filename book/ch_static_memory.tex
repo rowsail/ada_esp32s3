@@ -54,6 +54,19 @@ creation, the \emph{set} of tasks is known at compile time, so the sum of all ta
 stacks is a static quantity: you can add it up. There is no pool of tasks coming
 and going to reason about; what you declare is what you pay.
 
+The \texttt{full} profile works differently: it allocates each task's primary
+stack \emph{dynamically}, at activation.\index{task!stack in PSRAM}
+\index{\_\_gnat\_task\_stack\_alloc} By default the stack comes from the Ada
+heap (so with \texttt{HEAP\_PSRAM=1} it lands in PSRAM along with everything
+else). For finer control the runtime first probes a weak hook,
+\texttt{\_\_gnat\_task\_stack\_alloc(size)}: define that symbol in your
+application and every task stack comes from wherever you say. The
+engine-monitor example in the companion collection uses exactly this split
+\textemdash{} task stacks from a dedicated PSRAM arena, while the heap (and
+its secondary stacks) stay in internal DRAM. If the hook, or the heap, cannot
+satisfy a request, \texttt{Create\_Task} fails cleanly and activation raises
+\texttt{Tasking\_Error} rather than running on a null stack.
+
 \section{The secondary stack}\index{secondary stack}
 
 Ada returns unconstrained results (a \texttt{String} of computed length, say)

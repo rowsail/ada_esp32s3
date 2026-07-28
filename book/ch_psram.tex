@@ -355,7 +355,20 @@ by a din the bootloader measured for itself. There is no FreeRTOS, no ESP-IDF, a
 remaining blob in the path: the entire octal-PSRAM bring-up is now readable source plus
 a few ROM calls, which is exactly what de-blobbing set out to achieve.
 
-One caveat the example notes for completeness: task stacks stay in internal SRAM. PSRAM
-is unreachable whenever the cache is disabled (for instance during a flash write),
-so it is the right home for large data buffers and heaps, but not for a stack that an
-interrupt might unwind while the cache is down (\S\ref{ch:bootloader}).
+Task stacks can live here too.\index{PSRAM!task stacks} On the full profile the
+runtime allocates each task's primary stack at activation, and the application
+can route those allocations into PSRAM: wholesale with \texttt{HEAP\_PSRAM=1}
+(stacks follow the heap), or selectively through the
+\texttt{\_\_gnat\_task\_stack\_alloc} hook (\S\ref{ch:static-mem}). The
+register-window machinery does not care where the stack lives \textemdash{}
+window spills and fills go through the same data cache as every other access.
+We verified that the hard way: 1.45 million checksum-verified deep recursions
+on a PSRAM stack, and an engine-monitor GUI running its whole task set from a
+PSRAM arena.
+
+One real caveat remains. PSRAM is unreachable whenever the cache is disabled
+(for instance during a flash write), so a task on a PSRAM stack must never run
+while flash is being programmed (\S\ref{ch:bootloader}). This runtime never
+writes flash at run time. If your application does, keep the flash-writing
+task \textemdash{} and every task that may preempt it \textemdash{} on an
+internal-SRAM stack.

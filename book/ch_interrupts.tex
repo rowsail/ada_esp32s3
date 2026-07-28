@@ -152,6 +152,16 @@ OS-band interrupt fires (say the tick, on CPU interrupt 21), this is the path:
         (\texttt{rsil 6}): the whole prologue is now atomic against the OS
         band, and the frame build below cannot trip the per-task
         stack-overflow watchpoint.
+  \item \textbf{Stack sanity net.}\index{\_\_gnat\_bad\_sp} Before touching
+        the interrupted stack, the vector checks that the interruptee's SP
+        lies in a plausible stack region: internal DRAM or the PSRAM window
+        (full-profile task stacks may live in either,
+        \S\ref{ch:static-mem}). A wild SP means the context was corrupted
+        \emph{before} this interrupt, and building the save frame through it
+        would scribble whatever it points at. The vector instead parks the
+        core, fully masked, with the bad SP and the interrupted PC preserved
+        in \texttt{\_\_gnat\_bad\_sp} (see the park-decoding traps in
+        \S\ref{ch:debug}).
   \item \textbf{Save.} It builds an \texttt{XT\_STK} frame on the
         interrupted stack and calls \texttt{\_xt\_context\_save} to spill the
         full register state into it. The spill leaves
