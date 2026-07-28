@@ -74,11 +74,12 @@ __gnat_int_nest:
 __gnat_int_task_sp:
 	.word	0, 0
 
-	/* TEMP diagnostic: set when a vector entered with an interruptee SP
-	   outside DRAM (a corrupted resumed context) -- the core parks in the
-	   vector before that SP can scribble a single byte.  [0]=the bad SP,
-	   [1]=the interrupted PC.  NB engmon-only assumption: all task stacks
-	   live in DRAM (no ENV_STACK_PSRAM). */
+	/* Stack sanity net: set when a vector entered with an interruptee SP
+	   outside every plausible stack region (a corrupted resumed context) --
+	   the core parks in the vector before that SP can scribble a single
+	   byte.  [0]=the bad SP, [1]=the interrupted PC.  Plausible = internal
+	   DRAM or the PSRAM d-bus window: the full profile may legitimately
+	   place task stacks in PSRAM (__gnat_task_stack_alloc / HEAP_PSRAM). */
 	.align	4
 	.global	__gnat_bad_sp
 __gnat_bad_sp:
@@ -108,17 +109,23 @@ __gnat_vec_text_start:
 	   the slot stashed the interruptee's a0 in EXCSAVE_\LVL. */
 	rsil	a0, 6
 
-	/* TEMP diagnostic (see __gnat_bad_sp): park BEFORE the frame build if
-	   the interruptee SP is not a DRAM stack address -- a corrupted context
-	   was resumed, and building the XT_STK frame through its SP would
-	   scribble whatever it points at (observed: SYSTIMER registers).  Only
-	   a0 is free; sp itself is expendable on the bad path. */
+	/* Stack sanity net (see __gnat_bad_sp): park BEFORE the frame build if
+	   the interruptee SP is not a plausible stack address -- internal DRAM
+	   or the PSRAM d-bus window (full-profile task stacks may live in
+	   PSRAM).  A corrupted resumed context would otherwise have the XT_STK
+	   frame built through its SP, scribbling whatever it points at
+	   (observed once: SYSTIMER registers).  Only a0 is free; sp itself is
+	   expendable on the bad path. */
 	movi	a0, 0x3FC80000
-	bltu	sp, a0, 9f
+	bltu	sp, a0, 6f		/* below DRAM: maybe the PSRAM window */
 	movi	a0, 0x3FD00000
-	bgeu	sp, a0, 9f
-	j	8f
-9:	movi	a0, __gnat_bad_sp
+	bltu	sp, a0, 8f		/* inside DRAM: plausible */
+	j	7f			/* above DRAM: park */
+6:	movi	a0, 0x3D000000
+	bltu	sp, a0, 7f		/* below the PSRAM window: park */
+	movi	a0, 0x3E000000
+	bltu	sp, a0, 8f		/* inside the PSRAM window: plausible */
+7:	movi	a0, __gnat_bad_sp
 	s32i	sp, a0, 0		/* [0] = the bad SP */
 	rsr.epc\LVL	sp		/* sp is garbage anyway: reuse for EPC */
 	s32i	sp, a0, 4		/* [1] = interrupted PC */
