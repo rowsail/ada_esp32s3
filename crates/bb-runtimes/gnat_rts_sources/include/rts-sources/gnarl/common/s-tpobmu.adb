@@ -131,9 +131,18 @@ package body System.Tasking.Protected_Objects.Multiprocessors is
                       BB.Board_Support.Multiprocessors.Current_CPU;
       Entry_Call : Entry_Call_Link;
       Next       : Entry_Call_Link;
+      Int_State  : Integer;
 
    begin
-      --  Interrupts are always disabled when entering here
+      --  This runs from Leave_Kernel, reached from an interrupt handler at
+      --  THAT handler's INTLEVEL -- e.g. the level-2 systimer alarm handler.
+      --  At level 2 a higher-level interrupt (an L3 device, the LCD refill)
+      --  could preempt the per-CPU lock hold below and re-enter here, re-
+      --  taking the non-recursive fair lock on the same core = self-deadlock.
+      --  Mask fully across the hold (the producer Served does the same), then
+      --  restore the EXACT entry state -- the wakeup loop is already re-entry
+      --  safe (it drains and unlinks before waking), so it needs no masking.
+      Int_State := System.BB.CPU_Primitives.Save_And_Disable_Interrupts;
 
       Lock (Served_Entry_Call (CPU_Id).Lock);
 
@@ -141,6 +150,8 @@ package body System.Tasking.Protected_Objects.Multiprocessors is
       Served_Entry_Call (CPU_Id).List := null;
 
       Unlock (Served_Entry_Call (CPU_Id).Lock);
+
+      System.BB.CPU_Primitives.Restore_Interrupts (Int_State);
 
       --  Wake up every drained caller.  Capture each node's successor and
       --  unlink the node (Next := null) *before* calling Wakeup.  Wakeup
