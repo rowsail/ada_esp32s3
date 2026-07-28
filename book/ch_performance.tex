@@ -92,6 +92,37 @@ this book was obtained, including the discovery that an unplaced hot loop was
 cache-bound, or that a SIMD kernel really was an order of magnitude faster than the
 scalar one.
 
+\section{Per-task CPU time}\index{Execution\_Time}\index{run statistics}\index{CPU usage}
+
+\texttt{CCOUNT} times a code section; it cannot tell you where a whole
+\emph{system}'s cycles go.  For that the runtime keeps per-thread execution
+time: every context switch charges the elapsed slice to the outgoing thread
+(\texttt{System.BB.Execution\_Time}), and interrupt time is accounted
+separately.  \texttt{Thread\_Clock} returns any thread's accumulated time;
+\texttt{Global\_Interrupt\_Clock} the handlers' total.  Both tick in the same
+unit as the wall clock, so a task's share of an interval is a plain ratio.
+
+Arming it costs one \texttt{with}.  The package's elaboration installs the
+\texttt{Scheduling\_Event} hook, so a build whose closure never names it pays
+nothing \textemdash{} the accounting simply does not exist.  The engine-monitor
+example in the companion collection turns this into a run-statistics harness
+(\texttt{ENGMON\_DEBUG=yes}): every five seconds, one line per registered task
+with its CPU share, core affinity and stack high-water, and a closing line for
+interrupt time:
+
+\begin{lstlisting}[style=sh]
+task env        c0  cpu 30.3%  stack 12288/hw 5036 (40%)
+task decode     c1  cpu 1.3%   stack 20480/hw 11036 (53%)
+task idle1      c1  cpu 98.3%  stack 8192/hw 384 (4%)
+task interrupts     cpu 56.9%
+\end{lstlisting}
+
+The columns audit themselves: on the dual-core S3 the CPU column plus the
+interrupt line must sum to about 200\% \textemdash{} both cores fully
+accounted \textemdash{} and a pinned idle-counter task's share must match the
+per-core idle measurement taken independently.  When a table like this
+balances, you can trust what it says about the tasks in between.
+
 \section{Optimisation levels}\index{optimisation}
 
 The build is not uniform about \texttt{-O}, on purpose. The runtime, the HAL and the

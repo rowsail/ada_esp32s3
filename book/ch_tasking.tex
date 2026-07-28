@@ -707,12 +707,22 @@ The ESP32-S3 has two cores and the runtime schedules across both. Two ordinary-A
 facilities put them to use.
 
 \textbf{Pin a task to a core} with the \texttt{CPU} aspect (\texttt{CPU => 1} is
-the first core, \texttt{2} the second); omit it and the task may run on either:
+the first core, \texttt{2} the second):
 
 \begin{lstlisting}
    task Beat0 with Priority => Priority'Last - 1, CPU => 1;
    task Beat1 with Priority => Priority'Last - 1, CPU => 2;   -- the other core
 \end{lstlisting}
+
+Omitting the aspect does \emph{not} make a task migratory.  The kernel assigns
+every new thread to the core that created it
+(\texttt{Initialize\_Thread} sets \texttt{Base\_CPU := This\_CPU}), and it
+stays there for life.  Since the environment task elaborates library-level
+tasks on core~0, a program that never writes a \texttt{CPU} aspect runs
+\emph{entirely} on core~0 while core~1 idles \textemdash{} plainly visible in
+the engine-monitor example's run-statistics affinity column
+(\S\ref{ch:perf}).  The \texttt{CPU} aspect is therefore not an optimisation
+hint; it is the only way work reaches the second core.
 
 \textbf{Share data with a protected object.} It works \emph{across} cores, not
 just between tasks on one core. A protected \emph{entry} can even hand a caller

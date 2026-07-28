@@ -222,6 +222,18 @@ The runtime helps before you reach for a tool at all:
         \texttt{light-tasking} stays detection-only: a trip parks in the
         panic breadcrumb dump.
 
+        One constraint follows for \emph{diagnostic tools}: the watched
+        redzone sits 2\,KB above each task's stack limit, and any tool that
+        writes near the limit trips it.  A stack high-water monitor that
+        paints the unused stack with a sentinel must start its paint (and its
+        scan) \emph{above} the redzone plus the 64-byte watch window \textemdash{}
+        paint from the very limit and the monitor itself raises the
+        \texttt{Storage\_Error} it set out to measure.  Nothing is lost by
+        stopping short: a task that ever reached the redzone would take
+        \texttt{Storage\_Error} anyway, so the usable stack \emph{is} what
+        lies above it.  (The engine-monitor example's run-statistics harness
+        is a worked example of both the technique and the trap.)
+
         The recovery path has one design constraint worth recording: the
         debug-exception handler cannot simply call the raise through an
         assembly trampoline, because Xtensa \texttt{gas} cannot emit CFI and
