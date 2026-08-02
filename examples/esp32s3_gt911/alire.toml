@@ -1,0 +1,17 @@
+name = "esp32s3_gt911"
+description = "Bare-metal Ada GT911 capacitive-touch driver demo on the ESP32-S3"
+version = "0.1.0-dev"
+
+authors = ["D. Howells"]
+maintainers = ["D. Howells <dhowells@motium.us>"]
+licenses = "Apache-2.0 WITH LLVM-exception"
+tags = ["embedded", "esp32s3", "i2c", "touch", "gt911", "driver", "example"]
+
+project-files = ["gt911.gpr"]
+
+[[depends-on]]
+esp32s3_rts = "*"
+
+[[pins]]
+esp32s3_rts = { path = "../../crates/esp32s3_rts" }
+xtensa_dynconfig       = { path = "../../crates/xtensa-dynconfig" }
