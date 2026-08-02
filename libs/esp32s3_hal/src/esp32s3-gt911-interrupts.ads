@@ -27,7 +27,7 @@ package ESP32S3.GT911.Interrupts is
 
    --  Configure Dev's INT pin as a floating input and deliver an interrupt to
    --  Action on every report pulse.  No-op if Dev was set up with No_Pin.
-   --  Routes the GPIO source to the runtime's level-3 device slot on first use
+   --  Routes the GPIO source to the runtime's level-2 device slot on first use
    --  (done by ESP32S3.GPIO.Interrupts).
    procedure Attach
      (Dev    : Device;

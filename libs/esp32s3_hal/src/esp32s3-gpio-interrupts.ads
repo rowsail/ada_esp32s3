@@ -4,14 +4,15 @@ with Ada.Interrupts.Names;
 --
 --  The GPIO peripheral has one interrupt SOURCE (the OR of all pins' latched
 --  status); this module routes it through the interrupt matrix to the runtime's
---  level-3 device slot (Ada.Interrupts.Names.Device_L3_0 = CPU_INT 23) and owns
---  the ISR there.  The ISR demuxes by GPIO status and runs your per-pin
---  callback.
+--  level-2 device slot (Ada.Interrupts.Names.Device_L2_1 = CPU_INT 20) and owns
+--  the ISR there.  (Not a level-3 slot: on an RGB-LCD board both L3 slots are
+--  taken -- the LCD engine's relock and the GDMA EOF.)  The ISR demuxes by GPIO
+--  status and runs your per-pin callback.
 --
 --  Ravenscar/Jorvik attaches handlers statically, so the application does not
 --  pass an ISR -- it registers a per-pin Callback that this module's ISR calls.
 --  That Callback runs in INTERRUPT context (inside a protected action at the
---  level-3 ceiling): keep it short, and don't call a lower-ceiling protected
+--  level-2 ceiling): keep it short, and don't call a lower-ceiling protected
 --  object or block.  The usual idiom is to bump an Atomic flag or Set a
 --  Suspension_Object that a normal task is waiting on, and do the real work
 --  there.
@@ -27,7 +28,7 @@ package ESP32S3.GPIO.Interrupts is
    type Callback is access procedure;
 
    --  Enable Pin's interrupt with the given trigger and action.  On first use
-   --  this also routes the GPIO source to the level-3 device slot.  The pin's
+   --  this also routes the GPIO source to the level-2 device slot.  The pin's
    --  input buffer must be on (ESP32S3.GPIO.Configure already enables it).
    procedure Enable (Pin : Pin_Id; On : Trigger; Action : Callback)
    with Pre => Action /= null;
