@@ -532,6 +532,12 @@ package body ESP32S3.WiFi.IP is
    TCP_MSS    : constant := 536;     --  our send segment cap (safe, no PMTUD)
    TCP_RXBuf  : constant := 2048;    --  per-connection receive buffer
    TCP_RTO    : constant Time_Span := Milliseconds (600);
+   --  How long a closed-by-the-app connection may linger in the FIN
+   --  handshake before its slot is reclaimed regardless: a peer that
+   --  half-closes and then sits on the connection (large CDNs do) would
+   --  otherwise hold the slot in Fin_Wait_2 forever -- and with it every
+   --  future connection that lands on the same socket id.
+   TCP_Linger : constant Time_Span := Milliseconds (5_000);
    TCP_Max_Retries : constant := 8;
 
    Empty : constant Byte_Array (1 .. 0) := (others => 0);
@@ -567,6 +573,9 @@ package body ESP32S3.WiFi.IP is
       Rt_Data    : Byte_Array (0 .. TCP_MSS - 1) := (others => 0);
       Rt_Deadline : Time := Time_First;
       Rt_Tries   : Natural := 0;
+      --  Deadline for a Want_Close connection to finish its FIN handshake
+      --  (armed by TCP_Close); past it the slot is reclaimed (TCP_Linger).
+      Close_Deadline : Time := Time_First;
    end record;
    TCPs : array (Socket_Id) of TCP_Conn;
 
@@ -726,6 +735,13 @@ package body ESP32S3.WiFi.IP is
       if C.State = Time_Wait then
          C.State := Closed;                      --  no 2*MSL wait for a client
       end if;
+      --  A close the APP already asked for has now fully completed: release
+      --  the connection slot -- TCP_Close only frees the Closed/Syn_Sent
+      --  states itself, so a graceful close finishing HERE leaked the slot
+      --  and the next TCP_Open on this socket id failed.
+      if C.Want_Close and then C.State = Closed then
+         C.In_Use := False;
+      end if;
       Maybe_Send_Fin (C);
    end Process;
 
@@ -776,12 +792,25 @@ package body ESP32S3.WiFi.IP is
                   C.Reset := True;               --  give up: treat as aborted
                   C.State := Closed;
                   C.Rt_Pending := False;
+                  if C.Want_Close then
+                     C.In_Use := False;          --  app is gone: free the slot
+                  end if;
                else
                   C.Rt_Tries := C.Rt_Tries + 1;
                   C.Rt_Deadline := Now + TCP_RTO;
                   Emit (C, C.Rt_Flags, C.Rt_Seq, C.Rcv_Nxt,
                         C.Rt_Data (0 .. C.Rt_Len - 1), C.Rt_MSS);
                end if;
+            end if;
+            --  A closed-by-the-app connection whose FIN handshake never
+            --  finished (peer half-closed and went quiet): reclaim the slot
+            --  once the linger deadline passes.
+            if C.In_Use and then C.Want_Close and then C.State /= Closed
+              and then Now >= C.Close_Deadline
+            then
+               C.State := Closed;
+               C.Rt_Pending := False;
+               C.In_Use := False;
             end if;
          end;
       end loop;
@@ -791,6 +820,17 @@ package body ESP32S3.WiFi.IP is
    procedure TCP_Open (Id : Socket_Id; Local_Port : U16; Ok : out Boolean) is
       C : TCP_Conn renames TCPs (Id);
    begin
+      --  A previous connection on this slot that the app has already closed
+      --  may still be mid-FIN-handshake (or its peer half-closed and went
+      --  quiet).  The close is best-effort once the app is gone: reclaim the
+      --  slot now rather than fail the open -- Poll-driven ticks are not
+      --  guaranteed to run between an app's connections, so waiting out
+      --  TCP_Linger here could mean waiting forever.
+      if C.In_Use and then C.Want_Close then
+         C.State := Closed;
+         C.Rt_Pending := False;
+         C.In_Use := False;
+      end if;
       if C.In_Use then
          Ok := False;
          return;
@@ -884,6 +924,7 @@ package body ESP32S3.WiFi.IP is
       C : TCP_Conn renames TCPs (Id);
    begin
       C.Want_Close := True;
+      C.Close_Deadline := Clock + TCP_Linger;
       Maybe_Send_Fin (C);
       if C.State in Closed | Syn_Sent then
          C.In_Use := False;                        --  nothing established to close
