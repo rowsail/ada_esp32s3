@@ -10,6 +10,8 @@ with SPARKNaCl.Scalar;
 with SPARKNaCl.Hashing.SHA256;
 with SPARKNaCl.HKDF;
 with P256;
+with TLS_Client.Scratch;
+use TLS_Client.Scratch;
 
 package body TLS_Client is
 
@@ -22,8 +24,8 @@ package body TLS_Client is
 
    package SHA renames SPARKNaCl.Hashing.SHA256;
 
-   --  Handshake transcript (ClientHello || Server|| ...), static (one at a time).
-   TR     : Byte_Array (0 .. 4095);
+   --  Handshake transcript (ClientHello || Server|| ...): the buffer itself
+   --  (TR) lives in TLS_Client.Scratch with the other big statics.
    TR_Len : Natural := 0;
 
    procedure Transcript (Data : Byte_Array) is
@@ -100,16 +102,11 @@ package body TLS_Client is
    --  Byte buffer builder (for the outgoing ClientHello).
    ---------------------------------------------------------------------------
 
-   type Builder is record
-      Data : Byte_Array (0 .. 2047);
-      Len  : Natural := 0;
-   end record;
-
-   --  One handshake at a time, so keep the big buffers in static scratch rather
-   --  than on the (limited) task stack -- alongside SPARKNaCl's X25519 they would
-   --  otherwise overflow it.
-   CH : Builder;                       --  ClientHello build buffer
-   RB : Byte_Array (0 .. 4095);        --  inbound record fragment
+   --  The Builder type is in the spec's private part; the buffers themselves
+   --  (CH, RB, ...) are in TLS_Client.Scratch: one handshake at a time, so
+   --  the big buffers live in static scratch rather than on the (limited)
+   --  task stack -- alongside SPARKNaCl's X25519 they would otherwise
+   --  overflow it.  The TLS_BUFFERS scenario picks their RAM (DRAM/PSRAM).
 
    procedure P8 (B : in out Builder; V : U8) is
    begin
@@ -604,9 +601,8 @@ package body TLS_Client is
    --  Decrypt the server's encrypted handshake flight (AES-128-GCM).
    ---------------------------------------------------------------------------
 
-   GC_C    : ESP32S3.AES.GCM.Byte_Array (0 .. 4095);   --  ciphertext / plaintext scratch
-   GC_P    : ESP32S3.AES.GCM.Byte_Array (0 .. 4095);
-   HSB     : Byte_Array (0 .. 8191);                   --  reassembled handshake messages
+   --  GC_C / GC_P (GCM scratch) and HSB (reassembled handshake messages) are
+   --  in TLS_Client.Scratch.
    HSB_Len : Natural := 0;
 
    --  Decrypt one TLS 1.3 record fragment Frag(.. Len-1) under the server key, with
@@ -972,9 +968,8 @@ package body TLS_Client is
    --  Encrypt + send a record; complete the handshake (client Finished + app keys)
    ---------------------------------------------------------------------------
 
-   GE_P : ESP32S3.AES.GCM.Byte_Array (0 .. 4095);
-   GE_C : ESP32S3.AES.GCM.Byte_Array (0 .. 4095);
-   ER   : Byte_Array (0 .. 4127);
+   --  GE_P / GE_C (encrypt-side GCM scratch) and ER (the assembled outbound
+   --  record) are in TLS_Client.Scratch.
 
    --  Encrypt Inner (plus its content-type byte) under (RKey, RIV) at Seq and send
    --  it as one TLS 1.3 application_data record.
@@ -1454,6 +1449,30 @@ package body TLS_Client is
       end loop;
       return Result;
    end Server_Chain_Cert;
+
+   procedure Copy_Chain_Cert
+     (S      : Session;
+      Index  : Positive;
+      Target : out X509.Byte_Array;
+      Length : out Natural) is
+   begin
+      Length := 0;
+      if Index > S.Chain_Count then
+         return;
+      end if;
+      declare
+         Bounds : constant Cert_Bounds := S.Chain (Index);
+         Size   : constant Natural := Bounds.Last - Bounds.First + 1;
+      begin
+         if Size > Target'Length then
+            return;
+         end if;
+         for I in 0 .. Size - 1 loop
+            Target (Target'First + I) := X509.U8 (HSB (Bounds.First + I));
+         end loop;
+         Length := Size;
+      end;
+   end Copy_Chain_Cert;
 
    function Server_Finished_OK (S : Session) return Boolean
    is (S.Fin_OK);

@@ -52,6 +52,16 @@ package TLS_Client is
    function Server_Chain_Cert (S : Session; Index : Positive) return X509.Byte_Array
    with Pre => Index <= Server_Cert_Count (S);
 
+   --  Copy chain cert Index into Target instead of returning it: no
+   --  secondary-stack temporary, for callers whose per-task secondary stacks
+   --  are small (a leaf certificate can be several KB).  Length is the DER
+   --  size copied, 0 when Index is out of range or Target is too small.
+   procedure Copy_Chain_Cert
+     (S      : Session;
+      Index  : Positive;
+      Target : out X509.Byte_Array;
+      Length : out Natural);
+
    --  The server's Finished verified: its HMAC over the handshake transcript
    --  matches, proving the transcript, keys and decryption are all consistent.
    function Server_Finished_OK (S : Session) return Boolean;
@@ -105,6 +115,15 @@ package TLS_Client is
 
 private
    subtype Key32 is Byte_Array (0 .. 31);
+
+   --  Byte buffer builder for the outgoing ClientHello.  Here (not in the
+   --  body) so the TLS_Client.Scratch child -- which holds the big static
+   --  buffers, placed in DRAM or PSRAM by the TLS_BUFFERS scenario -- can
+   --  declare one.
+   type Builder is record
+      Data : Byte_Array (0 .. 2047);
+      Len  : Natural := 0;
+   end record;
 
    Max_Chain  : constant := 6;                   --  leaf + a few issuers
    Max_Ticket : constant := 512;                 --  resumption ticket identity cap
