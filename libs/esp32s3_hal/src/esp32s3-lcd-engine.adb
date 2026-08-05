@@ -275,6 +275,12 @@ package body ESP32S3.LCD.Engine is
    Bounce_Buf   : array (0 .. 2 * Max_Half - 1) of aliased Unsigned_8
      with Alignment => 32;
 
+   --  Desync-recovery count (see the spec); written only in the VSYNC
+   --  handler, read from anywhere.
+   Recoveries : Natural := 0 with Volatile;
+
+   function Refill_Recoveries return Natural is (Recoveries);
+
    RGB_Chan     : GD.Channel;                      --  held for the whole refresh
    FB_Len     : Natural := 0;
    Half_Bytes : Natural := 0 with Volatile;        --  bytes per bounce half
@@ -472,6 +478,7 @@ package body ESP32S3.LCD.Engine is
                      LCD_CAM_Periph.LCD_MISC.LCD_AFIFO_RESET := True;
                      GD.Restart_Bounce (RGB_Chan);
                      Cur_Off := (2 * Half_Bytes) mod Natural'Max (FB_Len, 1);
+                     Recoveries := Recoveries + 1;
                   end if;
                end;
 

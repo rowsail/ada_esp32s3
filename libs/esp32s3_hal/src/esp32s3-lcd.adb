@@ -154,6 +154,8 @@ package body ESP32S3.LCD is
       E.Flip (State.Owned (S).all);
    end Flip;
 
+   function Refill_Recoveries return Natural is (E.Refill_Recoveries);
+
    function Back_Buffer (S : Session) return System.Address is
    begin
       if not S.Active then

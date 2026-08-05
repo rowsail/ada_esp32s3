@@ -54,6 +54,12 @@ private package ESP32S3.LCD.Engine is
    procedure Flip (B : Bus);
    function Back_Buffer return System.Address;
 
+   --  How many times the bounce pipeline's per-VSYNC desync check has had to
+   --  recover (refill EOFs fell short of a frame's worth: the refill fell
+   --  behind the ring -- each recovery is one glitched frame).  A diagnostic:
+   --  a healthy system holds this steady at its startup value.
+   function Refill_Recoveries return Natural;
+
    --  Free-run the pixel clock continuously on Pclk_Pad (no data transaction).
    procedure Enable_Clock_Out (B : Bus; Pclk_Pad : ESP32S3.GPIO.Pin_Id);
 

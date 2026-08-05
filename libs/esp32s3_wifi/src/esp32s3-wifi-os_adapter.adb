@@ -178,7 +178,16 @@ package body ESP32S3.WiFi.OS_Adapter is
       pragma Unreferenced (Mux);
       Old : Interfaces.Unsigned_32;
    begin
-      Asm ("rsil %0, 3",
+      --  INTLEVEL 2, not 3: the critical section only has to exclude the
+      --  blob's own WMAC interrupt (Device_L2_1) and the kernel's scheduling
+      --  interrupts (also level 2), and everything Wi-Fi runs on core 0 so a
+      --  local mask is complete.  Level 3 is deliberately reserved for
+      --  latency-critical handlers that touch no Wi-Fi state -- the LCD RGB
+      --  bounce refill (GDMA Device_L3_1) lives there, and masking it here
+      --  made the panel image slip horizontally whenever radio traffic was
+      --  heavy (the refill missed its half deadline and the vsync desync
+      --  recovery repainted the frame).
+      Asm ("rsil %0, 2",
            Outputs  => Interfaces.Unsigned_32'Asm_Output ("=a", Old),
            Volatile => True);
       return Old;
