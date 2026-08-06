@@ -5,6 +5,7 @@
 with Interfaces;
 use type Interfaces.Integer_32, Interfaces.Unsigned_8;
 with System;
+with ESP32S3.Log;
 with ESP32S3.WiFi.IDF;
 with ESP32S3.WiFi.OS_Adapter;
 with ESP32S3.WiFi.RTOS;
@@ -50,7 +51,14 @@ package body ESP32S3.WiFi is
       return A;
    end To_AP;
 
-   procedure Initialize (Result : out Status) is
+   procedure Initialize
+     (Result          : out Status;
+      Static_Rx_Bufs  : Positive := 10;
+      Dynamic_Rx_Bufs : Positive := 32;
+      Dynamic_Tx_Bufs : Positive := 32;
+      Mgmt_Sbufs      : Positive := 32;
+      AMPDU           : Boolean := True)
+   is
       Cfg : aliased IDF.Wifi_Init_Config;
       Rc  : IDF.Esp_Err;
    begin
@@ -60,9 +68,20 @@ package body ESP32S3.WiFi is
       RTOS.Install_Exc_Handler;   --  catch faults on the env core
       OS_Adapter.Install;
       Cfg := IDF.Default_Config (OS_Adapter.Table'Address);
+      Cfg.Static_Rx_Buf_Num := Interfaces.Integer_32 (Static_Rx_Bufs);
+      Cfg.Dynamic_Rx_Buf_Num := Interfaces.Integer_32 (Dynamic_Rx_Bufs);
+      Cfg.Dynamic_Tx_Buf_Num := Interfaces.Integer_32 (Dynamic_Tx_Bufs);
+      Cfg.Mgmt_Sbuf_Num := Interfaces.Integer_32 (Mgmt_Sbufs);
+      if not AMPDU then
+         Cfg.Ampdu_Rx_Enable := 0;
+         Cfg.Ampdu_Tx_Enable := 0;
+      end if;
 
       Rc := IDF.Esp_Wifi_Init (Cfg'Address);
       if Rc /= IDF.ESP_OK then
+         Log.Put ("[wifi] esp_wifi_init rc=");
+         Log.Put (Integer (Rc));
+         Log.Put_Line ("");
          Result := Radio_Error;
          return;
       end if;
@@ -74,12 +93,18 @@ package body ESP32S3.WiFi is
 
       Rc := IDF.Esp_Wifi_Set_Mode (IDF.WIFI_MODE_STA);
       if Rc /= IDF.ESP_OK then
+         Log.Put ("[wifi] esp_wifi_set_mode rc=");
+         Log.Put (Integer (Rc));
+         Log.Put_Line ("");
          Result := Radio_Error;
          return;
       end if;
 
       Rc := IDF.Esp_Wifi_Start;
       if Rc /= IDF.ESP_OK then
+         Log.Put ("[wifi] esp_wifi_start rc=");
+         Log.Put (Integer (Rc));
+         Log.Put_Line ("");
          Result := Radio_Error;
          return;
       end if;

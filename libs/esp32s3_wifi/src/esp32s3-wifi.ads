@@ -52,7 +52,21 @@ package ESP32S3.WiFi is
    --  Bring the radio up in station mode: clocks, PHY + RF calibration, the OS
    --  adapter, esp_wifi_init / set_mode(STA) / start.  Must succeed before Scan.
    --  (Milestone M0 -- the hard part; hardware only.)
-   procedure Initialize (Result : out Status);
+   --
+   --  The buffer-profile formals map onto wifi_init_config_t and default to
+   --  the blob's standard numbers.  An app whose leftover-DRAM malloc arena is
+   --  small (e.g. one that also carries the LCD driver's DRAM buffers) can
+   --  shrink them -- fewer/smaller pools at init and a lower ceiling under
+   --  traffic -- at the cost of throughput; esp_wifi_init returns NO_MEM (rc
+   --  257, logged) when the arena cannot even hold the pools asked for.
+   --  AMPDU off also skips the block-ack reordering allocations.
+   procedure Initialize
+     (Result          : out Status;
+      Static_Rx_Bufs  : Positive := 10;
+      Dynamic_Rx_Bufs : Positive := 32;
+      Dynamic_Tx_Bufs : Positive := 32;
+      Mgmt_Sbufs      : Positive := 32;
+      AMPDU           : Boolean := True);
 
    --  Blocking scan for access points.  Fills Found (1 .. Count) with up to
    --  Found'Length of the strongest APs found; Count is how many were returned.

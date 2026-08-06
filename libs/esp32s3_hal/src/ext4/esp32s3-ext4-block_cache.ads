@@ -10,21 +10,42 @@ with ESP32S3.Block_Dev;
 --  Copy-in / copy-out interface: callers overlay on-disk record types onto their
 --  own block buffer.  Dirty blocks are written back on eviction and on Flush.
 
+with System;
+with System.Storage_Elements;
+with System.Storage_Pools;
+
 package ESP32S3.Ext4.Block_Cache is
 
    type Cache is limited private;
 
    --  Bring up a cache of Entries blocks of Block_Size bytes over Dev.
    --  Block_Size must be a multiple of 512.
+   --  Storage, when given, is memory the CALLER owns and keeps alive for the
+   --  cache's lifetime; the cache then allocates nothing.  It must hold
+   --  Entries * Block_Size data bytes plus Meta_Bytes (Entries) of
+   --  bookkeeping.  Without it the cache allocates from the Ada heap as
+   --  before -- which on a board whose heap is also the Wi-Fi blob's malloc
+   --  arena is exactly the memory one cannot spare.
    procedure Init
      (C          : in out Cache;
       Dev        : ESP32S3.Block_Dev.Device;
       Block_Size : Positive;
-      Entries    : Positive := 32)
+      Entries    : Positive := 32;
+      Storage    : System.Address := System.Null_Address;
+      Storage_Bytes : Natural := 0)
    with Pre => Block_Size mod 512 = 0;
+
+   --  Bookkeeping bytes a caller-supplied Storage must add to the data.
+   function Meta_Bytes (Entries : Positive) return Natural;
 
    --  The configured filesystem block size in bytes.
    function Block_Size (C : Cache) return Natural;
+
+   --  True if block B is currently held in the cache (its cached copy may be
+   --  dirtier than the device's).  A reader that can pull data straight from
+   --  the device (ESP32S3.Ext4.File streaming a large read) must route any
+   --  resident block through the cache instead, or it reads stale data.
+   function Resident (C : Cache; B : Block_Number) return Boolean;
 
    --  Copy filesystem block B into Into (Into'Length must equal Block_Size).
    procedure Read (C : in out Cache; B : Block_Number; Into : out Byte_Array)
@@ -79,8 +100,38 @@ private
    end record;
 
    type Meta_Array is array (Natural range <>) of Entry_Meta;
-   type Meta_Ptr is access Meta_Array;
-   type Bytes_Ptr is access Byte_Array;
+   --  Both the metadata and the block pool are allocated through this pool,
+   --  so `new` still builds proper array bounds.  With no caller storage
+   --  configured it forwards to the C heap exactly as before; when Init is
+   --  given Storage it bump-allocates from that memory instead and frees
+   --  nothing (the caller owns it).
+   type Cache_Pool is new System.Storage_Pools.Root_Storage_Pool with record
+      Base : System.Address := System.Null_Address;
+      Size : System.Storage_Elements.Storage_Count := 0;
+      Next : System.Storage_Elements.Storage_Count := 0;
+   end record;
+
+   overriding procedure Allocate
+     (P         : in out Cache_Pool;
+      Addr      : out System.Address;
+      Size      : System.Storage_Elements.Storage_Count;
+      Alignment : System.Storage_Elements.Storage_Count);
+
+   overriding procedure Deallocate
+     (P         : in out Cache_Pool;
+      Addr      : System.Address;
+      Size      : System.Storage_Elements.Storage_Count;
+      Alignment : System.Storage_Elements.Storage_Count);
+
+   overriding function Storage_Size
+     (P : Cache_Pool) return System.Storage_Elements.Storage_Count;
+
+   --  One cache at a time may use caller storage (the FS mounts one volume
+   --  per Mount object, and only the configured one sets Base).
+   The_Pool : Cache_Pool;
+
+   type Meta_Ptr is access Meta_Array with Storage_Pool => The_Pool;
+   type Bytes_Ptr is access Byte_Array with Storage_Pool => The_Pool;
 
    type Cache is limited record
       Dev   : ESP32S3.Block_Dev.Device;
@@ -90,6 +141,9 @@ private
       Clock : U64 := 0;       --  monotonic LRU stamp
       Meta  : Meta_Ptr := null;  --  Count entries, 0-based
       Pool  : Bytes_Ptr := null;  --  Count * BS bytes, 0-based
+      --  False when Meta/Pool point into caller-supplied Storage, which
+      --  Drop must not free.
+      Owns_Storage : Boolean := True;
    end record;
 
 end ESP32S3.Ext4.Block_Cache;

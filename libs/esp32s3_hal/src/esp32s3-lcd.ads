@@ -175,6 +175,12 @@ package ESP32S3.LCD is
    procedure Flip (S : Session);
    function Back_Buffer (S : Session) return System.Address;
 
+   --  Diagnostic: how many times the RGB bounce pipeline's per-VSYNC desync
+   --  check has recovered (each recovery = one glitched frame -- the refill
+   --  fell behind, e.g. starved of interrupt latency or PSRAM bandwidth).
+   --  Steady at its startup value on a healthy system.
+   function Refill_Recoveries return Natural;
+
    procedure Release (S : in out Session);
 
 private

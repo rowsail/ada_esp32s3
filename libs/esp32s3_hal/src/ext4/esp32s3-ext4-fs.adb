@@ -112,11 +112,16 @@ package body ESP32S3.Ext4.FS is
      (M            : in out Mount;
       Dev          : ESP32S3.Block_Dev.Device;
       Read_Only    : Boolean := True;
-      Cache_Blocks : Positive := 32) is
+      Cache_Blocks : Positive := 32;
+      Cache_Storage : System.Address := System.Null_Address;
+      Cache_Storage_Bytes : Natural := 0) is
    begin
       Superblock.Read (Dev, M.V.SB);
       Superblock.Require_Supported (M.V.SB, Handled_Incompat);
-      ESP32S3.Ext4.Block_Cache.Init (M.V.Cache, Dev, M.V.SB.Block_Size, Cache_Blocks);
+      ESP32S3.Ext4.Block_Cache.Init
+        (M.V.Cache, Dev, M.V.SB.Block_Size, Cache_Blocks,
+         Storage       => Cache_Storage,
+         Storage_Bytes => Cache_Storage_Bytes);
       M.V.Dev := Dev;
       M.V.Read_Only := Read_Only;
       M.Live := True;

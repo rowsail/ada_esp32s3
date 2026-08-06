@@ -14,10 +14,14 @@ package body ESP32S3.SDMMC is
    package GR renames ESP32S3_Registers.GPIO;
    package MX renames ESP32S3_Registers.IO_MUX;
 
-   --  The card-clock source feeding the controller's CLKDIV (PLL160M on the S3).
-   --  The card clock = Src_Hz / (2 * divider).  If your bring-up clocks come out
-   --  wrong, this is the number to revisit.
-   Src_Hz : constant := 160_000_000;
+   --  The clock feeding the controller's CLKDIV: PLL160M through the S3's own
+   --  CLK_EDGE_SEL pre-divider, programmed to /2 in Setup (the IDF-canonical
+   --  configuration) -- so 80 MHz into the CIU, and the card clock =
+   --  Src_Hz / (2 * divider).  Setup MUST program CLK_EDGE_SEL for this to
+   --  hold: at reset that register runs the CIU from the 40 MHz XTAL instead
+   --  (its bit 23 is the clock-source select, mislabelled CCLK_EN in the
+   --  SVD), which made every "20 MHz" card clock actually 5 MHz on the wire.
+   Src_Hz : constant := 80_000_000;
 
    --  GPIO-matrix signal indices (ESP32-S3 gpio_sig_map.h), per slot.
    type Dat_Sigs is array (0 .. 3) of Natural;
@@ -68,6 +72,7 @@ package body ESP32S3.SDMMC is
    Int_FRUN      : constant UInt32 := 16#0800#;   --  FIFO under/overrun
    Int_EBE       : constant UInt32 := 16#8000#;   --  end-bit error
    Int_Resp_Err  : constant UInt32 := 16#0002#;   --  response error
+   Int_ACD       : constant UInt32 := 16#4000#;   --  auto-command (CMD12) done
    Data_Err      : constant UInt32 := Int_DCRC or Int_DRTO or Int_HTO or Int_FRUN or Int_EBE;
 
    --  A named-field view of the SAME register for readable status TESTS.  Writes
@@ -230,7 +235,8 @@ package body ESP32S3.SDMMC is
       Resp    : Resp_Kind;
       Dir     : Data_Dir := No_Data;
       Slot_No : Natural;
-      Init    : Boolean := False) return Status is
+      Init      : Boolean := False;
+      Auto_Stop : Boolean := False) return Status is
    begin
       --  Clear all raw interrupt bits (write 1 to clear).
       RINT := 16#FFFF#;
@@ -243,6 +249,7 @@ package body ESP32S3.SDMMC is
          CHECK_RESPONSE_CRC    => Resp in Short_Resp | Long_Resp,
          DATA_EXPECTED         => Dir /= No_Data,
          READ_WRITE            => Dir = Write_Data,
+         SEND_AUTO_STOP        => Auto_Stop,
          WAIT_PRVDATA_COMPLETE => True,
          SEND_INITIALIZATION   => Init,
          CARD_NUMBER           => CMD_CARD_NUMBER_Field (Slot_No),
@@ -304,7 +311,9 @@ package body ESP32S3.SDMMC is
    --  PIO data transfer through the FIFO (no DMA).
    ---------------------------------------------------------------------------
 
-   procedure Prepare_Data (Bytes : Natural := Block_Bytes) is
+   procedure Prepare_Data
+     (Bytes : Natural := Block_Bytes; Block_Size : Natural := Block_Bytes)
+   is
    begin
       SDHOST_Periph.CTRL.FIFO_RESET := True;
       declare
@@ -314,7 +323,7 @@ package body ESP32S3.SDMMC is
             exit when Past (Deadline);
          end loop;
       end;
-      SDHOST_Periph.BLKSIZ.BLOCK_SIZE := BLKSIZ_BLOCK_SIZE_Field (Bytes);
+      SDHOST_Periph.BLKSIZ.BLOCK_SIZE := BLKSIZ_BLOCK_SIZE_Field (Block_Size);
       SDHOST_Periph.BYTCNT := UInt32 (Bytes);
    end Prepare_Data;
 
@@ -372,48 +381,74 @@ package body ESP32S3.SDMMC is
    end Read_Small;
 
    --  Pull 512 bytes (128 words, little-endian) out of the read FIFO.
+   --
+   --  The shape of this loop is what sets the card's read bandwidth, and it
+   --  is not the FIFO reads that cost: it is asking the clock.  Polling
+   --  "is the FIFO empty?" once per word and consulting a deadline each time
+   --  round means one systimer read -- a register write, a valid-bit poll
+   --  and two reads -- for every four bytes moved, which held a 20 MHz bus
+   --  to roughly a tenth of its bandwidth.  So: take the whole burst the
+   --  card has delivered (FIFO_COUNT) rather than one word at a time, and
+   --  check the deadline once per Poll_Budget cheap status reads instead of
+   --  once per poll.  The timeout stays honest to within a few microseconds,
+   --  which is nothing against Data_Span.
+   Poll_Budget : constant := 256;
+
    function Read_FIFO (Data : out Block) return Status is
       Fifo_Word : UInt32;
+      Deadline  : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
+      Word      : Natural := 0;
+      Available : Natural := 0;
+      Spins     : Natural := 0;
    begin
-      for Word in 0 .. Block_Words - 1 loop
-         declare
-            Ready    : Boolean := False;
-            Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
-         begin
+      while Word <= Block_Words - 1 loop
+         if Available = 0 then
+            --  Nothing buffered: wait for the card to deliver some.
             loop
                if Any_Data_Err then
                   RINT := Data_Err;
                   Data := (others => 0);
                   return Read_Error;
                end if;
-               if not SDHOST_Periph.STATUS.FIFO_EMPTY then
-                  Ready := True;
-                  exit;
+               Available := Natural (SDHOST_Periph.STATUS.FIFO_COUNT);
+               exit when Available > 0;
+               Spins := Spins + 1;
+               if Spins >= Poll_Budget then
+                  Spins := 0;
+                  if Past (Deadline) then
+                     Data := (others => 0);
+                     return Read_Error;
+                  end if;
                end if;
-               exit when Past (Deadline);
             end loop;
-            if not Ready then
-               Data := (others => 0);
-               return Read_Error;
+            if Available > Block_Words - Word then
+               Available := Block_Words - Word;
             end if;
-         end;
-         Fifo_Word := FIFO;
-         Split_LE
-           (Unsigned_32 (Fifo_Word),
-            Data (Word * 4),
-            Data (Word * 4 + 1),
-            Data (Word * 4 + 2),
-            Data (Word * 4 + 3));
+         end if;
+
+         --  Drain the burst with no status polling and no clock at all.
+         for Unused in 1 .. Available loop
+            Fifo_Word := FIFO;
+            Split_LE
+              (Unsigned_32 (Fifo_Word),
+               Data (Word * 4),
+               Data (Word * 4 + 1),
+               Data (Word * 4 + 2),
+               Data (Word * 4 + 3));
+            Word := Word + 1;
+         end loop;
+         Available := 0;
       end loop;
 
       --  Wait for the data-transfer-over flag.
-      declare
-         Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
-      begin
-         while not (RINT_Bits.Data_Over or Any_Data_Err) loop
+      loop
+         exit when RINT_Bits.Data_Over or Any_Data_Err;
+         Spins := Spins + 1;
+         if Spins >= Poll_Budget then
+            Spins := 0;
             exit when Past (Deadline);
-         end loop;
-      end;
+         end if;
+      end loop;
       if Any_Data_Err then
          RINT := Data_Err or Int_Data_Over;
          return Read_Error;
@@ -423,13 +458,14 @@ package body ESP32S3.SDMMC is
    end Read_FIFO;
 
    --  Push 512 bytes (128 words) into the write FIFO.
+   --  One deadline for the block, as in Read_FIFO above.
    function Write_FIFO (Data : Block) return Status is
       Fifo_Word : UInt32;
+      Deadline  : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
    begin
       for Word in 0 .. Block_Words - 1 loop
          declare
-            Ready    : Boolean := False;
-            Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Data_Span;
+            Ready : Boolean := False;
          begin
             loop
                if Any_Data_Err then
@@ -631,6 +667,242 @@ package body ESP32S3.SDMMC is
       Result := OK;
    end Do_Initialize;
 
+   --  Terminate an open-ended/failed multi-block transfer with CMD12 and wait
+   --  the card out of its data state.  Called on EVERY failure path of the run
+   --  operations: the controller's auto-CMD12 only fires at the programmed end
+   --  of the transfer, so a run abandoned mid-stream (deadline, data error)
+   --  otherwise leaves the card streaming/busy -- and then EVERY subsequent
+   --  command times out, which upstream looks like "the volume is gone" (and
+   --  nearly got a good card reformatted).
+   procedure Abort_Transfer (Slot_No : Natural) is
+      Ignored : Status;
+   begin
+      Ignored := Issue (12, 0, Short_Resp, Slot_No => Slot_No);
+      Wait_Not_Busy;
+      RINT := 16#FFFF#;                          --  clear the aborted debris
+   end Abort_Transfer;
+
+   --  Read a run of consecutive blocks in ONE command (CMD18).
+   --
+   --  This is what makes a card usable for bulk reads.  A CMD17 costs the
+   --  card's internal read-access latency -- measured here at ~1.8 ms, and
+   --  it is a property of the card, not of the bus: it did not move when the
+   --  card clock went from 20 to 40 MHz, nor when the host-side drain loop
+   --  was made ten times cheaper.  Paying it per 512 bytes capped a 20 MHz
+   --  bus at ~230 KB/s.  CMD18 pays it once and then streams, with the
+   --  controller issuing the closing CMD12 itself (SEND_AUTO_STOP).
+   procedure Do_Read_Run
+     (C : in out Card; LBA : Block_Address; Data : out Block_Run;
+      Result : out Status)
+   is
+      Card_Index : constant Natural := Card_No (C.On);
+      Total      : constant Natural := Data'Length;
+      Words      : constant Natural := Total / 4;
+      St         : Status;
+      Fifo_Word  : UInt32;
+      Word       : Natural := 0;
+      Available  : Natural := 0;
+      Spins      : Natural := 0;
+      Base       : constant Natural := Data'First;
+   begin
+      if Total = 0 or else Total mod Block_Bytes /= 0 then
+         Result := Read_Error;
+         return;
+      end if;
+
+      Prepare_Data (Bytes => Total, Block_Size => Block_Bytes);
+      St := Issue
+        (18, Addr_Of (C, LBA), Short_Resp, Dir => Read_Data,
+         Slot_No => Card_Index, Auto_Stop => True);
+      if St /= OK then
+         Data := (others => 0);
+         Result := St;
+         return;
+      end if;
+
+      declare
+         --  Data_Span is already a second -- ample for a whole run, and a
+         --  per-block multiple would turn one stuck read into a minute.
+         Deadline : constant Ada.Real_Time.Time :=
+           Ada.Real_Time.Clock + Data_Span;
+      begin
+         while Word < Words loop
+            if Available = 0 then
+               loop
+                  if Any_Data_Err then
+                     RINT := Data_Err;
+                     Abort_Transfer (Card_Index);
+                     Data := (others => 0);
+                     Result := Read_Error;
+                     return;
+                  end if;
+                  Available := Natural (SDHOST_Periph.STATUS.FIFO_COUNT);
+                  exit when Available > 0;
+                  Spins := Spins + 1;
+                  if Spins >= Poll_Budget then
+                     Spins := 0;
+                     if Past (Deadline) then
+                        Abort_Transfer (Card_Index);
+                        Data := (others => 0);
+                        Result := Read_Error;
+                        return;
+                     end if;
+                  end if;
+               end loop;
+               if Available > Words - Word then
+                  Available := Words - Word;
+               end if;
+            end if;
+
+            for Unused in 1 .. Available loop
+               Fifo_Word := FIFO;
+               Split_LE
+                 (Unsigned_32 (Fifo_Word),
+                  Data (Base + Word * 4),
+                  Data (Base + Word * 4 + 1),
+                  Data (Base + Word * 4 + 2),
+                  Data (Base + Word * 4 + 3));
+               Word := Word + 1;
+            end loop;
+            Available := 0;
+         end loop;
+
+         --  Data over, then the auto-issued CMD12 completing.
+         loop
+            exit when RINT_Bits.Data_Over or Any_Data_Err;
+            Spins := Spins + 1;
+            if Spins >= Poll_Budget then
+               Spins := 0;
+               exit when Past (Deadline);
+            end if;
+         end loop;
+      end;
+
+      if Any_Data_Err then
+         RINT := Data_Err or Int_Data_Over or Int_ACD;
+         Abort_Transfer (Card_Index);
+         Result := Read_Error;
+         return;
+      end if;
+      if not RINT_Bits.Data_Over then
+         Abort_Transfer (Card_Index);
+         Result := Read_Error;                   --  deadline hit, no data-over
+         return;
+      end if;
+      RINT := Int_Data_Over or Int_ACD or Int_Cmd_Done;
+      Result := OK;
+   end Do_Read_Run;
+
+   --  Write a run of consecutive blocks in ONE command (CMD25).
+   --
+   --  Same economics as Do_Read_Run above, on the write side: CMD24 pays the
+   --  card's programming overhead per 512 bytes, CMD25 pays it once per run
+   --  (the card pipelines programming across the streamed blocks), with the
+   --  controller issuing the closing CMD12 itself (SEND_AUTO_STOP).
+   Fifo_Depth_Words : constant := 128;   --  the controller's data FIFO
+
+   procedure Do_Write_Run
+     (C : in out Card; LBA : Block_Address; Data : Block_Run;
+      Result : out Status)
+   is
+      Card_Index : constant Natural := Card_No (C.On);
+      Total      : constant Natural := Data'Length;
+      Words      : constant Natural := Total / 4;
+      St         : Status;
+      Fifo_Word  : UInt32;
+      Word       : Natural := 0;
+      Room       : Natural := 0;
+      Spins      : Natural := 0;
+      Base       : constant Natural := Data'First;
+   begin
+      if Total = 0 or else Total mod Block_Bytes /= 0 then
+         Result := Write_Error;
+         return;
+      end if;
+
+      Prepare_Data (Bytes => Total, Block_Size => Block_Bytes);
+      St := Issue
+        (25, Addr_Of (C, LBA), Short_Resp, Dir => Write_Data,
+         Slot_No => Card_Index, Auto_Stop => True);
+      if St /= OK then
+         Result := St;
+         return;
+      end if;
+
+      declare
+         Deadline : constant Ada.Real_Time.Time :=
+           Ada.Real_Time.Clock + Data_Span;
+      begin
+         while Word < Words loop
+            if Room = 0 then
+               --  Wait for FIFO space, then take all of it in one burst
+               --  (FIFO_COUNT is the words still queued).
+               loop
+                  if Any_Data_Err then
+                     RINT := Data_Err;
+                     Abort_Transfer (Card_Index);
+                     Result := Write_Error;
+                     return;
+                  end if;
+                  Room := Fifo_Depth_Words
+                    - Natural (SDHOST_Periph.STATUS.FIFO_COUNT);
+                  exit when Room > 0;
+                  Spins := Spins + 1;
+                  if Spins >= Poll_Budget then
+                     Spins := 0;
+                     if Past (Deadline) then
+                        Abort_Transfer (Card_Index);
+                        Result := Write_Error;
+                        return;
+                     end if;
+                  end if;
+               end loop;
+               if Room > Words - Word then
+                  Room := Words - Word;
+               end if;
+            end if;
+
+            for Unused in 1 .. Room loop
+               Fifo_Word :=
+                 UInt32
+                   (Join_LE
+                      (Data (Base + Word * 4),
+                       Data (Base + Word * 4 + 1),
+                       Data (Base + Word * 4 + 2),
+                       Data (Base + Word * 4 + 3)));
+               FIFO := Fifo_Word;
+               Word := Word + 1;
+            end loop;
+            Room := 0;
+         end loop;
+
+         --  Data over, then the auto-issued CMD12 completing.
+         loop
+            exit when RINT_Bits.Data_Over or Any_Data_Err;
+            Spins := Spins + 1;
+            if Spins >= Poll_Budget then
+               Spins := 0;
+               exit when Past (Deadline);
+            end if;
+         end loop;
+      end;
+
+      if Any_Data_Err then
+         RINT := Data_Err or Int_Data_Over or Int_ACD;
+         Abort_Transfer (Card_Index);
+         Result := Write_Error;
+         return;
+      end if;
+      if not RINT_Bits.Data_Over then
+         Abort_Transfer (Card_Index);
+         Result := Write_Error;                  --  deadline hit, no data-over
+         return;
+      end if;
+      RINT := Int_Data_Over or Int_ACD or Int_Cmd_Done;
+      Wait_Not_Busy;                             --  card programs the run out
+      Result := OK;
+   end Do_Write_Run;
+
    procedure Do_Read (C : in out Card; LBA : Block_Address; Data : out Block; Result : out Status)
    is
       Card_Index : constant Natural := Card_No (C.On);
@@ -666,7 +938,13 @@ package body ESP32S3.SDMMC is
    protected Lock is
       procedure Initialize (C : in out Card; Result : out Status);
       procedure Read (C : in out Card; LBA : Block_Address; Data : out Block; Result : out Status);
+      procedure Read_Run
+        (C : in out Card; LBA : Block_Address; Data : out Block_Run;
+         Result : out Status);
       procedure Write (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status);
+      procedure Write_Run
+        (C : in out Card; LBA : Block_Address; Data : Block_Run;
+         Result : out Status);
    end Lock;
 
    protected body Lock is
@@ -681,10 +959,24 @@ package body ESP32S3.SDMMC is
          Do_Read (C, LBA, Data, Result);
       end Read;
 
+      procedure Read_Run
+        (C : in out Card; LBA : Block_Address; Data : out Block_Run;
+         Result : out Status) is
+      begin
+         Do_Read_Run (C, LBA, Data, Result);
+      end Read_Run;
+
       procedure Write (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status) is
       begin
          Do_Write (C, LBA, Data, Result);
       end Write;
+
+      procedure Write_Run
+        (C : in out Card; LBA : Block_Address; Data : Block_Run;
+         Result : out Status) is
+      begin
+         Do_Write_Run (C, LBA, Data, Result);
+      end Write_Run;
    end Lock;
 
    ---------------------------------------------------------------------------
@@ -738,6 +1030,25 @@ package body ESP32S3.SDMMC is
             exit when Past (Deadline);
          end loop;
       end;
+
+      --  cclk_in to the CIU: PLL160M / 2 = 80 MHz (= Src_Hz), duty 1/2, with
+      --  the IDF-canonical phases (dout 90 deg for hold time, din/core 0).
+      --  The SVD's names for this register describe the ESP32's; on the S3
+      --  the fields are (soc/sdmmc_struct.h): DRV/SAM/SLF_SEL = the dout/
+      --  din/core clock phases, EDGE_H/L/N = the divider's high-length/
+      --  period/reset counts (H = div/2 - 1, L = N = div - 1), and CCLK_EN
+      --  is really clk_sel -- False selects the 40 MHz XTAL, True PLL160M.
+      SDHOST_Periph.CLK_EDGE_SEL :=
+        (CCLKIN_EDGE_DRV_SEL => 1,
+         CCLKIN_EDGE_SAM_SEL => 0,
+         CCLKIN_EDGE_SLF_SEL => 0,
+         CCLLKIN_EDGE_H      => 0,
+         CCLLKIN_EDGE_L      => 1,
+         CCLLKIN_EDGE_N      => 1,
+         ESDIO_MODE          => False,
+         ESD_MODE            => False,
+         CCLK_EN             => True,
+         others              => <>);
 
       --  Generous response/data timeouts; conservative FIFO watermarks.
       SDHOST_Periph.TMOUT :=
@@ -873,6 +1184,20 @@ package body ESP32S3.SDMMC is
    begin
       Lock.Read (C, LBA, Data, Result);
    end Read_Block;
+
+   procedure Read_Blocks
+     (C : in out Card; LBA : Block_Address; Data : out Block_Run;
+      Result : out Status) is
+   begin
+      Lock.Read_Run (C, LBA, Data, Result);
+   end Read_Blocks;
+
+   procedure Write_Blocks
+     (C : in out Card; LBA : Block_Address; Data : Block_Run;
+      Result : out Status) is
+   begin
+      Lock.Write_Run (C, LBA, Data, Result);
+   end Write_Blocks;
 
    procedure Write_Block (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status)
    is

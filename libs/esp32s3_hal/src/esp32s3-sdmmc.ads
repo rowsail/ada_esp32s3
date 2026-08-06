@@ -135,6 +135,23 @@ package ESP32S3.SDMMC is
    function Active_Clock_Hz (C : Card) return Natural;
 
    --  Read / write one 512-byte block at logical address LBA.
+   --  A run of consecutive blocks as a flat buffer; the length must be a
+   --  whole number of blocks.  Reading a run costs the card's read-access
+   --  latency once rather than once per block, which is the difference
+   --  between ~230 KB/s and the bus rate.
+   type Block_Run is array (Natural range <>) of Interfaces.Unsigned_8;
+
+   procedure Read_Blocks
+     (C : in out Card; LBA : Block_Address; Data : out Block_Run;
+      Result : out Status);
+
+   --  Write a run of consecutive blocks in one command (CMD25): the card
+   --  pipelines the programming across the run instead of paying its full
+   --  write latency per 512-byte block.
+   procedure Write_Blocks
+     (C : in out Card; LBA : Block_Address; Data : Block_Run;
+      Result : out Status);
+
    procedure Read_Block
      (C : in out Card; LBA : Block_Address; Data : out Block; Result : out Status);
    procedure Write_Block (C : in out Card; LBA : Block_Address; Data : Block; Result : out Status);

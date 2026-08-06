@@ -157,7 +157,9 @@ package body ESP32S3.Block_Dev.W25Q_Source is
          Read  => Do_Read'Access,
          Write => Do_Write'Access,
          Count => Do_Count'Access,
-         Erase => Do_Erase'Access);
+         Erase => Do_Erase'Access,
+         Read_Run => null,
+         Write_Run => null);
    end Make;
 
 end ESP32S3.Block_Dev.W25Q_Source;

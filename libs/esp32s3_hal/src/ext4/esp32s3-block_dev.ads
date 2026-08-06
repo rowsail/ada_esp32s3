@@ -24,6 +24,23 @@ package ESP32S3.Block_Dev is
    type Write_Proc is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : Sector);
    type Count_Func is access function (Ctx : System.Address) return Sector_Index;
 
+   --  A run of consecutive sectors as one flat buffer; the length must be a
+   --  whole number of sectors.  Runs exist because on SD the fixed cost is
+   --  PER COMMAND, not per byte: each single-sector read pays the card's
+   --  internal access latency (~2 ms on cards measured here), so reading a
+   --  4 KiB filesystem block as eight one-sector commands is ~8x slower
+   --  than one eight-sector command.
+   type Sector_Run is array (Natural range <>) of Interfaces.Unsigned_8;
+
+   --  OPTIONAL capabilities: read / write the run [First, First +
+   --  Data'Length/512) in one device operation.  A device without one leaves
+   --  the member null and Read_Sectors / Write_Sectors fall back to a
+   --  per-sector loop.
+   type Read_Run_Proc is
+     access procedure (Ctx : System.Address; First : Sector_Index; Data : out Sector_Run);
+   type Write_Run_Proc is
+     access procedure (Ctx : System.Address; First : Sector_Index; Data : Sector_Run);
+
    --  OPTIONAL capability: discard/erase the run of sectors [First, First+Count).
    --  Best-effort -- where the medium has an erase unit (a NOR flash 4 KB
    --  sector) the run becomes erased; a device that cannot do this leaves Erase
@@ -37,11 +54,13 @@ package ESP32S3.Block_Dev is
    --  A configured backend.  Write = null marks a read-only device; Erase = null
    --  a device with no block-erase capability (the common case).
    type Device is record
-      Ctx   : System.Address := System.Null_Address;
-      Read  : Read_Proc := null;
-      Write : Write_Proc := null;
-      Count : Count_Func := null;
-      Erase : Erase_Proc := null;
+      Ctx       : System.Address := System.Null_Address;
+      Read      : Read_Proc := null;
+      Write     : Write_Proc := null;
+      Count     : Count_Func := null;
+      Erase     : Erase_Proc := null;
+      Read_Run  : Read_Run_Proc := null;
+      Write_Run : Write_Run_Proc := null;
    end record;
 
    --  True if the device can be written.
@@ -59,6 +78,12 @@ package ESP32S3.Block_Dev is
    --  out-of-range index (Read_Sector) / a read-only device (Write_Sector).
    procedure Read_Sector (Dev : Device; LBA : Sector_Index; Data : out Sector);
    procedure Write_Sector (Dev : Device; LBA : Sector_Index; Data : Sector);
+
+   --  Read / write the run of consecutive sectors starting at First (Data's
+   --  length must be a whole number of sectors): one device operation where
+   --  the device offers the run capability, a per-sector loop otherwise.
+   procedure Read_Sectors (Dev : Device; First : Sector_Index; Data : out Sector_Run);
+   procedure Write_Sectors (Dev : Device; First : Sector_Index; Data : Sector_Run);
 
    --  Best-effort erase of [First, First+Count); a no-op if the device has no
    --  Erase capability (so callers may invoke it unconditionally).

@@ -47,7 +47,9 @@ package body ESP32S3.Block_Dev.SD_SPI_Source is
          Read  => Do_Read'Access,
          Write => Do_Write'Access,
          Count => Do_Count'Access,
-         Erase => null);
+         Erase => null,
+         Read_Run => null,
+         Write_Run => null);
    end Make;
 
 end ESP32S3.Block_Dev.SD_SPI_Source;

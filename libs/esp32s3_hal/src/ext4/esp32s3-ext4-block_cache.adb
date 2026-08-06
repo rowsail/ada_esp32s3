@@ -2,13 +2,64 @@ with Ada.Unchecked_Deallocation;
 with Ada.IO_Exceptions;
 with Interfaces;
 
+with System.Storage_Elements; use System.Storage_Elements;
 package body ESP32S3.Ext4.Block_Cache is
+
+   use type System.Address;
 
    use type Interfaces.Unsigned_64;
    use type ESP32S3.Block_Dev.Sector_Index;
 
    procedure Free is new Ada.Unchecked_Deallocation (Meta_Array, Meta_Ptr);
    procedure Free is new Ada.Unchecked_Deallocation (Byte_Array, Bytes_Ptr);
+
+   function C_Malloc (Size : Interfaces.Unsigned_32) return System.Address
+     with Import, Convention => C, External_Name => "malloc";
+   procedure C_Free (Ptr : System.Address)
+     with Import, Convention => C, External_Name => "free";
+
+   overriding procedure Allocate
+     (P         : in out Cache_Pool;
+      Addr      : out System.Address;
+      Size      : Storage_Count;
+      Alignment : Storage_Count) is
+      use type System.Address;
+   begin
+      if P.Base = System.Null_Address then
+         Addr := C_Malloc (Interfaces.Unsigned_32 (Size));
+         if Addr = System.Null_Address then
+            raise Storage_Error with "ext4 cache: heap exhausted";
+         end if;
+         return;
+      end if;
+      declare
+         Start : constant Storage_Count :=
+           (P.Next + Alignment - 1) / Alignment * Alignment;
+      begin
+         if Start + Size > P.Size then
+            raise Storage_Error with "ext4 cache: caller storage too small";
+         end if;
+         Addr := P.Base + Start;
+         P.Next := Start + Size;
+      end;
+   end Allocate;
+
+   overriding procedure Deallocate
+     (P         : in out Cache_Pool;
+      Addr      : System.Address;
+      Size      : Storage_Count;
+      Alignment : Storage_Count) is
+      pragma Unreferenced (Size, Alignment);
+      use type System.Address;
+   begin
+      --  Caller storage is never freed; heap blocks are.
+      if P.Base = System.Null_Address then
+         C_Free (Addr);
+      end if;
+   end Deallocate;
+
+   overriding function Storage_Size (P : Cache_Pool) return Storage_Count
+   is (if P.Base = System.Null_Address then Storage_Count'Last else P.Size);
 
    --  Byte range of entry E within the pool.
    function Lo (C : Cache; E : Natural) return Natural
@@ -22,11 +73,22 @@ package body ESP32S3.Ext4.Block_Cache is
    -- Init --
    ----------
 
+   function Meta_Bytes (Entries : Positive) return Natural is
+      Sample : constant Meta_Array (0 .. Entries - 1) := (others => <>);
+   begin
+      return Sample'Size / 8;
+   end Meta_Bytes;
+
    procedure Init
      (C          : in out Cache;
       Dev        : ESP32S3.Block_Dev.Device;
       Block_Size : Positive;
-      Entries    : Positive := 32) is
+      Entries    : Positive := 32;
+      Storage    : System.Address := System.Null_Address;
+      Storage_Bytes : Natural := 0) is
+      use type System.Address;
+      Need_Meta : constant Natural := Meta_Bytes (Entries);
+      Need_Data : constant Natural := Entries * Block_Size;
    begin
       if Block_Size mod 512 /= 0 then
          raise Ada.IO_Exceptions.Use_Error with "block size not a multiple of 512";
@@ -36,8 +98,23 @@ package body ESP32S3.Ext4.Block_Cache is
       C.Spb := Block_Size / 512;
       C.Count := Entries;
       C.Clock := 0;
+      --  Point the pool at caller storage (or leave it on the heap), then
+      --  allocate normally so the arrays carry proper bounds.
+      if Storage /= System.Null_Address then
+         if Storage_Bytes < Need_Meta + Need_Data then
+            raise Ada.IO_Exceptions.Use_Error with "cache storage too small";
+         end if;
+         The_Pool.Base := Storage;
+         The_Pool.Size := Storage_Count (Storage_Bytes);
+         The_Pool.Next := 0;
+         C.Owns_Storage := False;
+      else
+         The_Pool.Base := System.Null_Address;
+         C.Owns_Storage := True;
+      end if;
       C.Meta := new Meta_Array (0 .. Entries - 1);
       C.Pool := new Byte_Array (0 .. Entries * Block_Size - 1);
+      C.Meta.all := (others => <>);
    end Init;
 
    ----------------
@@ -51,31 +128,41 @@ package body ESP32S3.Ext4.Block_Cache is
    -- Internal moves --
    --------------------
 
-   --  Pull filesystem block Meta(E).Tag from the device into entry E's pool slot.
+   --  Pull filesystem block Meta(E).Tag from the device into entry E's pool
+   --  slot.  One run read straight into the slot: on SD the fixed cost is per
+   --  COMMAND (the card's ~2 ms access latency), so fetching a 4 KiB block as
+   --  eight one-sector commands was ~8x slower than this single command.
    procedure Load (C : in out Cache; E : Natural) is
       Base : constant ESP32S3.Block_Dev.Sector_Index := Base_Sector (C, C.Meta (E).Tag);
-      Sec  : ESP32S3.Block_Dev.Sector;
-      Dst  : Natural := Lo (C, E);
+      Run  : ESP32S3.Block_Dev.Sector_Run (0 .. C.BS - 1)
+        with Import, Address => C.Pool (Lo (C, E))'Address;
    begin
-      for S in 0 .. C.Spb - 1 loop
-         ESP32S3.Block_Dev.Read_Sector (C.Dev, Base + ESP32S3.Block_Dev.Sector_Index (S), Sec);
-         C.Pool (Dst .. Dst + 511) := Byte_Array (Sec);
-         Dst := Dst + 512;
-      end loop;
+      ESP32S3.Block_Dev.Read_Sectors (C.Dev, Base, Run);
    end Load;
 
-   --  Push entry E's pool slot back to the device.
+   --  Push entry E's pool slot back to the device, as one run write (see
+   --  Load above for why one command per block, not one per sector).
    procedure Store (C : in out Cache; E : Natural) is
       Base : constant ESP32S3.Block_Dev.Sector_Index := Base_Sector (C, C.Meta (E).Tag);
-      Sec  : ESP32S3.Block_Dev.Sector;
-      Src  : Natural := Lo (C, E);
+      Run  : ESP32S3.Block_Dev.Sector_Run (0 .. C.BS - 1)
+        with Import, Address => C.Pool (Lo (C, E))'Address;
    begin
-      for S in 0 .. C.Spb - 1 loop
-         Sec := ESP32S3.Block_Dev.Sector (C.Pool (Src .. Src + 511));
-         ESP32S3.Block_Dev.Write_Sector (C.Dev, Base + ESP32S3.Block_Dev.Sector_Index (S), Sec);
-         Src := Src + 512;
-      end loop;
+      ESP32S3.Block_Dev.Write_Sectors (C.Dev, Base, Run);
    end Store;
+
+   --------------
+   -- Resident --
+   --------------
+
+   function Resident (C : Cache; B : Block_Number) return Boolean is
+   begin
+      for E in 0 .. C.Count - 1 loop
+         if C.Meta (E).Valid and then C.Meta (E).Tag = B then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Resident;
 
    --  Find block B, loading + evicting as needed; return its entry index.
    function Acquire (C : in out Cache; B : Block_Number) return Natural is
@@ -225,8 +312,13 @@ package body ESP32S3.Ext4.Block_Cache is
 
    procedure Drop (C : in out Cache) is
    begin
-      Free (C.Meta);
-      Free (C.Pool);
+      if C.Owns_Storage then
+         Free (C.Meta);
+         Free (C.Pool);
+      else
+         C.Meta := null;   --  caller-owned: detach, never deallocate
+         C.Pool := null;
+      end if;
       C.Count := 0;
       C.BS := 0;
       C.Spb := 0;
