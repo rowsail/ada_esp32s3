@@ -77,6 +77,13 @@ def handle(conn):
                 reply("213 %d" % os.path.getsize(localpath(arg)))
             except OSError:
                 reply("550 no such file")
+        elif cmd == "MDTM":
+            try:
+                import time as _t
+                mt = _t.gmtime(os.path.getmtime(localpath(arg)))
+                reply("213 %s" % _t.strftime("%Y%m%d%H%M%S", mt))
+            except OSError:
+                reply("550 no such file")
         elif cmd == "PASV":
             # Advertise / bind the data listener on the control connection's local
             # IP -- 127.0.0.1 for the host harness, or the LAN IP when a board

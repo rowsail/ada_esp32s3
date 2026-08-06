@@ -636,6 +636,50 @@ package body FTP_Client is
       Simple (S, "DELE " & Path, Result);
    end Delete_File;
 
+   procedure Mod_Time
+     (S      : in out Session;
+      Path   : String;
+      Stamp  : out String;
+      Last   : out Natural;
+      Result : out Status)
+   is
+      Line   : String (1 .. 256);
+      L_Last : Natural;
+      Code   : Integer;
+      St     : Status;
+   begin
+      Stamp := (others => ' ');
+      Last := 0;
+      if not S.Open then
+         Result := Not_Connected;
+         return;
+      end if;
+      Command_Line (S, "MDTM " & Path, Code, Line, L_Last, St);
+      if St /= OK then
+         Finish (S, St, Result);
+         return;
+      end if;
+      if Code = 213 then
+         --  "213 YYYYMMDDHHMMSS[.sss]" -- hand back the timestamp text
+         --  verbatim (callers compare stamps, they do not decode them).
+         declare
+            From : constant Natural := Line'First + 4;
+         begin
+            for I in From .. Line'First + L_Last - 1 loop
+               exit when Last >= Stamp'Length;
+               exit when Line (I) = ' ' or else Line (I) = ASCII.CR;
+               Last := Last + 1;
+               Stamp (Stamp'First + Last - 1) := Line (I);
+            end loop;
+         end;
+         Finish (S, OK, Result);
+      elsif Code in 400 .. 599 then
+         Finish (S, Server_Error, Result);
+      else
+         Finish (S, Protocol_Error, Result);
+      end if;
+   end Mod_Time;
+
    procedure File_Size (S : in out Session; Path : String; Size : out Natural; Result : out Status)
    is
       Line : String (1 .. 256);
