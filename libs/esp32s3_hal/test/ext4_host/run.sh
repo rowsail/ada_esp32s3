@@ -58,6 +58,11 @@ for S in dindirect dtrunc dunlink; do
    grep -hE "^(dindirect|dtrunc|dunlink):" /tmp/ext4_host.out | sed 's/^/      /'
 done
 
+echo "directory growth (hundreds of names -> multi-block dir):"
+fresh; run_scenario dirgrow dirgrow
+grep -h '^dirgrow:' /tmp/ext4_host.out | sed 's/^/      /'
+
+
 echo "no-journal:"
 for S in one two battery stream; do fresh_nojournal; run_scenario "$S" "$S"; done
 grep -h '^stream:' /tmp/ext4_host.out | sed 's/^/      /'

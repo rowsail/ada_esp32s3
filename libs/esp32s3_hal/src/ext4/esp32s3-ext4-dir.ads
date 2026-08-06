@@ -28,18 +28,25 @@ package ESP32S3.Ext4.Dir with SPARK_Mode => On is
       Visit : not null access procedure (Name : String; Ino : Inode_Number; File_Type : U8))
    with SPARK_Mode => Off;
 
-   --  Add Name -> Child (with File_Type) to directory Dir by splitting slack in
-   --  one of its existing data blocks.  Raises No_Space if no block has room
-   --  (directory-block extension is a later step).  Raises Use_Error if Name
-   --  already exists (entries must be unique -- a blind append would create a
-   --  duplicate dirent); callers that mean to replace remove the old entry first.
+   --  Add Name -> Child (with File_Type) to directory inode Dir_N/Dir by
+   --  splitting slack in one of its existing data blocks -- or, when every
+   --  block is packed, by GROWING the directory one block into the next free
+   --  direct map slot (12 x 4 KiB holds ~1,700 entries).  On growth Dir is
+   --  updated in place (size/map) and the inode written back, so a caller
+   --  that later writes Dir itself stays consistent.  Raises No_Space once
+   --  the direct slots are exhausted, Unsupported_Feature for an
+   --  extent-mapped directory, and Use_Error if Name already exists (entries
+   --  must be unique -- a blind append would create a duplicate dirent);
+   --  callers that mean to replace remove the old entry first.
    procedure Add_Entry
      (V         : in out Volume.Context;
-      Dir       : Inode.Info;
+      Dir_N     : Inode_Number;
+      Dir       : in out Inode.Info;
       Name      : String;
       Child     : Inode_Number;
       File_Type : U8)
-   with Pre => Name'Length > 0 and then Child >= 1, SPARK_Mode => Off;
+   with Pre => Name'Length > 0 and then Child >= 1 and then Dir_N >= 1,
+        SPARK_Mode => Off;
 
    --  Remove Name from directory Dir (merging its slot into the previous entry,
    --  or zeroing its inode if first in the block).  Returns the removed entry's
