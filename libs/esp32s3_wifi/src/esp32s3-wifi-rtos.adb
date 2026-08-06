@@ -220,7 +220,16 @@ package body ESP32S3.WiFi.RTOS is
 
    Mutexes : array (1 .. Max_Mutex) of aliased Rec_Mutex;
    Sems    : array (1 .. Max_Sem)   of aliased Sem;
-   Queues  : array (1 .. Max_Queue) of aliased Queue;
+   --  The queue pool is ~25 KB of plain data the blob only ever reaches
+   --  through our own post/fetch calls, so it lives in external PSRAM: on a
+   --  board that also runs the RGB LCD (64 KB of DRAM bounce buffers) and a
+   --  TLS client, internal DRAM is the binding constraint -- and what is
+   --  left of it is exactly the arena the blob mallocs from, so freeing
+   --  25 KB here is the difference between the radio working and dying at
+   --  association.  Safe from interrupt context: the d-cache is on
+   --  throughout (this port never writes flash at run time).
+   Queues  : array (1 .. Max_Queue) of aliased Queue
+     with Linker_Section => ".ext_ram.bss", Alignment => 16;
 
    function C_Malloc (Size : Interfaces.Unsigned_32) return System.Address
      with Import, Convention => C, External_Name => "malloc";
