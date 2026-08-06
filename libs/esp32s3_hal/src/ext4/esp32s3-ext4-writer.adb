@@ -30,12 +30,14 @@ package body ESP32S3.Ext4.Writer is
    -----------------
 
    function Create_File (V : in out Volume.Context; Dir_Path, Name : String) return Inode_Number is
+      Dir_N : Inode_Number;
       Dir_I : Inode.Info;
       Child : Inode_Number;
       CI    : Inode.Info;
    begin
       Guard (V);
-      Inode.Read (V, Path.Resolve (V, Dir_Path), Dir_I);
+      Dir_N := Path.Resolve (V, Dir_Path);
+      Inode.Read (V, Dir_N, Dir_I);
       if not Inode.Is_Dir (Dir_I) then
          raise Use_Error with "parent is not a directory";
       end if;
@@ -57,7 +59,7 @@ package body ESP32S3.Ext4.Writer is
          I_Block    => [others => 0]);
       Inode.Write (V, Child, CI, Fresh => True);
 
-      Dir.Add_Entry (V, Dir_I, Name, Child, Dir.FT_Reg);
+      Dir.Add_Entry (V, Dir_N, Dir_I, Name, Child, Dir.FT_Reg);
       return Child;
    end Create_File;
 
@@ -371,7 +373,7 @@ package body ESP32S3.Ext4.Writer is
       Put_U32 (DI.I_Block, 0, U32 (Blk));
       Inode.Write (V, New_N, DI, Fresh => True);
 
-      Dir.Add_Entry (V, Parent_I, Name, New_N, Dir.FT_Dir);
+      Dir.Add_Entry (V, Parent_N, Parent_I, Name, New_N, Dir.FT_Dir);
 
       Parent_I.Links := Parent_I.Links + 1;    --  the new dir's ".." -> parent
       Inode.Write (V, Parent_N, Parent_I, Fresh => False);
@@ -665,7 +667,7 @@ package body ESP32S3.Ext4.Writer is
          end;
       end if;
 
-      Dir.Add_Entry (V, New_DI, New_Name, Child, FType_Of (CI));
+      Dir.Add_Entry (V, NN, New_DI, New_Name, Child, FType_Of (CI));
       declare
          R : constant Inode_Number := Dir.Remove_Entry (V, Old_DI, Old_Name);
          pragma Unreferenced (R);
@@ -828,6 +830,7 @@ package body ESP32S3.Ext4.Writer is
    procedure Link (V : in out Volume.Context; Target_Path, New_Dir, New_Name : String) is
       TN  : constant Inode_Number := Path.Resolve (V, Target_Path);
       TI  : Inode.Info;
+      NDN : Inode_Number;
       NDI : Inode.Info;
    begin
       Guard (V);
@@ -835,14 +838,15 @@ package body ESP32S3.Ext4.Writer is
       if Inode.Is_Dir (TI) then
          raise Use_Error with "hard link to a directory";
       end if;
-      Inode.Read (V, Path.Resolve (V, New_Dir), NDI);
+      NDN := Path.Resolve (V, New_Dir);
+      Inode.Read (V, NDN, NDI);
       if not Inode.Is_Dir (NDI) then
          raise Use_Error with "link parent is not a directory";
       end if;
       if Dir.Lookup (V, NDI, New_Name) /= 0 then
          raise Use_Error with "link target already exists: " & New_Name;
       end if;
-      Dir.Add_Entry (V, NDI, New_Name, TN, FType_Of (TI));
+      Dir.Add_Entry (V, NDN, NDI, New_Name, TN, FType_Of (TI));
       TI.Links := TI.Links + 1;
       Inode.Write (V, TN, TI, Fresh => False);
    end Link;
@@ -853,6 +857,7 @@ package body ESP32S3.Ext4.Writer is
 
    procedure Make_Symlink (V : in out Volume.Context; Dir_Path, Name, Target : String) is
       BS    : constant Natural := V.SB.Block_Size;
+      Dir_N : Inode_Number;
       Dir_I : Inode.Info;
       Child : Inode_Number;
       CI    : Inode.Info;
@@ -865,7 +870,8 @@ package body ESP32S3.Ext4.Writer is
          raise Use_Error with "symlink target longer than one block";
       end if;
 
-      Inode.Read (V, Path.Resolve (V, Dir_Path), Dir_I);
+      Dir_N := Path.Resolve (V, Dir_Path);
+      Inode.Read (V, Dir_N, Dir_I);
       if not Inode.Is_Dir (Dir_I) then
          raise Use_Error with "parent is not a directory";
       end if;
@@ -907,7 +913,7 @@ package body ESP32S3.Ext4.Writer is
          end;
       end if;
 
-      Dir.Add_Entry (V, Dir_I, Name, Child, Dir.FT_Symlink);
+      Dir.Add_Entry (V, Dir_N, Dir_I, Name, Child, Dir.FT_Symlink);
    end Make_Symlink;
 
 end ESP32S3.Ext4.Writer;

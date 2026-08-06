@@ -247,6 +247,51 @@ begin
       M.Commit;
       Put_Line ("dunlink: 5 MB double-indirect file created + unlinked");
       M.Close;
+
+   elsif Scenario = "dirgrow" then
+      --  Fill a directory far past its first 4 KiB block -- the NOAA-mirror
+      --  shape (hundreds of ~20-char names) that used to die with "directory
+      --  full".  400 names at rec_len 28 is ~3 blocks of dirents; verify
+      --  every name still resolves, then punch holes and re-create through
+      --  the freed slack, and leave the tree for e2fsck to judge.
+      declare
+         Missing : Natural := 0;
+         Ino     : Inode_Number;
+      begin
+         M.Mkdir ("/", "noaa");
+         for I in 1 .. 400 loop
+            Make_File ("/noaa", "fax_chart_" & I'Image (2 .. I'Image'Last) & ".TIF");
+         end loop;
+         M.Commit;
+
+         for I in 1 .. 400 loop
+            Ino := M.Lookup ("/noaa/fax_chart_" & I'Image (2 .. I'Image'Last) & ".TIF");
+            if Ino = 0 then
+               Missing := Missing + 1;
+            end if;
+         end loop;
+
+         --  Replace a slice of them (the mirror's update pattern: unlink,
+         --  create anew) so growth coexists with slot reuse.
+         for I in 100 .. 200 loop
+            M.Unlink ("/noaa", "fax_chart_" & I'Image (2 .. I'Image'Last) & ".TIF");
+         end loop;
+         for I in 100 .. 200 loop
+            Make_File ("/noaa", "fax_chart_" & I'Image (2 .. I'Image'Last) & ".TIF");
+         end loop;
+         M.Commit;
+
+         for I in 1 .. 400 loop
+            Ino := M.Lookup ("/noaa/fax_chart_" & I'Image (2 .. I'Image'Last) & ".TIF");
+            if Ino = 0 then
+               Missing := Missing + 1;
+            end if;
+         end loop;
+
+         Put_Line ("dirgrow: 400 files + 101 replaced, missing"
+                   & Missing'Image);
+      end;
+      M.Close;
    end if;
 
    if Scenario = "dirty_battery" then

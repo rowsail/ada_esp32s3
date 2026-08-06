@@ -1,4 +1,5 @@
 with Interfaces; use Interfaces;
+with ESP32S3.Ext4.Bitmap;
 with ESP32S3.Ext4.Block_Cache;
 with ESP32S3.Ext4.Block_Map;
 
@@ -134,7 +135,8 @@ package body ESP32S3.Ext4.Dir with SPARK_Mode => On is
 
    procedure Add_Entry
      (V         : in out Volume.Context;
-      Dir       : Inode.Info;
+      Dir_N     : Inode_Number;
+      Dir       : in out Inode.Info;
       Name      : String;
       Child     : Inode_Number;
       File_Type : U8)
@@ -203,7 +205,42 @@ package body ESP32S3.Ext4.Dir with SPARK_Mode => On is
             end if;
          end;
       end loop;
-      raise No_Space with "directory full (block extension not implemented)";
+      --  Every existing block is packed: grow the directory by one block.
+      --  This is what lets a flat directory hold more than one block's worth
+      --  of names -- a card mirroring ~76 products at three files each blew
+      --  straight past the first 4 KiB (~140 entries) and every later create
+      --  failed.  Directories written by this stack are direct-mapped, so
+      --  growth fills the next of the inode's 12 direct slots.
+      if Inode.Uses_Extents (Dir) then
+         raise Unsupported_Feature with "cannot grow an extent-mapped directory";
+      end if;
+      if N_Blk >= 12 then
+         raise No_Space with "directory full (all 12 direct blocks in use)";
+      end if;
+      declare
+         Phys   : constant Block_Number := Bitmap.Alloc_Block (V);
+         Zeros  : constant Byte_Array (0 .. 511) := [others => 0];
+         Empty  : Byte_Array (0 .. 7) := [others => 0];
+      begin
+         for S in 0 .. BS / 512 - 1 loop
+            ESP32S3.Ext4.Block_Cache.Write_At (V.Cache, Phys, S * 512, Zeros);
+         end loop;
+         --  One unused entry (ino 0) spanning the whole fresh block, the
+         --  same shape mkfs gives a new directory block.
+         Put_U16 (Empty, 4, U16 (BS));
+         ESP32S3.Ext4.Block_Cache.Write_At (V.Cache, Phys, 0, Empty);
+
+         --  Wire the block into the next direct slot and persist the grown
+         --  inode BEFORE placing the name, so a caller re-reading the
+         --  directory mid-sequence sees a consistent (if briefly emptier)
+         --  block.  Dir is in-out: the caller's copy stays current too.
+         Put_U32 (Dir.I_Block, Natural (N_Blk) * 4, U32 (Phys));
+         Dir.Size := Dir.Size + U64 (BS);
+         Dir.Blocks_512 := Dir.Blocks_512 + U64 (BS / 512);
+         Inode.Write (V, Dir_N, Dir, Fresh => False);
+
+         Place (Phys, 0, BS);
+      end;
    end Add_Entry;
 
    ------------------
