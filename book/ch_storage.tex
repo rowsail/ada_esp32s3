@@ -234,6 +234,32 @@ classic map (through triple-indirect) and ext4 extent trees, so a
 multi-gigabyte file written by a host is readable on-device, bounded only by the
 volume's free space.
 
+\subsection{Directory capacity}\index{directory capacity}\index{dirent}\index{directory growth}
+
+A directory is itself a file of variable-length entries (each 8 bytes plus the
+name, rounded to 4), and creating a name must find room for one. When every
+existing directory block is packed, \texttt{Add\_Entry} grows the directory:
+it allocates a block, writes a single spanning unused entry (the shape
+\texttt{mkfs} gives a fresh directory block), wires it into the inode's next
+\emph{direct} map slot, and persists the grown inode before placing the name.
+Twelve direct slots at 4\,KiB give 48\,KiB of entries -- on the order of
+1{,}500--2{,}900 names depending on their length. Growth past the direct slots
+raises \texttt{No\_Space}, and a directory a host created with an extent map
+raises \texttt{Unsupported\_Feature} rather than being modified half-correctly.
+
+That ceiling is not hypothetical bookkeeping. Before growth existed, a
+directory was capped at its \emph{first} block -- roughly 140 mirror-length
+names -- and one application built on this SDK hit it silently: it mirrors a
+weather service's chart set at three files per product, filled the block
+partway through the first full download, and every later create failed with
+\texttt{No\_Space} from that day on. The products that happened to sort late in
+its list simply never appeared on the card, which surfaced to the user as one
+category of the UI ``only ever shows one image.'' A capacity limit in a
+filesystem rarely announces itself where the limit lives; budget directory
+sizes (files per directory, not just bytes per volume) when planning on-card
+layouts, and prefer one subdirectory per product family once counts head into
+the hundreds.
+
 \subsection{Crash-safe transactions}\index{crash-safe transactions}\index{journaling}\index{commit barrier}
 
 For atomicity, group an operation behind \texttt{Commit}: the dirty metadata and
@@ -370,6 +396,44 @@ source file, every mutation is checked with \texttt{e2fsck -fn}, and journal
 replay and commit are cross-checked against the kernel's own recovery. The same
 code cross-compiles for the ESP32-S3 and runs over the SD drivers above. See
 \texttt{tests/ext4\_host/} and \texttt{libs/esp32s3\_hal/src/ext4/REFERENCES.md}.
+
+\subsection{Scope: deliberately smaller than Linux ext4}\index{ext4 scope}\index{HTree}\index{delayed allocation}\index{metadata\_csum}
+
+It is worth being explicit that this filesystem does not aim for feature parity
+with the Linux kernel's ext4, and why. The asymmetry is intentional: the
+\emph{read} path is wide (extents, 64-bit, HTree-indexed directories,
+\texttt{metadata\_csum} verification -- a default desktop card mounts and reads),
+while the \emph{write} path is a narrow, fully-understood subset (classic
+indirect maps, linear directories, non-csum volumes). Anything outside that
+subset is \emph{refused} -- \texttt{Read\_Only}, \texttt{Unsupported\_Feature} --
+rather than attempted, because the most dangerous state for an on-disk format
+is ``implemented enough to write, not enough to write correctly'': that is
+silent corruption a desktop mount discovers weeks later. Refusal fails loudly
+at the call site.
+
+The features left out earn nothing at this scale. HTree directory indexing
+beats a linear scan somewhere in the thousands of entries; a directory here
+tops out around two thousand entries in 48\,KiB that is hot in the block cache.
+Delayed allocation and the multi-block allocator exist to optimise allocation
+locality under multi-process write pressure that a single-owner embedded mount
+does not have. Full \texttt{jbd2} parity would double metadata writes on a bus
+measured in single-digit MB/s (and add SD wear) to strengthen guarantees the
+simple journal-plus-\texttt{Commit} model already provides. And every one of
+them wants cache and working state sized for a kernel page cache, not for a
+32\,KiB block cache sharing PSRAM with an application's framebuffers.
+
+What keeps the small subset honest is that it stays small enough to
+\emph{verify}: the host harness runs whole scenario batteries with
+\texttt{e2fsck} as the referee, as described above, and individual pieces are
+within reach of SPARK proof. A port of Linux ext4's roughly sixty thousand lines
+would be the largest, least-reviewable component in the SDK, with a test
+matrix that grows combinatorially in feature interactions -- correctness that
+upstream earned through two decades of fleet exposure no embedded project can
+replicate. If a concrete interoperability need arises -- the strongest
+candidate is \emph{writing} \texttt{metadata\_csum} volumes, so cards formatted
+by a modern desktop \texttt{mkfs.ext4} need not be reformatted -- the right
+move is to implement that one feature (checksum recompute on the metadata the
+writer already touches), not to chase parity.
 
 \section{Putting ext4 on raw SPI NOR flash}\index{SPI NOR flash}\index{wear leveling}\index{flash translation layer}
 
