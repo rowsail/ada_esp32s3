@@ -42,6 +42,19 @@ begin
    FTP_Client.File_Size (S, "hello.txt", Sz, St);
    Check ("SIZE hello.txt = 30", St = FTP_Client.OK and then Sz = 30);
 
+   declare
+      Stamp : String (1 .. 24);
+      SLen  : Natural;
+   begin
+      FTP_Client.Mod_Time (S, "hello.txt", Stamp, SLen, St);
+      Check ("MDTM hello.txt = 14-digit stamp",
+             St = FTP_Client.OK and then SLen = 14
+             and then (for all C of Stamp (1 .. SLen) => C in '0' .. '9'));
+      FTP_Client.Mod_Time (S, "no-such-file.txt", Stamp, SLen, St);
+      Check ("MDTM missing file -> Server_Error",
+             St = FTP_Client.Server_Error and then SLen = 0);
+   end;
+
    Reset_Acc;
    FTP_Client.Retrieve (S, "hello.txt", Append_Sink'Access, System.Null_Address, St);
    Check ("RETR hello.txt content",

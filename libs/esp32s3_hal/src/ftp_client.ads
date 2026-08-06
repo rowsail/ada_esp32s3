@@ -130,6 +130,19 @@ package FTP_Client is
    procedure File_Size
      (S : in out Session; Path : String; Size : out Natural; Result : out Status);
 
+   --  Modification time of a remote file (MDTM, RFC 3659): the server's
+   --  "YYYYMMDDHHMMSS[.sss]" timestamp text, verbatim, in Stamp (1 .. Last).
+   --  Last = 0 on any non-OK Result.  Callers use it as an opaque
+   --  change-detection stamp (equal text = unchanged file), the FTP
+   --  equivalent of HTTP's Last-Modified / If-Modified-Since pair.
+   procedure Mod_Time
+     (S      : in out Session;
+      Path   : String;
+      Stamp  : out String;
+      Last   : out Natural;
+      Result : out Status)
+   with Pre => Stamp'Length >= 20;
+
 private
    --  Control-connection input buffer, so Get_Line can hand back one CRLF-
    --  terminated reply line at a time regardless of how the TCP reads chunk.
