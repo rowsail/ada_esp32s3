@@ -69,7 +69,9 @@ procedure Wl_Host is
       Read  => R_Read'Unrestricted_Access,
       Write => R_Write'Unrestricted_Access,
       Count => R_Count'Unrestricted_Access,
-      Erase => R_Erase'Unrestricted_Access);
+      Erase => R_Erase'Unrestricted_Access,
+      Read_Run => null,
+      Write_Run => null);
 
    --  Reference model: the last bytes written to each logical sector.
    Vol     : aliased WL.Volume;

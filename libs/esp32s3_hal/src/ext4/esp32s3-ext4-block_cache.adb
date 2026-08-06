@@ -128,31 +128,41 @@ package body ESP32S3.Ext4.Block_Cache is
    -- Internal moves --
    --------------------
 
-   --  Pull filesystem block Meta(E).Tag from the device into entry E's pool slot.
+   --  Pull filesystem block Meta(E).Tag from the device into entry E's pool
+   --  slot.  One run read straight into the slot: on SD the fixed cost is per
+   --  COMMAND (the card's ~2 ms access latency), so fetching a 4 KiB block as
+   --  eight one-sector commands was ~8x slower than this single command.
    procedure Load (C : in out Cache; E : Natural) is
       Base : constant ESP32S3.Block_Dev.Sector_Index := Base_Sector (C, C.Meta (E).Tag);
-      Sec  : ESP32S3.Block_Dev.Sector;
-      Dst  : Natural := Lo (C, E);
+      Run  : ESP32S3.Block_Dev.Sector_Run (0 .. C.BS - 1)
+        with Import, Address => C.Pool (Lo (C, E))'Address;
    begin
-      for S in 0 .. C.Spb - 1 loop
-         ESP32S3.Block_Dev.Read_Sector (C.Dev, Base + ESP32S3.Block_Dev.Sector_Index (S), Sec);
-         C.Pool (Dst .. Dst + 511) := Byte_Array (Sec);
-         Dst := Dst + 512;
-      end loop;
+      ESP32S3.Block_Dev.Read_Sectors (C.Dev, Base, Run);
    end Load;
 
-   --  Push entry E's pool slot back to the device.
+   --  Push entry E's pool slot back to the device, as one run write (see
+   --  Load above for why one command per block, not one per sector).
    procedure Store (C : in out Cache; E : Natural) is
       Base : constant ESP32S3.Block_Dev.Sector_Index := Base_Sector (C, C.Meta (E).Tag);
-      Sec  : ESP32S3.Block_Dev.Sector;
-      Src  : Natural := Lo (C, E);
+      Run  : ESP32S3.Block_Dev.Sector_Run (0 .. C.BS - 1)
+        with Import, Address => C.Pool (Lo (C, E))'Address;
    begin
-      for S in 0 .. C.Spb - 1 loop
-         Sec := ESP32S3.Block_Dev.Sector (C.Pool (Src .. Src + 511));
-         ESP32S3.Block_Dev.Write_Sector (C.Dev, Base + ESP32S3.Block_Dev.Sector_Index (S), Sec);
-         Src := Src + 512;
-      end loop;
+      ESP32S3.Block_Dev.Write_Sectors (C.Dev, Base, Run);
    end Store;
+
+   --------------
+   -- Resident --
+   --------------
+
+   function Resident (C : Cache; B : Block_Number) return Boolean is
+   begin
+      for E in 0 .. C.Count - 1 loop
+         if C.Meta (E).Valid and then C.Meta (E).Tag = B then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Resident;
 
    --  Find block B, loading + evicting as needed; return its entry index.
    function Acquire (C : in out Cache; B : Block_Number) return Natural is

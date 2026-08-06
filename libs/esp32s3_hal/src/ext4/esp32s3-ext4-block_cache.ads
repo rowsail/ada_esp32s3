@@ -41,6 +41,12 @@ package ESP32S3.Ext4.Block_Cache is
    --  The configured filesystem block size in bytes.
    function Block_Size (C : Cache) return Natural;
 
+   --  True if block B is currently held in the cache (its cached copy may be
+   --  dirtier than the device's).  A reader that can pull data straight from
+   --  the device (ESP32S3.Ext4.File streaming a large read) must route any
+   --  resident block through the cache instead, or it reads stale data.
+   function Resident (C : Cache; B : Block_Number) return Boolean;
+
    --  Copy filesystem block B into Into (Into'Length must equal Block_Size).
    procedure Read (C : in out Cache; B : Block_Number; Into : out Byte_Array)
    with Pre => Into'Length = Block_Size (C);

@@ -292,7 +292,9 @@ package body ESP32S3.Block_Dev.WL is
          Read  => Do_Read'Access,
          Write => (if V.Lower.Write /= null then Do_Write'Access else null),
          Count => Do_Count'Access,
-         Erase => null);   --  the FS above does not erase logical ranges
+         Erase => null,   --  the FS above does not erase logical ranges
+         Read_Run => null,
+         Write_Run => null);
    end Make;
 
 end ESP32S3.Block_Dev.WL;

@@ -49,7 +49,9 @@ procedure Mkfs_Host is
       Read  => FRead'Unrestricted_Access,
       Write => FWrite'Unrestricted_Access,
       Count => FCount'Unrestricted_Access,
-      Erase => null);
+      Erase => null,
+      Read_Run => null,
+      Write_Run => null);
 
    Scenario : constant String := (if Argument_Count >= 2 then Argument (2) else "format");
    --  Optional 3rd arg "journal" formats a journaled volume.
