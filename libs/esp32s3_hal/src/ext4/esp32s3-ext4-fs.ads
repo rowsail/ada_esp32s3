@@ -9,6 +9,8 @@ with ESP32S3.Ext4.Journal;
 --  scope (including on exception unwind), so there is no silently-unflushed
 --  state.  Errors are raised (see ESP32S3.Ext4).
 
+with System;
+
 package ESP32S3.Ext4.FS is
 
    type Mount is tagged limited private;
@@ -20,11 +22,16 @@ package ESP32S3.Ext4.FS is
 
    --  Mount Dev: read + feature-gate the superblock, bring up the cache.
    --  Cache_Blocks is the number of filesystem blocks the LRU cache holds.
+   --  Cache_Storage, when given, is caller memory the mount uses for its
+   --  block cache instead of the Ada heap (see Block_Cache.Init) -- for
+   --  boards where the heap is scarce and PSRAM is not.
    procedure Open
      (M            : in out Mount;
       Dev          : ESP32S3.Block_Dev.Device;
       Read_Only    : Boolean := True;
-      Cache_Blocks : Positive := 32)
+      Cache_Blocks : Positive := 32;
+      Cache_Storage : System.Address := System.Null_Address;
+      Cache_Storage_Bytes : Natural := 0)
    with Post => Is_Live (M);
 
    --  Flush + release (also done by finalization; idempotent).

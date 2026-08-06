@@ -2,13 +2,64 @@ with Ada.Unchecked_Deallocation;
 with Ada.IO_Exceptions;
 with Interfaces;
 
+with System.Storage_Elements; use System.Storage_Elements;
 package body ESP32S3.Ext4.Block_Cache is
+
+   use type System.Address;
 
    use type Interfaces.Unsigned_64;
    use type ESP32S3.Block_Dev.Sector_Index;
 
    procedure Free is new Ada.Unchecked_Deallocation (Meta_Array, Meta_Ptr);
    procedure Free is new Ada.Unchecked_Deallocation (Byte_Array, Bytes_Ptr);
+
+   function C_Malloc (Size : Interfaces.Unsigned_32) return System.Address
+     with Import, Convention => C, External_Name => "malloc";
+   procedure C_Free (Ptr : System.Address)
+     with Import, Convention => C, External_Name => "free";
+
+   overriding procedure Allocate
+     (P         : in out Cache_Pool;
+      Addr      : out System.Address;
+      Size      : Storage_Count;
+      Alignment : Storage_Count) is
+      use type System.Address;
+   begin
+      if P.Base = System.Null_Address then
+         Addr := C_Malloc (Interfaces.Unsigned_32 (Size));
+         if Addr = System.Null_Address then
+            raise Storage_Error with "ext4 cache: heap exhausted";
+         end if;
+         return;
+      end if;
+      declare
+         Start : constant Storage_Count :=
+           (P.Next + Alignment - 1) / Alignment * Alignment;
+      begin
+         if Start + Size > P.Size then
+            raise Storage_Error with "ext4 cache: caller storage too small";
+         end if;
+         Addr := P.Base + Start;
+         P.Next := Start + Size;
+      end;
+   end Allocate;
+
+   overriding procedure Deallocate
+     (P         : in out Cache_Pool;
+      Addr      : System.Address;
+      Size      : Storage_Count;
+      Alignment : Storage_Count) is
+      pragma Unreferenced (Size, Alignment);
+      use type System.Address;
+   begin
+      --  Caller storage is never freed; heap blocks are.
+      if P.Base = System.Null_Address then
+         C_Free (Addr);
+      end if;
+   end Deallocate;
+
+   overriding function Storage_Size (P : Cache_Pool) return Storage_Count
+   is (if P.Base = System.Null_Address then Storage_Count'Last else P.Size);
 
    --  Byte range of entry E within the pool.
    function Lo (C : Cache; E : Natural) return Natural
@@ -22,11 +73,22 @@ package body ESP32S3.Ext4.Block_Cache is
    -- Init --
    ----------
 
+   function Meta_Bytes (Entries : Positive) return Natural is
+      Sample : constant Meta_Array (0 .. Entries - 1) := (others => <>);
+   begin
+      return Sample'Size / 8;
+   end Meta_Bytes;
+
    procedure Init
      (C          : in out Cache;
       Dev        : ESP32S3.Block_Dev.Device;
       Block_Size : Positive;
-      Entries    : Positive := 32) is
+      Entries    : Positive := 32;
+      Storage    : System.Address := System.Null_Address;
+      Storage_Bytes : Natural := 0) is
+      use type System.Address;
+      Need_Meta : constant Natural := Meta_Bytes (Entries);
+      Need_Data : constant Natural := Entries * Block_Size;
    begin
       if Block_Size mod 512 /= 0 then
          raise Ada.IO_Exceptions.Use_Error with "block size not a multiple of 512";
@@ -36,8 +98,23 @@ package body ESP32S3.Ext4.Block_Cache is
       C.Spb := Block_Size / 512;
       C.Count := Entries;
       C.Clock := 0;
+      --  Point the pool at caller storage (or leave it on the heap), then
+      --  allocate normally so the arrays carry proper bounds.
+      if Storage /= System.Null_Address then
+         if Storage_Bytes < Need_Meta + Need_Data then
+            raise Ada.IO_Exceptions.Use_Error with "cache storage too small";
+         end if;
+         The_Pool.Base := Storage;
+         The_Pool.Size := Storage_Count (Storage_Bytes);
+         The_Pool.Next := 0;
+         C.Owns_Storage := False;
+      else
+         The_Pool.Base := System.Null_Address;
+         C.Owns_Storage := True;
+      end if;
       C.Meta := new Meta_Array (0 .. Entries - 1);
       C.Pool := new Byte_Array (0 .. Entries * Block_Size - 1);
+      C.Meta.all := (others => <>);
    end Init;
 
    ----------------
@@ -225,8 +302,13 @@ package body ESP32S3.Ext4.Block_Cache is
 
    procedure Drop (C : in out Cache) is
    begin
-      Free (C.Meta);
-      Free (C.Pool);
+      if C.Owns_Storage then
+         Free (C.Meta);
+         Free (C.Pool);
+      else
+         C.Meta := null;   --  caller-owned: detach, never deallocate
+         C.Pool := null;
+      end if;
       C.Count := 0;
       C.BS := 0;
       C.Spb := 0;
