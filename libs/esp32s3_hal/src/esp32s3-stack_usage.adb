@@ -24,6 +24,23 @@ package body ESP32S3.Stack_Usage is
    --  never reach into a live frame (this body's own, or a callee's).
    Guard : constant Storage_Offset := 256;
 
+   --  ...and keep this many bytes ABOVE the stack's limit unpainted.  The
+   --  recoverable stack-overflow guard (Bare_Glue.Stack_Ovf_Redzone) arms a
+   --  STORE data-watchpoint that far above the limit, and painting is a store:
+   --  painting from the limit up therefore trips the watchpoint on its very
+   --  first word and raises Storage_Error before the stack has overflowed at
+   --  all.  Keep this in step with Stack_Ovf_Redzone in the bare boot glue.
+   --
+   --  Nothing is lost by not painting it: a stack that ever reached the redzone
+   --  would have fired the guard for real, so there is no high-water mark to
+   --  recover from down there.
+   Overflow_Redzone : constant Storage_Offset := 2048;
+
+   --  The bottom of the painted region.  Paint_Env_Stack and High_Water must
+   --  use exactly the same base, or the unpainted redzone reads as "used" and
+   --  the high-water mark comes back as the whole stack.
+   Paint_Base : constant System.Address := Env_Low + Overflow_Redzone;
+
    -----------
    -- Paint --
    -----------
@@ -65,9 +82,10 @@ package body ESP32S3.Stack_Usage is
       Here  : aliased Integer := 0;   --  lives in THIS frame, near the current SP
       Limit : constant System.Address := Here'Address - Guard;
    begin
-      --  Paint [__stack_start, here - guard): the still-unused region below us.
-      if To_Integer (Limit) > To_Integer (Env_Low) then
-         Paint (Env_Low, Limit);
+      --  Paint [__stack_start + redzone, here - guard): the still-unused region
+      --  below us, stopping clear of the overflow guard's watchpoint.
+      if To_Integer (Limit) > To_Integer (Paint_Base) then
+         Paint (Paint_Base, Limit);
       end if;
    end Paint_Env_Stack;
 
@@ -78,7 +96,7 @@ package body ESP32S3.Stack_Usage is
    function Env_Total return Natural
    is (Natural (Env_High - Env_Low));
    function Env_Used return Natural
-   is (High_Water (Env_Low, Env_High));
+   is (High_Water (Paint_Base, Env_High));
    function Env_Free return Natural
    is (Env_Total - Env_Used);
 
