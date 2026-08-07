@@ -4,6 +4,13 @@ PROVIDE ( ets_printf                = 0x400005d0 );
 PROVIDE ( esp_rom_printf            = 0x400005d0 );
 PROVIDE ( ets_set_appcpu_boot_addr  = 0x40000720 );
 PROVIDE ( ets_update_cpu_frequency  = 0x40001a4c );
+PROVIDE ( ets_delay_us              = 0x40000600 );
+/* Analog (regi2c) register access -- the BBPLL bring-up in start.S / Bare_Glue.
+ * esp32s3.rom.api.ld aliases esp_rom_regi2c_write{,_mask} onto these. */
+PROVIDE ( rom_i2c_writeReg          = 0x40005d60 );
+PROVIDE ( rom_i2c_writeReg_Mask     = 0x40005d6c );
+PROVIDE ( esp_rom_regi2c_write      = rom_i2c_writeReg );
+PROVIDE ( esp_rom_regi2c_write_mask = rom_i2c_writeReg_Mask );
 PROVIDE ( Cache_Invalidate_ICache_All = 0x400016d4 );
 PROVIDE ( Cache_Disable_ICache       = 0x4000186c );
 PROVIDE ( Cache_Enable_ICache        = 0x40001878 );

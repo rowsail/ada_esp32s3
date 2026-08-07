@@ -111,13 +111,25 @@ _start:
 	   (XTAL) with PRE_DIV_CNT=1, i.e. 40/2 = 20 MHz.  The GNARL runtime hard-
 	   assumes 240 MHz (s-bbpara Clock_Frequency) for its timer/alarm maths, so at
 	   20 MHz CCOUNT-driven alarms fire ~12x late (short Ada delays overshoot
-	   wildly; ACATS/profile-test timing checks fail).  The 480 MHz BBPLL is
-	   already enabled by the ROM (it clocks the 80 MHz flash MSPI), so we only
-	   need to (a) set CPUPERIOD_SEL=2 + PLL_FREQ_SEL=480 in CPU_PER_CONF, then
-	   (b) point SYSCLK_CONF at the PLL (SOC_CLK_SEL=1, PRE_DIV_CNT=0) -> 480/2 =
-	   240 MHz.  Flash MSPI keeps its own 80 MHz clock (unaffected by the CPU
-	   source).  Done here from IRAM, before the IROM jump, so any clock transient
-	   does not disturb execution. */
+	   wildly; ACATS/profile-test timing checks fail).  So we (a) CONFIGURE and
+	   calibrate the 480 MHz BBPLL, (b) set CPUPERIOD_SEL=2 + PLL_FREQ_SEL=480 in
+	   CPU_PER_CONF, then (c) point SYSCLK_CONF at the PLL (SOC_CLK_SEL=1,
+	   PRE_DIV_CNT=0) -> 480/2 = 240 MHz.  Flash MSPI keeps its own clock
+	   (unaffected by the CPU source).  Done here from IRAM, before the IROM jump,
+	   so any clock transient does not disturb execution.
+
+	   (a) used to be skipped, on the assumption that the ROM had already brought
+	   the BBPLL up for the 80 MHz flash MSPI.  That holds only on boards whose
+	   ROM takes the PLL flash path; where it does not, the PLL is powered but
+	   never configured, and switching the CPU onto an uncalibrated VCO made the
+	   first flash-XIP fetch decode as garbage -- a double exception before any
+	   application code ran.  Configuring it explicitly is correct either way. */
+	call4	bbpll_480m_configure
+	/* Core voltage BEFORE core frequency: 240 MHz needs a higher LDO dbias than
+	   the ROM default.  Skipping this ran the core under-volted at 240 MHz and
+	   it executed garbage from the first flash fetch (160 MHz was fine, which is
+	   what isolated it).  See Bare_Glue.Cpu_240M_Raise_Voltage. */
+	call4	cpu_240m_raise_voltage
 	movi	a2, 0x600c0010		/* SYSTEM_CPU_PER_CONF_REG */
 	l32i	a3, a2, 0
 	movi	a4, 0xfffffff8		/* clear CPUPERIOD_SEL[1:0] + PLL_FREQ_SEL[2] */

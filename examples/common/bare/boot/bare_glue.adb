@@ -164,6 +164,160 @@ package body Bare_Glue is
       end loop;
    end Ada_Env_Body;
 
+   --------------------------
+   -- Bbpll_480M_Configure --
+   --------------------------
+
+   --  Ported from the IDF's rtc_clk_bbpll_configure / clk_ll_bbpll_* for the
+   --  ESP32-S3 (480 MHz VCO from a 40 MHz crystal).  Only the 40 MHz XTAL case
+   --  is covered: every board this bare boot supports uses one, and start.S's
+   --  240 MHz target assumes it.
+   procedure Bbpll_480M_Configure is
+
+      --  ---- registers ------------------------------------------------------
+      Rtc_Options0 : constant := 16#6000_8000#;   --  RTC_CNTL_OPTIONS0
+      Ana_Conf0    : constant := 16#6000_E040#;   --  I2C_MST_ANA_CONF0
+      Cpu_Per_Conf : constant := 16#600C_0010#;   --  SYSTEM_CPU_PER_CONF
+
+      Bb_I2C_Force_Pd       : constant := 2 ** 6;    --  OPTIONS0
+      Bbpll_I2C_Force_Pd    : constant := 2 ** 8;
+      Bbpll_Force_Pd        : constant := 2 ** 10;
+      Bbpll_Stop_Force_High : constant := 2 ** 2;    --  ANA_CONF0
+      Bbpll_Stop_Force_Low  : constant := 2 ** 3;
+      Bbpll_Cal_Done        : constant := 2 ** 24;
+      Pll_Freq_Sel_480      : constant := 2 ** 2;    --  CPU_PER_CONF
+
+      --  ---- regi2c: BBPLL block, and the register indices we program -------
+      Bbpll_Block   : constant Unsigned_8 := 16#66#;
+      Bbpll_Host    : constant Unsigned_8 := 1;
+      Reg_Ref_Div   : constant Unsigned_8 := 2;   --  I2C_BBPLL_OC_REF_DIV
+      Reg_Div_7_0   : constant Unsigned_8 := 3;   --  I2C_BBPLL_OC_DIV_7_0
+      Reg_Mode_Hf   : constant Unsigned_8 := 4;   --  I2C_BBPLL_MODE_HF
+      Reg_Dr1_Dr3   : constant Unsigned_8 := 5;   --  I2C_BBPLL_OC_DR1 / _DR3
+      Reg_Dcur      : constant Unsigned_8 := 6;   --  I2C_BBPLL_OC_DCUR
+      Reg_Vco_Dbias : constant Unsigned_8 := 9;   --  I2C_BBPLL_OC_VCO_DBIAS
+
+      --  480 MHz from 40 MHz: div_ref = 0, div7_0 = 8, dr1 = dr3 = 0,
+      --  dchgp = 5, dcur = 3, dbias = 3 (IDF clk_ll_bbpll_set_config).
+      Mode_Hf_480 : constant Unsigned_8 := 16#6B#;
+      Ref_Div_Val : constant Unsigned_8 := 16#50#;  --  dchgp(5) << 4 | div_ref(0)
+      Div_7_0_Val : constant Unsigned_8 := 8;
+      Dcur_Val    : constant Unsigned_8 := 16#73#;  --  dlref(1)<<6 | dhref(3)<<4 | dcur(3)
+      Dbias_Val   : constant Unsigned_8 := 3;
+
+      procedure Regi2c_Write (Block, Host, Reg, Data : Unsigned_8)
+      with Import, Convention => C, External_Name => "esp_rom_regi2c_write";
+      procedure Regi2c_Write_Mask
+        (Block, Host, Reg, Msb, Lsb, Data : Unsigned_8)
+      with Import, Convention => C, External_Name => "esp_rom_regi2c_write_mask";
+      procedure Ets_Delay_Us (Us : Unsigned_32)
+      with Import, Convention => C, External_Name => "ets_delay_us";
+
+      procedure Poke (Addr, Val : Unsigned_32) is
+         R : Unsigned_32
+         with Import, Volatile, Address => To_Address (Integer_Address (Addr));
+      begin
+         R := Val;
+      end Poke;
+
+      function Peek (Addr : Unsigned_32) return Unsigned_32 is
+         R : Unsigned_32
+         with Import, Volatile, Address => To_Address (Integer_Address (Addr));
+      begin
+         return R;
+      end Peek;
+
+   begin
+      --  1. Power up the BBPLL and its regi2c master (clearing the force-PD
+      --     bits is a no-op on a ROM that already brought them up).
+      Poke (Rtc_Options0,
+            Peek (Rtc_Options0)
+              and not (Bb_I2C_Force_Pd or Bbpll_I2C_Force_Pd or Bbpll_Force_Pd));
+
+      --  2. Digital part: select the 480 MHz VCO.
+      Poke (Cpu_Per_Conf, Peek (Cpu_Per_Conf) or Pll_Freq_Sel_480);
+
+      --  3. Start calibration, program the analog part, wait for CAL_DONE.
+      Poke (Ana_Conf0, Peek (Ana_Conf0) and not Bbpll_Stop_Force_High);
+      Poke (Ana_Conf0, Peek (Ana_Conf0) or Bbpll_Stop_Force_Low);
+
+      Regi2c_Write (Bbpll_Block, Bbpll_Host, Reg_Mode_Hf, Mode_Hf_480);
+      Regi2c_Write (Bbpll_Block, Bbpll_Host, Reg_Ref_Div, Ref_Div_Val);
+      Regi2c_Write (Bbpll_Block, Bbpll_Host, Reg_Div_7_0, Div_7_0_Val);
+      Regi2c_Write_Mask (Bbpll_Block, Bbpll_Host, Reg_Dr1_Dr3, 2, 0, 0);  --  DR1
+      Regi2c_Write_Mask (Bbpll_Block, Bbpll_Host, Reg_Dr1_Dr3, 6, 4, 0);  --  DR3
+      Regi2c_Write (Bbpll_Block, Bbpll_Host, Reg_Dcur, Dcur_Val);
+      Regi2c_Write_Mask
+        (Bbpll_Block, Bbpll_Host, Reg_Vco_Dbias, 1, 0, Dbias_Val);
+
+      while (Peek (Ana_Conf0) and Bbpll_Cal_Done) = 0 loop
+         null;
+      end loop;
+      Ets_Delay_Us (10);
+
+      --  4. Stop calibration; the VCO is now locked and safe to clock from.
+      Poke (Ana_Conf0, Peek (Ana_Conf0) and not Bbpll_Stop_Force_Low);
+      Poke (Ana_Conf0, Peek (Ana_Conf0) or Bbpll_Stop_Force_High);
+   end Bbpll_480M_Configure;
+
+   -----------------------------
+   -- Cpu_240M_Raise_Voltage --
+   -----------------------------
+
+   procedure Cpu_240M_Raise_Voltage is
+      Rtc_Date_Reg : constant := 16#6000_81FC#;   --  RTC_CNTL_DATE
+      Slave_Pd_Mask  : constant := 16#3F#;
+      Slave_Pd_Shift : constant := 13;
+
+      Dig_Block : constant Unsigned_8 := 16#6D#;  --  I2C_DIG_REG
+      Dig_Host  : constant Unsigned_8 := 1;
+      Reg_Rtc_Dreg : constant Unsigned_8 := 4;    --  I2C_DIG_REG_EXT_RTC_DREG
+      Reg_Dig_Dreg : constant Unsigned_8 := 6;    --  I2C_DIG_REG_EXT_DIG_DREG
+      Dreg_Msb : constant Unsigned_8 := 4;
+      Dreg_Lsb : constant Unsigned_8 := 0;
+
+      --  IDF rtc_init.c: g_rtc_dbias_pvt_240m = g_dig_dbias_pvt_240m = 28.
+      --  (The IDF may refine these from the PVT calibration eFuses; 28 is the
+      --  uncalibrated default and is what this bare boot uses.)
+      Dbias_240M : constant Unsigned_8 := 28;
+
+      --  DEFAULT_LDO_SLAVE (0x7) >> (240 / 80) -- open the LDO slaves for the
+      --  240 MHz load, which damps the voltage step as the frequency rises.
+      Ldo_Slave_240M : constant Unsigned_32 := 16#7# / 2 ** 3;
+
+      procedure Regi2c_Write_Mask
+        (Block, Host, Reg, Msb, Lsb, Data : Unsigned_8)
+      with Import, Convention => C, External_Name => "esp_rom_regi2c_write_mask";
+      procedure Ets_Delay_Us (Us : Unsigned_32)
+      with Import, Convention => C, External_Name => "ets_delay_us";
+
+      procedure Poke (Addr, Val : Unsigned_32) is
+         R : Unsigned_32
+         with Import, Volatile, Address => To_Address (Integer_Address (Addr));
+      begin
+         R := Val;
+      end Poke;
+
+      function Peek (Addr : Unsigned_32) return Unsigned_32 is
+         R : Unsigned_32
+         with Import, Volatile, Address => To_Address (Integer_Address (Addr));
+      begin
+         return R;
+      end Peek;
+
+   begin
+      Regi2c_Write_Mask
+        (Dig_Block, Dig_Host, Reg_Rtc_Dreg, Dreg_Msb, Dreg_Lsb, Dbias_240M);
+      Regi2c_Write_Mask
+        (Dig_Block, Dig_Host, Reg_Dig_Dreg, Dreg_Msb, Dreg_Lsb, Dbias_240M);
+      Ets_Delay_Us (40);   --  let the regulators settle before the step up
+
+      Poke (Rtc_Date_Reg,
+            (Peek (Rtc_Date_Reg)
+               and not Unsigned_32 (Slave_Pd_Mask * 2 ** Slave_Pd_Shift))
+            or (Ldo_Slave_240M * 2 ** Slave_Pd_Shift));
+   end Cpu_240M_Raise_Voltage;
+
    --------------------
    -- Core1_Bare_Main --
    --------------------

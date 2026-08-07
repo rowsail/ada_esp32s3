@@ -39,6 +39,38 @@ package Bare_Glue is
    with Export, Convention => C, External_Name => "core1_bare_main", No_Return,
         Linker_Section => ".iram1.core1";
 
+   --  Configure + calibrate the 480 MHz BBPLL, called from start.S immediately
+   --  BEFORE the CPU clock source is switched to it.  Runs from IRAM: it is
+   --  reached while the CPU is still on the ROM default clock and before the
+   --  first flash-XIP fetch.
+   --
+   --  start.S used to switch straight to the PLL on the assumption that the ROM
+   --  had already brought it up for the 80 MHz flash MSPI.  That is not true on
+   --  every board -- a chip whose ROM leaves the flash on the XTAL path never
+   --  configures the PLL, so SOC_CLK_SEL=PLL then clocked the CPU from an
+   --  uncalibrated VCO and the first instruction fetched from flash decoded as
+   --  garbage (double exception before any application code ran).  Configuring
+   --  it explicitly is correct on both kinds of board: the sequence below is
+   --  what the PLL needs regardless of what the ROM did or did not do.
+   procedure Bbpll_480M_Configure
+   with Export, Convention => C, External_Name => "bbpll_480m_configure",
+        Linker_Section => ".iram1.bbpll";
+
+   --  Raise the RTC + digital LDO regulator voltage to the level the core needs
+   --  at 240 MHz, and open the LDO slaves for that load.  Called from start.S
+   --  between the PLL bring-up and the CPU_PER_CONF / SYSCLK_CONF switch --
+   --  the voltage must be up BEFORE the frequency is.
+   --
+   --  240 MHz is a special case in the IDF (rtc_clk_cpu_freq_to_pll_mhz):
+   --  "cpu_frequency < 240M: dbias = pvt-dig + 2; cpu_frequency = 240M:
+   --  dbias = pvt-dig + 3".  start.S used to switch to 240 MHz at the ROM's
+   --  default dbias; a part that needs the higher voltage then executes
+   --  garbage from the first flash fetch onward.  Verified on an ESP32-S3FN8
+   --  (rev v0.2): 160 MHz ran fine at the default dbias, 240 MHz did not.
+   procedure Cpu_240M_Raise_Voltage
+   with Export, Convention => C, External_Name => "cpu_240m_raise_voltage",
+        Linker_Section => ".iram1.bbpll";
+
    --  GNARL Start_All_CPUs calls this to release core 1 past its spin.
    procedure Native_Release_Core1
    with Export, Convention => C, External_Name => "native_release_core1";
