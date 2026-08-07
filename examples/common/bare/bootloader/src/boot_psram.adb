@@ -46,6 +46,8 @@ package body Boot_Psram is
      with Import, Convention => C, External_Name => "Cache_Dbus_MMU_Set";
 
    --  ROM console (variadic; declare the fixed arities we use).
+   function P0 (F : Address) return Integer
+     with Import, Convention => C, External_Name => "esp_rom_printf";
    function P1 (F : Address; A : Unsigned_32) return Integer
      with Import, Convention => C, External_Name => "esp_rom_printf";
    function P2 (F : Address; A, B : Unsigned_32) return Integer
@@ -292,7 +294,22 @@ package body Boot_Psram is
         "[ada-free-boot] PSRAM mapped @0x3D000000 rc=%d" & ASCII.LF & ASCII.NUL;
       Prc : Integer;
       Mrc : Integer;
+      None : constant String :=
+        "[ada-free-boot] PSRAM_Size=0 -- no PSRAM, bring-up skipped"
+        & ASCII.LF & ASCII.NUL;
    begin
+      --  PSRAM_Size = 0 in board.ads means no chip is fitted.  Return before
+      --  touching anything: every step below writes shared MSPI state that the
+      --  flash also depends on -- Opi_Pin_Config rewires the octal pins,
+      --  Impl_Enable talks to a chip that will not answer, and Tune_Din picks a
+      --  din sampling mode from a calibration sweep in which nothing passed
+      --  (passmask=0) and applies it anyway.  Doing that on a PSRAM-less board
+      --  left the app faulting the moment it executed from cached flash.
+      if Pages = 0 then
+         Ign := P0 (None'Address);
+         return;
+      end if;
+
       --  octal MSPI pins (ROM leaves SPID4-7 + DQS unwired) + pad drive.
       Opi_Pin_Config;
       Set_Pin_Drive;
