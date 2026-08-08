@@ -60,6 +60,7 @@ package Ada.Interrupts.Names is
    --  Level-3 device interrupts (ceiling Device_L3_Priority):
    Device_L3_0 : constant Interrupt_ID := 23;
    Device_L3_1 : constant Interrupt_ID := 27;
+   Device_L3_2 : constant Interrupt_ID := 22;
    SW_L3       : constant Interrupt_ID := 29;  --  software (wsr.intset)
 
    --  Levels 4 and 5 have NO native dispatcher (only Level2_Dispatch /

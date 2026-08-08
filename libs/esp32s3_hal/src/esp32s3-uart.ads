@@ -55,7 +55,18 @@ package ESP32S3.UART is
    --
    --  Buffer is CALLER-OWNED and sets the ring depth: declare one ALIASED at
    --  library level, ANY size, and it must outlive the port.  The RX ISR writes
-   --  it, so it must be library-level (not a stack object).  Call once at startup
+   --  it, so it must be library-level (not a stack object).
+   --
+   --  Declare it WITHOUT bounds, taking them from the initial value:
+   --
+   --     Ring : aliased ESP32S3.UART.Byte_Array := (0 .. 255 => 0);
+   --
+   --  so that its nominal subtype is the unconstrained Byte_Array this access
+   --  type designates and 'Access can be taken of it.  Given explicit bounds
+   --  ("(0 .. 255) := (others => 0)") it is a CONSTRAINED subtype, 'Access is
+   --  illegal, and the only way through is 'Unrestricted_Access.
+   --
+   --  Call once at startup
    --  (single-threaded), before any task Acquires the port; it brings the port up
    --  itself if no Acquire has yet.
    procedure Enable_Buffered_Rx (Port : UART_Port; Buffer : Rx_Buffer_Access);

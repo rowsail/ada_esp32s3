@@ -71,11 +71,7 @@ procedure Main is
 
       --  Buffered RX first: it routes the UART's interrupt to the shared slot
       --  and registers the service.  Then take the port and loop it back.
-      --  'Unrestricted_Access, not 'Access: the ring is a CONSTRAINED subtype
-      --  of the unconstrained Byte_Array the access type designates, which GNAT
-      --  will not take a plain 'Access of.  Safe here for the reason the API
-      --  asks for: the ring is library-level and outlives the port.
-      U.Enable_Buffered_Rx (U.UART1, Demo_State.Rx_Ring'Unrestricted_Access);
+      U.Enable_Buffered_Rx (U.UART1, Demo_State.Rx_Ring'Access);
       U.Acquire
         (Session, Port => U.UART1, Baud => 115_200,
          Tx => Uart_Tx, Rx => Uart_Rx);

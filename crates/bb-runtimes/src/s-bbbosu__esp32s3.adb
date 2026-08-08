@@ -63,6 +63,14 @@ package body System.BB.Board_Support is
    Device_L3_1_Id  : constant := 27;                        --  CPU_INT 27 (L3)
    Device_L3_1_Bit : constant Unsigned_32 := 2 ** Device_L3_1_Id;
 
+   Device_L3_2_Id  : constant := 22;                        --  CPU_INT 22 (L3)
+   Device_L3_2_Bit : constant Unsigned_32 := 2 ** Device_L3_2_Id;
+   --  The third level-3 device slot.  It has always been level 3 in
+   --  Priority_Of_Interrupt and matrix-drivable in silicon, but was never
+   --  serviced here and so never usable -- a free slot hiding in plain sight,
+   --  found while looking for somewhere to put the USB-OTG controller after it
+   --  had to be evicted from the kernel's CPU_INT 21.
+
    SW_L3_Id  : constant System.BB.Interrupts.Interrupt_ID := 29;
    SW_L3_Bit : constant Unsigned_32 := 2 ** SW_L3_Id;
    --  CPU_INT 29 = software-triggered level-3 source (wsr.intset bit 29).
@@ -239,6 +247,10 @@ package body System.BB.Board_Support is
       if (Pending and Device_L3_1_Bit) /= 0 then
          --  Second L3 device source (CPU_INT 27); same shape as int 23.
          System.BB.Interrupts.Interrupt_Wrapper (Device_L3_1_Id);
+      end if;
+      if (Pending and Device_L3_2_Bit) /= 0 then
+         --  Third L3 device source (CPU_INT 22); same shape as 23 and 27.
+         System.BB.Interrupts.Interrupt_Wrapper (Device_L3_2_Id);
       end if;
       if (Pending and SW_L3_Bit) /= 0 then
          --  Software-triggered L3 source (CPU_INT 29); the handler must ack it

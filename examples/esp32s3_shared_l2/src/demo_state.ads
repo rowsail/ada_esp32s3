@@ -8,8 +8,13 @@ with ESP32S3.TWAI;
 --  the main procedure.  Both therefore live here.
 package Demo_State is
 
-   --  Caller-owned ring for ESP32S3.UART.Enable_Buffered_Rx.
-   Rx_Ring : aliased ESP32S3.UART.Byte_Array (0 .. 255) := (others => 0);
+   --  Caller-owned ring for ESP32S3.UART.Enable_Buffered_Rx.  Declared WITHOUT
+   --  bounds, taking them from the initial value: its nominal subtype is then
+   --  the unconstrained Byte_Array the access type designates, which is what
+   --  lets a plain 'Access be taken of it.  Written with explicit bounds --
+   --  "(0 .. 255) := (others => 0)" -- it would be a constrained subtype, and
+   --  'Access is then illegal.
+   Rx_Ring : aliased ESP32S3.UART.Byte_Array := (0 .. 255 => 0);
 
    --  The frame the CAN reader task took off the interrupt-driven queue.
    Can_Frame : ESP32S3.TWAI.Queued_Frame;
