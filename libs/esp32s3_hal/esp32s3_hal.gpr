@@ -48,7 +48,8 @@ project ESP32S3_HAL is
    --  No_Finalization, so they are excluded there; light-tasking keeps GPIO, RNG
    --  and Temperature.  The ext4 filesystem (src/ext4, ESP32S3.Ext4.*) uses
    --  exceptions + finalization + secondary stack, so it is an embedded/full-only
-   --  source directory (not visible under light-tasking at all).
+   --  source directory (not visible under light-tasking at all) -- and so is the
+   --  FAT16 filesystem (src/fat16, ESP32S3.Fat16.*), for the same reason.
    case Profile is
       when "light-tasking" =>
          for Source_Dirs use ("src", "src/eeprom", "src/fram", "svd");
@@ -155,7 +156,8 @@ project ESP32S3_HAL is
             "modbus-master.ads",       "modbus-master.adb",
             "modbus-slave.ads",        "modbus-slave.adb");
       when "embedded" | "full" =>
-         for Source_Dirs use ("src", "src/eeprom", "src/fram", "svd", "src/ext4");
+         for Source_Dirs use
+           ("src", "src/eeprom", "src/fram", "svd", "src/ext4", "src/fat16");
    end case;
 
    package Compiler is

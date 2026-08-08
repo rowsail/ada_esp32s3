@@ -47,7 +47,9 @@ It is built in three layers:
 3. **A pure-Ada ext2/3/4 filesystem with a JBD2 journal**
    ([`libs/esp32s3_hal/src/ext4`](libs/esp32s3_hal/src/ext4)) — mounts real ext4
    SD cards (read, write, crash recovery) and is cross-validated against the Linux
-   kernel's own `e2fsck`.
+   kernel's own `e2fsck`. Alongside it, **a pure-Ada FAT16 reader**
+   ([`libs/esp32s3_hal/src/fat16`](libs/esp32s3_hal/src/fat16)) for the volumes a
+   Windows PC has to be able to read and write.
 
 > New here? Start with **[QUICKSTART.md](QUICKSTART.md)**. For the developer
 > tooling and IDE setup see **[TOOLING.md](TOOLING.md)**. For the long-form
@@ -90,7 +92,7 @@ per-board measurement with no magic constant, validated end-to-end by the exampl
 - **Single-precision FPU** state preserved across context switches.
 - **ACATS 4.2 conformance** on hardware — **0 genuine failures on every profile**
   (`full`: 1,286+ PASS one-test-per-image; see below).
-- **25+ peripheral drivers** and a **pure-Ada ext4 filesystem** (most drivers
+- **25+ peripheral drivers** and **pure-Ada ext4 + FAT16 filesystems** (most drivers
   ship with a hardware self-test; see [Testing status](#testing-status)).
 
 ## Quick start
@@ -213,6 +215,29 @@ rootless host test harness that checks every operation against
 It is **host-verified only** — the on-device path (`examples/esp32s3_ext4`, over
 the SD driver) has not yet been validated on hardware.
 
+## The pure-Ada FAT16 filesystem
+
+[`libs/esp32s3_hal/src/fat16`](libs/esp32s3_hal/src/fat16) is the filesystem to
+reach for when a **PC** has to see the medium. A device that exposes its storage
+over USB mass storage appears as a removable drive; format it FAT and Windows,
+macOS and Linux all mount it with no driver and no ceremony. ext4 is the better
+filesystem, but only Linux mounts it.
+
+`ESP32S3.Fat16` reads — mount, list, open, read, seek — with **long filenames**,
+from either an MBR-partitioned disk (what Windows expects on a USB stick) or a
+bare boot sector at LBA 0. `ESP32S3.Fat16.Mkfs` formats blank media, choosing
+4 KB clusters aligned to the NOR erase unit so the block layer's
+read-modify-write stays one erase per cluster written. FAT12 and FAT32 volumes
+are recognised and *refused* rather than misread. Both sit on
+`ESP32S3.Block_Dev`, so the same sources run over SPI NOR flash, an SD card, or
+a file-backed device in the test harness.
+
+It is **host-verified**: the development repository's harness makes three
+independent implementations agree about every volume — the Ada code, the host's
+own `dosfstools` (`mkfs.fat` writes volumes it must read, `fsck.fat` checks
+volumes it writes), and a FAT16 writer written from the specification rather
+than from the Ada source.
+
 ## Testing status
 
 **Important:** the table below reflects what was exercised *during development*;
@@ -234,6 +259,7 @@ Drivers and components that are **not hardware-verified** and need testing:
 | `SDMMC` (native SDHOST) | compiles; no-card smoke test only | test against a real card |
 | Temperature sensor | compiles | run on hardware |
 | ext4 filesystem | host-verified vs `e2fsck` only | validate on-device over SD |
+| FAT16 filesystem | host-verified vs `dosfstools` only | validate on-device over SPI NOR |
 
 ## ACATS conformance
 
@@ -276,7 +302,7 @@ crates/
   bb-runtimes/      AdaCore bb-runtimes fork with the esp32s3 board (submodule)
   xtensa-dynconfig/ the Xtensa core-config plugin the toolchain needs
 libs/
-  esp32s3_hal/      the reusable peripheral HAL + the pure-Ada ext4 filesystem
+  esp32s3_hal/      the reusable peripheral HAL + the pure-Ada ext4/FAT16 filesystems
 examples/           the flashable examples (each owns its board.ads)
   common/bare/      the shared FreeRTOS-free boot (bootloader, start.S, vectors, glue)
 book/               the long-form guide (LaTeX sources + main.pdf)
