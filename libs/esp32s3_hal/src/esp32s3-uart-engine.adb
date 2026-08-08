@@ -7,21 +7,27 @@ with ESP32S3.GPIO_Signals;
 with ESP32S3_Registers.INTERRUPT_CORE0;
 with Ada.Interrupts.Names;
 
+with ESP32S3.Shared_L2;
+
 package body ESP32S3.UART.Engine is
 
    package Sigs renames ESP32S3.GPIO_Signals;
    package IC renames ESP32S3_Registers.INTERRUPT_CORE0;
 
-   --  Free runtime device-interrupt slot.  The runtime dispatches level-2 slots
-   --  19/20/21 (Device_L2_0/1/2) and the single level-3 slot 23 (GPIO uses it);
-   --  level-3 slot 27 is defined but NOT dispatched.
+   --  Free runtime device-interrupt slot.  The runtime dispatches the level-2
+   --  slots 19/20/21 (Device_L2_0/1/2) through Level2_Dispatch and BOTH level-3
+   --  slots, 23 and 27 (Device_L3_0/1), through Level3_Dispatch.
    --
-   --  Device_L2_0 (19).  GDMA used to attach here too, which raises Program_Error
-   --  at ELABORATION (s-bbinte.adb) -- a boot loop, not a runtime error -- in any
-   --  app that pulls in SPI (which withs GDMA) alongside buffered UART RX.  GDMA
-   --  moved to Device_L2_1; do not move the UART here, it is the latency-critical
-   --  one (modem bytes arrive asynchronously).
-   RX_CPU_Int : constant := 19;   --  Device_L2_0
+   --  Device_L2_0 (19).  Exactly one protected handler may attach to an
+   --  Interrupt_ID; a second attachment raises Program_Error at ELABORATION
+   --  (s-bbinte.adb) -- a boot loop, not a runtime error.  GDMA used to attach
+   --  here, which broke any app pulling in SPI (which withs GDMA) alongside
+   --  buffered UART RX; it now owns Device_L3_1 (27), where the LCD bounce
+   --  refill it drives can preempt the level-2 devices.  What still collides
+   --  here is the TWAI (CAN) engine, so buffered UART RX and CAN cannot both be
+   --  in one image.  Do not move the UART: it is the latency-critical one
+   --  (modem bytes arrive asynchronously).
+   RX_CPU_Int : constant := 19;   --  Device_L2_0, owned by ESP32S3.Shared_L2
 
    ---------------------------------------------------------------------------
    --  Interrupt-driven RX.  One protected object owns a software ring per port
@@ -41,14 +47,28 @@ package body ESP32S3.UART.Engine is
       function  Has_Buffer (Port : UART_Port) return Boolean;
       function  Avail (Port : UART_Port) return Natural;
       procedure Take (Port : UART_Port; Data : out Byte_Array; Count : out Natural);
+
+      --  Called from ESP32S3.Shared_L2, which owns Device_L2_0 -- not attached
+      --  directly, because the TWAI receiver shares the slot.  Already written
+      --  to check its own cause first, so a call for someone else's interrupt
+      --  costs one register read per port and does nothing.
+      procedure Service;
    private
-      procedure Handler with Attach_Handler => Ada.Interrupts.Names.Device_L2_0;
 
       Buf  : Ring_Buf_Array := (others => null);
       Head : Ring_Idx_Array := (others => 0);  --  producer
       Tail : Ring_Idx_Array := (others => 0);  --  consumer
       Cnt  : Ring_Idx_Array := (others => 0);  --  bytes buffered
    end Rx_Ctrl;
+
+   --  What ESP32S3.Shared_L2 holds: a library-level procedure, so no trampoline
+   --  is emitted (no_dynamic_code.adc).  Both protected objects sit at
+   --  Device_L2_Priority, so this nested call is within the ceiling.
+   procedure Rx_Service;
+   procedure Rx_Service is
+   begin
+      Rx_Ctrl.Service;
+   end Rx_Service;
 
    package GR renames ESP32S3_Registers.GPIO;    --  GPIO matrix register layer
    package MX renames ESP32S3_Registers.IO_MUX;  --  IO_MUX (per-pad config)
@@ -411,7 +431,7 @@ package body ESP32S3.UART.Engine is
          end loop;
       end Take;
 
-      procedure Handler is
+      procedure Service is
       begin
          for Port in UART_Port loop
             if Buf (Port) /= null then
@@ -444,7 +464,7 @@ package body ESP32S3.UART.Engine is
                end;
             end if;
          end loop;
-      end Handler;
+      end Service;
 
    end Rx_Ctrl;
 
@@ -466,10 +486,13 @@ package body ESP32S3.UART.Engine is
       --  Route this port's interrupt source to the RX ISR's CPU interrupt slot.
       case B.Port is
          when UART0 =>
+            ESP32S3.Shared_L2.Register (Rx_Service'Access);
             IC.INTERRUPT_CORE0_Periph.UART_INTR_MAP.UART_INTR_MAP   := RX_CPU_Int;
          when UART1 =>
+            ESP32S3.Shared_L2.Register (Rx_Service'Access);
             IC.INTERRUPT_CORE0_Periph.UART1_INTR_MAP.UART1_INTR_MAP := RX_CPU_Int;
          when UART2 =>
+            ESP32S3.Shared_L2.Register (Rx_Service'Access);
             IC.INTERRUPT_CORE0_Periph.UART2_INTR_MAP.UART2_INTR_MAP := RX_CPU_Int;
       end case;
    end Enable_Buffered_Rx;

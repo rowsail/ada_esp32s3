@@ -11,6 +11,8 @@ with ESP32S3_Registers.IO_MUX;
 with ESP32S3_Registers.SYSTEM;
 with ESP32S3_Registers.INTERRUPT_CORE0;
 
+with ESP32S3.Shared_L2;
+
 package body ESP32S3.TWAI.Engine is
 
    --  The CAN frame-information byte as its documented bit fields, so the layout
@@ -361,7 +363,11 @@ package body ESP32S3.TWAI.Engine is
    --  (CPU_INT 23), so the RGB LCD and TWAI run together on one board (a CAN
    --  dashboard).  CPU_INT 21 is NOT available to anyone: the kernel routes its
    --  tick and its cross-core poke there.
-   TWAI_CPU_Int  : constant := 19;    --  = Ada.Interrupts.Names.Device_L2_0
+   TWAI_CPU_Int  : constant := 19;    --  Device_L2_0, owned by ESP32S3.Shared_L2
+
+   --  What ESP32S3.Shared_L2 holds: library-level, so no trampoline is emitted
+   --  (no_dynamic_code.adc).  Declared here and completed after RX_Ctrl.
+   procedure Rx_Service;
    Ring_Capacity : constant := 64;
    type Ring_Index is mod Ring_Capacity;
    type Frame_Ring is array (Ring_Index) of Queued_Frame;
@@ -372,9 +378,13 @@ package body ESP32S3.TWAI.Engine is
       procedure Enable;                    --  route + enable + flush the ring
       entry Get (F : out Queued_Frame);    --  block until a frame is queued
       function Overruns return Natural;
+
+      --  Called from ESP32S3.Shared_L2, which owns Device_L2_0 -- not attached
+      --  directly, because the buffered UART receiver shares the slot.  The
+      --  body already drains only while its own RX status says there is a
+      --  frame, so a call for someone else's interrupt does nothing.
+      procedure Service;
    private
-      procedure Handler
-        with Attach_Handler => Ada.Interrupts.Names.Device_L2_0;
       Routed : Boolean := False;
       Ring   : Frame_Ring;
       Head   : Ring_Index := 0;
@@ -399,7 +409,7 @@ package body ESP32S3.TWAI.Engine is
            (RX_INT_ENA => True, OVERRUN_INT_ENA => True, others => <>);
       end Enable;
 
-      procedure Handler is
+      procedure Service is
          Ints : constant INT_RAW_Register := TWAI0_Periph.INT_RAW;  --  read = ack
          F    : Queued_Frame;
       begin
@@ -420,7 +430,7 @@ package body ESP32S3.TWAI.Engine is
             Ovr := Ovr + 1;
             TWAI0_Periph.CMD := (CLR_OVERRUN => True, others => <>);
          end if;
-      end Handler;
+      end Service;
 
       entry Get (F : out Queued_Frame) when Count > 0 is
       begin
@@ -433,8 +443,14 @@ package body ESP32S3.TWAI.Engine is
 
    end RX_Ctrl;
 
+   procedure Rx_Service is
+   begin
+      RX_Ctrl.Service;
+   end Rx_Service;
+
    procedure Enable_Rx_Interrupt is
    begin
+      ESP32S3.Shared_L2.Register (Rx_Service'Access);
       RX_Ctrl.Enable;
    end Enable_Rx_Interrupt;
 

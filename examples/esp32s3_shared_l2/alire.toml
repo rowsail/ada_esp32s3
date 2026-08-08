@@ -1,0 +1,17 @@
+name = "esp32s3_shared_l2"
+description = "Two drivers on one level-2 interrupt via ESP32S3.Shared_L2"
+version = "0.1.0-dev"
+
+authors = ["D. Howells"]
+maintainers = ["D. Howells <dhowells@motium.us>"]
+licenses = "Apache-2.0 WITH LLVM-exception"
+tags = ["embedded", "esp32s3", "twai", "can", "driver", "example"]
+
+project-files = ["shared_l2.gpr"]
+
+[[depends-on]]
+esp32s3_rts = "*"
+
+[[pins]]
+esp32s3_rts = { path = "../../crates/esp32s3_rts" }
+xtensa_dynconfig       = { path = "../../crates/xtensa-dynconfig" }
