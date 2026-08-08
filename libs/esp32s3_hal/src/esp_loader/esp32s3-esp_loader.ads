@@ -62,9 +62,49 @@ package ESP32S3.Esp_Loader is
       Unsupported);     --  the transport cannot do what was asked (e.g. no
    --  Set_Baud was supplied)
 
-   --  The FLASH_DATA payload the ROM accepts.  Not a tuning knob -- the ROM
-   --  loader's receive buffer is this size.
+   --  The FLASH_DATA payload the ROM accepts.  Not a tuning knob -- every
+   --  ESP ROM loader's receive buffer is this size.
    Block_Bytes : constant := 1024;
+
+   --  ------------------------------------------------------------------
+   --  Which chip is on the other end
+   --  ------------------------------------------------------------------
+   --  Connect identifies the target, because the ROM protocol is NOT uniform
+   --  across the family and guessing wrong corrupts the flash rather than
+   --  failing cleanly.  Three differences are handled here:
+   --
+   --    * the original ESP32 ROM ends every reply with FOUR status bytes, not
+   --      two, so the error flag is in a different place;
+   --    * the ESP32 and ESP8266 ROMs take a 16-byte FLASH_BEGIN payload, the
+   --      rest a 20-byte one with an encryption word;
+   --    * the ESP8266 ROM has no SPI_ATTACH and no SPI_SET_PARAMS at all, and
+   --      needs a workaround for a bug in how its FLASH_BEGIN sizes an erase.
+   --
+   --  An unrecognised chip is still usable -- it is driven with the modern
+   --  defaults, which is what every part since the ESP32-S2 wants.
+   type Chip_Kind is
+     (Unknown,
+      Esp8266,
+      Esp32,
+      Esp32_S2,
+      Esp32_S3,
+      Esp32_C2,
+      Esp32_C3,
+      Esp32_C5,
+      Esp32_C6,
+      Esp32_C61,
+      Esp32_H2,
+      Esp32_H21,
+      Esp32_H4,
+      Esp32_P4,
+      Esp32_S31,
+      Esp32_E22);
+
+   --  The part's marketing name ("ESP32-C6"), for a log line or a display.
+   function Chip_Name (Kind : Chip_Kind) return String;
+
+   --  Flash sizes vary far more than chips do, so this is NOT guessed from the
+   --  chip: Configure_Flash still wants the size the caller knows.
 
    --  ------------------------------------------------------------------
    --  The transport
@@ -109,12 +149,17 @@ package ESP32S3.Esp_Loader is
    --  ------------------------------------------------------------------
    type Session is limited private;
 
-   --  Reset the target into its download loader and synchronise with it.
-   --  Retries the whole sequence a few times before giving up, because a ROM
-   --  that is still coming up misses the first SYNC.
+   --  Reset the target into its download loader, synchronise with it, and
+   --  identify it.  Retries the whole sequence a few times before giving up,
+   --  because a ROM that is still coming up misses the first SYNC.  A target
+   --  that answers but cannot be identified still connects, as Unknown.
    procedure Connect (S : out Session; Over : Link; Status : out Status_Kind);
 
    function Is_Connected (S : Session) return Boolean;
+
+   --  What Connect found on the other end.  Unknown until then, and still
+   --  Unknown for a chip newer than this table -- which is not fatal.
+   function Chip (S : Session) return Chip_Kind;
 
    --  Reset the target WITHOUT connecting: Into_Download False simply runs
    --  whatever is flashed.  Also what Finish uses to start the new firmware.
@@ -219,9 +264,17 @@ private
    --  Bytes pulled from the transport at a time.
    In_Staging : constant := 256;
 
+   --  Replies end with this many status bytes, the first of which is the
+   --  error flag.  Two everywhere except the original ESP32's ROM.
+   Default_Status_Bytes : constant := 2;
+
    type Session is limited record
       Over      : Link;
       Connected : Boolean := False;
+
+      --  Set by Connect, and what every per-chip decision below reads.
+      Kind         : Chip_Kind := Unknown;
+      Status_Bytes : Natural := Default_Status_Bytes;
 
       --  Outgoing staging (flushed when full and at each frame's end).
       Out_Buf : Byte_Array (1 .. Out_Staging) := (others => 0);

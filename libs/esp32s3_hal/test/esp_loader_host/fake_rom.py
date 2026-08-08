@@ -33,10 +33,53 @@ OP_SPI_PARAMS = 0x0B
 OP_SPI_ATTACH = 0x0D
 OP_CHANGE_BAUD = 0x0F
 OP_FLASH_MD5 = 0x13
+OP_SECURITY = 0x14
 
 BLOCK = 1024
-CHIP_MAGIC = 9            # ESP32-S3
 KNOWN_MD5 = "0123456789abcdef0123456789abcdef"
+SECTOR = 4096
+SECTORS_PER_BLOCK = 16
+
+#  What each chip this simulator can impersonate actually does.  Taken from
+#  esptool's per-target classes, not from the Ada source:
+#
+#    magic     the value at 0x40001000
+#    chip_id   what GET_SECURITY_INFO reports, or None if the chip does not
+#              answer that command with an id (ESP32-S2 answers a short form,
+#              ESP32 and ESP8266 reject the command outright)
+#    status    how many status bytes end every reply
+#    begin_len the FLASH_BEGIN payload the ROM accepts, in bytes
+#    spi_cmds  whether SPI_ATTACH / SPI_SET_PARAMS exist at all
+#    erase_bug whether FLASH_BEGIN wants the doctored erase size
+CHIPS = {
+    "esp8266":  dict(magic=0xFFF0C101, chip_id=None, security="reject",
+                     status=2, begin_len=16, spi_cmds=False, erase_bug=True),
+    "esp32":    dict(magic=0x00F01D83, chip_id=None, security="reject",
+                     status=4, begin_len=16, spi_cmds=True, erase_bug=False),
+    "esp32s2":  dict(magic=0x000007C6, chip_id=None, security="short",
+                     status=2, begin_len=20, spi_cmds=True, erase_bug=False),
+    "esp32s3":  dict(magic=0x00000009, chip_id=9, security="full",
+                     status=2, begin_len=20, spi_cmds=True, erase_bug=False),
+    "esp32c3":  dict(magic=0x6921506F, chip_id=5, security="full",
+                     status=2, begin_len=20, spi_cmds=True, erase_bug=False),
+    "esp32c6":  dict(magic=0x2CE0806F, chip_id=13, security="full",
+                     status=2, begin_len=20, spi_cmds=True, erase_bug=False),
+    "esp32p4":  dict(magic=0x0, chip_id=18, security="full",
+                     status=2, begin_len=20, spi_cmds=True, erase_bug=False),
+}
+
+
+def erase_size(chip, offset, size):
+    """esptool's ESP8266 FLASH_BEGIN erase-size workaround."""
+    if not chip["erase_bug"]:
+        return size
+    sectors = (size + SECTOR - 1) // SECTOR
+    first = offset // SECTOR
+    head = SECTORS_PER_BLOCK - (first % SECTORS_PER_BLOCK)
+    head = min(head, sectors)
+    if sectors < 2 * head:
+        return (sectors + 1) // 2 * SECTOR
+    return (sectors - head) * SECTOR
 
 
 def slip_escape(payload):
@@ -78,8 +121,10 @@ class Lines(threading.Thread):
 
 
 class Rom:
-    def __init__(self, mode, out_path):
+    def __init__(self, mode, out_path, chip="esp32s3"):
         self.mode = mode
+        self.chip_name = chip
+        self.chip = CHIPS[chip]
         self.out_path = out_path
         self.faults = []
 
@@ -97,6 +142,7 @@ class Rom:
         self.expect_blocks = 0
         self.next_seq = 0
         self.finished = False
+        self.pending_size = 0
 
     def fault(self, why):
         self.faults.append(why)
@@ -141,17 +187,34 @@ class Rom:
             #  The real ROM answers a SYNC several times over.
             return [self.reply(op)] * 8
 
+        if op == OP_SECURITY:
+            kind = self.chip["security"]
+            if kind == "reject":
+                #  What a ROM that has never heard of the command answers.
+                return [self.reply(op, error=True)]
+            if kind == "short":
+                return [self.reply(op, data=b"\x00" * 12)]
+            body = struct.pack("<IBBBBBBBBII", 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                               self.chip["chip_id"], 0)
+            return [self.reply(op, data=body)]
+
         if op == OP_READ_REG:
             (address,) = struct.unpack("<I", payload)
             if address != 0x40001000:
                 self.fault(f"READ_REG of {address:#x}, expected the chip magic")
-            return [self.reply(op, value=CHIP_MAGIC)]
+            return [self.reply(op, value=self.chip["magic"])]
 
         if op == OP_SPI_ATTACH:
+            if not self.chip["spi_cmds"]:
+                self.fault(f"SPI_ATTACH sent to a {self.chip_name}, which has no such command")
+                return [self.reply(op, error=True)]
             self.attached = True
             return [self.reply(op)]
 
         if op == OP_SPI_PARAMS:
+            if not self.chip["spi_cmds"]:
+                self.fault(f"SPI_SET_PARAMS sent to a {self.chip_name}, which has no such command")
+                return [self.reply(op, error=True)]
             if not self.attached:
                 self.fault("SPI_SET_PARAMS before SPI_ATTACH")
             size = struct.unpack("<6I", payload)[1]
@@ -169,18 +232,57 @@ class Rom:
             return [reply]
 
         if op == OP_FLASH_BEGIN:
+            want = self.chip["begin_len"]
+            if len(payload) != want:
+                self.fault(
+                    f"FLASH_BEGIN payload is {len(payload)} bytes, "
+                    f"a {self.chip_name} ROM takes {want}"
+                )
+                return [self.reply(op, error=True)]
+
+            if len(payload) == 20:
+                size, blocks, block_size, offset, encrypted = struct.unpack("<5I", payload)
+            else:
+                size, blocks, block_size, offset = struct.unpack("<4I", payload)
+                encrypted = 0
+
+            #  A zero-sized FLASH_BEGIN is how the ESP8266 attaches its flash.
+            if size == 0 and blocks == 0:
+                self.attached = True
+                self.params_set = True
+                return [self.reply(op)]
+
             if not self.params_set:
-                self.fault("FLASH_BEGIN before SPI_SET_PARAMS")
-            size, blocks, block_size, offset, encrypted = struct.unpack("<5I", payload)
+                self.fault("FLASH_BEGIN before the flash was attached")
             if block_size != BLOCK:
                 self.fault(f"FLASH_BEGIN block size {block_size}, expected {BLOCK}")
-            if blocks != (size + BLOCK - 1) // BLOCK:
-                self.fault(f"FLASH_BEGIN claims {blocks} blocks for {size} bytes")
+            #  The first word is an ERASE size, which on the ESP8266 is not
+            #  the image size: its ROM miscounts, and esptool doctors it.  Only
+            #  a scenario that named an image file gives us an independent size
+            #  to check that against; the others declare their own and are
+            #  taken at face value.
+            if self.pending_size:
+                want_erase = erase_size(self.chip, offset, self.pending_size)
+                if size != want_erase:
+                    self.fault(
+                        f"FLASH_BEGIN erase size {size}, "
+                        f"a {self.chip_name} wants {want_erase}"
+                    )
+                if blocks != (self.pending_size + BLOCK - 1) // BLOCK:
+                    self.fault(
+                        f"FLASH_BEGIN claims {blocks} blocks "
+                        f"for {self.pending_size} bytes"
+                    )
+                declared = self.pending_size
+            else:
+                if blocks != (size + BLOCK - 1) // BLOCK:
+                    self.fault(f"FLASH_BEGIN claims {blocks} blocks for {size} bytes")
+                declared = size
             if encrypted != 0:
                 self.fault("FLASH_BEGIN asked for encryption")
             self.image = bytearray()
             self.image_at = offset
-            self.image_size = size
+            self.image_size = declared
             self.expect_blocks = blocks
             self.next_seq = 0
             if self.mode == "refuse_begin":
@@ -233,7 +335,9 @@ class Rom:
         return None
 
     def reply(self, op, value=0, data=b"", error=False):
+        #  The status pair -- or quartet, on the original ESP32's ROM.
         status = bytes([1 if error else 0, 5 if error else 0])
+        status += b"\x00" * (self.chip["status"] - 2)
         body = data + status
         return slip_escape(struct.pack("<BBHI", 1, op, len(body), value) + body)
 
@@ -245,13 +349,20 @@ def main():
     parser.add_argument("--image")
     parser.add_argument("--out")
     parser.add_argument("--mode", default="ok")
+    parser.add_argument("--chip", default="esp32s3", choices=sorted(CHIPS))
     args = parser.parse_args()
 
     command = [args.tool, args.scenario]
     if args.image:
         command.append(args.image)
 
-    rom = Rom(args.mode, args.out)
+    rom = Rom(args.mode, args.out, args.chip)
+    #  The simulator has to know the image size to check FLASH_BEGIN's erase
+    #  size and block count, since the wire only carries the doctored value.
+    rom.pending_size = 0
+    if args.image:
+        with open(args.image, "rb") as probe:
+            rom.pending_size = len(probe.read())
     child = subprocess.Popen(
         command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )

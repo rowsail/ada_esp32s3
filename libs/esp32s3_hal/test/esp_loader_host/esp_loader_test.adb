@@ -197,6 +197,12 @@ begin
       Ada.Command_Line.Set_Exit_Status (1);
       return;
    end if;
+   Say ("CHIP " & Loader.Chip_Name (Loader.Chip (Target)));
+
+   if Scenario = "detect" then
+      Ada.Command_Line.Set_Exit_Status (if Failed then 1 else 0);
+      return;
+   end if;
 
    ---------------------------------------------------------------------------
    if Scenario = "regread" then

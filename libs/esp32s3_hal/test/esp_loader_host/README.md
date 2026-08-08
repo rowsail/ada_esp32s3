@@ -31,8 +31,9 @@ per check. Requirements: a native GNAT toolchain and `python3`.
 
 ## What it proves
 
-`fake_rom.py` is written from the protocol description rather than from the Ada
-source, and it is strict about everything it is sent. It faults on a bad frame
+`fake_rom.py` is written from the protocol description (and esptool's per-target
+tables) rather than from the Ada source, and it is strict about everything it is
+sent. It faults on a bad frame
 direction, a length field that disagrees with the payload, a wrong FLASH_DATA
 block checksum, a skipped or repeated sequence number, a block size that is not
 1 KB, a final block not padded with `0xFF`, a SYNC whose payload is not the
@@ -47,11 +48,19 @@ mode.
 | refused command | an error status must surface as `Target_Refused`, not success |
 | silent target | must give up in bounded time (~8 s), not hang |
 | length mismatches | fewer or more bytes than `Begin_Image` declared must both be `Wrong_Length` |
-| the harness can fail | a target whose IO0 never goes low must get nowhere — a pass here would mean the simulator is asleep |
+| every chip family | each of ESP8266, ESP32, S2, S3, C3, C6 and P4 identified, then flashed byte-exact — they differ in how they are identified at all, how many status bytes end a reply, how long a `FLASH_BEGIN` payload they accept, whether `SPI_ATTACH` exists, and whether the erase size needs doctoring |
+| the harness can fail | four deliberate breakages that must all be caught: a target whose IO0 never goes low, plus the three per-chip differences above being ignored |
 
 The 200 KB image is deliberately not a multiple of the 1 KB block, and the test
 feeds it in 3000-byte chunks, so every block boundary lands mid-chunk and the
 final block is partial.
+
+The mutation checks matter more than they look. Without them the chip table
+could quietly be decoration: every other scenario would still pass if the loader
+ignored the detected chip *and* the simulator never checked. Each mutation edits
+the library, rebuilds, runs, and requires a failure — the worst of the three
+being an ESP32's four status bytes read as two, under which a refused erase
+reads back as success.
 
 ## What it does NOT prove
 

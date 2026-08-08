@@ -61,6 +61,32 @@ else
    status=1
 fi
 
+echo "== every chip family the simulator can impersonate =="
+#  The ROM protocol is NOT uniform across the family.  Each of these differs
+#  from the modern default in at least one way the loader has to get right:
+#  how the chip is identified at all, how many status bytes end a reply, how
+#  long a FLASH_BEGIN payload it accepts, whether SPI_ATTACH exists, and
+#  whether its erase size needs doctoring.
+for chip in esp8266 esp32 esp32s2 esp32s3 esp32c3 esp32c6 esp32p4; do
+   name=$(timeout 60 python3 ./fake_rom.py detect --chip "$chip" 2>&1 | sed -n 's/.*CHIP //p')
+   if [ -n "$name" ]; then
+      printf '  %-44s ok\n' "identified as $name"
+   else
+      printf '  %-44s FAILED\n' "identify $chip"; status=1
+   fi
+
+   out="$work/flashed_$chip.bin"
+   if timeout 120 python3 ./fake_rom.py flash --image "$work/image.bin" \
+         --out "$out" --chip "$chip" >"$work/log_$chip" 2>&1 \
+      && cmp -s "$work/image.bin" "$out"; then
+      printf '  %-44s ok\n' "  ... flashed byte-exact"
+   else
+      printf '  %-44s FAILED\n' "  ... flashed byte-exact"
+      sed 's/^/    /' "$work/log_$chip" | head -6
+      status=1
+   fi
+done
+
 echo "== individual commands =="
 run "read a target register (chip magic)"  0 regread
 run "raise the baud rate"                  0 baud
@@ -73,6 +99,36 @@ run "fewer bytes than declared"            0 short
 run "more bytes than declared"             0 overrun
 
 echo "== the harness itself can fail =="
+#  Three deliberate breakages of the per-chip handling, each rebuilt, run and
+#  required to be CAUGHT.  Without these the chip table could quietly be
+#  decoration: every scenario above would still pass if the loader ignored it
+#  and the simulator never checked.
+mutate () {   # mutate <description> <sed-expression> <scenario> [args...]
+   local what=$1 edit=$2; shift 2
+   cp "$loader" "$work/loader.bak"
+   sed -i "$edit" "$loader"
+   if gprbuild -q -P esp_loader_host.gpr 2>/dev/null \
+      && ! timeout 120 python3 ./fake_rom.py "$@" >/dev/null 2>&1; then
+      printf '  %-44s ok\n' "$what"
+   else
+      printf '  %-44s FAILED (not caught)\n' "$what"
+      status=1
+   fi
+   cp "$work/loader.bak" "$loader"
+   gprbuild -q -P esp_loader_host.gpr 2>/dev/null
+}
+
+loader=../../src/esp_loader/esp32s3-esp_loader.adb
+mutate "an ESP32 sent the long FLASH_BEGIN" \
+   's/Extended : constant Boolean := S.Kind not in Esp32 | Esp8266;/Extended : constant Boolean := True;/' \
+   flash --image "$work/image.bin" --chip esp32
+mutate "an ESP32's four status bytes ignored" \
+   's/S.Status_Bytes := (if S.Kind = Esp32 then 4 else Default_Status_Bytes);/S.Status_Bytes := Default_Status_Bytes;/' \
+   refuse --mode refuse_begin --chip esp32
+mutate "an ESP8266 erase size left undoctored" \
+   's/      if Kind \/= Esp8266 then/      if True then/' \
+   flash --image "$work/image.bin" --chip esp8266
+
 #  If the target's IO0 never goes low it never enters the loader, so nothing
 #  should get past SYNC.  A pass here would mean the simulator is asleep.
 run "a target that never enters the loader" 1 flash \

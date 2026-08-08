@@ -16,6 +16,22 @@ package body ESP32S3.Esp_Loader is
    Op_Spi_Attach  : constant Interfaces.Unsigned_8 := 16#0D#;
    Op_Change_Baud : constant Interfaces.Unsigned_8 := 16#0F#;
    Op_Flash_Md5   : constant Interfaces.Unsigned_8 := 16#13#;
+   Op_Security    : constant Interfaces.Unsigned_8 := 16#14#;
+
+   --  Where every ESP ROM parks its chip-identification magic.
+   Chip_Magic_Register : constant Interfaces.Unsigned_32 := 16#4000_1000#;
+
+   --  Identification is quick or not happening: do not spend a whole command
+   --  timeout discovering that an older ROM lacks GET_SECURITY_INFO.
+   Detect_Timeout_Ms : constant := 500;
+
+   --  Reply length of GET_SECURITY_INFO on chips that report a chip-id.  The
+   --  ESP32-S2 answers a short form (12) with no id.
+   Security_With_Id : constant := 20;
+
+   --  Erase geometry the ESP8266's FLASH_BEGIN workaround is written in.
+   Flash_Sector_Bytes  : constant := 4096;
+   Sectors_Per_Block   : constant := 16;
 
    --  ---- timing -------------------------------------------------------
    --  Erasing the region FLASH_BEGIN covers is much the slowest step, hence
@@ -268,15 +284,22 @@ package body ESP32S3.Esp_Loader is
          if Got >= 8 and then Frame (1) = 1 and then Frame (2) = Op then
             Value := Get_32 (Frame, 5);
 
-            --  Status is the last two payload bytes; the first is the error
-            --  flag.  Short replies (SYNC) carry no status pair.
-            if Got >= 10 and then Frame (Got - 1) /= 0 then
+            --  The reply ends with the status bytes, the first of which is
+            --  the error flag.  How MANY there are is per-chip -- four on the
+            --  original ESP32's ROM, two everywhere else -- which is why
+            --  Connect identifies the target before anything else is sent.
+            if Got >= 8 + S.Status_Bytes
+              and then Frame (Got - S.Status_Bytes + 1) /= 0
+            then
                Status := Target_Refused;
                return;
             end if;
 
-            if Got > 8 then
-               Reply_Len := Natural'Min (Got - 8, Reply'Length);
+            --  What the caller gets back is the DATA, with the status bytes
+            --  taken off, so a reply reads the same on every chip.
+            if Got > 8 + S.Status_Bytes then
+               Reply_Len :=
+                 Natural'Min (Got - 8 - S.Status_Bytes, Reply'Length);
                Reply (Reply'First .. Reply'First + Reply_Len - 1) :=
                  Frame (9 .. 8 + Reply_Len);
             end if;
@@ -302,6 +325,95 @@ package body ESP32S3.Esp_Loader is
       Command
         (S, Op, Header, Nothing, 0, Timeout_Ms, Value, Reply, Got, Status);
    end Simple_Command;
+
+   ---------------------------------------------------------------------------
+   --  Identifying the target
+   ---------------------------------------------------------------------------
+
+   --  The chip-id every ROM since the ESP32-S3 reports through
+   --  GET_SECURITY_INFO -- the same numbers that identify a chip in an
+   --  application image header.
+   function From_Chip_Id (Id : Interfaces.Unsigned_32) return Chip_Kind
+   is (case Id is
+         when 0 => Esp32,
+         when 2 => Esp32_S2,
+         when 5 => Esp32_C3,
+         when 9 => Esp32_S3,
+         when 12 => Esp32_C2,
+         when 13 => Esp32_C6,
+         when 16 => Esp32_H2,
+         when 18 => Esp32_P4,
+         when 20 => Esp32_C61,
+         when 23 => Esp32_C5,
+         when 25 => Esp32_H21,
+         when 28 => Esp32_H4,
+         when 31 => Esp32_E22,
+         when 32 => Esp32_S31,
+         when others => Unknown);
+
+   --  The older identification: a value the ROM leaves in a fixed register.
+   --  Several chips have more than one, across silicon revisions.
+   --
+   --  The ESP32-P4's published magic is 0 -- which is also what a mis-read or
+   --  an unimplemented register gives back -- so it is deliberately NOT listed.
+   --  The P4 reports a chip-id through GET_SECURITY_INFO, which is how it gets
+   --  identified; guessing "P4" from a zero would be worse than Unknown,
+   --  because Unknown still drives a modern target correctly.
+   function From_Magic (Magic : Interfaces.Unsigned_32) return Chip_Kind
+   is (case Magic is
+         when 16#FFF0_C101# => Esp8266,
+         when 16#00F0_1D83# => Esp32,
+         when 16#0000_07C6# => Esp32_S2,
+         when 16#0000_0009# | 16#EB00_4136# => Esp32_S3,
+         when 16#6921_506F# | 16#1B31_506F#
+            | 16#4881_606F# | 16#4361_606F# => Esp32_C3,
+         when 16#6F51_306F# | 16#7C41_A06F# => Esp32_C2,
+         when 16#2CE0_806F# | 16#0DA1_806F# => Esp32_C6,
+         when 16#D7B7_3E80# | 16#CA26_CC22#
+            | 16#6881_B06F# => Esp32_H2,
+         when others => Unknown);
+
+   procedure Detect (S : in out Session) is
+      Nothing : constant Byte_Array (1 .. 0) := (others => 0);
+      Reply   : Byte_Array (1 .. Security_With_Id);
+      Value   : Interfaces.Unsigned_32;
+      Got     : Natural;
+      Result  : Status_Kind;
+   begin
+      S.Kind := Unknown;
+      S.Status_Bytes := Default_Status_Bytes;
+
+      --  Ask the modern way first.  Chips from the ESP32-S3 on report a
+      --  chip-id here; the ESP32 ROM has no such command at all and the
+      --  ESP32-S2 answers a short form with no id -- both fall through.
+      Command
+        (S, Op_Security, Nothing, Nothing, 0, Detect_Timeout_Ms, Value, Reply,
+         Got, Result);
+      if Result = Ok and then Got >= Security_With_Id then
+         S.Kind := From_Chip_Id (Get_32 (Reply, 13));
+      end if;
+
+      --  Otherwise the magic register, which is the only way to tell an
+      --  ESP8266, an ESP32 or an ESP32-S2 apart.
+      if S.Kind = Unknown then
+         declare
+            Header : Byte_Array (1 .. 4);
+            Magic  : Interfaces.Unsigned_32;
+         begin
+            Put_32 (Header, 1, Chip_Magic_Register);
+            Command
+              (S, Op_Read_Reg, Header, Nothing, 0, Detect_Timeout_Ms, Magic,
+               Reply, Got, Result);
+            if Result = Ok then
+               S.Kind := From_Magic (Magic);
+            end if;
+         end;
+      end if;
+
+      --  The difference that changes how replies are PARSED, so it has to be
+      --  settled before any further command goes out.
+      S.Status_Bytes := (if S.Kind = Esp32 then 4 else Default_Status_Bytes);
+   end Detect;
 
    ---------------------------------------------------------------------------
    --  Connecting
@@ -367,6 +479,7 @@ package body ESP32S3.Esp_Loader is
 
          if Status = Ok then
             S.Connected := True;
+            Detect (S);
             return;
          end if;
       end loop;
@@ -374,6 +487,28 @@ package body ESP32S3.Esp_Loader is
 
    function Is_Connected (S : Session) return Boolean
    is (S.Connected);
+
+   function Chip (S : Session) return Chip_Kind
+   is (S.Kind);
+
+   function Chip_Name (Kind : Chip_Kind) return String
+   is (case Kind is
+         when Unknown => "unknown",
+         when Esp8266 => "ESP8266",
+         when Esp32 => "ESP32",
+         when Esp32_S2 => "ESP32-S2",
+         when Esp32_S3 => "ESP32-S3",
+         when Esp32_C2 => "ESP32-C2",
+         when Esp32_C3 => "ESP32-C3",
+         when Esp32_C5 => "ESP32-C5",
+         when Esp32_C6 => "ESP32-C6",
+         when Esp32_C61 => "ESP32-C61",
+         when Esp32_H2 => "ESP32-H2",
+         when Esp32_H21 => "ESP32-H21",
+         when Esp32_H4 => "ESP32-H4",
+         when Esp32_P4 => "ESP32-P4",
+         when Esp32_S31 => "ESP32-S31",
+         when Esp32_E22 => "ESP32-E22");
 
    function Remaining (S : Session) return Interfaces.Unsigned_32
    is (S.Owed);
@@ -413,10 +548,23 @@ package body ESP32S3.Esp_Loader is
       Flash_Bytes : Interfaces.Unsigned_32;
       Status      : out Status_Kind)
    is
-      Attach : constant Byte_Array (1 .. 8) :=
-        (others => 0);  --  default SPI pins
+      Attach : constant Byte_Array (1 .. 8) := (others => 0);  --  default pins
       Params : Byte_Array (1 .. 24);
+      Header : Byte_Array (1 .. 16);
    begin
+      --  The ESP8266's ROM has NEITHER command.  It attaches the flash as a
+      --  side effect of a zero-sized FLASH_BEGIN, and it has no notion of
+      --  being told the geometry at all -- so that half is simply skipped,
+      --  which is what esptool does too.
+      if S.Kind = Esp8266 then
+         Put_32 (Header, 1, 0);
+         Put_32 (Header, 5, 0);
+         Put_32 (Header, 9, Block_Bytes);
+         Put_32 (Header, 13, 0);
+         Simple_Command (S, Op_Flash_Begin, Header, Short_Timeout_Ms, Status);
+         return;
+      end if;
+
       Simple_Command (S, Op_Spi_Attach, Attach, Short_Timeout_Ms, Status);
       if Status /= Ok then
          return;
@@ -437,6 +585,38 @@ package body ESP32S3.Esp_Loader is
    --  Images
    ---------------------------------------------------------------------------
 
+   --  The ESP8266's ROM miscounts how much it must erase, and erasing too
+   --  little silently leaves stale flash behind the new image.  This is
+   --  esptool's long-standing workaround, reproduced exactly: the value in
+   --  FLASH_BEGIN's first word is not the image size but a doctored erase
+   --  size.  On every other chip the two are the same number.
+   function Erase_Size
+     (Kind : Chip_Kind; At_Offset, Length : Interfaces.Unsigned_32)
+      return Interfaces.Unsigned_32
+   is
+      Sectors      : Interfaces.Unsigned_32;
+      First_Sector : Interfaces.Unsigned_32;
+      Head         : Interfaces.Unsigned_32;
+   begin
+      if Kind /= Esp8266 then
+         return Length;
+      end if;
+
+      Sectors :=
+        (Length + Flash_Sector_Bytes - 1) / Flash_Sector_Bytes;
+      First_Sector := At_Offset / Flash_Sector_Bytes;
+      Head := Sectors_Per_Block - (First_Sector mod Sectors_Per_Block);
+      if Sectors < Head then
+         Head := Sectors;
+      end if;
+
+      if Sectors < 2 * Head then
+         return ((Sectors + 1) / 2) * Flash_Sector_Bytes;
+      else
+         return (Sectors - Head) * Flash_Sector_Bytes;
+      end if;
+   end Erase_Size;
+
    procedure Begin_Image
      (S         : in out Session;
       At_Offset : Interfaces.Unsigned_32;
@@ -445,13 +625,21 @@ package body ESP32S3.Esp_Loader is
    is
       Blocks : constant Interfaces.Unsigned_32 :=
         (Length + Block_Bytes - 1) / Block_Bytes;
-      Header : Byte_Array (1 .. 20);
+
+      --  The ESP32 and ESP8266 ROMs take the four-word form; every later ROM
+      --  takes a fifth word saying whether the write is encrypted.  Sending
+      --  the long form to an ESP32 is not ignored -- it is rejected.
+      Extended : constant Boolean := S.Kind not in Esp32 | Esp8266;
+      Words    : constant Natural := (if Extended then 5 else 4);
+      Header   : Byte_Array (1 .. 4 * Words);
    begin
-      Put_32 (Header, 1, Length);
+      Put_32 (Header, 1, Erase_Size (S.Kind, At_Offset, Length));
       Put_32 (Header, 5, Blocks);
       Put_32 (Header, 9, Block_Bytes);
       Put_32 (Header, 13, At_Offset);
-      Put_32 (Header, 17, 0);              --  not encrypted
+      if Extended then
+         Put_32 (Header, 17, 0);           --  not encrypted
+      end if;
 
       Simple_Command (S, Op_Flash_Begin, Header, Erase_Timeout_Ms, Status);
       if Status /= Ok then

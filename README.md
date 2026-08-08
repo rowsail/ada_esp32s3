@@ -256,9 +256,21 @@ truncated source is an error rather than a corrupt target.
 GPIOs. Only the ROM loader is spoken — no downloadable stub, so no compression;
 that costs transfer time and nothing else.
 
+**The whole family.** `Connect` identifies the target, because the ROM protocol
+is *not* uniform and guessing wrong corrupts flash rather than failing cleanly:
+the original ESP32 ends every reply with four status bytes instead of two, the
+ESP32 and ESP8266 take a shorter `FLASH_BEGIN` payload, and the ESP8266 has no
+`SPI_ATTACH` at all plus a bug in how it sizes an erase. Identification uses
+`GET_SECURITY_INFO` where the chip supports it (ESP32-S3 and later) and the
+magic register otherwise (ESP8266, ESP32, ESP32-S2) — ESP8266, ESP32, S2, S3,
+C2, C3, C5, C6, C61, H2, H21, H4, P4, S31 and E22. A chip newer than the table
+still connects, as `Unknown`, and is driven with the modern defaults.
+
 It is **host-verified only**: the development repository drives it against a
-simulated ROM that validates every frame it is sent. The real ROM's timing and
-quirks still want a target board on the end of a real UART.
+simulated ROM that validates every frame it is sent, impersonating each chip
+family in turn — and deliberately breaks the per-chip handling three ways to
+prove those checks bite. The real ROM's timing and quirks still want a target
+board on the end of a real UART.
 
 ## Testing status
 
