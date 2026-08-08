@@ -13,7 +13,9 @@ project Esp_Loader_Host is
      ("esp_loader_test.adb",
       "esp32s3.ads",
       "esp32s3-esp_loader.ads",
-      "esp32s3-esp_loader.adb");
+      "esp32s3-esp_loader.adb",
+      "esp32s3-esp_loader-auto_reset.ads",
+      "esp32s3-esp_loader-auto_reset.adb");
    package Compiler is
       for Default_Switches ("Ada") use
         ("-g", "-O0", "-gnat2022", "-gnata", "-gnatwa", "-gnatwJ");

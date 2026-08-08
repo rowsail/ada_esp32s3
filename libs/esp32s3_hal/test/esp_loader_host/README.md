@@ -48,6 +48,7 @@ mode.
 | refused command | an error status must surface as `Target_Refused`, not success |
 | silent target | must give up in bounded time (~8 s), not hang |
 | length mismatches | fewer or more bytes than `Begin_Image` declared must both be `Wrong_Length` |
+| the auto-reset circuit | esptool's own `ClassicReset` and `UnixTightReset` line sequences replayed through `ESP32S3.Esp_Loader.Auto_Reset`, with the simulator deciding whether the target really reached its download loader — plus a terminal emulator opening the port, which must disturb nothing |
 | every chip family | each of ESP8266, ESP32, S2, S3, C3, C6 and P4 identified, then flashed byte-exact — they differ in how they are identified at all, how many status bytes end a reply, how long a `FLASH_BEGIN` payload they accept, whether `SPI_ATTACH` exists, and whether the erase size needs doctoring |
 | the harness can fail | four deliberate breakages that must all be caught: a target whose IO0 never goes low, plus the three per-chip differences above being ignored |
 
@@ -60,7 +61,15 @@ could quietly be decoration: every other scenario would still pass if the loader
 ignored the detected chip *and* the simulator never checked. Each mutation edits
 the library, rebuilds, runs, and requires a failure — the worst of the three
 being an ESP32's four status bytes read as two, under which a refused erase
-reads back as success.
+reads back as success. Two more cover the auto-reset emulation: without the
+software capacitor `ClassicReset` lets the target out of reset a fraction too
+early and it boots the application; without the cross-coupling a terminal
+emulator resets the target merely by opening the port.
+
+`mutate` guards its own two silent-failure modes: a sed expression that no
+longer matches (checked with `cmp`), and gprbuild skipping a rebuild on
+same-second timestamps (avoided with `-f`). Either would look exactly like the
+mutation being caught.
 
 ## What it does NOT prove
 

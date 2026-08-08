@@ -92,6 +92,15 @@ run "read a target register (chip magic)"  0 regread
 run "raise the baud rate"                  0 baud
 run "read the target's flash MD5"          0 md5
 
+echo "== emulating the auto-reset circuit for a PC's esptool =="
+#  In pass-through mode the PC's esptool wiggles DTR/RTS at what it thinks is
+#  an ordinary USB-serial bridge.  These replay its own sequences through the
+#  emulated circuit; the simulator watches the control lines and decides
+#  whether the target really ended up in its download loader.
+run "esptool ClassicReset reaches the loader"  0 classic  --expect download
+run "esptool UnixTightReset reaches the loader" 0 tight   --expect download
+run "a terminal opening the port disturbs nothing" 0 terminal --expect untouched
+
 echo "== failures the caller must be told about =="
 run "a refused command is not success"     0 refuse  --mode refuse_begin
 run "a silent target gives up, not hangs"  0 silent  --mode silent
@@ -107,15 +116,34 @@ mutate () {   # mutate <description> <sed-expression> <scenario> [args...]
    local what=$1 edit=$2; shift 2
    cp "$loader" "$work/loader.bak"
    sed -i "$edit" "$loader"
-   if gprbuild -q -P esp_loader_host.gpr 2>/dev/null \
-      && ! timeout 120 python3 ./fake_rom.py "$@" >/dev/null 2>&1; then
+
+   #  A mutation that did not apply -- a stale expression after the source was
+   #  reworded -- would look exactly like one that was caught.  Check.
+   if cmp -s "$loader" "$work/loader.bak"; then
+      printf '  %-44s FAILED (mutation did not apply)\n' "$what"
+      status=1
+      cp "$work/loader.bak" "$loader"
+      return
+   fi
+   #  Force the rebuild.  gprbuild's timestamp check is not fine-grained
+   #  enough for back-to-back restore-then-mutate, and a skipped rebuild would
+   #  ALSO look exactly like the mutation being caught.  The project is a
+   #  handful of units; correctness is worth the second.
+
+   local out build
+   gprbuild -q -f -P esp_loader_host.gpr 2>"$work/build.err"; build=$?
+   out=$(timeout 120 python3 ./fake_rom.py "$@" 2>&1); local got=$?
+   if [ "$build" = 0 ] && [ "$got" != 0 ]; then
       printf '  %-44s ok\n' "$what"
    else
       printf '  %-44s FAILED (not caught)\n' "$what"
+      [ "$build" != 0 ] && sed 's/^/    build: /' "$work/build.err" | head -5
+      printf '%s\n' "$out" | sed 's/^/    /' | head -6
       status=1
    fi
+
    cp "$work/loader.bak" "$loader"
-   gprbuild -q -P esp_loader_host.gpr 2>/dev/null
+   gprbuild -q -f -P esp_loader_host.gpr 2>/dev/null
 }
 
 loader=../../src/esp_loader/esp32s3-esp_loader.adb
@@ -128,6 +156,18 @@ mutate "an ESP32's four status bytes ignored" \
 mutate "an ESP8266 erase size left undoctored" \
    's/      if Kind \/= Esp8266 then/      if True then/' \
    flash --image "$work/image.bin" --chip esp8266
+
+#  The two halves of the auto-reset emulation, each removed in turn.  Without
+#  the software capacitor ClassicReset lets the target out of reset a fraction
+#  too early and it boots the application; without the cross-coupling a
+#  terminal emulator resets the target just by opening the port.
+loader=../../src/esp_loader/esp32s3-esp_loader-auto_reset.adb
+mutate "reset released with no software RC" \
+   's/if not C.Release_Pending then/if False then/' \
+   classic --expect download
+mutate "control lines mapped straight through" \
+   's/RTS and then not DTR/RTS/; s/DTR and then not RTS/DTR/' \
+   terminal --expect untouched
 
 #  If the target's IO0 never goes low it never enters the loader, so nothing
 #  should get past SYNC.  A pass here would mean the simulator is asleep.

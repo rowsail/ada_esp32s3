@@ -350,6 +350,11 @@ def main():
     parser.add_argument("--out")
     parser.add_argument("--mode", default="ok")
     parser.add_argument("--chip", default="esp32s3", choices=sorted(CHIPS))
+    #  For the reset-emulation scenarios, which send no commands at all: the
+    #  whole result is what the control lines did to the target.
+    parser.add_argument(
+        "--expect", choices=["download", "untouched"], default=None
+    )
     args = parser.parse_args()
 
     command = [args.tool, args.scenario]
@@ -411,10 +416,29 @@ def main():
         seen[fault] = seen.get(fault, 0) + 1
     for fault, times in seen.items():
         print("    ROM FAULT:", fault, f"(x{times})" if times > 1 else "")
+    already = len(rom.faults)
 
-    if rom.reset_count == 0:
+    if args.expect == "download":
+        #  The point of the whole emulation: reset was released while IO0 was
+        #  low, so the ROM latched download mode rather than running the app.
+        if rom.reset_count == 0:
+            rom.faults.append("the target was never reset")
+        elif not rom.in_download:
+            rom.faults.append(
+                "the target was reset but came up RUNNING, not in the loader "
+                "-- IO0 was not low when reset was released"
+            )
+    elif args.expect == "untouched":
+        if rom.reset_count or rom.in_download:
+            rom.faults.append(
+                f"the target was disturbed: {rom.reset_count} reset(s), "
+                f"download={rom.in_download}"
+            )
+    elif rom.reset_count == 0:
         rom.faults.append("the target was never reset")
-        print("    ROM FAULT: the target was never reset")
+
+    for fault in rom.faults[already:]:
+        print("    ROM FAULT:", fault)
 
     return 0 if code == 0 and not rom.faults else 1
 

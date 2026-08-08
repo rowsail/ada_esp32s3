@@ -266,6 +266,15 @@ magic register otherwise (ESP8266, ESP32, ESP32-S2) — ESP8266, ESP32, S2, S3,
 C2, C3, C5, C6, C61, H2, H21, H4, P4, S31 and E22. A chip newer than the table
 still connects, as `Unknown`, and is driven with the modern defaults.
 
+**Pass-through too.** `ESP32S3.Esp_Loader.Auto_Reset` is the auto-reset circuit
+every ESP development board has, in software: when a board sits between a PC and
+a target as a USB-serial bridge, esptool on the PC expects to reach the target's
+ROM loader by wiggling DTR and RTS, and this makes that work. It reproduces the
+real circuit's cross-coupling — so a terminal emulator asserting both lines on
+open does not reset the target — and emulates its capacitor, so esptool's
+`ClassicReset` (which moves the lines one at a time) works regardless of what
+the target board has on its EN pin.
+
 It is **host-verified only**: the development repository drives it against a
 simulated ROM that validates every frame it is sent, impersonating each chip
 family in turn — and deliberately breaks the per-chip handling three ways to

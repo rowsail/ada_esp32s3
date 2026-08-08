@@ -22,6 +22,7 @@ with Interfaces.C;
 with System;
 
 with ESP32S3.Esp_Loader;
+with ESP32S3.Esp_Loader.Auto_Reset;
 
 procedure Esp_Loader_Test is
 
@@ -173,6 +174,36 @@ procedure Esp_Loader_Test is
        then Ada.Command_Line.Argument (N)
        else "");
 
+   ---------------------------------------------------------------------------
+   --  esptool's reset sequences, replayed through the emulated circuit.  The
+   --  simulator on the other end watches the control lines and decides whether
+   --  the target really entered its download loader -- which is the only thing
+   --  that matters about any of this.
+   ---------------------------------------------------------------------------
+   package Circuits renames ESP32S3.Esp_Loader.Auto_Reset;
+
+   Wiring   : Circuits.Circuit;
+   Held_DTR : Boolean := False;
+   Held_RTS : Boolean := False;
+
+   --  Keep polling the circuit for Milliseconds, which is what lets the
+   --  emulated capacitor time out.  The pass-through loop does this for real.
+   procedure Settle (Milliseconds : Natural) is
+   begin
+      for Tick in 1 .. Milliseconds loop
+         Circuits.Update (Wiring, Held_DTR, Held_RTS);
+         delay 0.001;
+      end loop;
+   end Settle;
+
+   --  One host line change, applied the instant it arrives.
+   procedure Lines (DTR, RTS : Boolean) is
+   begin
+      Held_DTR := DTR;
+      Held_RTS := RTS;
+      Circuits.Update (Wiring, Held_DTR, Held_RTS);
+   end Lines;
+
    Scenario : constant String := Argument (1);
 
 begin
@@ -184,7 +215,51 @@ begin
 
    ---------------------------------------------------------------------------
    --  A target that never answers must be given up on, not waited on forever.
-   if Scenario = "silent" then
+   --  esptool's ClassicReset: the lines move one at a time, so the state is
+   --  briefly (1,1) -- the case the emulated capacitor exists to cover.
+   if Scenario = "classic" then
+      Circuits.Configure (Wiring, Wire);
+      Lines (False, False);
+      Lines (False, True);                --  IO0 high, EN low: in reset
+      Settle (100);
+      Lines (True, True);                 --  DTR asserted ...
+      Lines (True, False);                --  ... then RTS dropped
+      Settle (50);
+      Lines (False, False);               --  IO0 high, done
+      Settle (20);
+      Say ("OK classic replayed");
+      Ada.Command_Line.Set_Exit_Status (0);
+      return;
+
+   --  esptool's UnixTightReset: both lines move together, so (1,1) is only a
+   --  priming step and the capacitor is never needed.
+   elsif Scenario = "tight" then
+      Circuits.Configure (Wiring, Wire);
+      Lines (False, False);
+      Lines (True, True);
+      Lines (False, True);                --  IO0 high, EN low: in reset
+      Settle (100);
+      Lines (True, False);                --  IO0 low, EN high: released
+      Settle (50);
+      Lines (False, False);
+      Settle (20);
+      Say ("OK tight replayed");
+      Ada.Command_Line.Set_Exit_Status (0);
+      return;
+
+   --  A terminal emulator opening the port asserts both lines.  The
+   --  cross-coupling is what stops that from touching the target at all.
+   elsif Scenario = "terminal" then
+      Circuits.Configure (Wiring, Wire);
+      Lines (True, True);
+      Settle (200);
+      Lines (False, False);
+      Settle (20);
+      Say ("OK terminal open replayed");
+      Ada.Command_Line.Set_Exit_Status (0);
+      return;
+
+   elsif Scenario = "silent" then
       Loader.Connect (Target, Wire, Status);
       Expect ("connect", Status, Loader.No_Response);
       Ada.Command_Line.Set_Exit_Status (if Failed then 1 else 0);
