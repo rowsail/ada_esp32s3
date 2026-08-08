@@ -32,6 +32,15 @@ package body System.BB.Board_Support is
    use System.Multiprocessors;
 
    Alarm_Interrupt_ID : constant System.BB.Interrupts.Interrupt_ID := 21;
+
+   Alarm_Slot_Taken : Boolean := False;
+   --  Set once the kernel has claimed Alarm_Interrupt_ID for itself.  The
+   --  kernel installs its alarm through the very same Attach_Handler path an
+   --  application uses, so "is this slot reserved?" cannot be answered from
+   --  the id alone -- the FIRST claim is the legitimate one, and every later
+   --  claim is a device driver taking the scheduler's interrupt.  Runtime
+   --  initialisation runs before any library-level elaboration, so the kernel
+   --  is always first.
    --  The alarm is a SYSTIMER UNIT0 comparator (TARGET0 on core 0, TARGET1 on
    --  core 1) whose matrix interrupt is routed to CPU_INT 21 (Device_L2_2,
    --  LEVEL 2) on each core -- see native_setup_systimer_core* in bare_boot.
@@ -563,6 +572,23 @@ package body System.BB.Board_Support is
            > Interrupt_Priority'Last - 2
          then
             raise Program_Error with "interrupt level has no dispatcher";
+         end if;
+
+         --  The level check above cannot catch a slot the KERNEL owns at a
+         --  level that IS dispatched.  CPU_INT 21 is exactly that: bare_boot
+         --  routes both the SYSTIMER alarm and the cross-core poke onto it, so
+         --  a device handler there displaces the scheduler's tick and its
+         --  wakeups.  Ada.Interrupts.Names deliberately does not name it, so
+         --  the idiomatic path is a compile error; this catches the escape
+         --  that writes the raw literal.  System.BB.Interrupts refuses the
+         --  second claim too, but with a bare Program_Error that says nothing
+         --  about which slot or why -- and that is the whole difficulty.
+         if Interrupt = Alarm_Interrupt_ID then
+            if Alarm_Slot_Taken then
+               raise Program_Error
+                 with "CPU_INT 21 is the kernel tick + cross-core poke";
+            end if;
+            Alarm_Slot_Taken := True;
          end if;
 
          --  Enable the CPU interrupt on this core.  Its dedicated vector (the

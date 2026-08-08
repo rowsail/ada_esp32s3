@@ -407,7 +407,7 @@ package body ESP32S3.LCD.Engine is
    end Refill_Hook;
 
    --------------------------------------------------------------------------
-   --  LCD_CAM VSYNC interrupt (LCD_CAM source -> CPU_INT 21 = Device_L2_2).
+   --  LCD_CAM VSYNC interrupt (LCD_CAM source -> CPU_INT 23 = Device_L3_0).
    --
    --  BOUNCE mode re-locks the stream to the frame here EVERY VSYNC: reset the
    --  refill to frame start, re-prime both bounce halves from the shown buffer,

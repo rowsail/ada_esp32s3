@@ -357,9 +357,10 @@ package body ESP32S3.TWAI.Engine is
    --  between the application's reads; Get (a protected entry) blocks until the
    --  ring is non-empty.  Routed to CPU interrupt Device_L2_0 (19) -- the slot
    --  the buffered-UART RX ISR would use, so TWAI-RX and UART-RX are mutually
-   --  exclusive (no board needs both).  This leaves 21 (Device_L2_2) for the
-   --  LCD_CAM VSYNC handler, so the RGB LCD and TWAI can run together on one
-   --  board (a CAN dashboard).  GDMA keeps 20.
+   --  exclusive (no board needs both).  The LCD_CAM VSYNC handler is at level 3
+   --  (CPU_INT 23), so the RGB LCD and TWAI run together on one board (a CAN
+   --  dashboard).  CPU_INT 21 is NOT available to anyone: the kernel routes its
+   --  tick and its cross-core poke there.
    TWAI_CPU_Int  : constant := 19;    --  = Ada.Interrupts.Names.Device_L2_0
    Ring_Capacity : constant := 64;
    type Ring_Index is mod Ring_Capacity;

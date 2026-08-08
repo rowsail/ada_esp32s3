@@ -41,13 +41,21 @@ package Ada.Interrupts.Names is
    --  numbers; the number's fixed Xtensa level fixes its Ada priority (see
    --  Priority_Of_Interrupt in s-bbbosu__esp32s3.adb).  Attach a protected
    --  handler to the CPU interrupt the source is routed to, with the matching
-   --  ceiling priority below.  The kernel reserves level 5 (tick + cross-core
-   --  poke); the names below cover the interrupts free for device handlers.
+   --  ceiling priority below.  The names here cover the interrupts free for
+   --  device handlers; what the kernel keeps for itself is NOT named, so
+   --  claiming it is a compile error rather than a field failure.
 
    --  Level-2 device interrupts (ceiling Device_L2_Priority):
    Device_L2_0 : constant Interrupt_ID := 19;
    Device_L2_1 : constant Interrupt_ID := 20;
-   Device_L2_2 : constant Interrupt_ID := 21;
+
+   --  CPU_INT 21 is NOT named, because the KERNEL owns it.  bare_boot routes
+   --  BOTH the SYSTIMER alarm and the cross-core FROM_CPU poke onto it (the
+   --  only matrix-drivable slot at level <= 3), and Level2_Dispatch reads the
+   --  FROM_CPU register to tell them apart.  A device handler there displaces
+   --  the scheduler's tick and its cross-core wakeups -- the machinery behind
+   --  the hardest faults this port has had.  Naming it invited exactly that:
+   --  it read as the third free level-2 slot.
 
    --  Level-3 device interrupts (ceiling Device_L3_Priority):
    Device_L3_0 : constant Interrupt_ID := 23;
@@ -61,7 +69,11 @@ package Ada.Interrupts.Names is
    --  field crash; a raw-literal escape is caught at elaboration by
    --  Install_Interrupt_Handler.
 
-   --  Kernel-reserved -- do NOT attach application handlers:
+   --  Kernel-reserved -- do NOT attach application handlers.  Both are level-5
+   --  IDs from the ORIGINAL design, kept for reference: the live tick and poke
+   --  are on CPU_INT 21 (see above), because a level-5 tick could preempt a
+   --  register-window spill mid-rotation and corrupt WINDOWSTART.  Both are
+   --  caught at elaboration anyway -- level 5 has no dispatcher.
    Tick_Interrupt : constant Interrupt_ID := 16;  --  CCOMPARE2 (level 5)
    Poke_Interrupt : constant Interrupt_ID := 31;  --  cross-core IPI (level 5)
 
