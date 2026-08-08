@@ -260,12 +260,46 @@ package body Bare_Glue is
       Poke (Ana_Conf0, Peek (Ana_Conf0) or Bbpll_Stop_Force_High);
    end Bbpll_480M_Configure;
 
-   -----------------------------
-   -- Cpu_240M_Raise_Voltage --
-   -----------------------------
+   --------------------
+   -- Cpu_Clock_Init --
+   --------------------
 
-   procedure Cpu_240M_Raise_Voltage is
+   procedure Cpu_Clock_Init is
+
+      --  === the ONE place the target CPU frequency is stated ================
+      --  Everything below is derived from it: the CPUPERIOD_SEL encoding, the
+      --  dbias tier and the LDO-slave mask.  NOTE the GNARL runtime separately
+      --  hard-assumes this value (s-bbpara Clock_Frequency) -- changing it here
+      --  alone is not enough, but at least nothing inside the clock switch can
+      --  now disagree with itself.
+      Target_Mhz : constant := 240;
+
+      --  SYSTEM_CPU_PER_CONF CPUPERIOD_SEL: 0 = 80, 1 = 160, 2 = 240 MHz.
+      Cpuperiod_Sel : constant Unsigned_32 :=
+        (if Target_Mhz = 80 then 0 elsif Target_Mhz = 160 then 1 else 2);
+
+      --  IDF rtc_clk_cpu_freq_to_pll_mhz: dbias = pvt-dig + 3 at 240 MHz,
+      --  pvt-dig + 2 below it.
+      Dbias_Bump : constant := (if Target_Mhz = 240 then 3 else 2);
+
+      --  DEFAULT_LDO_SLAVE (0x7) >> (freq / 80): open more LDO slaves as the
+      --  load rises (all six at 240 MHz), damping the voltage step.
+      Ldo_Slave : constant Unsigned_32 :=
+        Shift_Right (Unsigned_32 (16#7#), Target_Mhz / 80);
+
+      --  IDF rtc_init.c fallback when the part carries no PVT calibration.
+      Dbias_Uncalibrated : constant := 28;
+
+      --  ---- registers ------------------------------------------------------
       Rtc_Date_Reg : constant := 16#6000_81FC#;   --  RTC_CNTL_DATE
+      Cpu_Per_Conf : constant := 16#600C_0010#;   --  SYSTEM_CPU_PER_CONF
+      Sysclk_Conf  : constant := 16#600C_0060#;   --  SYSTEM_SYSCLK_CONF
+
+      Efuse_Blk1_W4 : constant := 16#6000_7054#;  --  EFUSE_RD_MAC_SPI_SYS_4
+      Efuse_Blk1_W5 : constant := 16#6000_7058#;  --  EFUSE_RD_MAC_SPI_SYS_5
+      Efuse_Blk1_W3 : constant := 16#6000_7050#;  --  EFUSE_RD_MAC_SPI_SYS_3
+      Efuse_Part1_4 : constant := 16#6000_706C#;  --  EFUSE_RD_SYS_PART1_DATA4
+
       Slave_Pd_Mask  : constant := 16#3F#;
       Slave_Pd_Shift : constant := 13;
 
@@ -276,20 +310,19 @@ package body Bare_Glue is
       Dreg_Msb : constant Unsigned_8 := 4;
       Dreg_Lsb : constant Unsigned_8 := 0;
 
-      --  IDF rtc_init.c: g_rtc_dbias_pvt_240m = g_dig_dbias_pvt_240m = 28.
-      --  (The IDF may refine these from the PVT calibration eFuses; 28 is the
-      --  uncalibrated default and is what this bare boot uses.)
-      Dbias_240M : constant Unsigned_8 := 28;
-
-      --  DEFAULT_LDO_SLAVE (0x7) >> (240 / 80) -- open the LDO slaves for the
-      --  240 MHz load, which damps the voltage step as the frequency rises.
-      Ldo_Slave_240M : constant Unsigned_32 := 16#7# / 2 ** 3;
+      --  Midpoints of the LDO voltage/slope model (IDF soc/rtc.h).
+      K_Rtc_Mid : constant := 198;
+      K_Dig_Mid : constant := 211;
+      V_Rtc_Mid : constant := 10_181;
+      V_Dig_Mid : constant := 10_841;
 
       procedure Regi2c_Write_Mask
         (Block, Host, Reg, Msb, Lsb, Data : Unsigned_8)
       with Import, Convention => C, External_Name => "esp_rom_regi2c_write_mask";
       procedure Ets_Delay_Us (Us : Unsigned_32)
       with Import, Convention => C, External_Name => "ets_delay_us";
+      procedure Ets_Update_Cpu_Frequency (Mhz : Unsigned_32)
+      with Import, Convention => C, External_Name => "ets_update_cpu_frequency";
 
       procedure Poke (Addr, Val : Unsigned_32) is
          R : Unsigned_32
@@ -305,18 +338,119 @@ package body Bare_Glue is
          return R;
       end Peek;
 
+      function Field (Addr : Unsigned_32; Shift, Width : Natural)
+        return Unsigned_32
+      is (Shift_Right (Peek (Addr), Shift) and (2 ** Width - 1));
+
+      --  The eFuse voltage fields are sign-magnitude: the top bit of the field
+      --  is the sign, the rest the magnitude.
+      function Signed_Mag (Raw : Unsigned_32; Width : Natural) return Integer is
+         Sign_Bit : constant Unsigned_32 := 2 ** (Width - 1);
+      begin
+         if (Raw and Sign_Bit) /= 0 then
+            return -Integer (Raw and (Sign_Bit - 1));
+         else
+            return Integer (Raw);
+         end if;
+      end Signed_Mag;
+
+      --  ---- the PVT calibration fields (BLK1) ------------------------------
+      function K_Rtc_Ldo     return Integer
+      is (Signed_Mag (Field (Efuse_Blk1_W4, 13, 7), 7));
+      function K_Dig_Ldo     return Integer
+      is (Signed_Mag (Field (Efuse_Blk1_W4, 20, 7), 7));
+      function V_Rtc_Dbias20 return Integer
+      is (Signed_Mag (Shift_Left (Field (Efuse_Blk1_W5, 0, 3), 5)
+                        or Field (Efuse_Blk1_W4, 27, 5), 8));
+      function V_Dig_Dbias20 return Integer
+      is (Signed_Mag (Field (Efuse_Blk1_W5, 3, 8), 8));
+      function Dig_Dbias_Hvt return Integer
+      is (Integer (Field (Efuse_Blk1_W5, 11, 5)));
+
+      --  PVT is burned from eFuse BLK version 1.2 onward (IDF rtc_init.c).
+      function Pvt_Calibrated return Boolean is
+         Major : constant Unsigned_32 := Field (Efuse_Part1_4, 0, 2);
+         Minor : constant Unsigned_32 := Field (Efuse_Blk1_W3, 24, 3);
+      begin
+         return (Major <= 1 and then Minor = 1)
+                or else Major > 1
+                or else (Major = 1 and then Minor >= 2);
+      end Pvt_Calibrated;
+
+      --  Highest dig_dbias whose modelled voltage stays under 1.3 V -- the cap
+      --  the IDF applies so the +3 bump can never push past the 1.3 V rail.
+      function Dig_1V3_Dbias return Integer is
+         V20 : constant Integer := V_Dig_Mid + V_Dig_Dbias20 * 10_000 / 500;
+         K   : constant Integer := K_Dig_Mid + K_Dig_Ldo;
+      begin
+         for Dbias in 15 .. 30 loop
+            if V20 + K * (Dbias - 20) >= 13_000 then
+               return Dbias;
+            end if;
+         end loop;
+         return 31;   --  IDF leaves its loop counter at 31 when none matches
+      end Dig_1V3_Dbias;
+
+      --  The rtc_dbias whose modelled voltage first reaches the digital rail
+      --  (less a 25 mV allowance), for a given dig_dbias.
+      function Rtc_Dbias_For (Dig_Dbias : Integer) return Integer is
+         V_Rtc20 : constant Integer := V_Rtc_Mid + V_Rtc_Dbias20 * 10_000 / 500;
+         V_Dig20 : constant Integer := V_Dig_Mid + V_Dig_Dbias20 * 10_000 / 500;
+         K_Rtc   : constant Integer := K_Rtc_Mid + K_Rtc_Ldo;
+         K_Dig   : constant Integer := K_Dig_Mid + K_Dig_Ldo;
+         V_Dig   : constant Integer := V_Dig20 + K_Dig * (Dig_Dbias - 20);
+      begin
+         for Dbias in 15 .. 30 loop
+            if V_Rtc20 + K_Rtc * (Dbias - 20) >= V_Dig - 250 then
+               return Dbias;
+            end if;
+         end loop;
+         return 31;   --  IDF leaves its loop counter at 31 when none matches
+      end Rtc_Dbias_For;
+
+      Dbias_Dbg : constant String :=
+        "[clk] dbias rtc=%u dig=%u" & ASCII.LF & ASCII.NUL;
+      Dig_Dbias : Unsigned_8 := Dbias_Uncalibrated;
+      Rtc_Dbias : Unsigned_8 := Dbias_Uncalibrated;
+      Hvt       : Integer;
+
    begin
+      --  1. PLL first: it must be locked before anything is clocked from it.
+      Bbpll_480M_Configure;
+
+      --  2. Core voltage.  Prefer the part's own PVT calibration; a hardcoded
+      --     28 (the IDF's uncalibrated fallback) over-volts a calibrated chip.
+      if Pvt_Calibrated then
+         Hvt := Dig_Dbias_Hvt;
+         if Hvt /= 0 then
+            Dig_Dbias := Unsigned_8 (Integer'Min (Dig_1V3_Dbias, Hvt + Dbias_Bump));
+            Rtc_Dbias := Unsigned_8 (Rtc_Dbias_For (Integer (Dig_Dbias)));
+         end if;
+      end if;
+
       Regi2c_Write_Mask
-        (Dig_Block, Dig_Host, Reg_Rtc_Dreg, Dreg_Msb, Dreg_Lsb, Dbias_240M);
+        (Dig_Block, Dig_Host, Reg_Rtc_Dreg, Dreg_Msb, Dreg_Lsb, Rtc_Dbias);
       Regi2c_Write_Mask
-        (Dig_Block, Dig_Host, Reg_Dig_Dreg, Dreg_Msb, Dreg_Lsb, Dbias_240M);
+        (Dig_Block, Dig_Host, Reg_Dig_Dreg, Dreg_Msb, Dreg_Lsb, Dig_Dbias);
+      Esp_Rom_Printf2 (Dbias_Dbg'Address,
+                       Unsigned_32 (Rtc_Dbias), Unsigned_32 (Dig_Dbias));
       Ets_Delay_Us (40);   --  let the regulators settle before the step up
 
       Poke (Rtc_Date_Reg,
             (Peek (Rtc_Date_Reg)
                and not Unsigned_32 (Slave_Pd_Mask * 2 ** Slave_Pd_Shift))
-            or (Ldo_Slave_240M * 2 ** Slave_Pd_Shift));
-   end Cpu_240M_Raise_Voltage;
+            or (Ldo_Slave * 2 ** Slave_Pd_Shift));
+
+      --  3. Frequency last: CPUPERIOD_SEL + PLL_FREQ_SEL=480, then point
+      --     SYSCLK_CONF at the PLL (SOC_CLK_SEL=1, PRE_DIV_CNT=0).
+      Poke (Cpu_Per_Conf,
+            (Peek (Cpu_Per_Conf) and 16#FFFF_FFF8#)
+            or Cpuperiod_Sel or 4);                --  bit2 = PLL_FREQ_SEL 480
+      Poke (Sysclk_Conf,
+            (Peek (Sysclk_Conf) and 16#FFFF_F000#) or 16#400#);
+
+      Ets_Update_Cpu_Frequency (Target_Mhz);
+   end Cpu_Clock_Init;
 
    --------------------
    -- Core1_Bare_Main --

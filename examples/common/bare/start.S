@@ -106,48 +106,26 @@ _start:
 	movi	a11, 0x000003fc		/* CACHE_DROM_MMU_MAX_END(0x400) - 4 */
 	call4	Cache_Set_IDROM_MMU_Size
 	call4	Cache_Invalidate_ICache_All
-	/* Switch the CPU to 240 MHz.  Our 2nd-stage bootloader does NO clock setup,
-	   so it leaves the CPU on the ROM default: SYSTEM_SYSCLK_CONF SOC_CLK_SEL=0
-	   (XTAL) with PRE_DIV_CNT=1, i.e. 40/2 = 20 MHz.  The GNARL runtime hard-
-	   assumes 240 MHz (s-bbpara Clock_Frequency) for its timer/alarm maths, so at
-	   20 MHz CCOUNT-driven alarms fire ~12x late (short Ada delays overshoot
-	   wildly; ACATS/profile-test timing checks fail).  So we (a) CONFIGURE and
-	   calibrate the 480 MHz BBPLL, (b) set CPUPERIOD_SEL=2 + PLL_FREQ_SEL=480 in
-	   CPU_PER_CONF, then (c) point SYSCLK_CONF at the PLL (SOC_CLK_SEL=1,
-	   PRE_DIV_CNT=0) -> 480/2 = 240 MHz.  Flash MSPI keeps its own clock
-	   (unaffected by the CPU source).  Done here from IRAM, before the IROM jump,
-	   so any clock transient does not disturb execution.
+	/* Bring the CPU to its target clock.  Our 2nd-stage bootloader does NO clock
+	   setup, so it leaves the CPU on the ROM default: SYSTEM_SYSCLK_CONF
+	   SOC_CLK_SEL=0 (XTAL) with PRE_DIV_CNT=1, i.e. 40/2 = 20 MHz.  The GNARL
+	   runtime hard-assumes 240 MHz (s-bbpara Clock_Frequency) for its timer/alarm
+	   maths, so at 20 MHz CCOUNT-driven alarms fire ~12x late (short Ada delays
+	   overshoot wildly; ACATS/profile-test timing checks fail).
 
-	   (a) used to be skipped, on the assumption that the ROM had already brought
-	   the BBPLL up for the 80 MHz flash MSPI.  That holds only on boards whose
-	   ROM takes the PLL flash path; where it does not, the PLL is powered but
-	   never configured, and switching the CPU onto an uncalibrated VCO made the
-	   first flash-XIP fetch decode as garbage -- a double exception before any
-	   application code ran.  Configuring it explicitly is correct either way. */
-	call4	bbpll_480m_configure
-	/* Core voltage BEFORE core frequency: 240 MHz needs a higher LDO dbias than
-	   the ROM default.  Skipping this ran the core under-volted at 240 MHz and
-	   it executed garbage from the first flash fetch (160 MHz was fine, which is
-	   what isolated it).  See Bare_Glue.Cpu_240M_Raise_Voltage. */
-	call4	cpu_240m_raise_voltage
-	movi	a2, 0x600c0010		/* SYSTEM_CPU_PER_CONF_REG */
-	l32i	a3, a2, 0
-	movi	a4, 0xfffffff8		/* clear CPUPERIOD_SEL[1:0] + PLL_FREQ_SEL[2] */
-	and	a3, a3, a4
-	movi	a4, 0x6			/* PLL_FREQ_SEL=1 (480 MHz) | CPUPERIOD_SEL=2 */
-	or	a3, a3, a4
-	s32i	a3, a2, 0
-	memw
-	movi	a2, 0x600c0060		/* SYSTEM_SYSCLK_CONF_REG */
-	l32i	a3, a2, 0
-	movi	a4, 0xfffff000		/* clear PRE_DIV_CNT[9:0] + SOC_CLK_SEL[11:10] */
-	and	a3, a3, a4
-	movi	a4, 0x400		/* SOC_CLK_SEL=1 (PLL), PRE_DIV_CNT=0 */
-	or	a3, a3, a4
-	s32i	a3, a2, 0
-	memw
-	movi	a10, 240		/* tell the ROM the new freq (ets_delay_us) */
-	call4	ets_update_cpu_frequency
+	   PLL bring-up, core voltage and the frequency switch all live in
+	   Bare_Glue.Cpu_Clock_Init (IRAM) rather than open-coded here, so one place
+	   owns the target frequency and the dbias tier / LDO-slave mask that have to
+	   track it.  Two ways this used to be wrong, both of which produced garbage
+	   on the first flash-XIP fetch and a double exception before any application
+	   code ran:
+	     - the BBPLL was never configured, on the assumption the ROM had brought
+	       it up for the 80 MHz flash MSPI (only true on some boards);
+	     - the switch to 240 MHz happened at whatever core dbias the ROM left,
+	       which under-volts a part that needs the 240 MHz tier.
+	   Called from IRAM before the IROM jump, so any clock transient cannot
+	   disturb execution. */
+	call4	cpu_clock_init
 	/* Enter start_c by JUMP, not call4: _start is raw asm with no ENTRY, so a
 	   `call4 start_c` would leave _start as a phantom windowed frame ABOVE
 	   start_c in the spill chain -- and when adainit's deep, window-wrapping

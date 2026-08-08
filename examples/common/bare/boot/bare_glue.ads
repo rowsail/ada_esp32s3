@@ -56,19 +56,26 @@ package Bare_Glue is
    with Export, Convention => C, External_Name => "bbpll_480m_configure",
         Linker_Section => ".iram1.bbpll";
 
-   --  Raise the RTC + digital LDO regulator voltage to the level the core needs
-   --  at 240 MHz, and open the LDO slaves for that load.  Called from start.S
-   --  between the PLL bring-up and the CPU_PER_CONF / SYSCLK_CONF switch --
-   --  the voltage must be up BEFORE the frequency is.
+   --  Bring the CPU to its target clock: PLL bring-up, then core voltage, then
+   --  frequency.  Called from start.S in place of the open-coded register
+   --  writes, so that ONE place owns the target frequency and everything that
+   --  must track it.  Runs from IRAM, before the first flash-XIP fetch.
    --
-   --  240 MHz is a special case in the IDF (rtc_clk_cpu_freq_to_pll_mhz):
-   --  "cpu_frequency < 240M: dbias = pvt-dig + 2; cpu_frequency = 240M:
-   --  dbias = pvt-dig + 3".  start.S used to switch to 240 MHz at the ROM's
-   --  default dbias; a part that needs the higher voltage then executes
-   --  garbage from the first flash fetch onward.  Verified on an ESP32-S3FN8
-   --  (rev v0.2): 160 MHz ran fine at the default dbias, 240 MHz did not.
-   procedure Cpu_240M_Raise_Voltage
-   with Export, Convention => C, External_Name => "cpu_240m_raise_voltage",
+   --  The ordering is not cosmetic.  Core voltage must be raised BEFORE the
+   --  frequency: 240 MHz is a special case in the IDF
+   --  (rtc_clk_cpu_freq_to_pll_mhz) -- "cpu_frequency < 240M: dbias =
+   --  pvt-dig + 2; cpu_frequency = 240M: dbias = pvt-dig + 3".  start.S used to
+   --  switch at whatever dbias the ROM left, and a part that needs the higher
+   --  voltage then executes garbage from the first flash fetch onward.
+   --  Verified on an ESP32-S3FN8 (rev v0.2): 160 MHz ran fine at the ROM
+   --  default dbias, 240 MHz did not.
+   --
+   --  The dbias VALUES come from the chip's own PVT calibration eFuses where
+   --  they are burned (as the IDF's rtc_set_stored_dbias does), falling back to
+   --  the IDF's uncalibrated constant 28 where they are not -- a hardcoded 28
+   --  over-volts a calibrated part.
+   procedure Cpu_Clock_Init
+   with Export, Convention => C, External_Name => "cpu_clock_init",
         Linker_Section => ".iram1.bbpll";
 
    --  GNARL Start_All_CPUs calls this to release core 1 past its spin.
