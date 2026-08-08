@@ -238,6 +238,28 @@ own `dosfstools` (`mkfs.fat` writes volumes it must read, `fsck.fat` checks
 volumes it writes), and a FAT16 writer written from the specification rather
 than from the Ada source.
 
+## Programming another ESP32
+
+[`libs/esp32s3_hal/src/esp_loader`](libs/esp32s3_hal/src/esp_loader) speaks the
+ESP32 serial ROM-bootloader protocol as the **host**, so a board can flash
+another ESP32 over a UART — the device-side twin of what `esptool` (and this
+SDK's own `examples/common/bare/espflash`) does from a PC. A production jig, a
+field programmer, or a board that reflashes its own daughterboard all need this,
+and none of them can run Python.
+
+`ESP32S3.Esp_Loader` connects (reset into the download loader, then SYNC),
+raises the baud rate, and **streams** images: `Begin_Image` declares the length,
+`Write` takes whatever chunks the source produces, and full 1 KB blocks go out
+as they fill. Flashing a megabyte therefore costs a kilobyte of RAM, and a
+truncated source is an error rather than a corrupt target.
+`ESP32S3.Esp_Loader.Serial_Link` is the ready-made transport over a UART and two
+GPIOs. Only the ROM loader is spoken — no downloadable stub, so no compression;
+that costs transfer time and nothing else.
+
+It is **host-verified only**: the development repository drives it against a
+simulated ROM that validates every frame it is sent. The real ROM's timing and
+quirks still want a target board on the end of a real UART.
+
 ## Testing status
 
 **Important:** the table below reflects what was exercised *during development*;
@@ -260,6 +282,7 @@ Drivers and components that are **not hardware-verified** and need testing:
 | Temperature sensor | compiles | run on hardware |
 | ext4 filesystem | host-verified vs `e2fsck` only | validate on-device over SD |
 | FAT16 filesystem | host-verified vs `dosfstools` only | validate on-device over SPI NOR |
+| ESP serial bootloader client | host-verified vs a simulated ROM only | validate against a real target over UART |
 
 ## ACATS conformance
 
