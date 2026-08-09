@@ -58,7 +58,7 @@ CHIPS = {
                      status=4, begin_len=16, spi_cmds=True, erase_bug=False),
     "esp32s2":  dict(magic=0x000007C6, chip_id=None, security="short",
                      status=2, begin_len=20, spi_cmds=True, erase_bug=False),
-    "esp32s3":  dict(magic=0x00000009, chip_id=None, security="short",
+    "esp32s3":  dict(magic=0x00000009, chip_id=9, security="full",
                      status=2, begin_len=20, spi_cmds=True, erase_bug=False),
     "esp32c3":  dict(magic=0x6921506F, chip_id=5, security="full",
                      status=2, begin_len=20, spi_cmds=True, erase_bug=False),
