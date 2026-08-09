@@ -100,6 +100,98 @@ package body ESP32S3.Block_Dev.W25Q_Source is
       end if;
    end Do_Write;
 
+   --  Write a run of consecutive sectors, ONE ERASE BLOCK AT A TIME.
+   --
+   --  Do_Write above is correct but pays per SECTOR: a change that is not
+   --  clear-only read-modify-writes the whole 4 KB block, so writing the eight
+   --  sectors of one block erased that block eight times.  Eight times the
+   --  wear, and at ~45 ms an erase, eight times the wait -- about 8 kB/s.  A
+   --  bulk write from a USB host is precisely that pattern, and it was slow
+   --  enough that the transfer outran the host and the device dropped off the
+   --  bus mid-write.
+   --
+   --  Here each block is touched once.  A block the run covers only in part
+   --  still has neighbours to preserve, so it takes ONE read-modify-write for
+   --  the block rather than one per sector.  Write-through is unchanged: each
+   --  block is on the medium before the next one starts.
+   procedure Do_Write_Run
+     (Ctx : System.Address; First : Sector_Index; Data : Sector_Run)
+   is
+      S         : constant Source_Access := To_Source (Ctx);
+      Per_Erase : constant Sector_Index := Sector_Index (Sectors_Per_Erase);
+      Count     : constant Sector_Index := Sector_Index (Data'Length) / Sector_Bytes;
+   begin
+      if Count = 0 then
+         return;
+      end if;
+      if First + Count > S.Count then
+         raise Ada.IO_Exceptions.Device_Error with "W25Q write run out of range";
+      end if;
+
+      declare
+         Last : constant Sector_Index := First + Count - 1;
+      begin
+         for Blk in First / Per_Erase .. Last / Per_Erase loop
+            declare
+               Blk_First : constant Sector_Index := Blk * Per_Erase;
+               Base      : constant W25Q.Address :=
+                 W25Q.Address (Blk_First) * Sector_Bytes;
+
+               --  The part of this block the run actually covers.
+               From : constant Sector_Index := Sector_Index'Max (First, Blk_First);
+               To   : constant Sector_Index :=
+                 Sector_Index'Min (Last, Blk_First + Per_Erase - 1);
+
+               Len : constant Natural := Natural (To - From + 1) * Sector_Bytes;
+
+               --  ... where that sits in the caller's data, and in the block.
+               Src_First : constant Natural :=
+                 Data'First + Natural (From - First) * Sector_Bytes;
+               Dst_First : constant Natural :=
+                 Natural (From - Blk_First) * Sector_Bytes;
+
+               Identical : Boolean := True;
+               Clear_Ok  : Boolean := True;
+            begin
+               --  Compare in place against what is already there.  No large
+               --  temporaries: one 4 KB local here would be half a task's
+               --  stack and two would be all of it.
+               W25Q.Read (S.Flash, Base, S.Buf);
+               for I in 0 .. Len - 1 loop
+                  declare
+                     Old_Byte : constant Unsigned_8 := S.Buf (Dst_First + I);
+                     New_Byte : constant Unsigned_8 := Data (Src_First + I);
+                  begin
+                     if Old_Byte /= New_Byte then
+                        Identical := False;
+                        if (New_Byte and Old_Byte) /= New_Byte then
+                           Clear_Ok := False;
+                           exit;
+                        end if;
+                     end if;
+                  end;
+               end loop;
+
+               if not Identical then
+                  for I in 0 .. Len - 1 loop
+                     S.Buf (Dst_First + I) := Data (Src_First + I);
+                  end loop;
+
+                  if Clear_Ok then
+                     --  Only 1->0 changes: program over the top, no erase.
+                     Program_Pages
+                       (S.Flash, Base + W25Q.Address (Dst_First),
+                        S.Buf (Dst_First .. Dst_First + Len - 1));
+                  else
+                     W25Q.Erase_Sector (S.Flash, Base);
+                     Program_Pages (S.Flash, Base, S.Buf);
+                  end if;
+               end if;
+            end;
+         end loop;
+      end;
+   end Do_Write_Run;
+
    function Do_Count (Ctx : System.Address) return Sector_Index is
       S : constant Source_Access := To_Source (Ctx);
    begin
@@ -158,8 +250,8 @@ package body ESP32S3.Block_Dev.W25Q_Source is
          Write => Do_Write'Access,
          Count => Do_Count'Access,
          Erase => Do_Erase'Access,
-         Read_Run => null,
-         Write_Run => null);
+         Read_Run  => null,
+         Write_Run => Do_Write_Run'Access);
    end Make;
 
 end ESP32S3.Block_Dev.W25Q_Source;
