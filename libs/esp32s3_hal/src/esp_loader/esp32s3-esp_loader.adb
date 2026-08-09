@@ -1,4 +1,8 @@
+with Ada.Real_Time;
+
 package body ESP32S3.Esp_Loader is
+
+   use type Ada.Real_Time.Time;
 
    --  ---- SLIP ---------------------------------------------------------
    Frame_End      : constant Interfaces.Unsigned_8 := 16#C0#;
@@ -151,11 +155,30 @@ package body ESP32S3.Esp_Loader is
       Got       : Boolean;
       Started   : Boolean := False;   --  a delimiter has been seen
       Overflown : Boolean := False;   --  this frame is too big for Into
+
+      --  An OVERALL deadline, not just a per-byte one.
+      --
+      --  Timeout_Ms bounds the wait for the next byte, which bounds nothing at
+      --  all when the target never stops talking -- and the target this matters
+      --  most for is a BLANK one, which reboots forever printing "invalid
+      --  header: 0xffffffff".  Its chatter contains no frame, so Found never
+      --  becomes True, and no byte ever fails to arrive, so the loop below ran
+      --  until the board was power-cycled.  A programmer meets blank targets
+      --  as a matter of routine, so this is the normal case, not a corner.
+      --
+      --  Timeout_Ms is what the caller means by "wait this long for a reply",
+      --  so spend it in total rather than per byte.
+      Deadline : constant Ada.Real_Time.Time :=
+        Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (Timeout_Ms);
    begin
       Length := 0;
       Found := False;
 
       loop
+         if Ada.Real_Time.Clock >= Deadline then
+            return;                    --  chatter, or a frame that never ended
+         end if;
+
          Get_Byte (S, Timeout_Ms, Value, Got);
          if not Got then
             return;
