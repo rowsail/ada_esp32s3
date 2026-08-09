@@ -40,7 +40,8 @@ package ESP32S3.Fonts is
       Bpp            : Natural;             --  1 or 4
       Adv, W, H      : System.Address;
       XOff, YOff     : System.Address;
-      Off            : System.Address;      --  U16 byte offset into Bits per glyph
+      --  U16 byte offset into Bits per glyph
+      Off            : System.Address;
       Bits           : System.Address;
    end record;
 
