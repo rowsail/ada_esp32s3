@@ -188,6 +188,9 @@ package ESP32S3.Esp_Loader is
    function Last_Frame_Op (S : Session) return Interfaces.Unsigned_8;
    function Last_Frame_Len (S : Session) return Natural;
 
+   --  The last request as it went to the transport: what we believe we sent.
+   function Last_Sent (S : Session) return Byte_Array;
+
    --  Reset the target WITHOUT connecting: Into_Download False simply runs
    --  whatever is flashed.  Also what Finish uses to start the new firmware.
    procedure Reset_Target (Over : Link; Into_Download : Boolean := False);
@@ -318,6 +321,10 @@ private
       Probe_Last_Dir : Interfaces.Unsigned_8 := 0;
       Probe_Last_Op  : Interfaces.Unsigned_8 := 0;
       Probe_Last_Len : Natural := 0;
+
+      --  The bytes of the last request, as handed to the transport.
+      Probe_Sent     : Byte_Array (1 .. 24) := (others => 0);
+      Probe_Sent_Len : Natural := 0;
 
       --  Outgoing staging (flushed when full and at each frame's end).
       Out_Buf : Byte_Array (1 .. Out_Staging) := (others => 0);

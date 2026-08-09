@@ -135,6 +135,33 @@ package body ESP32S3.Esp_Loader is
       Found := True;
    end Get_Byte;
 
+   --  Read and discard until the target has been quiet for Quiet_Ms.
+   --
+   --  The ROM answers ONE sync many times over, and those replies are still
+   --  arriving after the fixed drain in Sync has given up -- measured: right
+   --  after Connect returns, the buffer sits MID-FRAME in the tail of a sync
+   --  reply with more behind it.  Every command that follows is then read
+   --  against a stream that is out of step, and reports no response although
+   --  the target is answering perfectly.
+   --
+   --  Counting frames cannot fix this because the count is not known; only
+   --  silence says the burst is over.  Bounded so a target that never stops
+   --  talking -- a blank one, boot-looping -- cannot hold this for ever.
+   procedure Drain_Until_Quiet
+     (S : in out Session; Quiet_Ms : Natural := 150; Limit_Ms : Natural := 2_000)
+   is
+      Value    : Interfaces.Unsigned_8;
+      Got      : Boolean;
+      Deadline : constant Ada.Real_Time.Time :=
+        Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (Limit_Ms);
+   begin
+      loop
+         Get_Byte (S, Quiet_Ms, Value, Got);
+         exit when not Got;                       --  quiet for Quiet_Ms
+         exit when Ada.Real_Time.Clock >= Deadline;
+      end loop;
+   end Drain_Until_Quiet;
+
    procedure Drop_Input (S : in out Session) is
    begin
       S.In_Len := 0;
@@ -301,11 +328,39 @@ package body ESP32S3.Esp_Loader is
         Interfaces.Unsigned_8 (Interfaces.Shift_Right (Length, 8) and 16#FF#);
       Put_32 (Prefix, 5, Checksum);
 
+      --  Nothing that arrived BEFORE this request can be an answer to it.
+      --
+      --  A request/response protocol on a shared wire must start from a clean
+      --  slate, and this one did not: measured on hardware, a command would
+      --  draw the reply to an EARLIER one -- SPI_ATTACH answered by a SYNC
+      --  reply, and later by a GET_SECURITY_INFO reply the run had never even
+      --  sent.  The ROM answers one SYNC many times over, so the surplus sits
+      --  in the buffer and every later exchange reads one behind, for ever.
+      --
+      --  Discarding costs nothing when there is nothing there, which is the
+      --  case for all but the first command after a sync -- so the thousands
+      --  of FLASH_DATA blocks in an image pay only an empty check each.
+      Drop_Input (S);
+      declare
+         Stale : Interfaces.Unsigned_8;
+         Got_It : Boolean;
+      begin
+         loop
+            Get_Byte (S, 0, Stale, Got_It);
+            exit when not Got_It;
+         end loop;
+      end;
+      Drop_Input (S);
+
       Emit (S, Frame_End);
       Emit_Escaped (S, Prefix);
       Emit_Escaped (S, Header);
       Emit_Escaped (S, Payload);
       Emit (S, Frame_End);
+
+      S.Probe_Sent_Len := Natural'Min (S.Out_Len, S.Probe_Sent'Length);
+      S.Probe_Sent (1 .. S.Probe_Sent_Len) := S.Out_Buf (1 .. S.Probe_Sent_Len);
+
       Flush (S);
 
       --  The target may still be emitting boot text, and a stale reply to an
@@ -530,7 +585,15 @@ package body ESP32S3.Esp_Loader is
          if Status = Ok then
             S.Connected := True;
 
-            Detect (S);
+            --  Let the sync burst finish before anything else is sent: the
+            --  ROM answers one SYNC many times over, and a command issued
+            --  while those are still coming is read against a stream that is
+            --  out of step.
+            Drain_Until_Quiet (S);
+
+            if Identify then
+               Detect (S);
+            end if;
             return;
          end if;
       end loop;
@@ -561,6 +624,9 @@ package body ESP32S3.Esp_Loader is
    is (S.Probe_Last_Op);
    function Last_Frame_Len (S : Session) return Natural
    is (S.Probe_Last_Len);
+
+   function Last_Sent (S : Session) return Byte_Array
+   is (S.Probe_Sent (1 .. S.Probe_Sent_Len));
 
    function Chip_Name (Kind : Chip_Kind) return String
    is (case Kind is
