@@ -542,3 +542,55 @@ written filesystem is then:
 \noindent The on-target examples \texttt{esp32s3\_w25q}, \texttt{esp32s3\_wl} and
 \texttt{esp32s3\_ext4\_mkfs} run this stack end to end on the hardware.
 
+\subsection{Writing in runs, not sectors}\index{Write\_Run}\index{erase amplification}
+
+One more W25Q\_Source fact earns its space, because it is an 8$\times$
+difference. The block layer's \texttt{Write\_Sector} is erase-aware but
+per-sector: any change that is not purely clearing bits read-modify-writes the
+whole 4\,KB erase block. Hand it the eight 512-byte sectors of one block, one
+at a time, and it erases that block eight times --- eight times the wear, and at
+$\sim$45\,ms an erase, eight times the wait. \texttt{Write\_Run} walks a run
+of consecutive sectors one \emph{erase block} at a time instead: a block the
+run covers completely is erased once and programmed; a block covered in part
+takes one read-modify-write, not one per sector. Callers reach it through
+\texttt{Block\_Dev.Write\_Sectors}, which uses the run primitive when the
+device offers one and falls back to the per-sector loop when it does not.
+Measured on a 32\,MB part behind a USB mass-storage function: a 64\,KiB
+write fell from a per-sector 8\,kB/s crawl to wire speed.
+
+\section{FAT16: the filesystem a PC can just mount}
+\index{FAT16}\index{Fat16.Mkfs}\index{long filenames}
+
+ext4 is the right home for the board's own data. It is exactly wrong for one
+job: a volume a Windows PC must mount without drivers or questions.
+\texttt{ESP32S3.Fat16} exists for that job --- a board exposes its flash over
+USB mass storage, a PC drops files on it, the board reads them back. Interop
+is the whole point, so the design follows what PCs expect rather than what
+would be elegant.
+
+The reader mounts an MBR-partitioned disk (the first FAT16 partition) or a
+bare-boot-sector ``superfloppy'', walks long filenames as well as 8.3 names,
+matches names case-insensitively because FAT's own rule does, and streams:
+\texttt{Open} / \texttt{Read} / \texttt{Seek} over a caller-supplied buffer,
+no heap. A \texttt{Read} that comes back short means end of file, never a
+transient.
+
+\texttt{Fat16.Mkfs.Format} lays down an empty volume so a blank chip appears
+to the first PC as a usable drive rather than as ``you need to format this
+disk''. Two facts drive its geometry. Windows expects a USB drive to carry a
+partition table with the filesystem inside partition~1, so that is the
+default. And the backing medium is NOR flash with a 4\,KB erase unit, so
+clusters are 4\,KB and the data area starts on an erase-block boundary --- a
+cluster never straddles two erase blocks, and a cluster write costs the block
+layer one erase. Formatting is destructive and unconditional; deciding
+\emph{whether} is the caller's job, and the honest test for ``blank'' is the
+medium's own bytes (erased NOR reads all ones), not a missing signature ---
+a volume the reader cannot parse looks exactly like no volume at all.
+
+The host harness (\texttt{test/fat16\_host}) checks the pair three ways
+against reference tooling: volumes written by \texttt{dosfstools}, volumes
+written by Python, and volumes written by \texttt{Mkfs} itself, cross-read
+and \texttt{fsck}-checked. One application built on this SDK runs the full
+loop: it formats its own flash, serves it to a PC as a USB drive, and later
+reads back the firmware images the PC left there.
+

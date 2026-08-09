@@ -59,9 +59,18 @@ ceiling becomes the \texttt{INTLEVEL} it raises while it holds a lock
 gives symbolic IDs for the slots that are free for application use:
 \texttt{Device\_L2\_0/1} (CPU interrupts 19/20) and \texttt{Device\_L3\_0/1}
 (23/27), with ceilings \texttt{Device\_L2\_Priority} /
-\texttt{Device\_L3\_Priority}. CPU interrupt 21 (\texttt{Device\_L2\_2}) is
-kernel-reserved: the systimer tick and the cross-core poke share it, and the
-kernel attaches its alarm handler there at start-up. Do not attach to it.
+\texttt{Device\_L3\_Priority}. Two riders on that list. First,
+\texttt{Device\_L2\_0} already has an owner: \texttt{ESP32S3.Shared\_L2}, one
+protected object that dispatches every registered service on each interrupt.
+The HAL's UART and TWAI receivers register with it, so a driver that wants
+level~2 should call \texttt{Shared\_L2.Register} rather than attach --- Ada
+allows one handler per interrupt, and a second \texttt{Attach\_Handler} is a
+\texttt{Program\_Error} at elaboration, which on a board means a boot
+loop.\index{Shared\_L2} Second, CPU interrupt 21 is the kernel's: the systimer
+alarm and the cross-core poke share it. It once had a name here, read as a free
+slot, and cost days. The name is gone --- claiming it is now a compile error
+--- and the runtime refuses a raw-literal escape at elaboration with a message
+that says whose interrupt it is.
 
 \section{What the silicon does}\index{EPC}\index{EPS}\index{EXCSAVE}\index{VECBASE}\index{rfi}
 
@@ -131,10 +140,16 @@ Three consequences matter in practice:
         (software) interrupts the matrix cannot drive at all. The usable
         level-triggered OS-band slots are few --- 19/20/21 at level 2, 23/27
         at level 3 --- which is why the allocation in
-        \texttt{Ada.Interrupts.Names} is as tight as it is. (Two findings
-        from the field: CPU interrupt 22 is edge-triggered and will simply
-        never fire for a level source, and 29 is an internal software
-        interrupt the matrix cannot reach. Both look free on paper.)
+        \texttt{Ada.Interrupts.Names} is as tight as it is. Two traps look
+        free on paper. CPU interrupt 29 is an internal software interrupt the
+        matrix cannot drive. And CPU interrupt 22 is \emph{edge}-triggered ---
+        the one edge slot at level 3 --- which is worse than useless for a
+        matrix source. A peripheral asserts a level and holds it; the edge
+        latches a pending bit that only an explicit \texttt{INTCLEAR}
+        retires, so the handler acknowledges its peripheral, returns, and is
+        re-entered at once, forever. No task runs again, no fault is raised,
+        and every peripheral register reads healthy. Measured, at the cost of
+        a day: the runtime now refuses 22 by name at elaboration.
 \end{itemize}
 
 \section{From silicon to handler}\index{interrupt vector}\index{interrupt wrapper}

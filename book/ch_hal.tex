@@ -523,6 +523,33 @@ added to the driver cannot reach the registers without passing a \texttt{Session
 through the same check. The guard is impossible to forget because there is no
 other door to the hardware.
 
+\textbf{The receive FIFO can lie, and \texttt{Repair\_Rx} makes it stop.}
+The S3's UART commits received bytes to its RX FIFO through a small
+clock-domain crossing, and two hardware behaviours around that crossing cost
+this SDK a full day each to find. First, without the receive-timeout machinery
+enabled, the \emph{tail} of a burst sits in the crossing --- invisible to
+\texttt{RXFIFO\_CNT}, unreadable --- until more traffic pushes it through. A
+polled reader then sees every reply arrive minus its last bytes, forever.
+\texttt{Acquire} now enables the timeout at bring-up, so a burst's tail
+commits when the line goes idle. Second, an RX FIFO \emph{overflow} can leave
+the FIFO's read pointer skewed from its write pointer while the count reads
+zero. From then on every read returns the ring's contents \emph{rotated} by
+the skew: nothing lost, everything late, replies one exchange behind. Both
+faults defeat every check that looks for loss or corruption, because the
+stream is merely late.\index{RX FIFO}\index{Repair\_Rx}\index{UART overflow}
+
+\texttt{Repair\_Rx (S)} detects the skew --- pointers that disagree while the
+count says empty --- and pulses the FIFO reset until the silicon verifies
+aligned. It touches nothing readable, so it is safe whenever the line is known
+idle; a request/response protocol calls it just before each request goes out,
+and self-heals no matter when the overflow happened. \texttt{esp-idf} resets
+the FIFO after every overflow for the same reason.
+
+\cnote{If you have ever watched a peripheral ``answer the previous command''
+on an ESP32 and blamed your protocol code, this is the likely culprit. The
+arbitrating registers are \texttt{MEM\_RX\_STATUS} (the two pointers) and
+\texttt{STATUS.RXFIFO\_CNT}; when they disagree, believe the pointers.}
+
 \lstexample{Transmit a line.}
 \begin{lstlisting}
 with ESP32S3.UART; use ESP32S3.UART;

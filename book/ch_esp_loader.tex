@@ -1,0 +1,167 @@
+%  Esp_Loader: the board flashes ANOTHER ESP32 -- the esptool serial protocol
+%  as a device-side client, with the auto-reset circuit done in software and
+%  the result proven by the target's own hash.
+\chapter[Esp\_Loader: Flashing Another ESP32]%
+        {Esp\_Loader: Flashing Another ESP32}
+\label{ch:esp_loader}
+
+Every ESP32 ships with a ROM bootloader that accepts firmware over a serial
+port. That is what \texttt{esptool} talks to from a PC. \texttt{ESP32S3.Esp\_Loader}
+is the same protocol as a device-side client, so a board built on this SDK can
+program \emph{other} ESP32s itself --- no PC in the
+loop.\index{Esp\_Loader}\index{ROM bootloader}\index{esptool}
+
+The shape of the job: reset the target into its ROM loader, synchronise,
+describe the flash, stream the image in 1\,KB blocks, and reset the target into
+its new firmware. Each step is a command with a reply, framed in SLIP. The
+chapter walks the stack from the wire up.
+
+\section{The wire: SLIP frames and commands}\index{SLIP framing}
+
+The ROM speaks a request/response protocol over 115\,200-baud serial. Every
+packet travels inside a SLIP frame: a \texttt{C0} delimiter on each end, with
+\texttt{C0} and \texttt{DB} bytes inside the payload escaped. A request starts
+with a fixed header --- direction (0), opcode, payload length, checksum --- and
+the reply echoes the opcode back with a status trailer.
+
+Two details vary by chip, and both change how bytes are \emph{parsed}, not just
+what they mean. The original ESP32's ROM ends replies with four status bytes;
+everything since uses two. And chips after the ESP32 take a fifth word in
+\texttt{FLASH\_BEGIN}. The driver therefore identifies the target first and
+keeps both facts in the session.
+
+\section{Reset into the loader: the circuit esptool expects}
+\index{auto-reset}\index{DTR/RTS}
+
+A target enters its ROM loader when it leaves reset with \texttt{IO0} held low.
+Development boards do this with two transistors cross-coupled between the serial
+port's DTR and RTS lines, plus an RC on the EN pin. \texttt{esptool} wiggles
+DTR and RTS in a fixed dance and trusts that circuit to translate.
+
+\texttt{Esp\_Loader.Auto\_Reset} is that circuit in software, for a board that
+sits between a PC and a target as a USB-serial bridge. The cross-coupling
+matters: terminal programs assert both lines when they open a port, and the
+real circuit's both-asserted state deliberately does nothing --- otherwise every
+\texttt{screen} session would reset the target. The RC matters too.
+\texttt{esptool}'s classic reset passes through a brief both-asserted moment,
+and only the capacitor's hold-up carries EN across it. The software circuit
+reproduces both: asserting reset is immediate, releasing it waits out an
+emulated RC, and a release still pending when reset is wanted again is simply
+cancelled.
+
+When the board itself is the programmer, none of that subtlety is needed:
+\texttt{Reset\_Target} drives the two lines directly, holds reset for
+100\,ms with boot asserted, and releases them in order.
+
+\section{The transport: a Link, not a UART}\index{Link record}
+
+The protocol core does not name a UART. It talks through a \texttt{Link} --- a
+record of access-to-subprogram values plus an opaque context, the same pattern
+as \texttt{Block\_Dev}:
+
+\begin{lstlisting}
+type Link is record
+   Ctx          : System.Address := System.Null_Address;
+   Send         : Send_Proc    := null;
+   Receive      : Receive_Proc := null;
+   Assert_Reset : Line_Proc    := null;   --  logical, not electrical
+   Assert_Boot  : Line_Proc    := null;
+   Set_Baud     : Baud_Proc    := null;   --  optional
+end record;
+\end{lstlisting}
+
+\texttt{Serial\_Link} is the ready-made transport: a UART plus two GPIOs, with
+the electrical polarity of the reset and boot lines a configuration fact
+(\texttt{Reset\_Drives\_High}), because a board that drives a transistor
+inverts the sense. Its \texttt{Open} holds the target in reset while the UART
+comes up, by default. That ordering is not politeness --- a UART FIFO reset
+that races live traffic can leave the receiver serving rotated data for the
+rest of the boot (Chapter~\ref{ch:hal} tells that story). A caller that must
+not disturb a running target opts out and accepts the hazard knowingly.
+
+\section{A session, start to finish}\index{FLASH\_BEGIN}\index{SPI\_ATTACH}
+
+\begin{lstlisting}
+Open (Wire, On => UART1, Tx => 4, Rx => 5,
+      Reset => 6, Boot => 18);
+Connect (Session, As_Link (Wire), Status);   --  reset, sync, identify
+Configure_Flash (Session, 4 * 1024 * 1024, Status);
+Begin_Image (Session, At_Offset => 16#1_0000#,
+             Length => Size, Status => Status);
+loop
+   ... read a chunk from wherever the image lives ...
+   Write (Session, Chunk, Status);
+end loop;
+End_Image (Session, Status);
+Finish (Session, Run => True, Status => Status);  --  boot it
+\end{lstlisting}
+
+\texttt{Connect} retries the whole reset-and-sync sequence a few times, because
+a ROM still waking up misses the first sync. It then drains the line until the
+target goes quiet: the ROM answers one sync many times over, and a command sent
+while those replies are still arriving reads against a stream that is out of
+step. \texttt{Configure\_Flash} attaches the target's SPI flash and declares
+its size (\texttt{SPI\_ATTACH}, then \texttt{SPI\_SET\_PARAMS}).
+\texttt{Begin\_Image} erases the region --- the slowest step of a run --- and
+\texttt{Write} streams it in the ROM's fixed 1\,KB blocks, re-blocking whatever
+chunk sizes the caller finds convenient.
+
+Identification deserves a note. \texttt{Connect} asks the modern way first
+(\texttt{GET\_SECURITY\_INFO} carries a chip id on everything from the
+ESP32-S3 on), and falls back to a magic register that tells the older chips
+apart. A chip newer than the tables still connects, as \texttt{Unknown} ---
+and \texttt{Unknown} deliberately selects the modern protocol variants, so an
+unrecognised future chip is more likely to program than not. A caller that
+only wants to write an image can skip identification entirely
+(\texttt{Identify => False}); the reference host flasher never identifies at
+all.
+
+\section{Proving the write: the target hashes itself}
+\index{SPI\_FLASH\_MD5}\index{MD5}\index{verification}
+
+Every \texttt{FLASH\_DATA} block is checksummed and acknowledged, but a block
+ack only says the target \emph{accepted} the bytes. The ROM's
+\texttt{SPI\_FLASH\_MD5} command closes the loop: the target hashes a region of
+its own flash and returns the digest. \texttt{Read\_Md5} exposes it, and
+\texttt{ESP32S3.MD5} computes the expected side --- a streaming RFC~1321
+implementation, pure Ada, no heap, added to the HAL for exactly this pairing.
+Hash the image as it streams out, ask the target to hash what its flash holds,
+and compare:
+
+\begin{lstlisting}
+MD5.Update (Digest, Chunk);        --  ... during the write loop
+...
+Read_Md5 (Session, Offset, Length, Readback, Status);
+if Readback /= MD5.Hex_Digest (Digest) then ...  --  not programmed
+\end{lstlisting}
+
+MD5 is long broken as a cryptographic hash; this is an integrity check against
+accident, not an adversary, and the ROM chose the algorithm. One sequencing
+rule, learned the measured way: write every region first, then verify every
+region. The ROM refuses a \texttt{FLASH\_BEGIN} that follows an MD5 command,
+so the two passes must not interleave --- which is also the order
+\texttt{esptool} uses.
+
+\section{Testing without a victim}\index{fake ROM}\index{host testing}
+
+The protocol core is host-testable. \texttt{test/esp\_loader\_host} runs the
+real Ada client against a Python fake ROM over pipes: sync, identification for
+each chip in the tables, byte-exact flashing, the auto-reset sequences as
+\texttt{esptool} performs them, and the failure paths --- a silent target, a
+refused command, an image shorter than declared. The fake ROM models each
+chip's real reply shape, and one lesson from the bring-up is recorded in its
+history: model what a trace of real silicon shows, not what documentation
+implies. A DevKit and \texttt{esptool --trace} settle such questions in
+minutes.
+
+The harness proves the protocol; it cannot prove the transport. The one real
+bug of the bring-up lived below every layer the fake ROM exercises --- an RX
+FIFO with skewed pointers serving rotated bytes (Chapter~\ref{ch:hal}) --- and
+survived precisely because the protocol logic above it was correct.
+
+\medskip
+\noindent One application built on this SDK closes the chapter's loop: a
+programmer board that carries images on its own storage, flashes a blank
+ESP32-S3 through \texttt{Esp\_Loader}, and calls the job done only when the
+target's own hashes match --- bootloader, partition table and application,
+each region verified.
