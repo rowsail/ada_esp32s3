@@ -20,6 +20,12 @@ This extends [`BOOTLOADER_STAGE0.md`](BOOTLOADER_STAGE0.md), which deliberately
 dropped "OTA slot selection · anti-rollback" from the minimal bootloader. This
 doc adds them back as a second stage.
 
+> **Status (2026-07).** §§1–11 are the original plan and are kept as history;
+> the scheme has since been **built** by an application using this SDK, with
+> some details changed — see §12 for the as-built layout
+> and for the next design step: **runtime-discovered slots** (JEDEC-sized
+> flash, computed layout, addresses in the boot-control block).
+
 ---
 
 ## 1. How ThingsBoard OTA-over-MQTT works
@@ -333,3 +339,128 @@ floor in boot-control.
 * Cellular (BG95) OTA — same protocol, slower; want it in scope for Phase 1?
 * Do we want a golden/recovery image in the ~12 MB free region as a last-resort
   fallback the bootloader can always reach?
+
+---
+
+## 12. Design update (2026-07): as-built, and runtime-discovered slots
+
+### 12.1 What was actually built
+
+An application built on this SDK shipped the scheme with these deltas from
+§§4–6; its own flash-map package is the authority for the numbers:
+
+```
+  0x000000  2nd-stage bootloader (~3 KB)
+  0x008000  partition table      (vendored single-app table -- NOTHING reads it)
+  0x009000  nvs: device token
+  0x00A000  boot-control 0 ┐ ping-pong, magic "OTA1", seq + CRC32
+  0x00B000  boot-control 1 ┘
+  0x010000  SLOT A  4 MB  (running app; fixed base)
+  0x410000  SLOT B  4 MB  (OTA staging)
+  0x810000  free ~7.9 MB  (unused; bulk data lives on the SD card via ext4)
+```
+
+The boot-control block stores a **slot id** (A/B) + state (STABLE/TRIAL) +
+try-count.  The application side is a boot-control package (arm-pending /
+commit / read); the bootloader side is the forked `boot_main.adb`, which is
+public.  Download and verify is an OTA client package: 512 B chunks, streaming
+SHA-256, writing through the internal-flash block source.
+
+Three warts, all instances of the same disease — **duplicated static facts**:
+
+1. The layout constants exist twice: the application's flash-map package, and
+   literals in the ZFP bootloader, which cannot `with` the app's package tree.
+2. The chip size exists three times: the board description (16 MB), the flasher
+   environment, and a hardcoded 16 MB the bootloader pokes into the ROM driver's
+   chip struct (`rom_spiflash_legacy_data->chip_size`, which otherwise
+   *defaults to 2 MB* — it is an assumption someone writes, not a measurement).
+3. The partition table at `0x8000` is flashed but never read by anything —
+   pure ESP-IDF vestige.
+
+### 12.2 Next step: discover the size, compute the layout
+
+Replace the compiled-in facts with one hardware measurement and one formula.
+
+**Size discovery.** The flash chip is the source of truth: JEDEC Read-ID
+(`0x9F`), third ID byte = capacity as 2^N (`0x18` → 16 MB). The **bootloader**
+issues it (trivial there — it runs from SRAM before flash is cache-mapped),
+clamps to a whitelist {4, 8, 16, 32 MB} with a fall-back *small* default
+(staying inside the real chip on nonsense), and **pokes the detected size into
+the ROM chip struct** — replacing today's hardcoded 16 MB poke. The app then
+simply reads the size back from `rom_spiflash_legacy_data`, so it needs no
+second RDID and no cache-suspend dance.
+
+**Layout formula** (both sides could compute it, but see 12.3 — only the app
+does):
+
+```
+  App_Base  = 0x10000                                   -- first 64 KB boundary
+  Slot_Size = align_down ((Chip_Size - App_Base) / 2, 64 KB)   -- MMU page
+  Slot_A    = App_Base
+  Slot_B    = App_Base + Slot_Size
+```
+
+| Chip  | Slot size          | Slot B base |
+|-------|--------------------|-------------|
+| 16 MB | `0x7F0000` (7.94 MB) | `0x800000`  |
+| 8 MB  | `0x3F0000` (3.94 MB) | `0x400000`  |
+| 4 MB  | `0x1F0000` (1.94 MB) | `0x200000`  |
+
+The head (`0x0`–`0x10000`: bootloader, nvs token, boot-control) stays fixed
+and chip-independent. The partition table is **dropped from the flash script**;
+its sector becomes a spare nvs sector. One leftover 64 KB rounding remainder
+lands at the top of flash (spare sectors — event log, crash dump).
+
+### 12.3 Addresses in the boot-control block, not slot ids
+
+The bootloader at `0x0` is **not OTA-updatable**, so any formula baked into it
+is frozen for the life of the board. Therefore the bootloader gets **no
+formula at all**: the boot-control record (versioned magic, e.g. `"OTA2"`)
+stores **flash addresses**:
+
+```
+  boot_addr     : u32   -- image to boot
+  fallback_addr : u32   -- last-good image (rollback target)
+  state/tries/seq/crc32 as today
+```
+
+The **app** — which *is* updatable — computes the layout, stages into
+"whichever slot I am not running from" (it learns its own slot from the
+block's `boot_addr`, killing the current running-in-A assumption), and arms
+`{boot_addr = other slot, fallback_addr = my slot}`. The bootloader merely
+**validates and jumps**:
+
+* 64 KB-aligned, `>= App_Base`, below the RDID-detected chip size;
+* image header magic (`0xE9`) + bounded segment sanity before jumping;
+* any failure → treat as a failed try → `fallback_addr` → factory `0x10000`.
+
+A future firmware can re-partition the top of flash without touching the
+bootloader. One bootloader binary serves every board and chip size.
+
+### 12.4 Where each guarantee moves
+
+* **"App fits the slot" is a *staging-time* invariant, not a boot-time one.**
+  Booting needs only alignment + a valid image; size never enters the jump
+  path.  The OTA client knows the firmware size from the server's metadata
+  *before* erasing — reject oversized images up front. The `build.sh` guard remains as a courtesy
+  check against the smallest chip the product supports.
+* **"Never write over the running app"** was a compile-time property of the
+  constants; it becomes a runtime scope guard: the staging range must not
+  intersect `[boot_addr, boot_addr + Slot_Size)` nor the head region. This
+  check is now load-bearing — it belongs in the flash writer, not the caller.
+* **Power-loss safety** is unchanged: ping-pong + seq + CRC for the control
+  block; a loss mid-stage leaves an invalid image that validation never boots.
+
+### 12.5 Migration
+
+1. New bootloader (RDID + poke real size + `"OTA2"` address block + validate);
+   one-time reflash of `0x0`. With no valid block it still boots `0x10000`.
+2. The application's boot-control and flash-map packages grow the v2 record +
+   the formula; on finding an old `"OTA1"` block (or none), fall back to the
+   static 4 MB layout and rewrite v2 the next time an update is armed.
+3. Drop `partition-table.bin` from `bare_flash.sh`'s write list.
+
+Residual risks: oddball RDID capacity encodings (mitigated by the whitelist
+clamp); the bootloader's *validation* rules are still frozen — keep them
+minimal and permissive (alignment, bounds, image magic) so they never have to
+change.
