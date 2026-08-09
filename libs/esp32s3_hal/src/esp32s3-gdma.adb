@@ -576,7 +576,7 @@ package body ESP32S3.GDMA is
       Id : Channel_Id;
       Ok : Boolean;
    begin
-      Completion.Route;               --  ensure DMA ints reach CPU_INT 19 (once)
+      Completion.Route;               --  ensure DMA ints reach CPU_INT 27 (once)
       Release (C);                    --  free any channel C already held
       Pool.Claim (Peri, Id, Ok);
       if Ok then

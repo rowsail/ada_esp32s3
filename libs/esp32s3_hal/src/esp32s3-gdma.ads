@@ -29,8 +29,10 @@ with Interfaces;
 --
 --  Completion is interrupt-driven: a transfer's Wait suspends the calling task
 --  and the channel's end-of-transfer interrupt wakes it.  This driver OWNS the
---  Device_L2_0 interrupt (CPU_INT 19) for that -- an application must not also
---  attach a handler to it.
+--  Device_L3_1 interrupt (CPU_INT 27) for that -- level 3, not a level-2 device
+--  slot, because the LCD RGB bounce refill runs from this completion ISR and has
+--  to preempt the level-2 devices to make its deadline (the body says why).  An
+--  application must not also attach a handler to it.
 
 package ESP32S3.GDMA is
    --  DMA buffers must be DMA-capable memory (see Is_DMA_Capable).  Enforce the
