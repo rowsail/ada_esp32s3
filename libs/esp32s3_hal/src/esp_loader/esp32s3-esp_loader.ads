@@ -161,6 +161,23 @@ package ESP32S3.Esp_Loader is
    --  Unknown for a chip newer than this table -- which is not fatal.
    function Chip (S : Session) return Chip_Kind;
 
+   --  What identification actually read, whatever it concluded.  Chip alone
+   --  reports a chip newer than these tables and a detection that went wrong
+   --  identically, and those want opposite responses.
+   function Security_Status (S : Session) return Status_Kind;
+   function Security_Bytes (S : Session) return Natural;
+   function Reported_Chip_Id (S : Session) return Interfaces.Unsigned_32;
+   function Magic_Status (S : Session) return Status_Kind;
+   function Reported_Magic (S : Session) return Interfaces.Unsigned_32;
+
+   --  How the last command's reply hunt went: how many frames it read, and
+   --  what the last of them was.  Zero frames means nothing came back at all;
+   --  frames with the wrong opcode mean the stream is out of step.
+   function Frames_Read (S : Session) return Natural;
+   function Last_Frame_Dir (S : Session) return Interfaces.Unsigned_8;
+   function Last_Frame_Op (S : Session) return Interfaces.Unsigned_8;
+   function Last_Frame_Len (S : Session) return Natural;
+
    --  Reset the target WITHOUT connecting: Into_Download False simply runs
    --  whatever is flashed.  Also what Finish uses to start the new firmware.
    procedure Reset_Target (Over : Link; Into_Download : Boolean := False);
@@ -275,6 +292,22 @@ private
       --  Set by Connect, and what every per-chip decision below reads.
       Kind         : Chip_Kind := Unknown;
       Status_Bytes : Natural := Default_Status_Bytes;
+
+      --  What identification actually saw, kept so an Unknown can be reported
+      --  rather than merely admitted to.
+      Probe_Sec_Status : Status_Kind := Not_Connected;
+      Probe_Sec_Bytes  : Natural := 0;
+      Probe_Chip_Id    : Interfaces.Unsigned_32 := 0;
+      Probe_Reg_Status : Status_Kind := Not_Connected;
+      Probe_Magic      : Interfaces.Unsigned_32 := 0;
+
+      --  What the LAST command's reply hunt saw.  "No response" is the same
+      --  report whether nothing arrived or the wrong thing did, and those are
+      --  different faults.
+      Probe_Frames   : Natural := 0;
+      Probe_Last_Dir : Interfaces.Unsigned_8 := 0;
+      Probe_Last_Op  : Interfaces.Unsigned_8 := 0;
+      Probe_Last_Len : Natural := 0;
 
       --  Outgoing staging (flushed when full and at each frame's end).
       Out_Buf : Byte_Array (1 .. Out_Staging) := (others => 0);

@@ -168,8 +168,13 @@ package body ESP32S3.Esp_Loader is
       --
       --  Timeout_Ms is what the caller means by "wait this long for a reply",
       --  so spend it in total rather than per byte.
-      Deadline : constant Ada.Real_Time.Time :=
+      --  The budget bounds waiting for a frame to BEGIN.  Once one starts it
+      --  gets its own, or a reply arriving late in the window is truncated and
+      --  its tail desynchronises everything after it.  One-shot, so the worst
+      --  case is twice the timeout rather than unbounded.
+      Deadline : Ada.Real_Time.Time :=
         Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (Timeout_Ms);
+      Extended : Boolean := False;
    begin
       Length := 0;
       Found := False;
@@ -187,6 +192,12 @@ package body ESP32S3.Esp_Loader is
          if Value = Frame_End then
             if not Started then
                Started := True;              --  opens the first frame
+               if not Extended then
+                  Extended := True;
+                  Deadline :=
+                    Ada.Real_Time.Clock
+                    + Ada.Real_Time.Milliseconds (Timeout_Ms);
+               end if;
             elsif Overflown then
                --  Drop it whole rather than truncate: a truncated frame would
                --  parse as a plausible short one.  This same delimiter opens
@@ -300,9 +311,16 @@ package body ESP32S3.Esp_Loader is
       --  The target may still be emitting boot text, and a stale reply to an
       --  earlier retry can arrive first, so skip frames until one answers THIS
       --  opcode.
+      S.Probe_Frames := 0;
       for Attempt in 1 .. Reply_Attempts loop
          Read_Frame (S, Frame, Got, Timeout_Ms, Found);
          exit when not Found;
+         S.Probe_Frames   := S.Probe_Frames + 1;
+         S.Probe_Last_Len := Got;
+         if Got >= 2 then
+            S.Probe_Last_Dir := Frame (1);
+            S.Probe_Last_Op  := Frame (2);
+         end if;
 
          if Got >= 8 and then Frame (1) = 1 and then Frame (2) = Op then
             Value := Get_32 (Frame, 5);
@@ -412,8 +430,11 @@ package body ESP32S3.Esp_Loader is
       Command
         (S, Op_Security, Nothing, Nothing, 0, Detect_Timeout_Ms, Value, Reply,
          Got, Result);
+      S.Probe_Sec_Status := Result;
+      S.Probe_Sec_Bytes  := Got;
       if Result = Ok and then Got >= Security_With_Id then
-         S.Kind := From_Chip_Id (Get_32 (Reply, 13));
+         S.Probe_Chip_Id := Get_32 (Reply, 13);
+         S.Kind := From_Chip_Id (S.Probe_Chip_Id);
       end if;
 
       --  Otherwise the magic register, which is the only way to tell an
@@ -427,6 +448,8 @@ package body ESP32S3.Esp_Loader is
             Command
               (S, Op_Read_Reg, Header, Nothing, 0, Detect_Timeout_Ms, Magic,
                Reply, Got, Result);
+            S.Probe_Reg_Status := Result;
+            S.Probe_Magic      := Magic;
             if Result = Ok then
                S.Kind := From_Magic (Magic);
             end if;
@@ -502,6 +525,7 @@ package body ESP32S3.Esp_Loader is
 
          if Status = Ok then
             S.Connected := True;
+
             Detect (S);
             return;
          end if;
@@ -513,6 +537,26 @@ package body ESP32S3.Esp_Loader is
 
    function Chip (S : Session) return Chip_Kind
    is (S.Kind);
+
+   function Security_Status (S : Session) return Status_Kind
+   is (S.Probe_Sec_Status);
+   function Security_Bytes (S : Session) return Natural
+   is (S.Probe_Sec_Bytes);
+   function Reported_Chip_Id (S : Session) return Interfaces.Unsigned_32
+   is (S.Probe_Chip_Id);
+   function Magic_Status (S : Session) return Status_Kind
+   is (S.Probe_Reg_Status);
+   function Reported_Magic (S : Session) return Interfaces.Unsigned_32
+   is (S.Probe_Magic);
+
+   function Frames_Read (S : Session) return Natural
+   is (S.Probe_Frames);
+   function Last_Frame_Dir (S : Session) return Interfaces.Unsigned_8
+   is (S.Probe_Last_Dir);
+   function Last_Frame_Op (S : Session) return Interfaces.Unsigned_8
+   is (S.Probe_Last_Op);
+   function Last_Frame_Len (S : Session) return Natural
+   is (S.Probe_Last_Len);
 
    function Chip_Name (Kind : Chip_Kind) return String
    is (case Kind is
