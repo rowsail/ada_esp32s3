@@ -153,7 +153,17 @@ package ESP32S3.Esp_Loader is
    --  identify it.  Retries the whole sequence a few times before giving up,
    --  because a ROM that is still coming up misses the first SYNC.  A target
    --  that answers but cannot be identified still connects, as Unknown.
-   procedure Connect (S : out Session; Over : Link; Status : out Status_Kind);
+   --  Identify False skips the chip-identification probes and leaves Chip as
+   --  Unknown.  That is what the reference host flasher does -- it syncs and
+   --  goes straight to attaching the flash -- and it is the safe choice for a
+   --  caller that already knows what it is talking to, or that only wants to
+   --  write an image: Unknown selects the same protocol variants an ESP32-S3
+   --  needs (the five-word FLASH_BEGIN, two status bytes).
+   procedure Connect
+     (S        : out Session;
+      Over     : Link;
+      Status   : out Status_Kind;
+      Identify : Boolean := True);
 
    function Is_Connected (S : Session) return Boolean;
 

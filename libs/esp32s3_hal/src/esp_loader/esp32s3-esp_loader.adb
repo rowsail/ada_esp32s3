@@ -505,7 +505,11 @@ package body ESP32S3.Esp_Loader is
       end if;
    end Sync;
 
-   procedure Connect (S : out Session; Over : Link; Status : out Status_Kind)
+   procedure Connect
+     (S        : out Session;
+      Over     : Link;
+      Status   : out Status_Kind;
+      Identify : Boolean := True)
    is
    begin
       S.Over := Over;
