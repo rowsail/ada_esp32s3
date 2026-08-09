@@ -60,8 +60,31 @@ package Ada.Interrupts.Names is
    --  Level-3 device interrupts (ceiling Device_L3_Priority):
    Device_L3_0 : constant Interrupt_ID := 23;
    Device_L3_1 : constant Interrupt_ID := 27;
-   Device_L3_2 : constant Interrupt_ID := 22;
    SW_L3       : constant Interrupt_ID := 29;  --  software (wsr.intset)
+
+   --  CPU_INT 22 is level 3 and matrix-drivable, and was briefly named here as
+   --  a third device slot.  It is NOT one.  The core config says why:
+   --
+   --    XCHAL_INTLEVEL3_MASK           = 0x28C08800
+   --                        -- level-3 slots: 11 15 22 23 27 29
+   --    XCHAL_INTTYPE_MASK_EXTERN_EDGE = 0x50400400
+   --                        -- edge-triggered:  10 22 28 30
+   --
+   --  22 is the one EDGE-triggered slot at level 3 -- which is exactly why it
+   --  looked free.  Every peripheral routed through the interrupt matrix
+   --  asserts a LEVEL, held high until the peripheral's own status is cleared.
+   --  On an edge slot that rise latches a pending bit which only an explicit
+   --  INTCLEAR retires, so a handler that acknowledges its peripheral and
+   --  returns is re-entered immediately, forever: the CPU never leaves
+   --  interrupt context and no task is ever scheduled again.  It reads as a
+   --  dead board -- no fault, no spin, every peripheral register healthy --
+   --  and it cost a day of the USB-OTG bring-up.
+   --
+   --  Using it would mean clearing the CPU latch in Level3_Dispatch AND
+   --  accepting that a cause asserting while the line is already high raises
+   --  no new edge and is lost.  Not worth it while 23 and 27 exist: the way
+   --  to fit a third level-3 device is to share one of those, as
+   --  ESP32S3.Shared_L2 does at level 2.
 
    --  Levels 4 and 5 have NO native dispatcher (only Level2_Dispatch /
    --  Level3_Dispatch exist; level 5 parks), so no attachable name is exported

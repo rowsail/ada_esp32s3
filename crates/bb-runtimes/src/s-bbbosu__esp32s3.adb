@@ -63,13 +63,13 @@ package body System.BB.Board_Support is
    Device_L3_1_Id  : constant := 27;                        --  CPU_INT 27 (L3)
    Device_L3_1_Bit : constant Unsigned_32 := 2 ** Device_L3_1_Id;
 
-   Device_L3_2_Id  : constant := 22;                        --  CPU_INT 22 (L3)
-   Device_L3_2_Bit : constant Unsigned_32 := 2 ** Device_L3_2_Id;
-   --  The third level-3 device slot.  It has always been level 3 in
-   --  Priority_Of_Interrupt and matrix-drivable in silicon, but was never
-   --  serviced here and so never usable -- a free slot hiding in plain sight,
-   --  found while looking for somewhere to put the USB-OTG controller after it
-   --  had to be evicted from the kernel's CPU_INT 21.
+   --  CPU_INT 22 is deliberately NOT serviced here.  It is level 3 and
+   --  matrix-drivable, so it looks like a third device slot, but it is the one
+   --  EDGE-triggered slot at level 3 (XCHAL_INTTYPE_MASK_EXTERN_EDGE =
+   --  0x50400400).  Matrix sources assert a level, and an edge slot latches a
+   --  pending bit that only INTCLEAR retires, so servicing it the way 23 and
+   --  27 are serviced re-enters the handler forever and starves every task.
+   --  See Ada.Interrupts.Names for the full account.
 
    SW_L3_Id  : constant System.BB.Interrupts.Interrupt_ID := 29;
    SW_L3_Bit : constant Unsigned_32 := 2 ** SW_L3_Id;
@@ -247,10 +247,6 @@ package body System.BB.Board_Support is
       if (Pending and Device_L3_1_Bit) /= 0 then
          --  Second L3 device source (CPU_INT 27); same shape as int 23.
          System.BB.Interrupts.Interrupt_Wrapper (Device_L3_1_Id);
-      end if;
-      if (Pending and Device_L3_2_Bit) /= 0 then
-         --  Third L3 device source (CPU_INT 22); same shape as 23 and 27.
-         System.BB.Interrupts.Interrupt_Wrapper (Device_L3_2_Id);
       end if;
       if (Pending and SW_L3_Bit) /= 0 then
          --  Software-triggered L3 source (CPU_INT 29); the handler must ack it
@@ -601,6 +597,17 @@ package body System.BB.Board_Support is
                  with "CPU_INT 21 is the kernel tick + cross-core poke";
             end if;
             Alarm_Slot_Taken := True;
+         end if;
+
+         --  Nor can it catch a slot whose LEVEL is dispatched but whose
+         --  TRIGGER TYPE is wrong for a matrix source.  CPU_INT 22 is the one
+         --  edge-triggered slot at level 3; a peripheral holds its line high,
+         --  the edge latches a pending bit no peripheral ack retires, and the
+         --  vector re-fires forever with every task starved.  The board looks
+         --  dead, with no fault and no clue.  Refuse it by name.
+         if Interrupt = 22 then
+            raise Program_Error
+              with "CPU_INT 22 is edge-triggered; use 23 or 27";
          end if;
 
          --  Enable the CPU interrupt on this core.  Its dedicated vector (the
