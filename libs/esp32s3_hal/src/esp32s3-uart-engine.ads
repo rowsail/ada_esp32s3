@@ -72,6 +72,11 @@ private package ESP32S3.UART.Engine is
    --  is lost between Reads.  Read/Rx_Available then serve from Buf.
    procedure Enable_Buffered_Rx (B : Bus; Buf : Rx_Buffer_Access);
 
+   --  Re-align the RX FIFO's pointers if an overflow left them skewed (see
+   --  the body).  A no-op when sane or buffered.  Call on a QUIET line: the
+   --  repair resets the FIFO, and only an empty-by-count FIFO is touched.
+   procedure Repair_Rx (B : Bus);
+
    procedure Close (B : in out Bus);
 
 private

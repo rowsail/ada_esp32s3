@@ -232,6 +232,11 @@ package body ESP32S3.UART is
    function Available (S : Session) return Natural
    is (E.Rx_Available (State.Owned (S)));
 
+   procedure Repair_Rx (S : Session) is
+   begin
+      E.Repair_Rx (State.Owned (S));
+   end Repair_Rx;
+
    -------------
    -- Release --
    -------------

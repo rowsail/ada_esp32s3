@@ -38,7 +38,25 @@ package ESP32S3.Esp_Loader.Serial_Link is
       Boot              : ESP32S3.GPIO.Pin_Id;
       Baud              : ESP32S3.UART.Baud_Rate := 115_200;
       Reset_Drives_High : Boolean := True;
-      Boot_Drives_High  : Boolean := True);
+      Boot_Drives_High  : Boolean := True;
+      Silence_With_Reset : Boolean := True);
+   --  Silence_With_Reset holds the target in reset while the UART comes up,
+   --  then releases it -- so the target reboots once, and the port opens
+   --  against a SILENT line.
+   --
+   --  Why that matters: the UART bring-up pulses RXFIFO_RST, and resetting
+   --  that FIFO while bytes are ARRIVING desynchronises its read pointer from
+   --  its count register.  From then on every read runs a fixed few bytes
+   --  behind the wire: losslessly, in order, and invisibly, because the
+   --  parked bytes only surface when new ones push them.  A blank target
+   --  chatters its boot loop without pause, so opening against one hits this
+   --  almost every time -- and a stream that is merely LATE defeats every
+   --  check that looks for loss or corruption.  Each reply then arrives
+   --  missing its last few bytes until the NEXT reply arrives, which starves
+   --  a request/response protocol while raw dumps look almost right.
+   --
+   --  False preserves the old contract -- never disturb a running target --
+   --  for callers like a live serial bridge that accept the hazard knowingly.
 
    function Is_Open (P : Port) return Boolean;
 
@@ -48,6 +66,7 @@ package ESP32S3.Esp_Loader.Serial_Link is
 
    function As_Link (P : aliased in out Port) return Link
    with Pre => Is_Open (P);
+
 
 private
 

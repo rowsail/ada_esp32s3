@@ -152,6 +152,10 @@ package ESP32S3.UART is
 
    --  Bytes currently waiting in the RX FIFO.  Raises Not_Owned unless S holds
    --  a port.
+   --  Re-align the RX FIFO if an overflow skewed its pointers (see the
+   --  engine).  Safe and cheap on a quiet line; a no-op when sane.
+   procedure Repair_Rx (S : Session);
+
    function Available (S : Session) return Natural
    with Pre => Is_Held (S);
 

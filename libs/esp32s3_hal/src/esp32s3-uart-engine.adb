@@ -180,6 +180,44 @@ package body ESP32S3.UART.Engine is
       Regs.CONF0.RXFIFO_RST := False;
       Regs.CONF0.TXFIFO_RST := False;
 
+      --  The receiver commits bytes to the RX FIFO through a small
+      --  clock-domain crossing buffer, and WITHOUT the RX timeout enabled the
+      --  TAIL of a burst stays in that buffer -- uncounted by RXFIFO_CNT,
+      --  unreadable -- until more traffic pushes it through.  A polled reader
+      --  then sees every reply arrive minus its final byte, forever: on a
+      --  request/response wire each answer surfaces only when the NEXT one
+      --  arrives, which reads as a phantom one-reply lag and starves any
+      --  frame parser waiting for a terminator.  It cost a full day against
+      --  an ESP32-S3 ROM whose 15-byte replies sat at RXFIFO_CNT = 14.
+      --
+      --  The timeout machinery is what flushes that buffer on line idle --
+      --  which is why interrupt-buffered RX (which always enabled it) never
+      --  showed the fault, and polled RX always did.  Enable it here for
+      --  every open: the threshold is in bit-times of idle, and ten of them
+      --  at any rate is far below a polled reader's patience.  The timeout
+      --  INTERRUPT stays off; the flush is hardware and needs no handler.
+      Regs.MEM_CONF.RX_TOUT_THRHD := 10;
+      Regs.CONF1.RX_TOUT_EN := True;
+
+      --  A VERIFIED receive-FIFO reset, not a hopeful one.
+      --
+      --  A single RXFIFO_RST pulse can leave the FIFO's read pointer offset
+      --  from its write pointer -- measured on hardware: a constant skew that
+      --  makes every later read return the ring's contents ROTATED, so each
+      --  reply arrives as a window of stale-bytes-then-new, its newest bytes
+      --  stranded.  A polled protocol then sees answers one exchange behind,
+      --  or frames with the wrong opcode, or tails that never come -- while
+      --  every byte is in fact present and in order.  The pointers are
+      --  readable in MEM_RX_STATUS, so do not trust the reset: check that
+      --  read and write agree and the count is zero, and pulse again until
+      --  they do.  esp-idf performs this same dance for the same reason.
+      for Attempt in 1 .. 8 loop
+         exit when Regs.MEM_RX_STATUS.APB_RX_RADDR = Regs.MEM_RX_STATUS.RX_WADDR
+           and then Natural (Regs.STATUS.RXFIFO_CNT) = 0;
+         Regs.CONF0.RXFIFO_RST := True;
+         Regs.CONF0.RXFIFO_RST := False;
+      end loop;
+
       --  HIGH_SPEED (ID register, default True) auto-syncs config into the UART
       --  core clock domain, so no explicit REG_UPDATE is needed.
       return (Regs => Regs, Port => Port, Valid => True);
@@ -540,6 +578,32 @@ package body ESP32S3.UART.Engine is
          Count := Count + 1;
       end loop;
    end Read;
+
+   procedure Repair_Rx (B : Bus) is
+   begin
+      if not B.Valid or else Rx_Ctrl.Has_Buffer (B.Port) then
+         return;
+      end if;
+
+      --  An RX FIFO that has OVERFLOWED can be left with its read pointer
+      --  skewed from its write pointer while the count reads zero -- measured
+      --  on hardware: rd=684 wr=752 cnt=0 -- after which every read returns
+      --  the ring's contents rotated by the skew, for the rest of the boot.
+      --  Newest bytes stranded, stale cells served first: a polled protocol
+      --  sees replies one exchange behind, or frames with the wrong opcode,
+      --  while every byte is present and in order.  esp-idf resets the FIFO
+      --  after every overflow for this reason.  The skew is detectable, so
+      --  repair on sight -- and only when the count says empty, so nothing
+      --  readable is ever thrown away.  The caller picks a quiet moment.
+      for Attempt in 1 .. 8 loop
+         exit when
+           B.Regs.MEM_RX_STATUS.APB_RX_RADDR = B.Regs.MEM_RX_STATUS.RX_WADDR;
+         exit when Natural (B.Regs.STATUS.RXFIFO_CNT) /= 0;
+         B.Regs.CONF0.RXFIFO_RST := True;
+         B.Regs.CONF0.RXFIFO_RST := False;
+      end loop;
+      B.Regs.INT_CLR := (RXFIFO_OVF_INT_CLR => True, others => <>);
+   end Repair_Rx;
 
    procedure Close (B : in out Bus) is
    begin

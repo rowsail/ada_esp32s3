@@ -23,6 +23,11 @@ package body ESP32S3.Esp_Loader.Serial_Link is
       P         : constant Port_Access := To_Port (Ctx);
       Out_Bytes : Serial.Byte_Array (0 .. Data'Length - 1);
    begin
+      --  Just before a request goes out, the wire is idle by construction --
+      --  the one safe moment to re-align an RX FIFO that an earlier overflow
+      --  skewed.  One register read when nothing is wrong.
+      Serial.Repair_Rx (P.Serial);
+
       for I in Out_Bytes'Range loop
          Out_Bytes (I) := Serial.Byte (Data (Data'First + I));
       end loop;
@@ -99,7 +104,8 @@ package body ESP32S3.Esp_Loader.Serial_Link is
       Boot              : ESP32S3.GPIO.Pin_Id;
       Baud              : ESP32S3.UART.Baud_Rate := 115_200;
       Reset_Drives_High : Boolean := True;
-      Boot_Drives_High  : Boolean := True) is
+      Boot_Drives_High  : Boolean := True;
+      Silence_With_Reset : Boolean := True) is
    begin
       P.Reset_Pin := Reset;
       P.Boot_Pin := Boot;
@@ -108,16 +114,44 @@ package body ESP32S3.Esp_Loader.Serial_Link is
       P.Tx_Pin := Tx;
       P.Rx_Pin := Rx;
 
-      --  Release both lines BEFORE configuring them as outputs, so bringing the
-      --  programmer up does not glitch a target that is happily running.
-      ESP32S3.GPIO.Write (Reset, not Reset_Drives_High);
+      --  Set each line's level BEFORE configuring it as an output, so the pin
+      --  never glitches through the wrong state on its way up.  Reset starts
+      --  ASSERTED when the caller wants the line silenced, released otherwise.
+      ESP32S3.GPIO.Write (Reset, Silence_With_Reset = Reset_Drives_High);
       ESP32S3.GPIO.Write (Boot, not Boot_Drives_High);
       ESP32S3.GPIO.Configure (Reset, ESP32S3.GPIO.Output);
       ESP32S3.GPIO.Configure (Boot, ESP32S3.GPIO.Output);
-      ESP32S3.GPIO.Write (Reset, not Reset_Drives_High);
+      ESP32S3.GPIO.Write (Reset, Silence_With_Reset = Reset_Drives_High);
       ESP32S3.GPIO.Write (Boot, not Boot_Drives_High);
 
+      if Silence_With_Reset then
+         --  Let the in-flight byte finish and the line settle to idle before
+         --  the UART's FIFO reset happens (see the spec: a FIFO reset under
+         --  live traffic desynchronises the read pointer from the count).
+         delay 0.020;
+      end if;
+
       Serial.Acquire (P.Serial, Port => On, Baud => Baud, Tx => Tx, Rx => Rx);
+
+      if Silence_With_Reset then
+         --  Discard anything captured before the line went quiet, then let
+         --  the target boot.  Its chatter now lands in a healthy FIFO.
+         declare
+            Junk  : Serial.Byte_Array (0 .. 63);
+            Count : Natural;
+         begin
+            while Serial.Available (P.Serial) > 0 loop
+               Serial.Read
+                 (P.Serial,
+                  Junk (0 .. Natural'Min (Serial.Available (P.Serial),
+                                          Junk'Length) - 1),
+                  Count);
+               exit when Count = 0;
+            end loop;
+         end;
+         ESP32S3.GPIO.Write (Reset, not Reset_Drives_High);
+      end if;
+
       P.Opened := True;
    end Open;
 
