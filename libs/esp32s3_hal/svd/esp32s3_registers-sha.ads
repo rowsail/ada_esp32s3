@@ -36,13 +36,16 @@ package ESP32S3_Registers.SHA is
       --  unspecified
       Reserved_3_31 : ESP32S3_Registers.UInt29 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for MODE_Register use record
-      MODE          at 0 range 0 .. 2;
-      Reserved_3_31 at 0 range 3 .. 31;
-   end record;
+   for MODE_Register use
+     record
+       MODE at 0 range 0 .. 2;
+       Reserved_3_31 at 0 range 3 .. 31;
+     end record;
 
    subtype T_LENGTH_T_LENGTH_Field is ESP32S3_Registers.UInt6;
 
@@ -53,13 +56,16 @@ package ESP32S3_Registers.SHA is
       --  unspecified
       Reserved_6_31 : ESP32S3_Registers.UInt26 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for T_LENGTH_Register use record
-      T_LENGTH      at 0 range 0 .. 5;
-      Reserved_6_31 at 0 range 6 .. 31;
-   end record;
+   for T_LENGTH_Register use
+     record
+       T_LENGTH at 0 range 0 .. 5;
+       Reserved_6_31 at 0 range 6 .. 31;
+     end record;
 
    subtype DMA_BLOCK_NUM_DMA_BLOCK_NUM_Field is ESP32S3_Registers.UInt6;
 
@@ -70,13 +76,16 @@ package ESP32S3_Registers.SHA is
       --  unspecified
       Reserved_6_31 : ESP32S3_Registers.UInt26 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for DMA_BLOCK_NUM_Register use record
-      DMA_BLOCK_NUM at 0 range 0 .. 5;
-      Reserved_6_31 at 0 range 6 .. 31;
-   end record;
+   for DMA_BLOCK_NUM_Register use
+     record
+       DMA_BLOCK_NUM at 0 range 0 .. 5;
+       Reserved_6_31 at 0 range 6 .. 31;
+     end record;
 
    subtype START_START_Field is ESP32S3_Registers.UInt31;
 
@@ -87,13 +96,16 @@ package ESP32S3_Registers.SHA is
       --  Write-only. reserved.
       START        : START_START_Field := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for START_Register use record
-      Reserved_0_0 at 0 range 0 .. 0;
-      START        at 0 range 1 .. 31;
-   end record;
+   for START_Register use
+     record
+       Reserved_0_0 at 0 range 0 .. 0;
+       START at 0 range 1 .. 31;
+     end record;
 
    subtype CONTINUE_CONTINUE_Field is ESP32S3_Registers.UInt31;
 
@@ -104,13 +116,16 @@ package ESP32S3_Registers.SHA is
       --  Write-only. reserved.
       CONTINUE     : CONTINUE_CONTINUE_Field := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for CONTINUE_Register use record
-      Reserved_0_0 at 0 range 0 .. 0;
-      CONTINUE     at 0 range 1 .. 31;
-   end record;
+   for CONTINUE_Register use
+     record
+       Reserved_0_0 at 0 range 0 .. 0;
+       CONTINUE at 0 range 1 .. 31;
+     end record;
 
    --  Busy register.
    type BUSY_Register is record
@@ -119,13 +134,16 @@ package ESP32S3_Registers.SHA is
       --  unspecified
       Reserved_1_31 : ESP32S3_Registers.UInt31;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for BUSY_Register use record
-      STATE         at 0 range 0 .. 0;
-      Reserved_1_31 at 0 range 1 .. 31;
-   end record;
+   for BUSY_Register use
+     record
+       STATE at 0 range 0 .. 0;
+       Reserved_1_31 at 0 range 1 .. 31;
+     end record;
 
    --  DMA configuration register 1.
    type DMA_START_Register is record
@@ -134,13 +152,16 @@ package ESP32S3_Registers.SHA is
       --  unspecified
       Reserved_1_31 : ESP32S3_Registers.UInt31 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for DMA_START_Register use record
-      DMA_START     at 0 range 0 .. 0;
-      Reserved_1_31 at 0 range 1 .. 31;
-   end record;
+   for DMA_START_Register use
+     record
+       DMA_START at 0 range 0 .. 0;
+       Reserved_1_31 at 0 range 1 .. 31;
+     end record;
 
    --  DMA configuration register 2.
    type DMA_CONTINUE_Register is record
@@ -149,13 +170,16 @@ package ESP32S3_Registers.SHA is
       --  unspecified
       Reserved_1_31 : ESP32S3_Registers.UInt31 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for DMA_CONTINUE_Register use record
-      DMA_CONTINUE  at 0 range 0 .. 0;
-      Reserved_1_31 at 0 range 1 .. 31;
-   end record;
+   for DMA_CONTINUE_Register use
+     record
+       DMA_CONTINUE at 0 range 0 .. 0;
+       Reserved_1_31 at 0 range 1 .. 31;
+     end record;
 
    --  Interrupt clear register.
    type CLEAR_IRQ_Register is record
@@ -164,13 +188,16 @@ package ESP32S3_Registers.SHA is
       --  unspecified
       Reserved_1_31   : ESP32S3_Registers.UInt31 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for CLEAR_IRQ_Register use record
-      CLEAR_INTERRUPT at 0 range 0 .. 0;
-      Reserved_1_31   at 0 range 1 .. 31;
-   end record;
+   for CLEAR_IRQ_Register use
+     record
+       CLEAR_INTERRUPT at 0 range 0 .. 0;
+       Reserved_1_31 at 0 range 1 .. 31;
+     end record;
 
    --  Interrupt enable register.
    type IRQ_ENA_Register is record
@@ -179,13 +206,16 @@ package ESP32S3_Registers.SHA is
       --  unspecified
       Reserved_1_31 : ESP32S3_Registers.UInt31 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for IRQ_ENA_Register use record
-      INTERRUPT_ENA at 0 range 0 .. 0;
-      Reserved_1_31 at 0 range 1 .. 31;
-   end record;
+   for IRQ_ENA_Register use
+     record
+       INTERRUPT_ENA at 0 range 0 .. 0;
+       Reserved_1_31 at 0 range 1 .. 31;
+     end record;
 
    subtype DATE_DATE_Field is ESP32S3_Registers.UInt30;
 
@@ -196,13 +226,16 @@ package ESP32S3_Registers.SHA is
       --  unspecified
       Reserved_30_31 : ESP32S3_Registers.UInt2 := 16#0#;
    end record
-     with Volatile_Full_Access, Object_Size => 32,
-          Bit_Order => System.Low_Order_First;
+   with
+     Volatile_Full_Access,
+     Object_Size => 32,
+     Bit_Order   => System.Low_Order_First;
 
-   for DATE_Register use record
-      DATE           at 0 range 0 .. 29;
-      Reserved_30_31 at 0 range 30 .. 31;
-   end record;
+   for DATE_Register use
+     record
+       DATE at 0 range 0 .. 29;
+       Reserved_30_31 at 0 range 30 .. 31;
+     end record;
 
    --  Sha H memory which contains intermediate hash or finial hash.
 
@@ -249,27 +282,28 @@ package ESP32S3_Registers.SHA is
       --  Sha M memory which contains message.
       M_MEM         : aliased M_MEM_Registers;
    end record
-     with Volatile;
+   with Volatile;
 
-   for SHA_Peripheral use record
-      MODE          at 16#0# range 0 .. 31;
-      T_STRING      at 16#4# range 0 .. 31;
-      T_LENGTH      at 16#8# range 0 .. 31;
-      DMA_BLOCK_NUM at 16#C# range 0 .. 31;
-      START         at 16#10# range 0 .. 31;
-      CONTINUE      at 16#14# range 0 .. 31;
-      BUSY          at 16#18# range 0 .. 31;
-      DMA_START     at 16#1C# range 0 .. 31;
-      DMA_CONTINUE  at 16#20# range 0 .. 31;
-      CLEAR_IRQ     at 16#24# range 0 .. 31;
-      IRQ_ENA       at 16#28# range 0 .. 31;
-      DATE          at 16#2C# range 0 .. 31;
-      H_MEM         at 16#40# range 0 .. 511;
-      M_MEM         at 16#80# range 0 .. 511;
-   end record;
+   for SHA_Peripheral use
+     record
+       MODE at 16#0# range 0 .. 31;
+       T_STRING at 16#4# range 0 .. 31;
+       T_LENGTH at 16#8# range 0 .. 31;
+       DMA_BLOCK_NUM at 16#C# range 0 .. 31;
+       START at 16#10# range 0 .. 31;
+       CONTINUE at 16#14# range 0 .. 31;
+       BUSY at 16#18# range 0 .. 31;
+       DMA_START at 16#1C# range 0 .. 31;
+       DMA_CONTINUE at 16#20# range 0 .. 31;
+       CLEAR_IRQ at 16#24# range 0 .. 31;
+       IRQ_ENA at 16#28# range 0 .. 31;
+       DATE at 16#2C# range 0 .. 31;
+       H_MEM at 16#40# range 0 .. 511;
+       M_MEM at 16#80# range 0 .. 511;
+     end record;
 
    --  SHA (Secure Hash Algorithm) Accelerator
    SHA_Periph : aliased SHA_Peripheral
-     with Import, Address => SHA_Base;
+   with Import, Address => SHA_Base;
 
 end ESP32S3_Registers.SHA;

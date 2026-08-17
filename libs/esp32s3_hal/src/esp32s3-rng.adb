@@ -1,5 +1,5 @@
-with Interfaces;              use Interfaces;
-with System.Machine_Code;     use System.Machine_Code;
+with Interfaces;          use Interfaces;
+with System.Machine_Code; use System.Machine_Code;
 with ESP32S3_Registers.RNG;
 with ESP32S3_Registers.RTC_CNTL;
 with ESP32S3_Registers.SYSTEM;
@@ -21,8 +21,10 @@ package body ESP32S3.RNG is
       function CCOUNT return Unsigned_32 is
          V : Unsigned_32;
       begin
-         Asm ("rsr.ccount %0",
-              Outputs => Unsigned_32'Asm_Output ("=r", V), Volatile => True);
+         Asm
+           ("rsr.ccount %0",
+            Outputs  => Unsigned_32'Asm_Output ("=r", V),
+            Volatile => True);
          return V;
       end CCOUNT;
       Start : constant Unsigned_32 := CCOUNT;
@@ -40,6 +42,7 @@ package body ESP32S3.RNG is
       while I <= Buffer'Last loop
          if not First then
             Pace;                                  --  space this read from the last
+
          end if;
          First := False;
          declare
@@ -73,7 +76,8 @@ package body ESP32S3.RNG is
    procedure Enable_Entropy_Source is
       ADC    : ESP32S3_Registers.APB_SARADC.APB_SARADC_Peripheral renames
         ESP32S3_Registers.APB_SARADC.APB_SARADC_Periph;
-      Sensor : ESP32S3_Registers.SENS.SENS_Peripheral renames ESP32S3_Registers.SENS.SENS_Periph;
+      Sensor : ESP32S3_Registers.SENS.SENS_Peripheral renames
+        ESP32S3_Registers.SENS.SENS_Periph;
       Sys    : ESP32S3_Registers.SYSTEM.SYSTEM_Peripheral renames
         ESP32S3_Registers.SYSTEM.SYSTEM_Periph;
       RTC    : ESP32S3_Registers.RTC_CNTL.RTC_CNTL_Peripheral renames
@@ -99,10 +103,12 @@ package body ESP32S3.RNG is
       ADC.CLKM_CONF.CLK_EN := True;
       ADC.CLKM_CONF.CLKM_DIV_NUM := 3;
       ADC.CTRL.SARADC_SAR_CLK_DIV := 3;       --  SAR clock divider (>= 2)
-      ADC.CTRL2.SARADC_TIMER_TARGET := 70;      --  read freq well below sample freq
+      ADC.CTRL2.SARADC_TIMER_TARGET :=
+        70;      --  read freq well below sample freq
 
       ADC.CTRL.SARADC_START_FORCE := False;
-      Sensor.SAR_POWER_XPD_SAR.FORCE_XPD_SAR := 3; --  power up the SAR analog block
+      Sensor.SAR_POWER_XPD_SAR.FORCE_XPD_SAR :=
+        3; --  power up the SAR analog block
       ADC.CTRL2.SARADC_MEAS_NUM_LIMIT := False;
       ADC.CTRL.SARADC_WORK_MODE := 1; --  digital controller, continuous
 
@@ -112,7 +118,8 @@ package body ESP32S3.RNG is
       ADC.CTRL.SARADC_SAR1_PATT_LEN := 0;
       ADC.SAR1_PATT_TAB1.SARADC_SAR1_PATT_TAB1 := 16#AF_FFFF#;
 
-      Sensor.SAR_MEAS1_MUX.SAR1_DIG_FORCE := True;  --  ADC1 driven by the dig controller
+      Sensor.SAR_MEAS1_MUX.SAR1_DIG_FORCE :=
+        True;  --  ADC1 driven by the dig controller
       Sensor.SAR_MEAS2_MUX.SAR2_RTC_FORCE := False;
       ADC.ARB_CTRL.ADC_ARB_GRANT_FORCE := False;
       ADC.ARB_CTRL.ADC_ARB_FIX_PRIORITY := False;
@@ -133,12 +140,14 @@ package body ESP32S3.RNG is
    procedure Disable_Entropy_Source is
       ADC    : ESP32S3_Registers.APB_SARADC.APB_SARADC_Peripheral renames
         ESP32S3_Registers.APB_SARADC.APB_SARADC_Periph;
-      Sensor : ESP32S3_Registers.SENS.SENS_Peripheral renames ESP32S3_Registers.SENS.SENS_Periph;
+      Sensor : ESP32S3_Registers.SENS.SENS_Peripheral renames
+        ESP32S3_Registers.SENS.SENS_Periph;
    begin
       Sensor.SAR_POWER_XPD_SAR.FORCE_XPD_SAR := 0;     --  power off the SAR
       Sensor.SAR_MEAS1_MUX.SAR1_DIG_FORCE := False;
       ADC.CTRL2.SARADC_TIMER_EN := False; --  stop sampling
-      ESP32S3_Registers.SYSTEM.SYSTEM_Periph.PERIP_CLK_EN0.APB_SARADC_CLK_EN := False;
+      ESP32S3_Registers.SYSTEM.SYSTEM_Periph.PERIP_CLK_EN0.APB_SARADC_CLK_EN :=
+        False;
    --  (the 8 MHz clock entropy source is left running)
    end Disable_Entropy_Source;
 

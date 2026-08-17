@@ -18,7 +18,10 @@ package body ESP32S3.Touch is
    --  The per-pad RTC_IO config registers (GPIO n at TOUCH_PAD0 + 4*n).
    type Pad_Array is array (Natural range 0 .. 21) of UInt32 with Volatile;
    Pads : Pad_Array
-   with Volatile, Import, Address => ESP32S3_Registers.RTC_IO.RTC_IO_Periph.TOUCH_PAD0'Address;
+   with
+     Volatile,
+     Import,
+     Address => ESP32S3_Registers.RTC_IO.RTC_IO_Periph.TOUCH_PAD0'Address;
 
    --  Charge/discharge slope (DAC) -- 3 bits per pad, pad n at bit 29 - 3*n in
    --  TOUCH_DAC (pads 0..9) or TOUCH_DAC1 (pads 10..14).  MUST be non-zero or the
@@ -40,7 +43,9 @@ package body ESP32S3.Touch is
    begin
       --  Charge/discharge voltage + measurement timing; enable bias + clock.
       RTC_CNTL_Periph.TOUCH_CTRL1 :=
-        (TOUCH_MEAS_NUM => 16#1000#, TOUCH_SLEEP_CYCLES => 16#100#, others => <>);
+        (TOUCH_MEAS_NUM     => 16#1000#,
+         TOUCH_SLEEP_CYCLES => 16#100#,
+         others             => <>);
       RTC_CNTL_Periph.TOUCH_CTRL2 :=
         (TOUCH_DREFH        => 3,
          TOUCH_DREFL        => 0,
@@ -56,7 +61,8 @@ package body ESP32S3.Touch is
       --  Reset the FSM, clear all channel benchmarks, then start the scan timer.
       RTC_CNTL_Periph.TOUCH_CTRL2.TOUCH_RESET := False;
       RTC_CNTL_Periph.TOUCH_CTRL2.TOUCH_RESET := True;
-      SENS_Periph.SAR_TOUCH_CHN_ST.SAR_TOUCH_CHANNEL_CLR := 2#111_1111_1111_1111#;
+      SENS_Periph.SAR_TOUCH_CHN_ST.SAR_TOUCH_CHANNEL_CLR :=
+        2#111_1111_1111_1111#;
       RTC_CNTL_Periph.TOUCH_CTRL2.TOUCH_TIMER_FORCE_DONE := 3;
       RTC_CNTL_Periph.TOUCH_CTRL2.TOUCH_TIMER_FORCE_DONE := 0;
       RTC_CNTL_Periph.TOUCH_CTRL2.TOUCH_SLP_TIMER_EN := True;
@@ -90,7 +96,8 @@ package body ESP32S3.Touch is
       end if;
 
       --  Route the pad into the RTC/touch domain (no digital input, no pulls).
-      Pads (Pad_Index) := (Pads (Pad_Index) or Mux_Sel) and not (Fun_IE or Pulls);
+      Pads (Pad_Index) :=
+        (Pads (Pad_Index) or Mux_Sel) and not (Fun_IE or Pulls);
 
       --  Add the channel to the scan set.
       RTC_CNTL_Periph.TOUCH_SCAN_CTRL.TOUCH_SCAN_PAD_MAP :=
@@ -117,7 +124,9 @@ package body ESP32S3.Touch is
    -- Touched --
    -------------
 
-   function Touched (Ch : Channel; Reference : Natural; Margin : Natural := 20_000) return Boolean
+   function Touched
+     (Ch : Channel; Reference : Natural; Margin : Natural := 20_000)
+      return Boolean
    is
       Now : constant Natural := Read (Ch);
    begin

@@ -1,4 +1,6 @@
-package body ESP32S3.Endian with SPARK_Mode => On is
+package body ESP32S3.Endian
+  with SPARK_Mode => On
+is
 
    use Interfaces;
 

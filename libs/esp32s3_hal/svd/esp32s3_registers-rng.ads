@@ -36,14 +36,15 @@ package ESP32S3_Registers.RNG is
       --  Random number data
       DATA : aliased ESP32S3_Registers.UInt32;
    end record
-     with Volatile;
+   with Volatile;
 
-   for RNG_Peripheral use record
-      DATA at 16#110# range 0 .. 31;
-   end record;
+   for RNG_Peripheral use
+     record
+       DATA at 16#110# range 0 .. 31;
+     end record;
 
    --  Hardware Random Number Generator
    RNG_Periph : aliased RNG_Peripheral
-     with Import, Address => RNG_Base;
+   with Import, Address => RNG_Base;
 
 end ESP32S3_Registers.RNG;
