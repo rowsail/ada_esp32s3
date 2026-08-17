@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UART in depth &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="The one driver here with no setup call at all: you cannot touch a port you do not hold. Plus interrupt-driven RX, an Ada declaration that must be written a particular way, and a pin-routing trap.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li class="current"><a href="15-uart.html" aria-current="page">UART in depth</a></li>
+      <li><a href="16-debugging.html">Debugging</a></li>
+      <li><a href="17-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="14-spi.html">&larr; SPI in depth</a><a href="16-debugging.html">Debugging &rarr;</a></nav>
+    <p class="eyebrow">Step 15 of 17</p>
+    <h1>UART in depth</h1>
+    <p class="lede">The one driver here with no setup call at all: you cannot touch a port you do not hold. Plus interrupt-driven RX, an Ada declaration that must be written a particular way, and a pin-routing trap.</p>
+
+<h2>Three ports, all of them yours</h2>
+
+<pre><code>type UART_Port is (UART0, UART1, UART2);</code></pre>
+
+<p>On most ESP32 boards UART0 is the ROM console and effectively spoken for.
+Not here: this runtime puts the console on the USB-Serial-JTAG peripheral, so
+<strong>UART0's pads are free to repurpose</strong> like any other port.</p>
+
+<h2>No setup call &mdash; ownership comes first</h2>
+
+<p><a href="13-i2c.html">I2C</a> and <a href="14-spi.html">SPI</a> both have a
+port-level <code>Setup</code> you call before anyone contends. UART deliberately
+has none. <code>Acquire</code> takes the port <em>and</em> shapes it in one
+call, and every later configuration call requires the held session:</p>
+
+<pre><code>Acquire (S, UART1);                           --  bare: 115200 8-N-1
+Acquire (S, UART1, Tx =&gt; 17, Rx =&gt; 16);       --  full-duplex link
+Acquire (S, UART1, Rx =&gt; 18);                 --  RX only (e.g. a GPS)
+Acquire (S, UART1, Tx =&gt; 17, Rx =&gt; 16,
+                   Rts =&gt; 19, Cts =&gt; 20);     --  + RTS/CTS flow control</code></pre>
+
+<p>So changing a setting requires owning the port and can never race another
+task. There is no way to reconfigure a UART somebody else is mid-transfer on,
+because there is no API that takes a port instead of a session.</p>
+
+<p class="note"><strong><code>Acquire</code> sets the full state.</strong> The
+first <code>Acquire</code> of a port creates the controller; every
+<code>Acquire</code> then re-applies baud, frame format and pin routing. A
+session does <em>not</em> inherit the previous holder's settings &mdash; you get
+exactly what you asked for, defaulting to 115200 8-N-1 with nothing routed.</p>
+
+<h2>Flow control</h2>
+
+<p>Passing <code>Rts</code> enables RX flow control: the controller drives RTS to
+pause the peer once our RX FIFO reaches <code>Rx_Flow_Threshold</code> bytes of
+its 128. Passing <code>Cts</code> enables TX flow control: the transmitter only
+sends while the peer asserts CTS. Inputs (RX, CTS) get an internal pull-up, so an
+idle line reads high rather than floating.</p>
+
+<h2>The pin-routing trap</h2>
+
+<p class="warn"><strong><code>No_Pin</code> does two different things at
+once.</strong> In <code>Configure_Pins</code> (and in
+<code>Reconfigure</code>), <code>No_Pin</code> means "leave this line's
+<em>routing</em> alone" &mdash; which is what <code>Acquire</code>'s defaults
+rely on. But the flow-control enable bits are written in full every time, so
+that same <code>No_Pin</code> still turns that line's <strong>flow control
+off</strong>. If you re-route TX and RX on a link that had RTS/CTS, and do not
+name RTS and CTS again, you keep the wires and lose the flow control.</p>
+
+<p>A second, subtler one: a named output line <strong>moves</strong>. The pad it
+used to drive is released back to a pulled-up input so it stops transmitting.
+That is necessary because the GPIO matrix selects an output <em>per pad</em>, not
+per signal &mdash; without the release, the old pad would go on driving TXD
+alongside the new one.</p>
+
+<h2>Full state versus one attribute</h2>
+
+<table>
+  <thead><tr><th>Call</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>Reconfigure (S, …)</code></td>
+        <td>Re-applies the <strong>whole</strong> baud + frame + routing state on
+            the held port, without releasing it. An omitted attribute returns to
+            its default; an omitted pin is unrouted.</td></tr>
+    <tr><td><code>Set_Baud</code>, <code>Set_Data_Bits</code>,
+            <code>Set_Parity</code>, <code>Set_Stop_Bits</code></td>
+        <td>Read-modify-write of <strong>just</strong> that attribute, effective
+            immediately, leaving everything else (including routing)
+            untouched.</td></tr>
+  </tbody>
+</table>
+
+<p>Reach for the finer setters when you mean "change one thing" &mdash;
+<code>Reconfigure</code> with a single argument silently resets the rest.</p>
+
+<h2>Interrupt-driven RX</h2>
+
+<p>Polled <code>Read</code> is fine for a device that answers when spoken to. It
+is not fine for one that streams asynchronously &mdash; a modem, a GPS &mdash;
+because a burst can overflow the 128-byte hardware FIFO between your calls.
+<code>Enable_Buffered_Rx</code> switches the port to an RX interrupt (FIFO-full
+plus byte-timeout) that drains the FIFO into a ring buffer the instant bytes
+arrive; <code>Read</code> and <code>Available</code> then serve from that
+buffer.</p>
+
+<p>The buffer is caller-owned, and its size <em>is</em> the ring depth. It must
+outlive the port and must be library-level, because the RX ISR writes it &mdash;
+never a stack object.</p>
+
+<p class="warn"><strong>Declare it without bounds.</strong> This is a real Ada
+constraint, not a style preference:</p>
+
+<p>It goes in a package, not in your procedure. Declaring it inside the
+subprogram that calls <code>Enable_Buffered_Rx</code> fails with
+<code>non-local pointer cannot point to local object</code> &mdash; the language
+enforcing the same lifetime rule the ISR needs:</p>
+
+<pre><code>--  uart_buf.ads -- library level, so it outlives every scope
+with ESP32S3.UART;
+package Uart_Buf is
+   --  CORRECT: bounds come from the initial value, so the nominal subtype stays
+   --  the unconstrained Byte_Array the access type designates.
+   Ring : aliased ESP32S3.UART.Byte_Array := (0 .. 255 =&gt; 0);
+
+   --  WRONG: explicit bounds make this a CONSTRAINED subtype; 'Access is then
+   --  illegal, and the only way through would be 'Unrestricted_Access.
+   --  Ring : aliased ESP32S3.UART.Byte_Array (0 .. 255) := (others =&gt; 0);
+end Uart_Buf;</code></pre>
+
+<pre><code>--  then, anywhere:
+ESP32S3.UART.Enable_Buffered_Rx (ESP32S3.UART.UART1, Uart_Buf.Ring'Access);</code></pre>
+
+<p>Get it wrong and the compiler tells you precisely, which is worth
+recognising because the error lands on the <code>'Access</code> line while the
+actual mistake is up at the declaration:</p>
+
+<pre><code>ring.ads:8:04: warning: aliased object has explicit bounds
+ring.ads:8:04: warning: declare without bounds (and with explicit initialization)
+ring.ads:8:04: warning: for use with unconstrained access
+ring.ads:10:28: error: object subtype must statically match designated subtype</code></pre>
+
+<p>Call it once at startup, single-threaded, before any task acquires the port;
+it brings the port up itself if nothing has acquired it yet.</p>
+
+<h2>Repairing a skewed RX FIFO</h2>
+
+<pre><code>procedure Repair_Rx (S : Session);</code></pre>
+
+<p>An RX FIFO overflow can leave the hardware's read and write pointers skewed,
+after which the port serves correct bytes in the wrong order &mdash; a rotation,
+not a corruption, which is far more confusing to debug than dropped data.
+<code>Repair_Rx</code> re-aligns them. It is cheap and safe on a quiet line and a
+no-op when the pointers are already sane, so it costs nothing to call after a
+suspected overrun.</p>
+
+<h2>Transfers</h2>
+
+<ul>
+  <li><strong><code>Write (S, Data)</code></strong> pushes to the TX FIFO,
+      waiting for room. It returns once every byte is <em>queued</em> &mdash; not
+      necessarily shifted out of the pin. Do not power something down or drop
+      the line immediately after it returns.</li>
+  <li><strong><code>Read (S, Data, Count)</code></strong> reads up to
+      <code>Data'Length</code> bytes, waiting briefly for each, and reports how
+      many actually arrived. A short read is a timeout, not an error &mdash;
+      always use <code>Count</code>, never assume the buffer filled.</li>
+  <li><strong><code>Available (S)</code></strong> is the number of bytes waiting
+      now.</li>
+</ul>
+
+<h2>A loopback that actually works on-chip</h2>
+
+<pre><code>procedure Enable_Loopback (S : Session; On : Boolean := True);</code></pre>
+
+<p>Unlike <a href="13-i2c.html">I2C</a>, where an internal loopback is
+<em>impossible</em> because SDA is a wired-AND node, UART is push-pull and
+unidirectional &mdash; so the controller's internal TX&rarr;RX loopback proves
+the whole real data path: baud divider, frame format, TX FIFO, RX FIFO, with no
+pins and no wiring.</p>
+
+<p><code>./x run esp32s3_uart_loopback</code> runs three tests on that basis:
+a known buffer at 115200 8-N-1 written and read back byte-exact; hardware RTS/CTS
+flow control, with RTS matrix-looped to CTS so the CTS-gated transmitter
+visibly stalls at a low threshold and then drains intact; and per-line
+inversion, where inverting only TX breaks the link and inverting RX as well
+makes both ends agree again.</p>
+    <nav class="pager">
+      <a class="prev" href="14-spi.html"><span class="dir">&larr; Previous</span><span class="name">SPI in depth</span></a>
+      <a class="next" href="16-debugging.html"><span class="dir">Next &rarr;</span><span class="name">Debugging</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

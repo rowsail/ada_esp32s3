@@ -37,7 +37,7 @@ git submodule update --init --recursive
 
 \section{The \texttt{./x} dispatcher}\index{x helper script}
 
-The repository ships with over sixty ready-to-run examples, and one script at
+The repository ships with 96 ready-to-run examples, and one script at
 its root (\texttt{./x}) drives all of them \emph{from inside the clone}. (For
 your \emph{own} application, kept outside the repo, the counterpart command is
 \texttt{esp32-ada}, \S\ref{sec:esp32-ada}; the two share the same verbs.) List the
@@ -211,9 +211,11 @@ A few things make the copy build cleanly:
   drop in and build. An example built for \texttt{light-tasking} (its profile is
   shown by \texttt{./x list} and its \texttt{README}) needs the \texttt{build.sh}
   line \texttt{ESP32S3\_RTS\_PROFILE} set to match.
-\item \textbf{Bring board config and C natives if customized.} If the example sets
+\item \textbf{Bring the board config if customized.} If the example sets
   a non-default flash/PSRAM size, copy its \texttt{board.ads} (or run
-  \texttt{esp32-ada config}); if it has C natives, copy its \texttt{glue.c}.
+  \texttt{esp32-ada config}). An example may also carry an optional
+  \texttt{glue.c} at its root for C natives --- none currently does, the boot
+  glue itself being Ada --- and that would need copying too.
 \item \textbf{Extra libraries.} If the example \texttt{with}s more of the SDK's
   \texttt{libs/} (beyond the HAL), add the matching \texttt{with "<name>.gpr";} to
   \texttt{app.gpr}.

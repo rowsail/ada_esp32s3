@@ -36,9 +36,9 @@ Then restart Vim. Or wire it up yourself — it has the standard `plugin/` layou
 
 ```vim
 " vim-plug
-Plug '/path/to/ada-bare-metal-esp32s3/ide/vim-ada-esp32'
+Plug '/path/to/ada_esp32s3/ide/vim-ada-esp32'
 " or, no plugin manager:
-set runtimepath^=/path/to/ada-bare-metal-esp32s3/ide/vim-ada-esp32
+set runtimepath^=/path/to/ada_esp32s3/ide/vim-ada-esp32
 " or symlink the dir into a pack start dir (what install-vim does):
 "   ln -s .../ide/vim-ada-esp32 ~/.vim/pack/ada-esp32/start/vim-ada-esp32
 ```

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Shared IDF-free build for the bare ESP32-S3 examples.  No ESP-IDF / idf.py:
 # gprbuild the Ada against the pinned esp32s3_rts runtime, compile the shared
-# bare-boot (bare_glue.c + bare_boot.adb) + the example's own glue.c + the
+# bare-boot (boot/bare_glue.adb + bare_boot.adb) + the example's own optional glue.c + the
 # from-source Xtensa support (vendor/), link with the vendored linker scripts,
 # package with our own Ada elf2image (../elf2image).
 #

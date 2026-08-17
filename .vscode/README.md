@@ -41,7 +41,7 @@ code --install-extension webfreak.debug
 ## 3. Open the repo
 
 ```sh
-cd ~/ada-bare-metal-esp32s3
+cd ~/ada_esp32s3
 code .
 ```
 

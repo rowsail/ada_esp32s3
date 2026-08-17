@@ -48,7 +48,8 @@ up by the 2nd-stage bootloader at runtime, not the flasher.)
 
 ## Scope / notes
 
-- Verified on HW: flashes the vendored bootloader + partition table + an app and the
+- Verified on HW: flashes our own 2nd-stage bootloader + the vendored partition
+  table + an app and the
   board boots and runs (ACATS C41306 PASSED, 0 Guru); ~3 s for ~225 KB (ROM speed).
 - ROM commands only — no RAM stub (so no on-the-fly compression; fine at this scale).
 - 100% Ada — libc's serial syscalls (open/termios/ioctl/poll/read/write) are bound

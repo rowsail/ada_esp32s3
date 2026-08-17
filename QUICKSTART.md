@@ -23,11 +23,13 @@ no ESP-IDF, no esptool, and no Python in the build/flash path.
 ### The big picture
 
 ```
-  your Ada code  ─┐
-  Ada RTS    ──┤  ./build.sh ─► gprbuild (Alire xtensa GNAT) ─► app_main.o
-  (generated)     │             ─► link (vendored bootloader + boot glue)
-  glue.c (boot) ──┘             ─► esp_elf2image (Ada)           ─► app.bin
+  your Ada code ──┐
+  Ada RTS       ──┤  ./build.sh ─► gprbuild (Alire xtensa GNAT) ─► app_main.o
+  (generated)     │             ─► link (bare boot + vendored Xtensa support)
+  bare boot (Ada) ┘             ─► esp_elf2image (Ada)           ─► app.bin
+                                ─► our 2nd-stage bootloader      ─► bootloader.bin
                      ./flash.sh ─► esp_flash (Ada, over USB ROM) ─► board runs it
+                                   0x0 bootloader │ 0x8000 partitions │ 0x10000 app
 ```
 
 You only ever type **`./build.sh`** and **`./flash.sh`**. The Ada runtime ("RTS")
@@ -68,8 +70,8 @@ The runtime depends on two git submodules (`bb-runtimes`, `xtensa-dynconfig`).
 ```sh
 cd ~
 git clone --recurse-submodules \
-    https://github.com/rowsail/ada-bare-metal-esp32s3.git
-cd ada-bare-metal-esp32s3
+    https://github.com/rowsail/ada_esp32s3.git
+cd ada_esp32s3
 ```
 Already cloned shallow? `git submodule update --init --recursive`.
 
@@ -91,7 +93,7 @@ Already cloned shallow? `git submodule update --init --recursive`.
 Start with the GPIO0 blink (a peripheral driver written in pure Ada):
 
 ```sh
-cd ~/ada-bare-metal-esp32s3/examples/esp32s3_gpio0_blink
+cd ~/ada_esp32s3/examples/esp32s3_gpio0_blink
 ./build.sh                                 # compile + package -> app.bin
 ./flash.sh /dev/ttyACM0                    # flash over the USB ROM bootloader
 ```
@@ -169,10 +171,10 @@ your sources + thin build glue (no runtime source copied in — it references th
 via `$ESP32S3_ADA_SDK`):
 
 ```sh
-. ~/ada-bare-metal-esp32s3/export.sh       # sets ESP32S3_ADA_SDK, PATH, GPR_PROJECT_PATH
-                                           # (add to ~/.bashrc to make it permanent)
+. ~/ada_esp32s3/export.sh        # sets ESP32S3_ADA_SDK, PATH, GPR_PROJECT_PATH
+                                 # (add to ~/.bashrc to make it permanent)
 mkdir ~/myblink && cd ~/myblink
-esp32-ada init                             # scaffold app.gpr, board.ads, src/main.adb, glue
+esp32-ada init                   # scaffold app.gpr, board.ads, src/main.adb, .vscode
 # ... edit src/main.adb ...
 esp32-ada run -p /dev/ttyACM0              # build + flash + monitor
 ```
@@ -182,7 +184,7 @@ esp32-ada run -p /dev/ttyACM0              # build + flash + monitor
 The new folder looks like:
 
 ```
-myblink/  app.gpr  board.ads  build.sh  flash.sh  src/main.adb  main/{glue.c,build_ada.sh}  .vscode/
+myblink/  app.gpr  board.ads  build.sh  flash.sh  .gitignore  src/main.adb  .vscode/
 ```
 
 `app.gpr` does `with "esp32s3_rts.gpr"`, resolved via `GPR_PROJECT_PATH` (set by
@@ -195,7 +197,7 @@ hard-coded path. The project owns its own `board.ads` (Step 6), edited with
 ## Everyday workflow & tips
 
 - **Edit Ada and rebuild:** just `./build.sh` again, then `./flash.sh`.
-- **Force the Ada to rebuild:** `rm -f main/app_main.o` then `./build.sh`.
+- **Force the Ada to rebuild:** `rm -f obj/app_main.o` then `./build.sh`.
 - **Force the runtime to regenerate** (e.g. after a toolchain change):
   `rm -rf crates/esp32s3_rts/*-esp32s3`.
 - **Pick a different port:** pass it to flash, e.g. `./flash.sh /dev/ttyACM1`.
@@ -227,8 +229,8 @@ wget .../alr-2.1.0-bin-x86_64-linux.zip && unzip -d ~/alire alr-*.zip
 export PATH="$HOME/alire/bin:$PATH"
 alr toolchain --select gnat_native gprbuild
 alr toolchain --select gnat_xtensa_esp32_elf
-git clone --recurse-submodules https://github.com/rowsail/ada-bare-metal-esp32s3.git
-cd ada-bare-metal-esp32s3
+git clone --recurse-submodules https://github.com/rowsail/ada_esp32s3.git
+cd ada_esp32s3
 sudo usermod -aG dialout $USER          # then log out/in
 
 # --- build, flash, watch an example ---
@@ -238,7 +240,7 @@ cd examples/esp32s3_gpio0_blink
 screen /dev/ttyACM0 115200              # Ctrl-A K to quit
 
 # --- or start your own app in any folder ---
-. ~/ada-bare-metal-esp32s3/export.sh    # ESP32S3_ADA_SDK + esp32-ada on PATH
+. ~/ada_esp32s3/export.sh               # ESP32S3_ADA_SDK + esp32-ada on PATH
 mkdir ~/myblink && cd ~/myblink && esp32-ada init
 esp32-ada run -p /dev/ttyACM0           # build + flash + monitor
 ```

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Talking to the hardware: the HAL &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Twenty-five-plus drivers, each a private register engine hidden behind a task-safe gateway. Here is what using one looks like, and why they are shaped the way they are.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li class="current"><a href="11-hal.html" aria-current="page">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-debugging.html">Debugging</a></li>
+      <li><a href="17-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="10-own-project.html">&larr; Your own project</a><a href="12-gpio.html">GPIO in depth &rarr;</a></nav>
+    <p class="eyebrow">Step 11 of 17</p>
+    <h1>Talking to the hardware: the HAL</h1>
+    <p class="lede">Twenty-five-plus drivers, each a private register engine hidden behind a task-safe gateway. Here is what using one looks like, and why they are shaped the way they are.</p>
+
+<h2>Using it</h2>
+
+<p>The HAL is a plain GPR library project &mdash;
+<code>libs/esp32s3_hal/esp32s3_hal.gpr</code> &mdash; <strong>not an Alire
+crate</strong>. It has no <code>alire.toml</code>, and nothing reaches it through
+Alire's dependency graph; the runtime (<code>crates/esp32s3_rts</code>) is the
+only crate here, path-pinned by each example. What you get instead is one line
+in your own project file, resolved either of two ways:</p>
+
+<pre><code>--  Standalone project: by name, via GPR_PROJECT_PATH (which export.sh sets)
+with "esp32s3_hal.gpr";
+
+--  In-repo example: by relative path, so the Ada Language Server resolves it
+--  with no environment set at all
+with "../../libs/esp32s3_hal/esp32s3_hal.gpr";</code></pre>
+
+<p><code>export.sh</code> puts <code>crates/esp32s3_rts</code> and every
+directory under <code>libs/</code> on <code>GPR_PROJECT_PATH</code>, so the
+by-name form resolves for <code>gprbuild</code> <em>and</em> for the Ada Language
+Server. Adding a library to the SDK needs no edit anywhere: dropping
+<code>libs/&lt;name&gt;/&lt;name&gt;.gpr</code> in is enough. The HAL's units
+compile against the same runtime and the same profile as whatever consumes them
+&mdash; the project reads <code>ESP32S3_RTS_PROFILE</code> itself and keys its
+object directory by it.</p>
+
+<p>Then <code>with</code> the driver you want. This is the whole body of the
+blink example's GPIO package &mdash; a real, complete driver client:</p>
+
+<pre><code>with System;
+with Ada.Real_Time; use Ada.Real_Time;
+
+with ESP32S3.GPIO;
+with ESP32S3.Log; use ESP32S3.Log;
+
+package body GPIO is
+
+   Pin : constant ESP32S3.GPIO.Pin_Id := 0;
+
+   --  Library-level task: toggle GPIO0 every 250 ms (2 Hz square wave) on core 0,
+   --  logging each transition over the USB-Serial-JTAG console.
+   task Blinker
+     with Priority =&gt; System.Priority'Last - 1, CPU =&gt; 1;
+
+   task body Blinker is
+      Period : constant Time_Span := Milliseconds (250);
+      Next   : Time;
+      High   : Boolean := False;
+   begin
+      ESP32S3.GPIO.Configure (Pin, ESP32S3.GPIO.Output,
+                              Drive =&gt; ESP32S3.GPIO.Drive_Strong);
+      Next := Clock + Period;
+      loop
+         delay until Next;
+         High := not High;
+         ESP32S3.GPIO.Write (Pin, High);
+         Put_Line ("[gpio0] " &amp; (if High then "HIGH" else "low "));
+         Next := Next + Period;
+      end loop;
+   end Blinker;
+
+end GPIO;</code></pre>
+
+<p>Three things in there are worth noticing.</p>
+
+<ul>
+  <li><strong><code>CPU =&gt; 1</code></strong> pins the task to a core. This is
+      a genuinely dual-core SMP runtime; tasks can be pinned per core and
+      protected-object entries work <em>across</em> cores.</li>
+  <li><strong><code>Next := Next + Period</code></strong>, not
+      <code>Clock + Period</code>. Absolute deadlines do not accumulate drift.
+      The interrupt-backed <code>delay until</code> gives exact, stable
+      periods.</li>
+  <li><strong>No register pokes.</strong> Everything goes through
+      <code>ESP32S3.GPIO</code>, which is where the device knowledge lives.</li>
+</ul>
+
+<h2>How the drivers are shaped</h2>
+
+<p>Each driver is a thin <em>private</em> register "engine" hidden behind a
+task-safe gateway &mdash; either a protected object or a limited-controlled RAII
+handle. Concurrent access from several tasks is therefore safe by construction
+rather than by convention, and a driver handle releases its peripheral when it
+goes out of scope.</p>
+
+<p class="warn"><strong>The profile decides what the HAL even contains.</strong>
+The RAII-handle drivers &mdash; SPI, I2C, UART, GDMA, MCPWM &mdash; are built on
+controlled types, and <code>light-tasking</code> forbids those
+(<code>No_Finalization</code>), so the HAL project <em>excludes those sources</em>
+under that profile; so are the ext4 and FAT16 filesystems and the ESP
+serial-bootloader client. What remains under <code>light-tasking</code> is the
+lock-free subset: GPIO, RNG, temperature. The drivers <em>target</em>
+<a href="08-profiles.html"><code>embedded</code></a>, where full exception
+propagation lets their <code>-gnata</code> contracts &mdash; the GPIO valid-pin
+predicate, for one &mdash; raise something you can catch.</p>
+
+<p>Under the drivers sits a generated register layer,
+<code>ESP32S3_Registers.*</code>, produced by svd2ada from the vendor's SVD
+description &mdash; typed record fields with representation clauses, not
+<code>volatile uint32_t*</code> arithmetic.</p>
+
+<h2>What is available</h2>
+
+<p>GPIO, SPI, I2C, UART, GDMA, I2S, LEDC, RMT, PCNT, SDM, MCPWM, general-purpose
+timers, ADC, capacitive touch, RTC and RTC-IO, LCD (i80), TWAI/CAN, hardware
+crypto (SHA/AES), RNG, and SD over both SPI and the native SDHOST. Alongside
+them, a pure-Ada ext2/3/4 filesystem with a JBD2 journal, and a pure-Ada FAT16
+reader and formatter for media a PC has to be able to mount.</p>
+
+<p>Most drivers ship with a self-test under <code>examples/</code> that needs no
+wiring &mdash; internal loopback or GPIO sampling. Running the one for the
+peripheral you are about to use is the fastest way to confirm your board before
+you write any code against it.</p>
+
+<p>The next four steps take the four you will reach for first and go through
+them properly: <a href="12-gpio.html">GPIO</a> &mdash; the pin type, what is
+atomic in silicon, and pin interrupts; <a href="13-i2c.html">I2C</a> &mdash;
+session ownership, repeated START, and unbounded transfers;
+<a href="14-spi.html">SPI</a> &mdash; per-device clock and mode on a shared host,
+chip select three ways, and the DMA preconditions; and
+<a href="15-uart.html">UART</a> &mdash; why it has no setup call, interrupt-driven
+RX, and a pin-routing trap.</p>
+
+<p class="warn"><strong>Verify on your own board.</strong> The drivers were
+exercised on an ESP32-S3 during development, but nothing has been re-verified as
+it ships. A few components &mdash; the SD drivers, the temperature sensor, the
+filesystems' on-device paths, the ESP serial-bootloader client &mdash; are
+explicitly host-verified or smoke-tested only. The repository's <em>Testing
+status</em> table says which is which; treat every driver as needing
+confirmation on your hardware before you rely on it.</p>
+
+<h2>Console output</h2>
+
+<p><code>ESP32S3.Log</code> is the formatted-output path the examples use
+(<code>Put</code>, <code>Put_Line</code>, <code>Put_Hex</code>,
+<code>Put_Fixed</code>&hellip;) over the USB-Serial-JTAG console. On the
+<code>embedded</code> and <code>full</code> profiles
+<code>Ada.Text_IO</code> is available too, routed to the same console by the
+runtime.</p>
+    <nav class="pager">
+      <a class="prev" href="10-own-project.html"><span class="dir">&larr; Previous</span><span class="name">Your own project</span></a>
+      <a class="next" href="12-gpio.html"><span class="dir">Next &rarr;</span><span class="name">GPIO in depth</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

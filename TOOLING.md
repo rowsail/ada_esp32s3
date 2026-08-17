@@ -23,9 +23,9 @@ parts (language intelligence, the IDF-free build) already live in ALS + `./x`.
 ./x run     <example> [-p PORT] [-P PROF]  # build + flash + monitor
 ./x monitor [-p PORT]             # serial console @115200
 ./x clean   [<example>]           # remove build artifacts (all if omitted)
-./x config  [show|--json]         # show flash/PSRAM size (config/board.ads)
-./x config  flash-size <SIZE>     # e.g. 4MB, 512KB, 0x800000, 8388608
-./x config  psram-size <SIZE>     # (rebuild the bootloader for it to take effect)
+./x config  <example> [show|--json]   # show flash/PSRAM size (the example's board.ads)
+./x config  <example> flash-size <SIZE>  # e.g. 4MB, 512KB, 0x800000, 8388608
+./x config  <example> psram-size <SIZE>  # (rebuild the bootloader for it to take effect)
 ./x get-debug-tools               # fetch the pinned OpenOCD + s3 GDB (debug only)
 ./x debug   <example>             # on-chip debug: OpenOCD + GDB on app.elf
 ```
@@ -46,9 +46,8 @@ examples/<name>/
   alire.toml          # pins the esp32s3_rts runtime crate
   app.gpr             # Ada build (-> a relocatable ada_app.o)
   src/main.adb        # your code — boots both cores, then idles
-  main/glue.c         # your C natives (starts empty)
   build.sh flash.sh   # thin shims into common/bare (no edits needed)
-  main/build_ada.sh
+  .gitignore
 ```
 
 All the bare-boot machinery (start-up, the L5 vector, the 2nd-stage bootloader,
@@ -60,9 +59,10 @@ project never copies it. Then:
 ```
 
 The runtime is consumed by an Alire path-pin (`../../crates/esp32s3_rts`), so the
-project must live under `examples/`. Use the default **light-tasking** (Jorvik)
-profile, pick another per build with `./x build <ex> --profile embedded|full`, or
-hardcode `ESP32S3_RTS_PROFILE` in the example's `build.sh`.
+project must live under `examples/`. A scaffolded project defaults to the
+**embedded** profile (its `build.sh` exports `ESP32S3_RTS_PROFILE=embedded`);
+pick another per build with `./x build <ex> --profile light-tasking|full`, or
+change that line in the example's `build.sh`.
 
 ### Your own project, *outside* the repo (`esp32-ada`)
 
@@ -76,13 +76,14 @@ the out-of-tree counterpart of `./x` with the same verbs. `export.sh` puts
 ```sh
 . /path/to/ada_esp32s3/export.sh   # once per shell (add to ~/.bashrc to persist)
 mkdir ~/myblink && cd ~/myblink
-esp32-ada init                     # scaffold app.gpr, board.ads, src/main.adb, glue, .vscode
+esp32-ada init                     # scaffold app.gpr, board.ads, src/main.adb, .vscode
 esp32-ada run -p /dev/ttyACM0      # build + flash + monitor
 ```
 
 Verbs: `init [DIR] / build [-P PROFILE] / flash [-p PORT] / run [-p PORT] [-P PROFILE] /
-monitor / clean / config / debug / kill-openocd / install-ide / install-vim`. Default
-profile is **light-tasking**; `-C DIR` runs as if from `DIR`.
+monitor / clean / config / debug / kill-openocd / install-ide / install-vim`. A fresh
+`init` defaults to the **embedded** profile (set in the project's `build.sh`);
+`-C DIR` runs as if from `DIR`.
 
 **Lifting an example out of tree.** Don't copy a whole example directory (its Alire
 path-pin, `<name>.gpr`, and relative build shims are tied to `examples/`). Scaffold a
@@ -97,19 +98,20 @@ esp32-ada run -p /dev/ttyACM0
 ```
 
 Copy the example's `board.ads` too if it sets a non-default flash/PSRAM size, and its
-`main/glue.c` if it has C natives; add `with "<name>.gpr";` to `app.gpr` for any extra
-SDK library it uses.
+`glue.c` (at the example root) in the rare case it has C natives — no example
+currently does, the boot glue itself being Ada. Add `with "<name>.gpr";` to `app.gpr`
+for any extra SDK library it uses.
 
 ### Machine-readable discovery (for plugin authors)
 
-`./x list --json` and `./x config --json` emit structured output so a plugin can
+`./x list --json` and `./x config <example> --json` emit structured output so a plugin can
 populate menus without hardcoding:
 
 ```jsonc
 // ./x list --json
 [{"id":"esp32s3_gpio0_blink","name":"gpio0_blink",
   "dir":"examples/esp32s3_gpio0_blink","profile":"light-tasking"}, ...]
-// ./x config --json
+// ./x config <example> --json
 {"flash_size":2097152,"flash_size_str":"2MB","psram_size":2097152,"psram_pages":32}
 ```
 

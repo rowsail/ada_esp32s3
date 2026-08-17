@@ -1,5 +1,14 @@
---  Configuration pragma applied to the ESP32-S3 HAL (and any project that opts
---  in via Compiler'Local_Configuration_Pragmas).
+--  Configuration pragma applied to the ESP32-S3 HAL.
+--
+--  Your own project does NOT inherit it -- and needs it: under light-tasking the
+--  restriction is implicit in the runtime, but under embedded and full a
+--  trampoline COMPILES CLEAN and then faults on hardware.  To opt in, copy this
+--  file next to your app.gpr and name it in the project's Compiler package:
+--
+--     package Compiler is
+--        for Switches ("Ada") use ("-O2", "-g");
+--        for Local_Configuration_Pragmas use "no_dynamic_code.adc";
+--     end Compiler;
 --
 --  This target's stacks live in the data-bus SRAM window, whose instruction-bus
 --  alias is a different address; a GNAT *trampoline* -- the small stack stub

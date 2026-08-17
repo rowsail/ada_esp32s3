@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What happens between reset and Main &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li class="current"><a href="06-anatomy.html" aria-current="page">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-debugging.html">Debugging</a></li>
+      <li><a href="17-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
+    <p class="eyebrow">Step 06 of 17</p>
+    <h1>What happens between reset and Main</h1>
+    <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
+
+<h2>The layers, top to bottom</h2>
+
+<table>
+  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Your application</strong></td>
+        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
+    <tr><td><strong>The HAL</strong></td>
+        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
+            (<code>ESP32S3.*</code>) over a generated register layer
+            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
+            poke registers itself &mdash; but it is where the device knowledge
+            lives.</td></tr>
+    <tr><td><strong>The binder output</strong></td>
+        <td><code>gnatbind</code> generates <code>b__main</code>, which
+            elaborates every unit in dependency order and then calls
+            <code>Main</code>.</td></tr>
+    <tr><td><strong>The Ada runtime</strong></td>
+        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
+            stack, exceptions, text I/O over the USB-serial console, and the
+            tasking kernel &mdash; tasks, protected objects, delays,
+            scheduling.</td></tr>
+    <tr><td><strong>Board support</strong></td>
+        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
+            context switch, interrupt entry/exit vectors, the clock tick, SMP
+            scheduling and the inter-core interrupt. Ada plus a little assembly
+            (<code>start.S</code>, <code>highint5.S</code>,
+            <code>context_switch.S</code>). <em>This is the layer an
+            off-the-shelf RTOS would otherwise provide.</em></td></tr>
+    <tr><td><strong>2nd-stage bootloader</strong></td>
+        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
+            the octal PSRAM, and jumps to the application image. It replaces the
+            vendor's stock second-stage bootloader.</td></tr>
+    <tr><td><strong>Mask ROM</strong></td>
+        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
+            reset.</td></tr>
+  </tbody>
+</table>
+
+<h2>The boot path</h2>
+
+<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
+        cache/MMU, PSRAM      PLL, vectors,  elaboration
+                              release core 1</code></pre>
+
+<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
+interrupt vectors, and on the SMP examples releases the second core. Then the
+runtime's startup calls <code>adainit</code>, which runs every package's
+elaboration &mdash; and that is where library-level tasks like the blinker come
+alive, <em>before</em> <code>Main</code> is entered. Finally
+<code>Main</code> runs.</p>
+
+<p>There is no vendor startup shim and no third-party scheduler in that chain.
+The Ada runtime is the only scheduler and it is linked from source.</p>
+
+<h2>Why the blink example's Main does nothing</h2>
+
+<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
+this:</p>
+
+<pre><code>with Ada.Real_Time; use Ada.Real_Time;
+
+--  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
+--  task into the program so it elaborates and runs.
+with GPIO;
+pragma Unreferenced (GPIO);
+
+procedure Main is
+begin
+   loop
+      delay until Clock + Seconds (3600);
+   end loop;
+end Main;</code></pre>
+
+<p>The work is done by a library-level task inside package <code>GPIO</code>,
+which starts at elaboration. <code>Main</code> becomes the environment task,
+which here just parks forever. Withing a package you never call is how you pull
+its tasks into the link closure; <code>pragma Unreferenced</code> tells the
+compiler that is deliberate.</p>
+
+<h2>A minimal application</h2>
+
+<p>If you would rather do the work in <code>Main</code> itself, this is a
+complete program:</p>
+
+<pre><code>with Ada.Real_Time; use Ada.Real_Time;
+with ESP32S3.GPIO;
+
+procedure Main is
+   Led : constant ESP32S3.GPIO.Pin_Id := 2;
+begin
+   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
+   loop
+      ESP32S3.GPIO.Toggle (Led);
+      delay until Clock + Milliseconds (250);
+   end loop;
+end Main;</code></pre>
+
+<p><code>delay until</code> is served by the board-support tick;
+<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
+crate.</p>
+    <nav class="pager">
+      <a class="prev" href="05-first-blink.html"><span class="dir">&larr; Previous</span><span class="name">Your first blink</span></a>
+      <a class="next" href="07-build.html"><span class="dir">Next &rarr;</span><span class="name">What a build does</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

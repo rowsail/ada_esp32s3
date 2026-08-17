@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Start here &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-debugging.html">Debugging</a></li>
+      <li><a href="17-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <p class="eyebrow">Start here</p>
+    <h1>Bare-Metal Ada on the ESP32-S3</h1>
+    <p class="lede">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python. Seventeen short steps, one aspect each, from a
+    blank machine to your own Ada application running on both cores.</p>
+
+    <p>The ESP32-S3 is normally programmed through Espressif's ESP-IDF: a large
+    C SDK, a Python build front end, and FreeRTOS underneath everything. This
+    guide takes a different route. The runtime here owns both cores &mdash; the
+    context switch, the interrupt vectors, the clock tick, the SMP scheduler and
+    the inter-core interrupt are all its own, written in Ada and a little Xtensa
+    assembly. FreeRTOS never runs; its scheduler is not even linked. The
+    toolchain you install is one package manager.</p>
+
+    <p>Each page below covers exactly one thing, and each links to the next.
+    Steps 1 to 5 get an LED blinking. Steps 6 to 9 explain what you just did and
+    how to configure it. Steps 10 and 11 are your own project and the driver
+    library, 12 to 15 go deep on the four peripherals you will reach for first
+    &mdash; GPIO, I2C, SPI and UART &mdash; and 16 and 17 are the debugger and
+    what to do when something goes wrong.</p>
+
+    <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
+
+    <h2>Contents</h2>
+    <ol class="index-list">
+      <li><a href="01-what-you-need.html">What you need (and what you don't)</a><p>The board, the cable, the one package manager &mdash; and the four things you are not installing.</p></li>
+      <li><a href="02-toolchain.html">Installing Alire and the toolchains</a><p>Installing Alire and selecting the cross, native and build toolchains.</p></li>
+      <li><a href="03-clone.html">Getting the code (submodules are not optional)</a><p>Cloning the repository with its two submodules, and what is in the tree.</p></li>
+      <li><a href="04-board.html">Plugging in the board and finding the port</a><p>The native USB port, the device node, serial permissions, and forcing download mode.</p></li>
+      <li><a href="05-first-blink.html">Your first blink</a><p>One command builds, flashes and monitors a pure-Ada GPIO driver at 2&nbsp;Hz.</p></li>
+      <li><a href="06-anatomy.html">What happens between reset and Main</a><p>Every layer between the mask ROM and your first line of Ada, and why <code>Main</code> can be empty.</p></li>
+      <li><a href="07-build.html">What a build actually does</a><p>The five build steps, and the two Ada host tools that replace esptool.</p></li>
+      <li><a href="08-profiles.html">Choosing a runtime profile</a><p>light-tasking, embedded, full &mdash; what each gives you and which to pick.</p></li>
+      <li><a href="09-board-config.html">Board configuration: board.ads</a><p>Flash and PSRAM size in <code>board.ads</code>, and why PSRAM size rebuilds the bootloader.</p></li>
+      <li><a href="10-own-project.html">Your own project, outside the repo</a><p>Scaffolding a standalone project anywhere on disk with <code>export.sh</code> and <code>esp32-ada</code>.</p></li>
+      <li><a href="11-hal.html">Talking to the hardware: the HAL</a><p>Using the peripheral drivers, how they are shaped, and what still needs verifying on your board.</p></li>
+      <li><a href="12-gpio.html">GPIO in depth</a><p>The pin type that rejects a pad which would hang the chip, what is atomic in silicon, and the interrupt callback rule.</p></li>
+      <li><a href="13-i2c.html">I2C in depth</a><p>An RAII session that cannot leak the bus lock, repeated START, and why payload length never reaches your code.</p></li>
+      <li><a href="14-spi.html">SPI in depth</a><p>Per-device clock and mode on a shared host, chip select three ways, and DMA rules enforced as preconditions.</p></li>
+      <li><a href="15-uart.html">UART in depth</a><p>No setup call by design, interrupt-driven RX with a buffer Ada makes you declare just so, and a routing trap.</p></li>
+      <li><a href="16-debugging.html">Debugging: GDB over the same cable</a><p>OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.</p></li>
+      <li><a href="17-troubleshooting.html">Troubleshooting, and where to go next</a><p>The failure modes worth recognising on sight, a cheat sheet, and where to read next.</p></li>
+    </ol>
+
+    <footer class="site">
+      <p>Drawn from the project's own <code>QUICKSTART.md</code>,
+      <code>TOOLING.md</code>, and the book in <code>book/</code>. Where this
+      guide and the source repository disagree, the repository is right.</p>
+    </footer>
+
+  </main>
+
+</div>
+
+</body>
+</html>

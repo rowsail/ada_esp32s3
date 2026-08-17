@@ -29,9 +29,10 @@ and where each feature comes from.
   \texttt{context\_switch.S}). This is the layer an off-the-shelf RTOS would otherwise
   provide. Here it is ours.
 \item[The 2nd-stage bootloader.] Before any of the above runs, our own minimal
-  loader (a ZFP-Ada \texttt{boot\_main} + an assembly prologue + a thin C PSRAM
-  shim) maps the flash cache/MMU and brings up the octal PSRAM, then jumps to the
-  application image. It replaces the chip vendor's stock second-stage bootloader.
+  loader (ZFP Ada throughout --- \texttt{boot\_main} plus \texttt{boot\_psram}
+  --- behind an assembly prologue) maps the flash cache/MMU and brings up the
+  octal PSRAM, then jumps to the application image. It replaces the chip
+  vendor's stock second-stage bootloader, and contains no C.
 \item[The mask ROM.] The chip's on-chip ROM loads the 2nd-stage bootloader from
   flash at reset.
 \end{description}

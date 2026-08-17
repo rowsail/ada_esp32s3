@@ -60,23 +60,26 @@ It is built in three layers:
 ## Blob-free PSRAM bring-up with a real timing tune
 
 Reinforcing the *no-ESP-IDF* claim, the 2nd-stage bootloader's external octal-PSRAM
-bring-up is now **entirely from-source** — all five vendored IDF objects (the
-`mspi_timing`/GPIO config *and* the chip init) were reverse-engineered live over JTAG
-and replaced with ~200 lines of readable C
-([`mspi_timing_src.c`](examples/common/bare/bootloader/mspi_timing_src.c) +
-[`psram_impl_src.c`](examples/common/bare/bootloader/psram_impl_src.c)). The bring-up
-now calls only documented ROM functions: mode-register programming and the
-connectivity probe go through the ROM OPI helper, and the controller config is written
-from the captured (golden) register state.
+bring-up is now **entirely from-source, and entirely Ada** — all five vendored IDF
+objects (the `mspi_timing`/GPIO config *and* the chip init) were reverse-engineered
+live over JTAG, replaced first with readable C and then ported to ZFP Ada
+([`boot_psram.adb`](examples/common/bare/bootloader/src/boot_psram.adb)); the
+bootloader now has no C at all, only Ada plus its assembly prologue. The bring-up
+calls only documented ROM functions: mode-register programming and the connectivity
+probe go through the ROM OPI helper, and the controller config is written from the
+captured (golden) register state.
 
 The PSRAM **din sampling is also genuinely calibrated now**. The IDF blob runs its
 tuning sweep at 20 MHz — where the sampling phase is irrelevant — so it always falls
 back to a vendor default that actually *fails* at the 80 MHz operating speed
 (previously papered over by a hand-coded override). The replacement sweeps the din at
 the real 80 MHz over a *bounded* SPI1 transaction (a wrong setting returns garbage
-instead of stalling the bus), finds the true timing window, and centres on it — a
-per-board measurement with no magic constant, validated end-to-end by the example's
-1 MB checksum. Full write-up:
+instead of stalling the bus) — but it deliberately does **not** simply centre on that
+window: the SPI1 eye is wider than, and offset from, the cache's own SPI0 eye. A
+one-off async-preload cache probe measured the real cache eye, and the tune prefers
+**din mode 1**, which sits inside it on every octal board tested, whenever the sweep
+shows that mode in-window. Validated end-to-end by the example's 1 MB checksum. Full
+write-up:
 [PSRAM_BRINGUP_RESEARCH.md](examples/common/bare/bootloader/PSRAM_BRINGUP_RESEARCH.md).
 
 ## What runs on real silicon
@@ -99,8 +102,8 @@ per-board measurement with no magic constant, validated end-to-end by the exampl
 
 ```sh
 git clone --recurse-submodules \
-    https://github.com/rowsail/ada-bare-metal-esp32s3.git
-cd ada-bare-metal-esp32s3
+    https://github.com/rowsail/ada_esp32s3.git
+cd ada_esp32s3
 ./x flash smp_empty           # build + flash the empty SMP skeleton
 ./x monitor                   # watch the console
 ```
@@ -129,9 +132,10 @@ unrestricted runtime. See the book's profile chapter and the
 
 ## Examples
 
-All 31 examples share the same FreeRTOS-free bare boot
+All 96 examples share the same FreeRTOS-free bare boot
 ([`examples/common/bare/`](examples/common/bare)); build/flash any with
-`./x flash <short-name>` (the `esp32s3_` prefix is optional).
+`./x flash <short-name>` (the `esp32s3_` prefix is optional). Run `./x list` for
+the full set with each one's runtime profile — the tables below are a selection.
 
 **Boot**
 | Example | What it is |
@@ -194,8 +198,10 @@ put your network in the gitignored `src/wifi_credentials.ads`)
 
 ## The peripheral HAL
 
-[`libs/esp32s3_hal`](libs/esp32s3_hal) is a reusable Alire library
-(`with "esp32s3_hal.gpr";`) of task-safe drivers built on an svd2ada register
+[`libs/esp32s3_hal`](libs/esp32s3_hal) is a reusable GPR library project
+(`with "esp32s3_hal.gpr";` — resolved by name via `GPR_PROJECT_PATH`, which
+`export.sh` sets; it is not an Alire crate, and only the runtime in `crates/` is)
+of task-safe drivers built on an svd2ada register
 layer: GPIO, SPI, I2C, UART, GDMA, I2S, LEDC, RMT, PCNT, SDM, MCPWM, GP timers,
 ADC, capacitive touch, RTC + RTC-IO, LCD (i80), TWAI/CAN, hardware crypto
 (SHA/AES), RNG, and SD (SPI + native SDHOST). Each is a thin private register

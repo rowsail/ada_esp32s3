@@ -1,7 +1,7 @@
 --  Library-level latch for the QMI8658C INT line.
 --
 --  ESP32S3.GPIO.Interrupts.Enable takes a library-level `access procedure`, and
---  its Callback runs in INTERRUPT context (a level-3 protected action): it must
+--  its Callback runs in INTERRUPT context (a level-2 protected action): it must
 --  stay short and must not touch the I2C bus.  So the ISR here only sets an
 --  Atomic flag; the main task notices it, then does the slow I2C work (reading
 --  the samples / status) at task level.
