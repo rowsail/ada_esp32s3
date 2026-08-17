@@ -1002,7 +1002,8 @@ subtype Optional_Pin is Pad_Number
 PSRAM. Driving any of them hangs the chip &mdash; not an exception you can catch,
 a dead board. So they are not in the subtype.</p>
 
-<p class="note"><strong>Why the predicate is <code>Static_</code>.</strong>
+<p class="note"><strong>Why it is a <code>Static_Predicate</code> and not a
+dynamic one.</strong>
 Because it is static, naming a reserved pad as a <em>compile-time</em> value is a
 <strong>compile error</strong> (<code>static expression fails static predicate
 check</code>), not a runtime surprise. That only bites if the value is static
@@ -2033,7 +2034,7 @@ a:hover { text-decoration-thickness: 2px; }
 }
 .toc ol { list-style: none; margin: 0; padding: 0; counter-reset: step; }
 .toc li { counter-increment: step; margin: 0; }
-.toc a {
+.toc ol a {
   display: block;
   padding: 0.3rem 0.55rem 0.3rem 2.1rem;
   text-indent: -1.55rem;
@@ -2042,14 +2043,14 @@ a:hover { text-decoration-thickness: 2px; }
   border-left: 2px solid transparent;
   border-radius: 0 3px 3px 0;
 }
-.toc a::before {
+.toc ol a::before {
   content: counter(step, decimal-leading-zero);
   color: var(--fg-faint);
   font-family: var(--mono);
   font-size: 0.78em;
   margin-right: 0.6rem;
 }
-.toc a:hover { color: var(--fg); background: var(--rule-soft); }
+.toc ol a:hover { color: var(--fg); background: var(--rule-soft); }
 .toc li.current > a {
   color: var(--accent);
   font-weight: 600;

@@ -68,7 +68,8 @@ subtype Optional_Pin is Pad_Number
 PSRAM. Driving any of them hangs the chip &mdash; not an exception you can catch,
 a dead board. So they are not in the subtype.</p>
 
-<p class="note"><strong>Why the predicate is <code>Static_</code>.</strong>
+<p class="note"><strong>Why it is a <code>Static_Predicate</code> and not a
+dynamic one.</strong>
 Because it is static, naming a reserved pad as a <em>compile-time</em> value is a
 <strong>compile error</strong> (<code>static expression fails static predicate
 check</code>), not a runtime surprise. That only bites if the value is static

@@ -116,7 +116,7 @@ a:hover { text-decoration-thickness: 2px; }
 }
 .toc ol { list-style: none; margin: 0; padding: 0; counter-reset: step; }
 .toc li { counter-increment: step; margin: 0; }
-.toc a {
+.toc ol a {
   display: block;
   padding: 0.3rem 0.55rem 0.3rem 2.1rem;
   text-indent: -1.55rem;
@@ -125,14 +125,14 @@ a:hover { text-decoration-thickness: 2px; }
   border-left: 2px solid transparent;
   border-radius: 0 3px 3px 0;
 }
-.toc a::before {
+.toc ol a::before {
   content: counter(step, decimal-leading-zero);
   color: var(--fg-faint);
   font-family: var(--mono);
   font-size: 0.78em;
   margin-right: 0.6rem;
 }
-.toc a:hover { color: var(--fg); background: var(--rule-soft); }
+.toc ol a:hover { color: var(--fg); background: var(--rule-soft); }
 .toc li.current > a {
   color: var(--accent);
   font-weight: 600;
