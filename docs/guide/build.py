@@ -467,21 +467,13 @@ compiler that is deliberate.</p>
 
 <h2>A minimal application</h2>
 
-<p>If you would rather do the work in <code>Main</code> itself, this is a
-complete program:</p>
+<p>If you would rather do the work in the main procedure itself, this is a
+complete program. (It is named <code>Blink_Min</code> here because it lives in
+<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
+it against the embedded runtime on every doc change &mdash; rename it
+<code>Main</code> in your own project.)</p>
 
-<pre><code>with Ada.Real_Time; use Ada.Real_Time;
-with ESP32S3.GPIO;
-
-procedure Main is
-   Led : constant ESP32S3.GPIO.Pin_Id := 2;
-begin
-   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
-   loop
-      ESP32S3.GPIO.Toggle (Led);
-      delay until Clock + Milliseconds (250);
-   end loop;
-end Main;</code></pre>
+{{sample:blink_min.adb}}
 
 <p><code>delay until</code> is served by the board-support tick;
 <code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
@@ -1321,22 +1313,7 @@ acknowledge its address. That answer arrives in <code>Success</code>, which is
 exactly what a bus scan needs, so scanning is the same call in a loop over the
 address range:</p>
 
-<pre><code>--  needs:  with Interfaces;  with ESP32S3.I2C;  with ESP32S3.Log; use ESP32S3.Log;
-declare
-   S  : ESP32S3.I2C.Session;      --  releases itself when this block exits
-   Ok : Boolean;
-begin
-   ESP32S3.I2C.Acquire (S, ESP32S3.I2C.I2C0);
-   for A in ESP32S3.I2C.Slave_Address'Range loop      --  0 .. 16#7F#
-      --  (1 .. 0 =&gt; 0) is a null array: the address-only probe.
-      ESP32S3.I2C.Write (S, A, Data =&gt; (1 .. 0 =&gt; 0), Success =&gt; Ok);
-      if Ok then
-         Put ("[i2c] device at 0x");
-         Put_Hex (Interfaces.Unsigned_32 (A), Width =&gt; 2);
-         New_Line;
-      end if;
-   end loop;
-end;</code></pre>
+{{sample:i2c_scan.adb}}
 
 <p>Two details in there are easy to get wrong. <code>(1 .. 0 =&gt; 0)</code> is
 how you write a null array aggregate &mdash; a range whose upper bound is below
@@ -1433,7 +1410,8 @@ controller; the GPIO matrix is then re-routed for the duration of that hold.</p>
 
 <p>The session is the same limited, controlled RAII handle as
 <a href="13-i2c.html">I2C</a>'s: it releases the host on scope exit including
-during exception unwinding, and <code>Not_Initialized</code> /
+during exception unwinding, <code>Release</code> is available (and idempotent)
+to hand it back early, and <code>Not_Initialized</code> /
 <code>Not_Owned</code> enforce the ordering. One addition worth knowing:</p>
 
 <pre><code>pragma Assertion_Policy (Pre =&gt; Check);   --  in the spec of ESP32S3.SPI itself</code></pre>
@@ -1587,6 +1565,12 @@ Acquire (S, UART1, Rx =&gt; 18);                 --  RX only (e.g. a GPS)
 Acquire (S, UART1, Tx =&gt; 17, Rx =&gt; 16,
                    Rts =&gt; 19, Cts =&gt; 20);     --  + RTS/CTS flow control</code></pre>
 
+<p>The parameters are typed rather than numeric, so a nonsense frame format does
+not reach the hardware: <code>Baud : Baud_Rate</code> (300 .. 5_000_000),
+<code>Bits : Data_Bits</code> (5 .. 8), <code>Parity : Parity_Mode</code>
+(<code>None</code>, <code>Even</code>, <code>Odd</code>) and
+<code>Stop : Stop_Bits</code> (<code>One</code>, <code>Two</code>).</p>
+
 <p>So changing a setting requires owning the port and can never race another
 task. There is no way to reconfigure a UART somebody else is mid-transfer on,
 because there is no API that takes a port instead of a session.</p>
@@ -1636,6 +1620,9 @@ alongside the new one.</p>
         <td>Read-modify-write of <strong>just</strong> that attribute, effective
             immediately, leaving everything else (including routing)
             untouched.</td></tr>
+    <tr><td><code>Set_Inversion</code></td>
+        <td>Inverts (or un-inverts) each line's polarity independently. Sets the
+            full state of all four lines, so an omitted one is cleared.</td></tr>
   </tbody>
 </table>
 
@@ -1652,7 +1639,8 @@ plus byte-timeout) that drains the FIFO into a ring buffer the instant bytes
 arrive; <code>Read</code> and <code>Available</code> then serve from that
 buffer.</p>
 
-<p>The buffer is caller-owned, and its size <em>is</em> the ring depth. It must
+<p>The buffer is caller-owned &mdash; you pass an
+<code>Rx_Buffer_Access</code> &mdash; and its size <em>is</em> the ring depth. It must
 outlive the port and must be library-level, because the RX ISR writes it &mdash;
 never a stack object.</p>
 
@@ -1664,17 +1652,7 @@ subprogram that calls <code>Enable_Buffered_Rx</code> fails with
 <code>non-local pointer cannot point to local object</code> &mdash; the language
 enforcing the same lifetime rule the ISR needs:</p>
 
-<pre><code>--  uart_buf.ads -- library level, so it outlives every scope
-with ESP32S3.UART;
-package Uart_Buf is
-   --  CORRECT: bounds come from the initial value, so the nominal subtype stays
-   --  the unconstrained Byte_Array the access type designates.
-   Ring : aliased ESP32S3.UART.Byte_Array := (0 .. 255 =&gt; 0);
-
-   --  WRONG: explicit bounds make this a CONSTRAINED subtype; 'Access is then
-   --  illegal, and the only way through would be 'Unrestricted_Access.
-   --  Ring : aliased ESP32S3.UART.Byte_Array (0 .. 255) := (others =&gt; 0);
-end Uart_Buf;</code></pre>
+{{sample:uart_buf.ads}}
 
 <pre><code>--  then, anywhere:
 ESP32S3.UART.Enable_Buffered_Rx (ESP32S3.UART.UART1, Uart_Buf.Ring'Access);</code></pre>
@@ -1715,6 +1693,10 @@ suspected overrun.</p>
       always use <code>Count</code>, never assume the buffer filled.</li>
   <li><strong><code>Available (S)</code></strong> is the number of bytes waiting
       now.</li>
+  <li><strong><code>Release (S)</code></strong> hands the port back early, for a
+      session whose scope outlives its use of the link. It is idempotent, and
+      scope exit does it for you &mdash; so it is a convenience, never an
+      obligation.</li>
 </ul>
 
 <h2>A loopback that actually works on-chip</h2>
@@ -2411,6 +2393,17 @@ BLURBS = {
 }
 
 
+def sample(name):
+    """Inline a file from samples/ -- the same file check_samples.sh compiles.
+
+    The guide therefore cannot show Ada that does not build: there is one copy,
+    and it is the compiled one."""
+    with open(os.path.join(HERE, "samples", name)) as f:
+        text = f.read().rstrip("\n")
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return '<pre><code>%s</code></pre>' % text
+
+
 def strip_tags(s):
     return re.sub(r"<[^>]+>", "", s)
 
@@ -2487,7 +2480,8 @@ def build():
                 n,
                 p["title"],
                 p["lede"],
-                p["body"].rstrip(),
+                re.sub(r"\{\{sample:([\w.]+)\}\}",
+                       lambda m: sample(m.group(1)), p["body"]).rstrip(),
                 "\n".join(pager),
             )
         )

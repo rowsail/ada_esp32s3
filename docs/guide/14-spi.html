@@ -97,7 +97,8 @@ controller; the GPIO matrix is then re-routed for the duration of that hold.</p>
 
 <p>The session is the same limited, controlled RAII handle as
 <a href="13-i2c.html">I2C</a>'s: it releases the host on scope exit including
-during exception unwinding, and <code>Not_Initialized</code> /
+during exception unwinding, <code>Release</code> is available (and idempotent)
+to hand it back early, and <code>Not_Initialized</code> /
 <code>Not_Owned</code> enforce the ordering. One addition worth knowing:</p>
 
 <pre><code>pragma Assertion_Policy (Pre =&gt; Check);   --  in the spec of ESP32S3.SPI itself</code></pre>

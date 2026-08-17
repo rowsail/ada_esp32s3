@@ -173,14 +173,27 @@ acknowledge its address. That answer arrives in <code>Success</code>, which is
 exactly what a bus scan needs, so scanning is the same call in a loop over the
 address range:</p>
 
-<pre><code>--  needs:  with Interfaces;  with ESP32S3.I2C;  with ESP32S3.Log; use ESP32S3.Log;
-declare
-   S  : ESP32S3.I2C.Session;      --  releases itself when this block exits
+<pre><code>--  Guide step 13 -- "Scanning the bus".
+--
+--  A zero-length Write is a complete transaction with no payload: START, the
+--  address byte, STOP.  Success is then simply "did anything ACK this address",
+--  which is exactly what a bus scan needs.
+--
+--  Two things the compiler will hold you to, and the reason this file is
+--  compiled rather than hand-copied into the page:
+--    * (1 .. 0 =&gt; 0) is the null array aggregate -- upper bound below lower.
+--    * Slave_Address is a Natural subtype but Put_Hex takes an Unsigned_32, so
+--      the conversion is required.
+with Interfaces;
+with ESP32S3.I2C;
+with ESP32S3.Log; use ESP32S3.Log;
+
+procedure I2C_Scan is
+   S  : ESP32S3.I2C.Session;      --  releases itself when this scope exits
    Ok : Boolean;
 begin
    ESP32S3.I2C.Acquire (S, ESP32S3.I2C.I2C0);
    for A in ESP32S3.I2C.Slave_Address'Range loop      --  0 .. 16#7F#
-      --  (1 .. 0 =&gt; 0) is a null array: the address-only probe.
       ESP32S3.I2C.Write (S, A, Data =&gt; (1 .. 0 =&gt; 0), Success =&gt; Ok);
       if Ok then
          Put ("[i2c] device at 0x");
@@ -188,7 +201,7 @@ begin
          New_Line;
       end if;
    end loop;
-end;</code></pre>
+end I2C_Scan;</code></pre>
 
 <p>Two details in there are easy to get wrong. <code>(1 .. 0 =&gt; 0)</code> is
 how you write a null array aggregate &mdash; a range whose upper bound is below

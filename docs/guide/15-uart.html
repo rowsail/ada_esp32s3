@@ -69,6 +69,12 @@ Acquire (S, UART1, Rx =&gt; 18);                 --  RX only (e.g. a GPS)
 Acquire (S, UART1, Tx =&gt; 17, Rx =&gt; 16,
                    Rts =&gt; 19, Cts =&gt; 20);     --  + RTS/CTS flow control</code></pre>
 
+<p>The parameters are typed rather than numeric, so a nonsense frame format does
+not reach the hardware: <code>Baud : Baud_Rate</code> (300 .. 5_000_000),
+<code>Bits : Data_Bits</code> (5 .. 8), <code>Parity : Parity_Mode</code>
+(<code>None</code>, <code>Even</code>, <code>Odd</code>) and
+<code>Stop : Stop_Bits</code> (<code>One</code>, <code>Two</code>).</p>
+
 <p>So changing a setting requires owning the port and can never race another
 task. There is no way to reconfigure a UART somebody else is mid-transfer on,
 because there is no API that takes a port instead of a session.</p>
@@ -118,6 +124,9 @@ alongside the new one.</p>
         <td>Read-modify-write of <strong>just</strong> that attribute, effective
             immediately, leaving everything else (including routing)
             untouched.</td></tr>
+    <tr><td><code>Set_Inversion</code></td>
+        <td>Inverts (or un-inverts) each line's polarity independently. Sets the
+            full state of all four lines, so an omitted one is cleared.</td></tr>
   </tbody>
 </table>
 
@@ -134,7 +143,8 @@ plus byte-timeout) that drains the FIFO into a ring buffer the instant bytes
 arrive; <code>Read</code> and <code>Available</code> then serve from that
 buffer.</p>
 
-<p>The buffer is caller-owned, and its size <em>is</em> the ring depth. It must
+<p>The buffer is caller-owned &mdash; you pass an
+<code>Rx_Buffer_Access</code> &mdash; and its size <em>is</em> the ring depth. It must
 outlive the port and must be library-level, because the RX ISR writes it &mdash;
 never a stack object.</p>
 
@@ -146,17 +156,23 @@ subprogram that calls <code>Enable_Buffered_Rx</code> fails with
 <code>non-local pointer cannot point to local object</code> &mdash; the language
 enforcing the same lifetime rule the ISR needs:</p>
 
-<pre><code>--  uart_buf.ads -- library level, so it outlives every scope
+<pre><code>--  Guide step 15 -- the caller-owned ring buffer for interrupt-driven RX.
+--
+--  It lives in a PACKAGE, not in the procedure that calls Enable_Buffered_Rx:
+--  the RX ISR writes it, so it has to outlive every scope.  Declare it inside a
+--  subprogram and the compiler says
+--     error: non-local pointer cannot point to local object
+--
+--  And it must be declared WITHOUT bounds, taking them from the initial value,
+--  so its nominal subtype stays the unconstrained Byte_Array the access type
+--  designates.  With explicit bounds it is a constrained subtype, 'Access is
+--  illegal, and the only way through would be 'Unrestricted_Access:
+--     Ring : aliased ESP32S3.UART.Byte_Array (0 .. 255) := (others =&gt; 0);  -- WRONG
 with ESP32S3.UART;
-package Uart_Buf is
-   --  CORRECT: bounds come from the initial value, so the nominal subtype stays
-   --  the unconstrained Byte_Array the access type designates.
-   Ring : aliased ESP32S3.UART.Byte_Array := (0 .. 255 =&gt; 0);
 
-   --  WRONG: explicit bounds make this a CONSTRAINED subtype; 'Access is then
-   --  illegal, and the only way through would be 'Unrestricted_Access.
-   --  Ring : aliased ESP32S3.UART.Byte_Array (0 .. 255) := (others =&gt; 0);
-end Uart_Buf;</code></pre>
+package UART_Buf is
+   Ring : aliased ESP32S3.UART.Byte_Array := (0 .. 255 =&gt; 0);
+end UART_Buf;</code></pre>
 
 <pre><code>--  then, anywhere:
 ESP32S3.UART.Enable_Buffered_Rx (ESP32S3.UART.UART1, Uart_Buf.Ring'Access);</code></pre>
@@ -197,6 +213,10 @@ suspected overrun.</p>
       always use <code>Count</code>, never assume the buffer filled.</li>
   <li><strong><code>Available (S)</code></strong> is the number of bytes waiting
       now.</li>
+  <li><strong><code>Release (S)</code></strong> hands the port back early, for a
+      session whose scope outlives its use of the link. It is idempotent, and
+      scope exit does it for you &mdash; so it is a convenience, never an
+      obligation.</li>
 </ul>
 
 <h2>A loopback that actually works on-chip</h2>
