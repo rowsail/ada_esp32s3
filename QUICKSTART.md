@@ -17,7 +17,7 @@ repo's own scripts and host tools (a pure-Ada `elf2image` + serial flasher).
   USB-Serial-JTAG — usually labelled **USB**, not **UART**).
 - A **data-carrying** USB cable (not charge-only).
 
-**Software** — just three Alire toolchains + git. *That's the whole list*: there is
+**Software** — just three Alire toolchains (git optional). *That's the whole list*: there is
 no ESP-IDF, no esptool, and no Python in the build/flash path.
 
 ### The big picture
@@ -64,16 +64,27 @@ That's the only install. **No ESP-IDF, no esptool, no Python.**
 
 ## Step 2 — Get the repo (with submodules!)
 
-The runtime depends on two git submodules (`bb-runtimes`, `xtensa-dynconfig`).
-`--recurse-submodules` is **not optional**.
+Two ways in. **There are no submodules** — `bb-runtimes` and `xtensa-dynconfig`
+are vendored as ordinary directories — so nothing extra has to be fetched.
+
+Unzip a tagged release (no git needed; ~11 MB, a complete build tree):
 
 ```sh
 cd ~
-git clone --recurse-submodules \
-    https://github.com/rowsail/ada_esp32s3.git
+curl -LO https://github.com/rowsail/ada_esp32s3/archive/refs/tags/v1.4.zip
+unzip v1.4.zip && cd ada_esp32s3-1.4
+```
+
+Or clone, if you want `git pull` to bring updates:
+
+```sh
+cd ~
+git clone https://github.com/rowsail/ada_esp32s3.git
 cd ada_esp32s3
 ```
-Already cloned shallow? `git submodule update --init --recursive`.
+
+The book (*Bare-Metal Ada on the ESP32-S3*, PDF) is attached to the same
+[release](https://github.com/rowsail/ada_esp32s3/releases).
 
 ---
 
@@ -211,7 +222,7 @@ hard-coded path. The project owns its own `board.ads` (Step 6), edited with
 | Symptom | Cause / fix |
 |---|---|
 | `gprbuild` / cross-GNAT not found | A toolchain is missing — redo Step 1, check `alr toolchain`. |
-| `XTENSA_GNU_CONFIG unset` / missing `bb-runtimes` | Submodules weren't fetched — `git submodule update --init --recursive`. |
+| `XTENSA_GNU_CONFIG unset` / missing `bb-runtimes` | Not a submodule issue (there are none): the tree is incomplete, or `xtensa-dynconfig` hasn't been built — the first build does that and needs a host C compiler. |
 | `Permission denied` on `/dev/ttyACM0` | Add yourself to `dialout` (Step 3) and log out/in. |
 | No `/dev/ttyACM0` appears | Use the **native USB** port (not UART); try another cable; check `dmesg \| tail`. |
 | Flash never connects | Hold **BOOT**, tap **RESET**, release **BOOT** to force download mode, then `./flash.sh`. |
@@ -229,7 +240,7 @@ wget .../alr-2.1.0-bin-x86_64-linux.zip && unzip -d ~/alire alr-*.zip
 export PATH="$HOME/alire/bin:$PATH"
 alr toolchain --select gnat_native gprbuild
 alr toolchain --select gnat_xtensa_esp32_elf
-git clone --recurse-submodules https://github.com/rowsail/ada_esp32s3.git
+git clone https://github.com/rowsail/ada_esp32s3.git   # or unzip a release
 cd ada_esp32s3
 sudo usermod -aG dialout $USER          # then log out/in
 

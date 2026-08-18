@@ -23,17 +23,17 @@ language techniques; this one just gets you running.
 
 \section{Get the code}
 
-The runtime depends on two git submodules (the \texttt{bb-runtimes} fork that
-carries the ESP32-S3 bareboard runtime, and \texttt{xtensa-dynconfig}), so clone
-\emph{recursively}:
+The \texttt{bb-runtimes} fork that carries the ESP32-S3 bareboard runtime and
+\texttt{xtensa-dynconfig} are vendored as ordinary directories, so there are no
+submodules to fetch. Either unzip a tagged release archive (no git required) or
+clone:
 
 \begin{lstlisting}[style=sh]
-git clone --recurse-submodules \
-    https://github.com/rowsail/ada_esp32s3.git
+git clone https://github.com/rowsail/ada_esp32s3.git
 cd ada_esp32s3
-#  (if you already cloned without submodules:)
-git submodule update --init --recursive
 \end{lstlisting}
+
+\noindent The book itself is attached as a PDF to the same release.
 
 \section{The \texttt{./x} dispatcher}\index{x helper script}
 

@@ -163,13 +163,21 @@
     tools. Steps 53 and 54 are the test harnesses and the runtime itself, and
     55 and 56 the debugger and what to do when something goes wrong.</p>
 
+    <p>The SDK lives at
+    <a href="https://github.com/rowsail/ada_esp32s3">github.com/rowsail/ada_esp32s3</a>.
+    Grab it as a <a href="https://github.com/rowsail/ada_esp32s3/releases">tagged
+    release archive</a> or clone it &mdash; <a href="03-clone.html">step 3</a>
+    covers both. The same release page carries <strong><em>Bare-Metal Ada on the
+    ESP32-S3</em></strong>, the book: this guide gets you running and explains
+    each driver, while the book is the long-form design write-up behind it.</p>
+
     <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
 
     <h2>Contents</h2>
     <ol class="index-list">
       <li><a href="01-what-you-need.html">What you need (and what you don't)</a><p>The board, the cable, the one package manager &mdash; and the four things you are not installing.</p></li>
       <li><a href="02-toolchain.html">Installing Alire and the toolchains</a><p>Installing Alire and selecting the cross, native and build toolchains.</p></li>
-      <li><a href="03-clone.html">Getting the code (submodules are not optional)</a><p>Cloning the repository with its two submodules, and what is in the tree.</p></li>
+      <li><a href="03-clone.html">Getting the code</a><p>Cloning the repository with its two submodules, and what is in the tree.</p></li>
       <li><a href="04-board.html">Plugging in the board and finding the port</a><p>The native USB port, the device node, serial permissions, and forcing download mode.</p></li>
       <li><a href="05-first-blink.html">Your first blink</a><p>One command builds, flashes and monitors a pure-Ada GPIO driver at 2&nbsp;Hz.</p></li>
       <li><a href="06-anatomy.html">What happens between reset and Main</a><p>Every layer between the mask ROM and your first line of Ada, and why <code>Main</code> can be empty.</p></li>

@@ -101,9 +101,8 @@ write-up:
 ## Quick start
 
 ```sh
-git clone --recurse-submodules \
-    https://github.com/rowsail/ada_esp32s3.git
-cd ada_esp32s3
+git clone https://github.com/rowsail/ada_esp32s3.git
+cd ada_esp32s3                # or unzip a release archive -- no submodules
 ./x flash smp_empty           # build + flash the empty SMP skeleton
 ./x monitor                   # watch the console
 ```

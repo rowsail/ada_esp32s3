@@ -152,8 +152,10 @@
         <td>A toolchain is missing, or <code>PATH</code> lost Alire. Recheck
             <a href="02-toolchain.html">step 2</a> and <code>alr toolchain</code>.</td></tr>
     <tr><td><code>XTENSA_GNU_CONFIG unset</code>, or a missing <code>bb-runtimes</code></td>
-        <td>Submodules were never fetched:
-            <code>git submodule update --init --recursive</code>.</td></tr>
+        <td><strong>Not</strong> a submodule problem &mdash; this repository has
+            none. Either the tree is incomplete (re-unzip or re-clone), or the
+            <code>xtensa-dynconfig</code> plugin has not been built yet, which
+            the first build does and which needs a host C compiler.</td></tr>
     <tr><td><code>Permission denied</code> on <code>/dev/ttyACM0</code></td>
         <td>Add yourself to <code>dialout</code>, then <em>log out and back
             in</em>.</td></tr>
@@ -190,7 +192,7 @@ wget .../alr-2.1.0-bin-x86_64-linux.zip &amp;&amp; unzip -d ~/alire alr-*.zip
 export PATH="$HOME/alire/bin:$PATH"
 alr toolchain --select gnat_native gprbuild
 alr toolchain --select gnat_xtensa_esp32_elf
-git clone --recurse-submodules https://github.com/rowsail/ada_esp32s3.git
+git clone https://github.com/rowsail/ada_esp32s3.git   # or unzip a release archive
 cd ada_esp32s3
 sudo usermod -aG dialout $USER          # then log out/in
 

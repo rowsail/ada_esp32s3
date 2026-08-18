@@ -62,8 +62,9 @@ visible, but the console output alone proves it works.</p>
       the <code>gnat_xtensa_esp32_elf</code> cross-compiler for the chip, a
       native <code>gnat_native</code> for the host tools, and
       <code>gprbuild</code>.</li>
-  <li><strong>git</strong>, with submodule support (the runtime lives partly in
-      two submodules).</li>
+  <li><strong>git</strong> &mdash; optional. You can unzip a release archive
+      instead (<a href="03-clone.html">step 3</a>); there are no submodules to
+      fetch either way.</li>
   <li>A <strong>host C compiler</strong> &mdash; used exactly once, to build the
       <code>xtensa-dynconfig</code> core-config plugin the toolchain needs.</li>
 </ul>
@@ -178,61 +179,98 @@ it.</p>
 dict(
 slug="03-clone",
 nav="Getting the code",
-title="Getting the code (submodules are not optional)",
-lede="The Ada runtime is assembled from two git submodules. Clone without them "
-     "and the first build fails with a message about "
-     "<code>XTENSA_GNU_CONFIG</code> that will not obviously mean "
-     "“you forgot <code>--recurse-submodules</code>”.",
+title="Getting the code",
+lede="Two ways in: unzip a tagged release, or clone the repository. There are "
+     "no submodules to remember &mdash; whatever the older instructions say.",
 body="""
-<h2>Clone it</h2>
+<h2>Where it lives</h2>
 
-<pre><code>cd ~
-git clone --recurse-submodules \\
-    https://github.com/rowsail/ada_esp32s3.git
+<table>
+  <tbody>
+    <tr><td><strong>Repository</strong></td>
+        <td><a href="https://github.com/rowsail/ada_esp32s3">github.com/rowsail/ada_esp32s3</a></td></tr>
+    <tr><td><strong>Releases</strong></td>
+        <td><a href="https://github.com/rowsail/ada_esp32s3/releases">/releases</a> &mdash; tagged source archives, and the book</td></tr>
+    <tr><td><strong>The book</strong></td>
+        <td><em>Bare-Metal Ada on the ESP32-S3</em>, a ~1.7&nbsp;MB PDF attached to the latest release &mdash; the long-form companion to this guide</td></tr>
+  </tbody>
+</table>
+
+<p class="note">This guide gets you running and explains each driver. The
+<strong>book</strong> is the design write-up behind it: the kernel and context
+switch, the interrupt model, the filesystems, the ACATS work, the full-profile
+limitations. Download it from the release page rather than building the LaTeX
+&mdash; <code>book/main.pdf</code> is gitignored, so a fresh checkout does not
+contain it.</p>
+
+<h2>Option A: unzip a release</h2>
+
+<pre><code>curl -LO https://github.com/rowsail/ada_esp32s3/archive/refs/tags/v1.4.zip
+unzip v1.4.zip
+cd ada_esp32s3-1.4</code></pre>
+
+<p>About 11&nbsp;MB, and it is a complete build tree &mdash; every file the tag
+contains, symlinks included. No git required, and you get a fixed, known
+version. If you only want to build and run, this is the simplest route.</p>
+
+<h2>Option B: clone</h2>
+
+<pre><code>git clone https://github.com/rowsail/ada_esp32s3.git
 cd ada_esp32s3</code></pre>
 
-<p>Already cloned it the ordinary way? Repair it in place:</p>
+<p>Choose this if you want <code>git pull</code> to bring updates, or intend to
+change anything and send it back.</p>
 
-<pre><code>git submodule update --init --recursive</code></pre>
+<p class="warn"><strong>You do not need <code>--recurse-submodules</code>.</strong>
+The repository has no submodules &mdash; there is no <code>.gitmodules</code>
+file, and <code>git submodule status</code> prints nothing.
+<code>crates/bb-runtimes</code> (1,541 files) and
+<code>crates/xtensa-dynconfig</code> are vendored as ordinary tracked
+directories. Older instructions in <code>QUICKSTART.md</code>, the README and the
+book still say the flag is "not optional"; passing it is harmless, but nothing
+breaks without it, and no amount of <code>git submodule update</code> will fix a
+build problem.</p>
 
-<h2>What the two submodules are</h2>
+<h2>What the two vendored directories are</h2>
 
 <ul>
-  <li><strong><code>bb-runtimes</code></strong> &mdash; AdaCore's bare-board
-      runtime sources, forked here to add an <code>esp32s3</code> board. This is
-      the raw material the Ada runtime is generated from.</li>
-  <li><strong><code>xtensa-dynconfig</code></strong> &mdash; the Xtensa
-      core-configuration plugin that GNAT's Xtensa back end loads at runtime to
-      learn the shape of this particular core. Building it is what needs the
-      host C compiler, and it happens exactly once.</li>
+  <li><strong><code>crates/bb-runtimes</code></strong> &mdash; AdaCore's
+      bare-board runtime sources, forked here to add an <code>esp32s3</code>
+      board. This is the raw material the Ada runtime is generated from
+      (<a href="54-runtime.html">step 54</a>).</li>
+  <li><strong><code>crates/xtensa-dynconfig</code></strong> &mdash; the Xtensa
+      core-configuration plugin GNAT's Xtensa back end loads to learn the shape
+      of this core. Building it is what needs a host C compiler, and it happens
+      once.</li>
 </ul>
 
 <h2>What is in the tree</h2>
 
 <pre><code>crates/
   esp32s3_rts/      the GNAT runtime crate (3 profiles) + gen_runtime.sh
-  bb-runtimes/      AdaCore bb-runtimes fork with the esp32s3 board (submodule)
+  bb-runtimes/      AdaCore bb-runtimes fork with the esp32s3 board
   xtensa-dynconfig/ the Xtensa core-config plugin the toolchain needs
 libs/
-  esp32s3_hal/      the reusable peripheral HAL + pure-Ada ext4/FAT16
-examples/           the flashable examples (each owns its board.ads)
+  esp32s3_hal/      the peripheral HAL + the pure-Ada ext4/FAT16 filesystems
+  tls/              the pure-Ada TLS 1.3 stack
+  esp32s3_wifi/     the Wi-Fi driver
+examples/           96 flashable examples (each owns its board.ads)
   common/bare/      the shared FreeRTOS-free boot (bootloader, start.S, glue)
-book/               the long-form guide (LaTeX sources + main.pdf)
+book/               the long-form guide (LaTeX sources)
 x, export.sh        the ./x dispatcher and the esp32-ada launcher</code></pre>
 
-<p>Two entry points matter for now. <code>./x</code> at the repository root
-drives every example <em>inside</em> the clone. <code>export.sh</code> turns the
-clone into an SDK you can build your own projects against from anywhere on disk
-&mdash; that is <a href="10-own-project.html">step 10</a>.</p>
+<p>Two entry points matter for now. <code>./x</code> at the root drives every
+example <em>inside</em> the tree. <code>export.sh</code> turns the tree into an
+SDK you can build your own projects against from anywhere on disk &mdash; that is
+<a href="10-own-project.html">step 10</a>.</p>
 
-<p class="note">Nothing is downloaded at build time except the Alire toolchains
-themselves. The one exception is the optional Wi-Fi driver, whose lower-MAC and
-PHY blobs are Apache-2.0 binaries fetched (not committed) by
+<p class="note">Nothing is downloaded at build time except the Alire toolchains.
+The one exception is the optional Wi-Fi driver, whose lower-MAC and PHY blobs are
+Apache-2.0 binaries fetched (not committed) by
 <code>tools/fetch-wifi-blobs.sh</code>, pinned to exact upstream commits and
 verified by sha256.</p>
 """),
 
-# ---------------------------------------------------------------- 04
 dict(
 slug="04-board",
 nav="Board and serial port",
@@ -4943,8 +4981,10 @@ body="""
         <td>A toolchain is missing, or <code>PATH</code> lost Alire. Recheck
             <a href="02-toolchain.html">step 2</a> and <code>alr toolchain</code>.</td></tr>
     <tr><td><code>XTENSA_GNU_CONFIG unset</code>, or a missing <code>bb-runtimes</code></td>
-        <td>Submodules were never fetched:
-            <code>git submodule update --init --recursive</code>.</td></tr>
+        <td><strong>Not</strong> a submodule problem &mdash; this repository has
+            none. Either the tree is incomplete (re-unzip or re-clone), or the
+            <code>xtensa-dynconfig</code> plugin has not been built yet, which
+            the first build does and which needs a host C compiler.</td></tr>
     <tr><td><code>Permission denied</code> on <code>/dev/ttyACM0</code></td>
         <td>Add yourself to <code>dialout</code>, then <em>log out and back
             in</em>.</td></tr>
@@ -4981,7 +5021,7 @@ wget .../alr-2.1.0-bin-x86_64-linux.zip &amp;&amp; unzip -d ~/alire alr-*.zip
 export PATH="$HOME/alire/bin:$PATH"
 alr toolchain --select gnat_native gprbuild
 alr toolchain --select gnat_xtensa_esp32_elf
-git clone --recurse-submodules https://github.com/rowsail/ada_esp32s3.git
+git clone https://github.com/rowsail/ada_esp32s3.git   # or unzip a release archive
 cd ada_esp32s3
 sudo usermod -aG dialout $USER          # then log out/in
 
@@ -5535,6 +5575,14 @@ INDEX_BODY = """
     through TLS and Wi-Fi, and 46 to 52 the storage, filesystems and standalone
     tools. Steps 53 and 54 are the test harnesses and the runtime itself, and
     55 and 56 the debugger and what to do when something goes wrong.</p>
+
+    <p>The SDK lives at
+    <a href="https://github.com/rowsail/ada_esp32s3">github.com/rowsail/ada_esp32s3</a>.
+    Grab it as a <a href="https://github.com/rowsail/ada_esp32s3/releases">tagged
+    release archive</a> or clone it &mdash; <a href="03-clone.html">step 3</a>
+    covers both. The same release page carries <strong><em>Bare-Metal Ada on the
+    ESP32-S3</em></strong>, the book: this guide gets you running and explains
+    each driver, while the book is the long-form design write-up behind it.</p>
 
     <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
 
