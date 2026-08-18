@@ -2,11 +2,42 @@ with Interfaces;
 with GNAT.Sockets;
 with X509;
 
---  A TLS 1.3 client handshake over GNAT.Sockets (work in progress).  This first
---  slice does the unencrypted opening: it builds and sends a ClientHello offering
---  X25519 + AES-GCM, then receives and parses the ServerHello, recovering the
---  negotiated cipher suite and the server's X25519 key share (from which the shared
---  secret and traffic keys will be derived in the next slice).
+--  A TLS 1.3 client over GNAT.Sockets: the complete handshake, an encrypted
+--  application channel, and session resumption.  No C TLS library is involved --
+--  the crypto is Ada (SPARKNaCl, this repository's P256/P384) over the chip's
+--  SHA and AES accelerators.
+--
+--  Hello runs the WHOLE handshake, not just the opening exchange: ClientHello ->
+--  ServerHello -> the TLS 1.3 key schedule -> the server's encrypted flight
+--  (EncryptedExtensions, Certificate, CertificateVerify, Finished) -> our
+--  Finished.  When it returns Ok, Ready reports that the application channel is
+--  open; Send and Recv then carry encrypted application data.
+--
+--    * Key exchange: ECDHE.  We offer x25519 (0x001D) and secp256r1 / P-256
+--      (0x0017) in supported_groups AND send a key_share entry for both, so the
+--      server can choose either without costing a HelloRetryRequest round trip
+--      (see Session.Group for what it picked).  Both paths are HW-verified.
+--    * Cipher suites: TLS_AES_128_GCM_SHA256 / TLS_AES_256_GCM_SHA384.
+--    * Server authentication: RSA-PSS CertificateVerify, checked by
+--      Server_Cert_Verify_OK, plus the transcript HMAC in Server_Finished_OK.
+--
+--  AUTHENTICATION IS NOT COMPLETE HERE.  This package proves the peer holds the
+--  private key for the certificate it sent; it does NOT decide that the
+--  certificate is one you should trust.  Take the chain (Server_Cert_Count /
+--  Server_Chain_Cert / Copy_Chain_Cert) and anchor it to a pinned root with
+--  Chain_Verify, which also checks validity dates, the hostname and the X.509 v3
+--  usage extensions.  Chain_Verify needs the current time, so a real clock (NTP)
+--  is a prerequisite for meaningful verification, not an optional extra.
+--
+--  Resumption: after a full handshake the server usually sends a
+--  NewSessionTicket, which Recv captures (Has_Ticket).  Resume then starts a new
+--  handshake offering it as a pre_shared_key, PSK-with-(EC)DHE -- a fresh
+--  key_share still goes out, so forward secrecy holds and a server that declines
+--  the PSK simply falls back to a full handshake.
+--
+--  Worked examples: esp32s3_tls_hello (handshake), esp32s3_tls_weather
+--  (real-world HTTPS to a public server, chain anchored to ISRG Root X1),
+--  esp32s3_tls_resume (resumption), esp32s3_wifi_tls (over the radio).
 
 package TLS_Client is
 
