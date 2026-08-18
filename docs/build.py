@@ -4476,15 +4476,16 @@ slug="50-esp-loader",
 nav="Programming another ESP32",
 title="Esp_Loader: your board as the programmer",
 lede="The ESP32 serial ROM protocol spoken as the <em>host</em>, so a jig or a "
-     "product can flash another ESP32 &mdash; and none of them can run Python.",
+     "product can flash another ESP32 &mdash; and none of them should have to "
+     "run Python.",
 body="""
 <h2>The device-side twin of esptool</h2>
 
 <p>This is the same protocol the SDK's own <code>espflash</code> host tool speaks
 from a PC (<a href="07-build.html">step 7</a>), implemented so that <em>the board
 itself</em> is the programmer. A production jig, a field programmer, or a product
-that reflashes its own daughterboard all need exactly this, and none of them can
-run Python.</p>
+that reflashes its own daughterboard all need exactly this, and none of them
+should have to run Python.</p>
 
 <p>Every exchange is a SLIP frame (<code>0xC0</code> delimited,
 <code>0xDB</code> escaped) carrying a command and payload; the target answers

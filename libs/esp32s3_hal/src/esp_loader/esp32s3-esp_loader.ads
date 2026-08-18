@@ -5,7 +5,7 @@ with System;
 --  can program another over a UART: the device-side twin of what esptool (and
 --  this SDK's own examples/common/bare/espflash) does from a PC.  A production
 --  jig, a field programmer or a board that reflashes its own daughterboard all
---  need this, and none of them can run Python.
+--  need this, and none of them should have to run Python.
 --
 --  Only the ROM loader is spoken -- no downloadable stub -- so there is no
 --  compression and no stub-only command.  That costs transfer time and nothing

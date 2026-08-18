@@ -250,7 +250,7 @@ ESP32 serial ROM-bootloader protocol as the **host**, so a board can flash
 another ESP32 over a UART — the device-side twin of what `esptool` (and this
 SDK's own `examples/common/bare/espflash`) does from a PC. A production jig, a
 field programmer, or a board that reflashes its own daughterboard all need this,
-and none of them can run Python.
+and none of them should have to run Python.
 
 `ESP32S3.Esp_Loader` connects (reset into the download loader, then SYNC),
 raises the baud rate, and **streams** images: `Begin_Image` declares the length,
