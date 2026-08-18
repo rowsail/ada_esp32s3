@@ -117,10 +117,19 @@
       </li>
       <li class="toc-group">
         <details>
-          <summary>Debugging<span class="toc-range">52&ndash;53</span></summary>
+          <summary>Testing &amp; proof<span class="toc-range">52&ndash;53</span></summary>
           <ol>
-            <li><a href="52-debugging.html" data-step="52">Debugging</a></li>
-            <li><a href="53-troubleshooting.html" data-step="53">Troubleshooting &amp; next steps</a></li>
+            <li><a href="52-testing.html" data-step="52">Testing &amp; proof</a></li>
+            <li><a href="53-runtime.html" data-step="53">The runtime itself</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Debugging<span class="toc-range">54&ndash;55</span></summary>
+          <ol>
+            <li><a href="54-debugging.html" data-step="54">Debugging</a></li>
+            <li><a href="55-troubleshooting.html" data-step="55">Troubleshooting &amp; next steps</a></li>
           </ol>
         </details>
       </li>
@@ -131,7 +140,7 @@
 
     <p class="eyebrow">Start here</p>
     <h1>Bare-Metal Ada on the ESP32-S3</h1>
-    <p class="lede">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python. Fifty-three short steps, one aspect each, from a
+    <p class="lede">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python. Fifty-five short steps, one aspect each, from a
     blank machine to your own Ada application running on both cores.</p>
 
     <p>The ESP32-S3 is normally programmed through Espressif's ESP-IDF: a large
@@ -149,8 +158,8 @@
     external devices the SDK drives &mdash; start with whichever your board
     actually has. Steps 39 to 44 are the networking stack, from sockets up
     through TLS and Wi-Fi, and 45 to 51 the storage, filesystems and standalone
-    tools. Steps 52 and 53 are the debugger and what to do when something goes
-    wrong.</p>
+    tools. Steps 52 and 53 are the test harnesses and the runtime itself, and
+    54 and 55 the debugger and what to do when something goes wrong.</p>
 
     <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
 
@@ -207,8 +216,10 @@
       <li><a href="49-esp-loader.html">Esp_Loader: your board as the programmer</a><p>Your board as the programmer: the ROM protocol, streamed, with per-chip quirks handled.</p></li>
       <li><a href="50-simd.html">SIMD: the PIE vector unit</a><p>128-bit PIE kernels in inline assembly — vendored, and honestly labelled beta.</p></li>
       <li><a href="51-stack-usage.html">Stack usage: measuring what analysis cannot see</a><p>Stack painting: the measured counterpart to static analysis, conservative by design.</p></li>
-      <li><a href="52-debugging.html">Debugging: GDB over the same cable</a><p>OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.</p></li>
-      <li><a href="53-troubleshooting.html">Troubleshooting, and where to go next</a><p>The failure modes worth recognising on sight, a cheat sheet, and where to read next.</p></li>
+      <li><a href="52-testing.html">Testing and proof: reproducing the claims</a><p>Thirty-two harnesses that run on your PC — cross-checked against the host's own tools, and SPARK-proven.</p></li>
+      <li><a href="53-runtime.html">The runtime: how it is built, ported and proven conformant</a><p>Where the three profiles come from, the rebuild trap, porting, and the ACATS grade.</p></li>
+      <li><a href="54-debugging.html">Debugging: GDB over the same cable</a><p>OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.</p></li>
+      <li><a href="55-troubleshooting.html">Troubleshooting, and where to go next</a><p>The failure modes worth recognising on sight, a cheat sheet, and where to read next.</p></li>
     </ol>
 
     <footer class="site">

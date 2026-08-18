@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Esp_Loader: your board as the programmer &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="The ESP32 serial ROM protocol spoken as the host, so a jig or a product can flash another ESP32 &mdash; and none of them can run Python.">
+<title>Testing and proof: reproducing the claims &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Thirty-two harnesses run on your PC, not the board. Half check behaviour against the host's own tools; half prove absence of run-time errors outright.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -105,21 +105,21 @@
         </details>
       </li>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Text &amp; tooling<span class="toc-range">48&ndash;51</span></summary>
           <ol>
             <li><a href="48-console-fonts.html" data-step="48">Console, text &amp; fonts</a></li>
-            <li class="current"><a href="49-esp-loader.html" data-step="49" aria-current="page">Programming another ESP32</a></li>
+            <li><a href="49-esp-loader.html" data-step="49">Programming another ESP32</a></li>
             <li><a href="50-simd.html" data-step="50">SIMD (PIE)</a></li>
             <li><a href="51-stack-usage.html" data-step="51">Stack measurement</a></li>
           </ol>
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Testing &amp; proof<span class="toc-range">52&ndash;53</span></summary>
           <ol>
-            <li><a href="52-testing.html" data-step="52">Testing &amp; proof</a></li>
+            <li class="current"><a href="52-testing.html" data-step="52" aria-current="page">Testing &amp; proof</a></li>
             <li><a href="53-runtime.html" data-step="53">The runtime itself</a></li>
           </ol>
         </details>
@@ -137,74 +137,116 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="48-console-fonts.html">&larr; Console, text &amp; fonts</a><a href="50-simd.html">SIMD (PIE) &rarr;</a></nav>
-    <p class="eyebrow">Step 49 of 55</p>
-    <h1>Esp_Loader: your board as the programmer</h1>
-    <p class="lede">The ESP32 serial ROM protocol spoken as the <em>host</em>, so a jig or a product can flash another ESP32 &mdash; and none of them can run Python.</p>
+    <nav class="pager-top"><a href="51-stack-usage.html">&larr; Stack measurement</a><a href="53-runtime.html">The runtime itself &rarr;</a></nav>
+    <p class="eyebrow">Step 52 of 55</p>
+    <h1>Testing and proof: reproducing the claims</h1>
+    <p class="lede">Thirty-two harnesses run on your PC, not the board. Half check behaviour against the host's own tools; half prove absence of run-time errors outright.</p>
 
-<h2>The device-side twin of esptool</h2>
+<h2>Why so much runs on the host</h2>
 
-<p>This is the same protocol the SDK's own <code>espflash</code> host tool speaks
-from a PC (<a href="07-build.html">step 7</a>), implemented so that <em>the board
-itself</em> is the programmer. A production jig, a field programmer, or a product
-that reflashes its own daughterboard all need exactly this, and none of them can
-run Python.</p>
+<p>Most of what this SDK does is pure logic over a thin hardware seam &mdash; a
+filesystem over <a href="45-block-dev.html">Block_Dev</a>, a DNS message
+builder over <a href="39-net-stack.html">GNAT.Sockets</a>, a clock-divider
+calculation. Logic like that is target-independent, so it can be exercised on a
+PC in a second rather than flashed and watched over a serial cable.</p>
 
-<p>Every exchange is a SLIP frame (<code>0xC0</code> delimited,
-<code>0xDB</code> escaped) carrying a command and payload; the target answers
-with the same opcode and a status pair.</p>
+<p class="note">That split is deliberate and it tells you where a bug lives. The
+<code>ext4_host</code> harness builds the <em>same</em> filesystem sources the
+firmware uses &mdash; its project's <code>Source_Files</code> whitelist pulls in
+every portable unit and omits only the on-target block adapters. So a bug that
+reproduces on the host is a real filesystem bug, and one that appears
+<em>only</em> on target points at the SD/SPI layer instead.</p>
 
-<p class="note">Only the ROM loader is spoken &mdash; no downloadable stub &mdash;
-so there is no compression and no stub-only command. That costs transfer time and
-nothing else: raise the rate with <code>Set_Baud</code> and a megabyte moves in a
-few seconds.</p>
+<h2>Running a host test</h2>
 
-<h2>Streaming, so a megabyte costs a kilobyte</h2>
+<p>Each harness under <code>libs/esp32s3_hal/test/</code> carries its own
+<code>run.sh</code>, which finds the Alire native toolchain itself:</p>
 
-<p><code>Begin_Image</code> declares the length, <code>Write</code> takes whatever
-chunks the source produces, and full 1&nbsp;KB blocks go out as they fill.
-Flashing a megabyte therefore costs a kilobyte of RAM &mdash; and a truncated
-source is an <em>error</em> rather than a corrupt target, because the declared
-length is checked against what arrived.</p>
+<pre><code>bash libs/esp32s3_hal/test/endian_host/run.sh
+bash libs/esp32s3_hal/test/ext4_host/run.sh</code></pre>
 
-<h2>Knowing what you are talking to</h2>
+<p>The first is instant and self-contained:</p>
 
-<p class="warn"><strong>The ROM protocol is not uniform across the family, and
-guessing wrong corrupts flash rather than failing cleanly.</strong> The original
-ESP32 ends every reply with four status bytes instead of two; the ESP32 and
-ESP8266 take a shorter <code>FLASH_BEGIN</code> payload; the ESP8266 has no
-<code>SPI_ATTACH</code> at all, plus a bug in how it sizes an erase.</p>
+<pre><code>ESP32S3.Endian equivalence check:
+  little-endian join/split . PASS ( 4096 cases)
+  big-endian 32 join/split . PASS ( 4096 cases)
+  big-endian 16 join/split . PASS ( 65536 cases)</code></pre>
 
-<p>So <code>Connect</code> identifies the target first &mdash; via
-<code>GET_SECURITY_INFO</code> where the chip supports it (S3 and later), and the
-magic register otherwise. A chip newer than the table still connects, as
-<code>Unknown</code>, driven with the modern defaults.</p>
+<p>The second needs <code>e2fsprogs</code>, because it does something better than
+checking its own answers &mdash; it cross-checks every volume against the Linux
+kernel's own <code>e2fsck</code>:</p>
 
-<h2>Pass-through: the auto-reset circuit in software</h2>
+<pre><code>  dirgrow        e2fsck CLEAN
+      dirgrow: 400 files + 101 replaced, missing 0
+  stream         e2fsck CLEAN
+      stream: 205500 bytes via Append, readback OK</code></pre>
 
-<p><code>Esp_Loader.Auto_Reset</code> is the circuit every ESP dev board has,
-implemented in software. When a board sits between a PC and a target as a
-USB-serial bridge, esptool on the PC expects to reach the target's ROM loader by
-wiggling DTR and RTS &mdash; this makes that work.</p>
+<p>The same pattern recurs: <code>fat16_host</code> makes three independent
+implementations agree (this code, <code>dosfstools</code>, and a writer written
+from the specification), <code>modbus_*_host</code> talk to a standard client,
+and <code>esp_loader_host</code> drives a simulated ROM that validates every
+frame and impersonates each chip family in turn.</p>
 
-<p class="note">It reproduces the real circuit's <strong>cross-coupling</strong>,
-so a terminal emulator asserting both lines on open does not reset the target,
-and it emulates the capacitor so esptool's <code>ClassicReset</code> (which moves
-the lines one at a time) works regardless of what the target board has on its EN
-pin. Those two details are the difference between "usually works" and "works".</p>
+<table>
+  <thead><tr><th>Harness</th><th>Checked against</th></tr></thead>
+  <tbody>
+    <tr><td><code>ext4_host</code>, <code>mkfs_host</code>, <code>wl_host</code></td><td><code>mke2fs</code> / <code>debugfs</code> / <code>e2fsck</code></td></tr>
+    <tr><td><code>fat16_host</code></td><td><code>dosfstools</code>, plus a spec-derived writer</td></tr>
+    <tr><td><code>dns_host</code>, <code>ftp_host</code>, <code>modbus_*_host</code></td><td>Real servers and clients on the host</td></tr>
+    <tr><td><code>esp_loader_host</code></td><td>A simulated ROM, deliberately broken three ways</td></tr>
+    <tr><td><code>repclause_host</code>, <code>endian_host</code></td><td>An arithmetic reference &mdash; bit layouts and byte order</td></tr>
+  </tbody>
+</table>
 
-<p><code>Serial_Link</code> is the ready-made transport over a UART and two
-GPIOs, and <a href="26-crypto.html">MD5</a> is here for
-<code>SPI_FLASH_MD5</code>: the target hashes what its flash actually holds and
-you compare, so "programmed OK" means something.</p>
+<h2>Proof, not just testing</h2>
 
-<p class="warn">Host-verified only, against a simulated ROM that validates every
-frame and impersonates each chip family in turn (with the per-chip handling
-deliberately broken three ways to prove the checks bite). The real ROM's timing
-still wants a target board on a real UART.</p>
+<p>A test shows the cases you thought of pass. SPARK proves a property holds for
+<em>every</em> input. The proof projects run at
+<code>--level=1</code> &mdash; "silver": no overflow, no array index out of
+range, no division by zero, and all loops terminate.</p>
+
+<pre><code>cd libs/esp32s3_hal/test/ledc_math_prove
+gnatprove -P ledc_math_prove.gpr --level=1 --report=statistics</code></pre>
+
+<p>Which reports, per check, what was proved and by which solver:</p>
+
+<pre><code>esp32s3-ledc-math.adb:27:18: info: division check proved (Z3)
+esp32s3-ledc-math.ads:17:13: info: implicit aspect Always_Terminates on
+                                   "Clock_Divider" has been proved
+esp32s3-ledc-math.ads:19:19: info: postcondition proved (Z3)
+esp32s3-ledc-math.ads:26:19: info: postcondition proved (altergo)</code></pre>
+
+<p class="note">Note the last two: these are not only absence of run-time errors
+but <strong>postconditions</strong> &mdash; the divider really does produce a
+frequency within tolerance, for every input, not merely for the values someone
+tried.</p>
+
+<h2>How a unit joins the proof surface</h2>
+
+<p>A unit is proven by carrying <code>with SPARK_Mode =&gt; On</code> on its spec
+and body; I/O, access types and raising operations at the boundary get
+<code>SPARK_Mode =&gt; Off</code>, and GNATprove analyses the On subset
+automatically.</p>
+
+<p>That is why the proven parts are the shapes they are &mdash; parsers,
+serialisers, checksums, routing and date arithmetic, clock-divider maths. The
+<code>*_math</code> children exist precisely so the arithmetic can be separated
+from the register writes and proven on its own: <code>LEDC.Math</code>,
+<code>MCPWM.Math</code>, <code>RMT.Math</code>, <code>TWAI.Math</code>,
+<code>Ext4.Mkfs.Math</code>. The driver body that writes registers stays
+unmarked.</p>
+
+<p class="warn">Proof at silver level says the code cannot fail at run time and
+meets its stated contracts. It does <strong>not</strong> say the contract is the
+one you wanted, nor that the hardware behaves as the datasheet claims. It
+complements the hardware self-tests in the examples; it does not replace
+them.</p>
+
+<p><code>book/prove/prove.sh</code> runs the proof across every unit marked for
+it, if you want the whole surface rather than one project.</p>
     <nav class="pager">
-      <a class="prev" href="48-console-fonts.html"><span class="dir">&larr; Previous</span><span class="name">Console, text &amp; fonts</span></a>
-      <a class="next" href="50-simd.html"><span class="dir">Next &rarr;</span><span class="name">SIMD (PIE)</span></a>
+      <a class="prev" href="51-stack-usage.html"><span class="dir">&larr; Previous</span><span class="name">Stack measurement</span></a>
+      <a class="next" href="53-runtime.html"><span class="dir">Next &rarr;</span><span class="name">The runtime itself</span></a>
     </nav>
 
   </main>

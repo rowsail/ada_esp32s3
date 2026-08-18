@@ -117,10 +117,19 @@
       </li>
       <li class="toc-group">
         <details>
-          <summary>Debugging<span class="toc-range">52&ndash;53</span></summary>
+          <summary>Testing &amp; proof<span class="toc-range">52&ndash;53</span></summary>
           <ol>
-            <li><a href="52-debugging.html" data-step="52">Debugging</a></li>
-            <li><a href="53-troubleshooting.html" data-step="53">Troubleshooting &amp; next steps</a></li>
+            <li><a href="52-testing.html" data-step="52">Testing &amp; proof</a></li>
+            <li><a href="53-runtime.html" data-step="53">The runtime itself</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Debugging<span class="toc-range">54&ndash;55</span></summary>
+          <ol>
+            <li><a href="54-debugging.html" data-step="54">Debugging</a></li>
+            <li><a href="55-troubleshooting.html" data-step="55">Troubleshooting &amp; next steps</a></li>
           </ol>
         </details>
       </li>
@@ -128,8 +137,8 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="50-simd.html">&larr; SIMD (PIE)</a><a href="52-debugging.html">Debugging &rarr;</a></nav>
-    <p class="eyebrow">Step 51 of 53</p>
+    <nav class="pager-top"><a href="50-simd.html">&larr; SIMD (PIE)</a><a href="52-testing.html">Testing &amp; proof &rarr;</a></nav>
+    <p class="eyebrow">Step 51 of 55</p>
     <h1>Stack usage: measuring what analysis cannot see</h1>
     <p class="lede">Static worst-case analysis cannot see the prebuilt runtime, the C startup, ISRs or hand-written assembly. Painting the stack can.</p>
 
@@ -164,15 +173,15 @@ the error paths and the interrupt load, before believing the headroom.</p>
 and this to catch what it cannot. Agreement between them is meaningful evidence;
 a measured figure that exceeds the static bound means the static model is missing
 a path, which is worth knowing before it is a
-<a href="52-debugging.html">stack overflow on hardware</a>.</p>
+<a href="54-debugging.html">stack overflow on hardware</a>.</p>
 
 <p class="note">The runtime already guards the running task with a hardware
 watchpoint a redzone above its stack limit, re-armed on every context switch
-(<a href="52-debugging.html">step 44</a>). That catches an overflow precisely when
+(<a href="54-debugging.html">step 44</a>). That catches an overflow precisely when
 it happens; this tells you how close you were before it did.</p>
     <nav class="pager">
       <a class="prev" href="50-simd.html"><span class="dir">&larr; Previous</span><span class="name">SIMD (PIE)</span></a>
-      <a class="next" href="52-debugging.html"><span class="dir">Next &rarr;</span><span class="name">Debugging</span></a>
+      <a class="next" href="52-testing.html"><span class="dir">Next &rarr;</span><span class="name">Testing &amp; proof</span></a>
     </nav>
 
   </main>

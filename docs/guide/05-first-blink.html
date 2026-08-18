@@ -117,10 +117,19 @@
       </li>
       <li class="toc-group">
         <details>
-          <summary>Debugging<span class="toc-range">52&ndash;53</span></summary>
+          <summary>Testing &amp; proof<span class="toc-range">52&ndash;53</span></summary>
           <ol>
-            <li><a href="52-debugging.html" data-step="52">Debugging</a></li>
-            <li><a href="53-troubleshooting.html" data-step="53">Troubleshooting &amp; next steps</a></li>
+            <li><a href="52-testing.html" data-step="52">Testing &amp; proof</a></li>
+            <li><a href="53-runtime.html" data-step="53">The runtime itself</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Debugging<span class="toc-range">54&ndash;55</span></summary>
+          <ol>
+            <li><a href="54-debugging.html" data-step="54">Debugging</a></li>
+            <li><a href="55-troubleshooting.html" data-step="55">Troubleshooting &amp; next steps</a></li>
           </ol>
         </details>
       </li>
@@ -129,7 +138,7 @@
 
   <main>
     <nav class="pager-top"><a href="04-board.html">&larr; Board and serial port</a><a href="06-anatomy.html">Reset to Main &rarr;</a></nav>
-    <p class="eyebrow">Step 05 of 53</p>
+    <p class="eyebrow">Step 05 of 55</p>
     <h1>Your first blink</h1>
     <p class="lede">One command builds a pure-Ada GPIO driver, packages a flash image, writes it over the chip's ROM bootloader, resets the board, and streams the console.</p>
 
@@ -174,6 +183,33 @@ pieces:</p>
 ./x flash   esp32s3_gpio0_blink -p /dev/ttyACM0
 ./x monitor -p /dev/ttyACM0                # just the serial console (115200)
 ./x clean   esp32s3_gpio0_blink</code></pre>
+
+<p>And a handful that are easy to miss but worth knowing early:</p>
+
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>./x setup-device</code></td>
+        <td><strong>One-time</strong>, with sudo: installs the udev rule and
+            group membership for USB access &mdash; the scripted version of
+            <a href="04-board.html">step 4</a>'s permissions.</td></tr>
+    <tr><td><code>./x check-device [-p PORT]</code></td>
+        <td>Reports whether the board's port is actually accessible. Run this
+            before doubting your build.</td></tr>
+    <tr><td><code>./x stack &lt;example&gt; [--top N] [--run]</code></td>
+        <td>Static stack analysis, per frame &mdash; the counterpart to the
+            measured figure in <a href="51-stack-usage.html">step 51</a>.</td></tr>
+    <tr><td><code>./x mem &lt;example&gt;</code></td>
+        <td>Memory footprint: section sizes and bounds.</td></tr>
+    <tr><td><code>./x docs</code></td>
+        <td>Builds and runs the HAL reference generator, producing
+            <code>docs/HAL_Reference.pdf</code> from the driver specs.</td></tr>
+    <tr><td><code>./x install-ide</code> / <code>build-ide</code></td>
+        <td>Install the committed VS Code extension (no Node needed); the
+            <code>build-</code> form rebuilds the <code>.vsix</code> and is for
+            maintainers.</td></tr>
+  </tbody>
+</table>
 
 <p>Each example is also buildable from its own directory with the
 <code>./build.sh</code> and <code>./flash.sh</code> shims, if you prefer working

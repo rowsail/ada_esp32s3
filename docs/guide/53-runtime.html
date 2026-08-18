@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The runtime: how it is built, ported and proven conformant &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Three profiles generated from a forked bb-runtimes board, a porting checklist that is shorter than you would expect &mdash; and an ACATS sweep that grades the result one test per image.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li class="toc-group">
+        <details>
+          <summary>Getting started<span class="toc-range">1&ndash;11</span></summary>
+          <ol>
+            <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
+            <li><a href="02-toolchain.html" data-step="02">Installing the toolchain</a></li>
+            <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
+            <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
+            <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
+            <li><a href="07-build.html" data-step="07">What a build does</a></li>
+            <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
+            <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
+            <li><a href="10-own-project.html" data-step="10">Your own project</a></li>
+            <li><a href="11-hal.html" data-step="11">Talking to hardware</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Chip peripherals<span class="toc-range">12&ndash;28</span></summary>
+          <ol>
+            <li><a href="12-gpio.html" data-step="12">GPIO in depth</a></li>
+            <li><a href="13-i2c.html" data-step="13">I2C in depth</a></li>
+            <li><a href="14-spi.html" data-step="14">SPI in depth</a></li>
+            <li><a href="15-uart.html" data-step="15">UART in depth</a></li>
+            <li><a href="16-gdma.html" data-step="16">GDMA</a></li>
+            <li><a href="17-i2s.html" data-step="17">I2S audio</a></li>
+            <li><a href="18-lcd.html" data-step="18">LCD (i80 / RGB)</a></li>
+            <li><a href="19-twai.html" data-step="19">TWAI (CAN)</a></li>
+            <li><a href="20-rmt.html" data-step="20">RMT pulses</a></li>
+            <li><a href="21-ledc-sdm.html" data-step="21">LEDC &amp; sigma-delta</a></li>
+            <li><a href="22-mcpwm.html" data-step="22">MCPWM</a></li>
+            <li><a href="23-timers-pcnt.html" data-step="23">Timers &amp; pulse counting</a></li>
+            <li><a href="24-analog.html" data-step="24">ADC &amp; touch</a></li>
+            <li><a href="25-rtc.html" data-step="25">RTC, hold &amp; deep sleep</a></li>
+            <li><a href="26-crypto.html" data-step="26">Crypto &amp; RNG</a></li>
+            <li><a href="27-sd.html" data-step="27">SD cards</a></li>
+            <li><a href="28-chip-id.html" data-step="28">Temperature &amp; MAC</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>External devices<span class="toc-range">29&ndash;38</span></summary>
+          <ol>
+            <li><a href="29-display-touch.html" data-step="29">Display &amp; touch</a></li>
+            <li><a href="30-es8311.html" data-step="30">ES8311 codec</a></li>
+            <li><a href="31-sensors.html" data-step="31">IMU &amp; environment</a></li>
+            <li><a href="32-pcf85063a.html" data-step="32">PCF85063A RTC</a></li>
+            <li><a href="33-expanders.html" data-step="33">Port expanders</a></li>
+            <li><a href="34-tx1812.html" data-step="34">TX1812 LEDs</a></li>
+            <li><a href="35-memory.html" data-step="35">Flash, EEPROM &amp; FRAM</a></li>
+            <li><a href="36-tlv2556.html" data-step="36">TLV2556 ADC</a></li>
+            <li><a href="37-gps.html" data-step="37">GPS receiver</a></li>
+            <li><a href="38-w5500.html" data-step="38">W5500 Ethernet</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Networking<span class="toc-range">39&ndash;44</span></summary>
+          <ol>
+            <li><a href="39-net-stack.html" data-step="39">The network stack</a></li>
+            <li><a href="40-dns-ntp.html" data-step="40">DNS &amp; NTP</a></li>
+            <li><a href="41-tls.html" data-step="41">TLS 1.3</a></li>
+            <li><a href="42-wifi.html" data-step="42">Wi-Fi</a></li>
+            <li><a href="43-modbus.html" data-step="43">Modbus TCP</a></li>
+            <li><a href="44-ftp.html" data-step="44">FTP</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Storage &amp; files<span class="toc-range">45&ndash;47</span></summary>
+          <ol>
+            <li><a href="45-block-dev.html" data-step="45">Block devices &amp; wear levelling</a></li>
+            <li><a href="46-ext4.html" data-step="46">ext4 filesystem</a></li>
+            <li><a href="47-fat16.html" data-step="47">FAT16</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Text &amp; tooling<span class="toc-range">48&ndash;51</span></summary>
+          <ol>
+            <li><a href="48-console-fonts.html" data-step="48">Console, text &amp; fonts</a></li>
+            <li><a href="49-esp-loader.html" data-step="49">Programming another ESP32</a></li>
+            <li><a href="50-simd.html" data-step="50">SIMD (PIE)</a></li>
+            <li><a href="51-stack-usage.html" data-step="51">Stack measurement</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details open>
+          <summary>Testing &amp; proof<span class="toc-range">52&ndash;53</span></summary>
+          <ol>
+            <li><a href="52-testing.html" data-step="52">Testing &amp; proof</a></li>
+            <li class="current"><a href="53-runtime.html" data-step="53" aria-current="page">The runtime itself</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Debugging<span class="toc-range">54&ndash;55</span></summary>
+          <ol>
+            <li><a href="54-debugging.html" data-step="54">Debugging</a></li>
+            <li><a href="55-troubleshooting.html" data-step="55">Troubleshooting &amp; next steps</a></li>
+          </ol>
+        </details>
+      </li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="52-testing.html">&larr; Testing &amp; proof</a><a href="54-debugging.html">Debugging &rarr;</a></nav>
+    <p class="eyebrow">Step 53 of 55</p>
+    <h1>The runtime: how it is built, ported and proven conformant</h1>
+    <p class="lede">Three profiles generated from a forked bb-runtimes board, a porting checklist that is shorter than you would expect &mdash; and an ACATS sweep that grades the result one test per image.</p>
+
+<h2>Where the runtime comes from</h2>
+
+<p><a href="08-profiles.html">Step 8</a> covered <em>choosing</em> a profile.
+This is where they come from. The runtime is not vendored as a binary: it is
+<strong>generated</strong> from a fork of AdaCore's <code>bb-runtimes</code>
+carrying a new <code>esp32s3</code> board, and built on demand by
+<code>gen_runtime.sh</code> as the crate's Alire pre-build action.</p>
+
+<pre><code>ESP32S3_RTS_PROFILE=embedded   # light-tasking | embedded | full
+#  -> crates/esp32s3_rts/embedded-esp32s3/  (adainclude + adalib)</code></pre>
+
+<p>Two things it needs, both supplied for you:
+<code>XTENSA_GNU_CONFIG</code>, set by the <code>xtensa_dynconfig</code>
+dependency, which selects the ESP32-S3 core configuration (little-endian, 64
+address registers, FPU); and the cross toolchain plus <code>gprbuild</code> on
+<code>PATH</code>. It is idempotent &mdash; it regenerates only when the output
+is missing.</p>
+
+<p class="note">The crate is <strong>not published</strong>. You consume it via
+an Alire <em>pin</em>, which is why every example's <code>alire.toml</code>
+carries a <code>[[pins]]</code> entry pointing at
+<code>crates/esp32s3_rts</code>, and why an out-of-tree project resolves it
+through <code>GPR_PROJECT_PATH</code> instead
+(<a href="10-own-project.html">step 10</a>).</p>
+
+<h2>The trap that will bite you</h2>
+
+<p class="warn"><strong>Editing a runtime source does not rebuild
+anything.</strong> The heavy compile-and-archive step runs only when the output
+is missing, so changing a file under <code>bb-runtimes/</code> or
+<code>full_overlay/</code> leaves the previous archive in place &mdash; the next
+build links the old one and <em>your change silently does nothing</em>. The
+book records that this has caught the authors more than once.</p>
+
+<p>Delete the archives to force the rebuild:</p>
+
+<pre><code>rm crates/esp32s3_rts/&lt;profile&gt;-esp32s3/adalib/libgnat.a    crates/esp32s3_rts/&lt;profile&gt;-esp32s3/adalib/libgnarl.a</code></pre>
+
+<p>Or remove the generated tree entirely, as
+<a href="07-build.html">step 7</a>'s tips suggest.</p>
+
+<h2>Three profiles, three <code>system.ads</code></h2>
+
+<p>The profiles differ by restriction set, expressed as different
+<code>system-xi-xtensa-*.ads</code> variants:
+<code>light-tasking</code> adds <code>No_Exception_Propagation</code> and
+<code>No_Finalization</code>; <code>embedded</code> lifts both (ZCX);
+<code>full</code> is the unrestricted GNARL, built from an <em>overlay plus
+patches</em> on top of the same board.</p>
+
+<p>The register packages are separate again: <code>ESP32S3_Registers.*</code> is
+generated from the chip's SVD by svd2ada, not hand-written &mdash; which is why
+<a href="12-gpio.html">the drivers</a> get typed record fields with
+representation clauses instead of shift-and-mask.</p>
+
+<h2>Porting to another Xtensa SoC</h2>
+
+<p>The structure makes the checklist short:</p>
+
+<ol>
+  <li>Add a board class under <code>bb-runtimes/xtensa/</code> &mdash; target
+      triple, clock, interrupt range, SMP flag.</li>
+  <li>Supply the five <code>__&lt;board&gt;</code> bodies: parameters, board
+      support, console, reset, interrupt names.</li>
+  <li>Write the two <code>system-xi-xtensa-*.ads</code> variants, or reuse these
+      if the restriction set is the same.</li>
+  <li>Regenerate the register packages from that chip's SVD.</li>
+  <li>Point <code>gen_runtime.sh</code> at the new board name.</li>
+</ol>
+
+<p class="note">What that list deliberately excludes is the boot path &mdash; the
+2nd-stage loader, clock and cache bring-up, PSRAM
+(<a href="06-anatomy.html">step 6</a>). Those are chip-specific and are the
+larger job; the <em>runtime</em> port is the small half.</p>
+
+<h2>ACATS: conformance, not confidence</h2>
+
+<p>A hand-written runtime either implements Ada or approximates it, and the
+difference is not something a test suite of your own devising can settle. So the
+runtime is run against the <strong>official ACATS 4.2</strong> suite on real
+hardware.</p>
+
+<table>
+  <thead><tr><th>Profile</th><th>Test list</th><th>PASS</th><th>Genuine failures</th></tr></thead>
+  <tbody>
+    <tr><td><code>light-tasking</code></td><td><code>jorvik_hw_runnable</code> (846)</td><td>~700</td><td><strong>0</strong></td></tr>
+    <tr><td><code>embedded</code></td><td><code>jorvik_hw_runnable</code> (846)</td><td>840+</td><td><strong>0</strong></td></tr>
+    <tr><td><code>full</code></td><td><code>full_applicable</code> (1,518)</td><td>1,286+</td><td><strong>0</strong></td></tr>
+  </tbody>
+</table>
+
+<p class="warn">"Zero genuine failures" needs its qualifier stated, not buried:
+every non-passing test is an <em>interactive</em> test needing a bench-generated
+stimulus, a build-drop (a library unit the bare runtime omits), a correct
+<code>NOT-APPLICABLE</code>, or a documented limitation. That is a different
+claim from "everything passes", and the honest version is the useful one.</p>
+
+<h2>How the sweep works</h2>
+
+<p>The interesting engineering is the harness. Each test becomes
+<strong>one image containing exactly one test</strong>, built in parallel, then
+flashed and graded across a pool of boards. Two details make it work:</p>
+
+<ul>
+  <li>The grade has to come <em>off the chip</em>. ACATS'
+      <code>Report</code> package prints <code>PASSED</code>/<code>FAILED</code>,
+      and <code>ACATS/target/report.adb</code> routes each grade line through the
+      USB-Serial-JTAG console so the runner can read it.</li>
+  <li><strong>The grader must not trust the test id</strong> printed in the
+      output &mdash; the suffix letter breaks an exact-id match. Because each
+      image contains exactly one test, the runner knows which test it flashed
+      and grades on that instead.</li>
+</ul>
+
+<p class="note">The ACATS suite and its sweep harness
+(<code>acats_build.py</code>, <code>acats_run.py</code>, the
+<code>ACATS/</code> tree) are <strong>not shipped in this distribution</strong>
+&mdash; they live in the development repository. The book's ACATS chapter has the
+full breakdown if you want the detail.</p>
+    <nav class="pager">
+      <a class="prev" href="52-testing.html"><span class="dir">&larr; Previous</span><span class="name">Testing &amp; proof</span></a>
+      <a class="next" href="54-debugging.html"><span class="dir">Next &rarr;</span><span class="name">Debugging</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

@@ -347,6 +347,33 @@ pieces:</p>
 ./x monitor -p /dev/ttyACM0                # just the serial console (115200)
 ./x clean   esp32s3_gpio0_blink</code></pre>
 
+<p>And a handful that are easy to miss but worth knowing early:</p>
+
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>./x setup-device</code></td>
+        <td><strong>One-time</strong>, with sudo: installs the udev rule and
+            group membership for USB access &mdash; the scripted version of
+            <a href="04-board.html">step 4</a>'s permissions.</td></tr>
+    <tr><td><code>./x check-device [-p PORT]</code></td>
+        <td>Reports whether the board's port is actually accessible. Run this
+            before doubting your build.</td></tr>
+    <tr><td><code>./x stack &lt;example&gt; [--top N] [--run]</code></td>
+        <td>Static stack analysis, per frame &mdash; the counterpart to the
+            measured figure in <a href="51-stack-usage.html">step 51</a>.</td></tr>
+    <tr><td><code>./x mem &lt;example&gt;</code></td>
+        <td>Memory footprint: section sizes and bounds.</td></tr>
+    <tr><td><code>./x docs</code></td>
+        <td>Builds and runs the HAL reference generator, producing
+            <code>docs/HAL_Reference.pdf</code> from the driver specs.</td></tr>
+    <tr><td><code>./x install-ide</code> / <code>build-ide</code></td>
+        <td>Install the committed VS Code extension (no Node needed); the
+            <code>build-</code> form rebuilds the <code>.vsix</code> and is for
+            maintainers.</td></tr>
+  </tbody>
+</table>
+
 <p>Each example is also buildable from its own directory with the
 <code>./build.sh</code> and <code>./flash.sh</code> shims, if you prefer working
 inside one:</p>
@@ -3766,6 +3793,38 @@ retry.</p>
 port is what made an earlier cellular setup fail, because the carrier's NAT
 poisoned the flow. Rotating ports is a deliberate hardening measure, and the
 collision above is its small cost.</p>
+
+<h2>Encrypted DNS</h2>
+
+<p>Plain DNS is readable by anything on the path, and on a shared or hostile
+network the names a device looks up leak what it is doing.
+<code>DNS_TLS</code> adds the two encrypted transports over the
+<a href="41-tls.html">pure-Ada TLS 1.3 stack</a>:</p>
+
+<table>
+  <thead><tr><th>Transport</th><th>How</th></tr></thead>
+  <tbody>
+    <tr><td><strong>DoT</strong> (RFC 7858)</td>
+        <td>The ordinary DNS message, inside TLS, on port 853.</td></tr>
+    <tr><td><strong>DoH</strong> (RFC 8484)</td>
+        <td>A minimal HTTP/1.1 <code>POST</code> of
+            <code>application/dns-message</code> over HTTPS, port 443 &mdash;
+            so it survives networks that block 853.</td></tr>
+  </tbody>
+</table>
+
+<p class="note"><strong>The message bytes are the same proven ones every
+transport shares.</strong> Only the carriage differs, so the parser and builder
+under UDP, TCP, DoT and DoH are one implementation with one set of tests
+(<a href="52-testing.html">step 52</a>) &mdash; not four chances to get a
+message wrong.</p>
+
+<p class="warn">Trust stays with the <em>application</em>, exactly as in the
+HTTPS examples: the caller establishes the TCP connection and supplies the trust
+anchors. The resolver does not carry a built-in root store or decide for you
+which resolver is trustworthy. Note also that a root-pinned DoT or DoH endpoint
+may need <a href="41-tls.html">P-384</a> rather than P-256, depending on whose
+certificate chain you are anchoring to.</p>
 """),
 
 dict(
@@ -4470,16 +4529,258 @@ the error paths and the interrupt load, before believing the headroom.</p>
 and this to catch what it cannot. Agreement between them is meaningful evidence;
 a measured figure that exceeds the static bound means the static model is missing
 a path, which is worth knowing before it is a
-<a href="52-debugging.html">stack overflow on hardware</a>.</p>
+<a href="54-debugging.html">stack overflow on hardware</a>.</p>
 
 <p class="note">The runtime already guards the running task with a hardware
 watchpoint a redzone above its stack limit, re-armed on every context switch
-(<a href="52-debugging.html">step 44</a>). That catches an overflow precisely when
+(<a href="54-debugging.html">step 44</a>). That catches an overflow precisely when
 it happens; this tells you how close you were before it did.</p>
 """),
 
 dict(
-slug="52-debugging",
+slug="52-testing",
+nav="Testing &amp; proof",
+title="Testing and proof: reproducing the claims",
+lede="Thirty-two harnesses run on your PC, not the board. Half check "
+     "behaviour against the host's own tools; half prove absence of run-time "
+     "errors outright.",
+body="""
+<h2>Why so much runs on the host</h2>
+
+<p>Most of what this SDK does is pure logic over a thin hardware seam &mdash; a
+filesystem over <a href="45-block-dev.html">Block_Dev</a>, a DNS message
+builder over <a href="39-net-stack.html">GNAT.Sockets</a>, a clock-divider
+calculation. Logic like that is target-independent, so it can be exercised on a
+PC in a second rather than flashed and watched over a serial cable.</p>
+
+<p class="note">That split is deliberate and it tells you where a bug lives. The
+<code>ext4_host</code> harness builds the <em>same</em> filesystem sources the
+firmware uses &mdash; its project's <code>Source_Files</code> whitelist pulls in
+every portable unit and omits only the on-target block adapters. So a bug that
+reproduces on the host is a real filesystem bug, and one that appears
+<em>only</em> on target points at the SD/SPI layer instead.</p>
+
+<h2>Running a host test</h2>
+
+<p>Each harness under <code>libs/esp32s3_hal/test/</code> carries its own
+<code>run.sh</code>, which finds the Alire native toolchain itself:</p>
+
+<pre><code>bash libs/esp32s3_hal/test/endian_host/run.sh
+bash libs/esp32s3_hal/test/ext4_host/run.sh</code></pre>
+
+<p>The first is instant and self-contained:</p>
+
+<pre><code>ESP32S3.Endian equivalence check:
+  little-endian join/split . PASS ( 4096 cases)
+  big-endian 32 join/split . PASS ( 4096 cases)
+  big-endian 16 join/split . PASS ( 65536 cases)</code></pre>
+
+<p>The second needs <code>e2fsprogs</code>, because it does something better than
+checking its own answers &mdash; it cross-checks every volume against the Linux
+kernel's own <code>e2fsck</code>:</p>
+
+<pre><code>  dirgrow        e2fsck CLEAN
+      dirgrow: 400 files + 101 replaced, missing 0
+  stream         e2fsck CLEAN
+      stream: 205500 bytes via Append, readback OK</code></pre>
+
+<p>The same pattern recurs: <code>fat16_host</code> makes three independent
+implementations agree (this code, <code>dosfstools</code>, and a writer written
+from the specification), <code>modbus_*_host</code> talk to a standard client,
+and <code>esp_loader_host</code> drives a simulated ROM that validates every
+frame and impersonates each chip family in turn.</p>
+
+<table>
+  <thead><tr><th>Harness</th><th>Checked against</th></tr></thead>
+  <tbody>
+    <tr><td><code>ext4_host</code>, <code>mkfs_host</code>, <code>wl_host</code></td><td><code>mke2fs</code> / <code>debugfs</code> / <code>e2fsck</code></td></tr>
+    <tr><td><code>fat16_host</code></td><td><code>dosfstools</code>, plus a spec-derived writer</td></tr>
+    <tr><td><code>dns_host</code>, <code>ftp_host</code>, <code>modbus_*_host</code></td><td>Real servers and clients on the host</td></tr>
+    <tr><td><code>esp_loader_host</code></td><td>A simulated ROM, deliberately broken three ways</td></tr>
+    <tr><td><code>repclause_host</code>, <code>endian_host</code></td><td>An arithmetic reference &mdash; bit layouts and byte order</td></tr>
+  </tbody>
+</table>
+
+<h2>Proof, not just testing</h2>
+
+<p>A test shows the cases you thought of pass. SPARK proves a property holds for
+<em>every</em> input. The proof projects run at
+<code>--level=1</code> &mdash; "silver": no overflow, no array index out of
+range, no division by zero, and all loops terminate.</p>
+
+<pre><code>cd libs/esp32s3_hal/test/ledc_math_prove
+gnatprove -P ledc_math_prove.gpr --level=1 --report=statistics</code></pre>
+
+<p>Which reports, per check, what was proved and by which solver:</p>
+
+<pre><code>esp32s3-ledc-math.adb:27:18: info: division check proved (Z3)
+esp32s3-ledc-math.ads:17:13: info: implicit aspect Always_Terminates on
+                                   "Clock_Divider" has been proved
+esp32s3-ledc-math.ads:19:19: info: postcondition proved (Z3)
+esp32s3-ledc-math.ads:26:19: info: postcondition proved (altergo)</code></pre>
+
+<p class="note">Note the last two: these are not only absence of run-time errors
+but <strong>postconditions</strong> &mdash; the divider really does produce a
+frequency within tolerance, for every input, not merely for the values someone
+tried.</p>
+
+<h2>How a unit joins the proof surface</h2>
+
+<p>A unit is proven by carrying <code>with SPARK_Mode =&gt; On</code> on its spec
+and body; I/O, access types and raising operations at the boundary get
+<code>SPARK_Mode =&gt; Off</code>, and GNATprove analyses the On subset
+automatically.</p>
+
+<p>That is why the proven parts are the shapes they are &mdash; parsers,
+serialisers, checksums, routing and date arithmetic, clock-divider maths. The
+<code>*_math</code> children exist precisely so the arithmetic can be separated
+from the register writes and proven on its own: <code>LEDC.Math</code>,
+<code>MCPWM.Math</code>, <code>RMT.Math</code>, <code>TWAI.Math</code>,
+<code>Ext4.Mkfs.Math</code>. The driver body that writes registers stays
+unmarked.</p>
+
+<p class="warn">Proof at silver level says the code cannot fail at run time and
+meets its stated contracts. It does <strong>not</strong> say the contract is the
+one you wanted, nor that the hardware behaves as the datasheet claims. It
+complements the hardware self-tests in the examples; it does not replace
+them.</p>
+
+<p><code>book/prove/prove.sh</code> runs the proof across every unit marked for
+it, if you want the whole surface rather than one project.</p>
+"""),
+
+dict(
+slug="53-runtime",
+nav="The runtime itself",
+title="The runtime: how it is built, ported and proven conformant",
+lede="Three profiles generated from a forked bb-runtimes board, a porting "
+     "checklist that is shorter than you would expect &mdash; and an ACATS "
+     "sweep that grades the result one test per image.",
+body="""
+<h2>Where the runtime comes from</h2>
+
+<p><a href="08-profiles.html">Step 8</a> covered <em>choosing</em> a profile.
+This is where they come from. The runtime is not vendored as a binary: it is
+<strong>generated</strong> from a fork of AdaCore's <code>bb-runtimes</code>
+carrying a new <code>esp32s3</code> board, and built on demand by
+<code>gen_runtime.sh</code> as the crate's Alire pre-build action.</p>
+
+<pre><code>ESP32S3_RTS_PROFILE=embedded   # light-tasking | embedded | full
+#  -> crates/esp32s3_rts/embedded-esp32s3/  (adainclude + adalib)</code></pre>
+
+<p>Two things it needs, both supplied for you:
+<code>XTENSA_GNU_CONFIG</code>, set by the <code>xtensa_dynconfig</code>
+dependency, which selects the ESP32-S3 core configuration (little-endian, 64
+address registers, FPU); and the cross toolchain plus <code>gprbuild</code> on
+<code>PATH</code>. It is idempotent &mdash; it regenerates only when the output
+is missing.</p>
+
+<p class="note">The crate is <strong>not published</strong>. You consume it via
+an Alire <em>pin</em>, which is why every example's <code>alire.toml</code>
+carries a <code>[[pins]]</code> entry pointing at
+<code>crates/esp32s3_rts</code>, and why an out-of-tree project resolves it
+through <code>GPR_PROJECT_PATH</code> instead
+(<a href="10-own-project.html">step 10</a>).</p>
+
+<h2>The trap that will bite you</h2>
+
+<p class="warn"><strong>Editing a runtime source does not rebuild
+anything.</strong> The heavy compile-and-archive step runs only when the output
+is missing, so changing a file under <code>bb-runtimes/</code> or
+<code>full_overlay/</code> leaves the previous archive in place &mdash; the next
+build links the old one and <em>your change silently does nothing</em>. The
+book records that this has caught the authors more than once.</p>
+
+<p>Delete the archives to force the rebuild:</p>
+
+<pre><code>rm crates/esp32s3_rts/&lt;profile&gt;-esp32s3/adalib/libgnat.a \
+   crates/esp32s3_rts/&lt;profile&gt;-esp32s3/adalib/libgnarl.a</code></pre>
+
+<p>Or remove the generated tree entirely, as
+<a href="07-build.html">step 7</a>'s tips suggest.</p>
+
+<h2>Three profiles, three <code>system.ads</code></h2>
+
+<p>The profiles differ by restriction set, expressed as different
+<code>system-xi-xtensa-*.ads</code> variants:
+<code>light-tasking</code> adds <code>No_Exception_Propagation</code> and
+<code>No_Finalization</code>; <code>embedded</code> lifts both (ZCX);
+<code>full</code> is the unrestricted GNARL, built from an <em>overlay plus
+patches</em> on top of the same board.</p>
+
+<p>The register packages are separate again: <code>ESP32S3_Registers.*</code> is
+generated from the chip's SVD by svd2ada, not hand-written &mdash; which is why
+<a href="12-gpio.html">the drivers</a> get typed record fields with
+representation clauses instead of shift-and-mask.</p>
+
+<h2>Porting to another Xtensa SoC</h2>
+
+<p>The structure makes the checklist short:</p>
+
+<ol>
+  <li>Add a board class under <code>bb-runtimes/xtensa/</code> &mdash; target
+      triple, clock, interrupt range, SMP flag.</li>
+  <li>Supply the five <code>__&lt;board&gt;</code> bodies: parameters, board
+      support, console, reset, interrupt names.</li>
+  <li>Write the two <code>system-xi-xtensa-*.ads</code> variants, or reuse these
+      if the restriction set is the same.</li>
+  <li>Regenerate the register packages from that chip's SVD.</li>
+  <li>Point <code>gen_runtime.sh</code> at the new board name.</li>
+</ol>
+
+<p class="note">What that list deliberately excludes is the boot path &mdash; the
+2nd-stage loader, clock and cache bring-up, PSRAM
+(<a href="06-anatomy.html">step 6</a>). Those are chip-specific and are the
+larger job; the <em>runtime</em> port is the small half.</p>
+
+<h2>ACATS: conformance, not confidence</h2>
+
+<p>A hand-written runtime either implements Ada or approximates it, and the
+difference is not something a test suite of your own devising can settle. So the
+runtime is run against the <strong>official ACATS 4.2</strong> suite on real
+hardware.</p>
+
+<table>
+  <thead><tr><th>Profile</th><th>Test list</th><th>PASS</th><th>Genuine failures</th></tr></thead>
+  <tbody>
+    <tr><td><code>light-tasking</code></td><td><code>jorvik_hw_runnable</code> (846)</td><td>~700</td><td><strong>0</strong></td></tr>
+    <tr><td><code>embedded</code></td><td><code>jorvik_hw_runnable</code> (846)</td><td>840+</td><td><strong>0</strong></td></tr>
+    <tr><td><code>full</code></td><td><code>full_applicable</code> (1,518)</td><td>1,286+</td><td><strong>0</strong></td></tr>
+  </tbody>
+</table>
+
+<p class="warn">"Zero genuine failures" needs its qualifier stated, not buried:
+every non-passing test is an <em>interactive</em> test needing a bench-generated
+stimulus, a build-drop (a library unit the bare runtime omits), a correct
+<code>NOT-APPLICABLE</code>, or a documented limitation. That is a different
+claim from "everything passes", and the honest version is the useful one.</p>
+
+<h2>How the sweep works</h2>
+
+<p>The interesting engineering is the harness. Each test becomes
+<strong>one image containing exactly one test</strong>, built in parallel, then
+flashed and graded across a pool of boards. Two details make it work:</p>
+
+<ul>
+  <li>The grade has to come <em>off the chip</em>. ACATS'
+      <code>Report</code> package prints <code>PASSED</code>/<code>FAILED</code>,
+      and <code>ACATS/target/report.adb</code> routes each grade line through the
+      USB-Serial-JTAG console so the runner can read it.</li>
+  <li><strong>The grader must not trust the test id</strong> printed in the
+      output &mdash; the suffix letter breaks an exact-id match. Because each
+      image contains exactly one test, the runner knows which test it flashed
+      and grades on that instead.</li>
+</ul>
+
+<p class="note">The ACATS suite and its sweep harness
+(<code>acats_build.py</code>, <code>acats_run.py</code>, the
+<code>ACATS/</code> tree) are <strong>not shipped in this distribution</strong>
+&mdash; they live in the development repository. The book's ACATS chapter has the
+full breakdown if you want the detail.</p>
+"""),
+
+dict(
+slug="54-debugging",
 nav="Debugging",
 title="Debugging: GDB over the same cable",
 lede="The USB-Serial-JTAG port is both the console and a JTAG debug interface, "
@@ -4581,7 +4882,7 @@ unrelated.</p>
 
 # ---------------------------------------------------------------- 13
 dict(
-slug="53-troubleshooting",
+slug="55-troubleshooting",
 nav="Troubleshooting &amp; next steps",
 title="Troubleshooting, and where to go next",
 lede="The failure modes worth recognising on sight, a one-screen cheat sheet, "
@@ -5167,7 +5468,7 @@ PAGE = """<!DOCTYPE html>
 INDEX_BODY = """
     <p class="eyebrow">Start here</p>
     <h1>{site}</h1>
-    <p class="lede">{tagline} Fifty-three short steps, one aspect each, from a
+    <p class="lede">{tagline} Fifty-five short steps, one aspect each, from a
     blank machine to your own Ada application running on both cores.</p>
 
     <p>The ESP32-S3 is normally programmed through Espressif's ESP-IDF: a large
@@ -5185,8 +5486,8 @@ INDEX_BODY = """
     external devices the SDK drives &mdash; start with whichever your board
     actually has. Steps 39 to 44 are the networking stack, from sockets up
     through TLS and Wi-Fi, and 45 to 51 the storage, filesystems and standalone
-    tools. Steps 52 and 53 are the debugger and what to do when something goes
-    wrong.</p>
+    tools. Steps 52 and 53 are the test harnesses and the runtime itself, and
+    54 and 55 the debugger and what to do when something goes wrong.</p>
 
     <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
 
@@ -5254,8 +5555,10 @@ BLURBS = {
     "49-esp-loader":      "Your board as the programmer: the ROM protocol, streamed, with per-chip quirks handled.",
     "50-simd":            "128-bit PIE kernels in inline assembly \u2014 vendored, and honestly labelled beta.",
     "51-stack-usage":     "Stack painting: the measured counterpart to static analysis, conservative by design.",
-    "52-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
-    "53-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
+    "52-testing":         "Thirty-two harnesses that run on your PC \u2014 cross-checked against the host's own tools, and SPARK-proven.",
+    "53-runtime":         "Where the three profiles come from, the rebuild trap, porting, and the ACATS grade.",
+    "54-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
+    "55-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
 }
 
 
@@ -5269,7 +5572,8 @@ TOC_GROUPS = [
     ("Networking",         39, 44),
     ("Storage &amp; files",    45, 47),
     ("Text &amp; tooling",     48, 51),
-    ("Debugging",          52, 53),
+    ("Testing &amp; proof", 52, 53),
+    ("Debugging",          54, 55),
 ]
 
 
