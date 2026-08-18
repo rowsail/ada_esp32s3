@@ -15,11 +15,12 @@
 # Needs the cross toolchain and a generated runtime -- i.e. anything that has
 # already built one example.  Exits non-zero on the first failure.
 #
-#   ./docs/guide/check_samples.sh
+#   ./docs/check_samples.sh
 set -uo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(cd "$HERE/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")" && pwd)"            # docs/
+SITE="$HERE/adaformicrocontrollers.com"        # only the published files
+REPO="$(cd "$HERE/.." && pwd)"
 HAL="$REPO/libs/esp32s3_hal"
 RTS="$REPO/crates/esp32s3_rts/embedded-esp32s3"
 
@@ -41,7 +42,7 @@ fi
 [ -d "$RTS" ] || fail "no embedded runtime at $RTS -- build an embedded example once (e.g. ./x build i2c_loopback)"
 
 # ---- pass 1: compile every sample -------------------------------------------
-echo "== compiling docs/guide/samples against the embedded runtime =="
+echo "== compiling docs/samples against the embedded runtime =="
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 cp "$HERE"/samples/*.ad? "$WORK"/
@@ -63,7 +64,7 @@ done
 
 # ---- pass 2: the API names the pages quote must still exist ------------------
 echo "== checking quoted API names against the HAL specs =="
-python3 - "$HERE" "$HAL" <<'PY' || exit 1
+python3 - "$SITE" "$HAL" <<'PY' || exit 1
 import sys, os
 
 here, hal = sys.argv[1], sys.argv[2]
@@ -127,7 +128,7 @@ PY
 #  A bare "&" in a page title reaches every sidebar and pager on every page, so
 #  one careless nav= string is 200 broken entities.  It has happened twice.
 echo "== validating the generated HTML =="
-python3 - "$HERE" <<'PYHTML' || exit 1
+python3 - "$SITE" <<'PYHTML' || exit 1
 import glob, os, re, sys, html.parser
 
 here = sys.argv[1]

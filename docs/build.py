@@ -5,7 +5,7 @@ The deliverable is the plain .html files this writes next to it; this script
 exists only so the sidebar table of contents and the prev/next links stay
 consistent across every page.  Edit the prose below, then:
 
-    python3 docs/guide/build.py
+    python3 docs/build.py
 
 Everything is self-contained: no dependencies, no network, one shared
 stylesheet (style.css), no JavaScript.
@@ -14,7 +14,13 @@ stylesheet (style.css), no JavaScript.
 import os
 import re
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.abspath(__file__))          # docs/
+REPO = os.path.dirname(HERE)                              # the checkout root
+
+#  Everything that gets PUBLISHED lives here and nothing else does, so putting
+#  the site online is a plain directory copy -- no include/exclude filter to get
+#  wrong.  (An earlier filter silently dropped ada.svg from the upload.)
+SITE_DIR = os.path.join(HERE, "adaformicrocontrollers.com")
 
 SITE = "Bare-Metal Ada on the ESP32-S3"
 TAGLINE = "A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python."
@@ -556,7 +562,7 @@ compiler that is deliberate.</p>
 
 <p>If you would rather do the work in the main procedure itself, this is a
 complete program. (It is named <code>Blink_Min</code> here because it lives in
-<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
+<code>docs/samples/</code>, where <code>check_samples.sh</code> compiles
 it against the embedded runtime on every doc change &mdash; rename it
 <code>Main</code> in your own project.)</p>
 
@@ -5756,7 +5762,7 @@ def example_catalogue():
     import json
     import subprocess
 
-    root = os.path.dirname(os.path.dirname(HERE))
+    root = REPO
     try:
         out = subprocess.run([os.path.join(root, "x"), "list", "--json"],
                              capture_output=True, text=True, cwd=root, timeout=120)
@@ -5990,7 +5996,7 @@ def build():
             toc=toc_html(p["slug"]),
             content=content,
         )
-        with open(os.path.join(HERE, p["slug"] + ".html"), "w") as f:
+        with open(os.path.join(SITE_DIR, p["slug"] + ".html"), "w") as f:
             f.write(html)
 
     # -- index ------------------------------------------------------------
@@ -6007,21 +6013,21 @@ def build():
         toc=toc_html(None),
         content=INDEX_BODY.format(site=SITE, tagline=TAGLINE, items=items),
     )
-    with open(os.path.join(HERE, "index.html"), "w") as f:
+    with open(os.path.join(SITE_DIR, "index.html"), "w") as f:
         f.write(index_html)
 
-    with open(os.path.join(HERE, "style.css"), "w") as f:
+    with open(os.path.join(SITE_DIR, "style.css"), "w") as f:
         f.write(CSS)
 
     #  Drop generated pages left behind by an earlier run (a renamed or removed
     #  slug), so the directory only ever holds the current set.
     keep = {p["slug"] + ".html" for p in PAGES} | {"index.html"}
-    stale = [f for f in os.listdir(HERE) if f.endswith(".html") and f not in keep]
+    stale = [f for f in os.listdir(SITE_DIR) if f.endswith(".html") and f not in keep]
     for f in stale:
-        os.remove(os.path.join(HERE, f))
+        os.remove(os.path.join(SITE_DIR, f))
         print("removed stale page %s" % f)
 
-    print("wrote index.html, style.css, and %d step pages in %s" % (n, HERE))
+    print("wrote index.html, style.css, and %d step pages in %s" % (n, SITE_DIR))
 
 
 if __name__ == "__main__":
