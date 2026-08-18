@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What happens between reset and Main &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.">
+<title>FAT16: the filesystem a PC can read &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Deliberately narrow &mdash; read-only, FAT16 only, long filenames supported &mdash; because its whole job is being mountable by an operating system you do not control.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <h2>The steps</h2>
     <ol>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Getting started<span class="toc-range">1&ndash;12</span></summary>
           <ol>
             <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
@@ -31,7 +31,7 @@
             <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
             <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
             <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
-            <li class="current"><a href="06-anatomy.html" data-step="06" aria-current="page">Reset to Main</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
             <li><a href="07-build.html" data-step="07">What a build does</a></li>
             <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
             <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
@@ -96,12 +96,12 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Storage &amp; files<span class="toc-range">46&ndash;48</span></summary>
           <ol>
             <li><a href="46-block-dev.html" data-step="46">Block devices &amp; wear levelling</a></li>
             <li><a href="47-ext4.html" data-step="47">ext4 filesystem</a></li>
-            <li><a href="48-fat16.html" data-step="48">FAT16</a></li>
+            <li class="current"><a href="48-fat16.html" data-step="48" aria-current="page">FAT16</a></li>
           </ol>
         </details>
       </li>
@@ -138,122 +138,65 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
-    <p class="eyebrow">Step 06 of 56</p>
-    <h1>What happens between reset and Main</h1>
-    <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
+    <nav class="pager-top"><a href="47-ext4.html">&larr; ext4 filesystem</a><a href="49-console-fonts.html">Console, text &amp; fonts &rarr;</a></nav>
+    <p class="eyebrow">Step 48 of 56</p>
+    <h1>FAT16: the filesystem a PC can read</h1>
+    <p class="lede">Deliberately narrow &mdash; read-only, FAT16 only, long filenames supported &mdash; because its whole job is being mountable by an operating system you do not control.</p>
 
-<h2>The layers, top to bottom</h2>
+<h2>Why it exists alongside ext4</h2>
+
+<p><a href="47-ext4.html">ext4</a> is the better filesystem, but only Linux
+mounts it. When a device exposes its storage over USB mass storage it appears as
+a removable drive, and if it is formatted FAT then Windows, macOS and Linux all
+mount it with no driver and no ceremony: the user drops files on it and the
+device reads them back.</p>
+
+<p>That single use case sets the whole design.</p>
+
+<h2>The deliberate limits</h2>
 
 <table>
-  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
+  <thead><tr><th>Choice</th><th>Reason</th></tr></thead>
   <tbody>
-    <tr><td><strong>Your application</strong></td>
-        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
-    <tr><td><strong>The HAL</strong></td>
-        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
-            (<code>ESP32S3.*</code>) over a generated register layer
-            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
-            poke registers itself &mdash; but it is where the device knowledge
-            lives.</td></tr>
-    <tr><td><strong>The binder output</strong></td>
-        <td><code>gnatbind</code> generates <code>b__main</code>, which
-            elaborates every unit in dependency order and then calls
-            <code>Main</code>.</td></tr>
-    <tr><td><strong>The Ada runtime</strong></td>
-        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
-            stack, exceptions, text I/O over the USB-serial console, and the
-            tasking kernel &mdash; tasks, protected objects, delays,
-            scheduling.</td></tr>
-    <tr><td><strong>Board support</strong></td>
-        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
-            context switch, interrupt entry/exit vectors, the clock tick, SMP
-            scheduling and the inter-core interrupt. Ada plus a little assembly
-            (<code>start.S</code>, <code>highint5.S</code>,
-            <code>context_switch.S</code>). <em>This is the layer an
-            off-the-shelf RTOS would otherwise provide.</em></td></tr>
-    <tr><td><strong>2nd-stage bootloader</strong></td>
-        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
-            the octal PSRAM, and jumps to the application image. It replaces the
-            vendor's stock second-stage bootloader.</td></tr>
-    <tr><td><strong>Mask ROM</strong></td>
-        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
-            reset.</td></tr>
+    <tr><td><strong>Read only</strong></td>
+        <td>The PC writes; the device reads. Nothing here needs to write, so
+            nothing here can corrupt a volume the user cares about.</td></tr>
+    <tr><td><strong>FAT16 only</strong></td>
+        <td>FAT12 and FAT32 volumes are <em>recognised and rejected</em> rather
+            than misread, so wrongly formatted media fails loudly instead of
+            returning plausible rubbish.</td></tr>
+    <tr><td><strong>Long filenames (VFAT)</strong></td>
+        <td>Because a user dropping files on a drive will not respect 8.3, and
+            silently mangling their names is not acceptable.</td></tr>
   </tbody>
 </table>
 
-<h2>The boot path</h2>
+<p class="note">"Recognised and rejected" is the part worth copying as a design
+habit. A FAT32 volume read as FAT16 does not fail &mdash; it returns entries
+that look like files. Refusing is strictly better than a plausible wrong
+answer.</p>
 
-<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
-        cache/MMU, PSRAM      PLL, vectors,  elaboration
-                              release core 1</code></pre>
+<h2>Formatting</h2>
 
-<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
-interrupt vectors, and on the SMP examples releases the second core. Then the
-runtime's startup calls <code>adainit</code>, which runs every package's
-elaboration &mdash; and that is where library-level tasks like the blinker come
-alive, <em>before</em> <code>Main</code> is entered. Finally
-<code>Main</code> runs.</p>
+<p><code>Fat16.Mkfs</code> is a separate child that lays down an empty volume on
+blank media. It chooses 4&nbsp;KB clusters aligned to the NOR erase unit, so the
+block layer's read-modify-write stays one erase per cluster written &mdash;
+the filesystem's geometry chosen to suit the medium underneath it.</p>
 
-<p>There is no vendor startup shim and no third-party scheduler in that chain.
-The Ada runtime is the only scheduler and it is linked from source.</p>
+<p>It reads from either an MBR-partitioned disk (what Windows expects on a USB
+stick) or a bare boot sector at LBA 0, and sits on
+<a href="46-block-dev.html">Block_Dev</a> like everything else, so the same
+sources run over SPI NOR flash, an SD card, or a file-backed device in the test
+harness.</p>
 
-<h2>Why the blink example's Main does nothing</h2>
-
-<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
-this:</p>
-
-<pre><code>with Ada.Real_Time; use Ada.Real_Time;
-
---  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
---  task into the program so it elaborates and runs.
-with GPIO;
-pragma Unreferenced (GPIO);
-
-procedure Main is
-begin
-   loop
-      delay until Clock + Seconds (3600);
-   end loop;
-end Main;</code></pre>
-
-<p>The work is done by a library-level task inside package <code>GPIO</code>,
-which starts at elaboration. <code>Main</code> becomes the environment task,
-which here just parks forever. Withing a package you never call is how you pull
-its tasks into the link closure; <code>pragma Unreferenced</code> tells the
-compiler that is deliberate.</p>
-
-<h2>A minimal application</h2>
-
-<p>If you would rather do the work in the main procedure itself, this is a
-complete program. (It is named <code>Blink_Min</code> here because it lives in
-<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
-it against the embedded runtime on every doc change &mdash; rename it
-<code>Main</code> in your own project.)</p>
-
-<pre><code>--  Guide step 06 -- "A minimal application".
---
---  This file IS the code the page shows: build.py inlines it at generation
---  time, and check_samples.sh compiles it.  Edit it here, not in the HTML.
-with Ada.Real_Time; use Ada.Real_Time;
-with ESP32S3.GPIO;
-
-procedure Blink_Min is
-   Led : constant ESP32S3.GPIO.Pin_Id := 2;
-begin
-   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
-   loop
-      ESP32S3.GPIO.Toggle (Led);
-      delay until Clock + Milliseconds (250);
-   end loop;
-end Blink_Min;</code></pre>
-
-<p><code>delay until</code> is served by the board-support tick;
-<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
-crate.</p>
+<p class="warn">Host-verified only. The development harness makes three
+independent implementations agree about every volume &mdash; this code, the
+host's <code>dosfstools</code>, and a FAT16 writer written from the
+specification rather than from this source &mdash; but the on-device path wants
+checking on your own hardware.</p>
     <nav class="pager">
-      <a class="prev" href="05-first-blink.html"><span class="dir">&larr; Previous</span><span class="name">Your first blink</span></a>
-      <a class="next" href="07-build.html"><span class="dir">Next &rarr;</span><span class="name">What a build does</span></a>
+      <a class="prev" href="47-ext4.html"><span class="dir">&larr; Previous</span><span class="name">ext4 filesystem</span></a>
+      <a class="next" href="49-console-fonts.html"><span class="dir">Next &rarr;</span><span class="name">Console, text &amp; fonts</span></a>
     </nav>
 
   </main>

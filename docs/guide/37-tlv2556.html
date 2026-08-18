@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What happens between reset and Main &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.">
+<title>TLV2556: a pipelined external ADC &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Twelve bits and eleven channels over SPI &mdash; where the result you read belongs to the channel you asked for last time.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <h2>The steps</h2>
     <ol>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Getting started<span class="toc-range">1&ndash;12</span></summary>
           <ol>
             <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
@@ -31,7 +31,7 @@
             <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
             <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
             <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
-            <li class="current"><a href="06-anatomy.html" data-step="06" aria-current="page">Reset to Main</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
             <li><a href="07-build.html" data-step="07">What a build does</a></li>
             <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
             <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
@@ -66,7 +66,7 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>External devices<span class="toc-range">30&ndash;39</span></summary>
           <ol>
             <li><a href="30-display-touch.html" data-step="30">Display &amp; touch</a></li>
@@ -76,7 +76,7 @@
             <li><a href="34-expanders.html" data-step="34">Port expanders</a></li>
             <li><a href="35-tx1812.html" data-step="35">TX1812 LEDs</a></li>
             <li><a href="36-memory.html" data-step="36">Flash, EEPROM &amp; FRAM</a></li>
-            <li><a href="37-tlv2556.html" data-step="37">TLV2556 ADC</a></li>
+            <li class="current"><a href="37-tlv2556.html" data-step="37" aria-current="page">TLV2556 ADC</a></li>
             <li><a href="38-gps.html" data-step="38">GPS receiver</a></li>
             <li><a href="39-w5500.html" data-step="39">W5500 Ethernet</a></li>
           </ol>
@@ -138,122 +138,51 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
-    <p class="eyebrow">Step 06 of 56</p>
-    <h1>What happens between reset and Main</h1>
-    <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
+    <nav class="pager-top"><a href="36-memory.html">&larr; Flash, EEPROM &amp; FRAM</a><a href="38-gps.html">GPS receiver &rarr;</a></nav>
+    <p class="eyebrow">Step 37 of 56</p>
+    <h1>TLV2556: a pipelined external ADC</h1>
+    <p class="lede">Twelve bits and eleven channels over SPI &mdash; where the result you read belongs to the channel you asked for <em>last</em> time.</p>
 
-<h2>The layers, top to bottom</h2>
+<h2>The pipeline</h2>
 
-<table>
-  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
-  <tbody>
-    <tr><td><strong>Your application</strong></td>
-        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
-    <tr><td><strong>The HAL</strong></td>
-        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
-            (<code>ESP32S3.*</code>) over a generated register layer
-            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
-            poke registers itself &mdash; but it is where the device knowledge
-            lives.</td></tr>
-    <tr><td><strong>The binder output</strong></td>
-        <td><code>gnatbind</code> generates <code>b__main</code>, which
-            elaborates every unit in dependency order and then calls
-            <code>Main</code>.</td></tr>
-    <tr><td><strong>The Ada runtime</strong></td>
-        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
-            stack, exceptions, text I/O over the USB-serial console, and the
-            tasking kernel &mdash; tasks, protected objects, delays,
-            scheduling.</td></tr>
-    <tr><td><strong>Board support</strong></td>
-        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
-            context switch, interrupt entry/exit vectors, the clock tick, SMP
-            scheduling and the inter-core interrupt. Ada plus a little assembly
-            (<code>start.S</code>, <code>highint5.S</code>,
-            <code>context_switch.S</code>). <em>This is the layer an
-            off-the-shelf RTOS would otherwise provide.</em></td></tr>
-    <tr><td><strong>2nd-stage bootloader</strong></td>
-        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
-            the octal PSRAM, and jumps to the application image. It replaces the
-            vendor's stock second-stage bootloader.</td></tr>
-    <tr><td><strong>Mask ROM</strong></td>
-        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
-            reset.</td></tr>
-  </tbody>
-</table>
+<p>The TLV2556 is a 12-bit, 11-channel, 200-kSPS ADC with an internal reference,
+on SPI mode 0. Each I/O cycle clocks an 8-bit command in on DATA&nbsp;IN &mdash;
+top four bits select the analog input or a command, low four are configuration
+register 1 &mdash; while <em>simultaneously</em> clocking the previous
+conversion's result out on DATA&nbsp;OUT, MSB first.</p>
 
-<h2>The boot path</h2>
+<p class="warn"><strong>The converter is pipelined:</strong> the result of a
+channel you address now arrives on the <em>next</em> cycle. Read the datasheet's
+timing naively and you will attribute every sample to the wrong channel &mdash; a
+bug that produces entirely plausible numbers.</p>
 
-<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
-        cache/MMU, PSRAM      PLL, vectors,  elaboration
-                              release core 1</code></pre>
+<p><code>Read</code> hides this by priming the conversion, waiting it out, then
+reading it back, so the value you get belongs to the channel you asked for.</p>
 
-<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
-interrupt vectors, and on the SMP examples releases the second core. Then the
-runtime's startup calls <code>adainit</code>, which runs every package's
-elaboration &mdash; and that is where library-level tasks like the blinker come
-alive, <em>before</em> <code>Main</code> is entered. Finally
-<code>Main</code> runs.</p>
+<pre><code>type Sample       is range 0 .. 4095;
+type Analog_Input is ...;                                   --  11 channels
+type Reference    is (Internal_4096mV, Internal_2048mV, External);</code></pre>
 
-<p>There is no vendor startup shim and no third-party scheduler in that chain.
-The Ada runtime is the only scheduler and it is linked from source.</p>
+<p>The internal reference is the reason to choose this part over the
+<a href="25-analog.html">on-chip SAR ADC</a>: a known 4.096&nbsp;V or
+2.048&nbsp;V full scale gives you an absolute voltage, where the ESP's own ADC
+gives a raw code needing per-chip calibration.</p>
 
-<h2>Why the blink example's Main does nothing</h2>
+<h2>Sharing the bus</h2>
 
-<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
-this:</p>
+<p>Like <a href="36-memory.html">W25Q</a>, chip select is application-driven
+through an <a href="15-spi.html">SPI <code>CS_Select</code> callback</a>
+(active-low here), so the ADC shares a bus with other devices. The driver always
+uses 16-clock (2-byte) transfers with unipolar, MSB-first output.</p>
 
-<pre><code>with Ada.Real_Time; use Ada.Real_Time;
-
---  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
---  task into the program so it elaborates and runs.
-with GPIO;
-pragma Unreferenced (GPIO);
-
-procedure Main is
-begin
-   loop
-      delay until Clock + Seconds (3600);
-   end loop;
-end Main;</code></pre>
-
-<p>The work is done by a library-level task inside package <code>GPIO</code>,
-which starts at elaboration. <code>Main</code> becomes the environment task,
-which here just parks forever. Withing a package you never call is how you pull
-its tasks into the link closure; <code>pragma Unreferenced</code> tells the
-compiler that is deliberate.</p>
-
-<h2>A minimal application</h2>
-
-<p>If you would rather do the work in the main procedure itself, this is a
-complete program. (It is named <code>Blink_Min</code> here because it lives in
-<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
-it against the embedded runtime on every doc change &mdash; rename it
-<code>Main</code> in your own project.)</p>
-
-<pre><code>--  Guide step 06 -- "A minimal application".
---
---  This file IS the code the page shows: build.py inlines it at generation
---  time, and check_samples.sh compiles it.  Edit it here, not in the HTML.
-with Ada.Real_Time; use Ada.Real_Time;
-with ESP32S3.GPIO;
-
-procedure Blink_Min is
-   Led : constant ESP32S3.GPIO.Pin_Id := 2;
-begin
-   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
-   loop
-      ESP32S3.GPIO.Toggle (Led);
-      delay until Clock + Milliseconds (250);
-   end loop;
-end Blink_Min;</code></pre>
-
-<p><code>delay until</code> is served by the board-support tick;
-<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
-crate.</p>
+<p class="note">The in-tree example is a genuinely good bring-up test: it runs a
+<strong>reference-independent self-test</strong> &mdash; asking the chip for its
+internal zero, half-scale and full-scale conversions and checking they come back
+as 0, 2048 and 4095. That proves the SPI framing, the pipeline handling and the
+converter itself without needing a known voltage on any input pin.</p>
     <nav class="pager">
-      <a class="prev" href="05-first-blink.html"><span class="dir">&larr; Previous</span><span class="name">Your first blink</span></a>
-      <a class="next" href="07-build.html"><span class="dir">Next &rarr;</span><span class="name">What a build does</span></a>
+      <a class="prev" href="36-memory.html"><span class="dir">&larr; Previous</span><span class="name">Flash, EEPROM &amp; FRAM</span></a>
+      <a class="next" href="38-gps.html"><span class="dir">Next &rarr;</span><span class="name">GPS receiver</span></a>
     </nav>
 
   </main>

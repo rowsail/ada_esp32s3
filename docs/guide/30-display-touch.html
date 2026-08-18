@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What happens between reset and Main &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.">
+<title>ST7789 display and GT911 touch &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="A write-only SPI display that cannot be probed, and a touch controller whose I2C address depends on a pin level at reset &mdash; the two halves of a touchscreen, each with its own trap.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <h2>The steps</h2>
     <ol>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Getting started<span class="toc-range">1&ndash;12</span></summary>
           <ol>
             <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
@@ -31,7 +31,7 @@
             <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
             <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
             <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
-            <li class="current"><a href="06-anatomy.html" data-step="06" aria-current="page">Reset to Main</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
             <li><a href="07-build.html" data-step="07">What a build does</a></li>
             <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
             <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
@@ -66,10 +66,10 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>External devices<span class="toc-range">30&ndash;39</span></summary>
           <ol>
-            <li><a href="30-display-touch.html" data-step="30">Display &amp; touch</a></li>
+            <li class="current"><a href="30-display-touch.html" data-step="30" aria-current="page">Display &amp; touch</a></li>
             <li><a href="31-es8311.html" data-step="31">ES8311 codec</a></li>
             <li><a href="32-sensors.html" data-step="32">IMU &amp; environment</a></li>
             <li><a href="33-pcf85063a.html" data-step="33">PCF85063A RTC</a></li>
@@ -138,122 +138,100 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
-    <p class="eyebrow">Step 06 of 56</p>
-    <h1>What happens between reset and Main</h1>
-    <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
+    <nav class="pager-top"><a href="29-chip-id.html">&larr; Temperature &amp; MAC</a><a href="31-es8311.html">ES8311 codec &rarr;</a></nav>
+    <p class="eyebrow">Step 30 of 56</p>
+    <h1>ST7789 display and GT911 touch</h1>
+    <p class="lede">A write-only SPI display that cannot be probed, and a touch controller whose I2C address depends on a pin level at reset &mdash; the two halves of a touchscreen, each with its own trap.</p>
 
-<h2>The layers, top to bottom</h2>
+<h2>ST7789: no reads, no probe</h2>
 
-<table>
-  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
-  <tbody>
-    <tr><td><strong>Your application</strong></td>
-        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
-    <tr><td><strong>The HAL</strong></td>
-        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
-            (<code>ESP32S3.*</code>) over a generated register layer
-            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
-            poke registers itself &mdash; but it is where the device knowledge
-            lives.</td></tr>
-    <tr><td><strong>The binder output</strong></td>
-        <td><code>gnatbind</code> generates <code>b__main</code>, which
-            elaborates every unit in dependency order and then calls
-            <code>Main</code>.</td></tr>
-    <tr><td><strong>The Ada runtime</strong></td>
-        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
-            stack, exceptions, text I/O over the USB-serial console, and the
-            tasking kernel &mdash; tasks, protected objects, delays,
-            scheduling.</td></tr>
-    <tr><td><strong>Board support</strong></td>
-        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
-            context switch, interrupt entry/exit vectors, the clock tick, SMP
-            scheduling and the inter-core interrupt. Ada plus a little assembly
-            (<code>start.S</code>, <code>highint5.S</code>,
-            <code>context_switch.S</code>). <em>This is the layer an
-            off-the-shelf RTOS would otherwise provide.</em></td></tr>
-    <tr><td><strong>2nd-stage bootloader</strong></td>
-        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
-            the octal PSRAM, and jumps to the application image. It replaces the
-            vendor's stock second-stage bootloader.</td></tr>
-    <tr><td><strong>Mask ROM</strong></td>
-        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
-            reset.</td></tr>
-  </tbody>
-</table>
+<p class="warn"><strong>The panel never talks back.</strong> The ST77xx SPI
+interface is write-only as wired here, so there is no status read and no way to
+probe for the device. If nothing appears, the driver cannot tell you whether the
+panel is absent, mis-wired or simply off &mdash; you get silence either way.
+Check wiring before suspecting code.</p>
 
-<h2>The boot path</h2>
+<p>Three GPIOs are driven directly by the driver: <strong>DC</strong>
+(data/command), <strong>CS</strong>, and an optional <strong>RST</strong>. Pass
+<code>No_Pin</code> for RST and it falls back to a software reset.</p>
 
-<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
-        cache/MMU, PSRAM      PLL, vectors,  elaboration
-                              release core 1</code></pre>
+<pre><code>type Color is mod 2**16;                                   --  RGB565, MSB-first
+function RGB (R, G, B : Natural) return Color;             --  each 0 .. 255
+type Color_Array is array (Natural range &lt;&gt;) of Color;      --  row-major
+type Rotation is (Rot_0, Rot_90, Rot_180, Rot_270);</code></pre>
 
-<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
-interrupt vectors, and on the SMP examples releases the second core. Then the
-runtime's startup calls <code>adainit</code>, which runs every package's
-elaboration &mdash; and that is where library-level tasks like the blinker come
-alive, <em>before</em> <code>Main</code> is entered. Finally
-<code>Main</code> runs.</p>
+<p>Bring-up is <code>Setup</code> (records the wiring and geometry, brings the
+SPI host up in mode 0) then <code>Acquire</code> for an exclusive session, then
+<code>Init</code> to run the power-on sequence.</p>
 
-<p>There is no vendor startup shim and no third-party scheduler in that chain.
-The Ada runtime is the only scheduler and it is linked from source.</p>
+<pre><code>procedure Init         (S : Session);
+procedure Display_On   (S : Session);
+procedure Set_Rotation (S : Session; Rot : Rotation);        --  sets MADCTL
+procedure Invert       (S : Session; On : Boolean);
+procedure Sleep        (S : Session; On : Boolean);
 
-<h2>Why the blink example's Main does nothing</h2>
+procedure Fill        (S : Session; C : Color);
+procedure Fill_Rect   (S : Session; X, Y, W, H : Natural; C : Color);
+procedure Set_Pixel   (S : Session; X, Y : Natural; C : Color);
+procedure Draw_Bitmap (S : Session; X, Y, W, H : Natural; Pixels : Color_Array);</code></pre>
 
-<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
-this:</p>
+<h2>Two levels of locking</h2>
 
-<pre><code>with Ada.Real_Time; use Ada.Real_Time;
+<p class="note">The display has <em>two</em> guards, not one. The
+<code>Session</code> owns the <strong>display</strong> exclusively, while each
+operation locks the <strong>SPI host</strong> only for its own transfer &mdash;
+so another device on the same bus can interleave between your drawing calls, and
+a long <code>Fill</code> does not monopolise the bus.</p>
 
---  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
---  task into the program so it elaborates and runs.
-with GPIO;
-pragma Unreferenced (GPIO);
+<p>Those per-display guards are a fixed library-level array keyed by the CS pin,
+since a GPIO uniquely identifies one display. That is why no protected object
+lives inside a <code>Device</code>, and why <code>Device</code> values are cheap
+to hold.</p>
 
-procedure Main is
-begin
-   loop
-      delay until Clock + Seconds (3600);
-   end loop;
-end Main;</code></pre>
+<h2>GT911: the address is decided at reset</h2>
 
-<p>The work is done by a library-level task inside package <code>GPIO</code>,
-which starts at elaboration. <code>Main</code> becomes the environment task,
-which here just parks forever. Withing a package you never call is how you pull
-its tasks into the link closure; <code>pragma Unreferenced</code> tells the
-compiler that is deliberate.</p>
+<p>A Goodix 5-point capacitive controller on I2C. It is a
+<strong>16-bit-register</strong> device: every transaction sends the register
+address MSB-first, then reads or writes a run of bytes from the chip's
+auto-incrementing pointer. Multi-byte values inside the map &mdash; coordinates,
+firmware version, output range &mdash; are <em>little</em>-endian, so the address
+and the payload disagree about byte order.</p>
 
-<h2>A minimal application</h2>
+<p class="warn"><strong>The chip latches its I2C address from the INT level while
+RST is released:</strong> INT low gives <code>0x5D</code> (the usual module
+strapping), INT high gives <code>0x14</code>. This driver never drives INT or
+RST, because on many boards RST is not even on an ESP pin &mdash; the Waveshare
+ESP32-S3-Touch-LCD-7 routes it through a <a href="34-expanders.html">CH422G</a>
+expander with INT weakly low. Releasing reset is therefore board wiring you do
+once at startup, <em>before</em> touching the chip. Get the order wrong and the
+part answers at the other address, which looks exactly like a dead device.</p>
 
-<p>If you would rather do the work in the main procedure itself, this is a
-complete program. (It is named <code>Blink_Min</code> here because it lives in
-<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
-it against the embedded runtime on every doc change &mdash; rename it
-<code>Main</code> in your own project.)</p>
+<h2>Reading touches</h2>
 
-<pre><code>--  Guide step 06 -- "A minimal application".
---
---  This file IS the code the page shows: build.py inlines it at generation
---  time, and check_samples.sh compiles it.  Edit it here, not in the HTML.
-with Ada.Real_Time; use Ada.Real_Time;
-with ESP32S3.GPIO;
+<pre><code>type Touch_State is record ... end record;    --  up to 5 points, each with a track id
+type Status is (OK, Bus_Error);
 
-procedure Blink_Min is
-   Led : constant ESP32S3.GPIO.Pin_Id := 2;
-begin
-   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
-   loop
-      ESP32S3.GPIO.Toggle (Led);
-      delay until Clock + Milliseconds (250);
-   end loop;
-end Blink_Min;</code></pre>
+procedure Read_Touches (Dev : Device; State : out Touch_State; Result : out Status);
+procedure Read_Product_Id, Read_Firmware_Version, Read_Resolution ...</code></pre>
 
-<p><code>delay until</code> is served by the board-support tick;
-<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
-crate.</p>
+<p>The chip scans continuously and latches one report per scan cycle: a status
+register with a buffer-ready flag and point count, then up to five
+track-id/X/Y/size records. <code>Read_Touches</code> drains one report
+<em>and re-arms the latch</em> by writing the flag back to zero &mdash; so
+forgetting to call it stalls further reports rather than queueing them.</p>
+
+<p>The INT line pulses on every fresh report. Attach a handler with the
+<code>.Interrupts</code> child and call <code>Read_Touches</code> from a task it
+wakes &mdash; remembering the <a href="13-gpio.html">callback rules</a>: latch a
+flag in the handler, do the I2C work at task level, never from the ISR.</p>
+
+<p>Like <a href="14-i2c.html">I2C</a>'s other clients, the driver hard-codes no
+wiring: you tell <code>Setup</code> the host, the SDA/SCL pins, the optional INT
+pin and the address, and each operation opens a short-lived controlled session
+for one complete transaction.</p>
     <nav class="pager">
-      <a class="prev" href="05-first-blink.html"><span class="dir">&larr; Previous</span><span class="name">Your first blink</span></a>
-      <a class="next" href="07-build.html"><span class="dir">Next &rarr;</span><span class="name">What a build does</span></a>
+      <a class="prev" href="29-chip-id.html"><span class="dir">&larr; Previous</span><span class="name">Temperature &amp; MAC</span></a>
+      <a class="next" href="31-es8311.html"><span class="dir">Next &rarr;</span><span class="name">ES8311 codec</span></a>
     </nav>
 
   </main>

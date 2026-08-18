@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What happens between reset and Main &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.">
+<title>ES8311: the audio codec &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Control over I2C, audio over I2S, and a clocking relationship you have to get right &mdash; the ESP is the master, the codec follows.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <h2>The steps</h2>
     <ol>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Getting started<span class="toc-range">1&ndash;12</span></summary>
           <ol>
             <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
@@ -31,7 +31,7 @@
             <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
             <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
             <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
-            <li class="current"><a href="06-anatomy.html" data-step="06" aria-current="page">Reset to Main</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
             <li><a href="07-build.html" data-step="07">What a build does</a></li>
             <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
             <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
@@ -66,11 +66,11 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>External devices<span class="toc-range">30&ndash;39</span></summary>
           <ol>
             <li><a href="30-display-touch.html" data-step="30">Display &amp; touch</a></li>
-            <li><a href="31-es8311.html" data-step="31">ES8311 codec</a></li>
+            <li class="current"><a href="31-es8311.html" data-step="31" aria-current="page">ES8311 codec</a></li>
             <li><a href="32-sensors.html" data-step="32">IMU &amp; environment</a></li>
             <li><a href="33-pcf85063a.html" data-step="33">PCF85063A RTC</a></li>
             <li><a href="34-expanders.html" data-step="34">Port expanders</a></li>
@@ -138,122 +138,67 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
-    <p class="eyebrow">Step 06 of 56</p>
-    <h1>What happens between reset and Main</h1>
-    <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
+    <nav class="pager-top"><a href="30-display-touch.html">&larr; Display &amp; touch</a><a href="32-sensors.html">IMU &amp; environment &rarr;</a></nav>
+    <p class="eyebrow">Step 31 of 56</p>
+    <h1>ES8311: the audio codec</h1>
+    <p class="lede">Control over I2C, audio over I2S, and a clocking relationship you have to get right &mdash; the ESP is the master, the codec follows.</p>
 
-<h2>The layers, top to bottom</h2>
+<h2>Two buses, one device</h2>
+
+<p>The Everest ES8311 is a low-power mono codec that is <strong>controlled over
+I2C and carries audio over I2S</strong>. Both have to be right before a sound
+comes out, which is what makes it a more instructive device than it first
+looks.</p>
+
+<pre><code>subtype Address is ESP32S3.I2C.Slave_Address;   --  0x18 with CE/AD0 low, 0x19 with CE high</code></pre>
+
+<h2>The clocking relationship</h2>
+
+<p class="note">The ESP is the <strong>I2S master</strong> and generates MCLK,
+BCLK and WS; the codec runs as an <strong>I2S slave</strong> clocked from that
+MCLK. The driver fixes <code>MCLK = 256 &times; Sample_Rate</code> with 16-bit
+samples, and the register coefficients are calculated for that ratio &mdash; it
+is rate-independent, but not ratio-independent. This is why
+<a href="18-i2s.html">I2S</a>'s <code>Mclk</code> pin exists and why it is only
+available on I2S0.</p>
+
+<pre><code>procedure Setup (...; Sample_Rate : ...; Sda, Scl : ...; Asdout : ... := No_Pin;
+                 Ok : out Boolean);</code></pre>
+
+<p><code>Ok</code> is False if the codec never ACKed on I2C &mdash; the first
+thing to check is the address strap, since <code>0x18</code> and
+<code>0x19</code> differ only by the CE pin. <code>Asdout</code> is the codec's
+ADC data-out (the ESP's data-<em>in</em>): leave it <code>No_Pin</code> for
+output only, or wire it to bring up the microphone path as well, with PGA gain
+in 6&nbsp;dB steps from 0 to 42&nbsp;dB.</p>
+
+<h2>Playing</h2>
+
+<p>Audio output goes through a limited, controlled <code>Output</code> handle
+that owns the I2S port exclusively and releases it on scope exit. The playback
+calls mirror <a href="18-i2s.html">I2S</a>'s exactly, because they are built on
+them:</p>
 
 <table>
-  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
+  <thead><tr><th>Call</th><th>Use</th></tr></thead>
   <tbody>
-    <tr><td><strong>Your application</strong></td>
-        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
-    <tr><td><strong>The HAL</strong></td>
-        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
-            (<code>ESP32S3.*</code>) over a generated register layer
-            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
-            poke registers itself &mdash; but it is where the device knowledge
-            lives.</td></tr>
-    <tr><td><strong>The binder output</strong></td>
-        <td><code>gnatbind</code> generates <code>b__main</code>, which
-            elaborates every unit in dependency order and then calls
-            <code>Main</code>.</td></tr>
-    <tr><td><strong>The Ada runtime</strong></td>
-        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
-            stack, exceptions, text I/O over the USB-serial console, and the
-            tasking kernel &mdash; tasks, protected objects, delays,
-            scheduling.</td></tr>
-    <tr><td><strong>Board support</strong></td>
-        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
-            context switch, interrupt entry/exit vectors, the clock tick, SMP
-            scheduling and the inter-core interrupt. Ada plus a little assembly
-            (<code>start.S</code>, <code>highint5.S</code>,
-            <code>context_switch.S</code>). <em>This is the layer an
-            off-the-shelf RTOS would otherwise provide.</em></td></tr>
-    <tr><td><strong>2nd-stage bootloader</strong></td>
-        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
-            the octal PSRAM, and jumps to the application image. It replaces the
-            vendor's stock second-stage bootloader.</td></tr>
-    <tr><td><strong>Mask ROM</strong></td>
-        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
-            reset.</td></tr>
+    <tr><td><code>Play</code></td><td>One blocking buffer.</td></tr>
+    <tr><td><code>Play_Continuous</code></td><td>Self-looping DMA &mdash; a steady tone with no CPU involvement and no gap at the wrap.</td></tr>
+    <tr><td><code>Play_Stream</code> + <code>Await_Half</code></td><td>Gapless double-buffered playback: refill the half the hardware is not reading.</td></tr>
+    <tr><td><code>Capture</code> / <code>Capture_Stream</code> + <code>Await_Capture_Half</code></td><td>The microphone path, including while playback runs.</td></tr>
+    <tr><td><code>Duplex</code></td><td>Play and record simultaneously.</td></tr>
   </tbody>
 </table>
 
-<h2>The boot path</h2>
+<pre><code>procedure Set_Volume (Percent : Natural; Ok : out Boolean);   --  0 .. 100, after Setup</code></pre>
 
-<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
-        cache/MMU, PSRAM      PLL, vectors,  elaboration
-                              release core 1</code></pre>
-
-<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
-interrupt vectors, and on the SMP examples releases the second core. Then the
-runtime's startup calls <code>adainit</code>, which runs every package's
-elaboration &mdash; and that is where library-level tasks like the blinker come
-alive, <em>before</em> <code>Main</code> is entered. Finally
-<code>Main</code> runs.</p>
-
-<p>There is no vendor startup shim and no third-party scheduler in that chain.
-The Ada runtime is the only scheduler and it is linked from source.</p>
-
-<h2>Why the blink example's Main does nothing</h2>
-
-<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
-this:</p>
-
-<pre><code>with Ada.Real_Time; use Ada.Real_Time;
-
---  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
---  task into the program so it elaborates and runs.
-with GPIO;
-pragma Unreferenced (GPIO);
-
-procedure Main is
-begin
-   loop
-      delay until Clock + Seconds (3600);
-   end loop;
-end Main;</code></pre>
-
-<p>The work is done by a library-level task inside package <code>GPIO</code>,
-which starts at elaboration. <code>Main</code> becomes the environment task,
-which here just parks forever. Withing a package you never call is how you pull
-its tasks into the link closure; <code>pragma Unreferenced</code> tells the
-compiler that is deliberate.</p>
-
-<h2>A minimal application</h2>
-
-<p>If you would rather do the work in the main procedure itself, this is a
-complete program. (It is named <code>Blink_Min</code> here because it lives in
-<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
-it against the embedded runtime on every doc change &mdash; rename it
-<code>Main</code> in your own project.)</p>
-
-<pre><code>--  Guide step 06 -- "A minimal application".
---
---  This file IS the code the page shows: build.py inlines it at generation
---  time, and check_samples.sh compiles it.  Edit it here, not in the HTML.
-with Ada.Real_Time; use Ada.Real_Time;
-with ESP32S3.GPIO;
-
-procedure Blink_Min is
-   Led : constant ESP32S3.GPIO.Pin_Id := 2;
-begin
-   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
-   loop
-      ESP32S3.GPIO.Toggle (Led);
-      delay until Clock + Milliseconds (250);
-   end loop;
-end Blink_Min;</code></pre>
-
-<p><code>delay until</code> is served by the board-support tick;
-<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
-crate.</p>
+<p class="note">The register-init sequence and clock coefficients are ported from
+Espressif's own <code>es8311</code> driver &mdash; this is one place where the
+"from scratch" claim is honestly a port, because the sequence is a hardware
+recipe rather than a design decision.</p>
     <nav class="pager">
-      <a class="prev" href="05-first-blink.html"><span class="dir">&larr; Previous</span><span class="name">Your first blink</span></a>
-      <a class="next" href="07-build.html"><span class="dir">Next &rarr;</span><span class="name">What a build does</span></a>
+      <a class="prev" href="30-display-touch.html"><span class="dir">&larr; Previous</span><span class="name">Display &amp; touch</span></a>
+      <a class="next" href="32-sensors.html"><span class="dir">Next &rarr;</span><span class="name">IMU &amp; environment</span></a>
     </nav>
 
   </main>

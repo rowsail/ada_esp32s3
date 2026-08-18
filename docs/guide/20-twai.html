@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What happens between reset and Main &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.">
+<title>TWAI: CAN 2.0, with the bus-off trap &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Standard and extended frames as separate types so a 29-bit identifier cannot reach an 11-bit frame &mdash; and an error state that a single-node bench setup walks straight into.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <h2>The steps</h2>
     <ol>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Getting started<span class="toc-range">1&ndash;12</span></summary>
           <ol>
             <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
@@ -31,7 +31,7 @@
             <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
             <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
             <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
-            <li class="current"><a href="06-anatomy.html" data-step="06" aria-current="page">Reset to Main</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
             <li><a href="07-build.html" data-step="07">What a build does</a></li>
             <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
             <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
@@ -42,7 +42,7 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Chip peripherals<span class="toc-range">13&ndash;29</span></summary>
           <ol>
             <li><a href="13-gpio.html" data-step="13">GPIO in depth</a></li>
@@ -52,7 +52,7 @@
             <li><a href="17-gdma.html" data-step="17">GDMA</a></li>
             <li><a href="18-i2s.html" data-step="18">I2S audio</a></li>
             <li><a href="19-lcd.html" data-step="19">LCD (i80 / RGB)</a></li>
-            <li><a href="20-twai.html" data-step="20">TWAI (CAN)</a></li>
+            <li class="current"><a href="20-twai.html" data-step="20" aria-current="page">TWAI (CAN)</a></li>
             <li><a href="21-rmt.html" data-step="21">RMT pulses</a></li>
             <li><a href="22-ledc-sdm.html" data-step="22">LEDC &amp; sigma-delta</a></li>
             <li><a href="23-mcpwm.html" data-step="23">MCPWM</a></li>
@@ -138,122 +138,95 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
-    <p class="eyebrow">Step 06 of 56</p>
-    <h1>What happens between reset and Main</h1>
-    <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
+    <nav class="pager-top"><a href="19-lcd.html">&larr; LCD (i80 / RGB)</a><a href="21-rmt.html">RMT pulses &rarr;</a></nav>
+    <p class="eyebrow">Step 20 of 56</p>
+    <h1>TWAI: CAN 2.0, with the bus-off trap</h1>
+    <p class="lede">Standard and extended frames as separate types so a 29-bit identifier cannot reach an 11-bit frame &mdash; and an error state that a single-node bench setup walks straight into.</p>
 
-<h2>The layers, top to bottom</h2>
+<h2>One controller, three modes</h2>
 
-<table>
-  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
-  <tbody>
-    <tr><td><strong>Your application</strong></td>
-        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
-    <tr><td><strong>The HAL</strong></td>
-        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
-            (<code>ESP32S3.*</code>) over a generated register layer
-            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
-            poke registers itself &mdash; but it is where the device knowledge
-            lives.</td></tr>
-    <tr><td><strong>The binder output</strong></td>
-        <td><code>gnatbind</code> generates <code>b__main</code>, which
-            elaborates every unit in dependency order and then calls
-            <code>Main</code>.</td></tr>
-    <tr><td><strong>The Ada runtime</strong></td>
-        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
-            stack, exceptions, text I/O over the USB-serial console, and the
-            tasking kernel &mdash; tasks, protected objects, delays,
-            scheduling.</td></tr>
-    <tr><td><strong>Board support</strong></td>
-        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
-            context switch, interrupt entry/exit vectors, the clock tick, SMP
-            scheduling and the inter-core interrupt. Ada plus a little assembly
-            (<code>start.S</code>, <code>highint5.S</code>,
-            <code>context_switch.S</code>). <em>This is the layer an
-            off-the-shelf RTOS would otherwise provide.</em></td></tr>
-    <tr><td><strong>2nd-stage bootloader</strong></td>
-        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
-            the octal PSRAM, and jumps to the application image. It replaces the
-            vendor's stock second-stage bootloader.</td></tr>
-    <tr><td><strong>Mask ROM</strong></td>
-        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
-            reset.</td></tr>
-  </tbody>
-</table>
+<p>TWAI &mdash; Two-Wire Automotive Interface &mdash; is CAN 2.0, on an
+SJA1000-compatible controller. A real bus needs an external transceiver on the
+TX/RX pins.</p>
 
-<h2>The boot path</h2>
+<pre><code>type Bus_Mode is (Normal, Listen_Only, Self_Test);</code></pre>
 
-<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
-        cache/MMU, PSRAM      PLL, vectors,  elaboration
-                              release core 1</code></pre>
+<ul>
+  <li><strong><code>Normal</code></strong> drives a real bus.</li>
+  <li><strong><code>Listen_Only</code></strong> never transmits and never
+      acknowledges &mdash; a passive sniffer that cannot perturb traffic.</li>
+  <li><strong><code>Self_Test</code></strong> transmits and self-receives
+      <em>without needing an external acknowledgement</em>. With
+      <code>Enable_Loopback</code> tying TX back to RX through one pad, that
+      gives a complete wiring-free self-test.</li>
+</ul>
 
-<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
-interrupt vectors, and on the SMP examples releases the second core. Then the
-runtime's startup calls <code>adainit</code>, which runs every package's
-elaboration &mdash; and that is where library-level tasks like the blinker come
-alive, <em>before</em> <code>Main</code> is entered. Finally
-<code>Main</code> runs.</p>
+<h2>Identifiers that cannot be mixed up</h2>
 
-<p>There is no vendor startup shim and no third-party scheduler in that chain.
-The Ada runtime is the only scheduler and it is linked from source.</p>
+<pre><code>subtype Standard_Id is Interfaces.Unsigned_32 range 0 .. 16#7FF#;        --  11-bit
+subtype Extended_Id is Interfaces.Unsigned_32 range 0 .. 16#1FFF_FFFF#;  --  29-bit
 
-<h2>Why the blink example's Main does nothing</h2>
+type Standard_Frame is record
+   Id     : Standard_Id  := 0;
+   Remote : Boolean      := False;
+   Length : Data_Length  := 0;        --  0 .. 8
+   Data   : Data_Bytes   := (others =&gt; 0);
+end record;
+--  Extended_Frame is the same shape with an Extended_Id.</code></pre>
 
-<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
-this:</p>
+<p>Each frame type carries its own identifier subtype, so the identifier is
+range-checked against the standard it belongs to, and <code>Send</code> is
+overloaded on the frame type. <strong>You cannot put a 29-bit identifier in a
+standard frame</strong> &mdash; it is a compile-time or constraint error, not a
+malformed frame on the wire.</p>
 
-<pre><code>with Ada.Real_Time; use Ada.Real_Time;
+<p><code>Remote =&gt; True</code> makes it a remote-transmission request: it
+carries the identifier and the requested length but no data, and a node owning
+that identifier is expected to answer with a data frame.</p>
 
---  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
---  task into the program so it elaborates and runs.
-with GPIO;
-pragma Unreferenced (GPIO);
+<h2>Receiving, two ways</h2>
 
-procedure Main is
-begin
-   loop
-      delay until Clock + Seconds (3600);
-   end loop;
-end Main;</code></pre>
+<p>Polled, where the sender chooses the width so you must ask:</p>
 
-<p>The work is done by a library-level task inside package <code>GPIO</code>,
-which starts at elaboration. <code>Main</code> becomes the environment task,
-which here just parks forever. Withing a package you never call is how you pull
-its tasks into the link closure; <code>pragma Unreferenced</code> tells the
-compiler that is deliberate.</p>
+<pre><code>function  Available   (S : Session) return Boolean;
+function  Is_Extended (S : Session) return Boolean;   --  ask BEFORE choosing an overload
+procedure Receive (S : Session; F : out Standard_Frame; Got : out Boolean);
+procedure Receive (S : Session; F : out Extended_Frame; Got : out Boolean);</code></pre>
 
-<h2>A minimal application</h2>
+<p>Or interrupt-driven, which is the shape you want for a real bus:</p>
 
-<p>If you would rather do the work in the main procedure itself, this is a
-complete program. (It is named <code>Blink_Min</code> here because it lives in
-<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
-it against the embedded runtime on every doc change &mdash; rename it
-<code>Main</code> in your own project.)</p>
+<pre><code>procedure Enable_Rx_Interrupt (S : Session);   --  needs the Session
+procedure Get (F : out Queued_Frame);          --  does NOT -- call it from another task
+function  Rx_Overruns return Natural;</code></pre>
 
-<pre><code>--  Guide step 06 -- "A minimal application".
---
---  This file IS the code the page shows: build.py inlines it at generation
---  time, and check_samples.sh compiles it.  Edit it here, not in the HTML.
-with Ada.Real_Time; use Ada.Real_Time;
-with ESP32S3.GPIO;
+<p>A <code>Queued_Frame</code> carries its own width, so the consumer can tell a
+standard frame from an extended one without asking the controller. Note the
+asymmetry: <code>Enable_Rx_Interrupt</code> touches the controller and so needs
+the held session, but <code>Get</code> deliberately does not &mdash; it is meant
+to be called from a <em>different</em> task, typically a decode task separate
+from the one that owns the port. <code>Rx_Overruns</code> counts what the queue
+dropped, which is the number to watch when you suspect your decoder is too
+slow.</p>
 
-procedure Blink_Min is
-   Led : constant ESP32S3.GPIO.Pin_Id := 2;
-begin
-   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
-   loop
-      ESP32S3.GPIO.Toggle (Led);
-      delay until Clock + Milliseconds (250);
-   end loop;
-end Blink_Min;</code></pre>
+<h2>The bus-off trap</h2>
 
-<p><code>delay until</code> is served by the board-support tick;
-<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
-crate.</p>
+<pre><code>type Bus_State is (Active, Warning, Bus_Off);
+
+function  Health  (S : Session) return Bus_State;
+procedure Recover (S : Session);</code></pre>
+
+<p class="warn"><strong>A single node on a bench goes bus-off.</strong>
+<code>Active</code> is normal and <code>Warning</code> means an error counter has
+passed the warning limit, but <code>Bus_Off</code> means the node took
+<em>itself</em> off the bus after too many transmit errors &mdash; and the
+classic way to cause that is transmitting in <code>Normal</code> mode with no
+other node present to acknowledge. A bus-off node neither sends nor receives
+until <code>Recover</code> rejoins it. If your first CAN experiment goes deaf
+after a few frames, check <code>Health</code> before suspecting wiring, and use
+<code>Self_Test</code> mode when there is nothing else on the bus.</p>
     <nav class="pager">
-      <a class="prev" href="05-first-blink.html"><span class="dir">&larr; Previous</span><span class="name">Your first blink</span></a>
-      <a class="next" href="07-build.html"><span class="dir">Next &rarr;</span><span class="name">What a build does</span></a>
+      <a class="prev" href="19-lcd.html"><span class="dir">&larr; Previous</span><span class="name">LCD (i80 / RGB)</span></a>
+      <a class="next" href="21-rmt.html"><span class="dir">Next &rarr;</span><span class="name">RMT pulses</span></a>
     </nav>
 
   </main>

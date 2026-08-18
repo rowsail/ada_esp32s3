@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What happens between reset and Main &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.">
+<title>Block devices and wear levelling &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="One abstraction the filesystems talk to, thin adapters underneath it, and a filter in the middle that stops a hot metadata block from killing one sector of your flash.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <h2>The steps</h2>
     <ol>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Getting started<span class="toc-range">1&ndash;12</span></summary>
           <ol>
             <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
@@ -31,7 +31,7 @@
             <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
             <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
             <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
-            <li class="current"><a href="06-anatomy.html" data-step="06" aria-current="page">Reset to Main</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
             <li><a href="07-build.html" data-step="07">What a build does</a></li>
             <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
             <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
@@ -96,10 +96,10 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Storage &amp; files<span class="toc-range">46&ndash;48</span></summary>
           <ol>
-            <li><a href="46-block-dev.html" data-step="46">Block devices &amp; wear levelling</a></li>
+            <li class="current"><a href="46-block-dev.html" data-step="46" aria-current="page">Block devices &amp; wear levelling</a></li>
             <li><a href="47-ext4.html" data-step="47">ext4 filesystem</a></li>
             <li><a href="48-fat16.html" data-step="48">FAT16</a></li>
           </ol>
@@ -138,122 +138,71 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
-    <p class="eyebrow">Step 06 of 56</p>
-    <h1>What happens between reset and Main</h1>
-    <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
+    <nav class="pager-top"><a href="45-ftp.html">&larr; FTP</a><a href="47-ext4.html">ext4 filesystem &rarr;</a></nav>
+    <p class="eyebrow">Step 46 of 56</p>
+    <h1>Block devices and wear levelling</h1>
+    <p class="lede">One abstraction the filesystems talk to, thin adapters underneath it, and a filter in the middle that stops a hot metadata block from killing one sector of your flash.</p>
 
-<h2>The layers, top to bottom</h2>
+<h2>A vtable, not a tagged type</h2>
 
-<table>
-  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
-  <tbody>
-    <tr><td><strong>Your application</strong></td>
-        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
-    <tr><td><strong>The HAL</strong></td>
-        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
-            (<code>ESP32S3.*</code>) over a generated register layer
-            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
-            poke registers itself &mdash; but it is where the device knowledge
-            lives.</td></tr>
-    <tr><td><strong>The binder output</strong></td>
-        <td><code>gnatbind</code> generates <code>b__main</code>, which
-            elaborates every unit in dependency order and then calls
-            <code>Main</code>.</td></tr>
-    <tr><td><strong>The Ada runtime</strong></td>
-        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
-            stack, exceptions, text I/O over the USB-serial console, and the
-            tasking kernel &mdash; tasks, protected objects, delays,
-            scheduling.</td></tr>
-    <tr><td><strong>Board support</strong></td>
-        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
-            context switch, interrupt entry/exit vectors, the clock tick, SMP
-            scheduling and the inter-core interrupt. Ada plus a little assembly
-            (<code>start.S</code>, <code>highint5.S</code>,
-            <code>context_switch.S</code>). <em>This is the layer an
-            off-the-shelf RTOS would otherwise provide.</em></td></tr>
-    <tr><td><strong>2nd-stage bootloader</strong></td>
-        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
-            the octal PSRAM, and jumps to the application image. It replaces the
-            vendor's stock second-stage bootloader.</td></tr>
-    <tr><td><strong>Mask ROM</strong></td>
-        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
-            reset.</td></tr>
-  </tbody>
-</table>
+<pre><code>type Sector       is array (0 .. 511) of Interfaces.Unsigned_8;
+type Sector_Index is new Interfaces.Unsigned_64;
 
-<h2>The boot path</h2>
+type Read_Proc  is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : out Sector);
+type Write_Proc is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : Sector);
+type Count_Func is access function  (Ctx : System.Address) return Sector_Index;</code></pre>
 
-<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
-        cache/MMU, PSRAM      PLL, vectors,  elaboration
-                              release core 1</code></pre>
+<p><code>ESP32S3.Block_Dev</code> is a record of access-to-subprogram plus an
+opaque context &mdash; mirroring lwext4's <code>ext4_blockdev</code> vtable.
+<strong>No tagging, no finalization, swappable at run time.</strong> That keeps
+it usable from anywhere and makes a device something you can substitute in a
+test.</p>
 
-<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
-interrupt vectors, and on the SMP examples releases the second core. Then the
-runtime's startup calls <code>adainit</code>, which runs every package's
-elaboration &mdash; and that is where library-level tasks like the blinker come
-alive, <em>before</em> <code>Main</code> is entered. Finally
-<code>Main</code> runs.</p>
+<p>Behind it sit thin adapters: <code>SD_SPI_Source</code> and
+<code>SDMMC_Source</code> for <a href="28-sd.html">SD cards</a>,
+<code>W25Q_Source</code> for <a href="36-memory.html">SPI NOR flash</a>, and a
+file-backed device in the host test harness &mdash; which is what lets the whole
+filesystem stack be developed and tested on a PC.</p>
 
-<p>There is no vendor startup shim and no third-party scheduler in that chain.
-The Ada runtime is the only scheduler and it is linked from source.</p>
+<p class="note">The error model is Ada's: the primitive Read/Write
+<strong>raise</strong> <code>Ada.IO_Exceptions.Device_Error</code> on a hardware
+failure, with the adapters converting the SD driver's <code>Status</code> enum
+into that raise. So a media error propagates rather than being quietly returned
+and ignored.</p>
 
-<h2>Why the blink example's Main does nothing</h2>
+<h2>The wear-levelling filter</h2>
 
-<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
-this:</p>
+<p>Flash wears out per erase block. A filesystem writes some blocks far more
+often than others &mdash; an ext4 metadata block, say &mdash; so without
+intervention one physical sector dies long before the rest of the chip.</p>
 
-<pre><code>with Ada.Real_Time; use Ada.Real_Time;
+<p><code>Block_Dev.WL</code> is a <strong>Block_Dev over a Block_Dev</strong>: it
+takes the raw medium and presents a smaller logical device whose sectors are
+remapped so that, over time, every logical 4&nbsp;KB block visits every physical
+4&nbsp;KB block. Because it is a plain filter it carries no flash-specific code
+and runs unchanged on the host, where it is brute-force tested.</p>
 
---  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
---  task into the program so it elaborates and runs.
-with GPIO;
-pragma Unreferenced (GPIO);
+<pre><code>--  a typical stack, bottom to top
+W25Q flash  ->  Block_Dev.W25Q_Source  ->  Block_Dev.WL  ->  Ext4</code></pre>
 
-procedure Main is
-begin
-   loop
-      delay until Clock + Seconds (3600);
-   end loop;
-end Main;</code></pre>
+<p class="note"><strong>O(1) state:</strong> just a move counter &mdash; there is
+no per-block map to keep in RAM or rebuild at mount. A move erases the
+destination block in one shot through the lower device's optional
+<code>Erase_Sectors</code> before copying, so each move costs exactly one
+erase.</p>
 
-<p>The work is done by a library-level task inside package <code>GPIO</code>,
-which starts at elaboration. <code>Main</code> becomes the environment task,
-which here just parks forever. Withing a package you never call is how you pull
-its tasks into the link closure; <code>pragma Unreferenced</code> tells the
-compiler that is deliberate.</p>
+<p class="warn"><strong>This is <em>dynamic</em> wear levelling only.</strong> It
+bounds how unevenly <em>write</em> activity wears the chip, but it does not
+actively relocate cold, never-written blocks &mdash; so data you write once and
+never touch keeps its physical block out of rotation. That is sufficient for a
+32&nbsp;MB part; it is not the same guarantee as static wear levelling.</p>
 
-<h2>A minimal application</h2>
-
-<p>If you would rather do the work in the main procedure itself, this is a
-complete program. (It is named <code>Blink_Min</code> here because it lives in
-<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
-it against the embedded runtime on every doc change &mdash; rename it
-<code>Main</code> in your own project.)</p>
-
-<pre><code>--  Guide step 06 -- "A minimal application".
---
---  This file IS the code the page shows: build.py inlines it at generation
---  time, and check_samples.sh compiles it.  Edit it here, not in the HTML.
-with Ada.Real_Time; use Ada.Real_Time;
-with ESP32S3.GPIO;
-
-procedure Blink_Min is
-   Led : constant ESP32S3.GPIO.Pin_Id := 2;
-begin
-   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
-   loop
-      ESP32S3.GPIO.Toggle (Led);
-      delay until Clock + Milliseconds (250);
-   end loop;
-end Blink_Min;</code></pre>
-
-<p><code>delay until</code> is served by the board-support tick;
-<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
-crate.</p>
+<p>Config blocks are rewritten once per move, which is their wear cost. Raising
+<code>Update_Rate</code> trades levelling aggressiveness for less move and config
+overhead.</p>
     <nav class="pager">
-      <a class="prev" href="05-first-blink.html"><span class="dir">&larr; Previous</span><span class="name">Your first blink</span></a>
-      <a class="next" href="07-build.html"><span class="dir">Next &rarr;</span><span class="name">What a build does</span></a>
+      <a class="prev" href="45-ftp.html"><span class="dir">&larr; Previous</span><span class="name">FTP</span></a>
+      <a class="next" href="47-ext4.html"><span class="dir">Next &rarr;</span><span class="name">ext4 filesystem</span></a>
     </nav>
 
   </main>

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What happens between reset and Main &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.">
+<title>DNS and NTP: portable by construction &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Two clients written entirely against GNAT.Sockets, so the same source runs on a desktop and on the board &mdash; and one shared concurrency wrinkle worth knowing.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <h2>The steps</h2>
     <ol>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Getting started<span class="toc-range">1&ndash;12</span></summary>
           <ol>
             <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
@@ -31,7 +31,7 @@
             <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
             <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
             <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
-            <li class="current"><a href="06-anatomy.html" data-step="06" aria-current="page">Reset to Main</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
             <li><a href="07-build.html" data-step="07">What a build does</a></li>
             <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
             <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
@@ -83,11 +83,11 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Networking<span class="toc-range">40&ndash;45</span></summary>
           <ol>
             <li><a href="40-net-stack.html" data-step="40">The network stack</a></li>
-            <li><a href="41-dns-ntp.html" data-step="41">DNS &amp; NTP</a></li>
+            <li class="current"><a href="41-dns-ntp.html" data-step="41" aria-current="page">DNS &amp; NTP</a></li>
             <li><a href="42-tls.html" data-step="42">TLS 1.3</a></li>
             <li><a href="43-wifi.html" data-step="43">Wi-Fi</a></li>
             <li><a href="44-modbus.html" data-step="44">Modbus TCP</a></li>
@@ -138,122 +138,89 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
-    <p class="eyebrow">Step 06 of 56</p>
-    <h1>What happens between reset and Main</h1>
-    <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
+    <nav class="pager-top"><a href="40-net-stack.html">&larr; The network stack</a><a href="42-tls.html">TLS 1.3 &rarr;</a></nav>
+    <p class="eyebrow">Step 41 of 56</p>
+    <h1>DNS and NTP: portable by construction</h1>
+    <p class="lede">Two clients written entirely against <code>GNAT.Sockets</code>, so the same source runs on a desktop and on the board &mdash; and one shared concurrency wrinkle worth knowing.</p>
 
-<h2>The layers, top to bottom</h2>
+<h2>One line to resolve a name</h2>
+
+<pre><code>function Resolve (...) return ...;    --  Net_Resolver</code></pre>
+
+<p><code>Net_Resolver</code> turns a host name into an address whatever is
+carrying the traffic. Resolution is <strong>a real DNS query of our own</strong>
+&mdash; a UDP A-record request that <code>DNS_Client</code> issues over
+<a href="40-net-stack.html">GNAT.Sockets</a> &mdash; so it works identically over
+Ethernet, Wi-Fi, cellular, or whatever the routing table points at.</p>
+
+<p class="note"><strong>Why not use the modem's own resolver?</strong> Because
+one was tried and removed. The BG95's <code>AT+QIDNSGIP</code> silently refused
+answers whose shape it did not like &mdash; a CNAME chain onto several A records
+failed where a bare A record resolved. Doing DNS ourselves means one code path
+with predictable behaviour, rather than a per-modem set of quirks.</p>
+
+<p><code>DNS_Client</code> offers both <code>Resolve</code> (UDP) and
+<code>Resolve_TCP</code>, the latter for answers too large for a datagram.
+<code>NTP_Client.Query</code> is the same shape &mdash; a UDP query reading the
+transmit timestamp out of the reply &mdash; with <code>To_UTC</code> to convert
+it.</p>
+
+<h2>Portability is the point</h2>
+
+<p>Neither client contains anything chip-specific. On the board you call
+<code>GNAT.Sockets.Initialize (Device)</code> once during bring-up; on a desktop
+sockets are always usable. The same source then compiles in both places, which
+is what lets these be tested on a host rather than only on hardware.</p>
+
+<h2>The shared wrinkle</h2>
+
+<p class="warn"><strong>Both keep package-global rotors</strong> &mdash; the
+transaction id and the default source port for DNS, a source-port counter for
+NTP. Concurrent calls from several tasks corrupt nothing, but two in-flight
+queries can land on the same source port, and one then fails its reply check.
+That surfaces as a <em>failed lookup</em>, not an exception or corruption. If you
+resolve from more than one task, either serialise the calls or accept the
+retry.</p>
+
+<p class="note">The source-port rotation is not incidental &mdash; a fixed source
+port is what made an earlier cellular setup fail, because the carrier's NAT
+poisoned the flow. Rotating ports is a deliberate hardening measure, and the
+collision above is its small cost.</p>
+
+<h2>Encrypted DNS</h2>
+
+<p>Plain DNS is readable by anything on the path, and on a shared or hostile
+network the names a device looks up leak what it is doing.
+<code>DNS_TLS</code> adds the two encrypted transports over the
+<a href="42-tls.html">pure-Ada TLS 1.3 stack</a>:</p>
 
 <table>
-  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
+  <thead><tr><th>Transport</th><th>How</th></tr></thead>
   <tbody>
-    <tr><td><strong>Your application</strong></td>
-        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
-    <tr><td><strong>The HAL</strong></td>
-        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
-            (<code>ESP32S3.*</code>) over a generated register layer
-            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
-            poke registers itself &mdash; but it is where the device knowledge
-            lives.</td></tr>
-    <tr><td><strong>The binder output</strong></td>
-        <td><code>gnatbind</code> generates <code>b__main</code>, which
-            elaborates every unit in dependency order and then calls
-            <code>Main</code>.</td></tr>
-    <tr><td><strong>The Ada runtime</strong></td>
-        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
-            stack, exceptions, text I/O over the USB-serial console, and the
-            tasking kernel &mdash; tasks, protected objects, delays,
-            scheduling.</td></tr>
-    <tr><td><strong>Board support</strong></td>
-        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
-            context switch, interrupt entry/exit vectors, the clock tick, SMP
-            scheduling and the inter-core interrupt. Ada plus a little assembly
-            (<code>start.S</code>, <code>highint5.S</code>,
-            <code>context_switch.S</code>). <em>This is the layer an
-            off-the-shelf RTOS would otherwise provide.</em></td></tr>
-    <tr><td><strong>2nd-stage bootloader</strong></td>
-        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
-            the octal PSRAM, and jumps to the application image. It replaces the
-            vendor's stock second-stage bootloader.</td></tr>
-    <tr><td><strong>Mask ROM</strong></td>
-        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
-            reset.</td></tr>
+    <tr><td><strong>DoT</strong> (RFC 7858)</td>
+        <td>The ordinary DNS message, inside TLS, on port 853.</td></tr>
+    <tr><td><strong>DoH</strong> (RFC 8484)</td>
+        <td>A minimal HTTP/1.1 <code>POST</code> of
+            <code>application/dns-message</code> over HTTPS, port 443 &mdash;
+            so it survives networks that block 853.</td></tr>
   </tbody>
 </table>
 
-<h2>The boot path</h2>
+<p class="note"><strong>The message bytes are the same proven ones every
+transport shares.</strong> Only the carriage differs, so the parser and builder
+under UDP, TCP, DoT and DoH are one implementation with one set of tests
+(<a href="53-testing.html">step 52</a>) &mdash; not four chances to get a
+message wrong.</p>
 
-<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
-        cache/MMU, PSRAM      PLL, vectors,  elaboration
-                              release core 1</code></pre>
-
-<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
-interrupt vectors, and on the SMP examples releases the second core. Then the
-runtime's startup calls <code>adainit</code>, which runs every package's
-elaboration &mdash; and that is where library-level tasks like the blinker come
-alive, <em>before</em> <code>Main</code> is entered. Finally
-<code>Main</code> runs.</p>
-
-<p>There is no vendor startup shim and no third-party scheduler in that chain.
-The Ada runtime is the only scheduler and it is linked from source.</p>
-
-<h2>Why the blink example's Main does nothing</h2>
-
-<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
-this:</p>
-
-<pre><code>with Ada.Real_Time; use Ada.Real_Time;
-
---  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
---  task into the program so it elaborates and runs.
-with GPIO;
-pragma Unreferenced (GPIO);
-
-procedure Main is
-begin
-   loop
-      delay until Clock + Seconds (3600);
-   end loop;
-end Main;</code></pre>
-
-<p>The work is done by a library-level task inside package <code>GPIO</code>,
-which starts at elaboration. <code>Main</code> becomes the environment task,
-which here just parks forever. Withing a package you never call is how you pull
-its tasks into the link closure; <code>pragma Unreferenced</code> tells the
-compiler that is deliberate.</p>
-
-<h2>A minimal application</h2>
-
-<p>If you would rather do the work in the main procedure itself, this is a
-complete program. (It is named <code>Blink_Min</code> here because it lives in
-<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
-it against the embedded runtime on every doc change &mdash; rename it
-<code>Main</code> in your own project.)</p>
-
-<pre><code>--  Guide step 06 -- "A minimal application".
---
---  This file IS the code the page shows: build.py inlines it at generation
---  time, and check_samples.sh compiles it.  Edit it here, not in the HTML.
-with Ada.Real_Time; use Ada.Real_Time;
-with ESP32S3.GPIO;
-
-procedure Blink_Min is
-   Led : constant ESP32S3.GPIO.Pin_Id := 2;
-begin
-   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
-   loop
-      ESP32S3.GPIO.Toggle (Led);
-      delay until Clock + Milliseconds (250);
-   end loop;
-end Blink_Min;</code></pre>
-
-<p><code>delay until</code> is served by the board-support tick;
-<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
-crate.</p>
+<p class="warn">Trust stays with the <em>application</em>, exactly as in the
+HTTPS examples: the caller establishes the TCP connection and supplies the trust
+anchors. The resolver does not carry a built-in root store or decide for you
+which resolver is trustworthy. Note also that a root-pinned DoT or DoH endpoint
+may need <a href="42-tls.html">P-384</a> rather than P-256, depending on whose
+certificate chain you are anchoring to.</p>
     <nav class="pager">
-      <a class="prev" href="05-first-blink.html"><span class="dir">&larr; Previous</span><span class="name">Your first blink</span></a>
-      <a class="next" href="07-build.html"><span class="dir">Next &rarr;</span><span class="name">What a build does</span></a>
+      <a class="prev" href="40-net-stack.html"><span class="dir">&larr; Previous</span><span class="name">The network stack</span></a>
+      <a class="next" href="42-tls.html"><span class="dir">Next &rarr;</span><span class="name">TLS 1.3</span></a>
     </nav>
 
   </main>

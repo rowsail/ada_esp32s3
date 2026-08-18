@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What happens between reset and Main &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.">
+<title>Testing and proof: reproducing the claims &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Thirty-two harnesses run on your PC, not the board. Half check behaviour against the host's own tools; half prove absence of run-time errors outright.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <h2>The steps</h2>
     <ol>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Getting started<span class="toc-range">1&ndash;12</span></summary>
           <ol>
             <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
@@ -31,7 +31,7 @@
             <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
             <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
             <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
-            <li class="current"><a href="06-anatomy.html" data-step="06" aria-current="page">Reset to Main</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
             <li><a href="07-build.html" data-step="07">What a build does</a></li>
             <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
             <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
@@ -117,10 +117,10 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Testing &amp; proof<span class="toc-range">53&ndash;54</span></summary>
           <ol>
-            <li><a href="53-testing.html" data-step="53">Testing &amp; proof</a></li>
+            <li class="current"><a href="53-testing.html" data-step="53" aria-current="page">Testing &amp; proof</a></li>
             <li><a href="54-runtime.html" data-step="54">The runtime itself</a></li>
           </ol>
         </details>
@@ -138,122 +138,116 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
-    <p class="eyebrow">Step 06 of 56</p>
-    <h1>What happens between reset and Main</h1>
-    <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
+    <nav class="pager-top"><a href="52-stack-usage.html">&larr; Stack measurement</a><a href="54-runtime.html">The runtime itself &rarr;</a></nav>
+    <p class="eyebrow">Step 53 of 56</p>
+    <h1>Testing and proof: reproducing the claims</h1>
+    <p class="lede">Thirty-two harnesses run on your PC, not the board. Half check behaviour against the host's own tools; half prove absence of run-time errors outright.</p>
 
-<h2>The layers, top to bottom</h2>
+<h2>Why so much runs on the host</h2>
+
+<p>Most of what this SDK does is pure logic over a thin hardware seam &mdash; a
+filesystem over <a href="46-block-dev.html">Block_Dev</a>, a DNS message
+builder over <a href="40-net-stack.html">GNAT.Sockets</a>, a clock-divider
+calculation. Logic like that is target-independent, so it can be exercised on a
+PC in a second rather than flashed and watched over a serial cable.</p>
+
+<p class="note">That split is deliberate and it tells you where a bug lives. The
+<code>ext4_host</code> harness builds the <em>same</em> filesystem sources the
+firmware uses &mdash; its project's <code>Source_Files</code> whitelist pulls in
+every portable unit and omits only the on-target block adapters. So a bug that
+reproduces on the host is a real filesystem bug, and one that appears
+<em>only</em> on target points at the SD/SPI layer instead.</p>
+
+<h2>Running a host test</h2>
+
+<p>Each harness under <code>libs/esp32s3_hal/test/</code> carries its own
+<code>run.sh</code>, which finds the Alire native toolchain itself:</p>
+
+<pre><code>bash libs/esp32s3_hal/test/endian_host/run.sh
+bash libs/esp32s3_hal/test/ext4_host/run.sh</code></pre>
+
+<p>The first is instant and self-contained:</p>
+
+<pre><code>ESP32S3.Endian equivalence check:
+  little-endian join/split . PASS ( 4096 cases)
+  big-endian 32 join/split . PASS ( 4096 cases)
+  big-endian 16 join/split . PASS ( 65536 cases)</code></pre>
+
+<p>The second needs <code>e2fsprogs</code>, because it does something better than
+checking its own answers &mdash; it cross-checks every volume against the Linux
+kernel's own <code>e2fsck</code>:</p>
+
+<pre><code>  dirgrow        e2fsck CLEAN
+      dirgrow: 400 files + 101 replaced, missing 0
+  stream         e2fsck CLEAN
+      stream: 205500 bytes via Append, readback OK</code></pre>
+
+<p>The same pattern recurs: <code>fat16_host</code> makes three independent
+implementations agree (this code, <code>dosfstools</code>, and a writer written
+from the specification), <code>modbus_*_host</code> talk to a standard client,
+and <code>esp_loader_host</code> drives a simulated ROM that validates every
+frame and impersonates each chip family in turn.</p>
 
 <table>
-  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
+  <thead><tr><th>Harness</th><th>Checked against</th></tr></thead>
   <tbody>
-    <tr><td><strong>Your application</strong></td>
-        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
-    <tr><td><strong>The HAL</strong></td>
-        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
-            (<code>ESP32S3.*</code>) over a generated register layer
-            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
-            poke registers itself &mdash; but it is where the device knowledge
-            lives.</td></tr>
-    <tr><td><strong>The binder output</strong></td>
-        <td><code>gnatbind</code> generates <code>b__main</code>, which
-            elaborates every unit in dependency order and then calls
-            <code>Main</code>.</td></tr>
-    <tr><td><strong>The Ada runtime</strong></td>
-        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
-            stack, exceptions, text I/O over the USB-serial console, and the
-            tasking kernel &mdash; tasks, protected objects, delays,
-            scheduling.</td></tr>
-    <tr><td><strong>Board support</strong></td>
-        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
-            context switch, interrupt entry/exit vectors, the clock tick, SMP
-            scheduling and the inter-core interrupt. Ada plus a little assembly
-            (<code>start.S</code>, <code>highint5.S</code>,
-            <code>context_switch.S</code>). <em>This is the layer an
-            off-the-shelf RTOS would otherwise provide.</em></td></tr>
-    <tr><td><strong>2nd-stage bootloader</strong></td>
-        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
-            the octal PSRAM, and jumps to the application image. It replaces the
-            vendor's stock second-stage bootloader.</td></tr>
-    <tr><td><strong>Mask ROM</strong></td>
-        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
-            reset.</td></tr>
+    <tr><td><code>ext4_host</code>, <code>mkfs_host</code>, <code>wl_host</code></td><td><code>mke2fs</code> / <code>debugfs</code> / <code>e2fsck</code></td></tr>
+    <tr><td><code>fat16_host</code></td><td><code>dosfstools</code>, plus a spec-derived writer</td></tr>
+    <tr><td><code>dns_host</code>, <code>ftp_host</code>, <code>modbus_*_host</code></td><td>Real servers and clients on the host</td></tr>
+    <tr><td><code>esp_loader_host</code></td><td>A simulated ROM, deliberately broken three ways</td></tr>
+    <tr><td><code>repclause_host</code>, <code>endian_host</code></td><td>An arithmetic reference &mdash; bit layouts and byte order</td></tr>
   </tbody>
 </table>
 
-<h2>The boot path</h2>
+<h2>Proof, not just testing</h2>
 
-<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
-        cache/MMU, PSRAM      PLL, vectors,  elaboration
-                              release core 1</code></pre>
+<p>A test shows the cases you thought of pass. SPARK proves a property holds for
+<em>every</em> input. The proof projects run at
+<code>--level=1</code> &mdash; "silver": no overflow, no array index out of
+range, no division by zero, and all loops terminate.</p>
 
-<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
-interrupt vectors, and on the SMP examples releases the second core. Then the
-runtime's startup calls <code>adainit</code>, which runs every package's
-elaboration &mdash; and that is where library-level tasks like the blinker come
-alive, <em>before</em> <code>Main</code> is entered. Finally
-<code>Main</code> runs.</p>
+<pre><code>cd libs/esp32s3_hal/test/ledc_math_prove
+gnatprove -P ledc_math_prove.gpr --level=1 --report=statistics</code></pre>
 
-<p>There is no vendor startup shim and no third-party scheduler in that chain.
-The Ada runtime is the only scheduler and it is linked from source.</p>
+<p>Which reports, per check, what was proved and by which solver:</p>
 
-<h2>Why the blink example's Main does nothing</h2>
+<pre><code>esp32s3-ledc-math.adb:27:18: info: division check proved (Z3)
+esp32s3-ledc-math.ads:17:13: info: implicit aspect Always_Terminates on
+                                   "Clock_Divider" has been proved
+esp32s3-ledc-math.ads:19:19: info: postcondition proved (Z3)
+esp32s3-ledc-math.ads:26:19: info: postcondition proved (altergo)</code></pre>
 
-<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
-this:</p>
+<p class="note">Note the last two: these are not only absence of run-time errors
+but <strong>postconditions</strong> &mdash; the divider really does produce a
+frequency within tolerance, for every input, not merely for the values someone
+tried.</p>
 
-<pre><code>with Ada.Real_Time; use Ada.Real_Time;
+<h2>How a unit joins the proof surface</h2>
 
---  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
---  task into the program so it elaborates and runs.
-with GPIO;
-pragma Unreferenced (GPIO);
+<p>A unit is proven by carrying <code>with SPARK_Mode =&gt; On</code> on its spec
+and body; I/O, access types and raising operations at the boundary get
+<code>SPARK_Mode =&gt; Off</code>, and GNATprove analyses the On subset
+automatically.</p>
 
-procedure Main is
-begin
-   loop
-      delay until Clock + Seconds (3600);
-   end loop;
-end Main;</code></pre>
+<p>That is why the proven parts are the shapes they are &mdash; parsers,
+serialisers, checksums, routing and date arithmetic, clock-divider maths. The
+<code>*_math</code> children exist precisely so the arithmetic can be separated
+from the register writes and proven on its own: <code>LEDC.Math</code>,
+<code>MCPWM.Math</code>, <code>RMT.Math</code>, <code>TWAI.Math</code>,
+<code>Ext4.Mkfs.Math</code>. The driver body that writes registers stays
+unmarked.</p>
 
-<p>The work is done by a library-level task inside package <code>GPIO</code>,
-which starts at elaboration. <code>Main</code> becomes the environment task,
-which here just parks forever. Withing a package you never call is how you pull
-its tasks into the link closure; <code>pragma Unreferenced</code> tells the
-compiler that is deliberate.</p>
+<p class="warn">Proof at silver level says the code cannot fail at run time and
+meets its stated contracts. It does <strong>not</strong> say the contract is the
+one you wanted, nor that the hardware behaves as the datasheet claims. It
+complements the hardware self-tests in the examples; it does not replace
+them.</p>
 
-<h2>A minimal application</h2>
-
-<p>If you would rather do the work in the main procedure itself, this is a
-complete program. (It is named <code>Blink_Min</code> here because it lives in
-<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
-it against the embedded runtime on every doc change &mdash; rename it
-<code>Main</code> in your own project.)</p>
-
-<pre><code>--  Guide step 06 -- "A minimal application".
---
---  This file IS the code the page shows: build.py inlines it at generation
---  time, and check_samples.sh compiles it.  Edit it here, not in the HTML.
-with Ada.Real_Time; use Ada.Real_Time;
-with ESP32S3.GPIO;
-
-procedure Blink_Min is
-   Led : constant ESP32S3.GPIO.Pin_Id := 2;
-begin
-   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
-   loop
-      ESP32S3.GPIO.Toggle (Led);
-      delay until Clock + Milliseconds (250);
-   end loop;
-end Blink_Min;</code></pre>
-
-<p><code>delay until</code> is served by the board-support tick;
-<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
-crate.</p>
+<p><code>book/prove/prove.sh</code> runs the proof across every unit marked for
+it, if you want the whole surface rather than one project.</p>
     <nav class="pager">
-      <a class="prev" href="05-first-blink.html"><span class="dir">&larr; Previous</span><span class="name">Your first blink</span></a>
-      <a class="next" href="07-build.html"><span class="dir">Next &rarr;</span><span class="name">What a build does</span></a>
+      <a class="prev" href="52-stack-usage.html"><span class="dir">&larr; Previous</span><span class="name">Stack measurement</span></a>
+      <a class="next" href="54-runtime.html"><span class="dir">Next &rarr;</span><span class="name">The runtime itself</span></a>
     </nav>
 
   </main>

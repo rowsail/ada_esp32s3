@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What happens between reset and Main &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.">
+<title>Hardware crypto, and one honest caveat &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="SHA, AES and RSA acceleration behind protected objects, MD5 for a specific non-cryptographic job &mdash; and a random number generator that is not a CSPRNG on this runtime.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <h2>The steps</h2>
     <ol>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Getting started<span class="toc-range">1&ndash;12</span></summary>
           <ol>
             <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
@@ -31,7 +31,7 @@
             <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
             <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
             <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
-            <li class="current"><a href="06-anatomy.html" data-step="06" aria-current="page">Reset to Main</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
             <li><a href="07-build.html" data-step="07">What a build does</a></li>
             <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
             <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
@@ -42,7 +42,7 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Chip peripherals<span class="toc-range">13&ndash;29</span></summary>
           <ol>
             <li><a href="13-gpio.html" data-step="13">GPIO in depth</a></li>
@@ -59,7 +59,7 @@
             <li><a href="24-timers-pcnt.html" data-step="24">Timers &amp; pulse counting</a></li>
             <li><a href="25-analog.html" data-step="25">ADC &amp; touch</a></li>
             <li><a href="26-rtc.html" data-step="26">RTC, hold &amp; deep sleep</a></li>
-            <li><a href="27-crypto.html" data-step="27">Crypto &amp; RNG</a></li>
+            <li class="current"><a href="27-crypto.html" data-step="27" aria-current="page">Crypto &amp; RNG</a></li>
             <li><a href="28-sd.html" data-step="28">SD cards</a></li>
             <li><a href="29-chip-id.html" data-step="29">Temperature &amp; MAC</a></li>
           </ol>
@@ -138,122 +138,93 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
-    <p class="eyebrow">Step 06 of 56</p>
-    <h1>What happens between reset and Main</h1>
-    <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
+    <nav class="pager-top"><a href="26-rtc.html">&larr; RTC, hold &amp; deep sleep</a><a href="28-sd.html">SD cards &rarr;</a></nav>
+    <p class="eyebrow">Step 27 of 56</p>
+    <h1>Hardware crypto, and one honest caveat</h1>
+    <p class="lede">SHA, AES and RSA acceleration behind protected objects, MD5 for a specific non-cryptographic job &mdash; and a random number generator that is not a CSPRNG on this runtime.</p>
 
-<h2>The layers, top to bottom</h2>
+<h2>SHA</h2>
 
-<table>
-  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
-  <tbody>
-    <tr><td><strong>Your application</strong></td>
-        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
-    <tr><td><strong>The HAL</strong></td>
-        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
-            (<code>ESP32S3.*</code>) over a generated register layer
-            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
-            poke registers itself &mdash; but it is where the device knowledge
-            lives.</td></tr>
-    <tr><td><strong>The binder output</strong></td>
-        <td><code>gnatbind</code> generates <code>b__main</code>, which
-            elaborates every unit in dependency order and then calls
-            <code>Main</code>.</td></tr>
-    <tr><td><strong>The Ada runtime</strong></td>
-        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
-            stack, exceptions, text I/O over the USB-serial console, and the
-            tasking kernel &mdash; tasks, protected objects, delays,
-            scheduling.</td></tr>
-    <tr><td><strong>Board support</strong></td>
-        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
-            context switch, interrupt entry/exit vectors, the clock tick, SMP
-            scheduling and the inter-core interrupt. Ada plus a little assembly
-            (<code>start.S</code>, <code>highint5.S</code>,
-            <code>context_switch.S</code>). <em>This is the layer an
-            off-the-shelf RTOS would otherwise provide.</em></td></tr>
-    <tr><td><strong>2nd-stage bootloader</strong></td>
-        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
-            the octal PSRAM, and jumps to the application image. It replaces the
-            vendor's stock second-stage bootloader.</td></tr>
-    <tr><td><strong>Mask ROM</strong></td>
-        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
-            reset.</td></tr>
-  </tbody>
-</table>
+<pre><code>function Hash_1   (Data : Byte_Array) return SHA1_Digest;     --  20 bytes
+function Hash_224 (Data : Byte_Array) return SHA224_Digest;
+function Hash_256 (Data : Byte_Array) return SHA256_Digest;</code></pre>
 
-<h2>The boot path</h2>
+<p>One shared accelerator, so a protected object serialises the message-load /
+start / read handshake and concurrent <code>Hash</code> calls from different
+tasks are safe. All three variants share the 512-bit block and padding, differing
+only in hardware mode and digest length. The block also does SHA-384/512, which
+use a 1024-bit block and are not exposed here.</p>
 
-<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
-        cache/MMU, PSRAM      PLL, vectors,  elaboration
-                              release core 1</code></pre>
+<h2>AES, and a silicon limitation worth a contract</h2>
 
-<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
-interrupt vectors, and on the SMP examples releases the second core. Then the
-runtime's startup calls <code>adainit</code>, which runs every package's
-elaboration &mdash; and that is where library-level tasks like the blinker come
-alive, <em>before</em> <code>Main</code> is entered. Finally
-<code>Main</code> runs.</p>
+<pre><code>type Block     is array (0 .. 15) of Interfaces.Unsigned_8;
+subtype Key_128 is Key_Bytes (0 .. 15);
+subtype Key_256 is Key_Bytes (0 .. 31);
 
-<p>There is no vendor startup shim and no third-party scheduler in that chain.
-The Ada runtime is the only scheduler and it is linked from source.</p>
+function Supported_Key (Key : Key_Bytes) return Boolean;
+function Encrypt_ECB   (Key : Key_Bytes; Plain : Block) return Block;</code></pre>
 
-<h2>Why the blink example's Main does nothing</h2>
+<p class="warn"><strong>The S3's AES supports 128- and 256-bit keys only.</strong>
+There is no 192-bit support on this silicon &mdash; selecting "AES-192" makes the
+engine <em>silently fall back to AES-128 on the first 16 key bytes</em>, which
+would produce ciphertext that looks fine and is not what you asked for. The
+<code>Supported_Key</code> precondition turns that into a contract violation
+instead. 192-bit keys exist only on the original ESP32.</p>
 
-<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
-this:</p>
+<p>What is exposed is single-block ECB, deliberately: it is the primitive, not a
+mode you should be encrypting messages with directly. Build CBC, CTR or GCM on
+top of it.</p>
 
-<pre><code>with Ada.Real_Time; use Ada.Real_Time;
+<h2>RSA</h2>
 
---  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
---  task into the program so it elaborates and runs.
-with GPIO;
-pragma Unreferenced (GPIO);
+<pre><code>type Word_Array is array (Natural range &lt;&gt;) of Word;   --  little-endian limbs
 
-procedure Main is
-begin
-   loop
-      delay until Clock + Seconds (3600);
-   end loop;
-end Main;</code></pre>
+procedure Mod_Exp (X, Y, M, R2 : Word_Array; Z : out Word_Array; Ok : out Boolean);
+procedure Mod_Exp (X, Y, M     : Word_Array; Z : out Word_Array; Ok : out Boolean);</code></pre>
 
-<p>The work is done by a library-level task inside package <code>GPIO</code>,
-which starts at elaboration. <code>Main</code> becomes the environment task,
-which here just parks forever. Withing a package you never call is how you pull
-its tasks into the link closure; <code>pragma Unreferenced</code> tells the
-compiler that is deliberate.</p>
+<p>Big-integer modular exponentiation, <code>Z = X**Y mod M</code>, up to
+4096-bit &mdash; the core of RSA signature verification. The hardware does
+Montgomery exponentiation; the driver computes <code>M'</code> itself, and the
+second overload derives <code>R2</code> for you as well. Operands are
+little-endian 32-bit limb arrays, all the same length. It is lock-free and
+ZFP-safe: a sequence of register accesses with no tasking and no heap.</p>
 
-<h2>A minimal application</h2>
+<h2>MD5, and why it is here</h2>
 
-<p>If you would rather do the work in the main procedure itself, this is a
-complete program. (It is named <code>Blink_Min</code> here because it lives in
-<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
-it against the embedded runtime on every doc change &mdash; rename it
-<code>Main</code> in your own project.)</p>
+<p class="note">MD5 is long broken as a cryptographic hash and this package does
+not pretend otherwise. It earns its place because the ESP32 ROM loader's
+<code>SPI_FLASH_MD5</code> command speaks it: after writing an image, the target
+hashes what its flash actually holds, this computes what it <em>should</em> hold,
+and comparing them is what lets "programmed OK" mean something. An integrity
+check against accident, not against an adversary.</p>
 
-<pre><code>--  Guide step 06 -- "A minimal application".
---
---  This file IS the code the page shows: build.py inlines it at generation
---  time, and check_samples.sh compiles it.  Edit it here, not in the HTML.
-with Ada.Real_Time; use Ada.Real_Time;
-with ESP32S3.GPIO;
+<p>It is streaming (<code>Reset</code> / <code>Update</code> /
+<code>Hex_Digest</code>), pure Ada, no heap, no tasking &mdash; so it runs on the
+light runtime too.</p>
 
-procedure Blink_Min is
-   Led : constant ESP32S3.GPIO.Pin_Id := 2;
-begin
-   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
-   loop
-      ESP32S3.GPIO.Toggle (Led);
-      delay until Clock + Milliseconds (250);
-   end loop;
-end Blink_Min;</code></pre>
+<h2>The RNG caveat</h2>
 
-<p><code>delay until</code> is served by the board-support tick;
-<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
-crate.</p>
+<pre><code>--  Read is a single atomic 32-bit register load; Fill writes a buffer.</code></pre>
+
+<p>Each read of the RNG data register returns a fresh 32-bit value. It is
+Preelaborate, heap-free, finalization-free and task-safe by construction &mdash;
+the one peripheral that keeps every one of those properties at once.</p>
+
+<p class="warn"><strong>Do not treat it as a CSPRNG as it stands.</strong> The
+TRM wants an active entropy source for cryptographic-quality output &mdash; the
+RF subsystem, which this bare runtime does not start, or SAR-ADC bootloader
+entropy. Without one it still produces varying values from internal clock jitter,
+which is fine for dithering, non-secret identifiers, test data or seeding a
+software PRNG. It is not fine for keys. Also avoid reading in a tight loop faster
+than the hardware refreshes, or successive words may correlate.</p>
+
+<p class="note">A related trap: this is the <em>RNG peripheral</em> register, not
+esp-idf's <code>WDEV_RND_REG</code>. That one only yields entropy with the RF
+clock domain up, so on this runtime it reads a constant &mdash; a mistake that
+would look like working code returning the same "random" number forever.</p>
     <nav class="pager">
-      <a class="prev" href="05-first-blink.html"><span class="dir">&larr; Previous</span><span class="name">Your first blink</span></a>
-      <a class="next" href="07-build.html"><span class="dir">Next &rarr;</span><span class="name">What a build does</span></a>
+      <a class="prev" href="26-rtc.html"><span class="dir">&larr; Previous</span><span class="name">RTC, hold &amp; deep sleep</span></a>
+      <a class="next" href="28-sd.html"><span class="dir">Next &rarr;</span><span class="name">SD cards</span></a>
     </nav>
 
   </main>

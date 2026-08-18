@@ -76,24 +76,24 @@ here, hal = sys.argv[1], sys.argv[2]
 #
 #      page          spec(s) it documents            names it must still find
 MANIFEST = [
-    ("12-gpio.html", ["esp32s3-gpio.ads", "esp32s3-gpio-interrupts.ads"], """
+    ("13-gpio.html", ["esp32s3-gpio.ads", "esp32s3-gpio-interrupts.ads"], """
         Pad_Number No_Pin Pin_Id Optional_Pin Pin_Mode Pull_Mode Drive_Strength
         Drive_Weak Drive_Medium Drive_Strong Drive_Strongest Configure Toggle
         Trigger Rising_Edge Falling_Edge Any_Edge Low_Level High_Level
         Callback Enable Disable Read Write Set Clear"""),
 
-    ("13-i2c.html", ["esp32s3-i2c.ads"], """
+    ("14-i2c.html", ["esp32s3-i2c.ads"], """
         I2C_Host I2C0 I2C1 Slave_Address Byte_Array Max_Transfer Session
         Is_Held Setup Configure_Pins Not_Initialized Not_Owned Acquire
         Write Read Write_Read Release Check_Ack Engine"""),
 
-    ("14-spi.html", ["esp32s3-spi.ads", "esp32s3-gdma.ads"], """
+    ("15-spi.html", ["esp32s3-spi.ads", "esp32s3-gdma.ads"], """
         SPI_Host SPI2 SPI3 SPI_Mode CS_Select Select_Device Set_Clock
         Enable_Loopback Transfer Setup Configure_Pins Acquire Release Is_Held
         Not_Initialized Not_Owned Clock_Hz CS_Pin Select_CB Ctx
         DMA_Buffer DMA_Alignment Assertion_Policy"""),
 
-    ("15-uart.html", ["esp32s3-uart.ads"], """
+    ("16-uart.html", ["esp32s3-uart.ads"], """
         UART_Port UART0 UART1 UART2 Baud_Rate Data_Bits Parity_Mode Stop_Bits
         Rx_Buffer_Access Enable_Buffered_Rx Acquire Reconfigure Set_Baud
         Set_Data_Bits Set_Parity Set_Stop_Bits Set_Inversion Configure_Pins

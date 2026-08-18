@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What happens between reset and Main &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.">
+<title>LEDC and sigma-delta: the simple outputs &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Eight PWM channels for dimming and clean square waves, and eight 1-bit density-modulated outputs that become analog with one resistor and one capacitor.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <h2>The steps</h2>
     <ol>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Getting started<span class="toc-range">1&ndash;12</span></summary>
           <ol>
             <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
@@ -31,7 +31,7 @@
             <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
             <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
             <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
-            <li class="current"><a href="06-anatomy.html" data-step="06" aria-current="page">Reset to Main</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
             <li><a href="07-build.html" data-step="07">What a build does</a></li>
             <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
             <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
@@ -42,7 +42,7 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Chip peripherals<span class="toc-range">13&ndash;29</span></summary>
           <ol>
             <li><a href="13-gpio.html" data-step="13">GPIO in depth</a></li>
@@ -54,7 +54,7 @@
             <li><a href="19-lcd.html" data-step="19">LCD (i80 / RGB)</a></li>
             <li><a href="20-twai.html" data-step="20">TWAI (CAN)</a></li>
             <li><a href="21-rmt.html" data-step="21">RMT pulses</a></li>
-            <li><a href="22-ledc-sdm.html" data-step="22">LEDC &amp; sigma-delta</a></li>
+            <li class="current"><a href="22-ledc-sdm.html" data-step="22" aria-current="page">LEDC &amp; sigma-delta</a></li>
             <li><a href="23-mcpwm.html" data-step="23">MCPWM</a></li>
             <li><a href="24-timers-pcnt.html" data-step="24">Timers &amp; pulse counting</a></li>
             <li><a href="25-analog.html" data-step="25">ADC &amp; touch</a></li>
@@ -138,122 +138,72 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
-    <p class="eyebrow">Step 06 of 56</p>
-    <h1>What happens between reset and Main</h1>
-    <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
+    <nav class="pager-top"><a href="21-rmt.html">&larr; RMT pulses</a><a href="23-mcpwm.html">MCPWM &rarr;</a></nav>
+    <p class="eyebrow">Step 22 of 56</p>
+    <h1>LEDC and sigma-delta: the simple outputs</h1>
+    <p class="lede">Eight PWM channels for dimming and clean square waves, and eight 1-bit density-modulated outputs that become analog with one resistor and one capacitor.</p>
 
-<h2>The layers, top to bottom</h2>
+<h2>LEDC: PWM without the motor-control machinery</h2>
 
-<table>
-  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
-  <tbody>
-    <tr><td><strong>Your application</strong></td>
-        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
-    <tr><td><strong>The HAL</strong></td>
-        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
-            (<code>ESP32S3.*</code>) over a generated register layer
-            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
-            poke registers itself &mdash; but it is where the device knowledge
-            lives.</td></tr>
-    <tr><td><strong>The binder output</strong></td>
-        <td><code>gnatbind</code> generates <code>b__main</code>, which
-            elaborates every unit in dependency order and then calls
-            <code>Main</code>.</td></tr>
-    <tr><td><strong>The Ada runtime</strong></td>
-        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
-            stack, exceptions, text I/O over the USB-serial console, and the
-            tasking kernel &mdash; tasks, protected objects, delays,
-            scheduling.</td></tr>
-    <tr><td><strong>Board support</strong></td>
-        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
-            context switch, interrupt entry/exit vectors, the clock tick, SMP
-            scheduling and the inter-core interrupt. Ada plus a little assembly
-            (<code>start.S</code>, <code>highint5.S</code>,
-            <code>context_switch.S</code>). <em>This is the layer an
-            off-the-shelf RTOS would otherwise provide.</em></td></tr>
-    <tr><td><strong>2nd-stage bootloader</strong></td>
-        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
-            the octal PSRAM, and jumps to the application image. It replaces the
-            vendor's stock second-stage bootloader.</td></tr>
-    <tr><td><strong>Mask ROM</strong></td>
-        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
-            reset.</td></tr>
-  </tbody>
-</table>
+<p>Eight low-speed channels fed by four timers. A channel picks a timer &mdash;
+which sets its frequency and duty resolution &mdash; and drives a GPIO with a
+duty cycle you change at run time. This is the "dim an LED, generate a clean
+PWM" block; for dead-time, fault inputs and capture, see
+<a href="23-mcpwm.html">MCPWM</a>.</p>
 
-<h2>The boot path</h2>
+<pre><code>type Channel_Index is range 0 .. 7;
+subtype Resolution   is Positive range 1 .. 14;      --  duty-cycle bits
+subtype Duty_Percent is Float range 0.0 .. 100.0;
 
-<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
-        cache/MMU, PSRAM      PLL, vectors,  elaboration
-                              release core 1</code></pre>
+procedure Claim  (C : in out Channel; Index : Channel_Index);
+procedure Configure (C : ...; Freq : ...; Bits : Resolution; Pin : ...);
+procedure Set_Duty  (C : Channel; Percent : Duty_Percent);
+procedure Stop      (C : Channel);</code></pre>
 
-<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
-interrupt vectors, and on the SMP examples releases the second core. Then the
-runtime's startup calls <code>adainit</code>, which runs every package's
-elaboration &mdash; and that is where library-level tasks like the blinker come
-alive, <em>before</em> <code>Main</code> is entered. Finally
-<code>Main</code> runs.</p>
+<p>Two constraints are worth knowing before you pick numbers.</p>
 
-<p>There is no vendor startup shim and no third-party scheduler in that chain.
-The Ada runtime is the only scheduler and it is linked from source.</p>
+<p class="warn"><strong>Resolution and frequency trade against each
+other:</strong> <code>freq_max = 80&nbsp;MHz / 2**Bits</code>. Fourteen bits of
+duty resolution caps you under 5&nbsp;kHz; a 100&nbsp;kHz carrier leaves about
+nine bits. Choose <code>Bits</code> for the dimming smoothness you actually need,
+not the maximum.</p>
 
-<h2>Why the blink example's Main does nothing</h2>
+<p class="warn"><strong>A channel uses timer <code>Index mod 4</code>.</strong>
+Channels 0 and 4 share a timer, as do 1 and 5, and so on &mdash; so two channels
+four apart cannot run at different frequencies. Spread channels across
+0&nbsp;..&nbsp;3 when you need independent rates.</p>
 
-<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
-this:</p>
+<p><code>Set_Duty</code> takes effect at the next period, so it is safe to call
+while running &mdash; no glitch, no partial-update flicker. The handle is limited
+and controlled as everywhere else here, and finalization <em>stops the output</em>
+as well as releasing the channel, so a leaked handle cannot keep driving a
+pad.</p>
 
-<pre><code>with Ada.Real_Time; use Ada.Real_Time;
+<h2>Sigma-delta: analog for the price of an RC filter</h2>
 
---  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
---  task into the program so it elaborates and runs.
-with GPIO;
-pragma Unreferenced (GPIO);
+<p>Eight channels in the GPIO sigma-delta unit. Each emits a high-frequency
+pulse stream whose average density is set by a signed 8-bit value; pass it
+through an external RC low-pass and you have a cheap analog output &mdash; LED
+dimming, a bias voltage, simple audio.</p>
 
-procedure Main is
-begin
-   loop
-      delay until Clock + Seconds (3600);
-   end loop;
-end Main;</code></pre>
+<pre><code>type Channel_Index is range 0 .. 7;
+subtype Density_Percent is Float range 0.0 .. 100.0;
 
-<p>The work is done by a library-level task inside package <code>GPIO</code>,
-which starts at elaboration. <code>Main</code> becomes the environment task,
-which here just parks forever. Withing a package you never call is how you pull
-its tasks into the link closure; <code>pragma Unreferenced</code> tells the
-compiler that is deliberate.</p>
+procedure Configure   (C : ...; Pin : ...; Carrier_Hz : ...);   --  starts at 0 %
+procedure Set_Density (C : Channel; Percent : Density_Percent); --  one register write</code></pre>
 
-<h2>A minimal application</h2>
+<p>The distinction from LEDC matters when choosing between them. LEDC varies the
+<em>width</em> of a pulse at a fixed frequency, so its output has energy at the
+PWM frequency and its harmonics. Sigma-delta varies the <em>density</em> of
+fixed-width pulses, pushing quantisation noise up in frequency where a simple
+filter removes it &mdash; which is why it makes a better analog voltage and why
+the same technique appears inside <a href="18-i2s.html">I2S</a>'s PDM mode.</p>
 
-<p>If you would rather do the work in the main procedure itself, this is a
-complete program. (It is named <code>Blink_Min</code> here because it lives in
-<code>docs/guide/samples/</code>, where <code>check_samples.sh</code> compiles
-it against the embedded runtime on every doc change &mdash; rename it
-<code>Main</code> in your own project.)</p>
-
-<pre><code>--  Guide step 06 -- "A minimal application".
---
---  This file IS the code the page shows: build.py inlines it at generation
---  time, and check_samples.sh compiles it.  Edit it here, not in the HTML.
-with Ada.Real_Time; use Ada.Real_Time;
-with ESP32S3.GPIO;
-
-procedure Blink_Min is
-   Led : constant ESP32S3.GPIO.Pin_Id := 2;
-begin
-   ESP32S3.GPIO.Configure (Led, Mode =&gt; ESP32S3.GPIO.Output);
-   loop
-      ESP32S3.GPIO.Toggle (Led);
-      delay until Clock + Milliseconds (250);
-   end loop;
-end Blink_Min;</code></pre>
-
-<p><code>delay until</code> is served by the board-support tick;
-<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
-crate.</p>
+<p><code>Set_Density</code> is a single register write, so it is cheap enough to
+call from a sample loop.</p>
     <nav class="pager">
-      <a class="prev" href="05-first-blink.html"><span class="dir">&larr; Previous</span><span class="name">Your first blink</span></a>
-      <a class="next" href="07-build.html"><span class="dir">Next &rarr;</span><span class="name">What a build does</span></a>
+      <a class="prev" href="21-rmt.html"><span class="dir">&larr; Previous</span><span class="name">RMT pulses</span></a>
+      <a class="next" href="23-mcpwm.html"><span class="dir">Next &rarr;</span><span class="name">MCPWM</span></a>
     </nav>
 
   </main>

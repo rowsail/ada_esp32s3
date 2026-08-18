@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GDMA: the DMA engine everything else borrows &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Five channel pairs, assigned at run time rather than wired per peripheral &mdash; and a buffer type whose rules exist because PSRAM is reached through a cache.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li class="toc-group">
+        <details>
+          <summary>Getting started<span class="toc-range">1&ndash;12</span></summary>
+          <ol>
+            <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
+            <li><a href="02-toolchain.html" data-step="02">Installing the toolchain</a></li>
+            <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
+            <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
+            <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
+            <li><a href="07-build.html" data-step="07">What a build does</a></li>
+            <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
+            <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
+            <li><a href="10-own-project.html" data-step="10">Your own project</a></li>
+            <li><a href="11-hal.html" data-step="11">Talking to hardware</a></li>
+            <li><a href="12-examples.html" data-step="12">The examples</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details open>
+          <summary>Chip peripherals<span class="toc-range">13&ndash;29</span></summary>
+          <ol>
+            <li><a href="13-gpio.html" data-step="13">GPIO in depth</a></li>
+            <li><a href="14-i2c.html" data-step="14">I2C in depth</a></li>
+            <li><a href="15-spi.html" data-step="15">SPI in depth</a></li>
+            <li><a href="16-uart.html" data-step="16">UART in depth</a></li>
+            <li class="current"><a href="17-gdma.html" data-step="17" aria-current="page">GDMA</a></li>
+            <li><a href="18-i2s.html" data-step="18">I2S audio</a></li>
+            <li><a href="19-lcd.html" data-step="19">LCD (i80 / RGB)</a></li>
+            <li><a href="20-twai.html" data-step="20">TWAI (CAN)</a></li>
+            <li><a href="21-rmt.html" data-step="21">RMT pulses</a></li>
+            <li><a href="22-ledc-sdm.html" data-step="22">LEDC &amp; sigma-delta</a></li>
+            <li><a href="23-mcpwm.html" data-step="23">MCPWM</a></li>
+            <li><a href="24-timers-pcnt.html" data-step="24">Timers &amp; pulse counting</a></li>
+            <li><a href="25-analog.html" data-step="25">ADC &amp; touch</a></li>
+            <li><a href="26-rtc.html" data-step="26">RTC, hold &amp; deep sleep</a></li>
+            <li><a href="27-crypto.html" data-step="27">Crypto &amp; RNG</a></li>
+            <li><a href="28-sd.html" data-step="28">SD cards</a></li>
+            <li><a href="29-chip-id.html" data-step="29">Temperature &amp; MAC</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>External devices<span class="toc-range">30&ndash;39</span></summary>
+          <ol>
+            <li><a href="30-display-touch.html" data-step="30">Display &amp; touch</a></li>
+            <li><a href="31-es8311.html" data-step="31">ES8311 codec</a></li>
+            <li><a href="32-sensors.html" data-step="32">IMU &amp; environment</a></li>
+            <li><a href="33-pcf85063a.html" data-step="33">PCF85063A RTC</a></li>
+            <li><a href="34-expanders.html" data-step="34">Port expanders</a></li>
+            <li><a href="35-tx1812.html" data-step="35">TX1812 LEDs</a></li>
+            <li><a href="36-memory.html" data-step="36">Flash, EEPROM &amp; FRAM</a></li>
+            <li><a href="37-tlv2556.html" data-step="37">TLV2556 ADC</a></li>
+            <li><a href="38-gps.html" data-step="38">GPS receiver</a></li>
+            <li><a href="39-w5500.html" data-step="39">W5500 Ethernet</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Networking<span class="toc-range">40&ndash;45</span></summary>
+          <ol>
+            <li><a href="40-net-stack.html" data-step="40">The network stack</a></li>
+            <li><a href="41-dns-ntp.html" data-step="41">DNS &amp; NTP</a></li>
+            <li><a href="42-tls.html" data-step="42">TLS 1.3</a></li>
+            <li><a href="43-wifi.html" data-step="43">Wi-Fi</a></li>
+            <li><a href="44-modbus.html" data-step="44">Modbus TCP</a></li>
+            <li><a href="45-ftp.html" data-step="45">FTP</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Storage &amp; files<span class="toc-range">46&ndash;48</span></summary>
+          <ol>
+            <li><a href="46-block-dev.html" data-step="46">Block devices &amp; wear levelling</a></li>
+            <li><a href="47-ext4.html" data-step="47">ext4 filesystem</a></li>
+            <li><a href="48-fat16.html" data-step="48">FAT16</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Text &amp; tooling<span class="toc-range">49&ndash;52</span></summary>
+          <ol>
+            <li><a href="49-console-fonts.html" data-step="49">Console, text &amp; fonts</a></li>
+            <li><a href="50-esp-loader.html" data-step="50">Programming another ESP32</a></li>
+            <li><a href="51-simd.html" data-step="51">SIMD (PIE)</a></li>
+            <li><a href="52-stack-usage.html" data-step="52">Stack measurement</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Testing &amp; proof<span class="toc-range">53&ndash;54</span></summary>
+          <ol>
+            <li><a href="53-testing.html" data-step="53">Testing &amp; proof</a></li>
+            <li><a href="54-runtime.html" data-step="54">The runtime itself</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Debugging<span class="toc-range">55&ndash;56</span></summary>
+          <ol>
+            <li><a href="55-debugging.html" data-step="55">Debugging</a></li>
+            <li><a href="56-troubleshooting.html" data-step="56">Troubleshooting &amp; next steps</a></li>
+          </ol>
+        </details>
+      </li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="16-uart.html">&larr; UART in depth</a><a href="18-i2s.html">I2S audio &rarr;</a></nav>
+    <p class="eyebrow">Step 17 of 56</p>
+    <h1>GDMA: the DMA engine everything else borrows</h1>
+    <p class="lede">Five channel pairs, assigned at run time rather than wired per peripheral &mdash; and a buffer type whose rules exist because PSRAM is reached through a cache.</p>
+
+<h2>Channels are a resource, not a fixture</h2>
+
+<p>The S3 has one AHB GDMA block with <strong>five channel pairs</strong>
+(0&nbsp;..&nbsp;4). Each pair has an independent transmit (OUT) and receive (IN)
+path, and either can be wired to any peripheral through the GDMA crossbar. A
+channel is therefore something you <em>claim</em>, not something a peripheral
+owns:</p>
+
+<pre><code>type Channel_Id is mod 5;
+type Peripheral is (Mem2Mem, SPI2, SPI3, UHCI0, I2S0, I2S1, LCD_CAM, AES, SHA, ADC_DAC, RMT);
+
+procedure Claim (C : in out Channel; Peri : Peripheral);
+function  Is_Valid (C : Channel) return Boolean;
+procedure Release (C : in out Channel);</code></pre>
+
+<p><code>Claim</code> goes through a protected allocator, so two tasks can never
+be handed the same channel. The <code>Channel</code> handle is limited
+(non-copyable, so it cannot be aliased into another task) and controlled (it
+releases on scope exit, including on an exception, so a channel cannot leak or
+be reused through a stale copy). If all five are busy, <code>Claim</code> leaves
+the handle invalid rather than raising &mdash; check <code>Is_Valid</code>.</p>
+
+<p class="note">Once you hold a channel, only you touch its registers and
+descriptors, so the transfer operations themselves need no further locking. This
+is the same ownership pattern as <a href="15-spi.html">SPI</a> and
+<a href="14-i2c.html">I2C</a>, and for the same reason.</p>
+
+<h2>Why a buffer type exists</h2>
+
+<p>DMA needs DMA-capable memory, and on this chip that is not a single rule:</p>
+
+<ul>
+  <li><strong>Internal SRAM</strong> always qualifies, at any alignment.</li>
+  <li><strong>External PSRAM</strong> qualifies only when the buffer is
+      cache-line (32-byte) aligned &mdash; the GDMA reaches PSRAM
+      <em>through</em> the DCache, so the driver writes back and invalidates
+      around each transfer.</li>
+  <li><strong>Flash <code>.rodata</code></strong> is excluded. A
+      <code>constant</code> aggregate still cannot be DMA'd.</li>
+</ul>
+
+<pre><code>DMA_Alignment : constant := 32;
+
+type DMA_Buffer is array (Natural range &lt;&gt;) of Interfaces.Unsigned_8
+  with Alignment =&gt; DMA_Alignment;
+
+function Is_DMA_Capable (A : System.Address) return Boolean;</code></pre>
+
+<p class="warn"><strong>Alignment is only half of it.</strong> The type carries
+the aligned <em>start</em>; the operations' preconditions additionally demand a
+whole-cache-line <em>size</em>. That is not implied by alignment and it matters:
+the PSRAM write-back/invalidate rounds the region <strong>up</strong> to a whole
+line, so a buffer ending mid-line would have the maintenance touch its
+neighbour &mdash; discarding an adjacent object's dirty cached write. Size the
+payload up to a multiple of 32 (128 bytes for 100 useful ones).</p>
+
+<p>Hence the calling convention: <strong>pass the whole buffer plus a transfer
+length</strong>, never a slice. Slicing to the length would fail the size
+precondition, while the whole line-multiple buffer keeps every rounded
+maintenance op inside itself.</p>
+
+<pre><code>procedure Copy (C : Channel; Dst, Src : DMA_Buffer; Length : Natural)
+with Pre =&gt; Length &lt;= Src'Length and then Length &lt;= Dst'Length
+            and then Src'Length mod DMA_Alignment = 0
+            and then Dst'Length mod DMA_Alignment = 0;</code></pre>
+
+<p>These preconditions are pinned on with
+<code>pragma Assertion_Policy (Pre =&gt; Check)</code> in the spec, so they hold
+even when the build has assertions off &mdash; a buffer in flash or unaligned
+PSRAM corrupts the transfer <em>silently</em>, which is exactly the failure worth
+paying a check for.</p>
+
+<h2>The three shapes of transfer</h2>
+
+<table>
+  <thead><tr><th>Call</th><th>Behaviour</th></tr></thead>
+  <tbody>
+    <tr><td><code>Copy</code></td>
+        <td>Blocking memory-to-memory, completed by looping one channel's OUT
+            path into its own IN path. Buffers <em>and</em> the driver's
+            descriptors must be in internal SRAM, because the descriptor link
+            address is a 20-bit field.</td></tr>
+    <tr><td><code>Start</code></td>
+        <td>Arms a single-buffer peripheral transfer in one
+            <code>Direction</code> and returns immediately. You configure and
+            start the peripheral separately; the GDMA moves data as the
+            peripheral raises its DMA request.</td></tr>
+    <tr><td><code>Start_Loop</code></td>
+        <td>A single descriptor whose link points back at itself, so the engine
+            replays the buffer forever with no gap between passes and no CPU
+            involvement after the kick. Never completes on its own.</td></tr>
+  </tbody>
+</table>
+
+<p><code>Direction</code> is <code>Mem_To_Periph</code> (the OUT path reads RAM
+and feeds the peripheral) or <code>Periph_To_Mem</code>. A single descriptor
+caps at <code>Max_Transfer</code> = 4095 bytes, the hardware's 12-bit
+buffer-size field &mdash; which is where <a href="15-spi.html">SPI</a>'s
+1&nbsp;..&nbsp;4095 precondition comes from.</p>
+
+<h2>Beyond one descriptor: the framebuffer path</h2>
+
+<p>For a buffer larger than 4095 bytes there is a chained ring: up to
+<code>Max_Chain</code> = 256 descriptors that between them cover the buffer, the
+last linking back to the first. This is the display path &mdash; stream an LCD
+framebuffer to <code>LCD_CAM</code> continuously. The buffer may live in PSRAM
+(32-byte aligned) and is written back before the loop starts. After the CPU draws
+into a live framebuffer, <code>Flush</code> pushes the changes out so the running
+DMA re-reads them.</p>
+
+<p class="note">The descriptor ring is one shared internal-SRAM array, so exactly
+one chained loop runs at a time.</p>
+
+<h2>Completion, and an interrupt you must not take</h2>
+
+<p>Completion is interrupt-driven rather than polled: <code>Wait</code> suspends
+the calling task and the channel's end-of-transfer interrupt wakes it.</p>
+
+<p class="warn">This driver <strong>owns <code>Device_L3_1</code>
+(CPU_INT&nbsp;27)</strong>. An application must not attach its own handler
+there. It is a level-3 slot rather than a level-2 one because the LCD RGB bounce
+refill runs from this completion ISR and has to preempt the level-2 devices to
+make its deadline.</p>
+
+<h2>Proving the coherency path</h2>
+
+<pre><code>type Self_Test_Result is (Passed_PSRAM, Passed_SRAM, Failed, No_Channel);
+function Self_Test (Buf_A, Buf_B : System.Address) return Self_Test_Result;</code></pre>
+
+<p>A memory-to-memory round trip between two buffers <em>of your choosing</em>,
+which reports which memory it actually exercised. Hand it PSRAM buffers (from a
+task whose stack is in PSRAM) and a <code>Passed_PSRAM</code> result means the
+cache write-back/invalidate path really works on your board &mdash; not merely
+that DMA works in SRAM. Buffers must be 32-byte aligned and at least 64 bytes.</p>
+    <nav class="pager">
+      <a class="prev" href="16-uart.html"><span class="dir">&larr; Previous</span><span class="name">UART in depth</span></a>
+      <a class="next" href="18-i2s.html"><span class="dir">Next &rarr;</span><span class="name">I2S audio</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

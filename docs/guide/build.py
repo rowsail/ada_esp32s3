@@ -361,7 +361,7 @@ pieces:</p>
             before doubting your build.</td></tr>
     <tr><td><code>./x stack &lt;example&gt; [--top N] [--run]</code></td>
         <td>Static stack analysis, per frame &mdash; the counterpart to the
-            measured figure in <a href="51-stack-usage.html">step 51</a>.</td></tr>
+            measured figure in <a href="52-stack-usage.html">step 51</a>.</td></tr>
     <tr><td><code>./x mem &lt;example&gt;</code></td>
         <td>Memory footprint: section sizes and bounds.</td></tr>
     <tr><td><code>./x docs</code></td>
@@ -973,32 +973,34 @@ wiring &mdash; internal loopback or GPIO sampling. Running the one for the
 peripheral you are about to use is the fastest way to confirm your board before
 you write any code against it.</p>
 
-<p>The next seventeen steps go through the peripherals one at a time. The
-four you will reach for first come first &mdash; <a href="12-gpio.html">GPIO</a>,
-<a href="13-i2c.html">I2C</a>, <a href="14-spi.html">SPI</a> and
-<a href="15-uart.html">UART</a> &mdash; then the engine they and everything else
-are built on, <a href="16-gdma.html">GDMA</a>:</p>
+<p><a href="12-examples.html">Step 12</a> catalogues all 96 examples &mdash;
+which one to run for each peripheral, and under which profile. The steps after
+it go through the peripherals one at a time. The
+four you will reach for first come first &mdash; <a href="13-gpio.html">GPIO</a>,
+<a href="14-i2c.html">I2C</a>, <a href="15-spi.html">SPI</a> and
+<a href="16-uart.html">UART</a> &mdash; then the engine they and everything else
+are built on, <a href="17-gdma.html">GDMA</a>:</p>
 
 <table>
   <thead><tr><th>Step</th><th>Peripheral</th><th>Why it has its own page</th></tr></thead>
   <tbody>
-    <tr><td>12</td><td><a href="12-gpio.html">GPIO</a></td><td>The pin type, what is atomic in silicon, interrupts and the trampoline rule</td></tr>
-    <tr><td>13</td><td><a href="13-i2c.html">I2C</a></td><td>Session ownership, repeated START, unbounded transfers</td></tr>
-    <tr><td>14</td><td><a href="14-spi.html">SPI</a></td><td>Per-device clock and mode, chip select three ways, DMA preconditions</td></tr>
-    <tr><td>15</td><td><a href="15-uart.html">UART</a></td><td>No setup call, interrupt-driven RX, a pin-routing trap</td></tr>
-    <tr><td>16</td><td><a href="16-gdma.html">GDMA</a></td><td>Channels as a claimed resource, and the buffer rules PSRAM's cache imposes</td></tr>
-    <tr><td>17</td><td><a href="17-i2s.html">I2S</a></td><td>No CPU FIFO at all, gapless looping, capture under playback</td></tr>
-    <tr><td>18</td><td><a href="18-lcd.html">LCD</a></td><td>Command-driven i8080 and continuously-refreshed RGB</td></tr>
-    <tr><td>19</td><td><a href="19-twai.html">TWAI/CAN</a></td><td>Identifier widths kept apart by type, and the bus-off trap</td></tr>
-    <tr><td>20</td><td><a href="20-rmt.html">RMT</a></td><td>Arbitrary pulse trains; IR, WS2812, 1-Wire</td></tr>
-    <tr><td>21</td><td><a href="21-ledc-sdm.html">LEDC &amp; SDM</a></td><td>PWM dimming, and density modulation that filters to analog</td></tr>
-    <tr><td>22</td><td><a href="22-mcpwm.html">MCPWM</a></td><td>Dead-time and hardware fault shutdown</td></tr>
-    <tr><td>23</td><td><a href="23-timers-pcnt.html">Timers &amp; PCNT</a></td><td>A 54-bit timer with an alarm, and edge counters that wrap</td></tr>
-    <tr><td>24</td><td><a href="24-analog.html">ADC &amp; touch</a></td><td>Fixed-pin channels, attenuation, and relative touch detection</td></tr>
-    <tr><td>25</td><td><a href="25-rtc.html">RTC &amp; deep sleep</a></td><td>Waking is a reset; retained memory and pad hold</td></tr>
-    <tr><td>26</td><td><a href="26-crypto.html">Crypto &amp; RNG</a></td><td>SHA/AES/RSA, MD5's specific job, and the RNG caveat</td></tr>
-    <tr><td>27</td><td><a href="27-sd.html">SD cards</a></td><td>Two hosts, one block API, different profile requirements</td></tr>
-    <tr><td>28</td><td><a href="28-chip-id.html">Temperature &amp; MAC</a></td><td>Die temperature, and the four factory addresses</td></tr>
+    <tr><td>13</td><td><a href="13-gpio.html">GPIO</a></td><td>The pin type, what is atomic in silicon, interrupts and the trampoline rule</td></tr>
+    <tr><td>14</td><td><a href="14-i2c.html">I2C</a></td><td>Session ownership, repeated START, unbounded transfers</td></tr>
+    <tr><td>15</td><td><a href="15-spi.html">SPI</a></td><td>Per-device clock and mode, chip select three ways, DMA preconditions</td></tr>
+    <tr><td>16</td><td><a href="16-uart.html">UART</a></td><td>No setup call, interrupt-driven RX, a pin-routing trap</td></tr>
+    <tr><td>17</td><td><a href="17-gdma.html">GDMA</a></td><td>Channels as a claimed resource, and the buffer rules PSRAM's cache imposes</td></tr>
+    <tr><td>18</td><td><a href="18-i2s.html">I2S</a></td><td>No CPU FIFO at all, gapless looping, capture under playback</td></tr>
+    <tr><td>19</td><td><a href="19-lcd.html">LCD</a></td><td>Command-driven i8080 and continuously-refreshed RGB</td></tr>
+    <tr><td>20</td><td><a href="20-twai.html">TWAI/CAN</a></td><td>Identifier widths kept apart by type, and the bus-off trap</td></tr>
+    <tr><td>21</td><td><a href="21-rmt.html">RMT</a></td><td>Arbitrary pulse trains; IR, WS2812, 1-Wire</td></tr>
+    <tr><td>22</td><td><a href="22-ledc-sdm.html">LEDC &amp; SDM</a></td><td>PWM dimming, and density modulation that filters to analog</td></tr>
+    <tr><td>23</td><td><a href="23-mcpwm.html">MCPWM</a></td><td>Dead-time and hardware fault shutdown</td></tr>
+    <tr><td>24</td><td><a href="24-timers-pcnt.html">Timers &amp; PCNT</a></td><td>A 54-bit timer with an alarm, and edge counters that wrap</td></tr>
+    <tr><td>25</td><td><a href="25-analog.html">ADC &amp; touch</a></td><td>Fixed-pin channels, attenuation, and relative touch detection</td></tr>
+    <tr><td>26</td><td><a href="26-rtc.html">RTC &amp; deep sleep</a></td><td>Waking is a reset; retained memory and pad hold</td></tr>
+    <tr><td>27</td><td><a href="27-crypto.html">Crypto &amp; RNG</a></td><td>SHA/AES/RSA, MD5's specific job, and the RNG caveat</td></tr>
+    <tr><td>28</td><td><a href="28-sd.html">SD cards</a></td><td>Two hosts, one block API, different profile requirements</td></tr>
+    <tr><td>29</td><td><a href="29-chip-id.html">Temperature &amp; MAC</a></td><td>Die temperature, and the four factory addresses</td></tr>
   </tbody>
 </table>
 
@@ -1009,16 +1011,16 @@ on one of the buses above:</p>
 <table>
   <thead><tr><th>Step</th><th>Device</th><th>What it is</th></tr></thead>
   <tbody>
-    <tr><td>29</td><td><a href="29-display-touch.html">ST7789 &amp; GT911</a></td><td>SPI display and capacitive touch controller</td></tr>
-    <tr><td>30</td><td><a href="30-es8311.html">ES8311</a></td><td>Mono audio codec: I2C control, I2S audio</td></tr>
-    <tr><td>31</td><td><a href="31-sensors.html">QMI8658C &amp; SHT41</a></td><td>6-axis IMU, and temperature/humidity</td></tr>
-    <tr><td>32</td><td><a href="32-pcf85063a.html">PCF85063A</a></td><td>Real-time clock with an alarm</td></tr>
-    <tr><td>33</td><td><a href="33-expanders.html">TCA9555, CH422G, HC595</a></td><td>Port expanders and a shift register</td></tr>
-    <tr><td>34</td><td><a href="34-tx1812.html">TX1812</a></td><td>Addressable RGB LEDs</td></tr>
-    <tr><td>35</td><td><a href="35-memory.html">W25Q, 24C, FRAM</a></td><td>NOR flash, EEPROM catalogue, FRAM</td></tr>
-    <tr><td>36</td><td><a href="36-tlv2556.html">TLV2556</a></td><td>External 12-bit SPI ADC</td></tr>
-    <tr><td>37</td><td><a href="37-gps.html">GPS</a></td><td>NMEA receiver as a background service</td></tr>
-    <tr><td>38</td><td><a href="38-w5500.html">W5500</a></td><td>Ethernet with a hardwired TCP/IP stack</td></tr>
+    <tr><td>30</td><td><a href="30-display-touch.html">ST7789 &amp; GT911</a></td><td>SPI display and capacitive touch controller</td></tr>
+    <tr><td>31</td><td><a href="31-es8311.html">ES8311</a></td><td>Mono audio codec: I2C control, I2S audio</td></tr>
+    <tr><td>32</td><td><a href="32-sensors.html">QMI8658C &amp; SHT41</a></td><td>6-axis IMU, and temperature/humidity</td></tr>
+    <tr><td>33</td><td><a href="33-pcf85063a.html">PCF85063A</a></td><td>Real-time clock with an alarm</td></tr>
+    <tr><td>34</td><td><a href="34-expanders.html">TCA9555, CH422G, HC595</a></td><td>Port expanders and a shift register</td></tr>
+    <tr><td>35</td><td><a href="35-tx1812.html">TX1812</a></td><td>Addressable RGB LEDs</td></tr>
+    <tr><td>36</td><td><a href="36-memory.html">W25Q, 24C, FRAM</a></td><td>NOR flash, EEPROM catalogue, FRAM</td></tr>
+    <tr><td>37</td><td><a href="37-tlv2556.html">TLV2556</a></td><td>External 12-bit SPI ADC</td></tr>
+    <tr><td>38</td><td><a href="38-gps.html">GPS</a></td><td>NMEA receiver as a background service</td></tr>
+    <tr><td>39</td><td><a href="39-w5500.html">W5500</a></td><td>Ethernet with a hardwired TCP/IP stack</td></tr>
   </tbody>
 </table>
 
@@ -1029,12 +1031,12 @@ Wi-Fi or anything else registered as a NIC:</p>
 <table>
   <thead><tr><th>Step</th><th>Layer</th><th>What it gives you</th></tr></thead>
   <tbody>
-    <tr><td>39</td><td><a href="39-net-stack.html">Sockets &amp; routing</a></td><td>One socket API over several NICs, longest-prefix routing, failover</td></tr>
-    <tr><td>40</td><td><a href="40-dns-ntp.html">DNS &amp; NTP</a></td><td>Name resolution and time, portable between host and board</td></tr>
-    <tr><td>41</td><td><a href="41-tls.html">TLS 1.3</a></td><td>A full client handshake and chain validation, no C library</td></tr>
-    <tr><td>42</td><td><a href="42-wifi.html">Wi-Fi</a></td><td>Pure Ada around the fetched radio blobs, WPA2 handshake included</td></tr>
-    <tr><td>43</td><td><a href="43-modbus.html">Modbus TCP</a></td><td>Industrial master and slave over the facade</td></tr>
-    <tr><td>44</td><td><a href="44-ftp.html">FTP</a></td><td>Streamed client, and a server over your filesystems</td></tr>
+    <tr><td>40</td><td><a href="40-net-stack.html">Sockets &amp; routing</a></td><td>One socket API over several NICs, longest-prefix routing, failover</td></tr>
+    <tr><td>41</td><td><a href="41-dns-ntp.html">DNS &amp; NTP</a></td><td>Name resolution and time, portable between host and board</td></tr>
+    <tr><td>42</td><td><a href="42-tls.html">TLS 1.3</a></td><td>A full client handshake and chain validation, no C library</td></tr>
+    <tr><td>43</td><td><a href="43-wifi.html">Wi-Fi</a></td><td>Pure Ada around the fetched radio blobs, WPA2 handshake included</td></tr>
+    <tr><td>44</td><td><a href="44-modbus.html">Modbus TCP</a></td><td>Industrial master and slave over the facade</td></tr>
+    <tr><td>45</td><td><a href="45-ftp.html">FTP</a></td><td>Streamed client, and a server over your filesystems</td></tr>
   </tbody>
 </table>
 
@@ -1044,13 +1046,13 @@ the standalone tools:</p>
 <table>
   <thead><tr><th>Step</th><th>Component</th><th>What it gives you</th></tr></thead>
   <tbody>
-    <tr><td>45</td><td><a href="45-block-dev.html">Block devices &amp; wear levelling</a></td><td>The vtable the filesystems sit on, and an FTL that spreads flash wear</td></tr>
-    <tr><td>46</td><td><a href="46-ext4.html">ext4</a></td><td>Read/write ext2/3/4 with JBD2 replay and on-device mkfs</td></tr>
-    <tr><td>47</td><td><a href="47-fat16.html">FAT16</a></td><td>The filesystem a PC can mount, read-only by design</td></tr>
-    <tr><td>48</td><td><a href="48-console-fonts.html">Console, text &amp; fonts</a></td><td>Formatted output with no hosted runtime; panel-independent glyphs</td></tr>
-    <tr><td>49</td><td><a href="49-esp-loader.html">Esp_Loader</a></td><td>Program another ESP32 from the board</td></tr>
-    <tr><td>50</td><td><a href="50-simd.html">SIMD (PIE)</a></td><td>128-bit vector kernels in inline assembly</td></tr>
-    <tr><td>51</td><td><a href="51-stack-usage.html">Stack measurement</a></td><td>Stack painting, to catch what static analysis cannot see</td></tr>
+    <tr><td>46</td><td><a href="46-block-dev.html">Block devices &amp; wear levelling</a></td><td>The vtable the filesystems sit on, and an FTL that spreads flash wear</td></tr>
+    <tr><td>47</td><td><a href="47-ext4.html">ext4</a></td><td>Read/write ext2/3/4 with JBD2 replay and on-device mkfs</td></tr>
+    <tr><td>48</td><td><a href="48-fat16.html">FAT16</a></td><td>The filesystem a PC can mount, read-only by design</td></tr>
+    <tr><td>49</td><td><a href="49-console-fonts.html">Console, text &amp; fonts</a></td><td>Formatted output with no hosted runtime; panel-independent glyphs</td></tr>
+    <tr><td>50</td><td><a href="50-esp-loader.html">Esp_Loader</a></td><td>Program another ESP32 from the board</td></tr>
+    <tr><td>51</td><td><a href="51-simd.html">SIMD (PIE)</a></td><td>128-bit vector kernels in inline assembly</td></tr>
+    <tr><td>52</td><td><a href="52-stack-usage.html">Stack measurement</a></td><td>Stack painting, to catch what static analysis cannot see</td></tr>
   </tbody>
 </table>
 
@@ -1074,7 +1076,51 @@ runtime.</p>
 
 # ---------------------------------------------------------------- 12
 dict(
-slug="12-gpio",
+slug="12-examples",
+nav="The examples",
+title="The examples: all 96 of them",
+lede="Most need no wiring, most tell you PASS or FAIL, and each one is the "
+     "fastest way to find out whether a peripheral works on <em>your</em> "
+     "board before you write a line against it.",
+body="""
+<h2>How to use them</h2>
+
+<p>Every example builds and runs the same way, and the short name is
+enough:</p>
+
+<pre><code>./x list                       # names, profiles, directories
+./x run gpio0_blink            # build + flash + monitor
+./x run i2c_loopback -p /dev/ttyACM0</code></pre>
+
+<p class="note"><strong>Run the self-test before writing code.</strong> When a
+driver page here says a peripheral works, that is a claim about the authors'
+board. The matching example is how you turn it into a claim about yours &mdash;
+and most need <em>no external wiring at all</em>, using internal loopback or a
+pad the chip samples itself.</p>
+
+<p>They are also meant to be <em>read</em>. Each opens with a header saying what
+it demonstrates, what the console should print, and what hardware it needs;
+magic numbers are named and the reasoning is in the code.
+<code>examples/STYLE.md</code> records the bar, with
+<code>esp32s3_gpio0_blink</code> and <code>esp32s3_gdma_copy</code> as the
+models.</p>
+
+<p class="warn"><strong>Mind the profile column.</strong> An example built for
+<code>embedded</code> will not build under <code>light-tasking</code> &mdash; the
+RAII driver handles need finalization (<a href="08-profiles.html">step 8</a>).
+That is the first thing to check when a copied example fails to compile.</p>
+
+<h2>The catalogue</h2>
+
+<p>Generated from <code>./x list --json</code> and the examples' own headers, so
+it cannot drift from what the repository actually contains. The last column
+links to the step that explains the thing being demonstrated.</p>
+
+{{examples}}
+"""),
+
+dict(
+slug="13-gpio",
 nav="GPIO in depth",
 title="GPIO in depth",
 lede="A pin type that refuses to name a pad which would hang the chip, three "
@@ -1281,7 +1327,7 @@ rest.</p>
 
 # ---------------------------------------------------------------- 13
 dict(
-slug="13-i2c",
+slug="14-i2c",
 nav="I2C in depth",
 title="I2C in depth",
 lede="A master you cannot use wrongly: the raw registers are unreachable, the "
@@ -1311,7 +1357,7 @@ procedure Configure_Pins
 lines <em>with the internal pull-ups enabled</em>, so a quick bring-up needs no
 external resistors. The pin arguments are <code>Pin_Id</code>, so a reserved pad
 is rejected at compile or run time exactly as on the
-<a href="12-gpio.html">GPIO page</a>.</p>
+<a href="13-gpio.html">GPIO page</a>.</p>
 
 <p class="note">Internal pull-ups are weak. They are fine on a short bench wire
 at 100&nbsp;kHz; put real resistors on a production bus, especially at
@@ -1454,7 +1500,7 @@ accordingly.</p>
 
 # ---------------------------------------------------------------- 14
 dict(
-slug="14-spi",
+slug="15-spi",
 nav="SPI in depth",
 title="SPI in depth",
 lede="One host, several devices, each with its own clock, mode and chip select "
@@ -1509,7 +1555,7 @@ only for the rare device wired to a <em>different</em> set of pads on the same
 controller; the GPIO matrix is then re-routed for the duration of that hold.</p>
 
 <p>The session is the same limited, controlled RAII handle as
-<a href="13-i2c.html">I2C</a>'s: it releases the host on scope exit including
+<a href="14-i2c.html">I2C</a>'s: it releases the host on scope exit including
 during exception unwinding, <code>Release</code> is available (and idempotent)
 to hand it back early, and <code>Not_Initialized</code> /
 <code>Not_Owned</code> enforce the ordering. One addition worth knowing:</p>
@@ -1555,7 +1601,7 @@ the bus.</p>
 <pre><code>type CS_Select is access procedure (Ctx : System.Address; Active : Boolean);</code></pre>
 
 <p class="warn"><strong>It must be library-level with no captured state.</strong>
-Same reason as the <a href="12-gpio.html">GPIO interrupt callback</a>: the HAL
+Same reason as the <a href="13-gpio.html">GPIO interrupt callback</a>: the HAL
 builds under <code>No_Implicit_Dynamic_Code</code>, so a closure would emit a
 GNAT trampoline that faults on the S3. Per-device state travels in
 <code>Ctx</code> instead &mdash; that is exactly what the parameter is for.</p>
@@ -1637,7 +1683,7 @@ GPIO the driver drives.</p>
 
 # ---------------------------------------------------------------- 15
 dict(
-slug="15-uart",
+slug="16-uart",
 nav="UART in depth",
 title="UART in depth",
 lede="The one driver here with no setup call at all: you cannot touch a port "
@@ -1654,7 +1700,7 @@ Not here: this runtime puts the console on the USB-Serial-JTAG peripheral, so
 
 <h2>No setup call &mdash; ownership comes first</h2>
 
-<p><a href="13-i2c.html">I2C</a> and <a href="14-spi.html">SPI</a> both have a
+<p><a href="14-i2c.html">I2C</a> and <a href="15-spi.html">SPI</a> both have a
 port-level <code>Setup</code> you call before anyone contends. UART deliberately
 has none. <code>Acquire</code> takes the port <em>and</em> shapes it in one
 call, and every later configuration call requires the held session:</p>
@@ -1803,7 +1849,7 @@ suspected overrun.</p>
 
 <pre><code>procedure Enable_Loopback (S : Session; On : Boolean := True);</code></pre>
 
-<p>Unlike <a href="13-i2c.html">I2C</a>, where an internal loopback is
+<p>Unlike <a href="14-i2c.html">I2C</a>, where an internal loopback is
 <em>impossible</em> because SDA is a wired-AND node, UART is push-pull and
 unidirectional &mdash; so the controller's internal TX&rarr;RX loopback proves
 the whole real data path: baud divider, frame format, TX FIFO, RX FIFO, with no
@@ -1819,7 +1865,7 @@ makes both ends agree again.</p>
 
 # ---------------------------------------------------------------- 16
 dict(
-slug="16-gdma",
+slug="17-gdma",
 nav="GDMA",
 title="GDMA: the DMA engine everything else borrows",
 lede="Five channel pairs, assigned at run time rather than wired per "
@@ -1850,8 +1896,8 @@ the handle invalid rather than raising &mdash; check <code>Is_Valid</code>.</p>
 
 <p class="note">Once you hold a channel, only you touch its registers and
 descriptors, so the transfer operations themselves need no further locking. This
-is the same ownership pattern as <a href="14-spi.html">SPI</a> and
-<a href="13-i2c.html">I2C</a>, and for the same reason.</p>
+is the same ownership pattern as <a href="15-spi.html">SPI</a> and
+<a href="14-i2c.html">I2C</a>, and for the same reason.</p>
 
 <h2>Why a buffer type exists</h2>
 
@@ -1923,7 +1969,7 @@ paying a check for.</p>
 <p><code>Direction</code> is <code>Mem_To_Periph</code> (the OUT path reads RAM
 and feeds the peripheral) or <code>Periph_To_Mem</code>. A single descriptor
 caps at <code>Max_Transfer</code> = 4095 bytes, the hardware's 12-bit
-buffer-size field &mdash; which is where <a href="14-spi.html">SPI</a>'s
+buffer-size field &mdash; which is where <a href="15-spi.html">SPI</a>'s
 1&nbsp;..&nbsp;4095 precondition comes from.</p>
 
 <h2>Beyond one descriptor: the framebuffer path</h2>
@@ -1963,7 +2009,7 @@ that DMA works in SRAM. Buffers must be 32-byte aligned and at least 64 bytes.</
 """),
 
 dict(
-slug="17-i2s",
+slug="18-i2s",
 nav="I2S audio",
 title="I2S: audio that only moves by DMA",
 lede="The S3's I2S has no CPU FIFO at all &mdash; samples reach the wire only "
@@ -1973,8 +2019,8 @@ body="""
 <h2>No FIFO, so no polled path</h2>
 
 <p>Two controllers, <code>I2S0</code> and <code>I2S1</code>. Unlike the
-<a href="15-uart.html">UART</a>, neither has a CPU-accessible FIFO: data flows
-<em>only</em> through <a href="16-gdma.html">GDMA</a>. So bringing a port up
+<a href="16-uart.html">UART</a>, neither has a CPU-accessible FIFO: data flows
+<em>only</em> through <a href="17-gdma.html">GDMA</a>. So bringing a port up
 claims a GDMA channel, and that is a heavyweight, once-per-port resource &mdash;
 which is why acquisition works slightly differently here:</p>
 
@@ -1983,7 +2029,7 @@ it at the given configuration and claims its channel. Later <code>Acquire</code>
 calls <em>reuse it as-is</em> &mdash; they do not re-open the port and do not
 inherit a new configuration. To change the audio format on a port you already
 hold, call <code>Reconfigure</code> (which re-claims the channel). This is the
-opposite of <a href="15-uart.html">UART</a>, where every <code>Acquire</code>
+opposite of <a href="16-uart.html">UART</a>, where every <code>Acquire</code>
 re-applies the full state.</p>
 
 <pre><code>procedure Acquire
@@ -2083,7 +2129,7 @@ check against.</p>
 """),
 
 dict(
-slug="18-lcd",
+slug="19-lcd",
 nav="LCD (i80 / RGB)",
 title="LCD: two very different display modes",
 lede="One controller, two personalities &mdash; a command-driven 8-bit i8080 "
@@ -2094,7 +2140,7 @@ body="""
 
 <p><code>ESP32S3.LCD</code> drives the LCD half of the LCD_CAM controller as an
 8-bit Intel-8080 parallel master: a byte buffer is streamed out the data bus, one
-byte per pixel clock, over <a href="16-gdma.html">GDMA</a>. It suits any 8-bit
+byte per pixel clock, over <a href="17-gdma.html">GDMA</a>. It suits any 8-bit
 parallel sink, not only displays.</p>
 
 <pre><code>type Data_Pins is array (0 .. 7) of ESP32S3.GPIO.Optional_Pin;
@@ -2107,7 +2153,7 @@ procedure Acquire
 
 <p>The pixel clock is quantised: you get
 <code>20&nbsp;MHz / round (20&nbsp;MHz / Pclk_Hz)</code>, so ask for a divisor of
-20&nbsp;MHz if the exact rate matters. Unlike <a href="17-i2s.html">I2S</a>,
+20&nbsp;MHz if the exact rate matters. Unlike <a href="18-i2s.html">I2S</a>,
 bringing the controller up does <strong>not</strong> tie up a GDMA channel &mdash;
 <code>Transmit</code> claims one only for the duration of a transfer, so the
 channel is available to other peripherals between frames.</p>
@@ -2126,7 +2172,7 @@ divider on a scope before trusting a panel.</p>
 <p>A TFT panel driven by continuous HSYNC / VSYNC / DE / PCLK timing, rather than
 by commands. This is a different discipline: the panel must be refreshed forever,
 so the framebuffer streams from a chained GDMA descriptor ring
-(<a href="16-gdma.html">step 16</a>), which is exactly why that ring exists.</p>
+(<a href="17-gdma.html">step 16</a>), which is exactly why that ring exists.</p>
 
 <pre><code>type RGB_Data_Pins  is array (0 .. 15) of ESP32S3.GPIO.Optional_Pin;
 type RGB_Signal_Map is array (0 .. 15) of Natural;
@@ -2155,7 +2201,7 @@ framebuffer to it.</p>
 """),
 
 dict(
-slug="19-twai",
+slug="20-twai",
 nav="TWAI (CAN)",
 title="TWAI: CAN 2.0, with the bus-off trap",
 lede="Standard and extended frames as separate types so a 29-bit identifier "
@@ -2246,7 +2292,7 @@ after a few frames, check <code>Health</code> before suspecting wiring, and use
 """),
 
 dict(
-slug="20-rmt",
+slug="21-rmt",
 nav="RMT pulses",
 title="RMT: an arbitrary pulse generator",
 lede="Sequences of {level, duration} symbols in hardware &mdash; IR remotes, "
@@ -2331,7 +2377,7 @@ receiver.</p>
 """),
 
 dict(
-slug="21-ledc-sdm",
+slug="22-ledc-sdm",
 nav="LEDC &amp; sigma-delta",
 title="LEDC and sigma-delta: the simple outputs",
 lede="Eight PWM channels for dimming and clean square waves, and eight "
@@ -2344,7 +2390,7 @@ body="""
 which sets its frequency and duty resolution &mdash; and drives a GPIO with a
 duty cycle you change at run time. This is the "dim an LED, generate a clean
 PWM" block; for dead-time, fault inputs and capture, see
-<a href="22-mcpwm.html">MCPWM</a>.</p>
+<a href="23-mcpwm.html">MCPWM</a>.</p>
 
 <pre><code>type Channel_Index is range 0 .. 7;
 subtype Resolution   is Positive range 1 .. 14;      --  duty-cycle bits
@@ -2392,14 +2438,14 @@ procedure Set_Density (C : Channel; Percent : Density_Percent); --  one register
 PWM frequency and its harmonics. Sigma-delta varies the <em>density</em> of
 fixed-width pulses, pushing quantisation noise up in frequency where a simple
 filter removes it &mdash; which is why it makes a better analog voltage and why
-the same technique appears inside <a href="17-i2s.html">I2S</a>'s PDM mode.</p>
+the same technique appears inside <a href="18-i2s.html">I2S</a>'s PDM mode.</p>
 
 <p><code>Set_Density</code> is a single register write, so it is cheap enough to
 call from a sample loop.</p>
 """),
 
 dict(
-slug="22-mcpwm",
+slug="23-mcpwm",
 nav="MCPWM",
 title="MCPWM: PWM that can shut itself down",
 lede="Complementary outputs with dead-time so a half-bridge is never shorted, "
@@ -2486,7 +2532,7 @@ universally.</p>
 """),
 
 dict(
-slug="23-timers-pcnt",
+slug="24-timers-pcnt",
 nav="Timers &amp; pulse counting",
 title="Timers and pulse counting",
 lede="A 54-bit counter with an alarm, and four edge counters &mdash; the two "
@@ -2556,7 +2602,7 @@ pass-through defaults.</p>
 """),
 
 dict(
-slug="24-analog",
+slug="25-analog",
 nav="ADC &amp; touch",
 title="Analog in: the SAR ADC and capacitive touch",
 lede="Two 12-bit converters on fixed pins, and fourteen touch channels that "
@@ -2625,7 +2671,7 @@ RTC/SENS domain, so unlike most of the HAL it works under
 """),
 
 dict(
-slug="25-rtc",
+slug="26-rtc",
 nav="RTC, hold &amp; deep sleep",
 title="RTC, pad hold and deep sleep",
 lede="Deep sleep is not a pause &mdash; the chip resets and re-runs from the "
@@ -2705,7 +2751,7 @@ pokes &mdash; and RTC-IO works under every runtime profile.</p>
 """),
 
 dict(
-slug="26-crypto",
+slug="27-crypto",
 nav="Crypto &amp; RNG",
 title="Hardware crypto, and one honest caveat",
 lede="SHA, AES and RSA acceleration behind protected objects, MD5 for a "
@@ -2794,7 +2840,7 @@ would look like working code returning the same "random" number forever.</p>
 """),
 
 dict(
-slug="27-sd",
+slug="28-sd",
 nav="SD cards",
 title="SD cards: two hosts, one API shape",
 lede="The universal SPI transport and the native SD bus &mdash; different "
@@ -2810,7 +2856,7 @@ body="""
         <td>The SPI master, 4 lines</td>
         <td>The real SD bus: clock, bidirectional command line, 1 or 4 data lines</td></tr>
     <tr><td>Data path</td>
-        <td>Through <a href="14-spi.html">SPI</a> (and its GDMA)</td>
+        <td>Through <a href="15-spi.html">SPI</a> (and its GDMA)</td>
         <td>PIO/FIFO &mdash; the CPU pushes each 512-byte block through the controller's FIFO</td></tr>
     <tr><td>Speed</td>
         <td>Lower</td>
@@ -2837,7 +2883,7 @@ SDHC and SDXC cards use block addressing while older SDSC cards use byte
 addressing; that difference is resolved inside the driver, so it never reaches
 your code. Both also initialise the card at ≤400&nbsp;kHz as the SD specification
 requires, then switch to <code>Data_Clock_Hz</code> &mdash; which is precisely
-what <a href="14-spi.html">SPI</a>'s <code>Set_Clock</code> mid-hold exists
+what <a href="15-spi.html">SPI</a>'s <code>Set_Clock</code> mid-hold exists
 for.</p>
 
 <h2>Why SD-over-SPI needs a GPIO chip select</h2>
@@ -2846,7 +2892,7 @@ for.</p>
 the SPI peripheral's hardware CS. The SD protocol needs CS held asserted across a
 whole command / response / data sequence, and the peripheral's own CS pulses per
 transfer &mdash; which the protocol cannot use. This is the concrete case behind
-the <code>CS_Pin</code> option on <a href="14-spi.html">SPI's
+the <code>CS_Pin</code> option on <a href="15-spi.html">SPI's
 <code>Acquire</code></a>.</p>
 
 <p><code>SD_SPI</code> layers the SD "SPI mode" command protocol on top of the
@@ -2868,7 +2914,7 @@ against a real card before relying on them &mdash; see
 """),
 
 dict(
-slug="28-chip-id",
+slug="29-chip-id",
 nav="Temperature &amp; MAC",
 title="Chip identity: die temperature and the eFuse MAC",
 lede="Two small packages that answer questions about the silicon itself &mdash; "
@@ -2926,7 +2972,7 @@ these are safe to call from anywhere, at any time, under any profile.</p>
 """),
 
 dict(
-slug="29-display-touch",
+slug="30-display-touch",
 nav="Display &amp; touch",
 title="ST7789 display and GT911 touch",
 lede="A write-only SPI display that cannot be probed, and a touch controller "
@@ -2991,7 +3037,7 @@ and the payload disagree about byte order.</p>
 RST is released:</strong> INT low gives <code>0x5D</code> (the usual module
 strapping), INT high gives <code>0x14</code>. This driver never drives INT or
 RST, because on many boards RST is not even on an ESP pin &mdash; the Waveshare
-ESP32-S3-Touch-LCD-7 routes it through a <a href="33-expanders.html">CH422G</a>
+ESP32-S3-Touch-LCD-7 routes it through a <a href="34-expanders.html">CH422G</a>
 expander with INT weakly low. Releasing reset is therefore board wiring you do
 once at startup, <em>before</em> touching the chip. Get the order wrong and the
 part answers at the other address, which looks exactly like a dead device.</p>
@@ -3012,17 +3058,17 @@ forgetting to call it stalls further reports rather than queueing them.</p>
 
 <p>The INT line pulses on every fresh report. Attach a handler with the
 <code>.Interrupts</code> child and call <code>Read_Touches</code> from a task it
-wakes &mdash; remembering the <a href="12-gpio.html">callback rules</a>: latch a
+wakes &mdash; remembering the <a href="13-gpio.html">callback rules</a>: latch a
 flag in the handler, do the I2C work at task level, never from the ISR.</p>
 
-<p>Like <a href="13-i2c.html">I2C</a>'s other clients, the driver hard-codes no
+<p>Like <a href="14-i2c.html">I2C</a>'s other clients, the driver hard-codes no
 wiring: you tell <code>Setup</code> the host, the SDA/SCL pins, the optional INT
 pin and the address, and each operation opens a short-lived controlled session
 for one complete transaction.</p>
 """),
 
 dict(
-slug="30-es8311",
+slug="31-es8311",
 nav="ES8311 codec",
 title="ES8311: the audio codec",
 lede="Control over I2C, audio over I2S, and a clocking relationship you have "
@@ -3044,7 +3090,7 @@ BCLK and WS; the codec runs as an <strong>I2S slave</strong> clocked from that
 MCLK. The driver fixes <code>MCLK = 256 &times; Sample_Rate</code> with 16-bit
 samples, and the register coefficients are calculated for that ratio &mdash; it
 is rate-independent, but not ratio-independent. This is why
-<a href="17-i2s.html">I2S</a>'s <code>Mclk</code> pin exists and why it is only
+<a href="18-i2s.html">I2S</a>'s <code>Mclk</code> pin exists and why it is only
 available on I2S0.</p>
 
 <pre><code>procedure Setup (...; Sample_Rate : ...; Sda, Scl : ...; Asdout : ... := No_Pin;
@@ -3061,7 +3107,7 @@ in 6&nbsp;dB steps from 0 to 42&nbsp;dB.</p>
 
 <p>Audio output goes through a limited, controlled <code>Output</code> handle
 that owns the I2S port exclusively and releases it on scope exit. The playback
-calls mirror <a href="17-i2s.html">I2S</a>'s exactly, because they are built on
+calls mirror <a href="18-i2s.html">I2S</a>'s exactly, because they are built on
 them:</p>
 
 <table>
@@ -3084,7 +3130,7 @@ recipe rather than a design decision.</p>
 """),
 
 dict(
-slug="31-sensors",
+slug="32-sensors",
 nav="IMU &amp; environment",
 title="Sensors: the QMI8658C IMU and SHT41",
 lede="One register-mapped device and one command-based device &mdash; the two "
@@ -3099,7 +3145,7 @@ once because it repeats across the rest of these pages:</p>
 <p class="note"><strong>The driver hard-codes no board wiring.</strong> You tell
 <code>Setup</code> which host, which SDA/SCL pins, optionally which INT pin, and
 the address; the <code>Device</code> remembers them. Each operation then opens a
-<em>short-lived</em> <a href="13-i2c.html">I2C session</a> for one complete
+<em>short-lived</em> <a href="14-i2c.html">I2C session</a> for one complete
 transaction and lets it release the host on scope exit. So devices share a bus
 safely, and a fault mid-transaction cannot leak the lock. A <code>Device</code>
 is limited — it owns the wiring it was set up with and cannot be copied.</p>
@@ -3163,7 +3209,7 @@ fast a bus. Treat it as "retry", not "device missing".</p>
 """),
 
 dict(
-slug="32-pcf85063a",
+slug="33-pcf85063a",
 nav="PCF85063A RTC",
 title="PCF85063A: a clock that tells you when not to trust it",
 lede="BCD calendar registers, a programmable alarm, and one flag that answers "
@@ -3212,7 +3258,7 @@ requires, and clears the flag.</p>
   <li><strong>Alarm</strong> on second, minute, hour, day or weekday — any
       subset — asserting an active-low open-drain INT line. Attach it with the
       <code>.Interrupts</code> child, observing the
-      <a href="12-gpio.html">callback rules</a>: latch in the handler, do the
+      <a href="13-gpio.html">callback rules</a>: latch in the handler, do the
       I2C read in a task.</li>
   <li><strong><code>Stop_Clock</code></strong> halts the counters via
       <code>Control_1.STOP</code> without changing the loaded time.</li>
@@ -3223,11 +3269,11 @@ requires, and clears the flag.</p>
 <p>Reads use the auto-incrementing pointer, and the pointer survives the STOP
 between the two transactions — so a one-byte write followed by a separate read
 streams correctly without needing
-<a href="13-i2c.html">repeated START</a>. Up to 400&nbsp;kHz.</p>
+<a href="14-i2c.html">repeated START</a>. Up to 400&nbsp;kHz.</p>
 """),
 
 dict(
-slug="33-expanders",
+slug="34-expanders",
 nav="Port expanders",
 title="Port expanders: TCA9555, CH422G and HC595",
 lede="Three ways to buy more pins, and three quite different bargains &mdash; "
@@ -3237,7 +3283,7 @@ body="""
 <h2>Two levels of locking, again</h2>
 
 <p>The two I2C expanders share the pattern the
-<a href="29-display-touch.html">ST7789</a> uses: a <code>Session</code> owns the
+<a href="30-display-touch.html">ST7789</a> uses: a <code>Session</code> owns the
 <strong>device</strong>, while the <strong>I2C host</strong> is locked only for
 each transaction. The per-device guards live in a fixed library-level array
 keyed by (host, strap value), <em>not</em> inside the <code>Device</code> record
@@ -3286,7 +3332,7 @@ idea of the outputs out of step with reality. The chip also has no interrupt
 output, hence no <code>.Interrupts</code> child.</p>
 
 <p>This is the expander that holds the GT911's reset line on the Waveshare
-ESP32-S3-Touch-LCD-7 &mdash; see <a href="29-display-touch.html">step 31</a> for
+ESP32-S3-Touch-LCD-7 &mdash; see <a href="30-display-touch.html">step 31</a> for
 why that ordering matters.</p>
 
 <h2>HC595 &mdash; a shift register on the SPI bus</h2>
@@ -3315,7 +3361,7 @@ SPI host first &mdash; the expander does not own it.</p>
 """),
 
 dict(
-slug="34-tx1812",
+slug="35-tx1812",
 nav="TX1812 LEDs",
 title="TX1812: addressable LEDs from RMT symbols",
 lede="A single-wire LED family driven by generating its pulse train in "
@@ -3330,7 +3376,7 @@ precisely timed pulse train: a <code>1</code> is long-high/short-low, a
 <code>0</code> is short-high/long-low, and a low period over 80&nbsp;µs latches
 the frame.</p>
 
-<p>That is exactly the job <a href="20-rmt.html">RMT</a> exists for. The driver
+<p>That is exactly the job <a href="21-rmt.html">RMT</a> exists for. The driver
 generates the waveform as <strong>one RMT symbol per data bit</strong>, so the
 timing is produced by hardware rather than by a delay loop that an interrupt
 could disturb.</p>
@@ -3366,7 +3412,7 @@ underlying <code>RMT.Transmit</code> sends at most what fits in the channel's
 symbol RAM, so the practical case is <code>Strip (Count =&gt; 1)</code>; passing
 <code>Blocks</code> (1&nbsp;..&nbsp;4) borrows extra RMT RAM for roughly
 <code>Blocks * 2</code> LEDs &mdash; and borrowing blocks costs you the
-higher-numbered RMT channels, as <a href="20-rmt.html">step 20</a> explains.</p>
+higher-numbered RMT channels, as <a href="21-rmt.html">step 20</a> explains.</p>
 
 <p>A longer string needs RMT wrap/refill support, which is a later step. The API
 is already shaped for it &mdash; <code>Count</code>, per-pixel <code>Set</code>
@@ -3375,7 +3421,7 @@ knowing before you design a panel around it.</p>
 """),
 
 dict(
-slug="35-memory",
+slug="36-memory",
 nav="Flash, EEPROM &amp; FRAM",
 title="Off-chip memory: NOR flash, EEPROM and FRAM",
 lede="Three non-volatile technologies with three different bargains &mdash; and "
@@ -3385,7 +3431,7 @@ body="""
 <h2>W25Q: SPI NOR flash</h2>
 
 <p>Winbond W25Q-series, targeting the W25Q256FV (32&nbsp;MB, JEDEC ID
-<code>EF 40 19</code>), on a general-purpose <a href="14-spi.html">SPI</a> host
+<code>EF 40 19</code>), on a general-purpose <a href="15-spi.html">SPI</a> host
 with an <strong>application-driven chip select</strong> through the CS callback
 &mdash; so it shares a bus with other devices.</p>
 
@@ -3418,7 +3464,7 @@ AT24Cxx, onsemi CAT24Cxx &mdash; speaks the same protocol: device-type code
 <code>1010</code>, a big-endian word address, page writes that <em>wrap</em>
 inside the page rather than advancing, a ~5&nbsp;ms program cycle that NACKs
 everything until it finishes, and a random read that turns the bus around on a
-<a href="13-i2c.html">repeated START</a>.</p>
+<a href="14-i2c.html">repeated START</a>.</p>
 
 <p class="note">So a part is <strong>nothing but a geometry</strong>.
 <code>ESP32S3.EEPROM_24C.Driver</code> implements the protocol once, and each
@@ -3475,7 +3521,7 @@ yet</strong>. These are datasheet-derived.</p>
 """),
 
 dict(
-slug="36-tlv2556",
+slug="37-tlv2556",
 nav="TLV2556 ADC",
 title="TLV2556: a pipelined external ADC",
 lede="Twelve bits and eleven channels over SPI &mdash; where the result you "
@@ -3502,14 +3548,14 @@ type Analog_Input is ...;                                   --  11 channels
 type Reference    is (Internal_4096mV, Internal_2048mV, External);</code></pre>
 
 <p>The internal reference is the reason to choose this part over the
-<a href="24-analog.html">on-chip SAR ADC</a>: a known 4.096&nbsp;V or
+<a href="25-analog.html">on-chip SAR ADC</a>: a known 4.096&nbsp;V or
 2.048&nbsp;V full scale gives you an absolute voltage, where the ESP's own ADC
 gives a raw code needing per-chip calibration.</p>
 
 <h2>Sharing the bus</h2>
 
-<p>Like <a href="35-memory.html">W25Q</a>, chip select is application-driven
-through an <a href="14-spi.html">SPI <code>CS_Select</code> callback</a>
+<p>Like <a href="36-memory.html">W25Q</a>, chip select is application-driven
+through an <a href="15-spi.html">SPI <code>CS_Select</code> callback</a>
 (active-low here), so the ADC shares a bus with other devices. The driver always
 uses 16-clock (2-byte) transfers with unipolar, MSB-first output.</p>
 
@@ -3521,7 +3567,7 @@ converter itself without needing a known voltage on any input pin.</p>
 """),
 
 dict(
-slug="37-gps",
+slug="38-gps",
 nav="GPS receiver",
 title="GPS: a background service, not a device handle",
 lede="The one driver here you do not poll through a handle. A task owns the "
@@ -3533,13 +3579,13 @@ body="""
 <p class="note">Every other device driver in this guide hands you a
 <code>Device</code> and lets you poll it. This one does not. It is a
 <strong>singleton background service</strong>: a library-level task owns one
-<a href="15-uart.html">UART</a> for its lifetime, continuously reads the
+<a href="16-uart.html">UART</a> for its lifetime, continuously reads the
 receiver's NMEA-0183 stream, decodes it, and publishes results into a protected
 store. The application just reads that store. There is no handle.</p>
 
 <p>That follows from the device: a GPS talks whenever it likes, so something has
 to be listening the whole time. This is the concrete case for
-<a href="15-uart.html">interrupt-driven RX</a> &mdash; a receiver that streams
+<a href="16-uart.html">interrupt-driven RX</a> &mdash; a receiver that streams
 asynchronously is exactly what would overflow a polled FIFO.</p>
 
 <pre><code>procedure Setup (...);          --  call once at startup; Rx is the only pin needed
@@ -3583,7 +3629,7 @@ task and protected objects, so it is embedded/full only.</p>
 """),
 
 dict(
-slug="38-w5500",
+slug="39-w5500",
 nav="W5500 Ethernet",
 title="W5500: Ethernet with the stack on the chip",
 lede="A hardwired TCP/IP controller with eight hardware sockets &mdash; and a "
@@ -3629,10 +3675,10 @@ frame. VDM keeps the bus shareable rather than demanding an exclusive
 transaction per register.</p>
 
 <p class="note">CS is driven as a <strong>plain GPIO, not routed to the SPI
-peripheral</strong> &mdash; exactly as with <a href="27-sd.html">SD over
+peripheral</strong> &mdash; exactly as with <a href="28-sd.html">SD over
 SPI</a> &mdash; because it has to be held low across all three phases of the
 frame, and the peripheral's own CS pulses per transfer. Another concrete case for
-<a href="14-spi.html">SPI's <code>CS_Pin</code></a>. The chip runs in SPI mode
+<a href="15-spi.html">SPI's <code>CS_Pin</code></a>. The chip runs in SPI mode
 0.</p>
 
 <h2>Two levels of concurrency</h2>
@@ -3660,13 +3706,13 @@ straightforward rather than a locking exercise.</p>
 </ul>
 
 <p>A useful pairing: give the W5500 its address from
-<a href="28-chip-id.html">the eFuse MAC block</a>'s <code>Ethernet</code> entry
+<a href="29-chip-id.html">the eFuse MAC block</a>'s <code>Ethernet</code> entry
 &mdash; a real manufacturer-assigned address rather than one you invented, which
 matters as soon as two of your boards share a segment.</p>
 """),
 
 dict(
-slug="39-net-stack",
+slug="40-net-stack",
 nav="The network stack",
 title="The chip-neutral network stack",
 lede="One <code>GNAT.Sockets</code> subset, several possible NICs, and a "
@@ -3691,10 +3737,10 @@ type Device    is limited interface;</code></pre>
 
 <p class="note">This is the <strong>offloaded-stack</strong> model: the device
 provides TCP and UDP sockets directly, addressed by an index the device maps to
-its own per-socket state &mdash; the <a href="38-w5500.html">W5500</a> has eight
+its own per-socket state &mdash; the <a href="39-w5500.html">W5500</a> has eight
 hardware sockets, for instance. A raw-MAC chip cannot satisfy this interface as
 it stands; it needs a software TCP/IP stack implementing it, which is exactly
-what the <a href="42-wifi.html">Wi-Fi</a> side does.</p>
+what the <a href="43-wifi.html">Wi-Fi</a> side does.</p>
 
 <h2>Writing ordinary Ada networking code</h2>
 
@@ -3703,7 +3749,7 @@ Code written against the desktop API &mdash; <code>Create_Socket</code>,
 <code>Bind</code>, <code>Listen</code>, <code>Accept</code>,
 <code>Connect</code>, <code>Send</code>, <code>Receive</code>,
 <code>Close</code>, and the stream over a socket &mdash; compiles and runs
-unchanged within that subset. That is why <a href="40-dns-ntp.html">DNS_Client
+unchanged within that subset. That is why <a href="41-dns-ntp.html">DNS_Client
 and NTP_Client</a> are the same source on a desktop and on the board.</p>
 
 <h2>Routing and failover</h2>
@@ -3743,7 +3789,7 @@ using sockets. Requires the embedded or full profile.</p>
 """),
 
 dict(
-slug="40-dns-ntp",
+slug="41-dns-ntp",
 nav="DNS &amp; NTP",
 title="DNS and NTP: portable by construction",
 lede="Two clients written entirely against <code>GNAT.Sockets</code>, so the "
@@ -3757,7 +3803,7 @@ body="""
 <p><code>Net_Resolver</code> turns a host name into an address whatever is
 carrying the traffic. Resolution is <strong>a real DNS query of our own</strong>
 &mdash; a UDP A-record request that <code>DNS_Client</code> issues over
-<a href="39-net-stack.html">GNAT.Sockets</a> &mdash; so it works identically over
+<a href="40-net-stack.html">GNAT.Sockets</a> &mdash; so it works identically over
 Ethernet, Wi-Fi, cellular, or whatever the routing table points at.</p>
 
 <p class="note"><strong>Why not use the modem's own resolver?</strong> Because
@@ -3799,7 +3845,7 @@ collision above is its small cost.</p>
 <p>Plain DNS is readable by anything on the path, and on a shared or hostile
 network the names a device looks up leak what it is doing.
 <code>DNS_TLS</code> adds the two encrypted transports over the
-<a href="41-tls.html">pure-Ada TLS 1.3 stack</a>:</p>
+<a href="42-tls.html">pure-Ada TLS 1.3 stack</a>:</p>
 
 <table>
   <thead><tr><th>Transport</th><th>How</th></tr></thead>
@@ -3816,19 +3862,19 @@ network the names a device looks up leak what it is doing.
 <p class="note"><strong>The message bytes are the same proven ones every
 transport shares.</strong> Only the carriage differs, so the parser and builder
 under UDP, TCP, DoT and DoH are one implementation with one set of tests
-(<a href="52-testing.html">step 52</a>) &mdash; not four chances to get a
+(<a href="53-testing.html">step 52</a>) &mdash; not four chances to get a
 message wrong.</p>
 
 <p class="warn">Trust stays with the <em>application</em>, exactly as in the
 HTTPS examples: the caller establishes the TCP connection and supplies the trust
 anchors. The resolver does not carry a built-in root store or decide for you
 which resolver is trustworthy. Note also that a root-pinned DoT or DoH endpoint
-may need <a href="41-tls.html">P-384</a> rather than P-256, depending on whose
+may need <a href="42-tls.html">P-384</a> rather than P-256, depending on whose
 certificate chain you are anchoring to.</p>
 """),
 
 dict(
-slug="41-tls",
+slug="42-tls",
 nav="TLS 1.3",
 title="TLS 1.3, in Ada, with no C library",
 lede="A complete client handshake &mdash; ECDHE, AEAD, certificate chain "
@@ -3848,7 +3894,7 @@ public server:</p>
 
 <p>No external C TLS library is involved. The crypto is Ada &mdash; SPARKNaCl
 plus this repository's own P-256/P-384 &mdash; over the
-<a href="26-crypto.html">chip's SHA and AES accelerators</a>.</p>
+<a href="27-crypto.html">chip's SHA and AES accelerators</a>.</p>
 
 <h2>The client surface</h2>
 
@@ -3895,7 +3941,7 @@ makes it TLS is <code>Chain_Verify</code>, which puts the pieces together:</p>
 <ul>
   <li>per-link signature verification;</li>
   <li>validity dates &mdash; hence the <code>Now</code> parameter, and hence why
-      <a href="40-dns-ntp.html">NTP</a> is not optional;</li>
+      <a href="41-dns-ntp.html">NTP</a> is not optional;</li>
   <li>hostname matching;</li>
   <li>the X.509 v3 usage extensions &mdash; <code>basicConstraints</code>,
       <code>keyUsage</code>, <code>extKeyUsage</code>;</li>
@@ -3921,7 +3967,7 @@ choices are worth noting because they are the right ones:</p>
 
 <ul>
   <li><strong>Signing is deterministic per RFC 6979</strong>, so it needs no
-      per-signature randomness. Given <a href="26-crypto.html">the RNG caveat</a>
+      per-signature randomness. Given <a href="27-crypto.html">the RNG caveat</a>
       &mdash; no real entropy source on this runtime &mdash; that is not a
       stylistic preference, it removes a way to leak the private key.</li>
   <li>Verification and ECDH operate entirely on public values, so ordinary
@@ -3936,7 +3982,7 @@ choices are worth noting because they are the right ones:</p>
 """),
 
 dict(
-slug="42-wifi",
+slug="43-wifi",
 nav="Wi-Fi",
 title="Wi-Fi: pure Ada around three binary blobs",
 lede="The one place the from-scratch claim has an asterisk &mdash; and the "
@@ -3959,7 +4005,7 @@ Ada written against the embedded (Jorvik) runtime:</p>
     <tr><td><code>.Supplicant</code></td><td>The WPA2-PSK 4-way handshake.</td></tr>
     <tr><td><code>.IP</code>, <code>.DHCP</code>, <code>.Net_Device</code></td>
         <td>A software TCP/IP stack presenting the radio as a
-            <a href="39-net-stack.html">Net_Device</a>.</td></tr>
+            <a href="40-net-stack.html">Net_Device</a>.</td></tr>
     <tr><td><code>.Interrupt</code>, <code>.Port</code>, <code>.Core_Shim</code></td>
         <td>The interrupt, timer and core glue the blobs expect.</td></tr>
     <tr><td><code>.Sniffer</code></td><td>Promiscuous-mode capture.</td></tr>
@@ -4011,7 +4057,7 @@ promiscuous sniffing, DNS, HTTP and full HTTPS over the radio.</p>
 """),
 
 dict(
-slug="43-modbus",
+slug="44-modbus",
 nav="Modbus TCP",
 title="Modbus TCP: master and slave",
 lede="An industrial protocol on the socket facade &mdash; and a library that "
@@ -4042,21 +4088,21 @@ relay's position), not a block of memory that happens to be addressed twice.</p>
 
 <h2>Written against the facade</h2>
 
-<p>Like <a href="40-dns-ntp.html">DNS and NTP</a>, Modbus is written entirely
-against <a href="39-net-stack.html">GNAT.Sockets</a>, so the same source runs on
+<p>Like <a href="41-dns-ntp.html">DNS and NTP</a>, Modbus is written entirely
+against <a href="40-net-stack.html">GNAT.Sockets</a>, so the same source runs on
 a desktop and on the board. That is what makes an industrial protocol testable
 without a PLC on the bench: run the slave on a host, point a standard Modbus
 client at it, and you have exercised the wire format before any hardware is
 involved.</p>
 
 <p>On a multi-interface board, a Modbus connection follows
-<a href="39-net-stack.html">the routing table</a> like any other socket, or can
+<a href="40-net-stack.html">the routing table</a> like any other socket, or can
 be pinned to one interface &mdash; which is what you want when the PLC network is
 deliberately separate from the internet-facing one.</p>
 """),
 
 dict(
-slug="44-ftp",
+slug="45-ftp",
 nav="FTP",
 title="FTP: client and server",
 lede="Outbound-only transfers streamed through a callback, and an anonymous "
@@ -4066,8 +4112,8 @@ body="""
 <h2>The client: passive, binary, streamed</h2>
 
 <p>A small RFC 959 client written entirely against
-<a href="39-net-stack.html">GNAT.Sockets</a>, so like
-<a href="40-dns-ntp.html">DNS and NTP</a> the same source runs on a desktop and
+<a href="40-net-stack.html">GNAT.Sockets</a>, so like
+<a href="41-dns-ntp.html">DNS and NTP</a> the same source runs on a desktop and
 on the board.</p>
 
 <p class="note"><strong>Passive mode only, deliberately.</strong> An embedded
@@ -4075,14 +4121,14 @@ client should only ever make <em>outbound</em> connections, so every transfer
 asks the server to listen (PASV) and the client connects to it. No listening
 socket, and NAT/firewall friendly. A session uses two sockets at a time &mdash;
 the persistent control connection plus one transient data connection per
-transfer &mdash; comfortably within the <a href="38-w5500.html">W5500</a>'s
+transfer &mdash; comfortably within the <a href="39-w5500.html">W5500</a>'s
 eight.</p>
 
 <p class="warn"><strong>Transfers are streamed through a caller callback</strong>,
 so a file never has to be held whole in RAM &mdash; which on a board with a few
 hundred KB is the difference between working and not. As with every callback in
 this HAL, the sink and source must obey the
-<a href="12-gpio.html">closure-free rule</a>: library-level, no captured state,
+<a href="13-gpio.html">closure-free rule</a>: library-level, no captured state,
 context passed explicitly.</p>
 
 <p>Transfers are binary (<code>TYPE I</code>). There is no ASCII mode, which is
@@ -4092,7 +4138,7 @@ every non-text file.</p>
 <h2>The server: your filesystems, over the network</h2>
 
 <p>An anonymous passive-mode server that exposes one or more
-<a href="46-ext4.html">ext4</a> filesystems, so a desktop FTP client can browse,
+<a href="47-ext4.html">ext4</a> filesystems, so a desktop FTP client can browse,
 download, upload and manage the board's files.</p>
 
 <p>Filesystems are presented through <code>ESP32S3.Ext4.VFS</code>: register each
@@ -4105,12 +4151,12 @@ one more <code>VFS.Add</code> call and nothing else changes.</p>
 This is for a bench, a closed lab network or a deliberately isolated segment
 &mdash; not for anything reachable from a wider network. If the board is on a
 routable network, pin the socket to the interface you intend
-(<a href="39-net-stack.html"><code>Set_Interface</code></a>) rather than letting
+(<a href="40-net-stack.html"><code>Set_Interface</code></a>) rather than letting
 the routing table choose.</p>
 """),
 
 dict(
-slug="45-block-dev",
+slug="46-block-dev",
 nav="Block devices &amp; wear levelling",
 title="Block devices and wear levelling",
 lede="One abstraction the filesystems talk to, thin adapters underneath it, "
@@ -4133,8 +4179,8 @@ it usable from anywhere and makes a device something you can substitute in a
 test.</p>
 
 <p>Behind it sit thin adapters: <code>SD_SPI_Source</code> and
-<code>SDMMC_Source</code> for <a href="27-sd.html">SD cards</a>,
-<code>W25Q_Source</code> for <a href="35-memory.html">SPI NOR flash</a>, and a
+<code>SDMMC_Source</code> for <a href="28-sd.html">SD cards</a>,
+<code>W25Q_Source</code> for <a href="36-memory.html">SPI NOR flash</a>, and a
 file-backed device in the host test harness &mdash; which is what lets the whole
 filesystem stack be developed and tested on a PC.</p>
 
@@ -4177,7 +4223,7 @@ overhead.</p>
 """),
 
 dict(
-slug="46-ext4",
+slug="47-ext4",
 nav="ext4 filesystem",
 title="ext4: a real filesystem, in Ada",
 lede="A from-scratch ext2/3/4 implementation with JBD2 journal replay, an "
@@ -4188,7 +4234,7 @@ body="""
 <p><code>ESP32S3.Ext4</code> is a reimplementation of lwext4 in pure Ada: read
 <em>and</em> write &mdash; create, write, truncate, mkdir, rmdir, unlink, rename,
 link &mdash; with metadata checksums and JBD2 journal replay. It is pure logic
-over <a href="45-block-dev.html">Block_Dev</a>, so it also compiles host-native
+over <a href="46-block-dev.html">Block_Dev</a>, so it also compiles host-native
 and is developed against a harness that checks every operation against
 <code>mke2fs</code>, <code>debugfs</code> and <code>e2fsck</code>.</p>
 
@@ -4205,7 +4251,7 @@ codes, and the IO-family exceptions are the standard ones from
 <code>Ada.Streams.Stream_IO</code> bridge maps cleanly &mdash; plus a few
 filesystem-specific additions. That is a deliberate departure from the
 <code>Status</code>-out-parameter style used by the
-<a href="13-i2c.html">bus drivers</a>, and it is the right one here: a
+<a href="14-i2c.html">bus drivers</a>, and it is the right one here: a
 filesystem call has many more failure modes than a bus transaction, and threading
 them all through return values would drown the call sites.</p>
 
@@ -4242,7 +4288,7 @@ finalization, secondary stack and a heap.</p>
 """),
 
 dict(
-slug="47-fat16",
+slug="48-fat16",
 nav="FAT16",
 title="FAT16: the filesystem a PC can read",
 lede="Deliberately narrow &mdash; read-only, FAT16 only, long filenames "
@@ -4251,7 +4297,7 @@ lede="Deliberately narrow &mdash; read-only, FAT16 only, long filenames "
 body="""
 <h2>Why it exists alongside ext4</h2>
 
-<p><a href="46-ext4.html">ext4</a> is the better filesystem, but only Linux
+<p><a href="47-ext4.html">ext4</a> is the better filesystem, but only Linux
 mounts it. When a device exposes its storage over USB mass storage it appears as
 a removable drive, and if it is formatted FAT then Windows, macOS and Linux all
 mount it with no driver and no ceremony: the user drops files on it and the
@@ -4291,7 +4337,7 @@ the filesystem's geometry chosen to suit the medium underneath it.</p>
 
 <p>It reads from either an MBR-partitioned disk (what Windows expects on a USB
 stick) or a bare boot sector at LBA 0, and sits on
-<a href="45-block-dev.html">Block_Dev</a> like everything else, so the same
+<a href="46-block-dev.html">Block_Dev</a> like everything else, so the same
 sources run over SPI NOR flash, an SD card, or a file-backed device in the test
 harness.</p>
 
@@ -4303,7 +4349,7 @@ checking on your own hardware.</p>
 """),
 
 dict(
-slug="48-console-fonts",
+slug="49-console-fonts",
 nav="Console, text &amp; fonts",
 title="Console output, text and fonts",
 lede="There is no <code>Ada.Text_IO</code> console on this target, so printing "
@@ -4333,7 +4379,7 @@ why it is safe to call from places a heap allocation would not be. Each call is
 one short <code>esp_rom_printf</code>.</p>
 
 <p>Remember the type rule this implies, which
-<a href="13-i2c.html">the bus-scan sample</a> ran into:
+<a href="14-i2c.html">the bus-scan sample</a> ran into:
 <code>Put_Hex</code> takes an <code>Interfaces.Unsigned_32</code>, so an
 <code>Integer</code>-family value needs an explicit conversion.</p>
 
@@ -4360,7 +4406,7 @@ array.</p>
 """),
 
 dict(
-slug="49-esp-loader",
+slug="50-esp-loader",
 nav="Programming another ESP32",
 title="Esp_Loader: your board as the programmer",
 lede="The ESP32 serial ROM protocol spoken as the <em>host</em>, so a jig or a "
@@ -4418,7 +4464,7 @@ the lines one at a time) works regardless of what the target board has on its EN
 pin. Those two details are the difference between "usually works" and "works".</p>
 
 <p><code>Serial_Link</code> is the ready-made transport over a UART and two
-GPIOs, and <a href="26-crypto.html">MD5</a> is here for
+GPIOs, and <a href="27-crypto.html">MD5</a> is here for
 <code>SPI_FLASH_MD5</code>: the target hashes what its flash actually holds and
 you compare, so "programmed OK" means something.</p>
 
@@ -4429,7 +4475,7 @@ still wants a target board on a real UART.</p>
 """),
 
 dict(
-slug="50-simd",
+slug="51-simd",
 nav="SIMD (PIE)",
 title="SIMD: the PIE vector unit",
 lede="128-bit vector kernels with the inner loops written as GNAT inline "
@@ -4492,7 +4538,7 @@ port the boot code, that bit has to come with it or every kernel faults.</p>
 """),
 
 dict(
-slug="51-stack-usage",
+slug="52-stack-usage",
 nav="Stack measurement",
 title="Stack usage: measuring what analysis cannot see",
 lede="Static worst-case analysis cannot see the prebuilt runtime, the C "
@@ -4529,16 +4575,16 @@ the error paths and the interrupt load, before believing the headroom.</p>
 and this to catch what it cannot. Agreement between them is meaningful evidence;
 a measured figure that exceeds the static bound means the static model is missing
 a path, which is worth knowing before it is a
-<a href="54-debugging.html">stack overflow on hardware</a>.</p>
+<a href="55-debugging.html">stack overflow on hardware</a>.</p>
 
 <p class="note">The runtime already guards the running task with a hardware
 watchpoint a redzone above its stack limit, re-armed on every context switch
-(<a href="54-debugging.html">step 44</a>). That catches an overflow precisely when
+(<a href="55-debugging.html">step 44</a>). That catches an overflow precisely when
 it happens; this tells you how close you were before it did.</p>
 """),
 
 dict(
-slug="52-testing",
+slug="53-testing",
 nav="Testing &amp; proof",
 title="Testing and proof: reproducing the claims",
 lede="Thirty-two harnesses run on your PC, not the board. Half check "
@@ -4548,8 +4594,8 @@ body="""
 <h2>Why so much runs on the host</h2>
 
 <p>Most of what this SDK does is pure logic over a thin hardware seam &mdash; a
-filesystem over <a href="45-block-dev.html">Block_Dev</a>, a DNS message
-builder over <a href="39-net-stack.html">GNAT.Sockets</a>, a clock-divider
+filesystem over <a href="46-block-dev.html">Block_Dev</a>, a DNS message
+builder over <a href="40-net-stack.html">GNAT.Sockets</a>, a clock-divider
 calculation. Logic like that is target-independent, so it can be exercised on a
 PC in a second rather than flashed and watched over a serial cable.</p>
 
@@ -4650,7 +4696,7 @@ it, if you want the whole surface rather than one project.</p>
 """),
 
 dict(
-slug="53-runtime",
+slug="54-runtime",
 nav="The runtime itself",
 title="The runtime: how it is built, ported and proven conformant",
 lede="Three profiles generated from a forked bb-runtimes board, a porting "
@@ -4710,7 +4756,7 @@ patches</em> on top of the same board.</p>
 
 <p>The register packages are separate again: <code>ESP32S3_Registers.*</code> is
 generated from the chip's SVD by svd2ada, not hand-written &mdash; which is why
-<a href="12-gpio.html">the drivers</a> get typed record fields with
+<a href="13-gpio.html">the drivers</a> get typed record fields with
 representation clauses instead of shift-and-mask.</p>
 
 <h2>Porting to another Xtensa SoC</h2>
@@ -4780,7 +4826,7 @@ full breakdown if you want the detail.</p>
 """),
 
 dict(
-slug="54-debugging",
+slug="55-debugging",
 nav="Debugging",
 title="Debugging: GDB over the same cable",
 lede="The USB-Serial-JTAG port is both the console and a JTAG debug interface, "
@@ -4882,7 +4928,7 @@ unrelated.</p>
 
 # ---------------------------------------------------------------- 13
 dict(
-slug="55-troubleshooting",
+slug="56-troubleshooting",
 nav="Troubleshooting &amp; next steps",
 title="Troubleshooting, and where to go next",
 lede="The failure modes worth recognising on sight, a one-screen cheat sheet, "
@@ -5468,7 +5514,7 @@ PAGE = """<!DOCTYPE html>
 INDEX_BODY = """
     <p class="eyebrow">Start here</p>
     <h1>{site}</h1>
-    <p class="lede">{tagline} Fifty-five short steps, one aspect each, from a
+    <p class="lede">{tagline} Fifty-six short steps, one aspect each, from a
     blank machine to your own Ada application running on both cores.</p>
 
     <p>The ESP32-S3 is normally programmed through Espressif's ESP-IDF: a large
@@ -5482,12 +5528,13 @@ INDEX_BODY = """
     <p>Each page below covers exactly one thing, and each links to the next.
     Steps 1 to 5 get an LED blinking. Steps 6 to 9 explain what you just did and
     how to configure it. Steps 10 and 11 are your own project and the driver
-    library. Steps 12 to 28 are the chip's own peripherals and 29 to 38 the
+    library, and step 12 catalogues the 96 examples. Steps 13 to 29 are the
+    chip's own peripherals and 30 to 39 the
     external devices the SDK drives &mdash; start with whichever your board
-    actually has. Steps 39 to 44 are the networking stack, from sockets up
-    through TLS and Wi-Fi, and 45 to 51 the storage, filesystems and standalone
-    tools. Steps 52 and 53 are the test harnesses and the runtime itself, and
-    54 and 55 the debugger and what to do when something goes wrong.</p>
+    actually has. Steps 40 to 45 are the networking stack, from sockets up
+    through TLS and Wi-Fi, and 46 to 52 the storage, filesystems and standalone
+    tools. Steps 53 and 54 are the test harnesses and the runtime itself, and
+    55 and 56 the debugger and what to do when something goes wrong.</p>
 
     <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
 
@@ -5515,50 +5562,51 @@ BLURBS = {
     "09-board-config":    "Flash and PSRAM size in <code>board.ads</code>, and why PSRAM size rebuilds the bootloader.",
     "10-own-project":     "Scaffolding a standalone project anywhere on disk with <code>export.sh</code> and <code>esp32-ada</code>.",
     "11-hal":             "Using the peripheral drivers, how they are shaped, and what still needs verifying on your board.",
-    "12-gpio":            "The pin type that rejects a pad which would hang the chip, what is atomic in silicon, and the interrupt callback rule.",
-    "13-i2c":             "An RAII session that cannot leak the bus lock, repeated START, and why payload length never reaches your code.",
-    "14-spi":             "Per-device clock and mode on a shared host, chip select three ways, and DMA rules enforced as preconditions.",
-    "15-uart":            "No setup call by design, interrupt-driven RX with a buffer Ada makes you declare just so, and a routing trap.",
-    "16-gdma":            "Five channel pairs claimed at run time, and the buffer rules PSRAM's cache imposes.",
-    "17-i2s":             "Audio with no CPU FIFO: DMA-only transfers, gapless looping, and capture underneath playback.",
-    "18-lcd":             "A command-driven i8080 bus and a continuously-refreshed RGB panel from one controller.",
-    "19-twai":            "CAN 2.0 with identifier widths the type system keeps apart, and the bus-off trap.",
-    "20-rmt":             "Arbitrary {level, duration} pulse trains for IR, WS2812 and 1-Wire.",
-    "21-ledc-sdm":        "Eight PWM channels for dimming, and eight density-modulated outputs that filter to analog.",
-    "22-mcpwm":           "Dead-time, a chopper carrier, and fault inputs that force the pins safe in hardware.",
-    "23-timers-pcnt":     "A 54-bit timer with an alarm, and four edge counters that wrap sooner than you think.",
-    "24-analog":          "The SAR ADC on fixed pins, and touch channels that count their way to a reading.",
-    "25-rtc":             "Deep sleep resets the chip; what survives is RTC memory and the pads you held.",
-    "26-crypto":          "SHA, AES and RSA acceleration, MD5 for flash verification, and why the RNG is not a CSPRNG here.",
-    "27-sd":              "SPI transport versus the native SD bus, and why the faster one runs on the lean runtime.",
-    "28-chip-id":         "Die temperature (not ambient) and the four factory MACs in eFuse.",
-    "29-display-touch":   "A write-only SPI panel you cannot probe, and a touch chip whose address is set at reset.",
-    "30-es8311":          "Control over I2C, audio over I2S, and the 256x MCLK ratio the codec depends on.",
-    "31-sensors":         "A register-mapped IMU and a command-based humidity sensor, and how each flags a bad reading.",
-    "32-pcf85063a":       "A typed BCD calendar, an alarm, and the oscillator-stop flag that says do not trust me.",
-    "33-expanders":       "Per-pin control, an all-or-nothing direction bit, and a shift register with no readback.",
-    "34-tx1812":          "LED timing generated as RMT symbols, with the strip sized at elaboration.",
-    "35-memory":          "NOR flash, the 24C EEPROM catalogue and FRAM \u2014 three technologies, three bargains.",
-    "36-tlv2556":         "A pipelined SPI ADC whose result belongs to the previous request.",
-    "37-gps":             "A background task decoding NMEA into a protected store that timestamps its own staleness.",
-    "38-w5500":           "Ethernet with the TCP/IP stack in silicon, layered up to a GNAT.Sockets facade.",
-    "39-net-stack":       "One GNAT.Sockets subset over several possible NICs, with longest-prefix routing and failover.",
-    "40-dns-ntp":         "DNS and NTP written against the socket facade, so the same source runs on host and board.",
-    "41-tls":             "A complete TLS 1.3 client in Ada: ECDHE, chain validation to a pinned root, resumption.",
-    "42-wifi":            "Pure Ada around three fetched Apache-2.0 blobs, with the WPA2 handshake kept out of them.",
-    "43-modbus":          "Industrial master and slave on the socket facade, owning none of your data.",
-    "44-ftp":             "Outbound-only streamed transfers, and an anonymous server over your ext4 volumes.",
-    "45-block-dev":       "One vtable the filesystems talk to, and a filter that spreads flash wear.",
-    "46-ext4":            "A from-scratch ext2/3/4 with JBD2 replay, on-device mkfs, and Ada exceptions.",
-    "47-fat16":           "Read-only, FAT16-only, long filenames \u2014 the filesystem a PC can mount.",
-    "48-console-fonts":   "Formatted output with no hosted runtime, and glyph data that knows nothing about panels.",
-    "49-esp-loader":      "Your board as the programmer: the ROM protocol, streamed, with per-chip quirks handled.",
-    "50-simd":            "128-bit PIE kernels in inline assembly \u2014 vendored, and honestly labelled beta.",
-    "51-stack-usage":     "Stack painting: the measured counterpart to static analysis, conservative by design.",
-    "52-testing":         "Thirty-two harnesses that run on your PC \u2014 cross-checked against the host's own tools, and SPARK-proven.",
-    "53-runtime":         "Where the three profiles come from, the rebuild trap, porting, and the ACATS grade.",
-    "54-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
-    "55-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
+    "12-examples":        "All 96 examples: what each shows, which profile it needs, and where it is explained.",
+    "13-gpio":            "The pin type that rejects a pad which would hang the chip, what is atomic in silicon, and the interrupt callback rule.",
+    "14-i2c":             "An RAII session that cannot leak the bus lock, repeated START, and why payload length never reaches your code.",
+    "15-spi":             "Per-device clock and mode on a shared host, chip select three ways, and DMA rules enforced as preconditions.",
+    "16-uart":            "No setup call by design, interrupt-driven RX with a buffer Ada makes you declare just so, and a routing trap.",
+    "17-gdma":            "Five channel pairs claimed at run time, and the buffer rules PSRAM's cache imposes.",
+    "18-i2s":             "Audio with no CPU FIFO: DMA-only transfers, gapless looping, and capture underneath playback.",
+    "19-lcd":             "A command-driven i8080 bus and a continuously-refreshed RGB panel from one controller.",
+    "20-twai":            "CAN 2.0 with identifier widths the type system keeps apart, and the bus-off trap.",
+    "21-rmt":             "Arbitrary {level, duration} pulse trains for IR, WS2812 and 1-Wire.",
+    "22-ledc-sdm":        "Eight PWM channels for dimming, and eight density-modulated outputs that filter to analog.",
+    "23-mcpwm":           "Dead-time, a chopper carrier, and fault inputs that force the pins safe in hardware.",
+    "24-timers-pcnt":     "A 54-bit timer with an alarm, and four edge counters that wrap sooner than you think.",
+    "25-analog":          "The SAR ADC on fixed pins, and touch channels that count their way to a reading.",
+    "26-rtc":             "Deep sleep resets the chip; what survives is RTC memory and the pads you held.",
+    "27-crypto":          "SHA, AES and RSA acceleration, MD5 for flash verification, and why the RNG is not a CSPRNG here.",
+    "28-sd":              "SPI transport versus the native SD bus, and why the faster one runs on the lean runtime.",
+    "29-chip-id":         "Die temperature (not ambient) and the four factory MACs in eFuse.",
+    "30-display-touch":   "A write-only SPI panel you cannot probe, and a touch chip whose address is set at reset.",
+    "31-es8311":          "Control over I2C, audio over I2S, and the 256x MCLK ratio the codec depends on.",
+    "32-sensors":         "A register-mapped IMU and a command-based humidity sensor, and how each flags a bad reading.",
+    "33-pcf85063a":       "A typed BCD calendar, an alarm, and the oscillator-stop flag that says do not trust me.",
+    "34-expanders":       "Per-pin control, an all-or-nothing direction bit, and a shift register with no readback.",
+    "35-tx1812":          "LED timing generated as RMT symbols, with the strip sized at elaboration.",
+    "36-memory":          "NOR flash, the 24C EEPROM catalogue and FRAM \u2014 three technologies, three bargains.",
+    "37-tlv2556":         "A pipelined SPI ADC whose result belongs to the previous request.",
+    "38-gps":             "A background task decoding NMEA into a protected store that timestamps its own staleness.",
+    "39-w5500":           "Ethernet with the TCP/IP stack in silicon, layered up to a GNAT.Sockets facade.",
+    "40-net-stack":       "One GNAT.Sockets subset over several possible NICs, with longest-prefix routing and failover.",
+    "41-dns-ntp":         "DNS and NTP written against the socket facade, so the same source runs on host and board.",
+    "42-tls":             "A complete TLS 1.3 client in Ada: ECDHE, chain validation to a pinned root, resumption.",
+    "43-wifi":            "Pure Ada around three fetched Apache-2.0 blobs, with the WPA2 handshake kept out of them.",
+    "44-modbus":          "Industrial master and slave on the socket facade, owning none of your data.",
+    "45-ftp":             "Outbound-only streamed transfers, and an anonymous server over your ext4 volumes.",
+    "46-block-dev":       "One vtable the filesystems talk to, and a filter that spreads flash wear.",
+    "47-ext4":            "A from-scratch ext2/3/4 with JBD2 replay, on-device mkfs, and Ada exceptions.",
+    "48-fat16":           "Read-only, FAT16-only, long filenames \u2014 the filesystem a PC can mount.",
+    "49-console-fonts":   "Formatted output with no hosted runtime, and glyph data that knows nothing about panels.",
+    "50-esp-loader":      "Your board as the programmer: the ROM protocol, streamed, with per-chip quirks handled.",
+    "51-simd":            "128-bit PIE kernels in inline assembly \u2014 vendored, and honestly labelled beta.",
+    "52-stack-usage":     "Stack painting: the measured counterpart to static analysis, conservative by design.",
+    "53-testing":         "Thirty-two harnesses that run on your PC \u2014 cross-checked against the host's own tools, and SPARK-proven.",
+    "54-runtime":         "Where the three profiles come from, the rebuild trap, porting, and the ACATS grade.",
+    "55-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
+    "56-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
 }
 
 
@@ -5566,15 +5614,164 @@ BLURBS = {
 #  PAGES exactly, so adding a page without extending a range fails loudly
 #  instead of silently dropping it out of the navigation.
 TOC_GROUPS = [
-    ("Getting started",     1, 11),
-    ("Chip peripherals",   12, 28),
-    ("External devices",   29, 38),
-    ("Networking",         39, 44),
-    ("Storage &amp; files",    45, 47),
-    ("Text &amp; tooling",     48, 51),
-    ("Testing &amp; proof", 52, 53),
-    ("Debugging",          54, 55),
+    ("Getting started",     1, 12),
+    ("Chip peripherals",   13, 29),
+    ("External devices",   30, 39),
+    ("Networking",         40, 45),
+    ("Storage &amp; files",    46, 48),
+    ("Text &amp; tooling",     49, 52),
+    ("Testing &amp; proof", 53, 54),
+    ("Debugging",          55, 56),
 ]
+
+
+#  ---------------------------------------------------------------------------
+#  The examples catalogue is GENERATED from the repository, not typed out here:
+#  `./x list --json` is the same source of truth the dispatcher uses, and each
+#  one-line description is lifted from the example's own header comment.  So a
+#  new example appears in the guide by existing, and none can silently rot.
+#  ---------------------------------------------------------------------------
+
+#  Which guide step explains the thing an example demonstrates.  Matched longest
+#  prefix first, so "w5500_dns" beats "w5500".
+EXAMPLE_STEP = [
+    ("gpio0_blink", "13-gpio"), ("gpio", "13-gpio"),
+    ("i2c", "14-i2c"), ("spi_loopback", "15-spi"), ("uart", "16-uart"),
+    ("gdma", "17-gdma"), ("i2s", "18-i2s"), ("lcd", "19-lcd"),
+    ("twai", "20-twai"), ("rmt", "21-rmt"),
+    ("ledc", "22-ledc-sdm"), ("sdm_output", "22-ledc-sdm"),
+    ("mcpwm", "23-mcpwm"), ("timer", "24-timers-pcnt"), ("pcnt", "24-timers-pcnt"),
+    ("adc_read", "25-analog"), ("touch", "25-analog"),
+    ("rtc", "26-rtc"), ("rtcio", "26-rtc"),
+    ("crypto", "27-crypto"), ("aes", "27-crypto"), ("rsa", "27-crypto"),
+    ("sparknacl", "27-crypto"), ("p256", "27-crypto"),
+    ("sd_spi", "28-sd"), ("sdmmc", "28-sd"),
+    ("mac", "29-chip-id"), ("temperature", "29-chip-id"),
+    ("st7789", "30-display-touch"), ("gt911", "30-display-touch"),
+    ("b612", "49-console-fonts"),
+    ("es8311", "31-es8311"),
+    ("qmi8658c", "32-sensors"), ("sht41", "32-sensors"),
+    ("pcf85063a", "33-pcf85063a"),
+    ("tca9555", "34-expanders"), ("ch422g", "34-expanders"), ("hc595", "34-expanders"),
+    ("tx1812", "35-tx1812"),
+    ("w25q", "36-memory"), ("m24c64", "36-memory"), ("fram", "36-memory"),
+    ("tlv2556", "37-tlv2556"),
+    ("gps", "38-gps"),
+    ("w5500", "39-w5500"), ("multinic", "40-net-stack"),
+    ("dns_secure", "41-dns-ntp"), ("dns", "41-dns-ntp"), ("ntp", "41-dns-ntp"),
+    ("tls", "42-tls"), ("x509", "42-tls"),
+    ("wifi", "43-wifi"), ("modbus", "44-modbus"),
+    ("ftp", "45-ftp"),
+    ("wl", "46-block-dev"), ("ext4", "47-ext4"), ("fat16", "48-fat16"),
+    ("stack_usage", "52-stack-usage"), ("simd", "51-simd"),
+    ("smp", "08-profiles"), ("embedded", "08-profiles"), ("full_", "08-profiles"),
+    ("rendezvous", "08-profiles"), ("exceptions", "08-profiles"),
+    ("heartbeat", "05-first-blink"), ("psram", "09-board-config"),
+    ("heaptest", "09-board-config"),
+    ("intr_levels", "55-debugging"), ("shared_l2", "55-debugging"),
+    ("delay_test", "55-debugging"), ("stress", "55-debugging"),
+]
+
+
+def esc(t):
+    return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def example_catalogue():
+    """(name, profile, description, step-slug or None) for every example.
+
+    Reads `./x list --json` -- the dispatcher's own view -- so the guide and the
+    tooling can never disagree about what exists.
+    """
+    import json
+    import subprocess
+
+    root = os.path.dirname(os.path.dirname(HERE))
+    try:
+        out = subprocess.run([os.path.join(root, "x"), "list", "--json"],
+                             capture_output=True, text=True, cwd=root, timeout=120)
+        rows = json.loads(out.stdout)
+    except Exception as exc:                      # noqa: BLE001 - report and stop
+        raise SystemExit("cannot read ./x list --json (%s) -- run build.py from a"
+                         " checkout with the dispatcher present" % exc)
+
+    def describe(d):
+        """First sentence of the example's header comment, tidied.
+
+        Header comments wrap, so one line is usually a truncated clause --
+        accumulate until the sentence ends.  Then drop the boilerplate every
+        example repeats ("on the bare-metal ESP32-S3, no FreeRTOS, no IDF"),
+        which is true of all 96 and so distinguishes none of them.
+        """
+        import glob as _g
+
+        for pat in ("src/main.adb", "src/*.adb"):
+            for f in sorted(_g.glob(os.path.join(root, d, pat))):
+                parts, started = [], False
+                with open(f, errors="ignore") as fh:
+                    for line in fh:
+                        if not line.startswith("--"):
+                            if line.strip() == "" and not started:
+                                continue
+                            break
+                        t = line[2:].strip()
+                        if not t or set(t) <= set("=-_ "):
+                            if started:
+                                break
+                            continue
+                        low = t.lower()
+                        if not started and low.startswith(
+                                ("what it demonstrates", "what this", "build",
+                                 "output", "hardware")):
+                            continue
+                        started = True
+                        parts.append(t)
+                        if t.endswith("."):
+                            break
+                if not parts:
+                    continue
+                text = re.split(r"(?<=[a-z0-9)])\.\s", " ".join(parts))[0]
+                for noise in (
+                        " on the bare-metal ESP32-S3 (no FreeRTOS, no IDF)",
+                        " on the bare-metal ESP32-S3 (no FreeRTOS, IDF)",
+                        " -- bare-metal ESP32-S3 (no FreeRTOS, no IDF)",
+                        " (bare-metal ESP32-S3)", " -- bare-metal ESP32-S3",
+                        " on the bare-metal ESP32-S3",
+                        " (ESP32-S3, no FreeRTOS, no IDF)",
+                        " for the bare-metal ESP32-S3"):
+                    text = text.replace(noise, "")
+                text = re.sub(r"\s*\(no FreeRTOS[^)]*\)?$", "", text)
+                text = re.sub(r"\s+", " ", text).strip(" ,;:-")
+                return text.rstrip(".")
+
+        #  Some examples open straight into `with` clauses with no header
+        #  comment.  Fall back to the README's title, whose shape is
+        #  "# esp32s3_name -- what it is".
+        readme = os.path.join(root, d, "README.md")
+        if os.path.exists(readme):
+            with open(readme, errors="ignore") as fh:
+                head = fh.readline().lstrip("# ").strip()
+            for dash in ("\u2014", "\u2013", " -- "):
+                if dash in head:
+                    return head.split(dash, 1)[1].strip().rstrip(".")
+            #  No dash: the whole title is the description.
+            if head and not head.lower().startswith("esp32s3_"):
+                return head.rstrip(".")
+        #  Left blank on purpose: these examples have neither a header comment
+        #  nor a README, so there is nothing to quote.  Better an empty cell
+        #  than an invented one -- the fix belongs in the example.
+        return ""
+
+    cat = []
+    for r in rows:
+        name = r["name"]
+        step = None
+        for key, slug in sorted(EXAMPLE_STEP, key=lambda kv: -len(kv[0])):
+            if key in name:
+                step = slug
+                break
+        cat.append((name, r.get("profile", ""), describe(r["dir"]), step))
+    return sorted(cat)
 
 
 def sample(name):
@@ -5680,6 +5877,21 @@ def build():
                 '<span class="name">Back to the contents</span></a>'
             )
 
+        body = p["body"]
+        if "{{examples}}" in body:
+            cat = example_catalogue()
+            t = ['<div class="table-scroll">', '<table>',
+                 '  <thead><tr><th>Example</th><th>Profile</th>'
+                 '<th>What it shows</th><th>Step</th></tr></thead>', '  <tbody>']
+            for name, prof, d, step in cat:
+                link = ('<a href="%s.html">%s</a>' % (step, step.split("-")[0])
+                        if step else "&mdash;")
+                t.append('    <tr><td><code>%s</code></td><td><code>%s</code></td>'
+                         '<td>%s</td><td>%s</td></tr>'
+                         % (name, prof, esc(d), link))
+            t += ['  </tbody>', '</table>', '</div>']
+            body = body.replace("{{examples}}", "\n".join(t))
+
         content = (
             '    <nav class="pager-top">%s%s</nav>\n'
             '    <p class="eyebrow">Step %02d of %d</p>\n'
@@ -5695,7 +5907,7 @@ def build():
                 p["title"],
                 p["lede"],
                 re.sub(r"\{\{sample:([\w.]+)\}\}",
-                       lambda m: sample(m.group(1)), p["body"]).rstrip(),
+                       lambda m: sample(m.group(1)), body).rstrip(),
                 "\n".join(pager),
             )
         )
