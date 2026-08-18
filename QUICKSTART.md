@@ -67,12 +67,24 @@ That's the only install. **No ESP-IDF, no esptool, no Python.**
 Two ways in. **There are no submodules** — `bb-runtimes` and `xtensa-dynconfig`
 are vendored as ordinary directories — so nothing extra has to be fetched.
 
-Unzip a tagged release (no git needed; ~11 MB, a complete build tree):
+Unzip the latest release (no git needed; ~11 MB, a complete build tree). Neither
+form names a version, so both keep working as releases come and go:
 
 ```sh
 cd ~
-curl -LO https://github.com/rowsail/ada_esp32s3/archive/refs/tags/v1.4.zip
-unzip v1.4.zip && cd ada_esp32s3-1.4
+gh release download --repo rowsail/ada_esp32s3 --archive=zip
+unzip ada_esp32s3-*.zip && cd ada_esp32s3-*/
+```
+
+Without the GitHub CLI — `/releases/latest` redirects to the current tag:
+
+```sh
+cd ~
+REPO=rowsail/ada_esp32s3
+TAG=$(curl -sSLo /dev/null -w '%{url_effective}' \
+        https://github.com/$REPO/releases/latest | sed 's|.*/||')
+curl -LO https://github.com/$REPO/archive/refs/tags/$TAG.zip
+unzip $TAG.zip && cd ada_esp32s3-${TAG#v}
 ```
 
 Or clone, if you want `git pull` to bring updates:
@@ -84,7 +96,11 @@ cd ada_esp32s3
 ```
 
 The book (*Bare-Metal Ada on the ESP32-S3*, PDF) is attached to the same
-[release](https://github.com/rowsail/ada_esp32s3/releases).
+release. Release assets have a stable redirect, so it needs no version either:
+
+```sh
+curl -LO https://github.com/rowsail/ada_esp32s3/releases/latest/download/Bare-Metal-Ada-on-the-ESP32-S3.pdf
+```
 
 ---
 

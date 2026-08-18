@@ -203,15 +203,37 @@ limitations. Download it from the release page rather than building the LaTeX
 &mdash; <code>book/main.pdf</code> is gitignored, so a fresh checkout does not
 contain it.</p>
 
-<h2>Option A: unzip a release</h2>
+<h2>Option A: unzip the latest release</h2>
 
-<pre><code>curl -LO https://github.com/rowsail/ada_esp32s3/archive/refs/tags/v1.4.zip
-unzip v1.4.zip
-cd ada_esp32s3-1.4</code></pre>
+<p>Neither of these names a version, so they keep working as releases come and
+go. With the GitHub CLI:</p>
+
+<pre><code>gh release download --repo rowsail/ada_esp32s3 --archive=zip
+unzip ada_esp32s3-*.zip &amp;&amp; cd ada_esp32s3-*/</code></pre>
+
+<p>Or with nothing but <code>curl</code> and <code>unzip</code> &mdash;
+<code>/releases/latest</code> redirects to the current tag, so you can read the
+tag off the redirect and fetch that archive:</p>
+
+<pre><code>REPO=rowsail/ada_esp32s3
+TAG=$(curl -sSLo /dev/null -w '%{url_effective}' \
+        https://github.com/$REPO/releases/latest | sed 's|.*/||')
+curl -LO https://github.com/$REPO/archive/refs/tags/$TAG.zip
+unzip $TAG.zip &amp;&amp; cd ada_esp32s3-${TAG#v}</code></pre>
 
 <p>About 11&nbsp;MB, and it is a complete build tree &mdash; every file the tag
 contains, symlinks included. No git required, and you get a fixed, known
 version. If you only want to build and run, this is the simplest route.</p>
+
+<h2>Getting the book without a version either</h2>
+
+<p>Release <em>assets</em> have a stable redirect, so the PDF needs no tag at
+all:</p>
+
+<pre><code>curl -LO https://github.com/rowsail/ada_esp32s3/releases/latest/download/Bare-Metal-Ada-on-the-ESP32-S3.pdf
+
+# or:
+gh release download --repo rowsail/ada_esp32s3 --pattern '*.pdf'</code></pre>
 
 <h2>Option B: clone</h2>
 
