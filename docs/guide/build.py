@@ -982,16 +982,31 @@ on one of the buses above:</p>
 <table>
   <thead><tr><th>Step</th><th>Device</th><th>What it is</th></tr></thead>
   <tbody>
-    <tr><td>31</td><td><a href="29-display-touch.html">ST7789 &amp; GT911</a></td><td>SPI display and capacitive touch controller</td></tr>
-    <tr><td>32</td><td><a href="30-es8311.html">ES8311</a></td><td>Mono audio codec: I2C control, I2S audio</td></tr>
-    <tr><td>33</td><td><a href="31-sensors.html">QMI8658C &amp; SHT41</a></td><td>6-axis IMU, and temperature/humidity</td></tr>
-    <tr><td>34</td><td><a href="32-pcf85063a.html">PCF85063A</a></td><td>Real-time clock with an alarm</td></tr>
-    <tr><td>35</td><td><a href="33-expanders.html">TCA9555, CH422G, HC595</a></td><td>Port expanders and a shift register</td></tr>
-    <tr><td>36</td><td><a href="34-tx1812.html">TX1812</a></td><td>Addressable RGB LEDs</td></tr>
-    <tr><td>37</td><td><a href="35-memory.html">W25Q, 24C, FRAM</a></td><td>NOR flash, EEPROM catalogue, FRAM</td></tr>
-    <tr><td>38</td><td><a href="36-tlv2556.html">TLV2556</a></td><td>External 12-bit SPI ADC</td></tr>
-    <tr><td>39</td><td><a href="37-gps.html">GPS</a></td><td>NMEA receiver as a background service</td></tr>
-    <tr><td>40</td><td><a href="38-w5500.html">W5500</a></td><td>Ethernet with a hardwired TCP/IP stack</td></tr>
+    <tr><td>29</td><td><a href="29-display-touch.html">ST7789 &amp; GT911</a></td><td>SPI display and capacitive touch controller</td></tr>
+    <tr><td>30</td><td><a href="30-es8311.html">ES8311</a></td><td>Mono audio codec: I2C control, I2S audio</td></tr>
+    <tr><td>31</td><td><a href="31-sensors.html">QMI8658C &amp; SHT41</a></td><td>6-axis IMU, and temperature/humidity</td></tr>
+    <tr><td>32</td><td><a href="32-pcf85063a.html">PCF85063A</a></td><td>Real-time clock with an alarm</td></tr>
+    <tr><td>33</td><td><a href="33-expanders.html">TCA9555, CH422G, HC595</a></td><td>Port expanders and a shift register</td></tr>
+    <tr><td>34</td><td><a href="34-tx1812.html">TX1812</a></td><td>Addressable RGB LEDs</td></tr>
+    <tr><td>35</td><td><a href="35-memory.html">W25Q, 24C, FRAM</a></td><td>NOR flash, EEPROM catalogue, FRAM</td></tr>
+    <tr><td>36</td><td><a href="36-tlv2556.html">TLV2556</a></td><td>External 12-bit SPI ADC</td></tr>
+    <tr><td>37</td><td><a href="37-gps.html">GPS</a></td><td>NMEA receiver as a background service</td></tr>
+    <tr><td>38</td><td><a href="38-w5500.html">W5500</a></td><td>Ethernet with a hardwired TCP/IP stack</td></tr>
+  </tbody>
+</table>
+
+<p>Steps 39 to 43 are the <strong>networking stack</strong> above those
+interfaces &mdash; chip-neutral, so the same application code runs over Ethernet,
+Wi-Fi or anything else registered as a NIC:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Layer</th><th>What it gives you</th></tr></thead>
+  <tbody>
+    <tr><td>39</td><td><a href="39-net-stack.html">Sockets &amp; routing</a></td><td>One socket API over several NICs, longest-prefix routing, failover</td></tr>
+    <tr><td>40</td><td><a href="40-dns-ntp.html">DNS &amp; NTP</a></td><td>Name resolution and time, portable between host and board</td></tr>
+    <tr><td>41</td><td><a href="41-tls.html">TLS 1.3</a></td><td>A full client handshake and chain validation, no C library</td></tr>
+    <tr><td>42</td><td><a href="42-wifi.html">Wi-Fi</a></td><td>Pure Ada around the fetched radio blobs, WPA2 handshake included</td></tr>
+    <tr><td>43</td><td><a href="43-modbus.html">Modbus TCP</a></td><td>Industrial master and slave over the facade</td></tr>
   </tbody>
 </table>
 
@@ -3607,7 +3622,359 @@ matters as soon as two of your boards share a segment.</p>
 """),
 
 dict(
-slug="39-debugging",
+slug="39-net-stack",
+nav="The network stack",
+title="The chip-neutral network stack",
+lede="One <code>GNAT.Sockets</code> subset, several possible NICs, and a "
+     "routing table that fails traffic over when a link drops &mdash; so "
+     "networking code does not name the hardware carrying it.",
+body="""
+<h2>The contract a NIC must satisfy</h2>
+
+<p><code>Net_Devices.Device</code> is the chip-neutral interface. Each interface
+chip provides one concrete implementation; the facade keeps a registry and
+dispatches, so a board can carry <strong>more than one NIC, of different types,
+in a single binary</strong>.</p>
+
+<pre><code>type IPv4_Address is array (0 .. 3) of Octet;
+type MAC_Address  is array (0 .. 5) of Octet;
+subtype Port_Number  is Interfaces.Unsigned_16;
+type Interface_Id is range 0 .. Max_Interfaces - 1;
+
+type Status    is (OK, Not_Open, Closed_By_Peer, Timed_Out, Refused, No_Space, Error);
+type Transport is (TCP, UDP);
+type Device    is limited interface;</code></pre>
+
+<p class="note">This is the <strong>offloaded-stack</strong> model: the device
+provides TCP and UDP sockets directly, addressed by an index the device maps to
+its own per-socket state &mdash; the <a href="38-w5500.html">W5500</a> has eight
+hardware sockets, for instance. A raw-MAC chip cannot satisfy this interface as
+it stands; it needs a software TCP/IP stack implementing it, which is exactly
+what the <a href="42-wifi.html">Wi-Fi</a> side does.</p>
+
+<h2>Writing ordinary Ada networking code</h2>
+
+<p><code>GNAT.Sockets</code> here is a bare-metal subset of the standard package.
+Code written against the desktop API &mdash; <code>Create_Socket</code>,
+<code>Bind</code>, <code>Listen</code>, <code>Accept</code>,
+<code>Connect</code>, <code>Send</code>, <code>Receive</code>,
+<code>Close</code>, and the stream over a socket &mdash; compiles and runs
+unchanged within that subset. That is why <a href="40-dns-ntp.html">DNS_Client
+and NTP_Client</a> are the same source on a desktop and on the board.</p>
+
+<h2>Routing and failover</h2>
+
+<p><code>Net_Routes</code> is a small IPv4 table for boards with more than one
+interface. Selection is: among routes whose destination matches
+<strong>and whose interface is up</strong>, take the longest prefix, then the
+lowest metric.</p>
+
+<pre><code>procedure Add_Route   (...);
+procedure Set_Default (Iface : Interface_Id; Metric : Natural := 100);
+procedure Configure   (Is_Up : Up_Query);      --  liveness is INJECTED</code></pre>
+
+<p>So a wired interface at metric 10 and a cellular one at metric 100 give you
+automatic failover: traffic prefers wired and falls back to cellular only when
+wired is down. Liveness is injected rather than wired to a particular stack,
+which keeps the table pure logic &mdash; and host-testable against a mock
+up-state.</p>
+
+<p>Register interfaces with <code>Add_Interface</code> (the first is the
+default). An unpinned socket follows the table per destination: TCP at
+<code>Connect_Socket</code>, UDP <em>per datagram</em> at the
+<code>To</code>-form of <code>Send_Socket</code>. <code>Set_Interface</code> pins
+a socket to one interface, fail-closed.</p>
+
+<h2>The concurrency contract</h2>
+
+<p class="warn"><strong>A <code>Socket_Type</code> value has exactly one owning
+task.</strong> Nothing serialises concurrent operations on the same socket, and
+the routing forms may re-home it mid-call. Different sockets <em>may</em> be
+driven from different tasks &mdash; slot claim/release is a protected object and
+per-socket state belongs to that socket alone &mdash; but sharing one socket
+between tasks is your bug to avoid, not the library's to prevent.</p>
+
+<p>Register interfaces and configure routes during bring-up, before tasks start
+using sockets. Requires the embedded or full profile.</p>
+"""),
+
+dict(
+slug="40-dns-ntp",
+nav="DNS &amp; NTP",
+title="DNS and NTP: portable by construction",
+lede="Two clients written entirely against <code>GNAT.Sockets</code>, so the "
+     "same source runs on a desktop and on the board &mdash; and one shared "
+     "concurrency wrinkle worth knowing.",
+body="""
+<h2>One line to resolve a name</h2>
+
+<pre><code>function Resolve (...) return ...;    --  Net_Resolver</code></pre>
+
+<p><code>Net_Resolver</code> turns a host name into an address whatever is
+carrying the traffic. Resolution is <strong>a real DNS query of our own</strong>
+&mdash; a UDP A-record request that <code>DNS_Client</code> issues over
+<a href="39-net-stack.html">GNAT.Sockets</a> &mdash; so it works identically over
+Ethernet, Wi-Fi, cellular, or whatever the routing table points at.</p>
+
+<p class="note"><strong>Why not use the modem's own resolver?</strong> Because
+one was tried and removed. The BG95's <code>AT+QIDNSGIP</code> silently refused
+answers whose shape it did not like &mdash; a CNAME chain onto several A records
+failed where a bare A record resolved. Doing DNS ourselves means one code path
+with predictable behaviour, rather than a per-modem set of quirks.</p>
+
+<p><code>DNS_Client</code> offers both <code>Resolve</code> (UDP) and
+<code>Resolve_TCP</code>, the latter for answers too large for a datagram.
+<code>NTP_Client.Query</code> is the same shape &mdash; a UDP query reading the
+transmit timestamp out of the reply &mdash; with <code>To_UTC</code> to convert
+it.</p>
+
+<h2>Portability is the point</h2>
+
+<p>Neither client contains anything chip-specific. On the board you call
+<code>GNAT.Sockets.Initialize (Device)</code> once during bring-up; on a desktop
+sockets are always usable. The same source then compiles in both places, which
+is what lets these be tested on a host rather than only on hardware.</p>
+
+<h2>The shared wrinkle</h2>
+
+<p class="warn"><strong>Both keep package-global rotors</strong> &mdash; the
+transaction id and the default source port for DNS, a source-port counter for
+NTP. Concurrent calls from several tasks corrupt nothing, but two in-flight
+queries can land on the same source port, and one then fails its reply check.
+That surfaces as a <em>failed lookup</em>, not an exception or corruption. If you
+resolve from more than one task, either serialise the calls or accept the
+retry.</p>
+
+<p class="note">The source-port rotation is not incidental &mdash; a fixed source
+port is what made an earlier cellular setup fail, because the carrier's NAT
+poisoned the flow. Rotating ports is a deliberate hardening measure, and the
+collision above is its small cost.</p>
+"""),
+
+dict(
+slug="41-tls",
+nav="TLS 1.3",
+title="TLS 1.3, in Ada, with no C library",
+lede="A complete client handshake &mdash; ECDHE, AEAD, certificate chain "
+     "validation to a pinned root, and session resumption &mdash; with every "
+     "line of crypto in Ada or the chip's own accelerators.",
+body="""
+<h2>What it actually does</h2>
+
+<p>The headline claim is easy to under-read, so here is the pipeline the
+in-tree <code>esp32s3_tls_weather</code> example runs end to end against a live
+public server:</p>
+
+<pre><code>DNS -&gt; TCP connect :443 -&gt; TLS 1.3 handshake
+   (X25519 ECDHE, AES-128-GCM, HKDF, RSA-PSS CertificateVerify, Finished)
+-&gt; validate the server's chain to a PINNED root (ISRG Root X1)
+-&gt; encrypted HTTP GET -&gt; decrypt and parse the reply</code></pre>
+
+<p>No external C TLS library is involved. The crypto is Ada &mdash; SPARKNaCl
+plus this repository's own P-256/P-384 &mdash; over the
+<a href="26-crypto.html">chip's SHA and AES accelerators</a>.</p>
+
+<h2>The client surface</h2>
+
+<pre><code>type Session is limited private;
+
+procedure Hello (...);                                --  ClientHello / ServerHello
+function  Keys_Ready            (S : Session) return Boolean;
+function  Have_Server_Cert      (S : Session) return Boolean;
+function  Server_Cert_Verify_OK (S : Session) return Boolean;
+function  Server_Finished_OK    (S : Session) return Boolean;
+function  Ready                 (S : Session) return Boolean;
+
+procedure Send (S : in out Session; Sock : GNAT.Sockets.Socket_Type; Data : Byte_Array);
+procedure Recv (...);
+
+function  Has_Ticket          (S : Session) return Boolean;
+function  Server_Accepted_PSK (S : Session) return Boolean;
+procedure Resume (...);</code></pre>
+
+<p>The handshake state is inspectable rather than a single opaque boolean, which
+matters when a connection fails: you can tell "the certificate chain was
+rejected" from "the server never finished" from "we never got keys at all".</p>
+
+<p class="warn">The package header still opens with "work in progress &mdash;
+this first slice does the unencrypted opening". That comment is <strong>stale</strong>:
+<code>Send</code>, <code>Recv</code>, <code>Ready</code>, <code>Finished</code>
+verification and session resumption are all present, and three examples exercise
+them. Read the API, not the banner.</p>
+
+<h2>Chain validation is the hard part</h2>
+
+<pre><code>function Validate (Chain, Anchors : Cert_List; Host : String;
+                   Now : X509.Time_64) return Result;</code></pre>
+
+<p>A handshake that completes proves you are talking to <em>somebody</em>. What
+makes it TLS is <code>Chain_Verify</code>, which puts the pieces together:</p>
+
+<ul>
+  <li>per-link signature verification;</li>
+  <li>validity dates &mdash; hence the <code>Now</code> parameter, and hence why
+      <a href="40-dns-ntp.html">NTP</a> is not optional;</li>
+  <li>hostname matching;</li>
+  <li>the X.509 v3 usage extensions &mdash; <code>basicConstraints</code>,
+      <code>keyUsage</code>, <code>extKeyUsage</code>;</li>
+  <li>anchoring to a <strong>pinned</strong> set of roots, not a system trust
+      store, because there isn't one.</li>
+</ul>
+
+<p class="note">The <code>Now</code> parameter is the detail worth internalising:
+without a real clock, certificate expiry cannot be checked, and a chain that
+expired years ago validates happily. On a board that means fetching the time
+before you can meaningfully verify anything &mdash; which is why NTP comes first
+in the pipeline above.</p>
+
+<h2>The elliptic curves</h2>
+
+<pre><code>function Verify     (Pub_X, Pub_Y, Hash, R, S : Bytes_32) return Boolean;
+function Public_Key (Priv : Bytes_32; Pub_X, Pub_Y : out Bytes_32) return Boolean;
+function ECDH       (...);
+function Sign       (Priv, Hash : Bytes_32; R, S : out Bytes_32) return Boolean;</code></pre>
+
+<p>P-256 and P-384 are pure Ada with no chip dependency. Two implementation
+choices are worth noting because they are the right ones:</p>
+
+<ul>
+  <li><strong>Signing is deterministic per RFC 6979</strong>, so it needs no
+      per-signature randomness. Given <a href="26-crypto.html">the RNG caveat</a>
+      &mdash; no real entropy source on this runtime &mdash; that is not a
+      stylistic preference, it removes a way to leak the private key.</li>
+  <li>Verification and ECDH operate entirely on public values, so ordinary
+      variable-time code is fine there; the sensitive arithmetic is Montgomery
+      (CIOS) with constants derived on the fly, and points are Jacobian.</li>
+</ul>
+
+<p>Examples: <code>esp32s3_tls_hello</code> (handshake),
+<code>esp32s3_tls_weather</code> (real-world HTTPS),
+<code>esp32s3_tls_resume</code> (session resumption), plus
+<code>esp32s3_wifi_tls</code> over the radio.</p>
+"""),
+
+dict(
+slug="42-wifi",
+nav="Wi-Fi",
+title="Wi-Fi: pure Ada around three binary blobs",
+lede="The one place the from-scratch claim has an asterisk &mdash; and the "
+     "asterisk is smaller, and better fenced, than you would expect.",
+body="""
+<h2>What is a blob and what is not</h2>
+
+<p>The radio's MAC and PHY are undocumented, so the driver runs Espressif's
+closed libraries (<code>libnet80211</code>, <code>libpp</code>,
+<code>libphy</code>, <code>libcore</code>). Everything <em>around</em> them is
+Ada written against the embedded (Jorvik) runtime:</p>
+
+<table>
+  <thead><tr><th>Ours, in Ada</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>.OS_Adapter</code>, <code>.RTOS</code></td>
+        <td>Maps the blobs' RTOS calls onto Jorvik tasks &mdash; so
+            <strong>FreeRTOS still never runs</strong>.</td></tr>
+    <tr><td><code>.PHY</code></td><td>PHY/RF calibration, and persisting calibration data.</td></tr>
+    <tr><td><code>.Supplicant</code></td><td>The WPA2-PSK 4-way handshake.</td></tr>
+    <tr><td><code>.IP</code>, <code>.DHCP</code>, <code>.Net_Device</code></td>
+        <td>A software TCP/IP stack presenting the radio as a
+            <a href="39-net-stack.html">Net_Device</a>.</td></tr>
+    <tr><td><code>.Interrupt</code>, <code>.Port</code>, <code>.Core_Shim</code></td>
+        <td>The interrupt, timer and core glue the blobs expect.</td></tr>
+    <tr><td><code>.Sniffer</code></td><td>Promiscuous-mode capture.</td></tr>
+  </tbody>
+</table>
+
+<p class="note">The blobs are <strong>Apache-2.0 and fetched, not committed</strong>
+&mdash; <code>tools/fetch-wifi-blobs.sh</code> pins them to exact upstream
+commits and verifies each by sha256. So the repository still contains no opaque
+vendor binary for Wi-Fi; you choose to download them.</p>
+
+<h2>The supplicant is ours, deliberately</h2>
+
+<p>The 4-way handshake is pure Ada: derive the PMK with PBKDF2-HMAC-SHA1, run the
+handshake (PTK via SHA1-PRF, MIC via HMAC-SHA1, GTK via AES key-unwrap), and
+reply with message 2 of 4.</p>
+
+<p class="warn">That placement is the security-relevant part. Doing the handshake
+in Ada means <strong>your PSK and the derived keys never pass through blob
+code</strong> &mdash; the blob is handed an already-established association, not
+your passphrase. A driver that let the closed library do WPA2 would be trusting
+it with the one secret that matters.</p>
+
+<h2>Using it</h2>
+
+<pre><code>type Auth_Mode is ...;
+type AP_Record is record ... end record;
+type AP_List   is array (Positive range &lt;&gt;) of AP_Record;
+
+procedure Initialize (...);
+procedure Scan       (...);
+procedure Connect    (...);
+function  Connected        return Boolean;
+function  Current_Channel  return Natural;</code></pre>
+
+<p class="warn"><strong>Not re-entrant.</strong> This package drives a single
+radio and one caller &mdash; typically the environment task &mdash; owns it. Do
+not call <code>Scan</code> and <code>Connect</code> from two tasks.</p>
+
+<p class="note"><code>Connect</code> returns as soon as the association is
+<em>started</em>. The association and the 4-way handshake then run to completion
+on the internal Wi-Fi task, so poll <code>Connected</code> to learn when the link
+is actually up. Treating <code>Connect</code>'s return as "we are on the network"
+is the mistake to avoid.</p>
+
+<p>The version-locked C structs stay in the body; the spec exposes clean Ada
+records, so a blob update cannot ripple into your code. Examples run scan,
+promiscuous sniffing, DNS, HTTP and full HTTPS over the radio.</p>
+"""),
+
+dict(
+slug="43-modbus",
+nav="Modbus TCP",
+title="Modbus TCP: master and slave",
+lede="An industrial protocol on the socket facade &mdash; and a library that "
+     "deliberately owns none of your data.",
+body="""
+<h2>The data model, not stored here</h2>
+
+<p>Modbus is big-endian on the wire, with four tables: coils (1-bit read/write),
+discrete inputs, input registers and holding registers.</p>
+
+<p class="note"><strong>This library never stores any of them.</strong> The
+application owns its data: the master fills caller-supplied buffers, and the
+slave is implemented by <em>deriving</em> from <code>Modbus.Slave.Server</code>
+and overriding the accessors. That is the right split for an embedded device
+&mdash; your registers are usually views onto real state (a sensor reading, a
+relay's position), not a block of memory that happens to be addressed twice.</p>
+
+<h2>Master and slave</h2>
+
+<ul>
+  <li><strong><code>Modbus.Master</code></strong> &mdash; the client. Reads and
+      writes the four tables against a remote device, returning a status rather
+      than raising, so a dropped link is an ordinary control-flow case.</li>
+  <li><strong><code>Modbus.Slave</code></strong> &mdash; the server. You derive
+      the tagged type and put your data in the extension, so the library never
+      needs to know its shape or size.</li>
+</ul>
+
+<h2>Written against the facade</h2>
+
+<p>Like <a href="40-dns-ntp.html">DNS and NTP</a>, Modbus is written entirely
+against <a href="39-net-stack.html">GNAT.Sockets</a>, so the same source runs on
+a desktop and on the board. That is what makes an industrial protocol testable
+without a PLC on the bench: run the slave on a host, point a standard Modbus
+client at it, and you have exercised the wire format before any hardware is
+involved.</p>
+
+<p>On a multi-interface board, a Modbus connection follows
+<a href="39-net-stack.html">the routing table</a> like any other socket, or can
+be pinned to one interface &mdash; which is what you want when the PLC network is
+deliberately separate from the internet-facing one.</p>
+"""),
+
+dict(
+slug="44-debugging",
 nav="Debugging",
 title="Debugging: GDB over the same cable",
 lede="The USB-Serial-JTAG port is both the console and a JTAG debug interface, "
@@ -3709,7 +4076,7 @@ unrelated.</p>
 
 # ---------------------------------------------------------------- 13
 dict(
-slug="40-troubleshooting",
+slug="45-troubleshooting",
 nav="Troubleshooting &amp; next steps",
 title="Troubleshooting, and where to go next",
 lede="The failure modes worth recognising on sight, a one-screen cheat sheet, "
@@ -4239,7 +4606,7 @@ PAGE = """<!DOCTYPE html>
 INDEX_BODY = """
     <p class="eyebrow">Start here</p>
     <h1>{site}</h1>
-    <p class="lede">{tagline} Forty short steps, one aspect each, from a
+    <p class="lede">{tagline} Forty-five short steps, one aspect each, from a
     blank machine to your own Ada application running on both cores.</p>
 
     <p>The ESP32-S3 is normally programmed through Espressif's ESP-IDF: a large
@@ -4255,8 +4622,9 @@ INDEX_BODY = """
     how to configure it. Steps 10 and 11 are your own project and the driver
     library. Steps 12 to 28 are the chip's own peripherals and 29 to 38 the
     external devices the SDK drives &mdash; start with whichever your board
-    actually has. Steps 39 and 40 are the debugger and what to do when something
-    goes wrong.</p>
+    actually has. Steps 39 to 43 are the networking stack, from sockets up
+    through TLS and Wi-Fi. Steps 44 and 45 are the debugger and what to do when
+    something goes wrong.</p>
 
     <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
 
@@ -4311,8 +4679,13 @@ BLURBS = {
     "36-tlv2556":         "A pipelined SPI ADC whose result belongs to the previous request.",
     "37-gps":             "A background task decoding NMEA into a protected store that timestamps its own staleness.",
     "38-w5500":           "Ethernet with the TCP/IP stack in silicon, layered up to a GNAT.Sockets facade.",
-    "39-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
-    "40-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
+    "39-net-stack":       "One GNAT.Sockets subset over several possible NICs, with longest-prefix routing and failover.",
+    "40-dns-ntp":         "DNS and NTP written against the socket facade, so the same source runs on host and board.",
+    "41-tls":             "A complete TLS 1.3 client in Ada: ECDHE, chain validation to a pinned root, resumption.",
+    "42-wifi":            "Pure Ada around three fetched Apache-2.0 blobs, with the WPA2 handshake kept out of them.",
+    "43-modbus":          "Industrial master and slave on the socket facade, owning none of your data.",
+    "44-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
+    "45-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
 }
 
 

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Getting the code (submodules are not optional) &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="The Ada runtime is assembled from two git submodules. Clone without them and the first build fails with a message about XTENSA_GNU_CONFIG that will not obviously mean “you forgot --recurse-submodules”.">
+<title>Modbus TCP: master and slave &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="An industrial protocol on the socket facade &mdash; and a library that deliberately owns none of your data.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -24,7 +24,7 @@
     <ol>
       <li><a href="01-what-you-need.html">What you need</a></li>
       <li><a href="02-toolchain.html">Installing the toolchain</a></li>
-      <li class="current"><a href="03-clone.html" aria-current="page">Getting the code</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
       <li><a href="04-board.html">Board and serial port</a></li>
       <li><a href="05-first-blink.html">Your first blink</a></li>
       <li><a href="06-anatomy.html">Reset to Main</a></li>
@@ -64,67 +64,57 @@
       <li><a href="40-dns-ntp.html">DNS &amp; NTP</a></li>
       <li><a href="41-tls.html">TLS 1.3</a></li>
       <li><a href="42-wifi.html">Wi-Fi</a></li>
-      <li><a href="43-modbus.html">Modbus TCP</a></li>
+      <li class="current"><a href="43-modbus.html" aria-current="page">Modbus TCP</a></li>
       <li><a href="44-debugging.html">Debugging</a></li>
       <li><a href="45-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
     </ol>
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="02-toolchain.html">&larr; Installing the toolchain</a><a href="04-board.html">Board and serial port &rarr;</a></nav>
-    <p class="eyebrow">Step 03 of 45</p>
-    <h1>Getting the code (submodules are not optional)</h1>
-    <p class="lede">The Ada runtime is assembled from two git submodules. Clone without them and the first build fails with a message about <code>XTENSA_GNU_CONFIG</code> that will not obviously mean “you forgot <code>--recurse-submodules</code>”.</p>
+    <nav class="pager-top"><a href="42-wifi.html">&larr; Wi-Fi</a><a href="44-debugging.html">Debugging &rarr;</a></nav>
+    <p class="eyebrow">Step 43 of 45</p>
+    <h1>Modbus TCP: master and slave</h1>
+    <p class="lede">An industrial protocol on the socket facade &mdash; and a library that deliberately owns none of your data.</p>
 
-<h2>Clone it</h2>
+<h2>The data model, not stored here</h2>
 
-<pre><code>cd ~
-git clone --recurse-submodules \
-    https://github.com/rowsail/ada_esp32s3.git
-cd ada_esp32s3</code></pre>
+<p>Modbus is big-endian on the wire, with four tables: coils (1-bit read/write),
+discrete inputs, input registers and holding registers.</p>
 
-<p>Already cloned it the ordinary way? Repair it in place:</p>
+<p class="note"><strong>This library never stores any of them.</strong> The
+application owns its data: the master fills caller-supplied buffers, and the
+slave is implemented by <em>deriving</em> from <code>Modbus.Slave.Server</code>
+and overriding the accessors. That is the right split for an embedded device
+&mdash; your registers are usually views onto real state (a sensor reading, a
+relay's position), not a block of memory that happens to be addressed twice.</p>
 
-<pre><code>git submodule update --init --recursive</code></pre>
-
-<h2>What the two submodules are</h2>
+<h2>Master and slave</h2>
 
 <ul>
-  <li><strong><code>bb-runtimes</code></strong> &mdash; AdaCore's bare-board
-      runtime sources, forked here to add an <code>esp32s3</code> board. This is
-      the raw material the Ada runtime is generated from.</li>
-  <li><strong><code>xtensa-dynconfig</code></strong> &mdash; the Xtensa
-      core-configuration plugin that GNAT's Xtensa back end loads at runtime to
-      learn the shape of this particular core. Building it is what needs the
-      host C compiler, and it happens exactly once.</li>
+  <li><strong><code>Modbus.Master</code></strong> &mdash; the client. Reads and
+      writes the four tables against a remote device, returning a status rather
+      than raising, so a dropped link is an ordinary control-flow case.</li>
+  <li><strong><code>Modbus.Slave</code></strong> &mdash; the server. You derive
+      the tagged type and put your data in the extension, so the library never
+      needs to know its shape or size.</li>
 </ul>
 
-<h2>What is in the tree</h2>
+<h2>Written against the facade</h2>
 
-<pre><code>crates/
-  esp32s3_rts/      the GNAT runtime crate (3 profiles) + gen_runtime.sh
-  bb-runtimes/      AdaCore bb-runtimes fork with the esp32s3 board (submodule)
-  xtensa-dynconfig/ the Xtensa core-config plugin the toolchain needs
-libs/
-  esp32s3_hal/      the reusable peripheral HAL + pure-Ada ext4/FAT16
-examples/           the flashable examples (each owns its board.ads)
-  common/bare/      the shared FreeRTOS-free boot (bootloader, start.S, glue)
-book/               the long-form guide (LaTeX sources + main.pdf)
-x, export.sh        the ./x dispatcher and the esp32-ada launcher</code></pre>
+<p>Like <a href="40-dns-ntp.html">DNS and NTP</a>, Modbus is written entirely
+against <a href="39-net-stack.html">GNAT.Sockets</a>, so the same source runs on
+a desktop and on the board. That is what makes an industrial protocol testable
+without a PLC on the bench: run the slave on a host, point a standard Modbus
+client at it, and you have exercised the wire format before any hardware is
+involved.</p>
 
-<p>Two entry points matter for now. <code>./x</code> at the repository root
-drives every example <em>inside</em> the clone. <code>export.sh</code> turns the
-clone into an SDK you can build your own projects against from anywhere on disk
-&mdash; that is <a href="10-own-project.html">step 10</a>.</p>
-
-<p class="note">Nothing is downloaded at build time except the Alire toolchains
-themselves. The one exception is the optional Wi-Fi driver, whose lower-MAC and
-PHY blobs are Apache-2.0 binaries fetched (not committed) by
-<code>tools/fetch-wifi-blobs.sh</code>, pinned to exact upstream commits and
-verified by sha256.</p>
+<p>On a multi-interface board, a Modbus connection follows
+<a href="39-net-stack.html">the routing table</a> like any other socket, or can
+be pinned to one interface &mdash; which is what you want when the PLC network is
+deliberately separate from the internet-facing one.</p>
     <nav class="pager">
-      <a class="prev" href="02-toolchain.html"><span class="dir">&larr; Previous</span><span class="name">Installing the toolchain</span></a>
-      <a class="next" href="04-board.html"><span class="dir">Next &rarr;</span><span class="name">Board and serial port</span></a>
+      <a class="prev" href="42-wifi.html"><span class="dir">&larr; Previous</span><span class="name">Wi-Fi</span></a>
+      <a class="next" href="44-debugging.html"><span class="dir">Next &rarr;</span><span class="name">Debugging</span></a>
     </nav>
 
   </main>

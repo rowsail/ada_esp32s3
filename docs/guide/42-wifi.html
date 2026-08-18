@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wi-Fi: pure Ada around three binary blobs &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="The one place the from-scratch claim has an asterisk &mdash; and the asterisk is smaller, and better fenced, than you would expect.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-display-touch.html">Display &amp; touch</a></li>
+      <li><a href="30-es8311.html">ES8311 codec</a></li>
+      <li><a href="31-sensors.html">IMU &amp; environment</a></li>
+      <li><a href="32-pcf85063a.html">PCF85063A RTC</a></li>
+      <li><a href="33-expanders.html">Port expanders</a></li>
+      <li><a href="34-tx1812.html">TX1812 LEDs</a></li>
+      <li><a href="35-memory.html">Flash, EEPROM &amp; FRAM</a></li>
+      <li><a href="36-tlv2556.html">TLV2556 ADC</a></li>
+      <li><a href="37-gps.html">GPS receiver</a></li>
+      <li><a href="38-w5500.html">W5500 Ethernet</a></li>
+      <li><a href="39-net-stack.html">The network stack</a></li>
+      <li><a href="40-dns-ntp.html">DNS &amp; NTP</a></li>
+      <li><a href="41-tls.html">TLS 1.3</a></li>
+      <li class="current"><a href="42-wifi.html" aria-current="page">Wi-Fi</a></li>
+      <li><a href="43-modbus.html">Modbus TCP</a></li>
+      <li><a href="44-debugging.html">Debugging</a></li>
+      <li><a href="45-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="41-tls.html">&larr; TLS 1.3</a><a href="43-modbus.html">Modbus TCP &rarr;</a></nav>
+    <p class="eyebrow">Step 42 of 45</p>
+    <h1>Wi-Fi: pure Ada around three binary blobs</h1>
+    <p class="lede">The one place the from-scratch claim has an asterisk &mdash; and the asterisk is smaller, and better fenced, than you would expect.</p>
+
+<h2>What is a blob and what is not</h2>
+
+<p>The radio's MAC and PHY are undocumented, so the driver runs Espressif's
+closed libraries (<code>libnet80211</code>, <code>libpp</code>,
+<code>libphy</code>, <code>libcore</code>). Everything <em>around</em> them is
+Ada written against the embedded (Jorvik) runtime:</p>
+
+<table>
+  <thead><tr><th>Ours, in Ada</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>.OS_Adapter</code>, <code>.RTOS</code></td>
+        <td>Maps the blobs' RTOS calls onto Jorvik tasks &mdash; so
+            <strong>FreeRTOS still never runs</strong>.</td></tr>
+    <tr><td><code>.PHY</code></td><td>PHY/RF calibration, and persisting calibration data.</td></tr>
+    <tr><td><code>.Supplicant</code></td><td>The WPA2-PSK 4-way handshake.</td></tr>
+    <tr><td><code>.IP</code>, <code>.DHCP</code>, <code>.Net_Device</code></td>
+        <td>A software TCP/IP stack presenting the radio as a
+            <a href="39-net-stack.html">Net_Device</a>.</td></tr>
+    <tr><td><code>.Interrupt</code>, <code>.Port</code>, <code>.Core_Shim</code></td>
+        <td>The interrupt, timer and core glue the blobs expect.</td></tr>
+    <tr><td><code>.Sniffer</code></td><td>Promiscuous-mode capture.</td></tr>
+  </tbody>
+</table>
+
+<p class="note">The blobs are <strong>Apache-2.0 and fetched, not committed</strong>
+&mdash; <code>tools/fetch-wifi-blobs.sh</code> pins them to exact upstream
+commits and verifies each by sha256. So the repository still contains no opaque
+vendor binary for Wi-Fi; you choose to download them.</p>
+
+<h2>The supplicant is ours, deliberately</h2>
+
+<p>The 4-way handshake is pure Ada: derive the PMK with PBKDF2-HMAC-SHA1, run the
+handshake (PTK via SHA1-PRF, MIC via HMAC-SHA1, GTK via AES key-unwrap), and
+reply with message 2 of 4.</p>
+
+<p class="warn">That placement is the security-relevant part. Doing the handshake
+in Ada means <strong>your PSK and the derived keys never pass through blob
+code</strong> &mdash; the blob is handed an already-established association, not
+your passphrase. A driver that let the closed library do WPA2 would be trusting
+it with the one secret that matters.</p>
+
+<h2>Using it</h2>
+
+<pre><code>type Auth_Mode is ...;
+type AP_Record is record ... end record;
+type AP_List   is array (Positive range &lt;&gt;) of AP_Record;
+
+procedure Initialize (...);
+procedure Scan       (...);
+procedure Connect    (...);
+function  Connected        return Boolean;
+function  Current_Channel  return Natural;</code></pre>
+
+<p class="warn"><strong>Not re-entrant.</strong> This package drives a single
+radio and one caller &mdash; typically the environment task &mdash; owns it. Do
+not call <code>Scan</code> and <code>Connect</code> from two tasks.</p>
+
+<p class="note"><code>Connect</code> returns as soon as the association is
+<em>started</em>. The association and the 4-way handshake then run to completion
+on the internal Wi-Fi task, so poll <code>Connected</code> to learn when the link
+is actually up. Treating <code>Connect</code>'s return as "we are on the network"
+is the mistake to avoid.</p>
+
+<p>The version-locked C structs stay in the body; the spec exposes clean Ada
+records, so a blob update cannot ripple into your code. Examples run scan,
+promiscuous sniffing, DNS, HTTP and full HTTPS over the radio.</p>
+    <nav class="pager">
+      <a class="prev" href="41-tls.html"><span class="dir">&larr; Previous</span><span class="name">TLS 1.3</span></a>
+      <a class="next" href="43-modbus.html"><span class="dir">Next &rarr;</span><span class="name">Modbus TCP</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

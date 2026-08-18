@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DNS and NTP: portable by construction &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Two clients written entirely against GNAT.Sockets, so the same source runs on a desktop and on the board &mdash; and one shared concurrency wrinkle worth knowing.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-display-touch.html">Display &amp; touch</a></li>
+      <li><a href="30-es8311.html">ES8311 codec</a></li>
+      <li><a href="31-sensors.html">IMU &amp; environment</a></li>
+      <li><a href="32-pcf85063a.html">PCF85063A RTC</a></li>
+      <li><a href="33-expanders.html">Port expanders</a></li>
+      <li><a href="34-tx1812.html">TX1812 LEDs</a></li>
+      <li><a href="35-memory.html">Flash, EEPROM &amp; FRAM</a></li>
+      <li><a href="36-tlv2556.html">TLV2556 ADC</a></li>
+      <li><a href="37-gps.html">GPS receiver</a></li>
+      <li><a href="38-w5500.html">W5500 Ethernet</a></li>
+      <li><a href="39-net-stack.html">The network stack</a></li>
+      <li class="current"><a href="40-dns-ntp.html" aria-current="page">DNS &amp; NTP</a></li>
+      <li><a href="41-tls.html">TLS 1.3</a></li>
+      <li><a href="42-wifi.html">Wi-Fi</a></li>
+      <li><a href="43-modbus.html">Modbus TCP</a></li>
+      <li><a href="44-debugging.html">Debugging</a></li>
+      <li><a href="45-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="39-net-stack.html">&larr; The network stack</a><a href="41-tls.html">TLS 1.3 &rarr;</a></nav>
+    <p class="eyebrow">Step 40 of 45</p>
+    <h1>DNS and NTP: portable by construction</h1>
+    <p class="lede">Two clients written entirely against <code>GNAT.Sockets</code>, so the same source runs on a desktop and on the board &mdash; and one shared concurrency wrinkle worth knowing.</p>
+
+<h2>One line to resolve a name</h2>
+
+<pre><code>function Resolve (...) return ...;    --  Net_Resolver</code></pre>
+
+<p><code>Net_Resolver</code> turns a host name into an address whatever is
+carrying the traffic. Resolution is <strong>a real DNS query of our own</strong>
+&mdash; a UDP A-record request that <code>DNS_Client</code> issues over
+<a href="39-net-stack.html">GNAT.Sockets</a> &mdash; so it works identically over
+Ethernet, Wi-Fi, cellular, or whatever the routing table points at.</p>
+
+<p class="note"><strong>Why not use the modem's own resolver?</strong> Because
+one was tried and removed. The BG95's <code>AT+QIDNSGIP</code> silently refused
+answers whose shape it did not like &mdash; a CNAME chain onto several A records
+failed where a bare A record resolved. Doing DNS ourselves means one code path
+with predictable behaviour, rather than a per-modem set of quirks.</p>
+
+<p><code>DNS_Client</code> offers both <code>Resolve</code> (UDP) and
+<code>Resolve_TCP</code>, the latter for answers too large for a datagram.
+<code>NTP_Client.Query</code> is the same shape &mdash; a UDP query reading the
+transmit timestamp out of the reply &mdash; with <code>To_UTC</code> to convert
+it.</p>
+
+<h2>Portability is the point</h2>
+
+<p>Neither client contains anything chip-specific. On the board you call
+<code>GNAT.Sockets.Initialize (Device)</code> once during bring-up; on a desktop
+sockets are always usable. The same source then compiles in both places, which
+is what lets these be tested on a host rather than only on hardware.</p>
+
+<h2>The shared wrinkle</h2>
+
+<p class="warn"><strong>Both keep package-global rotors</strong> &mdash; the
+transaction id and the default source port for DNS, a source-port counter for
+NTP. Concurrent calls from several tasks corrupt nothing, but two in-flight
+queries can land on the same source port, and one then fails its reply check.
+That surfaces as a <em>failed lookup</em>, not an exception or corruption. If you
+resolve from more than one task, either serialise the calls or accept the
+retry.</p>
+
+<p class="note">The source-port rotation is not incidental &mdash; a fixed source
+port is what made an earlier cellular setup fail, because the carrier's NAT
+poisoned the flow. Rotating ports is a deliberate hardening measure, and the
+collision above is its small cost.</p>
+    <nav class="pager">
+      <a class="prev" href="39-net-stack.html"><span class="dir">&larr; Previous</span><span class="name">The network stack</span></a>
+      <a class="next" href="41-tls.html"><span class="dir">Next &rarr;</span><span class="name">TLS 1.3</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

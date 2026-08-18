@@ -165,6 +165,19 @@ for path in pages:
     for m in re.finditer(r"&(?!#?\w+;)", src):
         ctx = src[max(0, m.start() - 40):m.start() + 15].replace("\n", " ")
         bad.append("%s: bare '&' -- ...%s..." % (name, ctx))
+    #  Numbering drift: a page's filename must agree with the step number it
+    #  prints, and a routing-table row's number must agree with the slug it
+    #  links to.  Renumbering has silently desynchronised both before.
+    m = re.match(r"(\d+)-", name)
+    step = re.search(r"Step (\d+) of (\d+)", src)
+    if m and step and m.group(1) != step.group(1):
+        bad.append("%s: filename says step %s, page says step %s"
+                   % (name, m.group(1), step.group(1)))
+    for row in re.finditer(r'<tr><td>(\d+)</td><td><a href="(\d+)-', src):
+        if row.group(1) != row.group(2):
+            bad.append("%s: table row numbered %s links to step %s"
+                       % (name, row.group(1), row.group(2)))
+
     for attr in ("href", "src"):
         for m in re.finditer(r'%s="([^"]+)"' % attr, src):
             ref = m.group(1)
@@ -178,7 +191,7 @@ if bad:
     if len(bad) > 25:
         print("  ... and %d more" % (len(bad) - 25))
     sys.exit(1)
-print("  ok    %d pages: tags balanced, entities escaped, links resolve" % len(pages))
+print("  ok    %d pages: tags balanced, entities escaped, links resolve, numbering consistent" % len(pages))
 PYHTML
 
 printf '\n\033[32mPASS\033[0m  the guide compiles, its API is current, and the HTML is sound\n'
