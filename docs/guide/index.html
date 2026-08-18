@@ -50,8 +50,18 @@
       <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
       <li><a href="27-sd.html">SD cards</a></li>
       <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
-      <li><a href="29-debugging.html">Debugging</a></li>
-      <li><a href="30-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+      <li><a href="29-display-touch.html">Display &amp; touch</a></li>
+      <li><a href="30-es8311.html">ES8311 codec</a></li>
+      <li><a href="31-sensors.html">IMU &amp; environment</a></li>
+      <li><a href="32-pcf85063a.html">PCF85063A RTC</a></li>
+      <li><a href="33-expanders.html">Port expanders</a></li>
+      <li><a href="34-tx1812.html">TX1812 LEDs</a></li>
+      <li><a href="35-memory.html">Flash, EEPROM &amp; FRAM</a></li>
+      <li><a href="36-tlv2556.html">TLV2556 ADC</a></li>
+      <li><a href="37-gps.html">GPS receiver</a></li>
+      <li><a href="38-w5500.html">W5500 Ethernet</a></li>
+      <li><a href="39-debugging.html">Debugging</a></li>
+      <li><a href="40-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
     </ol>
   </nav>
 
@@ -59,7 +69,7 @@
 
     <p class="eyebrow">Start here</p>
     <h1>Bare-Metal Ada on the ESP32-S3</h1>
-    <p class="lede">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python. Thirty short steps, one aspect each, from a
+    <p class="lede">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python. Forty short steps, one aspect each, from a
     blank machine to your own Ada application running on both cores.</p>
 
     <p>The ESP32-S3 is normally programmed through Espressif's ESP-IDF: a large
@@ -73,9 +83,10 @@
     <p>Each page below covers exactly one thing, and each links to the next.
     Steps 1 to 5 get an LED blinking. Steps 6 to 9 explain what you just did and
     how to configure it. Steps 10 and 11 are your own project and the driver
-    library. Steps 12 to 28 are the peripherals, one at a time &mdash; start with
-    whichever one your board actually has. Steps 29 and 30 are the debugger and
-    what to do when something goes wrong.</p>
+    library. Steps 12 to 28 are the chip's own peripherals and 29 to 38 the
+    external devices the SDK drives &mdash; start with whichever your board
+    actually has. Steps 39 and 40 are the debugger and what to do when something
+    goes wrong.</p>
 
     <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
 
@@ -109,8 +120,18 @@
       <li><a href="26-crypto.html">Hardware crypto, and one honest caveat</a><p>SHA, AES and RSA acceleration, MD5 for flash verification, and why the RNG is not a CSPRNG here.</p></li>
       <li><a href="27-sd.html">SD cards: two hosts, one API shape</a><p>SPI transport versus the native SD bus, and why the faster one runs on the lean runtime.</p></li>
       <li><a href="28-chip-id.html">Chip identity: die temperature and the eFuse MAC</a><p>Die temperature (not ambient) and the four factory MACs in eFuse.</p></li>
-      <li><a href="29-debugging.html">Debugging: GDB over the same cable</a><p>OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.</p></li>
-      <li><a href="30-troubleshooting.html">Troubleshooting, and where to go next</a><p>The failure modes worth recognising on sight, a cheat sheet, and where to read next.</p></li>
+      <li><a href="29-display-touch.html">ST7789 display and GT911 touch</a><p>A write-only SPI panel you cannot probe, and a touch chip whose address is set at reset.</p></li>
+      <li><a href="30-es8311.html">ES8311: the audio codec</a><p>Control over I2C, audio over I2S, and the 256x MCLK ratio the codec depends on.</p></li>
+      <li><a href="31-sensors.html">Sensors: the QMI8658C IMU and SHT41</a><p>A register-mapped IMU and a command-based humidity sensor, and how each flags a bad reading.</p></li>
+      <li><a href="32-pcf85063a.html">PCF85063A: a clock that tells you when not to trust it</a><p>A typed BCD calendar, an alarm, and the oscillator-stop flag that says do not trust me.</p></li>
+      <li><a href="33-expanders.html">Port expanders: TCA9555, CH422G and HC595</a><p>Per-pin control, an all-or-nothing direction bit, and a shift register with no readback.</p></li>
+      <li><a href="34-tx1812.html">TX1812: addressable LEDs from RMT symbols</a><p>LED timing generated as RMT symbols, with the strip sized at elaboration.</p></li>
+      <li><a href="35-memory.html">Off-chip memory: NOR flash, EEPROM and FRAM</a><p>NOR flash, the 24C EEPROM catalogue and FRAM — three technologies, three bargains.</p></li>
+      <li><a href="36-tlv2556.html">TLV2556: a pipelined external ADC</a><p>A pipelined SPI ADC whose result belongs to the previous request.</p></li>
+      <li><a href="37-gps.html">GPS: a background service, not a device handle</a><p>A background task decoding NMEA into a protected store that timestamps its own staleness.</p></li>
+      <li><a href="38-w5500.html">W5500: Ethernet with the stack on the chip</a><p>Ethernet with the TCP/IP stack in silicon, layered up to a GNAT.Sockets facade.</p></li>
+      <li><a href="39-debugging.html">Debugging: GDB over the same cable</a><p>OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.</p></li>
+      <li><a href="40-troubleshooting.html">Troubleshooting, and where to go next</a><p>The failure modes worth recognising on sight, a cheat sheet, and where to read next.</p></li>
     </ol>
 
     <footer class="site">

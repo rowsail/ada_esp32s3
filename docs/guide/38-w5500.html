@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>W5500: Ethernet with the stack on the chip &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="A hardwired TCP/IP controller with eight hardware sockets &mdash; and a layered driver that ends up looking like GNAT.Sockets.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-display-touch.html">Display &amp; touch</a></li>
+      <li><a href="30-es8311.html">ES8311 codec</a></li>
+      <li><a href="31-sensors.html">IMU &amp; environment</a></li>
+      <li><a href="32-pcf85063a.html">PCF85063A RTC</a></li>
+      <li><a href="33-expanders.html">Port expanders</a></li>
+      <li><a href="34-tx1812.html">TX1812 LEDs</a></li>
+      <li><a href="35-memory.html">Flash, EEPROM &amp; FRAM</a></li>
+      <li><a href="36-tlv2556.html">TLV2556 ADC</a></li>
+      <li><a href="37-gps.html">GPS receiver</a></li>
+      <li class="current"><a href="38-w5500.html" aria-current="page">W5500 Ethernet</a></li>
+      <li><a href="39-debugging.html">Debugging</a></li>
+      <li><a href="40-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="37-gps.html">&larr; GPS receiver</a><a href="39-debugging.html">Debugging &rarr;</a></nav>
+    <p class="eyebrow">Step 38 of 40</p>
+    <h1>W5500: Ethernet with the stack on the chip</h1>
+    <p class="lede">A hardwired TCP/IP controller with eight hardware sockets &mdash; and a layered driver that ends up looking like GNAT.Sockets.</p>
+
+<h2>The stack is not yours</h2>
+
+<p>The WIZnet W5500 is an SPI slave carrying an on-chip 10/100 PHY, a MAC,
+<strong>and a hardwired TCP/IP stack</strong> exposing eight independent hardware
+sockets. You are not writing a TCP implementation against it; you are driving one
+that already exists in silicon.</p>
+
+<p>The driver is built in layers, which is worth knowing because it decides
+which package you should be reaching for:</p>
+
+<table>
+  <thead><tr><th>Layer</th><th>What it gives you</th></tr></thead>
+  <tbody>
+    <tr><td><code>ESP32S3.W5500</code></td>
+        <td>The SPI frame transport, hardware/software reset, common registers
+            (identity, network config) and PHY link status.</td></tr>
+    <tr><td><code>.Sockets</code></td>
+        <td>The socket engine: TCP and UDP over the eight hardware sockets, with
+            a self-contained <code>Socket</code> handle and a
+            <code>Status</code> error model.</td></tr>
+    <tr><td><code>.DHCP</code></td>
+        <td>A minimal DHCP client &mdash; a software protocol over UDP, so it
+            sits above the socket engine rather than in the chip.</td></tr>
+    <tr><td><code>.Net_Device</code></td>
+        <td>The W5500 as a concrete <code>Net_Devices.Device</code>, so it can
+            back the chip-neutral <code>GNAT.Sockets</code> facade.</td></tr>
+    <tr><td><code>.Interrupts</code></td>
+        <td>The INTn line. The base layer configures it as a pulled-up input but
+            does not use it &mdash; the first pass is polling.</td></tr>
+  </tbody>
+</table>
+
+<h2>The SPI frame, and why CS is a GPIO</h2>
+
+<p>Every access is one frame in Variable Length Data Mode: a 16-bit offset, a
+control byte, then N data bytes, with the offset auto-incrementing inside the
+frame. VDM keeps the bus shareable rather than demanding an exclusive
+transaction per register.</p>
+
+<p class="note">CS is driven as a <strong>plain GPIO, not routed to the SPI
+peripheral</strong> &mdash; exactly as with <a href="27-sd.html">SD over
+SPI</a> &mdash; because it has to be held low across all three phases of the
+frame, and the peripheral's own CS pulses per transfer. Another concrete case for
+<a href="14-spi.html">SPI's <code>CS_Pin</code></a>. The chip runs in SPI mode
+0.</p>
+
+<h2>Two levels of concurrency</h2>
+
+<p>Each frame takes the SPI host's session for its own transfer and releases it
+&mdash; the "lock the bus only as long as necessary" idiom shared with the other
+SPI drivers &mdash; so every W5500 access is atomic against any other task or
+device on that bus.</p>
+
+<p>The socket layer then adds <strong>per-socket ownership</strong> on top. The
+eight sockets are genuinely independent, so different tasks can drive different
+sockets simultaneously, with the transport serialising the shared bus
+underneath. That is the arrangement that makes a multi-socket application
+straightforward rather than a locking exercise.</p>
+
+<h2>What is not there yet</h2>
+
+<ul>
+  <li><strong>Polling, not interrupts.</strong> The blocking operations
+      &mdash; <code>Connect</code>, and <code>Send</code>'s completion &mdash;
+      poll. INTn is wired and configured but unused at this layer.</li>
+  <li><strong>DHCP has no renewal.</strong> <code>Acquire_Lease</code> is
+      one-shot; call it again before the lease expires, because nothing will do
+      it for you and the failure mode is a silently dead network.</li>
+</ul>
+
+<p>A useful pairing: give the W5500 its address from
+<a href="28-chip-id.html">the eFuse MAC block</a>'s <code>Ethernet</code> entry
+&mdash; a real manufacturer-assigned address rather than one you invented, which
+matters as soon as two of your boards share a segment.</p>
+    <nav class="pager">
+      <a class="prev" href="37-gps.html"><span class="dir">&larr; Previous</span><span class="name">GPS receiver</span></a>
+      <a class="next" href="39-debugging.html"><span class="dir">Next &rarr;</span><span class="name">Debugging</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

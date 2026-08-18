@@ -50,14 +50,24 @@
       <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
       <li><a href="27-sd.html">SD cards</a></li>
       <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
-      <li><a href="29-debugging.html">Debugging</a></li>
-      <li><a href="30-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+      <li><a href="29-display-touch.html">Display &amp; touch</a></li>
+      <li><a href="30-es8311.html">ES8311 codec</a></li>
+      <li><a href="31-sensors.html">IMU &amp; environment</a></li>
+      <li><a href="32-pcf85063a.html">PCF85063A RTC</a></li>
+      <li><a href="33-expanders.html">Port expanders</a></li>
+      <li><a href="34-tx1812.html">TX1812 LEDs</a></li>
+      <li><a href="35-memory.html">Flash, EEPROM &amp; FRAM</a></li>
+      <li><a href="36-tlv2556.html">TLV2556 ADC</a></li>
+      <li><a href="37-gps.html">GPS receiver</a></li>
+      <li><a href="38-w5500.html">W5500 Ethernet</a></li>
+      <li><a href="39-debugging.html">Debugging</a></li>
+      <li><a href="40-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
     </ol>
   </nav>
 
   <main>
     <nav class="pager-top"><a href="10-own-project.html">&larr; Your own project</a><a href="12-gpio.html">GPIO in depth &rarr;</a></nav>
-    <p class="eyebrow">Step 11 of 30</p>
+    <p class="eyebrow">Step 11 of 40</p>
     <h1>Talking to the hardware: the HAL</h1>
     <p class="lede">Twenty-five-plus drivers, each a private register engine hidden behind a task-safe gateway. Here is what using one looks like, and why they are shaped the way they are.</p>
 
@@ -200,6 +210,26 @@ are built on, <a href="16-gdma.html">GDMA</a>:</p>
     <tr><td>26</td><td><a href="26-crypto.html">Crypto &amp; RNG</a></td><td>SHA/AES/RSA, MD5's specific job, and the RNG caveat</td></tr>
     <tr><td>27</td><td><a href="27-sd.html">SD cards</a></td><td>Two hosts, one block API, different profile requirements</td></tr>
     <tr><td>28</td><td><a href="28-chip-id.html">Temperature &amp; MAC</a></td><td>Die temperature, and the four factory addresses</td></tr>
+  </tbody>
+</table>
+
+<p>Steps 29 to 38 then cover the <strong>external devices</strong> the SDK ships
+drivers for &mdash; parts on your board rather than inside the chip, each built
+on one of the buses above:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Device</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td>31</td><td><a href="29-display-touch.html">ST7789 &amp; GT911</a></td><td>SPI display and capacitive touch controller</td></tr>
+    <tr><td>32</td><td><a href="30-es8311.html">ES8311</a></td><td>Mono audio codec: I2C control, I2S audio</td></tr>
+    <tr><td>33</td><td><a href="31-sensors.html">QMI8658C &amp; SHT41</a></td><td>6-axis IMU, and temperature/humidity</td></tr>
+    <tr><td>34</td><td><a href="32-pcf85063a.html">PCF85063A</a></td><td>Real-time clock with an alarm</td></tr>
+    <tr><td>35</td><td><a href="33-expanders.html">TCA9555, CH422G, HC595</a></td><td>Port expanders and a shift register</td></tr>
+    <tr><td>36</td><td><a href="34-tx1812.html">TX1812</a></td><td>Addressable RGB LEDs</td></tr>
+    <tr><td>37</td><td><a href="35-memory.html">W25Q, 24C, FRAM</a></td><td>NOR flash, EEPROM catalogue, FRAM</td></tr>
+    <tr><td>38</td><td><a href="36-tlv2556.html">TLV2556</a></td><td>External 12-bit SPI ADC</td></tr>
+    <tr><td>39</td><td><a href="37-gps.html">GPS</a></td><td>NMEA receiver as a background service</td></tr>
+    <tr><td>40</td><td><a href="38-w5500.html">W5500</a></td><td>Ethernet with a hardwired TCP/IP stack</td></tr>
   </tbody>
 </table>
 

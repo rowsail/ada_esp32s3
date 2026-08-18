@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ES8311: the audio codec &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Control over I2C, audio over I2S, and a clocking relationship you have to get right &mdash; the ESP is the master, the codec follows.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-display-touch.html">Display &amp; touch</a></li>
+      <li class="current"><a href="30-es8311.html" aria-current="page">ES8311 codec</a></li>
+      <li><a href="31-sensors.html">IMU &amp; environment</a></li>
+      <li><a href="32-pcf85063a.html">PCF85063A RTC</a></li>
+      <li><a href="33-expanders.html">Port expanders</a></li>
+      <li><a href="34-tx1812.html">TX1812 LEDs</a></li>
+      <li><a href="35-memory.html">Flash, EEPROM &amp; FRAM</a></li>
+      <li><a href="36-tlv2556.html">TLV2556 ADC</a></li>
+      <li><a href="37-gps.html">GPS receiver</a></li>
+      <li><a href="38-w5500.html">W5500 Ethernet</a></li>
+      <li><a href="39-debugging.html">Debugging</a></li>
+      <li><a href="40-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="29-display-touch.html">&larr; Display &amp; touch</a><a href="31-sensors.html">IMU &amp; environment &rarr;</a></nav>
+    <p class="eyebrow">Step 30 of 40</p>
+    <h1>ES8311: the audio codec</h1>
+    <p class="lede">Control over I2C, audio over I2S, and a clocking relationship you have to get right &mdash; the ESP is the master, the codec follows.</p>
+
+<h2>Two buses, one device</h2>
+
+<p>The Everest ES8311 is a low-power mono codec that is <strong>controlled over
+I2C and carries audio over I2S</strong>. Both have to be right before a sound
+comes out, which is what makes it a more instructive device than it first
+looks.</p>
+
+<pre><code>subtype Address is ESP32S3.I2C.Slave_Address;   --  0x18 with CE/AD0 low, 0x19 with CE high</code></pre>
+
+<h2>The clocking relationship</h2>
+
+<p class="note">The ESP is the <strong>I2S master</strong> and generates MCLK,
+BCLK and WS; the codec runs as an <strong>I2S slave</strong> clocked from that
+MCLK. The driver fixes <code>MCLK = 256 &times; Sample_Rate</code> with 16-bit
+samples, and the register coefficients are calculated for that ratio &mdash; it
+is rate-independent, but not ratio-independent. This is why
+<a href="17-i2s.html">I2S</a>'s <code>Mclk</code> pin exists and why it is only
+available on I2S0.</p>
+
+<pre><code>procedure Setup (...; Sample_Rate : ...; Sda, Scl : ...; Asdout : ... := No_Pin;
+                 Ok : out Boolean);</code></pre>
+
+<p><code>Ok</code> is False if the codec never ACKed on I2C &mdash; the first
+thing to check is the address strap, since <code>0x18</code> and
+<code>0x19</code> differ only by the CE pin. <code>Asdout</code> is the codec's
+ADC data-out (the ESP's data-<em>in</em>): leave it <code>No_Pin</code> for
+output only, or wire it to bring up the microphone path as well, with PGA gain
+in 6&nbsp;dB steps from 0 to 42&nbsp;dB.</p>
+
+<h2>Playing</h2>
+
+<p>Audio output goes through a limited, controlled <code>Output</code> handle
+that owns the I2S port exclusively and releases it on scope exit. The playback
+calls mirror <a href="17-i2s.html">I2S</a>'s exactly, because they are built on
+them:</p>
+
+<table>
+  <thead><tr><th>Call</th><th>Use</th></tr></thead>
+  <tbody>
+    <tr><td><code>Play</code></td><td>One blocking buffer.</td></tr>
+    <tr><td><code>Play_Continuous</code></td><td>Self-looping DMA &mdash; a steady tone with no CPU involvement and no gap at the wrap.</td></tr>
+    <tr><td><code>Play_Stream</code> + <code>Await_Half</code></td><td>Gapless double-buffered playback: refill the half the hardware is not reading.</td></tr>
+    <tr><td><code>Capture</code> / <code>Capture_Stream</code> + <code>Await_Capture_Half</code></td><td>The microphone path, including while playback runs.</td></tr>
+    <tr><td><code>Duplex</code></td><td>Play and record simultaneously.</td></tr>
+  </tbody>
+</table>
+
+<pre><code>procedure Set_Volume (Percent : Natural; Ok : out Boolean);   --  0 .. 100, after Setup</code></pre>
+
+<p class="note">The register-init sequence and clock coefficients are ported from
+Espressif's own <code>es8311</code> driver &mdash; this is one place where the
+"from scratch" claim is honestly a port, because the sequence is a hardware
+recipe rather than a design decision.</p>
+    <nav class="pager">
+      <a class="prev" href="29-display-touch.html"><span class="dir">&larr; Previous</span><span class="name">Display &amp; touch</span></a>
+      <a class="next" href="31-sensors.html"><span class="dir">Next &rarr;</span><span class="name">IMU &amp; environment</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

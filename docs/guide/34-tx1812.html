@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TX1812: addressable LEDs from RMT symbols &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="A single-wire LED family driven by generating its pulse train in hardware &mdash; and a strip whose whole memory footprint is fixed at elaboration.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-display-touch.html">Display &amp; touch</a></li>
+      <li><a href="30-es8311.html">ES8311 codec</a></li>
+      <li><a href="31-sensors.html">IMU &amp; environment</a></li>
+      <li><a href="32-pcf85063a.html">PCF85063A RTC</a></li>
+      <li><a href="33-expanders.html">Port expanders</a></li>
+      <li class="current"><a href="34-tx1812.html" aria-current="page">TX1812 LEDs</a></li>
+      <li><a href="35-memory.html">Flash, EEPROM &amp; FRAM</a></li>
+      <li><a href="36-tlv2556.html">TLV2556 ADC</a></li>
+      <li><a href="37-gps.html">GPS receiver</a></li>
+      <li><a href="38-w5500.html">W5500 Ethernet</a></li>
+      <li><a href="39-debugging.html">Debugging</a></li>
+      <li><a href="40-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="33-expanders.html">&larr; Port expanders</a><a href="35-memory.html">Flash, EEPROM &amp; FRAM &rarr;</a></nav>
+    <p class="eyebrow">Step 34 of 40</p>
+    <h1>TX1812: addressable LEDs from RMT symbols</h1>
+    <p class="lede">A single-wire LED family driven by generating its pulse train in hardware &mdash; and a strip whose whole memory footprint is fixed at elaboration.</p>
+
+<h2>Timing as data</h2>
+
+<p>The TX1812 &mdash; like the WS2812 "NeoPixel" family &mdash; is a single-wire,
+daisy-chainable RGB LED. Twenty-four bits of colour are clocked in MSB-first as a
+precisely timed pulse train: a <code>1</code> is long-high/short-low, a
+<code>0</code> is short-high/long-low, and a low period over 80&nbsp;µs latches
+the frame.</p>
+
+<p>That is exactly the job <a href="20-rmt.html">RMT</a> exists for. The driver
+generates the waveform as <strong>one RMT symbol per data bit</strong>, so the
+timing is produced by hardware rather than by a delay loop that an interrupt
+could disturb.</p>
+
+<h2>A strip is sized at elaboration</h2>
+
+<pre><code>type Color is record ... end record;
+type Strip (Count : Positive) is limited private;</code></pre>
+
+<p class="note">The <code>Count</code> discriminant fixes the whole footprint:
+a <code>Strip</code> carries both the <code>Count</code>-pixel colour buffer
+<em>and</em> the <code>Count * 24</code> RMT-symbol frame buffer. Declaring
+<code>Panel : Strip (64)</code> reserves all of it at elaboration &mdash; no
+heap &mdash; and the linker verifies it fits. You find out at link time that a
+strip is too big for your RAM, not at run time.</p>
+
+<pre><code>procedure Acquire (...; Channel : ...; Pin : ...; Blocks : ...);
+function  Is_Valid (S : Strip) return Boolean;
+procedure Set     (S : in out Strip; Index : Positive; C : Color);   --  buffered
+procedure Set_All (S : in out Strip; C : Color);                     --  buffered
+procedure Show    (S : in out Strip);                                --  clock out + latch
+procedure Release (S : in out Strip);</code></pre>
+
+<p>A <code>Strip</code> is a claimed handle in the usual style: it takes an RMT
+transmit channel on <code>Acquire</code> and releases it on scope exit.
+<code>Set</code> and <code>Set_All</code> only write the buffer; nothing reaches
+the LEDs until <code>Show</code>.</p>
+
+<h2>The limitation, stated plainly</h2>
+
+<p class="warn"><strong>This driver currently drives a single LED.</strong> The
+underlying <code>RMT.Transmit</code> sends at most what fits in the channel's
+symbol RAM, so the practical case is <code>Strip (Count =&gt; 1)</code>; passing
+<code>Blocks</code> (1&nbsp;..&nbsp;4) borrows extra RMT RAM for roughly
+<code>Blocks * 2</code> LEDs &mdash; and borrowing blocks costs you the
+higher-numbered RMT channels, as <a href="20-rmt.html">step 20</a> explains.</p>
+
+<p>A longer string needs RMT wrap/refill support, which is a later step. The API
+is already shaped for it &mdash; <code>Count</code>, per-pixel <code>Set</code>
+&mdash; so only <code>Show</code>'s transport changes when it lands. Worth
+knowing before you design a panel around it.</p>
+    <nav class="pager">
+      <a class="prev" href="33-expanders.html"><span class="dir">&larr; Previous</span><span class="name">Port expanders</span></a>
+      <a class="next" href="35-memory.html"><span class="dir">Next &rarr;</span><span class="name">Flash, EEPROM &amp; FRAM</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

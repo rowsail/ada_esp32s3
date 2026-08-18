@@ -975,6 +975,26 @@ are built on, <a href="16-gdma.html">GDMA</a>:</p>
   </tbody>
 </table>
 
+<p>Steps 29 to 38 then cover the <strong>external devices</strong> the SDK ships
+drivers for &mdash; parts on your board rather than inside the chip, each built
+on one of the buses above:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Device</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td>31</td><td><a href="29-display-touch.html">ST7789 &amp; GT911</a></td><td>SPI display and capacitive touch controller</td></tr>
+    <tr><td>32</td><td><a href="30-es8311.html">ES8311</a></td><td>Mono audio codec: I2C control, I2S audio</td></tr>
+    <tr><td>33</td><td><a href="31-sensors.html">QMI8658C &amp; SHT41</a></td><td>6-axis IMU, and temperature/humidity</td></tr>
+    <tr><td>34</td><td><a href="32-pcf85063a.html">PCF85063A</a></td><td>Real-time clock with an alarm</td></tr>
+    <tr><td>35</td><td><a href="33-expanders.html">TCA9555, CH422G, HC595</a></td><td>Port expanders and a shift register</td></tr>
+    <tr><td>36</td><td><a href="34-tx1812.html">TX1812</a></td><td>Addressable RGB LEDs</td></tr>
+    <tr><td>37</td><td><a href="35-memory.html">W25Q, 24C, FRAM</a></td><td>NOR flash, EEPROM catalogue, FRAM</td></tr>
+    <tr><td>38</td><td><a href="36-tlv2556.html">TLV2556</a></td><td>External 12-bit SPI ADC</td></tr>
+    <tr><td>39</td><td><a href="37-gps.html">GPS</a></td><td>NMEA receiver as a background service</td></tr>
+    <tr><td>40</td><td><a href="38-w5500.html">W5500</a></td><td>Ethernet with a hardwired TCP/IP stack</td></tr>
+  </tbody>
+</table>
+
 <p class="warn"><strong>Verify on your own board.</strong> The drivers were
 exercised on an ESP32-S3 during development, but nothing has been re-verified as
 it ships. A few components &mdash; the SD drivers, the temperature sensor, the
@@ -2847,7 +2867,747 @@ these are safe to call from anywhere, at any time, under any profile.</p>
 """),
 
 dict(
-slug="29-debugging",
+slug="29-display-touch",
+nav="Display &amp; touch",
+title="ST7789 display and GT911 touch",
+lede="A write-only SPI display that cannot be probed, and a touch controller "
+     "whose I2C address depends on a pin level at reset &mdash; the two halves "
+     "of a touchscreen, each with its own trap.",
+body="""
+<h2>ST7789: no reads, no probe</h2>
+
+<p class="warn"><strong>The panel never talks back.</strong> The ST77xx SPI
+interface is write-only as wired here, so there is no status read and no way to
+probe for the device. If nothing appears, the driver cannot tell you whether the
+panel is absent, mis-wired or simply off &mdash; you get silence either way.
+Check wiring before suspecting code.</p>
+
+<p>Three GPIOs are driven directly by the driver: <strong>DC</strong>
+(data/command), <strong>CS</strong>, and an optional <strong>RST</strong>. Pass
+<code>No_Pin</code> for RST and it falls back to a software reset.</p>
+
+<pre><code>type Color is mod 2**16;                                   --  RGB565, MSB-first
+function RGB (R, G, B : Natural) return Color;             --  each 0 .. 255
+type Color_Array is array (Natural range &lt;&gt;) of Color;      --  row-major
+type Rotation is (Rot_0, Rot_90, Rot_180, Rot_270);</code></pre>
+
+<p>Bring-up is <code>Setup</code> (records the wiring and geometry, brings the
+SPI host up in mode 0) then <code>Acquire</code> for an exclusive session, then
+<code>Init</code> to run the power-on sequence.</p>
+
+<pre><code>procedure Init         (S : Session);
+procedure Display_On   (S : Session);
+procedure Set_Rotation (S : Session; Rot : Rotation);        --  sets MADCTL
+procedure Invert       (S : Session; On : Boolean);
+procedure Sleep        (S : Session; On : Boolean);
+
+procedure Fill        (S : Session; C : Color);
+procedure Fill_Rect   (S : Session; X, Y, W, H : Natural; C : Color);
+procedure Set_Pixel   (S : Session; X, Y : Natural; C : Color);
+procedure Draw_Bitmap (S : Session; X, Y, W, H : Natural; Pixels : Color_Array);</code></pre>
+
+<h2>Two levels of locking</h2>
+
+<p class="note">The display has <em>two</em> guards, not one. The
+<code>Session</code> owns the <strong>display</strong> exclusively, while each
+operation locks the <strong>SPI host</strong> only for its own transfer &mdash;
+so another device on the same bus can interleave between your drawing calls, and
+a long <code>Fill</code> does not monopolise the bus.</p>
+
+<p>Those per-display guards are a fixed library-level array keyed by the CS pin,
+since a GPIO uniquely identifies one display. That is why no protected object
+lives inside a <code>Device</code>, and why <code>Device</code> values are cheap
+to hold.</p>
+
+<h2>GT911: the address is decided at reset</h2>
+
+<p>A Goodix 5-point capacitive controller on I2C. It is a
+<strong>16-bit-register</strong> device: every transaction sends the register
+address MSB-first, then reads or writes a run of bytes from the chip's
+auto-incrementing pointer. Multi-byte values inside the map &mdash; coordinates,
+firmware version, output range &mdash; are <em>little</em>-endian, so the address
+and the payload disagree about byte order.</p>
+
+<p class="warn"><strong>The chip latches its I2C address from the INT level while
+RST is released:</strong> INT low gives <code>0x5D</code> (the usual module
+strapping), INT high gives <code>0x14</code>. This driver never drives INT or
+RST, because on many boards RST is not even on an ESP pin &mdash; the Waveshare
+ESP32-S3-Touch-LCD-7 routes it through a <a href="33-expanders.html">CH422G</a>
+expander with INT weakly low. Releasing reset is therefore board wiring you do
+once at startup, <em>before</em> touching the chip. Get the order wrong and the
+part answers at the other address, which looks exactly like a dead device.</p>
+
+<h2>Reading touches</h2>
+
+<pre><code>type Touch_State is record ... end record;    --  up to 5 points, each with a track id
+type Status is (OK, Bus_Error);
+
+procedure Read_Touches (Dev : Device; State : out Touch_State; Result : out Status);
+procedure Read_Product_Id, Read_Firmware_Version, Read_Resolution ...</code></pre>
+
+<p>The chip scans continuously and latches one report per scan cycle: a status
+register with a buffer-ready flag and point count, then up to five
+track-id/X/Y/size records. <code>Read_Touches</code> drains one report
+<em>and re-arms the latch</em> by writing the flag back to zero &mdash; so
+forgetting to call it stalls further reports rather than queueing them.</p>
+
+<p>The INT line pulses on every fresh report. Attach a handler with the
+<code>.Interrupts</code> child and call <code>Read_Touches</code> from a task it
+wakes &mdash; remembering the <a href="12-gpio.html">callback rules</a>: latch a
+flag in the handler, do the I2C work at task level, never from the ISR.</p>
+
+<p>Like <a href="13-i2c.html">I2C</a>'s other clients, the driver hard-codes no
+wiring: you tell <code>Setup</code> the host, the SDA/SCL pins, the optional INT
+pin and the address, and each operation opens a short-lived controlled session
+for one complete transaction.</p>
+"""),
+
+dict(
+slug="30-es8311",
+nav="ES8311 codec",
+title="ES8311: the audio codec",
+lede="Control over I2C, audio over I2S, and a clocking relationship you have "
+     "to get right &mdash; the ESP is the master, the codec follows.",
+body="""
+<h2>Two buses, one device</h2>
+
+<p>The Everest ES8311 is a low-power mono codec that is <strong>controlled over
+I2C and carries audio over I2S</strong>. Both have to be right before a sound
+comes out, which is what makes it a more instructive device than it first
+looks.</p>
+
+<pre><code>subtype Address is ESP32S3.I2C.Slave_Address;   --  0x18 with CE/AD0 low, 0x19 with CE high</code></pre>
+
+<h2>The clocking relationship</h2>
+
+<p class="note">The ESP is the <strong>I2S master</strong> and generates MCLK,
+BCLK and WS; the codec runs as an <strong>I2S slave</strong> clocked from that
+MCLK. The driver fixes <code>MCLK = 256 &times; Sample_Rate</code> with 16-bit
+samples, and the register coefficients are calculated for that ratio &mdash; it
+is rate-independent, but not ratio-independent. This is why
+<a href="17-i2s.html">I2S</a>'s <code>Mclk</code> pin exists and why it is only
+available on I2S0.</p>
+
+<pre><code>procedure Setup (...; Sample_Rate : ...; Sda, Scl : ...; Asdout : ... := No_Pin;
+                 Ok : out Boolean);</code></pre>
+
+<p><code>Ok</code> is False if the codec never ACKed on I2C &mdash; the first
+thing to check is the address strap, since <code>0x18</code> and
+<code>0x19</code> differ only by the CE pin. <code>Asdout</code> is the codec's
+ADC data-out (the ESP's data-<em>in</em>): leave it <code>No_Pin</code> for
+output only, or wire it to bring up the microphone path as well, with PGA gain
+in 6&nbsp;dB steps from 0 to 42&nbsp;dB.</p>
+
+<h2>Playing</h2>
+
+<p>Audio output goes through a limited, controlled <code>Output</code> handle
+that owns the I2S port exclusively and releases it on scope exit. The playback
+calls mirror <a href="17-i2s.html">I2S</a>'s exactly, because they are built on
+them:</p>
+
+<table>
+  <thead><tr><th>Call</th><th>Use</th></tr></thead>
+  <tbody>
+    <tr><td><code>Play</code></td><td>One blocking buffer.</td></tr>
+    <tr><td><code>Play_Continuous</code></td><td>Self-looping DMA &mdash; a steady tone with no CPU involvement and no gap at the wrap.</td></tr>
+    <tr><td><code>Play_Stream</code> + <code>Await_Half</code></td><td>Gapless double-buffered playback: refill the half the hardware is not reading.</td></tr>
+    <tr><td><code>Capture</code> / <code>Capture_Stream</code> + <code>Await_Capture_Half</code></td><td>The microphone path, including while playback runs.</td></tr>
+    <tr><td><code>Duplex</code></td><td>Play and record simultaneously.</td></tr>
+  </tbody>
+</table>
+
+<pre><code>procedure Set_Volume (Percent : Natural; Ok : out Boolean);   --  0 .. 100, after Setup</code></pre>
+
+<p class="note">The register-init sequence and clock coefficients are ported from
+Espressif's own <code>es8311</code> driver &mdash; this is one place where the
+"from scratch" claim is honestly a port, because the sequence is a hardware
+recipe rather than a design decision.</p>
+"""),
+
+dict(
+slug="31-sensors",
+nav="IMU &amp; environment",
+title="Sensors: the QMI8658C IMU and SHT41",
+lede="One register-mapped device and one command-based device &mdash; the two "
+     "shapes almost every I2C sensor takes, and how each reports that its "
+     "reading is trustworthy.",
+body="""
+<h2>The shared shape</h2>
+
+<p>Every I2C device driver here follows the same pattern, and it is worth stating
+once because it repeats across the rest of these pages:</p>
+
+<p class="note"><strong>The driver hard-codes no board wiring.</strong> You tell
+<code>Setup</code> which host, which SDA/SCL pins, optionally which INT pin, and
+the address; the <code>Device</code> remembers them. Each operation then opens a
+<em>short-lived</em> <a href="13-i2c.html">I2C session</a> for one complete
+transaction and lets it release the host on scope exit. So devices share a bus
+safely, and a fault mid-transaction cannot leak the lock. A <code>Device</code>
+is limited — it owns the wiring it was set up with and cannot be copied.</p>
+
+<h2>QMI8658C: a register-mapped IMU</h2>
+
+<p>A 6-axis part — 3-axis accelerometer plus 3-axis gyroscope. SA0 selects
+address <code>0x6A</code> or <code>0x6B</code>.</p>
+
+<pre><code>type Accel_Range is (Range_2G, Range_4G, Range_8G, Range_16G);
+type Gyro_Range  is ...;
+type Output_Rate is ...;
+type Axes        is record ... end record;
+type Status      is (OK, Bus_Error);
+
+procedure Read_Accelerometer (Dev : Device; A : out Axes; Result : out Status);
+procedure Read_Gyroscope     (Dev : Device; G : out Axes; Result : out Status);
+procedure Read_Temperature   (Dev : Device; Raw : out Interfaces.Integer_16; Result : out Status);
+procedure Data_Ready (Dev : Device; Accel, Gyro : out Boolean; Result : out Status);</code></pre>
+
+<p>Reads use the chip's auto-incrementing address pointer, set by
+<code>Configure</code> via <code>CTRL1.ADDR_AI</code>: a one-byte write sets the
+pointer and the following read streams from it. The driver runs the device
+little-endian (<code>CTRL1.BE = 0</code>).</p>
+
+<p class="warn"><strong>Raw counts are not physical units, and the scale depends
+on the range you configured.</strong> That is what these two are for:</p>
+
+<pre><code>function Accel_LSB_Per_G   (Dev : Device) return Positive;
+function Gyro_LSB_Per_DPS  (Dev : Device) return Positive;</code></pre>
+
+<p>Ask the device rather than hard-coding a divisor, and changing
+<code>Accel_Range</code> later cannot silently scale every reading wrong. Both are
+SPARK-mode functions.</p>
+
+<h2>SHT41: a command-based sensor</h2>
+
+<p class="note"><strong>The SHT4x has no registers at all.</strong> A measurement
+is: write a one-byte command, wait the conversion time, read six bytes. That is a
+genuinely different protocol shape from the IMU, and it is why the driver exposes
+<code>Measure</code> rather than register accessors.</p>
+
+<pre><code>type Precision   is (Low, Medium, High);
+type Measurement is record ... end record;
+type Status      is (OK, Bus_Error, CRC_Error);
+
+procedure Measure (...);
+procedure Read_Serial_Number (...);
+procedure Reset (Dev : Device; Result : out Status);</code></pre>
+
+<p><code>Precision</code> trades conversion time against noise. The six returned
+bytes are two CRC-8-protected words, and the driver checks them — hence the third
+<code>Status</code> value:</p>
+
+<p class="warn"><code>CRC_Error</code> is <em>not</em> <code>Bus_Error</code>. The
+device ACKed and returned data, but the checksum failed — so the wiring is
+probably fine and you are looking at interference, an over-long cable, or too
+fast a bus. Treat it as "retry", not "device missing".</p>
+
+<p>There is no interrupt line: the sensor is read on request.</p>
+"""),
+
+dict(
+slug="32-pcf85063a",
+nav="PCF85063A RTC",
+title="PCF85063A: a clock that tells you when not to trust it",
+lede="BCD calendar registers, a programmable alarm, and one flag that answers "
+     "the only question that matters after a power loss.",
+body="""
+<h2>The typed calendar</h2>
+
+<p>A small fixed-address (<code>0x51</code>) real-time clock. The time is not a
+blob of BCD bytes in the API — every field is a constrained subtype, so an
+impossible date cannot be constructed:</p>
+
+<pre><code>subtype Year_Number   is Natural range 2000 .. 2099;
+subtype Month_Number  is Natural range 1 .. 12;
+subtype Day_Number    is Natural range 1 .. 31;
+subtype Hour_Number   is Natural range 0 .. 23;      --  24-hour mode only
+subtype Minute_Number is Natural range 0 .. 59;
+subtype Second_Number is Natural range 0 .. 59;
+
+type Weekday is (Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday);
+type Time is record ... end record;</code></pre>
+
+<p class="note">Day-of-week is worth knowing about: in the chip it is just a free
+0&nbsp;..&nbsp;6 counter that nothing validates against the date. The
+<code>Weekday</code> naming is a convention the driver applies, not something the
+hardware enforces — so the chip will happily tell you a Tuesday that isn't
+one if something wrote it wrong.</p>
+
+<h2>The flag that matters</h2>
+
+<pre><code>procedure Get_Time (Dev : Device; T : out Time;
+                    Valid : out Boolean; Result : out Status);</code></pre>
+
+<p class="warn"><strong><code>Valid</code> is the whole point of using an RTC
+chip.</strong> It reflects the oscillator-stop flag: <code>False</code> means
+power was lost and the time it just handed you is meaningless. A clock that
+returns a plausible-looking wrong time is worse than one that admits it does not
+know, so branch on <code>Valid</code> before believing <code>T</code> — that is
+the difference between resuming a schedule and corrupting a log.</p>
+
+<p><code>Set_Time</code> stops the clock around the write, as the datasheet
+requires, and clears the flag.</p>
+
+<h2>The rest</h2>
+
+<ul>
+  <li><strong>Alarm</strong> on second, minute, hour, day or weekday — any
+      subset — asserting an active-low open-drain INT line. Attach it with the
+      <code>.Interrupts</code> child, observing the
+      <a href="12-gpio.html">callback rules</a>: latch in the handler, do the
+      I2C read in a task.</li>
+  <li><strong><code>Stop_Clock</code></strong> halts the counters via
+      <code>Control_1.STOP</code> without changing the loaded time.</li>
+  <li><strong><code>Reset</code></strong> returns every register to its power-on
+      default, which also stops the clock.</li>
+</ul>
+
+<p>Reads use the auto-incrementing pointer, and the pointer survives the STOP
+between the two transactions — so a one-byte write followed by a separate read
+streams correctly without needing
+<a href="13-i2c.html">repeated START</a>. Up to 400&nbsp;kHz.</p>
+"""),
+
+dict(
+slug="33-expanders",
+nav="Port expanders",
+title="Port expanders: TCA9555, CH422G and HC595",
+lede="Three ways to buy more pins, and three quite different bargains &mdash; "
+     "per-pin control, an all-or-nothing direction bit, and a shift register "
+     "with no readback at all.",
+body="""
+<h2>Two levels of locking, again</h2>
+
+<p>The two I2C expanders share the pattern the
+<a href="29-display-touch.html">ST7789</a> uses: a <code>Session</code> owns the
+<strong>device</strong>, while the <strong>I2C host</strong> is locked only for
+each transaction. The per-device guards live in a fixed library-level array
+keyed by (host, strap value), <em>not</em> inside the <code>Device</code> record
+&mdash; a protected object there would be a local PO, which this runtime
+forbids.</p>
+
+<h2>TCA9555 &mdash; the conventional one</h2>
+
+<pre><code>subtype Hardware_Address is Natural range 0 .. 7;    --  three strap pins
+type Pin_Number is range 0 .. 15;                    --  P0 = 0..7, P1 = 8..15
+type Port_Value is mod 2**16;
+type Direction  is (Output, Input);
+type Pin_State  is (Low, High);</code></pre>
+
+<p>Sixteen pins in two 8-bit ports, per-pin direction, three address straps so up
+to eight can share a bus, and an interrupt output with a <code>.Interrupts</code>
+child. If you want an expander that behaves the way you expect, this is it.</p>
+
+<h2>CH422G &mdash; the one that will surprise you</h2>
+
+<p>Eight bidirectional pins plus four output-only ones. Same locking shape, very
+different chip:</p>
+
+<p class="warn"><strong>It is not a register-pointer device.</strong> Each
+operation is a single-byte transaction to a <em>fixed, function-specific I2C
+address</em>: <code>0x24</code> system config, <code>0x23</code> write OC
+outputs, <code>0x38</code> write IO outputs, <code>0x26</code> read IO inputs.
+One consequence follows immediately &mdash; there are no address straps and
+<strong>only one CH422G per bus</strong>, so <code>Setup</code> takes no
+address.</p>
+
+<p class="warn"><strong>Direction is global.</strong> A single <code>IO_OE</code>
+bit makes <em>all</em> of IO0..IO7 inputs or <em>all</em> of them outputs. There
+is no per-pin direction. If you need three inputs and five outputs from one
+CH422G, you cannot have it.</p>
+
+<pre><code>type IO_Direction is (Inputs, Outputs);    --  all of IO0..IO7, together
+type OC_Drive     is (Push_Pull, Open_Drain);   --  all of OC0..OC3, together</code></pre>
+
+<p class="note">The config, OC and IO-output registers <strong>cannot be read
+back</strong> &mdash; only the IO pins can, via RD-IO. So the driver keeps a
+shadow initialised to the datasheet's power-on defaults (IO inputs, OC high,
+push-pull). That shadow is only correct if the chip really is at its defaults
+when you start, so a warm restart without a power cycle can leave the driver's
+idea of the outputs out of step with reality. The chip also has no interrupt
+output, hence no <code>.Interrupts</code> child.</p>
+
+<p>This is the expander that holds the GT911's reset line on the Waveshare
+ESP32-S3-Touch-LCD-7 &mdash; see <a href="29-display-touch.html">step 31</a> for
+why that ordering matters.</p>
+
+<h2>HC595 &mdash; a shift register on the SPI bus</h2>
+
+<p>Not I2C at all: any number of 74HC595s daisy-chained (each chip's QH' into the
+next chip's SER), giving <code>N * 8</code> outputs from three wires.</p>
+
+<pre><code>type Controller (Chips : Positive) is limited private;
+
+procedure Set_Output   (C : in out Controller; Index : Natural; On : Boolean);
+procedure Set_Byte     (C : in out Controller; Chip : Natural; Value : Byte);
+procedure Update       (C : in out Controller);        --  shift out + latch
+procedure Write_Output (C : in out Controller; Index : Natural; On : Boolean);
+procedure Clear_All / Set_All (C : in out Controller);</code></pre>
+
+<p>The driver keeps a shadow of the intended state; <code>Update</code> shifts
+the whole string out in chain order and pulses RCLK to latch it. So
+<code>Set_Output</code> is buffered and <code>Write_Output</code> is
+set-then-update &mdash; batch your changes and call <code>Update</code> once
+rather than paying a full string shift per bit.</p>
+
+<p class="note">It borrows the SPI host per <code>Update</code> <strong>with no
+chip select asserted</strong>, so other devices on the bus are undisturbed. The
+application must <code>Setup</code> and <code>Configure_Pins</code> the shared
+SPI host first &mdash; the expander does not own it.</p>
+"""),
+
+dict(
+slug="34-tx1812",
+nav="TX1812 LEDs",
+title="TX1812: addressable LEDs from RMT symbols",
+lede="A single-wire LED family driven by generating its pulse train in "
+     "hardware &mdash; and a strip whose whole memory footprint is fixed at "
+     "elaboration.",
+body="""
+<h2>Timing as data</h2>
+
+<p>The TX1812 &mdash; like the WS2812 "NeoPixel" family &mdash; is a single-wire,
+daisy-chainable RGB LED. Twenty-four bits of colour are clocked in MSB-first as a
+precisely timed pulse train: a <code>1</code> is long-high/short-low, a
+<code>0</code> is short-high/long-low, and a low period over 80&nbsp;µs latches
+the frame.</p>
+
+<p>That is exactly the job <a href="20-rmt.html">RMT</a> exists for. The driver
+generates the waveform as <strong>one RMT symbol per data bit</strong>, so the
+timing is produced by hardware rather than by a delay loop that an interrupt
+could disturb.</p>
+
+<h2>A strip is sized at elaboration</h2>
+
+<pre><code>type Color is record ... end record;
+type Strip (Count : Positive) is limited private;</code></pre>
+
+<p class="note">The <code>Count</code> discriminant fixes the whole footprint:
+a <code>Strip</code> carries both the <code>Count</code>-pixel colour buffer
+<em>and</em> the <code>Count * 24</code> RMT-symbol frame buffer. Declaring
+<code>Panel : Strip (64)</code> reserves all of it at elaboration &mdash; no
+heap &mdash; and the linker verifies it fits. You find out at link time that a
+strip is too big for your RAM, not at run time.</p>
+
+<pre><code>procedure Acquire (...; Channel : ...; Pin : ...; Blocks : ...);
+function  Is_Valid (S : Strip) return Boolean;
+procedure Set     (S : in out Strip; Index : Positive; C : Color);   --  buffered
+procedure Set_All (S : in out Strip; C : Color);                     --  buffered
+procedure Show    (S : in out Strip);                                --  clock out + latch
+procedure Release (S : in out Strip);</code></pre>
+
+<p>A <code>Strip</code> is a claimed handle in the usual style: it takes an RMT
+transmit channel on <code>Acquire</code> and releases it on scope exit.
+<code>Set</code> and <code>Set_All</code> only write the buffer; nothing reaches
+the LEDs until <code>Show</code>.</p>
+
+<h2>The limitation, stated plainly</h2>
+
+<p class="warn"><strong>This driver currently drives a single LED.</strong> The
+underlying <code>RMT.Transmit</code> sends at most what fits in the channel's
+symbol RAM, so the practical case is <code>Strip (Count =&gt; 1)</code>; passing
+<code>Blocks</code> (1&nbsp;..&nbsp;4) borrows extra RMT RAM for roughly
+<code>Blocks * 2</code> LEDs &mdash; and borrowing blocks costs you the
+higher-numbered RMT channels, as <a href="20-rmt.html">step 20</a> explains.</p>
+
+<p>A longer string needs RMT wrap/refill support, which is a later step. The API
+is already shaped for it &mdash; <code>Count</code>, per-pixel <code>Set</code>
+&mdash; so only <code>Show</code>'s transport changes when it lands. Worth
+knowing before you design a panel around it.</p>
+"""),
+
+dict(
+slug="35-memory",
+nav="Flash, EEPROM &amp; FRAM",
+title="Off-chip memory: NOR flash, EEPROM and FRAM",
+lede="Three non-volatile technologies with three different bargains &mdash; and "
+     "a family catalogue that turns a whole product line into one shared "
+     "driver plus a geometry.",
+body="""
+<h2>W25Q: SPI NOR flash</h2>
+
+<p>Winbond W25Q-series, targeting the W25Q256FV (32&nbsp;MB, JEDEC ID
+<code>EF 40 19</code>), on a general-purpose <a href="14-spi.html">SPI</a> host
+with an <strong>application-driven chip select</strong> through the CS callback
+&mdash; so it shares a bus with other devices.</p>
+
+<pre><code>procedure Initialize          (Dev : Flash; OK : out Boolean);
+procedure Read_Identification (Dev : Flash; ID : out JEDEC_ID);
+function  Capacity_Bytes      (ID : JEDEC_ID) return Address;
+procedure Read         (Dev : Flash; Addr : Address; Data : out Byte_Array);
+procedure Erase_Sector (Dev : Flash; Addr : Address);
+procedure Program_Page (Dev : Flash; Addr : Address; Data : Byte_Array);</code></pre>
+
+<p class="warn"><strong>Over 16&nbsp;MB means 4-byte addressing.</strong>
+<code>Initialize</code> puts the chip into 4-byte address mode (opcode
+<code>0xB7</code>) once at startup, after which the <em>standard</em> opcodes
+&mdash; Read <code>0x03</code>, Page-Program <code>0x02</code>, Sector-Erase
+<code>0x20</code> &mdash; each take four address bytes, which is what the FV
+datasheet prescribes. The FV has <strong>no</strong> dedicated 4-byte
+program/erase opcodes; the <code>0x12</code>/<code>0x21</code>/<code>0xDC</code>
+set is a later W25Q256JV addition, and issuing them here is <em>silently
+ignored</em> &mdash; a failure that leaves your data unwritten with no error.</p>
+
+<p>Flash is erase-before-write: sectors erase to all-ones, and a page program can
+only clear bits. That asymmetry is why the API has both
+<code>Erase_Sector</code> and <code>Program_Page</code> rather than a
+<code>Write</code>.</p>
+
+<h2>The 24C EEPROM catalogue</h2>
+
+<p>Every part in the family &mdash; ST M24Cxx, Microchip 24AAxx/24LCxx, Atmel
+AT24Cxx, onsemi CAT24Cxx &mdash; speaks the same protocol: device-type code
+<code>1010</code>, a big-endian word address, page writes that <em>wrap</em>
+inside the page rather than advancing, a ~5&nbsp;ms program cycle that NACKs
+everything until it finishes, and a random read that turns the bus around on a
+<a href="13-i2c.html">repeated START</a>.</p>
+
+<p class="note">So a part is <strong>nothing but a geometry</strong>.
+<code>ESP32S3.EEPROM_24C.Driver</code> implements the protocol once, and each
+part is a child instantiation &mdash;
+<code>with ESP32S3.EEPROM_24C.M24C64;</code> costs you one part, not the whole
+catalogue.</p>
+
+<p>Two traps the catalogue exists to encode:</p>
+
+<p class="warn"><strong>Page size varies by vendor at the low end.</strong> ST's
+M24C01/M24C02 have a 16-byte page; Atmel's and Microchip's 1K/2K parts have 8.
+Guessing wrong does not fail loudly &mdash; the write wraps inside the page and
+<em>silently overwrites what you just wrote</em>. Hence separate AT24C01 and
+AT24C02 entries.</p>
+
+<p class="warn"><strong>High address bits eat chip-enable pins.</strong> A part
+whose array outruns its word address folds the surplus bits into the low bits of
+its own device-select byte, costing a strap each: E0, then E1, then E2. A 24C16
+folds three and has <em>no strap left</em> &mdash; only one can sit on a bus. The
+driver derives this from capacity and address width rather than taking it as a
+parameter. Microchip's 24LC1025 is the one part that breaks the rule, putting its
+block bit in the high position instead.</p>
+
+<p class="warn"><strong>Only parts marked <code>Verified</code> have been run
+against real silicon.</strong> The rest are transcribed from datasheets &mdash;
+the protocol is shared so they are very likely right, but nobody has watched them
+on a scope. Each instance re-exports its status as
+<code>Hardware_Verified</code> and says so in its spec banner.</p>
+
+<h2>FRAM: non-volatile RAM</h2>
+
+<p>Fujitsu MB85RS and Cypress/Infineon FM25 over SPI (and MB85RC/FM24 over I2C).
+The distinction from EEPROM is the interesting part:</p>
+
+<p class="note"><strong>FRAM is byte-writable, has no page boundary, and has no
+program cycle at all</strong> &mdash; a write is committed as it is clocked in.
+None of the EEPROM ceremony applies: no page-wrap trap, no ~5&nbsp;ms NACK-until-
+done wait, no erase. If you are logging frequently, that difference is the whole
+reason to pay for FRAM.</p>
+
+<p>Because the read/write protocol is identical across manufacturers, parts are
+keyed by <strong>density rather than part number</strong>:
+<code>with ESP32S3.FRAM_SPI.Kbit_256;</code>. Only the identity command differs
+by vendor, so <code>Read_Device_ID</code> returns the raw bytes rather than
+pretending to decode them.</p>
+
+<p>Address width follows density: 16&nbsp;Kbit&nbsp;..&nbsp;512&nbsp;Kbit use two
+address bytes, 1&nbsp;Mbit uses three, and the 4&nbsp;Kbit parts use
+<em>one</em>, with the ninth address bit carried in bit 3 of the opcode &mdash;
+the legacy 25040 convention.</p>
+
+<p class="warn">Status: <strong>no FRAM part has been run against real silicon
+yet</strong>. These are datasheet-derived.</p>
+"""),
+
+dict(
+slug="36-tlv2556",
+nav="TLV2556 ADC",
+title="TLV2556: a pipelined external ADC",
+lede="Twelve bits and eleven channels over SPI &mdash; where the result you "
+     "read belongs to the channel you asked for <em>last</em> time.",
+body="""
+<h2>The pipeline</h2>
+
+<p>The TLV2556 is a 12-bit, 11-channel, 200-kSPS ADC with an internal reference,
+on SPI mode 0. Each I/O cycle clocks an 8-bit command in on DATA&nbsp;IN &mdash;
+top four bits select the analog input or a command, low four are configuration
+register 1 &mdash; while <em>simultaneously</em> clocking the previous
+conversion's result out on DATA&nbsp;OUT, MSB first.</p>
+
+<p class="warn"><strong>The converter is pipelined:</strong> the result of a
+channel you address now arrives on the <em>next</em> cycle. Read the datasheet's
+timing naively and you will attribute every sample to the wrong channel &mdash; a
+bug that produces entirely plausible numbers.</p>
+
+<p><code>Read</code> hides this by priming the conversion, waiting it out, then
+reading it back, so the value you get belongs to the channel you asked for.</p>
+
+<pre><code>type Sample       is range 0 .. 4095;
+type Analog_Input is ...;                                   --  11 channels
+type Reference    is (Internal_4096mV, Internal_2048mV, External);</code></pre>
+
+<p>The internal reference is the reason to choose this part over the
+<a href="24-analog.html">on-chip SAR ADC</a>: a known 4.096&nbsp;V or
+2.048&nbsp;V full scale gives you an absolute voltage, where the ESP's own ADC
+gives a raw code needing per-chip calibration.</p>
+
+<h2>Sharing the bus</h2>
+
+<p>Like <a href="35-memory.html">W25Q</a>, chip select is application-driven
+through an <a href="14-spi.html">SPI <code>CS_Select</code> callback</a>
+(active-low here), so the ADC shares a bus with other devices. The driver always
+uses 16-clock (2-byte) transfers with unipolar, MSB-first output.</p>
+
+<p class="note">The in-tree example is a genuinely good bring-up test: it runs a
+<strong>reference-independent self-test</strong> &mdash; asking the chip for its
+internal zero, half-scale and full-scale conversions and checking they come back
+as 0, 2048 and 4095. That proves the SPI framing, the pipeline handling and the
+converter itself without needing a known voltage on any input pin.</p>
+"""),
+
+dict(
+slug="37-gps",
+nav="GPS receiver",
+title="GPS: a background service, not a device handle",
+lede="The one driver here you do not poll through a handle. A task owns the "
+     "UART, decodes NMEA continuously, and publishes into a protected store "
+     "that timestamps its own staleness.",
+body="""
+<h2>A different shape entirely</h2>
+
+<p class="note">Every other device driver in this guide hands you a
+<code>Device</code> and lets you poll it. This one does not. It is a
+<strong>singleton background service</strong>: a library-level task owns one
+<a href="15-uart.html">UART</a> for its lifetime, continuously reads the
+receiver's NMEA-0183 stream, decodes it, and publishes results into a protected
+store. The application just reads that store. There is no handle.</p>
+
+<p>That follows from the device: a GPS talks whenever it likes, so something has
+to be listening the whole time. This is the concrete case for
+<a href="15-uart.html">interrupt-driven RX</a> &mdash; a receiver that streams
+asynchronously is exactly what would overflow a polled FIFO.</p>
+
+<pre><code>procedure Setup (...);          --  call once at startup; Rx is the only pin needed
+
+function Current_Position return Position_Reading;
+function Current_Fix      return Fix_Reading;
+function Current_Time     return Time_Reading;
+function Current_Date     return Date_Reading;
+--  ... plus velocity, signal and PPS readings</code></pre>
+
+<h2>Why a fix is one record</h2>
+
+<p class="warn"><strong>Latitude and longitude are a single
+<code>Position</code> record updated by one protected action.</strong> Split
+across two variables, a reader could catch a new latitude with an old longitude
+&mdash; a coordinate that describes somewhere you have never been, with nothing
+to signal it is wrong. Every published value is written and read under the
+store's lock, so a reader never sees a half-updated value, and a fix is always a
+consistent pair.</p>
+
+<h2>Staleness is explicit</h2>
+
+<p>Each value group carries the <code>Ada.Real_Time.Time</code> at which it was
+last refreshed, and the driver <strong>only refreshes a group from a valid
+sentence</strong> &mdash; a lost fix is not written at all.</p>
+
+<p class="warn">So a stale group keeps its <em>old</em> timestamp rather than
+being cleared, and <code>Current_Position</code> will happily return a position
+from twenty minutes ago that reads as perfectly plausible. Compare
+<code>Age (R.Updated_At)</code> against your own tolerance before trusting any
+reading. The API cannot decide for you how old is too old &mdash; that depends on
+whether you are tracking a ship or a pedestrian.</p>
+
+<pre><code>type Fix_Quality is (No_Fix, GPS_Fix, DGPS_Fix);
+type Fix_Type    is (Fix_None, Fix_2D, Fix_3D);
+type GNSS_System is (GPS, GLONASS, Galileo, BeiDou, QZSS, Other);</code></pre>
+
+<p>The satellite list and <code>GNSS_System</code> reflect that a modern receiver
+tracks several constellations at once. Uses the controlled UART session plus a
+task and protected objects, so it is embedded/full only.</p>
+"""),
+
+dict(
+slug="38-w5500",
+nav="W5500 Ethernet",
+title="W5500: Ethernet with the stack on the chip",
+lede="A hardwired TCP/IP controller with eight hardware sockets &mdash; and a "
+     "layered driver that ends up looking like GNAT.Sockets.",
+body="""
+<h2>The stack is not yours</h2>
+
+<p>The WIZnet W5500 is an SPI slave carrying an on-chip 10/100 PHY, a MAC,
+<strong>and a hardwired TCP/IP stack</strong> exposing eight independent hardware
+sockets. You are not writing a TCP implementation against it; you are driving one
+that already exists in silicon.</p>
+
+<p>The driver is built in layers, which is worth knowing because it decides
+which package you should be reaching for:</p>
+
+<table>
+  <thead><tr><th>Layer</th><th>What it gives you</th></tr></thead>
+  <tbody>
+    <tr><td><code>ESP32S3.W5500</code></td>
+        <td>The SPI frame transport, hardware/software reset, common registers
+            (identity, network config) and PHY link status.</td></tr>
+    <tr><td><code>.Sockets</code></td>
+        <td>The socket engine: TCP and UDP over the eight hardware sockets, with
+            a self-contained <code>Socket</code> handle and a
+            <code>Status</code> error model.</td></tr>
+    <tr><td><code>.DHCP</code></td>
+        <td>A minimal DHCP client &mdash; a software protocol over UDP, so it
+            sits above the socket engine rather than in the chip.</td></tr>
+    <tr><td><code>.Net_Device</code></td>
+        <td>The W5500 as a concrete <code>Net_Devices.Device</code>, so it can
+            back the chip-neutral <code>GNAT.Sockets</code> facade.</td></tr>
+    <tr><td><code>.Interrupts</code></td>
+        <td>The INTn line. The base layer configures it as a pulled-up input but
+            does not use it &mdash; the first pass is polling.</td></tr>
+  </tbody>
+</table>
+
+<h2>The SPI frame, and why CS is a GPIO</h2>
+
+<p>Every access is one frame in Variable Length Data Mode: a 16-bit offset, a
+control byte, then N data bytes, with the offset auto-incrementing inside the
+frame. VDM keeps the bus shareable rather than demanding an exclusive
+transaction per register.</p>
+
+<p class="note">CS is driven as a <strong>plain GPIO, not routed to the SPI
+peripheral</strong> &mdash; exactly as with <a href="27-sd.html">SD over
+SPI</a> &mdash; because it has to be held low across all three phases of the
+frame, and the peripheral's own CS pulses per transfer. Another concrete case for
+<a href="14-spi.html">SPI's <code>CS_Pin</code></a>. The chip runs in SPI mode
+0.</p>
+
+<h2>Two levels of concurrency</h2>
+
+<p>Each frame takes the SPI host's session for its own transfer and releases it
+&mdash; the "lock the bus only as long as necessary" idiom shared with the other
+SPI drivers &mdash; so every W5500 access is atomic against any other task or
+device on that bus.</p>
+
+<p>The socket layer then adds <strong>per-socket ownership</strong> on top. The
+eight sockets are genuinely independent, so different tasks can drive different
+sockets simultaneously, with the transport serialising the shared bus
+underneath. That is the arrangement that makes a multi-socket application
+straightforward rather than a locking exercise.</p>
+
+<h2>What is not there yet</h2>
+
+<ul>
+  <li><strong>Polling, not interrupts.</strong> The blocking operations
+      &mdash; <code>Connect</code>, and <code>Send</code>'s completion &mdash;
+      poll. INTn is wired and configured but unused at this layer.</li>
+  <li><strong>DHCP has no renewal.</strong> <code>Acquire_Lease</code> is
+      one-shot; call it again before the lease expires, because nothing will do
+      it for you and the failure mode is a silently dead network.</li>
+</ul>
+
+<p>A useful pairing: give the W5500 its address from
+<a href="28-chip-id.html">the eFuse MAC block</a>'s <code>Ethernet</code> entry
+&mdash; a real manufacturer-assigned address rather than one you invented, which
+matters as soon as two of your boards share a segment.</p>
+"""),
+
+dict(
+slug="39-debugging",
 nav="Debugging",
 title="Debugging: GDB over the same cable",
 lede="The USB-Serial-JTAG port is both the console and a JTAG debug interface, "
@@ -2949,7 +3709,7 @@ unrelated.</p>
 
 # ---------------------------------------------------------------- 13
 dict(
-slug="30-troubleshooting",
+slug="40-troubleshooting",
 nav="Troubleshooting &amp; next steps",
 title="Troubleshooting, and where to go next",
 lede="The failure modes worth recognising on sight, a one-screen cheat sheet, "
@@ -3479,7 +4239,7 @@ PAGE = """<!DOCTYPE html>
 INDEX_BODY = """
     <p class="eyebrow">Start here</p>
     <h1>{site}</h1>
-    <p class="lede">{tagline} Thirty short steps, one aspect each, from a
+    <p class="lede">{tagline} Forty short steps, one aspect each, from a
     blank machine to your own Ada application running on both cores.</p>
 
     <p>The ESP32-S3 is normally programmed through Espressif's ESP-IDF: a large
@@ -3493,9 +4253,10 @@ INDEX_BODY = """
     <p>Each page below covers exactly one thing, and each links to the next.
     Steps 1 to 5 get an LED blinking. Steps 6 to 9 explain what you just did and
     how to configure it. Steps 10 and 11 are your own project and the driver
-    library. Steps 12 to 28 are the peripherals, one at a time &mdash; start with
-    whichever one your board actually has. Steps 29 and 30 are the debugger and
-    what to do when something goes wrong.</p>
+    library. Steps 12 to 28 are the chip's own peripherals and 29 to 38 the
+    external devices the SDK drives &mdash; start with whichever your board
+    actually has. Steps 39 and 40 are the debugger and what to do when something
+    goes wrong.</p>
 
     <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
 
@@ -3540,8 +4301,18 @@ BLURBS = {
     "26-crypto":          "SHA, AES and RSA acceleration, MD5 for flash verification, and why the RNG is not a CSPRNG here.",
     "27-sd":              "SPI transport versus the native SD bus, and why the faster one runs on the lean runtime.",
     "28-chip-id":         "Die temperature (not ambient) and the four factory MACs in eFuse.",
-    "29-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
-    "30-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
+    "29-display-touch":   "A write-only SPI panel you cannot probe, and a touch chip whose address is set at reset.",
+    "30-es8311":          "Control over I2C, audio over I2S, and the 256x MCLK ratio the codec depends on.",
+    "31-sensors":         "A register-mapped IMU and a command-based humidity sensor, and how each flags a bad reading.",
+    "32-pcf85063a":       "A typed BCD calendar, an alarm, and the oscillator-stop flag that says do not trust me.",
+    "33-expanders":       "Per-pin control, an all-or-nothing direction bit, and a shift register with no readback.",
+    "34-tx1812":          "LED timing generated as RMT symbols, with the strip sized at elaboration.",
+    "35-memory":          "NOR flash, the 24C EEPROM catalogue and FRAM \u2014 three technologies, three bargains.",
+    "36-tlv2556":         "A pipelined SPI ADC whose result belongs to the previous request.",
+    "37-gps":             "A background task decoding NMEA into a protected store that timestamps its own staleness.",
+    "38-w5500":           "Ethernet with the TCP/IP stack in silicon, layered up to a GNAT.Sockets facade.",
+    "39-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
+    "40-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
 }
 
 

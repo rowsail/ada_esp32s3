@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Installing Alire and the toolchains &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="One download, one PATH line, two alr toolchain commands. This is the only thing you install on your machine.">
+<title>TLV2556: a pipelined external ADC &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Twelve bits and eleven channels over SPI &mdash; where the result you read belongs to the channel you asked for last time.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <h2>The steps</h2>
     <ol>
       <li><a href="01-what-you-need.html">What you need</a></li>
-      <li class="current"><a href="02-toolchain.html" aria-current="page">Installing the toolchain</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
       <li><a href="03-clone.html">Getting the code</a></li>
       <li><a href="04-board.html">Board and serial port</a></li>
       <li><a href="05-first-blink.html">Your first blink</a></li>
@@ -57,7 +57,7 @@
       <li><a href="33-expanders.html">Port expanders</a></li>
       <li><a href="34-tx1812.html">TX1812 LEDs</a></li>
       <li><a href="35-memory.html">Flash, EEPROM &amp; FRAM</a></li>
-      <li><a href="36-tlv2556.html">TLV2556 ADC</a></li>
+      <li class="current"><a href="36-tlv2556.html" aria-current="page">TLV2556 ADC</a></li>
       <li><a href="37-gps.html">GPS receiver</a></li>
       <li><a href="38-w5500.html">W5500 Ethernet</a></li>
       <li><a href="39-debugging.html">Debugging</a></li>
@@ -66,58 +66,51 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="01-what-you-need.html">&larr; What you need</a><a href="03-clone.html">Getting the code &rarr;</a></nav>
-    <p class="eyebrow">Step 02 of 40</p>
-    <h1>Installing Alire and the toolchains</h1>
-    <p class="lede">One download, one <code>PATH</code> line, two <code>alr toolchain</code> commands. This is the only thing you install on your machine.</p>
+    <nav class="pager-top"><a href="35-memory.html">&larr; Flash, EEPROM &amp; FRAM</a><a href="37-gps.html">GPS receiver &rarr;</a></nav>
+    <p class="eyebrow">Step 36 of 40</p>
+    <h1>TLV2556: a pipelined external ADC</h1>
+    <p class="lede">Twelve bits and eleven channels over SPI &mdash; where the result you read belongs to the channel you asked for <em>last</em> time.</p>
 
-<h2>Install Alire</h2>
+<h2>The pipeline</h2>
 
-<pre><code>cd ~
-wget https://github.com/alire-project/alire/releases/download/v2.1.0/alr-2.1.0-bin-x86_64-linux.zip
-unzip alr-2.1.0-bin-x86_64-linux.zip -d ~/alire
-export PATH="$HOME/alire/bin:$PATH"        # add to ~/.bashrc to make permanent
-alr version                                # -&gt; alr version 2.1.0</code></pre>
+<p>The TLV2556 is a 12-bit, 11-channel, 200-kSPS ADC with an internal reference,
+on SPI mode 0. Each I/O cycle clocks an 8-bit command in on DATA&nbsp;IN &mdash;
+top four bits select the analog input or a command, low four are configuration
+register 1 &mdash; while <em>simultaneously</em> clocking the previous
+conversion's result out on DATA&nbsp;OUT, MSB first.</p>
 
-<p>On an ARM64 host, take the <code>aarch64</code> asset instead. This guide was
-validated with <strong>alr 2.1.0</strong> and <strong>GNAT 15.2</strong>.</p>
+<p class="warn"><strong>The converter is pipelined:</strong> the result of a
+channel you address now arrives on the <em>next</em> cycle. Read the datasheet's
+timing naively and you will attribute every sample to the wrong channel &mdash; a
+bug that produces entirely plausible numbers.</p>
 
-<p class="warn">Put that <code>export PATH=...</code> line in your
-<code>~/.bashrc</code> now. Nearly every "<code>gprbuild</code>: command not
-found" report traces back to a shell that never saw it.</p>
+<p><code>Read</code> hides this by priming the conversion, waiting it out, then
+reading it back, so the value you get belongs to the channel you asked for.</p>
 
-<h2>Select the three toolchains</h2>
+<pre><code>type Sample       is range 0 .. 4095;
+type Analog_Input is ...;                                   --  11 channels
+type Reference    is (Internal_4096mV, Internal_2048mV, External);</code></pre>
 
-<p>Two commands, because the native and cross toolchains are selected
-separately:</p>
+<p>The internal reference is the reason to choose this part over the
+<a href="24-analog.html">on-chip SAR ADC</a>: a known 4.096&nbsp;V or
+2.048&nbsp;V full scale gives you an absolute voltage, where the ESP's own ADC
+gives a raw code needing per-chip calibration.</p>
 
-<pre><code>alr toolchain --select gnat_native gprbuild
-alr toolchain --select gnat_xtensa_esp32_elf
-alr toolchain                              # confirm all three are present</code></pre>
+<h2>Sharing the bus</h2>
 
-<p>Why three, when you are only compiling for one chip?</p>
+<p>Like <a href="35-memory.html">W25Q</a>, chip select is application-driven
+through an <a href="14-spi.html">SPI <code>CS_Select</code> callback</a>
+(active-low here), so the ADC shares a bus with other devices. The driver always
+uses 16-clock (2-byte) transfers with unipolar, MSB-first output.</p>
 
-<table>
-  <thead><tr><th>Toolchain</th><th>What it is for</th></tr></thead>
-  <tbody>
-    <tr><td><code>gnat_xtensa_esp32_elf</code></td>
-        <td>The cross-compiler. Turns your Ada into Xtensa LX7 code for the S3.</td></tr>
-    <tr><td><code>gnat_native</code></td>
-        <td>Builds the two <em>host</em> tools &mdash; the image packager and the
-            serial flasher &mdash; which run on your PC, not the board.</td></tr>
-    <tr><td><code>gprbuild</code></td>
-        <td>The Ada build driver both of the above are invoked through.</td></tr>
-  </tbody>
-</table>
-
-<p>That is the entire install. No SDK, no vendor installer, no environment
-script to source before every session.</p>
-
-<p class="next-hint">Next: get the code &mdash; and get the submodules with
-it.</p>
+<p class="note">The in-tree example is a genuinely good bring-up test: it runs a
+<strong>reference-independent self-test</strong> &mdash; asking the chip for its
+internal zero, half-scale and full-scale conversions and checking they come back
+as 0, 2048 and 4095. That proves the SPI framing, the pipeline handling and the
+converter itself without needing a known voltage on any input pin.</p>
     <nav class="pager">
-      <a class="prev" href="01-what-you-need.html"><span class="dir">&larr; Previous</span><span class="name">What you need</span></a>
-      <a class="next" href="03-clone.html"><span class="dir">Next &rarr;</span><span class="name">Getting the code</span></a>
+      <a class="prev" href="35-memory.html"><span class="dir">&larr; Previous</span><span class="name">Flash, EEPROM &amp; FRAM</span></a>
+      <a class="next" href="37-gps.html"><span class="dir">Next &rarr;</span><span class="name">GPS receiver</span></a>
     </nav>
 
   </main>

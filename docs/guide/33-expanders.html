@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Port expanders: TCA9555, CH422G and HC595 &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Three ways to buy more pins, and three quite different bargains &mdash; per-pin control, an all-or-nothing direction bit, and a shift register with no readback at all.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-display-touch.html">Display &amp; touch</a></li>
+      <li><a href="30-es8311.html">ES8311 codec</a></li>
+      <li><a href="31-sensors.html">IMU &amp; environment</a></li>
+      <li><a href="32-pcf85063a.html">PCF85063A RTC</a></li>
+      <li class="current"><a href="33-expanders.html" aria-current="page">Port expanders</a></li>
+      <li><a href="34-tx1812.html">TX1812 LEDs</a></li>
+      <li><a href="35-memory.html">Flash, EEPROM &amp; FRAM</a></li>
+      <li><a href="36-tlv2556.html">TLV2556 ADC</a></li>
+      <li><a href="37-gps.html">GPS receiver</a></li>
+      <li><a href="38-w5500.html">W5500 Ethernet</a></li>
+      <li><a href="39-debugging.html">Debugging</a></li>
+      <li><a href="40-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="32-pcf85063a.html">&larr; PCF85063A RTC</a><a href="34-tx1812.html">TX1812 LEDs &rarr;</a></nav>
+    <p class="eyebrow">Step 33 of 40</p>
+    <h1>Port expanders: TCA9555, CH422G and HC595</h1>
+    <p class="lede">Three ways to buy more pins, and three quite different bargains &mdash; per-pin control, an all-or-nothing direction bit, and a shift register with no readback at all.</p>
+
+<h2>Two levels of locking, again</h2>
+
+<p>The two I2C expanders share the pattern the
+<a href="29-display-touch.html">ST7789</a> uses: a <code>Session</code> owns the
+<strong>device</strong>, while the <strong>I2C host</strong> is locked only for
+each transaction. The per-device guards live in a fixed library-level array
+keyed by (host, strap value), <em>not</em> inside the <code>Device</code> record
+&mdash; a protected object there would be a local PO, which this runtime
+forbids.</p>
+
+<h2>TCA9555 &mdash; the conventional one</h2>
+
+<pre><code>subtype Hardware_Address is Natural range 0 .. 7;    --  three strap pins
+type Pin_Number is range 0 .. 15;                    --  P0 = 0..7, P1 = 8..15
+type Port_Value is mod 2**16;
+type Direction  is (Output, Input);
+type Pin_State  is (Low, High);</code></pre>
+
+<p>Sixteen pins in two 8-bit ports, per-pin direction, three address straps so up
+to eight can share a bus, and an interrupt output with a <code>.Interrupts</code>
+child. If you want an expander that behaves the way you expect, this is it.</p>
+
+<h2>CH422G &mdash; the one that will surprise you</h2>
+
+<p>Eight bidirectional pins plus four output-only ones. Same locking shape, very
+different chip:</p>
+
+<p class="warn"><strong>It is not a register-pointer device.</strong> Each
+operation is a single-byte transaction to a <em>fixed, function-specific I2C
+address</em>: <code>0x24</code> system config, <code>0x23</code> write OC
+outputs, <code>0x38</code> write IO outputs, <code>0x26</code> read IO inputs.
+One consequence follows immediately &mdash; there are no address straps and
+<strong>only one CH422G per bus</strong>, so <code>Setup</code> takes no
+address.</p>
+
+<p class="warn"><strong>Direction is global.</strong> A single <code>IO_OE</code>
+bit makes <em>all</em> of IO0..IO7 inputs or <em>all</em> of them outputs. There
+is no per-pin direction. If you need three inputs and five outputs from one
+CH422G, you cannot have it.</p>
+
+<pre><code>type IO_Direction is (Inputs, Outputs);    --  all of IO0..IO7, together
+type OC_Drive     is (Push_Pull, Open_Drain);   --  all of OC0..OC3, together</code></pre>
+
+<p class="note">The config, OC and IO-output registers <strong>cannot be read
+back</strong> &mdash; only the IO pins can, via RD-IO. So the driver keeps a
+shadow initialised to the datasheet's power-on defaults (IO inputs, OC high,
+push-pull). That shadow is only correct if the chip really is at its defaults
+when you start, so a warm restart without a power cycle can leave the driver's
+idea of the outputs out of step with reality. The chip also has no interrupt
+output, hence no <code>.Interrupts</code> child.</p>
+
+<p>This is the expander that holds the GT911's reset line on the Waveshare
+ESP32-S3-Touch-LCD-7 &mdash; see <a href="29-display-touch.html">step 31</a> for
+why that ordering matters.</p>
+
+<h2>HC595 &mdash; a shift register on the SPI bus</h2>
+
+<p>Not I2C at all: any number of 74HC595s daisy-chained (each chip's QH' into the
+next chip's SER), giving <code>N * 8</code> outputs from three wires.</p>
+
+<pre><code>type Controller (Chips : Positive) is limited private;
+
+procedure Set_Output   (C : in out Controller; Index : Natural; On : Boolean);
+procedure Set_Byte     (C : in out Controller; Chip : Natural; Value : Byte);
+procedure Update       (C : in out Controller);        --  shift out + latch
+procedure Write_Output (C : in out Controller; Index : Natural; On : Boolean);
+procedure Clear_All / Set_All (C : in out Controller);</code></pre>
+
+<p>The driver keeps a shadow of the intended state; <code>Update</code> shifts
+the whole string out in chain order and pulses RCLK to latch it. So
+<code>Set_Output</code> is buffered and <code>Write_Output</code> is
+set-then-update &mdash; batch your changes and call <code>Update</code> once
+rather than paying a full string shift per bit.</p>
+
+<p class="note">It borrows the SPI host per <code>Update</code> <strong>with no
+chip select asserted</strong>, so other devices on the bus are undisturbed. The
+application must <code>Setup</code> and <code>Configure_Pins</code> the shared
+SPI host first &mdash; the expander does not own it.</p>
+    <nav class="pager">
+      <a class="prev" href="32-pcf85063a.html"><span class="dir">&larr; Previous</span><span class="name">PCF85063A RTC</span></a>
+      <a class="next" href="34-tx1812.html"><span class="dir">Next &rarr;</span><span class="name">TX1812 LEDs</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>
