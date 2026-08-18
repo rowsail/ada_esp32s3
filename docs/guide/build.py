@@ -1007,6 +1007,23 @@ Wi-Fi or anything else registered as a NIC:</p>
     <tr><td>41</td><td><a href="41-tls.html">TLS 1.3</a></td><td>A full client handshake and chain validation, no C library</td></tr>
     <tr><td>42</td><td><a href="42-wifi.html">Wi-Fi</a></td><td>Pure Ada around the fetched radio blobs, WPA2 handshake included</td></tr>
     <tr><td>43</td><td><a href="43-modbus.html">Modbus TCP</a></td><td>Industrial master and slave over the facade</td></tr>
+    <tr><td>44</td><td><a href="44-ftp.html">FTP</a></td><td>Streamed client, and a server over your filesystems</td></tr>
+  </tbody>
+</table>
+
+<p>Steps 45 to 51 are the rest of the SDK &mdash; storage, filesystems, text and
+the standalone tools:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Component</th><th>What it gives you</th></tr></thead>
+  <tbody>
+    <tr><td>45</td><td><a href="45-block-dev.html">Block devices &amp; wear levelling</a></td><td>The vtable the filesystems sit on, and an FTL that spreads flash wear</td></tr>
+    <tr><td>46</td><td><a href="46-ext4.html">ext4</a></td><td>Read/write ext2/3/4 with JBD2 replay and on-device mkfs</td></tr>
+    <tr><td>47</td><td><a href="47-fat16.html">FAT16</a></td><td>The filesystem a PC can mount, read-only by design</td></tr>
+    <tr><td>48</td><td><a href="48-console-fonts.html">Console, text &amp; fonts</a></td><td>Formatted output with no hosted runtime; panel-independent glyphs</td></tr>
+    <tr><td>49</td><td><a href="49-esp-loader.html">Esp_Loader</a></td><td>Program another ESP32 from the board</td></tr>
+    <tr><td>50</td><td><a href="50-simd.html">SIMD (PIE)</a></td><td>128-bit vector kernels in inline assembly</td></tr>
+    <tr><td>51</td><td><a href="51-stack-usage.html">Stack measurement</a></td><td>Stack painting, to catch what static analysis cannot see</td></tr>
   </tbody>
 </table>
 
@@ -3796,11 +3813,17 @@ procedure Resume (...);</code></pre>
 matters when a connection fails: you can tell "the certificate chain was
 rejected" from "the server never finished" from "we never got keys at all".</p>
 
-<p class="warn">The package header still opens with "work in progress &mdash;
-this first slice does the unencrypted opening". That comment is <strong>stale</strong>:
-<code>Send</code>, <code>Recv</code>, <code>Ready</code>, <code>Finished</code>
-verification and session resumption are all present, and three examples exercise
-them. Read the API, not the banner.</p>
+<p class="note"><code>Hello</code> runs the <strong>whole</strong> handshake,
+not just the opening exchange &mdash; ClientHello, ServerHello, the key schedule,
+the server's encrypted flight (EncryptedExtensions, Certificate,
+CertificateVerify, Finished) and our Finished. When it returns,
+<code>Ready</code> reports the application channel is open.</p>
+
+<p>A detail worth copying if you ever write a client: the ClientHello sends a
+<strong>key_share entry for both x25519 and P-256</strong>, not just the
+preferred one. Offering only one group costs a HelloRetryRequest round trip
+whenever the server prefers the other. Both paths are hardware-verified &mdash;
+a P-256-only ClientHello completes a handshake just as an x25519 one does.</p>
 
 <h2>Chain validation is the hard part</h2>
 
@@ -3974,7 +3997,489 @@ deliberately separate from the internet-facing one.</p>
 """),
 
 dict(
-slug="44-debugging",
+slug="44-ftp",
+nav="FTP",
+title="FTP: client and server",
+lede="Outbound-only transfers streamed through a callback, and an anonymous "
+     "server that exposes your filesystems to a desktop &mdash; both on the "
+     "socket facade.",
+body="""
+<h2>The client: passive, binary, streamed</h2>
+
+<p>A small RFC 959 client written entirely against
+<a href="39-net-stack.html">GNAT.Sockets</a>, so like
+<a href="40-dns-ntp.html">DNS and NTP</a> the same source runs on a desktop and
+on the board.</p>
+
+<p class="note"><strong>Passive mode only, deliberately.</strong> An embedded
+client should only ever make <em>outbound</em> connections, so every transfer
+asks the server to listen (PASV) and the client connects to it. No listening
+socket, and NAT/firewall friendly. A session uses two sockets at a time &mdash;
+the persistent control connection plus one transient data connection per
+transfer &mdash; comfortably within the <a href="38-w5500.html">W5500</a>'s
+eight.</p>
+
+<p class="warn"><strong>Transfers are streamed through a caller callback</strong>,
+so a file never has to be held whole in RAM &mdash; which on a board with a few
+hundred KB is the difference between working and not. As with every callback in
+this HAL, the sink and source must obey the
+<a href="12-gpio.html">closure-free rule</a>: library-level, no captured state,
+context passed explicitly.</p>
+
+<p>Transfers are binary (<code>TYPE I</code>). There is no ASCII mode, which is
+the right call &mdash; ASCII mode's line-ending translation silently corrupts
+every non-text file.</p>
+
+<h2>The server: your filesystems, over the network</h2>
+
+<p>An anonymous passive-mode server that exposes one or more
+<a href="46-ext4.html">ext4</a> filesystems, so a desktop FTP client can browse,
+download, upload and manage the board's files.</p>
+
+<p>Filesystems are presented through <code>ESP32S3.Ext4.VFS</code>: register each
+under a name <em>before</em> calling <code>Run</code>, and they appear as
+top-level directories in one tree &mdash; <code>/flash</code>, <code>/sd</code>.
+The virtual root lists the mount names. Adding a second storage device later is
+one more <code>VFS.Add</code> call and nothing else changes.</p>
+
+<p class="warn"><strong>Anonymous</strong> means exactly that: no authentication.
+This is for a bench, a closed lab network or a deliberately isolated segment
+&mdash; not for anything reachable from a wider network. If the board is on a
+routable network, pin the socket to the interface you intend
+(<a href="39-net-stack.html"><code>Set_Interface</code></a>) rather than letting
+the routing table choose.</p>
+"""),
+
+dict(
+slug="45-block-dev",
+nav="Block devices &amp; wear levelling",
+title="Block devices and wear levelling",
+lede="One abstraction the filesystems talk to, thin adapters underneath it, "
+     "and a filter in the middle that stops a hot metadata block from killing "
+     "one sector of your flash.",
+body="""
+<h2>A vtable, not a tagged type</h2>
+
+<pre><code>type Sector       is array (0 .. 511) of Interfaces.Unsigned_8;
+type Sector_Index is new Interfaces.Unsigned_64;
+
+type Read_Proc  is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : out Sector);
+type Write_Proc is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : Sector);
+type Count_Func is access function  (Ctx : System.Address) return Sector_Index;</code></pre>
+
+<p><code>ESP32S3.Block_Dev</code> is a record of access-to-subprogram plus an
+opaque context &mdash; mirroring lwext4's <code>ext4_blockdev</code> vtable.
+<strong>No tagging, no finalization, swappable at run time.</strong> That keeps
+it usable from anywhere and makes a device something you can substitute in a
+test.</p>
+
+<p>Behind it sit thin adapters: <code>SD_SPI_Source</code> and
+<code>SDMMC_Source</code> for <a href="27-sd.html">SD cards</a>,
+<code>W25Q_Source</code> for <a href="35-memory.html">SPI NOR flash</a>, and a
+file-backed device in the host test harness &mdash; which is what lets the whole
+filesystem stack be developed and tested on a PC.</p>
+
+<p class="note">The error model is Ada's: the primitive Read/Write
+<strong>raise</strong> <code>Ada.IO_Exceptions.Device_Error</code> on a hardware
+failure, with the adapters converting the SD driver's <code>Status</code> enum
+into that raise. So a media error propagates rather than being quietly returned
+and ignored.</p>
+
+<h2>The wear-levelling filter</h2>
+
+<p>Flash wears out per erase block. A filesystem writes some blocks far more
+often than others &mdash; an ext4 metadata block, say &mdash; so without
+intervention one physical sector dies long before the rest of the chip.</p>
+
+<p><code>Block_Dev.WL</code> is a <strong>Block_Dev over a Block_Dev</strong>: it
+takes the raw medium and presents a smaller logical device whose sectors are
+remapped so that, over time, every logical 4&nbsp;KB block visits every physical
+4&nbsp;KB block. Because it is a plain filter it carries no flash-specific code
+and runs unchanged on the host, where it is brute-force tested.</p>
+
+<pre><code>--  a typical stack, bottom to top
+W25Q flash  ->  Block_Dev.W25Q_Source  ->  Block_Dev.WL  ->  Ext4</code></pre>
+
+<p class="note"><strong>O(1) state:</strong> just a move counter &mdash; there is
+no per-block map to keep in RAM or rebuild at mount. A move erases the
+destination block in one shot through the lower device's optional
+<code>Erase_Sectors</code> before copying, so each move costs exactly one
+erase.</p>
+
+<p class="warn"><strong>This is <em>dynamic</em> wear levelling only.</strong> It
+bounds how unevenly <em>write</em> activity wears the chip, but it does not
+actively relocate cold, never-written blocks &mdash; so data you write once and
+never touch keeps its physical block out of rotation. That is sufficient for a
+32&nbsp;MB part; it is not the same guarantee as static wear levelling.</p>
+
+<p>Config blocks are rewritten once per move, which is their wear cost. Raising
+<code>Update_Rate</code> trades levelling aggressiveness for less move and config
+overhead.</p>
+"""),
+
+dict(
+slug="46-ext4",
+nav="ext4 filesystem",
+title="ext4: a real filesystem, in Ada",
+lede="A from-scratch ext2/3/4 implementation with JBD2 journal replay, an "
+     "on-device formatter, and an error model that is simply Ada's.",
+body="""
+<h2>Scope</h2>
+
+<p><code>ESP32S3.Ext4</code> is a reimplementation of lwext4 in pure Ada: read
+<em>and</em> write &mdash; create, write, truncate, mkdir, rmdir, unlink, rename,
+link &mdash; with metadata checksums and JBD2 journal replay. It is pure logic
+over <a href="45-block-dev.html">Block_Dev</a>, so it also compiles host-native
+and is developed against a harness that checks every operation against
+<code>mke2fs</code>, <code>debugfs</code> and <code>e2fsck</code>.</p>
+
+<p>The pieces are separate children rather than one monolith: superblock, group
+descriptors, inodes, bitmaps, block map, block cache, directories, paths, files,
+the writer, the journal, mkfs, and a VFS layer that presents several mounted
+volumes as one tree.</p>
+
+<h2>The error model is Ada's</h2>
+
+<p class="note">Operations <strong>raise</strong> rather than returning status
+codes, and the IO-family exceptions are the standard ones from
+<code>Ada.IO_Exceptions</code> &mdash; chosen so a future
+<code>Ada.Streams.Stream_IO</code> bridge maps cleanly &mdash; plus a few
+filesystem-specific additions. That is a deliberate departure from the
+<code>Status</code>-out-parameter style used by the
+<a href="13-i2c.html">bus drivers</a>, and it is the right one here: a
+filesystem call has many more failure modes than a bus transaction, and threading
+them all through return values would drown the call sites.</p>
+
+<h2>Journal replay</h2>
+
+<p>The JBD2 journal lives in inode 8 as a regular file. On a volume whose
+superblock has the <code>RECOVER</code> incompat flag set, pending committed
+transactions are replayed into the filesystem before normal use, then the journal
+is reset and the flag cleared &mdash; which is what makes a power loss survivable
+rather than corrupting.</p>
+
+<p class="warn">Two things to know. The journal's on-disk structures are
+<strong>big-endian</strong>, unlike the rest of ext &mdash; a genuine trap when
+reading the code. And only the classic non-checksummed format is handled (ext3,
+and ext4 with <code>^metadata_csum</code>); a checksummed journal (CSUM_V2/V3)
+raises <code>Unsupported_Feature</code> rather than guessing.</p>
+
+<h2>Formatting on the device</h2>
+
+<p><code>Ext4.Mkfs</code> lays down a fresh minimal ext4 directly on a
+Block_Dev: one block group, a root directory and <code>lost+found</code>, no
+journal, no <code>metadata_csum</code>. The result mounts read-write with this
+filesystem and passes the host's <code>e2fsck</code> &mdash; which is the claim
+worth making, because it means the format is genuinely correct rather than merely
+self-consistent.</p>
+
+<p class="note">It writes only metadata and the two directory blocks, leaving
+data blocks untouched (the filesystem initialises each as it is allocated). So
+formatting a 32&nbsp;MB part is fast, but it also means <code>Mkfs</code> is not
+an erase &mdash; old file contents remain on the medium until overwritten.</p>
+
+<p class="warn">Targets the embedded/full runtimes: it needs exceptions,
+finalization, secondary stack and a heap.</p>
+"""),
+
+dict(
+slug="47-fat16",
+nav="FAT16",
+title="FAT16: the filesystem a PC can read",
+lede="Deliberately narrow &mdash; read-only, FAT16 only, long filenames "
+     "supported &mdash; because its whole job is being mountable by an operating "
+     "system you do not control.",
+body="""
+<h2>Why it exists alongside ext4</h2>
+
+<p><a href="46-ext4.html">ext4</a> is the better filesystem, but only Linux
+mounts it. When a device exposes its storage over USB mass storage it appears as
+a removable drive, and if it is formatted FAT then Windows, macOS and Linux all
+mount it with no driver and no ceremony: the user drops files on it and the
+device reads them back.</p>
+
+<p>That single use case sets the whole design.</p>
+
+<h2>The deliberate limits</h2>
+
+<table>
+  <thead><tr><th>Choice</th><th>Reason</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Read only</strong></td>
+        <td>The PC writes; the device reads. Nothing here needs to write, so
+            nothing here can corrupt a volume the user cares about.</td></tr>
+    <tr><td><strong>FAT16 only</strong></td>
+        <td>FAT12 and FAT32 volumes are <em>recognised and rejected</em> rather
+            than misread, so wrongly formatted media fails loudly instead of
+            returning plausible rubbish.</td></tr>
+    <tr><td><strong>Long filenames (VFAT)</strong></td>
+        <td>Because a user dropping files on a drive will not respect 8.3, and
+            silently mangling their names is not acceptable.</td></tr>
+  </tbody>
+</table>
+
+<p class="note">"Recognised and rejected" is the part worth copying as a design
+habit. A FAT32 volume read as FAT16 does not fail &mdash; it returns entries
+that look like files. Refusing is strictly better than a plausible wrong
+answer.</p>
+
+<h2>Formatting</h2>
+
+<p><code>Fat16.Mkfs</code> is a separate child that lays down an empty volume on
+blank media. It chooses 4&nbsp;KB clusters aligned to the NOR erase unit, so the
+block layer's read-modify-write stays one erase per cluster written &mdash;
+the filesystem's geometry chosen to suit the medium underneath it.</p>
+
+<p>It reads from either an MBR-partitioned disk (what Windows expects on a USB
+stick) or a bare boot sector at LBA 0, and sits on
+<a href="45-block-dev.html">Block_Dev</a> like everything else, so the same
+sources run over SPI NOR flash, an SD card, or a file-backed device in the test
+harness.</p>
+
+<p class="warn">Host-verified only. The development harness makes three
+independent implementations agree about every volume &mdash; this code, the
+host's <code>dosfstools</code>, and a FAT16 writer written from the
+specification rather than from this source &mdash; but the on-device path wants
+checking on your own hardware.</p>
+"""),
+
+dict(
+slug="48-console-fonts",
+nav="Console, text &amp; fonts",
+title="Console output, text and fonts",
+lede="There is no <code>Ada.Text_IO</code> console on this target, so printing "
+     "a number is a design decision &mdash; and drawing a glyph is a separate "
+     "one that knows nothing about your panel.",
+body="""
+<h2>Printing without a hosted runtime</h2>
+
+<p><code>ESP32S3.Log</code> is the formatted-output path the examples use. It
+routes through the ROM <code>printf</code> via fixed-signature C wrappers linked
+into every example, so you format <em>in Ada</em> rather than hand-writing a
+<code>glue.c</code> helper per message:</p>
+
+<pre><code>procedure Put       (S : String);
+procedure Put       (C : Character);
+procedure Put_Line  (S : String := "");
+procedure New_Line;
+procedure Put       (N : Integer; Width : Natural := 0; Pad : Character := ' ');
+procedure Put_Unsigned (N : Interfaces.Unsigned_32);
+procedure Put_Hex   (N : Interfaces.Unsigned_32; Width : Natural := 0);
+procedure Put_Fixed (...);</code></pre>
+
+<p class="note">Strings are passed to C NUL-terminated, built in a small
+<em>stack</em> buffer &mdash; no secondary stack, no heap. That is what keeps this
+usable from the lean profiles where <code>Ada.Text_IO</code> is unavailable, and
+why it is safe to call from places a heap allocation would not be. Each call is
+one short <code>esp_rom_printf</code>.</p>
+
+<p>Remember the type rule this implies, which
+<a href="13-i2c.html">the bus-scan sample</a> ran into:
+<code>Put_Hex</code> takes an <code>Interfaces.Unsigned_32</code>, so an
+<code>Integer</code>-family value needs an explicit conversion.</p>
+
+<h2>Fonts, separated from panels</h2>
+
+<p><code>ESP32S3.Fonts</code> is a panel-independent data model for proportional
+bitmap fonts. A <code>Font</code> is a light descriptor that <em>points</em> at
+flat glyph-atlas arrays generated offline by
+<code>libs/esp32s3_hal/tools/gen_font.py</code>: per-glyph metrics (advance,
+size, bearings, byte offset) plus packed coverage.</p>
+
+<p class="note"><strong>This package has no display dependency at all.</strong>
+It models glyph data and reads it through accessors; the rasterising and blitting
+live in the generic <code>ESP32S3.Fonts.Render</code>, instantiated per panel
+&mdash; <code>ESP32S3.ST7789.Fonts</code> being the worked case. So an atlas and
+its <code>Font</code> values are reusable across panels unchanged, and adding a
+new display type does not mean regenerating fonts.</p>
+
+<p>Two coverage encodings are supported, which is how the same model serves both
+crisp 1-bit glyphs and anti-aliased ones. The atlas being generated
+<em>offline</em> is the important structural choice: no font parsing, no
+rasteriser and no heap on the device &mdash; just indexed lookups into a constant
+array.</p>
+"""),
+
+dict(
+slug="49-esp-loader",
+nav="Programming another ESP32",
+title="Esp_Loader: your board as the programmer",
+lede="The ESP32 serial ROM protocol spoken as the <em>host</em>, so a jig or a "
+     "product can flash another ESP32 &mdash; and none of them can run Python.",
+body="""
+<h2>The device-side twin of esptool</h2>
+
+<p>This is the same protocol the SDK's own <code>espflash</code> host tool speaks
+from a PC (<a href="07-build.html">step 7</a>), implemented so that <em>the board
+itself</em> is the programmer. A production jig, a field programmer, or a product
+that reflashes its own daughterboard all need exactly this, and none of them can
+run Python.</p>
+
+<p>Every exchange is a SLIP frame (<code>0xC0</code> delimited,
+<code>0xDB</code> escaped) carrying a command and payload; the target answers
+with the same opcode and a status pair.</p>
+
+<p class="note">Only the ROM loader is spoken &mdash; no downloadable stub &mdash;
+so there is no compression and no stub-only command. That costs transfer time and
+nothing else: raise the rate with <code>Set_Baud</code> and a megabyte moves in a
+few seconds.</p>
+
+<h2>Streaming, so a megabyte costs a kilobyte</h2>
+
+<p><code>Begin_Image</code> declares the length, <code>Write</code> takes whatever
+chunks the source produces, and full 1&nbsp;KB blocks go out as they fill.
+Flashing a megabyte therefore costs a kilobyte of RAM &mdash; and a truncated
+source is an <em>error</em> rather than a corrupt target, because the declared
+length is checked against what arrived.</p>
+
+<h2>Knowing what you are talking to</h2>
+
+<p class="warn"><strong>The ROM protocol is not uniform across the family, and
+guessing wrong corrupts flash rather than failing cleanly.</strong> The original
+ESP32 ends every reply with four status bytes instead of two; the ESP32 and
+ESP8266 take a shorter <code>FLASH_BEGIN</code> payload; the ESP8266 has no
+<code>SPI_ATTACH</code> at all, plus a bug in how it sizes an erase.</p>
+
+<p>So <code>Connect</code> identifies the target first &mdash; via
+<code>GET_SECURITY_INFO</code> where the chip supports it (S3 and later), and the
+magic register otherwise. A chip newer than the table still connects, as
+<code>Unknown</code>, driven with the modern defaults.</p>
+
+<h2>Pass-through: the auto-reset circuit in software</h2>
+
+<p><code>Esp_Loader.Auto_Reset</code> is the circuit every ESP dev board has,
+implemented in software. When a board sits between a PC and a target as a
+USB-serial bridge, esptool on the PC expects to reach the target's ROM loader by
+wiggling DTR and RTS &mdash; this makes that work.</p>
+
+<p class="note">It reproduces the real circuit's <strong>cross-coupling</strong>,
+so a terminal emulator asserting both lines on open does not reset the target,
+and it emulates the capacitor so esptool's <code>ClassicReset</code> (which moves
+the lines one at a time) works regardless of what the target board has on its EN
+pin. Those two details are the difference between "usually works" and "works".</p>
+
+<p><code>Serial_Link</code> is the ready-made transport over a UART and two
+GPIOs, and <a href="26-crypto.html">MD5</a> is here for
+<code>SPI_FLASH_MD5</code>: the target hashes what its flash actually holds and
+you compare, so "programmed OK" means something.</p>
+
+<p class="warn">Host-verified only, against a simulated ROM that validates every
+frame and impersonates each chip family in turn (with the per-chip handling
+deliberately broken three ways to prove the checks bite). The real ROM's timing
+still wants a target board on a real UART.</p>
+"""),
+
+dict(
+slug="50-simd",
+nav="SIMD (PIE)",
+title="SIMD: the PIE vector unit",
+lede="128-bit vector kernels with the inner loops written as GNAT inline "
+     "assembly &mdash; vendored, experimental, and honest about it.",
+body="""
+<h2>What it is</h2>
+
+<p><code>ESP32S3.SIMD</code> exposes the S3's <strong>PIE</strong> SIMD extension
+&mdash; the Xtensa LX7's 128-bit <code>q0</code>&ndash;<code>q7</code> registers
+&mdash; with the inner loops written as GNAT inline assembly
+(<code>System.Machine_Code</code>) inside Ada bodies.</p>
+
+<p>Application code <code>with</code>s the facade; the per-type kernels live in
+children by element family:</p>
+
+<table>
+  <thead><tr><th>Child</th><th>Element type</th></tr></thead>
+  <tbody>
+    <tr><td><code>ESP32S3.SIMD.I8</code></td><td><code>Integer_8</code></td></tr>
+    <tr><td><code>ESP32S3.SIMD.I16</code></td><td><code>Integer_16</code></td></tr>
+    <tr><td><code>ESP32S3.SIMD.I32</code></td><td><code>Integer_32</code></td></tr>
+    <tr><td><code>ESP32S3.SIMD.F32</code></td><td><code>IEEE_Float_32</code></td></tr>
+  </tbody>
+</table>
+
+<pre><code>procedure Add   (A, B : SIMD_F32_Vector; Result : in out SIMD_F32_Vector);
+procedure Sub   (A, B : SIMD_F32_Vector; Result : in out SIMD_F32_Vector);
+procedure Mul_Scalar (...);
+procedure MAC   (...);
+function  Sum         (A : SIMD_F32_Vector) return IEEE_Float_32;
+function  Dot_Product (A, B : SIMD_F32_Vector) return IEEE_Float_32;
+procedure Ceil  (A : SIMD_F32_Vector; Result : in out SIMD_F32_Vector; Max_Val : IEEE_Float_32);
+procedure Floor (...);
+procedure Neg / Abs_Val (...);</code></pre>
+
+<p>Contracts on these are intentionally explicit &mdash; the preconditions state
+the length and aliasing rules rather than leaving them to a comment.</p>
+
+<h2>Read this before you depend on it</h2>
+
+<p class="warn"><strong>Status: experimental / beta.</strong> Correctness is
+validated for a <em>subset</em> of operations through the benchmark harness; edge
+cases and operation interactions are not systematically exercised. The library's
+own README says not to rely on it in safety-critical contexts without independent
+verification, and repeating that here rather than quietly omitting it is the
+point.</p>
+
+<p class="note"><strong>Provenance:</strong> vendored from
+<code>rowsail/ada-esp32-s3-simd</code>, itself based on the low-level
+implementation ideas of the upstream <code>zliu43/esp_simd</code> project. It is
+not original work of this SDK, and the vendoring is recorded rather than
+blurred.</p>
+
+<h2>Enabling the coprocessor</h2>
+
+<p>PIE is coprocessor 3. The bare boot's <code>start.S</code> sets
+<code>CPENABLE = 0x09</code> to enable it &mdash; so unlike most of the HAL, this
+library depends on a startup detail rather than only on its own registers. If you
+port the boot code, that bit has to come with it or every kernel faults.</p>
+"""),
+
+dict(
+slug="51-stack-usage",
+nav="Stack measurement",
+title="Stack usage: measuring what analysis cannot see",
+lede="Static worst-case analysis cannot see the prebuilt runtime, the C "
+     "startup, ISRs or hand-written assembly. Painting the stack can.",
+body="""
+<h2>How it works</h2>
+
+<p>Fill the unused part of a stack with a sentinel word, run the workload, then
+scan for the lowest word the program actually overwrote. The gap between that and
+the top is the peak depth ever reached.</p>
+
+<p>This is the <strong>measured</strong> counterpart to the static
+<code>x stack</code> worst-case analysis &mdash; and it is the only way to
+account for the parts static analysis structurally cannot see: the prebuilt
+runtime, the C startup, interrupt service routines, and hand-written
+assembly.</p>
+
+<h2>The direction of the error</h2>
+
+<p class="note">A sentinel-valued word that the program legitimately wrote looks
+pristine, so the scan stops at the <strong>first</strong> overwritten word from
+the bottom. That means it can only ever be <em>conservative</em>: it never
+under-reports the peak. Read the figure as "at least this much was used", never
+as an exact high-water mark.</p>
+
+<p class="warn">The measurement is only as good as the workload. A run that never
+takes the deep path reports a comfortable number that means nothing about the
+path you did not exercise &mdash; so drive a <em>real</em> workload, including
+the error paths and the interrupt load, before believing the headroom.</p>
+
+<h2>Why both approaches</h2>
+
+<p>Use the static analysis to find the theoretical worst case in code it can see,
+and this to catch what it cannot. Agreement between them is meaningful evidence;
+a measured figure that exceeds the static bound means the static model is missing
+a path, which is worth knowing before it is a
+<a href="52-debugging.html">stack overflow on hardware</a>.</p>
+
+<p class="note">The runtime already guards the running task with a hardware
+watchpoint a redzone above its stack limit, re-armed on every context switch
+(<a href="52-debugging.html">step 44</a>). That catches an overflow precisely when
+it happens; this tells you how close you were before it did.</p>
+"""),
+
+dict(
+slug="52-debugging",
 nav="Debugging",
 title="Debugging: GDB over the same cable",
 lede="The USB-Serial-JTAG port is both the console and a JTAG debug interface, "
@@ -4076,7 +4581,7 @@ unrelated.</p>
 
 # ---------------------------------------------------------------- 13
 dict(
-slug="45-troubleshooting",
+slug="53-troubleshooting",
 nav="Troubleshooting &amp; next steps",
 title="Troubleshooting, and where to go next",
 lede="The failure modes worth recognising on sight, a one-screen cheat sheet, "
@@ -4288,7 +4793,24 @@ a:hover { text-decoration-thickness: 2px; }
   position: sticky;
   top: 2rem;
   font-size: 0.88rem;
+  /* 45 steps is taller than most viewports, and a sticky element that
+     overflows simply clips -- the last entries become unreachable.  Bound it
+     to the visible height and let it scroll on its own. */
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;   /* don't chain to the page at either end */
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+  padding-right: 0.35rem;         /* room for the bar, so it can't cover text */
 }
+/* WebKit/Blink: match the slim, low-contrast Firefox treatment above. */
+.toc::-webkit-scrollbar { width: 8px; }
+.toc::-webkit-scrollbar-track { background: transparent; }
+.toc::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border-radius: 4px;
+}
+.toc:hover::-webkit-scrollbar-thumb { background: var(--fg-faint); }
 .toc h2 {
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -4297,8 +4819,45 @@ a:hover { text-decoration-thickness: 2px; }
   margin: 0 0 0.7rem;
   font-weight: 650;
 }
-.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: step; }
-.toc li { counter-increment: step; margin: 0; }
+.toc > ol { list-style: none; margin: 0; padding: 0; }
+.toc ol { list-style: none; margin: 0; padding: 0; }
+
+/* Collapsible sections.  The step counter lives on the OUTER list so numbering
+   stays continuous across groups -- a closed group must not renumber the ones
+   after it. */
+.toc-group { margin: 0 0 0.15rem; }
+.toc details > summary {
+  list-style: none;                 /* replace the default marker below */
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.3rem 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  user-select: none;
+}
+.toc details > summary::-webkit-details-marker { display: none; }
+.toc details > summary::before {
+  content: "▸";                 /* literal glyph: a CSS hex escape here would be eaten as octal by Python */
+  font-size: 0.7em;
+  color: var(--fg-faint);
+  transition: transform 0.12s ease;
+}
+.toc details[open] > summary::before { transform: rotate(90deg); }
+.toc details > summary:hover { background: var(--rule-soft); color: var(--fg); }
+.toc-range {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  font-weight: 400;
+  color: var(--fg-faint);
+}
+.toc details li { margin: 0; }
+.toc > ol > li { margin: 0; }
 .toc ol a {
   display: block;
   padding: 0.3rem 0.55rem 0.3rem 2.1rem;
@@ -4309,7 +4868,7 @@ a:hover { text-decoration-thickness: 2px; }
   border-radius: 0 3px 3px 0;
 }
 .toc ol a::before {
-  content: counter(step, decimal-leading-zero);
+  content: attr(data-step);
   color: var(--fg-faint);
   font-family: var(--mono);
   font-size: 0.78em;
@@ -4556,6 +5115,8 @@ footer.site {
     border: 1px solid var(--rule);
     border-radius: 8px;
     padding: 1rem 1.1rem;
+    max-height: none;      /* a static panel must not scroll inside itself */
+    overflow-y: visible;
   }
   main { max-width: none; }
   h1 { font-size: 1.65rem; }
@@ -4606,7 +5167,7 @@ PAGE = """<!DOCTYPE html>
 INDEX_BODY = """
     <p class="eyebrow">Start here</p>
     <h1>{site}</h1>
-    <p class="lede">{tagline} Forty-five short steps, one aspect each, from a
+    <p class="lede">{tagline} Fifty-three short steps, one aspect each, from a
     blank machine to your own Ada application running on both cores.</p>
 
     <p>The ESP32-S3 is normally programmed through Espressif's ESP-IDF: a large
@@ -4622,9 +5183,10 @@ INDEX_BODY = """
     how to configure it. Steps 10 and 11 are your own project and the driver
     library. Steps 12 to 28 are the chip's own peripherals and 29 to 38 the
     external devices the SDK drives &mdash; start with whichever your board
-    actually has. Steps 39 to 43 are the networking stack, from sockets up
-    through TLS and Wi-Fi. Steps 44 and 45 are the debugger and what to do when
-    something goes wrong.</p>
+    actually has. Steps 39 to 44 are the networking stack, from sockets up
+    through TLS and Wi-Fi, and 45 to 51 the storage, filesystems and standalone
+    tools. Steps 52 and 53 are the debugger and what to do when something goes
+    wrong.</p>
 
     <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
 
@@ -4684,9 +5246,31 @@ BLURBS = {
     "41-tls":             "A complete TLS 1.3 client in Ada: ECDHE, chain validation to a pinned root, resumption.",
     "42-wifi":            "Pure Ada around three fetched Apache-2.0 blobs, with the WPA2 handshake kept out of them.",
     "43-modbus":          "Industrial master and slave on the socket facade, owning none of your data.",
-    "44-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
-    "45-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
+    "44-ftp":             "Outbound-only streamed transfers, and an anonymous server over your ext4 volumes.",
+    "45-block-dev":       "One vtable the filesystems talk to, and a filter that spreads flash wear.",
+    "46-ext4":            "A from-scratch ext2/3/4 with JBD2 replay, on-device mkfs, and Ada exceptions.",
+    "47-fat16":           "Read-only, FAT16-only, long filenames \u2014 the filesystem a PC can mount.",
+    "48-console-fonts":   "Formatted output with no hosted runtime, and glyph data that knows nothing about panels.",
+    "49-esp-loader":      "Your board as the programmer: the ROM protocol, streamed, with per-chip quirks handled.",
+    "50-simd":            "128-bit PIE kernels in inline assembly \u2014 vendored, and honestly labelled beta.",
+    "51-stack-usage":     "Stack painting: the measured counterpart to static analysis, conservative by design.",
+    "52-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
+    "53-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
 }
+
+
+#  Sidebar sections: (title, first step, last step).  build() checks these cover
+#  PAGES exactly, so adding a page without extending a range fails loudly
+#  instead of silently dropping it out of the navigation.
+TOC_GROUPS = [
+    ("Getting started",     1, 11),
+    ("Chip peripherals",   12, 28),
+    ("External devices",   29, 38),
+    ("Networking",         39, 44),
+    ("Storage &amp; files",    45, 47),
+    ("Text &amp; tooling",     48, 51),
+    ("Debugging",          52, 53),
+]
 
 
 def sample(name):
@@ -4706,16 +5290,46 @@ def strip_tags(s):
 
 def build():
     n = len(PAGES)
+    #  Ranges must cover PAGES exactly and in order, so adding a page without
+    #  extending a group fails loudly instead of vanishing from the sidebar.
+    covered = []
+    for _, first, last in TOC_GROUPS:
+        covered.extend(range(first, last + 1))
+    if covered != list(range(1, n + 1)):
+        raise SystemExit("TOC_GROUPS covers %d steps but there are %d pages"
+                         " -- extend a range in TOC_GROUPS" % (len(covered), n))
 
     def toc_html(current_slug):
+        """Sidebar contents, grouped into collapsible sections.
+
+        A flat list of 45 entries is taller than most viewports.  Bounding it
+        and letting it scroll keeps every entry REACHABLE, but on a late page
+        the highlighted entry then starts below the fold -- you arrive unable to
+        see where you are.  Grouping fixes that with no JavaScript: <details>
+        collapses the sections you are not in, and the section holding the
+        current page is rendered open.
+        """
         rows = []
-        for p in PAGES:
-            cls = ' class="current"' if p["slug"] == current_slug else ""
-            aria = ' aria-current="page"' if p["slug"] == current_slug else ""
-            rows.append(
-                '      <li%s><a href="%s.html"%s>%s</a></li>'
-                % (cls, p["slug"], aria, p["nav"])
-            )
+        for title, first, last in TOC_GROUPS:
+            members = PAGES[first - 1:last]
+            here = any(m["slug"] == current_slug for m in members)
+            #  On the index (no current page) open the first group only, so the
+            #  reader sees where to start rather than a wall of closed sections.
+            open_attr = " open" if here or (current_slug is None and first == 1) else ""
+            rows.append('      <li class="toc-group">')
+            rows.append('        <details%s>' % open_attr)
+            rows.append('          <summary>%s<span class="toc-range">%d&ndash;%d</span></summary>'
+                        % (title, first, last))
+            rows.append('          <ol>')
+            for m in members:
+                cls = ' class="current"' if m["slug"] == current_slug else ""
+                aria = ' aria-current="page"' if m["slug"] == current_slug else ""
+                step_no = PAGES.index(m) + 1
+                rows.append('            <li%s><a href="%s.html" data-step="%02d"%s>%s</a></li>'
+                            % (cls, m["slug"], step_no, aria, m["nav"]))
+            rows.append('          </ol>')
+            rows.append('        </details>')
+            rows.append('      </li>')
         return "\n".join(rows)
 
     # -- step pages -------------------------------------------------------

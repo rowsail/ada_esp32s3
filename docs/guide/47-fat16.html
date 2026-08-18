@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Analog in: the SAR ADC and capacitive touch &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Two 12-bit converters on fixed pins, and fourteen touch channels that measure a pad's capacitance by counting &mdash; both living in the RTC domain.">
+<title>FAT16: the filesystem a PC can read &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Deliberately narrow &mdash; read-only, FAT16 only, long filenames supported &mdash; because its whole job is being mountable by an operating system you do not control.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -41,7 +41,7 @@
         </details>
       </li>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Chip peripherals<span class="toc-range">12&ndash;28</span></summary>
           <ol>
             <li><a href="12-gpio.html" data-step="12">GPIO in depth</a></li>
@@ -56,7 +56,7 @@
             <li><a href="21-ledc-sdm.html" data-step="21">LEDC &amp; sigma-delta</a></li>
             <li><a href="22-mcpwm.html" data-step="22">MCPWM</a></li>
             <li><a href="23-timers-pcnt.html" data-step="23">Timers &amp; pulse counting</a></li>
-            <li class="current"><a href="24-analog.html" data-step="24" aria-current="page">ADC &amp; touch</a></li>
+            <li><a href="24-analog.html" data-step="24">ADC &amp; touch</a></li>
             <li><a href="25-rtc.html" data-step="25">RTC, hold &amp; deep sleep</a></li>
             <li><a href="26-crypto.html" data-step="26">Crypto &amp; RNG</a></li>
             <li><a href="27-sd.html" data-step="27">SD cards</a></li>
@@ -95,12 +95,12 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Storage &amp; files<span class="toc-range">45&ndash;47</span></summary>
           <ol>
             <li><a href="45-block-dev.html" data-step="45">Block devices &amp; wear levelling</a></li>
             <li><a href="46-ext4.html" data-step="46">ext4 filesystem</a></li>
-            <li><a href="47-fat16.html" data-step="47">FAT16</a></li>
+            <li class="current"><a href="47-fat16.html" data-step="47" aria-current="page">FAT16</a></li>
           </ol>
         </details>
       </li>
@@ -128,73 +128,65 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="23-timers-pcnt.html">&larr; Timers &amp; pulse counting</a><a href="25-rtc.html">RTC, hold &amp; deep sleep &rarr;</a></nav>
-    <p class="eyebrow">Step 24 of 53</p>
-    <h1>Analog in: the SAR ADC and capacitive touch</h1>
-    <p class="lede">Two 12-bit converters on fixed pins, and fourteen touch channels that measure a pad's capacitance by counting &mdash; both living in the RTC domain.</p>
+    <nav class="pager-top"><a href="46-ext4.html">&larr; ext4 filesystem</a><a href="48-console-fonts.html">Console, text &amp; fonts &rarr;</a></nav>
+    <p class="eyebrow">Step 47 of 53</p>
+    <h1>FAT16: the filesystem a PC can read</h1>
+    <p class="lede">Deliberately narrow &mdash; read-only, FAT16 only, long filenames supported &mdash; because its whole job is being mountable by an operating system you do not control.</p>
 
-<h2>The SAR ADC</h2>
+<h2>Why it exists alongside ext4</h2>
 
-<p>Two units, each with up to ten 12-bit channels on <em>fixed</em> GPIOs. The
-mapping is not configurable, so the pin decides the channel:</p>
+<p><a href="46-ext4.html">ext4</a> is the better filesystem, but only Linux
+mounts it. When a device exposes its storage over USB mass storage it appears as
+a removable drive, and if it is formatted FAT then Windows, macOS and Linux all
+mount it with no driver and no ceremony: the user drops files on it and the
+device reads them back.</p>
 
-<pre><code>ADC1 channel n -&gt; GPIO (n + 1)     --  ch0 = GPIO1  .. ch9 = GPIO10
-ADC2 channel n -&gt; GPIO (n + 11)    --  ch0 = GPIO11 .. ch9 = GPIO20
+<p>That single use case sets the whole design.</p>
 
-function Channel_Pin (Unit : ADC_Unit; Ch : Channel_Index)
-  return ESP32S3.GPIO.Pin_Id;      --  ask, rather than hard-code the arithmetic</code></pre>
+<h2>The deliberate limits</h2>
 
-<p>Conversions are software-triggered single shots through the RTC controller,
-each returning a raw 12-bit code:</p>
+<table>
+  <thead><tr><th>Choice</th><th>Reason</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Read only</strong></td>
+        <td>The PC writes; the device reads. Nothing here needs to write, so
+            nothing here can corrupt a volume the user cares about.</td></tr>
+    <tr><td><strong>FAT16 only</strong></td>
+        <td>FAT12 and FAT32 volumes are <em>recognised and rejected</em> rather
+            than misread, so wrongly formatted media fails loudly instead of
+            returning plausible rubbish.</td></tr>
+    <tr><td><strong>Long filenames (VFAT)</strong></td>
+        <td>Because a user dropping files on a drive will not respect 8.3, and
+            silently mangling their names is not acceptable.</td></tr>
+  </tbody>
+</table>
 
-<pre><code>type Attenuation is (Db_0, Db_2_5, Db_6, Db_12);   --  ~1.1 V .. ~3.3 V full scale
-subtype Raw_Value is Natural range 0 .. 4095;
+<p class="note">"Recognised and rejected" is the part worth copying as a design
+habit. A FAT32 volume read as FAT16 does not fail &mdash; it returns entries
+that look like files. Refusing is strictly better than a plausible wrong
+answer.</p>
 
-function Read (R : Reader; Ch : Channel_Index;
-               Atten : Attenuation := Db_12) return Raw_Value;</code></pre>
+<h2>Formatting</h2>
 
-<p>Attenuation is per channel and per read, so one unit can serve a 1&nbsp;V
-sensor and a 3.3&nbsp;V divider without reconfiguration between them. The default
-<code>Db_12</code> gives roughly the full 3.3&nbsp;V range; a lower attenuation
-on a small signal buys real resolution.</p>
+<p><code>Fat16.Mkfs</code> is a separate child that lays down an empty volume on
+blank media. It chooses 4&nbsp;KB clusters aligned to the NOR erase unit, so the
+block layer's read-modify-write stays one erase per cluster written &mdash;
+the filesystem's geometry chosen to suit the medium underneath it.</p>
 
-<p class="note"><strong>The result is a raw code, not a voltage.</strong> The
-driver does not pretend to give you volts, because an accurate conversion needs
-the per-chip calibration data and the attenuation curve is not linear at the
-extremes. <code>Cal_Code</code> exposes the self-calibrated initial code and
-<code>Last_Done</code> whether the most recent conversion completed &mdash; both
-diagnostics for deciding whether a reading is trustworthy.</p>
+<p>It reads from either an MBR-partitioned disk (what Windows expects on a USB
+stick) or a bare boot sector at LBA 0, and sits on
+<a href="45-block-dev.html">Block_Dev</a> like everything else, so the same
+sources run over SPI NOR flash, an SD card, or a file-backed device in the test
+harness.</p>
 
-<h2>Capacitive touch</h2>
-
-<p>Fourteen channels on GPIO1&nbsp;..&nbsp;GPIO14, and the numbering is the one
-mnemonic you need: <strong>touch channel n is wired to GPIO n</strong>.</p>
-
-<pre><code>type Channel is range 1 .. 14;
-function Pad (Ch : Channel) return ESP32S3.GPIO.Pin_Id;
-
-procedure Setup;                    --  bring the controller up, start the FSM
-procedure Enable (Ch : Channel);    --  put the pad in touch mode, add to the scan
-function  Read (Ch : Channel) return Natural;     --  latest raw count</code></pre>
-
-<p>Each channel measures its pad's self-capacitance by counting charge/discharge
-cycles in a fixed window. A finger near the pad raises the capacitance and
-changes the count. An FSM scans the enabled channels continuously on the RTC
-timer, so <code>Read</code> returns the latest sample rather than triggering
-one &mdash; it never blocks.</p>
-
-<p>Detection is relative, not absolute: <code>Touched</code> compares a channel's
-current count against a reference you supply. That reference is
-board-specific &mdash; pad size, overlay thickness and stray capacitance all move
-it &mdash; so sample a known-untouched value at startup rather than hard-coding
-a threshold from someone else's board.</p>
-
-<p class="note">Touch needs no tasking runtime: it is register pokes into the
-RTC/SENS domain, so unlike most of the HAL it works under
-<code>light-tasking</code> too.</p>
+<p class="warn">Host-verified only. The development harness makes three
+independent implementations agree about every volume &mdash; this code, the
+host's <code>dosfstools</code>, and a FAT16 writer written from the
+specification rather than from this source &mdash; but the on-device path wants
+checking on your own hardware.</p>
     <nav class="pager">
-      <a class="prev" href="23-timers-pcnt.html"><span class="dir">&larr; Previous</span><span class="name">Timers &amp; pulse counting</span></a>
-      <a class="next" href="25-rtc.html"><span class="dir">Next &rarr;</span><span class="name">RTC, hold &amp; deep sleep</span></a>
+      <a class="prev" href="46-ext4.html"><span class="dir">&larr; Previous</span><span class="name">ext4 filesystem</span></a>
+      <a class="next" href="48-console-fonts.html"><span class="dir">Next &rarr;</span><span class="name">Console, text &amp; fonts</span></a>
     </nav>
 
   </main>

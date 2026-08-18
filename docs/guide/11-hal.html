@@ -22,57 +22,114 @@
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
     <ol>
-      <li><a href="01-what-you-need.html">What you need</a></li>
-      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
-      <li><a href="03-clone.html">Getting the code</a></li>
-      <li><a href="04-board.html">Board and serial port</a></li>
-      <li><a href="05-first-blink.html">Your first blink</a></li>
-      <li><a href="06-anatomy.html">Reset to Main</a></li>
-      <li><a href="07-build.html">What a build does</a></li>
-      <li><a href="08-profiles.html">Runtime profiles</a></li>
-      <li><a href="09-board-config.html">Board configuration</a></li>
-      <li><a href="10-own-project.html">Your own project</a></li>
-      <li class="current"><a href="11-hal.html" aria-current="page">Talking to hardware</a></li>
-      <li><a href="12-gpio.html">GPIO in depth</a></li>
-      <li><a href="13-i2c.html">I2C in depth</a></li>
-      <li><a href="14-spi.html">SPI in depth</a></li>
-      <li><a href="15-uart.html">UART in depth</a></li>
-      <li><a href="16-gdma.html">GDMA</a></li>
-      <li><a href="17-i2s.html">I2S audio</a></li>
-      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
-      <li><a href="19-twai.html">TWAI (CAN)</a></li>
-      <li><a href="20-rmt.html">RMT pulses</a></li>
-      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
-      <li><a href="22-mcpwm.html">MCPWM</a></li>
-      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
-      <li><a href="24-analog.html">ADC &amp; touch</a></li>
-      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
-      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
-      <li><a href="27-sd.html">SD cards</a></li>
-      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
-      <li><a href="29-display-touch.html">Display &amp; touch</a></li>
-      <li><a href="30-es8311.html">ES8311 codec</a></li>
-      <li><a href="31-sensors.html">IMU &amp; environment</a></li>
-      <li><a href="32-pcf85063a.html">PCF85063A RTC</a></li>
-      <li><a href="33-expanders.html">Port expanders</a></li>
-      <li><a href="34-tx1812.html">TX1812 LEDs</a></li>
-      <li><a href="35-memory.html">Flash, EEPROM &amp; FRAM</a></li>
-      <li><a href="36-tlv2556.html">TLV2556 ADC</a></li>
-      <li><a href="37-gps.html">GPS receiver</a></li>
-      <li><a href="38-w5500.html">W5500 Ethernet</a></li>
-      <li><a href="39-net-stack.html">The network stack</a></li>
-      <li><a href="40-dns-ntp.html">DNS &amp; NTP</a></li>
-      <li><a href="41-tls.html">TLS 1.3</a></li>
-      <li><a href="42-wifi.html">Wi-Fi</a></li>
-      <li><a href="43-modbus.html">Modbus TCP</a></li>
-      <li><a href="44-debugging.html">Debugging</a></li>
-      <li><a href="45-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+      <li class="toc-group">
+        <details open>
+          <summary>Getting started<span class="toc-range">1&ndash;11</span></summary>
+          <ol>
+            <li><a href="01-what-you-need.html" data-step="01">What you need</a></li>
+            <li><a href="02-toolchain.html" data-step="02">Installing the toolchain</a></li>
+            <li><a href="03-clone.html" data-step="03">Getting the code</a></li>
+            <li><a href="04-board.html" data-step="04">Board and serial port</a></li>
+            <li><a href="05-first-blink.html" data-step="05">Your first blink</a></li>
+            <li><a href="06-anatomy.html" data-step="06">Reset to Main</a></li>
+            <li><a href="07-build.html" data-step="07">What a build does</a></li>
+            <li><a href="08-profiles.html" data-step="08">Runtime profiles</a></li>
+            <li><a href="09-board-config.html" data-step="09">Board configuration</a></li>
+            <li><a href="10-own-project.html" data-step="10">Your own project</a></li>
+            <li class="current"><a href="11-hal.html" data-step="11" aria-current="page">Talking to hardware</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Chip peripherals<span class="toc-range">12&ndash;28</span></summary>
+          <ol>
+            <li><a href="12-gpio.html" data-step="12">GPIO in depth</a></li>
+            <li><a href="13-i2c.html" data-step="13">I2C in depth</a></li>
+            <li><a href="14-spi.html" data-step="14">SPI in depth</a></li>
+            <li><a href="15-uart.html" data-step="15">UART in depth</a></li>
+            <li><a href="16-gdma.html" data-step="16">GDMA</a></li>
+            <li><a href="17-i2s.html" data-step="17">I2S audio</a></li>
+            <li><a href="18-lcd.html" data-step="18">LCD (i80 / RGB)</a></li>
+            <li><a href="19-twai.html" data-step="19">TWAI (CAN)</a></li>
+            <li><a href="20-rmt.html" data-step="20">RMT pulses</a></li>
+            <li><a href="21-ledc-sdm.html" data-step="21">LEDC &amp; sigma-delta</a></li>
+            <li><a href="22-mcpwm.html" data-step="22">MCPWM</a></li>
+            <li><a href="23-timers-pcnt.html" data-step="23">Timers &amp; pulse counting</a></li>
+            <li><a href="24-analog.html" data-step="24">ADC &amp; touch</a></li>
+            <li><a href="25-rtc.html" data-step="25">RTC, hold &amp; deep sleep</a></li>
+            <li><a href="26-crypto.html" data-step="26">Crypto &amp; RNG</a></li>
+            <li><a href="27-sd.html" data-step="27">SD cards</a></li>
+            <li><a href="28-chip-id.html" data-step="28">Temperature &amp; MAC</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>External devices<span class="toc-range">29&ndash;38</span></summary>
+          <ol>
+            <li><a href="29-display-touch.html" data-step="29">Display &amp; touch</a></li>
+            <li><a href="30-es8311.html" data-step="30">ES8311 codec</a></li>
+            <li><a href="31-sensors.html" data-step="31">IMU &amp; environment</a></li>
+            <li><a href="32-pcf85063a.html" data-step="32">PCF85063A RTC</a></li>
+            <li><a href="33-expanders.html" data-step="33">Port expanders</a></li>
+            <li><a href="34-tx1812.html" data-step="34">TX1812 LEDs</a></li>
+            <li><a href="35-memory.html" data-step="35">Flash, EEPROM &amp; FRAM</a></li>
+            <li><a href="36-tlv2556.html" data-step="36">TLV2556 ADC</a></li>
+            <li><a href="37-gps.html" data-step="37">GPS receiver</a></li>
+            <li><a href="38-w5500.html" data-step="38">W5500 Ethernet</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Networking<span class="toc-range">39&ndash;44</span></summary>
+          <ol>
+            <li><a href="39-net-stack.html" data-step="39">The network stack</a></li>
+            <li><a href="40-dns-ntp.html" data-step="40">DNS &amp; NTP</a></li>
+            <li><a href="41-tls.html" data-step="41">TLS 1.3</a></li>
+            <li><a href="42-wifi.html" data-step="42">Wi-Fi</a></li>
+            <li><a href="43-modbus.html" data-step="43">Modbus TCP</a></li>
+            <li><a href="44-ftp.html" data-step="44">FTP</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Storage &amp; files<span class="toc-range">45&ndash;47</span></summary>
+          <ol>
+            <li><a href="45-block-dev.html" data-step="45">Block devices &amp; wear levelling</a></li>
+            <li><a href="46-ext4.html" data-step="46">ext4 filesystem</a></li>
+            <li><a href="47-fat16.html" data-step="47">FAT16</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Text &amp; tooling<span class="toc-range">48&ndash;51</span></summary>
+          <ol>
+            <li><a href="48-console-fonts.html" data-step="48">Console, text &amp; fonts</a></li>
+            <li><a href="49-esp-loader.html" data-step="49">Programming another ESP32</a></li>
+            <li><a href="50-simd.html" data-step="50">SIMD (PIE)</a></li>
+            <li><a href="51-stack-usage.html" data-step="51">Stack measurement</a></li>
+          </ol>
+        </details>
+      </li>
+      <li class="toc-group">
+        <details>
+          <summary>Debugging<span class="toc-range">52&ndash;53</span></summary>
+          <ol>
+            <li><a href="52-debugging.html" data-step="52">Debugging</a></li>
+            <li><a href="53-troubleshooting.html" data-step="53">Troubleshooting &amp; next steps</a></li>
+          </ol>
+        </details>
+      </li>
     </ol>
   </nav>
 
   <main>
     <nav class="pager-top"><a href="10-own-project.html">&larr; Your own project</a><a href="12-gpio.html">GPIO in depth &rarr;</a></nav>
-    <p class="eyebrow">Step 11 of 45</p>
+    <p class="eyebrow">Step 11 of 53</p>
     <h1>Talking to the hardware: the HAL</h1>
     <p class="lede">Twenty-five-plus drivers, each a private register engine hidden behind a task-safe gateway. Here is what using one looks like, and why they are shaped the way they are.</p>
 
@@ -250,6 +307,23 @@ Wi-Fi or anything else registered as a NIC:</p>
     <tr><td>41</td><td><a href="41-tls.html">TLS 1.3</a></td><td>A full client handshake and chain validation, no C library</td></tr>
     <tr><td>42</td><td><a href="42-wifi.html">Wi-Fi</a></td><td>Pure Ada around the fetched radio blobs, WPA2 handshake included</td></tr>
     <tr><td>43</td><td><a href="43-modbus.html">Modbus TCP</a></td><td>Industrial master and slave over the facade</td></tr>
+    <tr><td>44</td><td><a href="44-ftp.html">FTP</a></td><td>Streamed client, and a server over your filesystems</td></tr>
+  </tbody>
+</table>
+
+<p>Steps 45 to 51 are the rest of the SDK &mdash; storage, filesystems, text and
+the standalone tools:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Component</th><th>What it gives you</th></tr></thead>
+  <tbody>
+    <tr><td>45</td><td><a href="45-block-dev.html">Block devices &amp; wear levelling</a></td><td>The vtable the filesystems sit on, and an FTL that spreads flash wear</td></tr>
+    <tr><td>46</td><td><a href="46-ext4.html">ext4</a></td><td>Read/write ext2/3/4 with JBD2 replay and on-device mkfs</td></tr>
+    <tr><td>47</td><td><a href="47-fat16.html">FAT16</a></td><td>The filesystem a PC can mount, read-only by design</td></tr>
+    <tr><td>48</td><td><a href="48-console-fonts.html">Console, text &amp; fonts</a></td><td>Formatted output with no hosted runtime; panel-independent glyphs</td></tr>
+    <tr><td>49</td><td><a href="49-esp-loader.html">Esp_Loader</a></td><td>Program another ESP32 from the board</td></tr>
+    <tr><td>50</td><td><a href="50-simd.html">SIMD (PIE)</a></td><td>128-bit vector kernels in inline assembly</td></tr>
+    <tr><td>51</td><td><a href="51-stack-usage.html">Stack measurement</a></td><td>Stack painting, to catch what static analysis cannot see</td></tr>
   </tbody>
 </table>
 

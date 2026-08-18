@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Analog in: the SAR ADC and capacitive touch &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Two 12-bit converters on fixed pins, and fourteen touch channels that measure a pad's capacitance by counting &mdash; both living in the RTC domain.">
+<title>SIMD: the PIE vector unit &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="128-bit vector kernels with the inner loops written as GNAT inline assembly &mdash; vendored, experimental, and honest about it.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -41,7 +41,7 @@
         </details>
       </li>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Chip peripherals<span class="toc-range">12&ndash;28</span></summary>
           <ol>
             <li><a href="12-gpio.html" data-step="12">GPIO in depth</a></li>
@@ -56,7 +56,7 @@
             <li><a href="21-ledc-sdm.html" data-step="21">LEDC &amp; sigma-delta</a></li>
             <li><a href="22-mcpwm.html" data-step="22">MCPWM</a></li>
             <li><a href="23-timers-pcnt.html" data-step="23">Timers &amp; pulse counting</a></li>
-            <li class="current"><a href="24-analog.html" data-step="24" aria-current="page">ADC &amp; touch</a></li>
+            <li><a href="24-analog.html" data-step="24">ADC &amp; touch</a></li>
             <li><a href="25-rtc.html" data-step="25">RTC, hold &amp; deep sleep</a></li>
             <li><a href="26-crypto.html" data-step="26">Crypto &amp; RNG</a></li>
             <li><a href="27-sd.html" data-step="27">SD cards</a></li>
@@ -105,12 +105,12 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Text &amp; tooling<span class="toc-range">48&ndash;51</span></summary>
           <ol>
             <li><a href="48-console-fonts.html" data-step="48">Console, text &amp; fonts</a></li>
             <li><a href="49-esp-loader.html" data-step="49">Programming another ESP32</a></li>
-            <li><a href="50-simd.html" data-step="50">SIMD (PIE)</a></li>
+            <li class="current"><a href="50-simd.html" data-step="50" aria-current="page">SIMD (PIE)</a></li>
             <li><a href="51-stack-usage.html" data-step="51">Stack measurement</a></li>
           </ol>
         </details>
@@ -128,73 +128,68 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="23-timers-pcnt.html">&larr; Timers &amp; pulse counting</a><a href="25-rtc.html">RTC, hold &amp; deep sleep &rarr;</a></nav>
-    <p class="eyebrow">Step 24 of 53</p>
-    <h1>Analog in: the SAR ADC and capacitive touch</h1>
-    <p class="lede">Two 12-bit converters on fixed pins, and fourteen touch channels that measure a pad's capacitance by counting &mdash; both living in the RTC domain.</p>
+    <nav class="pager-top"><a href="49-esp-loader.html">&larr; Programming another ESP32</a><a href="51-stack-usage.html">Stack measurement &rarr;</a></nav>
+    <p class="eyebrow">Step 50 of 53</p>
+    <h1>SIMD: the PIE vector unit</h1>
+    <p class="lede">128-bit vector kernels with the inner loops written as GNAT inline assembly &mdash; vendored, experimental, and honest about it.</p>
 
-<h2>The SAR ADC</h2>
+<h2>What it is</h2>
 
-<p>Two units, each with up to ten 12-bit channels on <em>fixed</em> GPIOs. The
-mapping is not configurable, so the pin decides the channel:</p>
+<p><code>ESP32S3.SIMD</code> exposes the S3's <strong>PIE</strong> SIMD extension
+&mdash; the Xtensa LX7's 128-bit <code>q0</code>&ndash;<code>q7</code> registers
+&mdash; with the inner loops written as GNAT inline assembly
+(<code>System.Machine_Code</code>) inside Ada bodies.</p>
 
-<pre><code>ADC1 channel n -&gt; GPIO (n + 1)     --  ch0 = GPIO1  .. ch9 = GPIO10
-ADC2 channel n -&gt; GPIO (n + 11)    --  ch0 = GPIO11 .. ch9 = GPIO20
+<p>Application code <code>with</code>s the facade; the per-type kernels live in
+children by element family:</p>
 
-function Channel_Pin (Unit : ADC_Unit; Ch : Channel_Index)
-  return ESP32S3.GPIO.Pin_Id;      --  ask, rather than hard-code the arithmetic</code></pre>
+<table>
+  <thead><tr><th>Child</th><th>Element type</th></tr></thead>
+  <tbody>
+    <tr><td><code>ESP32S3.SIMD.I8</code></td><td><code>Integer_8</code></td></tr>
+    <tr><td><code>ESP32S3.SIMD.I16</code></td><td><code>Integer_16</code></td></tr>
+    <tr><td><code>ESP32S3.SIMD.I32</code></td><td><code>Integer_32</code></td></tr>
+    <tr><td><code>ESP32S3.SIMD.F32</code></td><td><code>IEEE_Float_32</code></td></tr>
+  </tbody>
+</table>
 
-<p>Conversions are software-triggered single shots through the RTC controller,
-each returning a raw 12-bit code:</p>
+<pre><code>procedure Add   (A, B : SIMD_F32_Vector; Result : in out SIMD_F32_Vector);
+procedure Sub   (A, B : SIMD_F32_Vector; Result : in out SIMD_F32_Vector);
+procedure Mul_Scalar (...);
+procedure MAC   (...);
+function  Sum         (A : SIMD_F32_Vector) return IEEE_Float_32;
+function  Dot_Product (A, B : SIMD_F32_Vector) return IEEE_Float_32;
+procedure Ceil  (A : SIMD_F32_Vector; Result : in out SIMD_F32_Vector; Max_Val : IEEE_Float_32);
+procedure Floor (...);
+procedure Neg / Abs_Val (...);</code></pre>
 
-<pre><code>type Attenuation is (Db_0, Db_2_5, Db_6, Db_12);   --  ~1.1 V .. ~3.3 V full scale
-subtype Raw_Value is Natural range 0 .. 4095;
+<p>Contracts on these are intentionally explicit &mdash; the preconditions state
+the length and aliasing rules rather than leaving them to a comment.</p>
 
-function Read (R : Reader; Ch : Channel_Index;
-               Atten : Attenuation := Db_12) return Raw_Value;</code></pre>
+<h2>Read this before you depend on it</h2>
 
-<p>Attenuation is per channel and per read, so one unit can serve a 1&nbsp;V
-sensor and a 3.3&nbsp;V divider without reconfiguration between them. The default
-<code>Db_12</code> gives roughly the full 3.3&nbsp;V range; a lower attenuation
-on a small signal buys real resolution.</p>
+<p class="warn"><strong>Status: experimental / beta.</strong> Correctness is
+validated for a <em>subset</em> of operations through the benchmark harness; edge
+cases and operation interactions are not systematically exercised. The library's
+own README says not to rely on it in safety-critical contexts without independent
+verification, and repeating that here rather than quietly omitting it is the
+point.</p>
 
-<p class="note"><strong>The result is a raw code, not a voltage.</strong> The
-driver does not pretend to give you volts, because an accurate conversion needs
-the per-chip calibration data and the attenuation curve is not linear at the
-extremes. <code>Cal_Code</code> exposes the self-calibrated initial code and
-<code>Last_Done</code> whether the most recent conversion completed &mdash; both
-diagnostics for deciding whether a reading is trustworthy.</p>
+<p class="note"><strong>Provenance:</strong> vendored from
+<code>rowsail/ada-esp32-s3-simd</code>, itself based on the low-level
+implementation ideas of the upstream <code>zliu43/esp_simd</code> project. It is
+not original work of this SDK, and the vendoring is recorded rather than
+blurred.</p>
 
-<h2>Capacitive touch</h2>
+<h2>Enabling the coprocessor</h2>
 
-<p>Fourteen channels on GPIO1&nbsp;..&nbsp;GPIO14, and the numbering is the one
-mnemonic you need: <strong>touch channel n is wired to GPIO n</strong>.</p>
-
-<pre><code>type Channel is range 1 .. 14;
-function Pad (Ch : Channel) return ESP32S3.GPIO.Pin_Id;
-
-procedure Setup;                    --  bring the controller up, start the FSM
-procedure Enable (Ch : Channel);    --  put the pad in touch mode, add to the scan
-function  Read (Ch : Channel) return Natural;     --  latest raw count</code></pre>
-
-<p>Each channel measures its pad's self-capacitance by counting charge/discharge
-cycles in a fixed window. A finger near the pad raises the capacitance and
-changes the count. An FSM scans the enabled channels continuously on the RTC
-timer, so <code>Read</code> returns the latest sample rather than triggering
-one &mdash; it never blocks.</p>
-
-<p>Detection is relative, not absolute: <code>Touched</code> compares a channel's
-current count against a reference you supply. That reference is
-board-specific &mdash; pad size, overlay thickness and stray capacitance all move
-it &mdash; so sample a known-untouched value at startup rather than hard-coding
-a threshold from someone else's board.</p>
-
-<p class="note">Touch needs no tasking runtime: it is register pokes into the
-RTC/SENS domain, so unlike most of the HAL it works under
-<code>light-tasking</code> too.</p>
+<p>PIE is coprocessor 3. The bare boot's <code>start.S</code> sets
+<code>CPENABLE = 0x09</code> to enable it &mdash; so unlike most of the HAL, this
+library depends on a startup detail rather than only on its own registers. If you
+port the boot code, that bit has to come with it or every kernel faults.</p>
     <nav class="pager">
-      <a class="prev" href="23-timers-pcnt.html"><span class="dir">&larr; Previous</span><span class="name">Timers &amp; pulse counting</span></a>
-      <a class="next" href="25-rtc.html"><span class="dir">Next &rarr;</span><span class="name">RTC, hold &amp; deep sleep</span></a>
+      <a class="prev" href="49-esp-loader.html"><span class="dir">&larr; Previous</span><span class="name">Programming another ESP32</span></a>
+      <a class="next" href="51-stack-usage.html"><span class="dir">Next &rarr;</span><span class="name">Stack measurement</span></a>
     </nav>
 
   </main>

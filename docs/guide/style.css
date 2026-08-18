@@ -116,7 +116,24 @@ a:hover { text-decoration-thickness: 2px; }
   position: sticky;
   top: 2rem;
   font-size: 0.88rem;
+  /* 45 steps is taller than most viewports, and a sticky element that
+     overflows simply clips -- the last entries become unreachable.  Bound it
+     to the visible height and let it scroll on its own. */
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;   /* don't chain to the page at either end */
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+  padding-right: 0.35rem;         /* room for the bar, so it can't cover text */
 }
+/* WebKit/Blink: match the slim, low-contrast Firefox treatment above. */
+.toc::-webkit-scrollbar { width: 8px; }
+.toc::-webkit-scrollbar-track { background: transparent; }
+.toc::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border-radius: 4px;
+}
+.toc:hover::-webkit-scrollbar-thumb { background: var(--fg-faint); }
 .toc h2 {
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -125,8 +142,45 @@ a:hover { text-decoration-thickness: 2px; }
   margin: 0 0 0.7rem;
   font-weight: 650;
 }
-.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: step; }
-.toc li { counter-increment: step; margin: 0; }
+.toc > ol { list-style: none; margin: 0; padding: 0; }
+.toc ol { list-style: none; margin: 0; padding: 0; }
+
+/* Collapsible sections.  The step counter lives on the OUTER list so numbering
+   stays continuous across groups -- a closed group must not renumber the ones
+   after it. */
+.toc-group { margin: 0 0 0.15rem; }
+.toc details > summary {
+  list-style: none;                 /* replace the default marker below */
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.3rem 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  user-select: none;
+}
+.toc details > summary::-webkit-details-marker { display: none; }
+.toc details > summary::before {
+  content: "▸";                 /* literal glyph: a CSS hex escape here would be eaten as octal by Python */
+  font-size: 0.7em;
+  color: var(--fg-faint);
+  transition: transform 0.12s ease;
+}
+.toc details[open] > summary::before { transform: rotate(90deg); }
+.toc details > summary:hover { background: var(--rule-soft); color: var(--fg); }
+.toc-range {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  font-weight: 400;
+  color: var(--fg-faint);
+}
+.toc details li { margin: 0; }
+.toc > ol > li { margin: 0; }
 .toc ol a {
   display: block;
   padding: 0.3rem 0.55rem 0.3rem 2.1rem;
@@ -137,7 +191,7 @@ a:hover { text-decoration-thickness: 2px; }
   border-radius: 0 3px 3px 0;
 }
 .toc ol a::before {
-  content: counter(step, decimal-leading-zero);
+  content: attr(data-step);
   color: var(--fg-faint);
   font-family: var(--mono);
   font-size: 0.78em;
@@ -384,6 +438,8 @@ footer.site {
     border: 1px solid var(--rule);
     border-radius: 8px;
     padding: 1rem 1.1rem;
+    max-height: none;      /* a static panel must not scroll inside itself */
+    overflow-y: visible;
   }
   main { max-width: none; }
   h1 { font-size: 1.65rem; }

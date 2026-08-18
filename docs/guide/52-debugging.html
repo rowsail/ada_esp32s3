@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Analog in: the SAR ADC and capacitive touch &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Two 12-bit converters on fixed pins, and fourteen touch channels that measure a pad's capacitance by counting &mdash; both living in the RTC domain.">
+<title>Debugging: GDB over the same cable &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="The USB-Serial-JTAG port is both the console and a JTAG debug interface, so one cable gets you breakpoints, both cores as GDB threads, and a live halt on a hung board.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -41,7 +41,7 @@
         </details>
       </li>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Chip peripherals<span class="toc-range">12&ndash;28</span></summary>
           <ol>
             <li><a href="12-gpio.html" data-step="12">GPIO in depth</a></li>
@@ -56,7 +56,7 @@
             <li><a href="21-ledc-sdm.html" data-step="21">LEDC &amp; sigma-delta</a></li>
             <li><a href="22-mcpwm.html" data-step="22">MCPWM</a></li>
             <li><a href="23-timers-pcnt.html" data-step="23">Timers &amp; pulse counting</a></li>
-            <li class="current"><a href="24-analog.html" data-step="24" aria-current="page">ADC &amp; touch</a></li>
+            <li><a href="24-analog.html" data-step="24">ADC &amp; touch</a></li>
             <li><a href="25-rtc.html" data-step="25">RTC, hold &amp; deep sleep</a></li>
             <li><a href="26-crypto.html" data-step="26">Crypto &amp; RNG</a></li>
             <li><a href="27-sd.html" data-step="27">SD cards</a></li>
@@ -116,10 +116,10 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Debugging<span class="toc-range">52&ndash;53</span></summary>
           <ol>
-            <li><a href="52-debugging.html" data-step="52">Debugging</a></li>
+            <li class="current"><a href="52-debugging.html" data-step="52" aria-current="page">Debugging</a></li>
             <li><a href="53-troubleshooting.html" data-step="53">Troubleshooting &amp; next steps</a></li>
           </ol>
         </details>
@@ -128,73 +128,105 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="23-timers-pcnt.html">&larr; Timers &amp; pulse counting</a><a href="25-rtc.html">RTC, hold &amp; deep sleep &rarr;</a></nav>
-    <p class="eyebrow">Step 24 of 53</p>
-    <h1>Analog in: the SAR ADC and capacitive touch</h1>
-    <p class="lede">Two 12-bit converters on fixed pins, and fourteen touch channels that measure a pad's capacitance by counting &mdash; both living in the RTC domain.</p>
+    <nav class="pager-top"><a href="51-stack-usage.html">&larr; Stack measurement</a><a href="53-troubleshooting.html">Troubleshooting &amp; next steps &rarr;</a></nav>
+    <p class="eyebrow">Step 52 of 53</p>
+    <h1>Debugging: GDB over the same cable</h1>
+    <p class="lede">The USB-Serial-JTAG port is both the console and a JTAG debug interface, so one cable gets you breakpoints, both cores as GDB threads, and a live halt on a hung board.</p>
 
-<h2>The SAR ADC</h2>
+<h2>Fetch the tools, once</h2>
 
-<p>Two units, each with up to ten 12-bit channels on <em>fixed</em> GPIOs. The
-mapping is not configurable, so the pin decides the channel:</p>
+<pre><code>./x get-debug-tools      # pinned, SHA-256-verified OpenOCD + xtensa-esp32s3-elf-gdb
+./x debug gpio0_blink    # build, flash, start OpenOCD, attach GDB, rest at Main</code></pre>
 
-<pre><code>ADC1 channel n -&gt; GPIO (n + 1)     --  ch0 = GPIO1  .. ch9 = GPIO10
-ADC2 channel n -&gt; GPIO (n + 11)    --  ch0 = GPIO11 .. ch9 = GPIO20
+<p>Both are debug-only downloads; build, flash and run need neither.</p>
 
-function Channel_Pin (Unit : ADC_Unit; Ch : Channel_Index)
-  return ESP32S3.GPIO.Pin_Id;      --  ask, rather than hard-code the arithmetic</code></pre>
+<p class="warn">The S3 needs the <strong>S3-specific</strong>
+<code>xtensa-esp32s3-elf-gdb</code>. The Alire crate's esp32 (LX6) GDB silently
+fails on it &mdash; hardware-confirmed. <code>./x debug</code> selects the right
+one for you, which is the main reason to go through it rather than invoking GDB
+by hand.</p>
 
-<p>Conversions are software-triggered single shots through the RTC controller,
-each returning a raw 12-bit code:</p>
+<h2>Two options that matter on this target</h2>
 
-<pre><code>type Attenuation is (Db_0, Db_2_5, Db_6, Db_12);   --  ~1.1 V .. ~3.3 V full scale
-subtype Raw_Value is Natural range 0 .. 4095;
+<ul>
+  <li><strong><code>--smp</code></strong> exposes <em>both</em> LX7 cores as GDB
+      threads, so <code>info threads</code> shows what each core is doing.
+      Essential for a cross-core hang.</li>
+  <li><strong><code>--attach</code></strong> halts the board <em>in place</em>
+      without resetting it, so you can examine a live hang or crash exactly
+      where it stopped.</li>
+</ul>
 
-function Read (R : Reader; Ch : Channel_Index;
-               Atten : Attenuation := Db_12) return Raw_Value;</code></pre>
+<p>From there it is ordinary GDB on <code>app.elf</code>: breakpoints,
+<code>step</code>, <code>print</code>, <code>backtrace</code>. When you are done,
+<code>./x kill-openocd</code> releases the USB-JTAG port &mdash; a captured port
+is the usual reason the next flash fails.</p>
 
-<p>Attenuation is per channel and per read, so one unit can serve a 1&nbsp;V
-sensor and a 3.3&nbsp;V divider without reconfiguration between them. The default
-<code>Db_12</code> gives roughly the full 3.3&nbsp;V range; a lower attenuation
-on a small signal buys real resolution.</p>
+<h2>In the editor</h2>
 
-<p class="note"><strong>The result is a raw code, not a voltage.</strong> The
-driver does not pretend to give you volts, because an accurate conversion needs
-the per-chip calibration data and the attenuation curve is not linear at the
-extremes. <code>Cal_Code</code> exposes the self-calibrated initial code and
-<code>Last_Done</code> whether the most recent conversion completed &mdash; both
-diagnostics for deciding whether a reading is trustworthy.</p>
+<p>The split is deliberate and worth understanding: <strong>the Ada Language
+Server provides language features</strong> (completion, diagnostics,
+go-to-definition, hover) by reading a project's <code>.gpr</code> file, and
+<strong><code>./x</code> provides the actions</strong>. Any editor with an LSP
+client gets the first for free; the editor integration only has to wrap the
+second.</p>
 
-<h2>Capacitive touch</h2>
+<ul>
+  <li><strong>VS Code</strong> &mdash; install the AdaCore <em>Ada &amp;
+      SPARK</em> extension for ALS, and <em>Native Debug</em>
+      (<code>webfreak.debug</code>) for debugging (cppdbg cannot walk the Xtensa
+      stack). The committed <code>.vscode/tasks.json</code> gives you
+      <code>Ada: build</code> (with a GNAT problem matcher), <code>flash</code>,
+      <code>monitor</code>, <code>run</code> and <code>clean</code>;
+      <code>launch.json</code> gives <code>Ada: debug (OpenOCD + GDB)</code>.
+      <kbd>Ctrl-Shift-B</kbd> builds, <kbd>F5</kbd> debugs.</li>
+  <li><strong>Vim / Neovim</strong> &mdash; the repository ships a plugin, and
+      one command installs it by symlinking it into Vim's and Neovim's native
+      package directory (so <code>git pull</code> updates it in place):
+      <pre><code>./x install-vim          # or, from a standalone project:  esp32-ada install-vim</code></pre>
+      Restart Vim and you get <code>:AdaEsp32New</code>,
+      <code>:AdaEsp32Build</code>, <code>:AdaEsp32Flash</code> and friends; they
+      auto-detect whether you are inside the repo (<code>./x</code>) or a
+      standalone project (<code>app.gpr</code> + <code>build.sh</code>) by
+      searching upward. Prefer to wire it yourself:
+      <pre><code>" vim-plug
+Plug '/path/to/ada_esp32s3/ide/vim-ada-esp32'
+" or, with no plugin manager:
+set runtimepath^=/path/to/ada_esp32s3/ide/vim-ada-esp32</code></pre>
+      For language features, point your LSP client at the
+      <code>ada_language_server</code> binary that ships inside the AdaCore
+      toolchain &mdash; with <code>nvim-lspconfig</code> that is
+      <code>require('lspconfig').als.setup{}</code>, having launched Neovim from
+      a shell that sourced <code>export.sh</code> so
+      <code>GPR_PROJECT_PATH</code> resolves the runtime and HAL projects.</li>
+</ul>
 
-<p>Fourteen channels on GPIO1&nbsp;..&nbsp;GPIO14, and the numbering is the one
-mnemonic you need: <strong>touch channel n is wired to GPIO n</strong>.</p>
+<h2>Post-mortem: decoding a Guru Meditation</h2>
 
-<pre><code>type Channel is range 1 .. 14;
-function Pad (Ch : Channel) return ESP32S3.GPIO.Pin_Id;
+<p>An unhandled fault prints a register dump and a backtrace of
+program-counter values over the console. You do not need a live debugger to read
+it &mdash; turn the addresses back into source:</p>
 
-procedure Setup;                    --  bring the controller up, start the FSM
-procedure Enable (Ch : Channel);    --  put the pad in touch mode, add to the scan
-function  Read (Ch : Channel) return Natural;     --  latest raw count</code></pre>
+<pre><code>xtensa-esp32s3-elf-addr2line -fe build/app.elf 0x4200abcd 0x4200ef01</code></pre>
 
-<p>Each channel measures its pad's self-capacitance by counting charge/discharge
-cycles in a fixed window. A finger near the pad raises the capacitance and
-changes the count. An FSM scans the enabled channels continuously on the RTC
-timer, so <code>Read</code> returns the latest sample rather than triggering
-one &mdash; it never blocks.</p>
+<p>In the dump, <strong><code>EXCVADDR</code></strong> is the faulting data
+address and <strong><code>EXCCAUSE</code></strong> the reason: a
+<code>LoadStoreError</code> is a bad data access; an
+<code>InstructionFetchError</code> is a wild jump, usually a corrupted stack or a
+stray pointer. Flash, reproduce, decode &mdash; that loop localises most faults
+without attaching anything.</p>
 
-<p>Detection is relative, not absolute: <code>Touched</code> compares a channel's
-current count against a reference you supply. That reference is
-board-specific &mdash; pad size, overlay thickness and stray capacitance all move
-it &mdash; so sample a known-untouched value at startup rather than hard-coding
-a threshold from someone else's board.</p>
+<h2>What the runtime catches for you</h2>
 
-<p class="note">Touch needs no tasking runtime: it is register pokes into the
-RTC/SENS domain, so unlike most of the HAL it works under
-<code>light-tasking</code> too.</p>
+<p>Before you reach for a tool at all: every profile guards the <em>running</em>
+task with a hardware watchpoint a redzone above its stack limit, and the context
+switch re-arms it for the incoming thread on every switch. An overflowing write
+therefore faults <em>precisely</em>, at the instruction that did it, instead of
+silently corrupting a neighbouring task's stack and failing somewhere
+unrelated.</p>
     <nav class="pager">
-      <a class="prev" href="23-timers-pcnt.html"><span class="dir">&larr; Previous</span><span class="name">Timers &amp; pulse counting</span></a>
-      <a class="next" href="25-rtc.html"><span class="dir">Next &rarr;</span><span class="name">RTC, hold &amp; deep sleep</span></a>
+      <a class="prev" href="51-stack-usage.html"><span class="dir">&larr; Previous</span><span class="name">Stack measurement</span></a>
+      <a class="next" href="53-troubleshooting.html"><span class="dir">Next &rarr;</span><span class="name">Troubleshooting &amp; next steps</span></a>
     </nav>
 
   </main>

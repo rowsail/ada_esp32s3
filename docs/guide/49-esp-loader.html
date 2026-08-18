@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Analog in: the SAR ADC and capacitive touch &middot; Bare-Metal Ada on the ESP32-S3</title>
-<meta name="description" content="Two 12-bit converters on fixed pins, and fourteen touch channels that measure a pad's capacitance by counting &mdash; both living in the RTC domain.">
+<title>Esp_Loader: your board as the programmer &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="The ESP32 serial ROM protocol spoken as the host, so a jig or a product can flash another ESP32 &mdash; and none of them can run Python.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -41,7 +41,7 @@
         </details>
       </li>
       <li class="toc-group">
-        <details open>
+        <details>
           <summary>Chip peripherals<span class="toc-range">12&ndash;28</span></summary>
           <ol>
             <li><a href="12-gpio.html" data-step="12">GPIO in depth</a></li>
@@ -56,7 +56,7 @@
             <li><a href="21-ledc-sdm.html" data-step="21">LEDC &amp; sigma-delta</a></li>
             <li><a href="22-mcpwm.html" data-step="22">MCPWM</a></li>
             <li><a href="23-timers-pcnt.html" data-step="23">Timers &amp; pulse counting</a></li>
-            <li class="current"><a href="24-analog.html" data-step="24" aria-current="page">ADC &amp; touch</a></li>
+            <li><a href="24-analog.html" data-step="24">ADC &amp; touch</a></li>
             <li><a href="25-rtc.html" data-step="25">RTC, hold &amp; deep sleep</a></li>
             <li><a href="26-crypto.html" data-step="26">Crypto &amp; RNG</a></li>
             <li><a href="27-sd.html" data-step="27">SD cards</a></li>
@@ -105,11 +105,11 @@
         </details>
       </li>
       <li class="toc-group">
-        <details>
+        <details open>
           <summary>Text &amp; tooling<span class="toc-range">48&ndash;51</span></summary>
           <ol>
             <li><a href="48-console-fonts.html" data-step="48">Console, text &amp; fonts</a></li>
-            <li><a href="49-esp-loader.html" data-step="49">Programming another ESP32</a></li>
+            <li class="current"><a href="49-esp-loader.html" data-step="49" aria-current="page">Programming another ESP32</a></li>
             <li><a href="50-simd.html" data-step="50">SIMD (PIE)</a></li>
             <li><a href="51-stack-usage.html" data-step="51">Stack measurement</a></li>
           </ol>
@@ -128,73 +128,74 @@
   </nav>
 
   <main>
-    <nav class="pager-top"><a href="23-timers-pcnt.html">&larr; Timers &amp; pulse counting</a><a href="25-rtc.html">RTC, hold &amp; deep sleep &rarr;</a></nav>
-    <p class="eyebrow">Step 24 of 53</p>
-    <h1>Analog in: the SAR ADC and capacitive touch</h1>
-    <p class="lede">Two 12-bit converters on fixed pins, and fourteen touch channels that measure a pad's capacitance by counting &mdash; both living in the RTC domain.</p>
+    <nav class="pager-top"><a href="48-console-fonts.html">&larr; Console, text &amp; fonts</a><a href="50-simd.html">SIMD (PIE) &rarr;</a></nav>
+    <p class="eyebrow">Step 49 of 53</p>
+    <h1>Esp_Loader: your board as the programmer</h1>
+    <p class="lede">The ESP32 serial ROM protocol spoken as the <em>host</em>, so a jig or a product can flash another ESP32 &mdash; and none of them can run Python.</p>
 
-<h2>The SAR ADC</h2>
+<h2>The device-side twin of esptool</h2>
 
-<p>Two units, each with up to ten 12-bit channels on <em>fixed</em> GPIOs. The
-mapping is not configurable, so the pin decides the channel:</p>
+<p>This is the same protocol the SDK's own <code>espflash</code> host tool speaks
+from a PC (<a href="07-build.html">step 7</a>), implemented so that <em>the board
+itself</em> is the programmer. A production jig, a field programmer, or a product
+that reflashes its own daughterboard all need exactly this, and none of them can
+run Python.</p>
 
-<pre><code>ADC1 channel n -&gt; GPIO (n + 1)     --  ch0 = GPIO1  .. ch9 = GPIO10
-ADC2 channel n -&gt; GPIO (n + 11)    --  ch0 = GPIO11 .. ch9 = GPIO20
+<p>Every exchange is a SLIP frame (<code>0xC0</code> delimited,
+<code>0xDB</code> escaped) carrying a command and payload; the target answers
+with the same opcode and a status pair.</p>
 
-function Channel_Pin (Unit : ADC_Unit; Ch : Channel_Index)
-  return ESP32S3.GPIO.Pin_Id;      --  ask, rather than hard-code the arithmetic</code></pre>
+<p class="note">Only the ROM loader is spoken &mdash; no downloadable stub &mdash;
+so there is no compression and no stub-only command. That costs transfer time and
+nothing else: raise the rate with <code>Set_Baud</code> and a megabyte moves in a
+few seconds.</p>
 
-<p>Conversions are software-triggered single shots through the RTC controller,
-each returning a raw 12-bit code:</p>
+<h2>Streaming, so a megabyte costs a kilobyte</h2>
 
-<pre><code>type Attenuation is (Db_0, Db_2_5, Db_6, Db_12);   --  ~1.1 V .. ~3.3 V full scale
-subtype Raw_Value is Natural range 0 .. 4095;
+<p><code>Begin_Image</code> declares the length, <code>Write</code> takes whatever
+chunks the source produces, and full 1&nbsp;KB blocks go out as they fill.
+Flashing a megabyte therefore costs a kilobyte of RAM &mdash; and a truncated
+source is an <em>error</em> rather than a corrupt target, because the declared
+length is checked against what arrived.</p>
 
-function Read (R : Reader; Ch : Channel_Index;
-               Atten : Attenuation := Db_12) return Raw_Value;</code></pre>
+<h2>Knowing what you are talking to</h2>
 
-<p>Attenuation is per channel and per read, so one unit can serve a 1&nbsp;V
-sensor and a 3.3&nbsp;V divider without reconfiguration between them. The default
-<code>Db_12</code> gives roughly the full 3.3&nbsp;V range; a lower attenuation
-on a small signal buys real resolution.</p>
+<p class="warn"><strong>The ROM protocol is not uniform across the family, and
+guessing wrong corrupts flash rather than failing cleanly.</strong> The original
+ESP32 ends every reply with four status bytes instead of two; the ESP32 and
+ESP8266 take a shorter <code>FLASH_BEGIN</code> payload; the ESP8266 has no
+<code>SPI_ATTACH</code> at all, plus a bug in how it sizes an erase.</p>
 
-<p class="note"><strong>The result is a raw code, not a voltage.</strong> The
-driver does not pretend to give you volts, because an accurate conversion needs
-the per-chip calibration data and the attenuation curve is not linear at the
-extremes. <code>Cal_Code</code> exposes the self-calibrated initial code and
-<code>Last_Done</code> whether the most recent conversion completed &mdash; both
-diagnostics for deciding whether a reading is trustworthy.</p>
+<p>So <code>Connect</code> identifies the target first &mdash; via
+<code>GET_SECURITY_INFO</code> where the chip supports it (S3 and later), and the
+magic register otherwise. A chip newer than the table still connects, as
+<code>Unknown</code>, driven with the modern defaults.</p>
 
-<h2>Capacitive touch</h2>
+<h2>Pass-through: the auto-reset circuit in software</h2>
 
-<p>Fourteen channels on GPIO1&nbsp;..&nbsp;GPIO14, and the numbering is the one
-mnemonic you need: <strong>touch channel n is wired to GPIO n</strong>.</p>
+<p><code>Esp_Loader.Auto_Reset</code> is the circuit every ESP dev board has,
+implemented in software. When a board sits between a PC and a target as a
+USB-serial bridge, esptool on the PC expects to reach the target's ROM loader by
+wiggling DTR and RTS &mdash; this makes that work.</p>
 
-<pre><code>type Channel is range 1 .. 14;
-function Pad (Ch : Channel) return ESP32S3.GPIO.Pin_Id;
+<p class="note">It reproduces the real circuit's <strong>cross-coupling</strong>,
+so a terminal emulator asserting both lines on open does not reset the target,
+and it emulates the capacitor so esptool's <code>ClassicReset</code> (which moves
+the lines one at a time) works regardless of what the target board has on its EN
+pin. Those two details are the difference between "usually works" and "works".</p>
 
-procedure Setup;                    --  bring the controller up, start the FSM
-procedure Enable (Ch : Channel);    --  put the pad in touch mode, add to the scan
-function  Read (Ch : Channel) return Natural;     --  latest raw count</code></pre>
+<p><code>Serial_Link</code> is the ready-made transport over a UART and two
+GPIOs, and <a href="26-crypto.html">MD5</a> is here for
+<code>SPI_FLASH_MD5</code>: the target hashes what its flash actually holds and
+you compare, so "programmed OK" means something.</p>
 
-<p>Each channel measures its pad's self-capacitance by counting charge/discharge
-cycles in a fixed window. A finger near the pad raises the capacitance and
-changes the count. An FSM scans the enabled channels continuously on the RTC
-timer, so <code>Read</code> returns the latest sample rather than triggering
-one &mdash; it never blocks.</p>
-
-<p>Detection is relative, not absolute: <code>Touched</code> compares a channel's
-current count against a reference you supply. That reference is
-board-specific &mdash; pad size, overlay thickness and stray capacitance all move
-it &mdash; so sample a known-untouched value at startup rather than hard-coding
-a threshold from someone else's board.</p>
-
-<p class="note">Touch needs no tasking runtime: it is register pokes into the
-RTC/SENS domain, so unlike most of the HAL it works under
-<code>light-tasking</code> too.</p>
+<p class="warn">Host-verified only, against a simulated ROM that validates every
+frame and impersonates each chip family in turn (with the per-chip handling
+deliberately broken three ways to prove the checks bite). The real ROM's timing
+still wants a target board on a real UART.</p>
     <nav class="pager">
-      <a class="prev" href="23-timers-pcnt.html"><span class="dir">&larr; Previous</span><span class="name">Timers &amp; pulse counting</span></a>
-      <a class="next" href="25-rtc.html"><span class="dir">Next &rarr;</span><span class="name">RTC, hold &amp; deep sleep</span></a>
+      <a class="prev" href="48-console-fonts.html"><span class="dir">&larr; Previous</span><span class="name">Console, text &amp; fonts</span></a>
+      <a class="next" href="50-simd.html"><span class="dir">Next &rarr;</span><span class="name">SIMD (PIE)</span></a>
     </nav>
 
   </main>
