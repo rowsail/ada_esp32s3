@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RMT: an arbitrary pulse generator &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Sequences of {level, duration} symbols in hardware &mdash; IR remotes, WS2812 LED strings, 1-Wire, and any timing you would otherwise bit-bang badly.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li class="current"><a href="20-rmt.html" aria-current="page">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-debugging.html">Debugging</a></li>
+      <li><a href="30-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="19-twai.html">&larr; TWAI (CAN)</a><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta &rarr;</a></nav>
+    <p class="eyebrow">Step 20 of 30</p>
+    <h1>RMT: an arbitrary pulse generator</h1>
+    <p class="lede">Sequences of {level, duration} symbols in hardware &mdash; IR remotes, WS2812 LED strings, 1-Wire, and any timing you would otherwise bit-bang badly.</p>
+
+<h2>Symbols, not bits</h2>
+
+<p>RMT transmits and receives sequences of pulses. The unit is a
+<strong>symbol</strong>: two consecutive {level, duration} pairs packed into one
+32-bit word, laid out to match the hardware exactly:</p>
+
+<pre><code>type Tick_Count is range 0 .. 32_767;          --  15-bit duration
+
+type RMT_Symbol is record
+   Level0    : Boolean    := False;
+   Duration0 : Tick_Count := 0;
+   Level1    : Boolean    := False;
+   Duration1 : Tick_Count := 0;
+end record;
+
+for RMT_Symbol use record
+   Duration0 at 0 range  0 .. 14;
+   Level0    at 0 range 15 .. 15;
+   Duration1 at 0 range 16 .. 30;
+   Level1    at 0 range 31 .. 31;
+end record;
+for RMT_Symbol'Size use 32;</code></pre>
+
+<p>The representation clause is the point: you write ordinary Ada record fields
+and the compiler lays them out bit-exactly as the symbol RAM expects, so there is
+no shifting or masking anywhere in your code. Durations are in channel ticks,
+and a tick is <code>1 / Resolution_Hz</code> &mdash; set the resolution to
+1_000_000 and a tick is one microsecond, which is how IR protocol timings are
+usually written down.</p>
+
+<h2>Eight channels, split by direction</h2>
+
+<pre><code>type TX_Index is range 0 .. 3;
+type RX_Index is range 0 .. 3;
+
+type TX_Channel is limited private;
+type RX_Channel is limited private;</code></pre>
+
+<p>Channels 0&nbsp;..&nbsp;3 transmit and 4&nbsp;..&nbsp;7 receive, each with a
+48-symbol RAM block. They are claimed handles &mdash; limited, controlled, released
+on scope exit &mdash; and <strong>TX and RX are distinct types</strong>, so the
+two cannot be confused at a call site.</p>
+
+<h2>Borrowing RAM for longer bursts</h2>
+
+<p><code>Configure</code> takes a <code>Blocks</code> parameter of
+1&nbsp;..&nbsp;4, giving the channel that many consecutive 48-symbol RAM
+blocks.</p>
+
+<p class="warn"><code>Blocks &gt; 1</code> <strong>borrows the RAM of the
+higher-numbered TX channels</strong>. Claiming two blocks on channel 0 consumes
+channel 1's memory, so channel 1 is no longer usable. That is a real constraint
+on how many independent pulse trains you can run at once, and it is invisible
+unless you know to look for it.</p>
+
+<p>Beyond the symbol RAM, a longer burst is streamed by refilling the RAM in
+halves as it drains, so <code>Transmit</code> is not limited to what fits &mdash;
+it just costs CPU attention during the burst.</p>
+
+<pre><code>procedure Transmit (C : TX_Channel; Symbols : Symbol_Array);   --  blocking</code></pre>
+
+<h2>Receiving</h2>
+
+<pre><code>procedure Start   (C : RX_Channel);                                        --  arm
+procedure Receive (C : RX_Channel; Into : out Symbol_Array; Count : out Natural);</code></pre>
+
+<p><code>Start</code> arms the receiver and should be called <em>just</em> before
+the incoming burst; <code>Receive</code> blocks until reception ends and reports
+how many symbols were captured. Reception ends on an idle threshold, so a
+protocol whose inter-frame gap is shorter than your threshold will run two
+bursts together.</p>
+
+<p><code>./x run esp32s3_rmt_loopback</code> exercises both directions with a
+TX channel driving an RX channel through one pad &mdash; no IR LED, no
+receiver.</p>
+    <nav class="pager">
+      <a class="prev" href="19-twai.html"><span class="dir">&larr; Previous</span><span class="name">TWAI (CAN)</span></a>
+      <a class="next" href="21-ledc-sdm.html"><span class="dir">Next &rarr;</span><span class="name">LEDC &amp; sigma-delta</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

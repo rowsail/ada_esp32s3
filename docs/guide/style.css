@@ -75,6 +75,9 @@ a:hover { text-decoration-thickness: 2px; }
   gap: 0.35rem 1rem;
 }
 .masthead-inner a.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
   font-weight: 650;
   font-size: 1.02rem;
   color: var(--fg);
@@ -82,6 +85,14 @@ a:hover { text-decoration-thickness: 2px; }
   letter-spacing: -0.01em;
 }
 .masthead-inner a.brand:hover { color: var(--accent); }
+
+/* The Ada mascot is drawn with black outlines, which disappear on a dark
+   ground.  Inverting lightness and rotating the hue back keeps the blues
+   roughly themselves while lifting the linework off the background. */
+.logo { display: block; width: 30px; height: 30px; flex: none; }
+@media (prefers-color-scheme: dark) {
+  .logo { filter: invert(1) hue-rotate(180deg); }
+}
 .masthead .tagline {
   color: var(--fg-faint);
   font-size: 0.82rem;

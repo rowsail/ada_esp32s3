@@ -11,7 +11,7 @@
 
 <header class="masthead">
   <div class="masthead-inner">
-    <a class="brand" href="index.html">Bare-Metal Ada on the ESP32-S3</a>
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
     <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
   </div>
 </header>
@@ -37,8 +37,21 @@
       <li><a href="13-i2c.html">I2C in depth</a></li>
       <li><a href="14-spi.html">SPI in depth</a></li>
       <li><a href="15-uart.html">UART in depth</a></li>
-      <li><a href="16-debugging.html">Debugging</a></li>
-      <li><a href="17-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-debugging.html">Debugging</a></li>
+      <li><a href="30-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
     </ol>
   </nav>
 
@@ -46,7 +59,7 @@
 
     <p class="eyebrow">Start here</p>
     <h1>Bare-Metal Ada on the ESP32-S3</h1>
-    <p class="lede">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python. Seventeen short steps, one aspect each, from a
+    <p class="lede">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python. Thirty short steps, one aspect each, from a
     blank machine to your own Ada application running on both cores.</p>
 
     <p>The ESP32-S3 is normally programmed through Espressif's ESP-IDF: a large
@@ -60,8 +73,8 @@
     <p>Each page below covers exactly one thing, and each links to the next.
     Steps 1 to 5 get an LED blinking. Steps 6 to 9 explain what you just did and
     how to configure it. Steps 10 and 11 are your own project and the driver
-    library, 12 to 15 go deep on the four peripherals you will reach for first
-    &mdash; GPIO, I2C, SPI and UART &mdash; and 16 and 17 are the debugger and
+    library. Steps 12 to 28 are the peripherals, one at a time &mdash; start with
+    whichever one your board actually has. Steps 29 and 30 are the debugger and
     what to do when something goes wrong.</p>
 
     <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
@@ -83,8 +96,21 @@
       <li><a href="13-i2c.html">I2C in depth</a><p>An RAII session that cannot leak the bus lock, repeated START, and why payload length never reaches your code.</p></li>
       <li><a href="14-spi.html">SPI in depth</a><p>Per-device clock and mode on a shared host, chip select three ways, and DMA rules enforced as preconditions.</p></li>
       <li><a href="15-uart.html">UART in depth</a><p>No setup call by design, interrupt-driven RX with a buffer Ada makes you declare just so, and a routing trap.</p></li>
-      <li><a href="16-debugging.html">Debugging: GDB over the same cable</a><p>OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.</p></li>
-      <li><a href="17-troubleshooting.html">Troubleshooting, and where to go next</a><p>The failure modes worth recognising on sight, a cheat sheet, and where to read next.</p></li>
+      <li><a href="16-gdma.html">GDMA: the DMA engine everything else borrows</a><p>Five channel pairs claimed at run time, and the buffer rules PSRAM's cache imposes.</p></li>
+      <li><a href="17-i2s.html">I2S: audio that only moves by DMA</a><p>Audio with no CPU FIFO: DMA-only transfers, gapless looping, and capture underneath playback.</p></li>
+      <li><a href="18-lcd.html">LCD: two very different display modes</a><p>A command-driven i8080 bus and a continuously-refreshed RGB panel from one controller.</p></li>
+      <li><a href="19-twai.html">TWAI: CAN 2.0, with the bus-off trap</a><p>CAN 2.0 with identifier widths the type system keeps apart, and the bus-off trap.</p></li>
+      <li><a href="20-rmt.html">RMT: an arbitrary pulse generator</a><p>Arbitrary {level, duration} pulse trains for IR, WS2812 and 1-Wire.</p></li>
+      <li><a href="21-ledc-sdm.html">LEDC and sigma-delta: the simple outputs</a><p>Eight PWM channels for dimming, and eight density-modulated outputs that filter to analog.</p></li>
+      <li><a href="22-mcpwm.html">MCPWM: PWM that can shut itself down</a><p>Dead-time, a chopper carrier, and fault inputs that force the pins safe in hardware.</p></li>
+      <li><a href="23-timers-pcnt.html">Timers and pulse counting</a><p>A 54-bit timer with an alarm, and four edge counters that wrap sooner than you think.</p></li>
+      <li><a href="24-analog.html">Analog in: the SAR ADC and capacitive touch</a><p>The SAR ADC on fixed pins, and touch channels that count their way to a reading.</p></li>
+      <li><a href="25-rtc.html">RTC, pad hold and deep sleep</a><p>Deep sleep resets the chip; what survives is RTC memory and the pads you held.</p></li>
+      <li><a href="26-crypto.html">Hardware crypto, and one honest caveat</a><p>SHA, AES and RSA acceleration, MD5 for flash verification, and why the RNG is not a CSPRNG here.</p></li>
+      <li><a href="27-sd.html">SD cards: two hosts, one API shape</a><p>SPI transport versus the native SD bus, and why the faster one runs on the lean runtime.</p></li>
+      <li><a href="28-chip-id.html">Chip identity: die temperature and the eFuse MAC</a><p>Die temperature (not ambient) and the four factory MACs in eFuse.</p></li>
+      <li><a href="29-debugging.html">Debugging: GDB over the same cable</a><p>OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.</p></li>
+      <li><a href="30-troubleshooting.html">Troubleshooting, and where to go next</a><p>The failure modes worth recognising on sight, a cheat sheet, and where to read next.</p></li>
     </ol>
 
     <footer class="site">

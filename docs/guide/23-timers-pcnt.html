@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timers and pulse counting &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="A 54-bit counter with an alarm, and four edge counters &mdash; the two ways to measure time and events without the CPU watching.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li class="current"><a href="23-timers-pcnt.html" aria-current="page">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-debugging.html">Debugging</a></li>
+      <li><a href="30-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="22-mcpwm.html">&larr; MCPWM</a><a href="24-analog.html">ADC &amp; touch &rarr;</a></nav>
+    <p class="eyebrow">Step 23 of 30</p>
+    <h1>Timers and pulse counting</h1>
+    <p class="lede">A 54-bit counter with an alarm, and four edge counters &mdash; the two ways to measure time and events without the CPU watching.</p>
+
+<h2>General-purpose timers</h2>
+
+<p>Two timer groups, TIMG0 and TIMG1. Each has one 54-bit up/down counter clocked
+from the APB clock through a 16-bit prescaler, with a programmable alarm. (The
+per-group watchdogs are separate and this driver does not touch them.)</p>
+
+<pre><code>type Timer_Index is range 0 .. 1;          --  0 = TIMG0, 1 = TIMG1
+type Ticks is new Interfaces.Unsigned_64;
+
+procedure Configure (T : in out Timer; Tick_Hz : Positive := 1_000_000);
+procedure Start (T : Timer);
+procedure Stop  (T : Timer);
+procedure Reset (T : Timer);              --  reload to 0, running or not
+function  Value (T : Timer) return Ticks; --  latched, then read
+
+procedure Set_Alarm    (T : Timer; At_Ticks : Ticks);
+function  Alarm_Fired  (T : Timer) return Boolean;
+procedure Clear_Alarm  (T : Timer);</code></pre>
+
+<p>The default 1&nbsp;MHz tick makes <code>Value</code> read directly in
+microseconds. Fifty-four bits at that rate is a bit over five centuries, so
+wrap-around is not a design consideration.</p>
+
+<p><code>Value</code> latches before reading, which matters on a 54-bit counter
+sampled by a 32-bit CPU: without the latch you could catch the low word after a
+carry and the high word before it, and read a time that never existed.</p>
+
+<p class="note"><strong>This is not the runtime's clock.</strong>
+<code>Ada.Real_Time.Clock</code> and <code>delay until</code> are served by the
+runtime's own tick on the systimer &mdash; see
+<a href="06-anatomy.html">step 6</a>. These timers are an independent
+measurement resource for your application, which is exactly what makes them
+useful for cross-checking the runtime: <code>./x run esp32s3_timer_count</code>
+does that against the wall clock.</p>
+
+<p><code>Alarm_Fired</code> stays set until <code>Clear_Alarm</code>, so a polled
+loop cannot miss the event between samples.</p>
+
+<h2>PCNT: counting edges</h2>
+
+<p>Four counter units, each counting into a signed 16-bit counter as edges arrive
+on its input pin. The classic uses are a tachometer, a flow meter, or a
+quadrature encoder.</p>
+
+<pre><code>type Unit_Index is range 0 .. 3;
+
+procedure Configure (U : in out Unit; Pin : ESP32S3.GPIO.Pin_Id;
+                     Both_Edges : Boolean := False);
+function  Count (U : Unit) return Integer;   --  signed; wraps at +/- 32768</code></pre>
+
+<p>By default each rising edge counts; <code>Both_Edges</code> counts falling
+ones too, doubling the resolution of a symmetric signal.</p>
+
+<p class="warn"><strong>The counter is 16-bit and wraps at ±32768.</strong> On a
+fast input that is not long: 10&nbsp;kHz overflows in about three seconds. Poll
+often enough to catch every wrap, or the count you accumulate will be wrong in a
+way that looks plausible.</p>
+
+<p>This driver exposes the common "count edges on a pin" case; the per-unit
+direction-control input and the threshold-event comparators are left at their
+pass-through defaults.</p>
+    <nav class="pager">
+      <a class="prev" href="22-mcpwm.html"><span class="dir">&larr; Previous</span><span class="name">MCPWM</span></a>
+      <a class="next" href="24-analog.html"><span class="dir">Next &rarr;</span><span class="name">ADC &amp; touch</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

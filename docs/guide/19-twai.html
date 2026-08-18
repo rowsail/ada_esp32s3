@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TWAI: CAN 2.0, with the bus-off trap &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="Standard and extended frames as separate types so a 29-bit identifier cannot reach an 11-bit frame &mdash; and an error state that a single-node bench setup walks straight into.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li class="current"><a href="19-twai.html" aria-current="page">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-debugging.html">Debugging</a></li>
+      <li><a href="30-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="18-lcd.html">&larr; LCD (i80 / RGB)</a><a href="20-rmt.html">RMT pulses &rarr;</a></nav>
+    <p class="eyebrow">Step 19 of 30</p>
+    <h1>TWAI: CAN 2.0, with the bus-off trap</h1>
+    <p class="lede">Standard and extended frames as separate types so a 29-bit identifier cannot reach an 11-bit frame &mdash; and an error state that a single-node bench setup walks straight into.</p>
+
+<h2>One controller, three modes</h2>
+
+<p>TWAI &mdash; Two-Wire Automotive Interface &mdash; is CAN 2.0, on an
+SJA1000-compatible controller. A real bus needs an external transceiver on the
+TX/RX pins.</p>
+
+<pre><code>type Bus_Mode is (Normal, Listen_Only, Self_Test);</code></pre>
+
+<ul>
+  <li><strong><code>Normal</code></strong> drives a real bus.</li>
+  <li><strong><code>Listen_Only</code></strong> never transmits and never
+      acknowledges &mdash; a passive sniffer that cannot perturb traffic.</li>
+  <li><strong><code>Self_Test</code></strong> transmits and self-receives
+      <em>without needing an external acknowledgement</em>. With
+      <code>Enable_Loopback</code> tying TX back to RX through one pad, that
+      gives a complete wiring-free self-test.</li>
+</ul>
+
+<h2>Identifiers that cannot be mixed up</h2>
+
+<pre><code>subtype Standard_Id is Interfaces.Unsigned_32 range 0 .. 16#7FF#;        --  11-bit
+subtype Extended_Id is Interfaces.Unsigned_32 range 0 .. 16#1FFF_FFFF#;  --  29-bit
+
+type Standard_Frame is record
+   Id     : Standard_Id  := 0;
+   Remote : Boolean      := False;
+   Length : Data_Length  := 0;        --  0 .. 8
+   Data   : Data_Bytes   := (others =&gt; 0);
+end record;
+--  Extended_Frame is the same shape with an Extended_Id.</code></pre>
+
+<p>Each frame type carries its own identifier subtype, so the identifier is
+range-checked against the standard it belongs to, and <code>Send</code> is
+overloaded on the frame type. <strong>You cannot put a 29-bit identifier in a
+standard frame</strong> &mdash; it is a compile-time or constraint error, not a
+malformed frame on the wire.</p>
+
+<p><code>Remote =&gt; True</code> makes it a remote-transmission request: it
+carries the identifier and the requested length but no data, and a node owning
+that identifier is expected to answer with a data frame.</p>
+
+<h2>Receiving, two ways</h2>
+
+<p>Polled, where the sender chooses the width so you must ask:</p>
+
+<pre><code>function  Available   (S : Session) return Boolean;
+function  Is_Extended (S : Session) return Boolean;   --  ask BEFORE choosing an overload
+procedure Receive (S : Session; F : out Standard_Frame; Got : out Boolean);
+procedure Receive (S : Session; F : out Extended_Frame; Got : out Boolean);</code></pre>
+
+<p>Or interrupt-driven, which is the shape you want for a real bus:</p>
+
+<pre><code>procedure Enable_Rx_Interrupt (S : Session);   --  needs the Session
+procedure Get (F : out Queued_Frame);          --  does NOT -- call it from another task
+function  Rx_Overruns return Natural;</code></pre>
+
+<p>A <code>Queued_Frame</code> carries its own width, so the consumer can tell a
+standard frame from an extended one without asking the controller. Note the
+asymmetry: <code>Enable_Rx_Interrupt</code> touches the controller and so needs
+the held session, but <code>Get</code> deliberately does not &mdash; it is meant
+to be called from a <em>different</em> task, typically a decode task separate
+from the one that owns the port. <code>Rx_Overruns</code> counts what the queue
+dropped, which is the number to watch when you suspect your decoder is too
+slow.</p>
+
+<h2>The bus-off trap</h2>
+
+<pre><code>type Bus_State is (Active, Warning, Bus_Off);
+
+function  Health  (S : Session) return Bus_State;
+procedure Recover (S : Session);</code></pre>
+
+<p class="warn"><strong>A single node on a bench goes bus-off.</strong>
+<code>Active</code> is normal and <code>Warning</code> means an error counter has
+passed the warning limit, but <code>Bus_Off</code> means the node took
+<em>itself</em> off the bus after too many transmit errors &mdash; and the
+classic way to cause that is transmitting in <code>Normal</code> mode with no
+other node present to acknowledge. A bus-off node neither sends nor receives
+until <code>Recover</code> rejoins it. If your first CAN experiment goes deaf
+after a few frames, check <code>Health</code> before suspecting wiring, and use
+<code>Self_Test</code> mode when there is nothing else on the bus.</p>
+    <nav class="pager">
+      <a class="prev" href="18-lcd.html"><span class="dir">&larr; Previous</span><span class="name">LCD (i80 / RGB)</span></a>
+      <a class="next" href="20-rmt.html"><span class="dir">Next &rarr;</span><span class="name">RMT pulses</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

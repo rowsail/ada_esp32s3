@@ -11,7 +11,7 @@
 
 <header class="masthead">
   <div class="masthead-inner">
-    <a class="brand" href="index.html">Bare-Metal Ada on the ESP32-S3</a>
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
     <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
   </div>
 </header>
@@ -37,14 +37,27 @@
       <li><a href="13-i2c.html">I2C in depth</a></li>
       <li><a href="14-spi.html">SPI in depth</a></li>
       <li><a href="15-uart.html">UART in depth</a></li>
-      <li><a href="16-debugging.html">Debugging</a></li>
-      <li><a href="17-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-debugging.html">Debugging</a></li>
+      <li><a href="30-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
     </ol>
   </nav>
 
   <main>
     <nav class="pager-top"><a href="05-first-blink.html">&larr; Your first blink</a><a href="07-build.html">What a build does &rarr;</a></nav>
-    <p class="eyebrow">Step 06 of 17</p>
+    <p class="eyebrow">Step 06 of 30</p>
     <h1>What happens between reset and Main</h1>
     <p class="lede">Your blink worked. Here is every layer it went through, from the chip's mask ROM to the first line of your Ada &mdash; and what an RTOS would normally be doing that nothing here does.</p>
 

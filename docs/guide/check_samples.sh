@@ -123,4 +123,62 @@ if bad:
 print("  ok    every documented API name still exists in the specs")
 PY
 
-printf '\n\033[32mPASS\033[0m  the guide compiles and its quoted API is current\n'
+# ---- pass 3: the generated HTML is well-formed ------------------------------
+#  A bare "&" in a page title reaches every sidebar and pager on every page, so
+#  one careless nav= string is 200 broken entities.  It has happened twice.
+echo "== validating the generated HTML =="
+python3 - "$HERE" <<'PYHTML' || exit 1
+import glob, os, re, sys, html.parser
+
+here = sys.argv[1]
+
+class Tags(html.parser.HTMLParser):
+    VOID = {"meta", "link", "br", "img", "hr", "input"}
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack, self.err = [], []
+    def handle_starttag(self, tag, attrs):
+        if tag not in self.VOID:
+            self.stack.append(tag)
+    def handle_endtag(self, tag):
+        if not self.stack:
+            self.err.append("stray </%s>" % tag)
+        elif self.stack[-1] != tag:
+            self.err.append("expected </%s>, got </%s> at line %d"
+                            % (self.stack[-1], tag, self.getpos()[0]))
+        else:
+            self.stack.pop()
+
+bad = []
+pages = sorted(glob.glob(os.path.join(here, "*.html")))
+if not pages:
+    bad.append("no generated pages -- run build.py")
+
+for path in pages:
+    name = os.path.basename(path)
+    src = open(path).read()
+    t = Tags(); t.feed(src)
+    for e in t.err:
+        bad.append("%s: %s" % (name, e))
+    if t.stack:
+        bad.append("%s: unclosed %s" % (name, ", ".join(t.stack)))
+    for m in re.finditer(r"&(?!#?\w+;)", src):
+        ctx = src[max(0, m.start() - 40):m.start() + 15].replace("\n", " ")
+        bad.append("%s: bare '&' -- ...%s..." % (name, ctx))
+    for attr in ("href", "src"):
+        for m in re.finditer(r'%s="([^"]+)"' % attr, src):
+            ref = m.group(1)
+            if ref.startswith(("http", "data:", "#")):
+                continue
+            if not os.path.exists(os.path.join(here, ref.split("#")[0])):
+                bad.append("%s: dead %s %s" % (name, attr, ref))
+
+if bad:
+    print("\n".join("  " + b for b in bad[:25]))
+    if len(bad) > 25:
+        print("  ... and %d more" % (len(bad) - 25))
+    sys.exit(1)
+print("  ok    %d pages: tags balanced, entities escaped, links resolve" % len(pages))
+PYHTML
+
+printf '\n\033[32mPASS\033[0m  the guide compiles, its API is current, and the HTML is sound\n'

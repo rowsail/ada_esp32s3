@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LCD: two very different display modes &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="One controller, two personalities &mdash; a command-driven 8-bit i8080 bus that streams a buffer on demand, and a continuously-refreshed RGB panel that never stops.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li class="current"><a href="18-lcd.html" aria-current="page">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-debugging.html">Debugging</a></li>
+      <li><a href="30-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="17-i2s.html">&larr; I2S audio</a><a href="19-twai.html">TWAI (CAN) &rarr;</a></nav>
+    <p class="eyebrow">Step 18 of 30</p>
+    <h1>LCD: two very different display modes</h1>
+    <p class="lede">One controller, two personalities &mdash; a command-driven 8-bit i8080 bus that streams a buffer on demand, and a continuously-refreshed RGB panel that never stops.</p>
+
+<h2>The i8080 mode</h2>
+
+<p><code>ESP32S3.LCD</code> drives the LCD half of the LCD_CAM controller as an
+8-bit Intel-8080 parallel master: a byte buffer is streamed out the data bus, one
+byte per pixel clock, over <a href="16-gdma.html">GDMA</a>. It suits any 8-bit
+parallel sink, not only displays.</p>
+
+<pre><code>type Data_Pins is array (0 .. 7) of ESP32S3.GPIO.Optional_Pin;
+
+procedure Acquire
+  (S       : in out Session;
+   Pclk_Hz : Positive  := 1_000_000;
+   Data    : Data_Pins := (others =&gt; No_Pin);
+   Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin);</code></pre>
+
+<p>The pixel clock is quantised: you get
+<code>20&nbsp;MHz / round (20&nbsp;MHz / Pclk_Hz)</code>, so ask for a divisor of
+20&nbsp;MHz if the exact rate matters. Unlike <a href="17-i2s.html">I2S</a>,
+bringing the controller up does <strong>not</strong> tie up a GDMA channel &mdash;
+<code>Transmit</code> claims one only for the duration of a transfer, so the
+channel is available to other peripherals between frames.</p>
+
+<pre><code>procedure Transmit (S : Session; Tx : ESP32S3.GDMA.DMA_Buffer;
+                    Length : Natural; Ok : out Boolean);</code></pre>
+
+<p>Blocking, 1&nbsp;..&nbsp;4095 bytes (the single-descriptor limit again), buffer
+in internal SRAM, with the usual <code>DMA_Buffer</code> alignment and
+whole-cache-line size preconditions. <code>Enable_Clock_Out</code> free-runs the
+pixel clock on a pad with no data transaction, which is how you check the clock
+divider on a scope before trusting a panel.</p>
+
+<h2>The RGB mode</h2>
+
+<p>A TFT panel driven by continuous HSYNC / VSYNC / DE / PCLK timing, rather than
+by commands. This is a different discipline: the panel must be refreshed forever,
+so the framebuffer streams from a chained GDMA descriptor ring
+(<a href="16-gdma.html">step 16</a>), which is exactly why that ring exists.</p>
+
+<pre><code>type RGB_Data_Pins  is array (0 .. 15) of ESP32S3.GPIO.Optional_Pin;
+type RGB_Signal_Map is array (0 .. 15) of Natural;
+
+type RGB_Config is record
+   H_Sync, V_Sync : Positive;          --  sync pulse widths
+   Two_Byte       : Boolean := True;   --  True: 16-bit RGB565; False: 8-bit
+   DE_Idle_High   : Boolean := False;  --  DE is usually active-high, so idle low
+   --  ... plus the porches, from the panel datasheet
+end record;
+
+procedure Acquire_RGB (S : in out Session; Config : RGB_Config; Pins : RGB_Pins);</code></pre>
+
+<p>Horizontal widths and porches are in pixel clocks; vertical ones in lines
+&mdash; copy them from the panel's datasheet. <code>RGB_Signal_Map</code> says
+which <code>LCD_DATA_OUT</code> signal drives each panel data line, for boards
+whose wiring is not in the obvious order.</p>
+
+<p class="note"><code>Acquire_RGB</code> <strong>initialises</strong> the
+peripheral &mdash; enables the controller, sets the timing and routes the pins.
+Starting the continuous refresh from a framebuffer is a separate call afterwards.
+Splitting the two lets you get the timing right on a scope before committing a
+framebuffer to it.</p>
+
+<p>The camera-receive half of LCD_CAM is not covered by this driver.</p>
+    <nav class="pager">
+      <a class="prev" href="17-i2s.html"><span class="dir">&larr; Previous</span><span class="name">I2S audio</span></a>
+      <a class="next" href="19-twai.html"><span class="dir">Next &rarr;</span><span class="name">TWAI (CAN)</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>

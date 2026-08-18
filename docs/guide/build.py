@@ -946,14 +946,34 @@ wiring &mdash; internal loopback or GPIO sampling. Running the one for the
 peripheral you are about to use is the fastest way to confirm your board before
 you write any code against it.</p>
 
-<p>The next four steps take the four you will reach for first and go through
-them properly: <a href="12-gpio.html">GPIO</a> &mdash; the pin type, what is
-atomic in silicon, and pin interrupts; <a href="13-i2c.html">I2C</a> &mdash;
-session ownership, repeated START, and unbounded transfers;
-<a href="14-spi.html">SPI</a> &mdash; per-device clock and mode on a shared host,
-chip select three ways, and the DMA preconditions; and
-<a href="15-uart.html">UART</a> &mdash; why it has no setup call, interrupt-driven
-RX, and a pin-routing trap.</p>
+<p>The next seventeen steps go through the peripherals one at a time. The
+four you will reach for first come first &mdash; <a href="12-gpio.html">GPIO</a>,
+<a href="13-i2c.html">I2C</a>, <a href="14-spi.html">SPI</a> and
+<a href="15-uart.html">UART</a> &mdash; then the engine they and everything else
+are built on, <a href="16-gdma.html">GDMA</a>:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Peripheral</th><th>Why it has its own page</th></tr></thead>
+  <tbody>
+    <tr><td>12</td><td><a href="12-gpio.html">GPIO</a></td><td>The pin type, what is atomic in silicon, interrupts and the trampoline rule</td></tr>
+    <tr><td>13</td><td><a href="13-i2c.html">I2C</a></td><td>Session ownership, repeated START, unbounded transfers</td></tr>
+    <tr><td>14</td><td><a href="14-spi.html">SPI</a></td><td>Per-device clock and mode, chip select three ways, DMA preconditions</td></tr>
+    <tr><td>15</td><td><a href="15-uart.html">UART</a></td><td>No setup call, interrupt-driven RX, a pin-routing trap</td></tr>
+    <tr><td>16</td><td><a href="16-gdma.html">GDMA</a></td><td>Channels as a claimed resource, and the buffer rules PSRAM's cache imposes</td></tr>
+    <tr><td>17</td><td><a href="17-i2s.html">I2S</a></td><td>No CPU FIFO at all, gapless looping, capture under playback</td></tr>
+    <tr><td>18</td><td><a href="18-lcd.html">LCD</a></td><td>Command-driven i8080 and continuously-refreshed RGB</td></tr>
+    <tr><td>19</td><td><a href="19-twai.html">TWAI/CAN</a></td><td>Identifier widths kept apart by type, and the bus-off trap</td></tr>
+    <tr><td>20</td><td><a href="20-rmt.html">RMT</a></td><td>Arbitrary pulse trains; IR, WS2812, 1-Wire</td></tr>
+    <tr><td>21</td><td><a href="21-ledc-sdm.html">LEDC &amp; SDM</a></td><td>PWM dimming, and density modulation that filters to analog</td></tr>
+    <tr><td>22</td><td><a href="22-mcpwm.html">MCPWM</a></td><td>Dead-time and hardware fault shutdown</td></tr>
+    <tr><td>23</td><td><a href="23-timers-pcnt.html">Timers &amp; PCNT</a></td><td>A 54-bit timer with an alarm, and edge counters that wrap</td></tr>
+    <tr><td>24</td><td><a href="24-analog.html">ADC &amp; touch</a></td><td>Fixed-pin channels, attenuation, and relative touch detection</td></tr>
+    <tr><td>25</td><td><a href="25-rtc.html">RTC &amp; deep sleep</a></td><td>Waking is a reset; retained memory and pad hold</td></tr>
+    <tr><td>26</td><td><a href="26-crypto.html">Crypto &amp; RNG</a></td><td>SHA/AES/RSA, MD5's specific job, and the RNG caveat</td></tr>
+    <tr><td>27</td><td><a href="27-sd.html">SD cards</a></td><td>Two hosts, one block API, different profile requirements</td></tr>
+    <tr><td>28</td><td><a href="28-chip-id.html">Temperature &amp; MAC</a></td><td>Die temperature, and the four factory addresses</td></tr>
+  </tbody>
+</table>
 
 <p class="warn"><strong>Verify on your own board.</strong> The drivers were
 exercised on an ESP32-S3 during development, but nothing has been re-verified as
@@ -1720,7 +1740,1114 @@ makes both ends agree again.</p>
 
 # ---------------------------------------------------------------- 16
 dict(
-slug="16-debugging",
+slug="16-gdma",
+nav="GDMA",
+title="GDMA: the DMA engine everything else borrows",
+lede="Five channel pairs, assigned at run time rather than wired per "
+     "peripheral &mdash; and a buffer type whose rules exist because PSRAM is "
+     "reached through a cache.",
+body="""
+<h2>Channels are a resource, not a fixture</h2>
+
+<p>The S3 has one AHB GDMA block with <strong>five channel pairs</strong>
+(0&nbsp;..&nbsp;4). Each pair has an independent transmit (OUT) and receive (IN)
+path, and either can be wired to any peripheral through the GDMA crossbar. A
+channel is therefore something you <em>claim</em>, not something a peripheral
+owns:</p>
+
+<pre><code>type Channel_Id is mod 5;
+type Peripheral is (Mem2Mem, SPI2, SPI3, UHCI0, I2S0, I2S1, LCD_CAM, AES, SHA, ADC_DAC, RMT);
+
+procedure Claim (C : in out Channel; Peri : Peripheral);
+function  Is_Valid (C : Channel) return Boolean;
+procedure Release (C : in out Channel);</code></pre>
+
+<p><code>Claim</code> goes through a protected allocator, so two tasks can never
+be handed the same channel. The <code>Channel</code> handle is limited
+(non-copyable, so it cannot be aliased into another task) and controlled (it
+releases on scope exit, including on an exception, so a channel cannot leak or
+be reused through a stale copy). If all five are busy, <code>Claim</code> leaves
+the handle invalid rather than raising &mdash; check <code>Is_Valid</code>.</p>
+
+<p class="note">Once you hold a channel, only you touch its registers and
+descriptors, so the transfer operations themselves need no further locking. This
+is the same ownership pattern as <a href="14-spi.html">SPI</a> and
+<a href="13-i2c.html">I2C</a>, and for the same reason.</p>
+
+<h2>Why a buffer type exists</h2>
+
+<p>DMA needs DMA-capable memory, and on this chip that is not a single rule:</p>
+
+<ul>
+  <li><strong>Internal SRAM</strong> always qualifies, at any alignment.</li>
+  <li><strong>External PSRAM</strong> qualifies only when the buffer is
+      cache-line (32-byte) aligned &mdash; the GDMA reaches PSRAM
+      <em>through</em> the DCache, so the driver writes back and invalidates
+      around each transfer.</li>
+  <li><strong>Flash <code>.rodata</code></strong> is excluded. A
+      <code>constant</code> aggregate still cannot be DMA'd.</li>
+</ul>
+
+<pre><code>DMA_Alignment : constant := 32;
+
+type DMA_Buffer is array (Natural range &lt;&gt;) of Interfaces.Unsigned_8
+  with Alignment =&gt; DMA_Alignment;
+
+function Is_DMA_Capable (A : System.Address) return Boolean;</code></pre>
+
+<p class="warn"><strong>Alignment is only half of it.</strong> The type carries
+the aligned <em>start</em>; the operations' preconditions additionally demand a
+whole-cache-line <em>size</em>. That is not implied by alignment and it matters:
+the PSRAM write-back/invalidate rounds the region <strong>up</strong> to a whole
+line, so a buffer ending mid-line would have the maintenance touch its
+neighbour &mdash; discarding an adjacent object's dirty cached write. Size the
+payload up to a multiple of 32 (128 bytes for 100 useful ones).</p>
+
+<p>Hence the calling convention: <strong>pass the whole buffer plus a transfer
+length</strong>, never a slice. Slicing to the length would fail the size
+precondition, while the whole line-multiple buffer keeps every rounded
+maintenance op inside itself.</p>
+
+<pre><code>procedure Copy (C : Channel; Dst, Src : DMA_Buffer; Length : Natural)
+with Pre =&gt; Length &lt;= Src'Length and then Length &lt;= Dst'Length
+            and then Src'Length mod DMA_Alignment = 0
+            and then Dst'Length mod DMA_Alignment = 0;</code></pre>
+
+<p>These preconditions are pinned on with
+<code>pragma Assertion_Policy (Pre =&gt; Check)</code> in the spec, so they hold
+even when the build has assertions off &mdash; a buffer in flash or unaligned
+PSRAM corrupts the transfer <em>silently</em>, which is exactly the failure worth
+paying a check for.</p>
+
+<h2>The three shapes of transfer</h2>
+
+<table>
+  <thead><tr><th>Call</th><th>Behaviour</th></tr></thead>
+  <tbody>
+    <tr><td><code>Copy</code></td>
+        <td>Blocking memory-to-memory, completed by looping one channel's OUT
+            path into its own IN path. Buffers <em>and</em> the driver's
+            descriptors must be in internal SRAM, because the descriptor link
+            address is a 20-bit field.</td></tr>
+    <tr><td><code>Start</code></td>
+        <td>Arms a single-buffer peripheral transfer in one
+            <code>Direction</code> and returns immediately. You configure and
+            start the peripheral separately; the GDMA moves data as the
+            peripheral raises its DMA request.</td></tr>
+    <tr><td><code>Start_Loop</code></td>
+        <td>A single descriptor whose link points back at itself, so the engine
+            replays the buffer forever with no gap between passes and no CPU
+            involvement after the kick. Never completes on its own.</td></tr>
+  </tbody>
+</table>
+
+<p><code>Direction</code> is <code>Mem_To_Periph</code> (the OUT path reads RAM
+and feeds the peripheral) or <code>Periph_To_Mem</code>. A single descriptor
+caps at <code>Max_Transfer</code> = 4095 bytes, the hardware's 12-bit
+buffer-size field &mdash; which is where <a href="14-spi.html">SPI</a>'s
+1&nbsp;..&nbsp;4095 precondition comes from.</p>
+
+<h2>Beyond one descriptor: the framebuffer path</h2>
+
+<p>For a buffer larger than 4095 bytes there is a chained ring: up to
+<code>Max_Chain</code> = 256 descriptors that between them cover the buffer, the
+last linking back to the first. This is the display path &mdash; stream an LCD
+framebuffer to <code>LCD_CAM</code> continuously. The buffer may live in PSRAM
+(32-byte aligned) and is written back before the loop starts. After the CPU draws
+into a live framebuffer, <code>Flush</code> pushes the changes out so the running
+DMA re-reads them.</p>
+
+<p class="note">The descriptor ring is one shared internal-SRAM array, so exactly
+one chained loop runs at a time.</p>
+
+<h2>Completion, and an interrupt you must not take</h2>
+
+<p>Completion is interrupt-driven rather than polled: <code>Wait</code> suspends
+the calling task and the channel's end-of-transfer interrupt wakes it.</p>
+
+<p class="warn">This driver <strong>owns <code>Device_L3_1</code>
+(CPU_INT&nbsp;27)</strong>. An application must not attach its own handler
+there. It is a level-3 slot rather than a level-2 one because the LCD RGB bounce
+refill runs from this completion ISR and has to preempt the level-2 devices to
+make its deadline.</p>
+
+<h2>Proving the coherency path</h2>
+
+<pre><code>type Self_Test_Result is (Passed_PSRAM, Passed_SRAM, Failed, No_Channel);
+function Self_Test (Buf_A, Buf_B : System.Address) return Self_Test_Result;</code></pre>
+
+<p>A memory-to-memory round trip between two buffers <em>of your choosing</em>,
+which reports which memory it actually exercised. Hand it PSRAM buffers (from a
+task whose stack is in PSRAM) and a <code>Passed_PSRAM</code> result means the
+cache write-back/invalidate path really works on your board &mdash; not merely
+that DMA works in SRAM. Buffers must be 32-byte aligned and at least 64 bytes.</p>
+"""),
+
+dict(
+slug="17-i2s",
+nav="I2S audio",
+title="I2S: audio that only moves by DMA",
+lede="The S3's I2S has no CPU FIFO at all &mdash; samples reach the wire only "
+     "through the DMA crossbar. That single fact shapes the whole API, "
+     "including gapless playback and capture that runs underneath it.",
+body="""
+<h2>No FIFO, so no polled path</h2>
+
+<p>Two controllers, <code>I2S0</code> and <code>I2S1</code>. Unlike the
+<a href="15-uart.html">UART</a>, neither has a CPU-accessible FIFO: data flows
+<em>only</em> through <a href="16-gdma.html">GDMA</a>. So bringing a port up
+claims a GDMA channel, and that is a heavyweight, once-per-port resource &mdash;
+which is why acquisition works slightly differently here:</p>
+
+<p class="note">The <strong>first</strong> <code>Acquire</code> of a port opens
+it at the given configuration and claims its channel. Later <code>Acquire</code>
+calls <em>reuse it as-is</em> &mdash; they do not re-open the port and do not
+inherit a new configuration. To change the audio format on a port you already
+hold, call <code>Reconfigure</code> (which re-claims the channel). This is the
+opposite of <a href="15-uart.html">UART</a>, where every <code>Acquire</code>
+re-applies the full state.</p>
+
+<pre><code>procedure Acquire
+  (S           : in out Session;
+   Port        : I2S_Port;
+   Sample_Rate : Positive     := 16_000;
+   Bits        : Sample_Bits  := Bits_16;      --  Bits_8 | 16 | 24 | 32
+   Mode        : I2S_Mode     := Standard;     --  Standard | PDM
+   Bclk, Ws, Dout, Din, Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin);</code></pre>
+
+<p>Every pin is optional, so a link routes only what it uses &mdash; omit
+<code>Din</code> for a TX-only DAC, omit <code>Dout</code> for an RX-only
+microphone. <code>Mclk</code> drives a codec's master-clock input and exists
+only on I2S0; leave it unrouted for codecs that clock from BCLK.</p>
+
+<h2>Typed sample buffers</h2>
+
+<pre><code>type PCM_8  is array (Natural range &lt;&gt;) of Interfaces.Integer_8;
+type PCM_16 is array (Natural range &lt;&gt;) of Interfaces.Integer_16;
+type PCM_32 is array (Natural range &lt;&gt;) of Interfaces.Integer_32;</code></pre>
+
+<p>The element type fixes the on-wire width, so the driver derives the byte count
+itself &mdash; no caller-side <code>* 2</code> &mdash; and the typed
+<code>Write</code>/<code>Read</code>/<code>Transfer</code> <strong>check the
+buffer's width against the port's configured <code>Bits</code></strong>. They are
+signed two's-complement, as PCM is. A <code>PCM_32</code> buffer carries both 24-
+and 32-bit samples, since both occupy a 32-bit slot. For already-framed bytes or
+an opaque bit pattern there are <code>*_Raw</code> primitives, including
+<code>DMA_Buffer</code> overloads with the usual alignment and size
+preconditions.</p>
+
+<h2>Standard and PDM are the same buffers</h2>
+
+<p><code>I2S_Mode</code> selects what sits between the buffer and the wire:</p>
+
+<ul>
+  <li><strong><code>Standard</code></strong> &mdash; ordinary I2S/TDM. The PCM
+      buffer appears verbatim on the data line, BCLK and WS framed. BCLK is
+      <code>Sample_Rate * Bits * 2</code>.</li>
+  <li><strong><code>PDM</code></strong> &mdash; the hardware sigma-delta
+      converters are inserted. On TX, PCM2PDM turns each sample into a 1-bit
+      pulse-density stream for a class-D amp or an RC low-pass; on RX, PDM2PCM
+      decimates a PDM microphone back to PCM. The serial clock runs at
+      <code>Sample_Rate * 128</code>, the oversample ratio.</li>
+</ul>
+
+<p>The DMA still moves ordinary PCM either way, so your transfer calls are
+unchanged &mdash; only the on-wire format differs.</p>
+
+<p class="warn">The PDM converters <strong>high-pass filter</strong>, removing
+DC. A constant level does not survive a PDM round trip, so do not write a
+self-test that expects one to.</p>
+
+<h2>Gapless playback</h2>
+
+<p>Three escalating options, all built on the GDMA behaviour from the previous
+step:</p>
+
+<table>
+  <thead><tr><th>Call</th><th>What it gives you</th></tr></thead>
+  <tbody>
+    <tr><td><code>Write</code> / <code>Read</code> / <code>Transfer</code></td>
+        <td>One blocking buffer, up to 4095 bytes.
+            <code>Transfer</code> is full duplex &mdash; shift out and capture
+            simultaneously, same length.</td></tr>
+    <tr><td><code>Start_Continuous</code></td>
+        <td>A self-looping descriptor replays one buffer forever with
+            <strong>no gap</strong> and no CPU involvement. The buffer must stay
+            valid, live in internal SRAM, and should hold a whole number of wave
+            periods so the wrap is seamless. <code>Stop</code> ends it.</td></tr>
+    <tr><td><code>Start_Stream</code> + <code>Await_Half</code></td>
+        <td>Gapless double-buffered streaming: the two halves of one buffer loop
+            forever, and <code>Await_Half</code> tells you which half the
+            hardware has finished so you can refill the other. This is how you
+            play audio longer than a buffer.</td></tr>
+  </tbody>
+</table>
+
+<h2>Capturing while playing</h2>
+
+<p><code>Read</code> drives the receive path as a transaction. When a continuous
+transmit is already running, use <code>Capture</code> instead &mdash; it fills a
+buffer <em>without disturbing the TX path</em>, so recording can run underneath
+playback. There is a streaming mirror of it too, the receive counterpart of
+<code>Start_Stream</code>.</p>
+
+<h2>Self-test without wiring</h2>
+
+<pre><code>procedure Enable_Loopback (S : Session; Pad : ESP32S3.GPIO.Pin_Id);</code></pre>
+
+<p>TX and RX share WS and BCK internally through the hardware
+<code>SIG_LOOPBACK</code> bit, with the data line looped through one pad, so
+<code>./x run esp32s3_i2s_loopback</code> proves the real DMA path in both
+directions byte-exact with nothing attached. <code>Configured_Bits</code> reports
+the width the held port is currently set to, which is what the typed transfers
+check against.</p>
+"""),
+
+dict(
+slug="18-lcd",
+nav="LCD (i80 / RGB)",
+title="LCD: two very different display modes",
+lede="One controller, two personalities &mdash; a command-driven 8-bit i8080 "
+     "bus that streams a buffer on demand, and a continuously-refreshed RGB "
+     "panel that never stops.",
+body="""
+<h2>The i8080 mode</h2>
+
+<p><code>ESP32S3.LCD</code> drives the LCD half of the LCD_CAM controller as an
+8-bit Intel-8080 parallel master: a byte buffer is streamed out the data bus, one
+byte per pixel clock, over <a href="16-gdma.html">GDMA</a>. It suits any 8-bit
+parallel sink, not only displays.</p>
+
+<pre><code>type Data_Pins is array (0 .. 7) of ESP32S3.GPIO.Optional_Pin;
+
+procedure Acquire
+  (S       : in out Session;
+   Pclk_Hz : Positive  := 1_000_000;
+   Data    : Data_Pins := (others =&gt; No_Pin);
+   Pclk    : ESP32S3.GPIO.Optional_Pin := No_Pin);</code></pre>
+
+<p>The pixel clock is quantised: you get
+<code>20&nbsp;MHz / round (20&nbsp;MHz / Pclk_Hz)</code>, so ask for a divisor of
+20&nbsp;MHz if the exact rate matters. Unlike <a href="17-i2s.html">I2S</a>,
+bringing the controller up does <strong>not</strong> tie up a GDMA channel &mdash;
+<code>Transmit</code> claims one only for the duration of a transfer, so the
+channel is available to other peripherals between frames.</p>
+
+<pre><code>procedure Transmit (S : Session; Tx : ESP32S3.GDMA.DMA_Buffer;
+                    Length : Natural; Ok : out Boolean);</code></pre>
+
+<p>Blocking, 1&nbsp;..&nbsp;4095 bytes (the single-descriptor limit again), buffer
+in internal SRAM, with the usual <code>DMA_Buffer</code> alignment and
+whole-cache-line size preconditions. <code>Enable_Clock_Out</code> free-runs the
+pixel clock on a pad with no data transaction, which is how you check the clock
+divider on a scope before trusting a panel.</p>
+
+<h2>The RGB mode</h2>
+
+<p>A TFT panel driven by continuous HSYNC / VSYNC / DE / PCLK timing, rather than
+by commands. This is a different discipline: the panel must be refreshed forever,
+so the framebuffer streams from a chained GDMA descriptor ring
+(<a href="16-gdma.html">step 16</a>), which is exactly why that ring exists.</p>
+
+<pre><code>type RGB_Data_Pins  is array (0 .. 15) of ESP32S3.GPIO.Optional_Pin;
+type RGB_Signal_Map is array (0 .. 15) of Natural;
+
+type RGB_Config is record
+   H_Sync, V_Sync : Positive;          --  sync pulse widths
+   Two_Byte       : Boolean := True;   --  True: 16-bit RGB565; False: 8-bit
+   DE_Idle_High   : Boolean := False;  --  DE is usually active-high, so idle low
+   --  ... plus the porches, from the panel datasheet
+end record;
+
+procedure Acquire_RGB (S : in out Session; Config : RGB_Config; Pins : RGB_Pins);</code></pre>
+
+<p>Horizontal widths and porches are in pixel clocks; vertical ones in lines
+&mdash; copy them from the panel's datasheet. <code>RGB_Signal_Map</code> says
+which <code>LCD_DATA_OUT</code> signal drives each panel data line, for boards
+whose wiring is not in the obvious order.</p>
+
+<p class="note"><code>Acquire_RGB</code> <strong>initialises</strong> the
+peripheral &mdash; enables the controller, sets the timing and routes the pins.
+Starting the continuous refresh from a framebuffer is a separate call afterwards.
+Splitting the two lets you get the timing right on a scope before committing a
+framebuffer to it.</p>
+
+<p>The camera-receive half of LCD_CAM is not covered by this driver.</p>
+"""),
+
+dict(
+slug="19-twai",
+nav="TWAI (CAN)",
+title="TWAI: CAN 2.0, with the bus-off trap",
+lede="Standard and extended frames as separate types so a 29-bit identifier "
+     "cannot reach an 11-bit frame &mdash; and an error state that a "
+     "single-node bench setup walks straight into.",
+body="""
+<h2>One controller, three modes</h2>
+
+<p>TWAI &mdash; Two-Wire Automotive Interface &mdash; is CAN 2.0, on an
+SJA1000-compatible controller. A real bus needs an external transceiver on the
+TX/RX pins.</p>
+
+<pre><code>type Bus_Mode is (Normal, Listen_Only, Self_Test);</code></pre>
+
+<ul>
+  <li><strong><code>Normal</code></strong> drives a real bus.</li>
+  <li><strong><code>Listen_Only</code></strong> never transmits and never
+      acknowledges &mdash; a passive sniffer that cannot perturb traffic.</li>
+  <li><strong><code>Self_Test</code></strong> transmits and self-receives
+      <em>without needing an external acknowledgement</em>. With
+      <code>Enable_Loopback</code> tying TX back to RX through one pad, that
+      gives a complete wiring-free self-test.</li>
+</ul>
+
+<h2>Identifiers that cannot be mixed up</h2>
+
+<pre><code>subtype Standard_Id is Interfaces.Unsigned_32 range 0 .. 16#7FF#;        --  11-bit
+subtype Extended_Id is Interfaces.Unsigned_32 range 0 .. 16#1FFF_FFFF#;  --  29-bit
+
+type Standard_Frame is record
+   Id     : Standard_Id  := 0;
+   Remote : Boolean      := False;
+   Length : Data_Length  := 0;        --  0 .. 8
+   Data   : Data_Bytes   := (others =&gt; 0);
+end record;
+--  Extended_Frame is the same shape with an Extended_Id.</code></pre>
+
+<p>Each frame type carries its own identifier subtype, so the identifier is
+range-checked against the standard it belongs to, and <code>Send</code> is
+overloaded on the frame type. <strong>You cannot put a 29-bit identifier in a
+standard frame</strong> &mdash; it is a compile-time or constraint error, not a
+malformed frame on the wire.</p>
+
+<p><code>Remote =&gt; True</code> makes it a remote-transmission request: it
+carries the identifier and the requested length but no data, and a node owning
+that identifier is expected to answer with a data frame.</p>
+
+<h2>Receiving, two ways</h2>
+
+<p>Polled, where the sender chooses the width so you must ask:</p>
+
+<pre><code>function  Available   (S : Session) return Boolean;
+function  Is_Extended (S : Session) return Boolean;   --  ask BEFORE choosing an overload
+procedure Receive (S : Session; F : out Standard_Frame; Got : out Boolean);
+procedure Receive (S : Session; F : out Extended_Frame; Got : out Boolean);</code></pre>
+
+<p>Or interrupt-driven, which is the shape you want for a real bus:</p>
+
+<pre><code>procedure Enable_Rx_Interrupt (S : Session);   --  needs the Session
+procedure Get (F : out Queued_Frame);          --  does NOT -- call it from another task
+function  Rx_Overruns return Natural;</code></pre>
+
+<p>A <code>Queued_Frame</code> carries its own width, so the consumer can tell a
+standard frame from an extended one without asking the controller. Note the
+asymmetry: <code>Enable_Rx_Interrupt</code> touches the controller and so needs
+the held session, but <code>Get</code> deliberately does not &mdash; it is meant
+to be called from a <em>different</em> task, typically a decode task separate
+from the one that owns the port. <code>Rx_Overruns</code> counts what the queue
+dropped, which is the number to watch when you suspect your decoder is too
+slow.</p>
+
+<h2>The bus-off trap</h2>
+
+<pre><code>type Bus_State is (Active, Warning, Bus_Off);
+
+function  Health  (S : Session) return Bus_State;
+procedure Recover (S : Session);</code></pre>
+
+<p class="warn"><strong>A single node on a bench goes bus-off.</strong>
+<code>Active</code> is normal and <code>Warning</code> means an error counter has
+passed the warning limit, but <code>Bus_Off</code> means the node took
+<em>itself</em> off the bus after too many transmit errors &mdash; and the
+classic way to cause that is transmitting in <code>Normal</code> mode with no
+other node present to acknowledge. A bus-off node neither sends nor receives
+until <code>Recover</code> rejoins it. If your first CAN experiment goes deaf
+after a few frames, check <code>Health</code> before suspecting wiring, and use
+<code>Self_Test</code> mode when there is nothing else on the bus.</p>
+"""),
+
+dict(
+slug="20-rmt",
+nav="RMT pulses",
+title="RMT: an arbitrary pulse generator",
+lede="Sequences of {level, duration} symbols in hardware &mdash; IR remotes, "
+     "WS2812 LED strings, 1-Wire, and any timing you would otherwise "
+     "bit-bang badly.",
+body="""
+<h2>Symbols, not bits</h2>
+
+<p>RMT transmits and receives sequences of pulses. The unit is a
+<strong>symbol</strong>: two consecutive {level, duration} pairs packed into one
+32-bit word, laid out to match the hardware exactly:</p>
+
+<pre><code>type Tick_Count is range 0 .. 32_767;          --  15-bit duration
+
+type RMT_Symbol is record
+   Level0    : Boolean    := False;
+   Duration0 : Tick_Count := 0;
+   Level1    : Boolean    := False;
+   Duration1 : Tick_Count := 0;
+end record;
+
+for RMT_Symbol use record
+   Duration0 at 0 range  0 .. 14;
+   Level0    at 0 range 15 .. 15;
+   Duration1 at 0 range 16 .. 30;
+   Level1    at 0 range 31 .. 31;
+end record;
+for RMT_Symbol'Size use 32;</code></pre>
+
+<p>The representation clause is the point: you write ordinary Ada record fields
+and the compiler lays them out bit-exactly as the symbol RAM expects, so there is
+no shifting or masking anywhere in your code. Durations are in channel ticks,
+and a tick is <code>1 / Resolution_Hz</code> &mdash; set the resolution to
+1_000_000 and a tick is one microsecond, which is how IR protocol timings are
+usually written down.</p>
+
+<h2>Eight channels, split by direction</h2>
+
+<pre><code>type TX_Index is range 0 .. 3;
+type RX_Index is range 0 .. 3;
+
+type TX_Channel is limited private;
+type RX_Channel is limited private;</code></pre>
+
+<p>Channels 0&nbsp;..&nbsp;3 transmit and 4&nbsp;..&nbsp;7 receive, each with a
+48-symbol RAM block. They are claimed handles &mdash; limited, controlled, released
+on scope exit &mdash; and <strong>TX and RX are distinct types</strong>, so the
+two cannot be confused at a call site.</p>
+
+<h2>Borrowing RAM for longer bursts</h2>
+
+<p><code>Configure</code> takes a <code>Blocks</code> parameter of
+1&nbsp;..&nbsp;4, giving the channel that many consecutive 48-symbol RAM
+blocks.</p>
+
+<p class="warn"><code>Blocks &gt; 1</code> <strong>borrows the RAM of the
+higher-numbered TX channels</strong>. Claiming two blocks on channel 0 consumes
+channel 1's memory, so channel 1 is no longer usable. That is a real constraint
+on how many independent pulse trains you can run at once, and it is invisible
+unless you know to look for it.</p>
+
+<p>Beyond the symbol RAM, a longer burst is streamed by refilling the RAM in
+halves as it drains, so <code>Transmit</code> is not limited to what fits &mdash;
+it just costs CPU attention during the burst.</p>
+
+<pre><code>procedure Transmit (C : TX_Channel; Symbols : Symbol_Array);   --  blocking</code></pre>
+
+<h2>Receiving</h2>
+
+<pre><code>procedure Start   (C : RX_Channel);                                        --  arm
+procedure Receive (C : RX_Channel; Into : out Symbol_Array; Count : out Natural);</code></pre>
+
+<p><code>Start</code> arms the receiver and should be called <em>just</em> before
+the incoming burst; <code>Receive</code> blocks until reception ends and reports
+how many symbols were captured. Reception ends on an idle threshold, so a
+protocol whose inter-frame gap is shorter than your threshold will run two
+bursts together.</p>
+
+<p><code>./x run esp32s3_rmt_loopback</code> exercises both directions with a
+TX channel driving an RX channel through one pad &mdash; no IR LED, no
+receiver.</p>
+"""),
+
+dict(
+slug="21-ledc-sdm",
+nav="LEDC &amp; sigma-delta",
+title="LEDC and sigma-delta: the simple outputs",
+lede="Eight PWM channels for dimming and clean square waves, and eight "
+     "1-bit density-modulated outputs that become analog with one resistor "
+     "and one capacitor.",
+body="""
+<h2>LEDC: PWM without the motor-control machinery</h2>
+
+<p>Eight low-speed channels fed by four timers. A channel picks a timer &mdash;
+which sets its frequency and duty resolution &mdash; and drives a GPIO with a
+duty cycle you change at run time. This is the "dim an LED, generate a clean
+PWM" block; for dead-time, fault inputs and capture, see
+<a href="22-mcpwm.html">MCPWM</a>.</p>
+
+<pre><code>type Channel_Index is range 0 .. 7;
+subtype Resolution   is Positive range 1 .. 14;      --  duty-cycle bits
+subtype Duty_Percent is Float range 0.0 .. 100.0;
+
+procedure Claim  (C : in out Channel; Index : Channel_Index);
+procedure Configure (C : ...; Freq : ...; Bits : Resolution; Pin : ...);
+procedure Set_Duty  (C : Channel; Percent : Duty_Percent);
+procedure Stop      (C : Channel);</code></pre>
+
+<p>Two constraints are worth knowing before you pick numbers.</p>
+
+<p class="warn"><strong>Resolution and frequency trade against each
+other:</strong> <code>freq_max = 80&nbsp;MHz / 2**Bits</code>. Fourteen bits of
+duty resolution caps you under 5&nbsp;kHz; a 100&nbsp;kHz carrier leaves about
+nine bits. Choose <code>Bits</code> for the dimming smoothness you actually need,
+not the maximum.</p>
+
+<p class="warn"><strong>A channel uses timer <code>Index mod 4</code>.</strong>
+Channels 0 and 4 share a timer, as do 1 and 5, and so on &mdash; so two channels
+four apart cannot run at different frequencies. Spread channels across
+0&nbsp;..&nbsp;3 when you need independent rates.</p>
+
+<p><code>Set_Duty</code> takes effect at the next period, so it is safe to call
+while running &mdash; no glitch, no partial-update flicker. The handle is limited
+and controlled as everywhere else here, and finalization <em>stops the output</em>
+as well as releasing the channel, so a leaked handle cannot keep driving a
+pad.</p>
+
+<h2>Sigma-delta: analog for the price of an RC filter</h2>
+
+<p>Eight channels in the GPIO sigma-delta unit. Each emits a high-frequency
+pulse stream whose average density is set by a signed 8-bit value; pass it
+through an external RC low-pass and you have a cheap analog output &mdash; LED
+dimming, a bias voltage, simple audio.</p>
+
+<pre><code>type Channel_Index is range 0 .. 7;
+subtype Density_Percent is Float range 0.0 .. 100.0;
+
+procedure Configure   (C : ...; Pin : ...; Carrier_Hz : ...);   --  starts at 0 %
+procedure Set_Density (C : Channel; Percent : Density_Percent); --  one register write</code></pre>
+
+<p>The distinction from LEDC matters when choosing between them. LEDC varies the
+<em>width</em> of a pulse at a fixed frequency, so its output has energy at the
+PWM frequency and its harmonics. Sigma-delta varies the <em>density</em> of
+fixed-width pulses, pushing quantisation noise up in frequency where a simple
+filter removes it &mdash; which is why it makes a better analog voltage and why
+the same technique appears inside <a href="17-i2s.html">I2S</a>'s PDM mode.</p>
+
+<p><code>Set_Density</code> is a single register write, so it is cheap enough to
+call from a sample loop.</p>
+"""),
+
+dict(
+slug="22-mcpwm",
+nav="MCPWM",
+title="MCPWM: PWM that can shut itself down",
+lede="Complementary outputs with dead-time so a half-bridge is never shorted, "
+     "a chopper carrier, and a fault input that forces the pins safe in "
+     "hardware &mdash; without waiting for your code.",
+body="""
+<h2>What makes it different from LEDC</h2>
+
+<p>Two units, each with three independent generator channels and three capture
+channels. A generator channel is one timer plus one operator producing an
+edge-aligned PWM on output A: high at the start of each period, low when the
+up-counting timer reaches the duty comparator.</p>
+
+<pre><code>type MCPWM_Unit    is (MCPWM0, MCPWM1);
+type Channel_Index is (Ch0, Ch1, Ch2);
+
+procedure Claim (C : in out Channel; Unit : MCPWM_Unit; Index : Channel_Index);
+procedure Configure_Channel (...; Freq : ...; Complement_Pin : ... );  --  ~10 Hz .. 10 MHz
+procedure Start (C : Channel);
+procedure Stop  (C : Channel);
+procedure Set_Duty (C : Channel; Percent : Duty_Percent);</code></pre>
+
+<p><code>Set_Duty</code> is a single atomic register write. <code>Stop</code>
+halts the timer and the output <em>stays in its current state</em> &mdash; which
+is not necessarily the safe state, so think about which level your hardware wants
+before stopping a running bridge.</p>
+
+<h2>Complementary output and dead-time</h2>
+
+<p>Pass <code>Complement_Pin</code> and the channel drives a half-bridge or
+H-bridge pair: the A output plus an inverted B output from the same PWM, with
+programmable <strong>dead-time</strong> inserted between their edges so the two
+are never high together.</p>
+
+<p class="note">That dead-time is the whole reason this peripheral exists. In a
+half-bridge, both transistors conducting at once is a direct short across the
+supply &mdash; "shoot-through" &mdash; which destroys the bridge in microseconds.
+Software cannot be trusted to sequence the edges; the hardware inserts the gap.</p>
+
+<h2>Carrier modulation</h2>
+
+<pre><code>subtype Carrier_Prescale is Natural range 0 .. 15;
+subtype Carrier_Duty     is Natural range 1 .. 7;
+subtype Carrier_Pulse    is Natural range 0 .. 15;
+
+procedure Set_Carrier (...);</code></pre>
+
+<p>Chops the PWM output with a high-frequency carrier. This is what drives a
+gate-drive transformer (which cannot pass DC) or an IR emitter that expects a
+modulated burst.</p>
+
+<h2>Fault inputs: the safety feature</h2>
+
+<pre><code>type Fault_Input is (Fault0, Fault1, Fault2);
+type Fault_Mode  is (One_Shot, Cycle_By_Cycle);
+type Trip_Action is (No_Change, Force_Low, Force_High);
+
+procedure Configure_Fault  (Input : ...; Pin : ...; Active_High : ...);
+procedure Protect_Channel  (C : ...; Input : Fault_Input; Action : Trip_Action);</code></pre>
+
+<p>A fault pin &mdash; an over-current comparator, a driver's fault flag &mdash;
+forces the channel's A and B outputs to a chosen state <strong>in
+hardware</strong>. No interrupt latency, no scheduler, no chance that your task
+was busy elsewhere.</p>
+
+<table>
+  <thead><tr><th>Mode</th><th>Behaviour</th></tr></thead>
+  <tbody>
+    <tr><td><code>Cycle_By_Cycle</code></td>
+        <td>The output is forced while the fault is asserted and resumes on its
+            own once it clears. For recoverable conditions such as a current
+            limit.</td></tr>
+    <tr><td><code>One_Shot</code></td>
+        <td>The trip <em>latches</em>. The outputs stay forced until you
+            explicitly clear it, and clearing only re-enables them if the fault
+            has actually gone. For conditions that should require a deliberate
+            decision to restart.</td></tr>
+  </tbody>
+</table>
+
+<p>Set <code>Trip_Action</code> to the level that is safe for <em>your</em>
+hardware &mdash; <code>Force_Low</code> is right for a low-side switch, but not
+universally.</p>
+"""),
+
+dict(
+slug="23-timers-pcnt",
+nav="Timers &amp; pulse counting",
+title="Timers and pulse counting",
+lede="A 54-bit counter with an alarm, and four edge counters &mdash; the two "
+     "ways to measure time and events without the CPU watching.",
+body="""
+<h2>General-purpose timers</h2>
+
+<p>Two timer groups, TIMG0 and TIMG1. Each has one 54-bit up/down counter clocked
+from the APB clock through a 16-bit prescaler, with a programmable alarm. (The
+per-group watchdogs are separate and this driver does not touch them.)</p>
+
+<pre><code>type Timer_Index is range 0 .. 1;          --  0 = TIMG0, 1 = TIMG1
+type Ticks is new Interfaces.Unsigned_64;
+
+procedure Configure (T : in out Timer; Tick_Hz : Positive := 1_000_000);
+procedure Start (T : Timer);
+procedure Stop  (T : Timer);
+procedure Reset (T : Timer);              --  reload to 0, running or not
+function  Value (T : Timer) return Ticks; --  latched, then read
+
+procedure Set_Alarm    (T : Timer; At_Ticks : Ticks);
+function  Alarm_Fired  (T : Timer) return Boolean;
+procedure Clear_Alarm  (T : Timer);</code></pre>
+
+<p>The default 1&nbsp;MHz tick makes <code>Value</code> read directly in
+microseconds. Fifty-four bits at that rate is a bit over five centuries, so
+wrap-around is not a design consideration.</p>
+
+<p><code>Value</code> latches before reading, which matters on a 54-bit counter
+sampled by a 32-bit CPU: without the latch you could catch the low word after a
+carry and the high word before it, and read a time that never existed.</p>
+
+<p class="note"><strong>This is not the runtime's clock.</strong>
+<code>Ada.Real_Time.Clock</code> and <code>delay until</code> are served by the
+runtime's own tick on the systimer &mdash; see
+<a href="06-anatomy.html">step 6</a>. These timers are an independent
+measurement resource for your application, which is exactly what makes them
+useful for cross-checking the runtime: <code>./x run esp32s3_timer_count</code>
+does that against the wall clock.</p>
+
+<p><code>Alarm_Fired</code> stays set until <code>Clear_Alarm</code>, so a polled
+loop cannot miss the event between samples.</p>
+
+<h2>PCNT: counting edges</h2>
+
+<p>Four counter units, each counting into a signed 16-bit counter as edges arrive
+on its input pin. The classic uses are a tachometer, a flow meter, or a
+quadrature encoder.</p>
+
+<pre><code>type Unit_Index is range 0 .. 3;
+
+procedure Configure (U : in out Unit; Pin : ESP32S3.GPIO.Pin_Id;
+                     Both_Edges : Boolean := False);
+function  Count (U : Unit) return Integer;   --  signed; wraps at +/- 32768</code></pre>
+
+<p>By default each rising edge counts; <code>Both_Edges</code> counts falling
+ones too, doubling the resolution of a symmetric signal.</p>
+
+<p class="warn"><strong>The counter is 16-bit and wraps at ±32768.</strong> On a
+fast input that is not long: 10&nbsp;kHz overflows in about three seconds. Poll
+often enough to catch every wrap, or the count you accumulate will be wrong in a
+way that looks plausible.</p>
+
+<p>This driver exposes the common "count edges on a pin" case; the per-unit
+direction-control input and the threshold-event comparators are left at their
+pass-through defaults.</p>
+"""),
+
+dict(
+slug="24-analog",
+nav="ADC &amp; touch",
+title="Analog in: the SAR ADC and capacitive touch",
+lede="Two 12-bit converters on fixed pins, and fourteen touch channels that "
+     "measure a pad's capacitance by counting &mdash; both living in the RTC "
+     "domain.",
+body="""
+<h2>The SAR ADC</h2>
+
+<p>Two units, each with up to ten 12-bit channels on <em>fixed</em> GPIOs. The
+mapping is not configurable, so the pin decides the channel:</p>
+
+<pre><code>ADC1 channel n -&gt; GPIO (n + 1)     --  ch0 = GPIO1  .. ch9 = GPIO10
+ADC2 channel n -&gt; GPIO (n + 11)    --  ch0 = GPIO11 .. ch9 = GPIO20
+
+function Channel_Pin (Unit : ADC_Unit; Ch : Channel_Index)
+  return ESP32S3.GPIO.Pin_Id;      --  ask, rather than hard-code the arithmetic</code></pre>
+
+<p>Conversions are software-triggered single shots through the RTC controller,
+each returning a raw 12-bit code:</p>
+
+<pre><code>type Attenuation is (Db_0, Db_2_5, Db_6, Db_12);   --  ~1.1 V .. ~3.3 V full scale
+subtype Raw_Value is Natural range 0 .. 4095;
+
+function Read (R : Reader; Ch : Channel_Index;
+               Atten : Attenuation := Db_12) return Raw_Value;</code></pre>
+
+<p>Attenuation is per channel and per read, so one unit can serve a 1&nbsp;V
+sensor and a 3.3&nbsp;V divider without reconfiguration between them. The default
+<code>Db_12</code> gives roughly the full 3.3&nbsp;V range; a lower attenuation
+on a small signal buys real resolution.</p>
+
+<p class="note"><strong>The result is a raw code, not a voltage.</strong> The
+driver does not pretend to give you volts, because an accurate conversion needs
+the per-chip calibration data and the attenuation curve is not linear at the
+extremes. <code>Cal_Code</code> exposes the self-calibrated initial code and
+<code>Last_Done</code> whether the most recent conversion completed &mdash; both
+diagnostics for deciding whether a reading is trustworthy.</p>
+
+<h2>Capacitive touch</h2>
+
+<p>Fourteen channels on GPIO1&nbsp;..&nbsp;GPIO14, and the numbering is the one
+mnemonic you need: <strong>touch channel n is wired to GPIO n</strong>.</p>
+
+<pre><code>type Channel is range 1 .. 14;
+function Pad (Ch : Channel) return ESP32S3.GPIO.Pin_Id;
+
+procedure Setup;                    --  bring the controller up, start the FSM
+procedure Enable (Ch : Channel);    --  put the pad in touch mode, add to the scan
+function  Read (Ch : Channel) return Natural;     --  latest raw count</code></pre>
+
+<p>Each channel measures its pad's self-capacitance by counting charge/discharge
+cycles in a fixed window. A finger near the pad raises the capacitance and
+changes the count. An FSM scans the enabled channels continuously on the RTC
+timer, so <code>Read</code> returns the latest sample rather than triggering
+one &mdash; it never blocks.</p>
+
+<p>Detection is relative, not absolute: <code>Touched</code> compares a channel's
+current count against a reference you supply. That reference is
+board-specific &mdash; pad size, overlay thickness and stray capacitance all move
+it &mdash; so sample a known-untouched value at startup rather than hard-coding
+a threshold from someone else's board.</p>
+
+<p class="note">Touch needs no tasking runtime: it is register pokes into the
+RTC/SENS domain, so unlike most of the HAL it works under
+<code>light-tasking</code> too.</p>
+"""),
+
+dict(
+slug="25-rtc",
+nav="RTC, hold &amp; deep sleep",
+title="RTC, pad hold and deep sleep",
+lede="Deep sleep is not a pause &mdash; the chip resets and re-runs from the "
+     "start. What survives is RTC memory, and the pads you explicitly told to "
+     "hold their level.",
+body="""
+<h2>The mental model that matters</h2>
+
+<p class="warn"><strong>Waking from deep sleep is a reset, not a resume.</strong>
+The digital core &mdash; CPU and main RAM &mdash; is powered down; only the RTC
+domain stays alive. On wake the chip <em>restarts from the beginning</em>: your
+<code>Main</code> runs again from the top, every variable re-elaborated. Nothing
+in ordinary RAM survives. Code written as though sleep were a blocking delay will
+be wrong in a way that looks like a spontaneous reboot.</p>
+
+<p>Two things do survive: data you deliberately put in RTC memory, and RTC pads
+you told to hold.</p>
+
+<h2>Retained memory</h2>
+
+<pre><code>subtype Word_Index is Natural range 0 .. Slow_Memory_Size / 4 - 1;
+
+function  Read  (Index : Word_Index) return Interfaces.Unsigned_32;
+procedure Write (Index : Word_Index; Value : Interfaces.Unsigned_32);</code></pre>
+
+<p>There is also a generic typed retained object: instantiate it once per stored
+item and it gives you a distinct slot with a real type, rather than making you
+hand-manage word indices and remember which one held what. Prefer that for
+anything beyond a single counter.</p>
+
+<h2>Knowing why you are running</h2>
+
+<pre><code>type Wake_Cause is ...;                       --  power-on, timer, RTC-GPIO, ...
+function Last_Wake       return Wake_Cause;
+function Raw_Reset_Cause return Natural;      --  5 = deep-sleep wake
+function Raw_Wake_Cause  return Natural;</code></pre>
+
+<p>Because every wake re-runs your program, the first thing it usually has to do
+is ask <em>why</em>: a cold power-on initialises state, a timer wake continues a
+duty cycle, a pin wake handles an event. That branch is the shape of nearly every
+low-power application.</p>
+
+<h2>Entering sleep</h2>
+
+<pre><code>procedure Deep_Sleep_For (Wake_After : Duration);   --  timer wake
+--  plus a variant that sleeps until an RTC-capable pin reaches a level (EXT1)</code></pre>
+
+<p class="note">These <strong>do not return</strong>. If one does, the sleep FSM
+rejected the request &mdash; and <code>Raw_Reject_Cause</code> tells you why.
+Treat a return as an error path, not as normal control flow, because that is
+exactly what it is.</p>
+
+<h2>Pad hold: keeping a line asserted through the reset</h2>
+
+<p>GPIO0&nbsp;..&nbsp;GPIO21 are RTC-capable. The headline feature of
+<code>ESP32S3.RTC_IO</code> is <strong>hold</strong>: latch a pad at its current
+output level so it keeps driving while the rest of the chip changes &mdash;
+including through deep sleep and across the reset that waking causes.</p>
+
+<pre><code>subtype RTC_Pin is ESP32S3.GPIO.Pin_Id range 0 .. 21;
+
+procedure Hold    (Pin : RTC_Pin);
+procedure Release (Pin : RTC_Pin);
+function  Is_Held (Pin : RTC_Pin) return Boolean;
+procedure Set_Pull (Pin : RTC_Pin; Mode : Pull_Mode);   --  No_Pull | Up | Down</code></pre>
+
+<p>This is how you keep a load enabled or a peripheral's reset line asserted
+while you sleep &mdash; without it, every pad returns to a default input at the
+moment of sleep and your board resets its own sensors.</p>
+
+<p class="warn"><strong>A held pad ignores ordinary GPIO writes until you
+<code>Release</code> it.</strong> On the run after a wake, a pin that refuses to
+change is almost always one you held before sleeping and have not released.</p>
+
+<p class="note">Neither package needs a tasking runtime &mdash; both are register
+pokes &mdash; and RTC-IO works under every runtime profile.</p>
+"""),
+
+dict(
+slug="26-crypto",
+nav="Crypto &amp; RNG",
+title="Hardware crypto, and one honest caveat",
+lede="SHA, AES and RSA acceleration behind protected objects, MD5 for a "
+     "specific non-cryptographic job &mdash; and a random number generator "
+     "that is not a CSPRNG on this runtime.",
+body="""
+<h2>SHA</h2>
+
+<pre><code>function Hash_1   (Data : Byte_Array) return SHA1_Digest;     --  20 bytes
+function Hash_224 (Data : Byte_Array) return SHA224_Digest;
+function Hash_256 (Data : Byte_Array) return SHA256_Digest;</code></pre>
+
+<p>One shared accelerator, so a protected object serialises the message-load /
+start / read handshake and concurrent <code>Hash</code> calls from different
+tasks are safe. All three variants share the 512-bit block and padding, differing
+only in hardware mode and digest length. The block also does SHA-384/512, which
+use a 1024-bit block and are not exposed here.</p>
+
+<h2>AES, and a silicon limitation worth a contract</h2>
+
+<pre><code>type Block     is array (0 .. 15) of Interfaces.Unsigned_8;
+subtype Key_128 is Key_Bytes (0 .. 15);
+subtype Key_256 is Key_Bytes (0 .. 31);
+
+function Supported_Key (Key : Key_Bytes) return Boolean;
+function Encrypt_ECB   (Key : Key_Bytes; Plain : Block) return Block;</code></pre>
+
+<p class="warn"><strong>The S3's AES supports 128- and 256-bit keys only.</strong>
+There is no 192-bit support on this silicon &mdash; selecting "AES-192" makes the
+engine <em>silently fall back to AES-128 on the first 16 key bytes</em>, which
+would produce ciphertext that looks fine and is not what you asked for. The
+<code>Supported_Key</code> precondition turns that into a contract violation
+instead. 192-bit keys exist only on the original ESP32.</p>
+
+<p>What is exposed is single-block ECB, deliberately: it is the primitive, not a
+mode you should be encrypting messages with directly. Build CBC, CTR or GCM on
+top of it.</p>
+
+<h2>RSA</h2>
+
+<pre><code>type Word_Array is array (Natural range &lt;&gt;) of Word;   --  little-endian limbs
+
+procedure Mod_Exp (X, Y, M, R2 : Word_Array; Z : out Word_Array; Ok : out Boolean);
+procedure Mod_Exp (X, Y, M     : Word_Array; Z : out Word_Array; Ok : out Boolean);</code></pre>
+
+<p>Big-integer modular exponentiation, <code>Z = X**Y mod M</code>, up to
+4096-bit &mdash; the core of RSA signature verification. The hardware does
+Montgomery exponentiation; the driver computes <code>M'</code> itself, and the
+second overload derives <code>R2</code> for you as well. Operands are
+little-endian 32-bit limb arrays, all the same length. It is lock-free and
+ZFP-safe: a sequence of register accesses with no tasking and no heap.</p>
+
+<h2>MD5, and why it is here</h2>
+
+<p class="note">MD5 is long broken as a cryptographic hash and this package does
+not pretend otherwise. It earns its place because the ESP32 ROM loader's
+<code>SPI_FLASH_MD5</code> command speaks it: after writing an image, the target
+hashes what its flash actually holds, this computes what it <em>should</em> hold,
+and comparing them is what lets "programmed OK" mean something. An integrity
+check against accident, not against an adversary.</p>
+
+<p>It is streaming (<code>Reset</code> / <code>Update</code> /
+<code>Hex_Digest</code>), pure Ada, no heap, no tasking &mdash; so it runs on the
+light runtime too.</p>
+
+<h2>The RNG caveat</h2>
+
+<pre><code>--  Read is a single atomic 32-bit register load; Fill writes a buffer.</code></pre>
+
+<p>Each read of the RNG data register returns a fresh 32-bit value. It is
+Preelaborate, heap-free, finalization-free and task-safe by construction &mdash;
+the one peripheral that keeps every one of those properties at once.</p>
+
+<p class="warn"><strong>Do not treat it as a CSPRNG as it stands.</strong> The
+TRM wants an active entropy source for cryptographic-quality output &mdash; the
+RF subsystem, which this bare runtime does not start, or SAR-ADC bootloader
+entropy. Without one it still produces varying values from internal clock jitter,
+which is fine for dithering, non-secret identifiers, test data or seeding a
+software PRNG. It is not fine for keys. Also avoid reading in a tight loop faster
+than the hardware refreshes, or successive words may correlate.</p>
+
+<p class="note">A related trap: this is the <em>RNG peripheral</em> register, not
+esp-idf's <code>WDEV_RND_REG</code>. That one only yields entropy with the RF
+clock domain up, so on this runtime it reads a constant &mdash; a mistake that
+would look like working code returning the same "random" number forever.</p>
+"""),
+
+dict(
+slug="27-sd",
+nav="SD cards",
+title="SD cards: two hosts, one API shape",
+lede="The universal SPI transport and the native SD bus &mdash; different "
+     "speeds, different profile requirements, and the same 512-byte logical "
+     "block interface.",
+body="""
+<h2>Two routes to the same card</h2>
+
+<table>
+  <thead><tr><th></th><th><code>SD_SPI</code></th><th><code>SDMMC</code></th></tr></thead>
+  <tbody>
+    <tr><td>Bus</td>
+        <td>The SPI master, 4 lines</td>
+        <td>The real SD bus: clock, bidirectional command line, 1 or 4 data lines</td></tr>
+    <tr><td>Data path</td>
+        <td>Through <a href="14-spi.html">SPI</a> (and its GDMA)</td>
+        <td>PIO/FIFO &mdash; the CPU pushes each 512-byte block through the controller's FIFO</td></tr>
+    <tr><td>Speed</td>
+        <td>Lower</td>
+        <td>Faster; how you reach an SDHC/SDXC card at speed</td></tr>
+    <tr><td>Profile</td>
+        <td><strong>embedded / full only</strong> (uses the SPI Session's finalization)</td>
+        <td><strong>every profile</strong>, light-tasking included</td></tr>
+  </tbody>
+</table>
+
+<p>That last row is the surprise, and it falls out of the implementation: because
+<code>SDMMC</code> moves data in PIO with no GDMA and no descriptors, it needs no
+finalization &mdash; a library-level protected object serialises the single
+shared controller. So the <em>faster</em> host is also the one available on the
+lean runtime.</p>
+
+<h2>The shared API shape</h2>
+
+<pre><code>type Block         is array (0 .. 511) of Interfaces.Unsigned_8;
+type Block_Address is new Interfaces.Unsigned_32;</code></pre>
+
+<p>Both are addressed in <strong>512-byte logical blocks (LBA)</strong>, always.
+SDHC and SDXC cards use block addressing while older SDSC cards use byte
+addressing; that difference is resolved inside the driver, so it never reaches
+your code. Both also initialise the card at ≤400&nbsp;kHz as the SD specification
+requires, then switch to <code>Data_Clock_Hz</code> &mdash; which is precisely
+what <a href="14-spi.html">SPI</a>'s <code>Set_Clock</code> mid-hold exists
+for.</p>
+
+<h2>Why SD-over-SPI needs a GPIO chip select</h2>
+
+<p class="note">The chip select is driven as a <strong>plain GPIO</strong>, not
+the SPI peripheral's hardware CS. The SD protocol needs CS held asserted across a
+whole command / response / data sequence, and the peripheral's own CS pulses per
+transfer &mdash; which the protocol cannot use. This is the concrete case behind
+the <code>CS_Pin</code> option on <a href="14-spi.html">SPI's
+<code>Acquire</code></a>.</p>
+
+<p><code>SD_SPI</code> layers the SD "SPI mode" command protocol on top of the
+task-safe SPI master: CMD0, CMD8, CMD58, ACMD41, CMD17, CMD24 and CRC7. Every
+operation takes the SPI host's session for the whole transaction, so concurrent
+callers serialise.</p>
+
+<pre><code>type Card_Kind is (Unknown, SD_V1, SD_V2_SC, SD_V2_HC);</code></pre>
+
+<p><code>SDMMC</code> has two slots (<code>Slot1</code>, <code>Slot2</code>), one
+card each, and a selectable <code>Bus_Width</code> of <code>Width_1</code> or
+<code>Width_4</code>. Its lines route through the GPIO matrix, so any free pins
+will do.</p>
+
+<p class="warn">Both drivers are marked in the repository's testing table as
+<strong>compiles, no-card smoke test only</strong>. They are the ones to verify
+against a real card before relying on them &mdash; see
+<a href="11-hal.html">step 11</a>.</p>
+"""),
+
+dict(
+slug="28-chip-id",
+nav="Temperature &amp; MAC",
+title="Chip identity: die temperature and the eFuse MAC",
+lede="Two small packages that answer questions about the silicon itself &mdash; "
+     "how hot it is, and what addresses the factory gave it.",
+body="""
+<h2>The on-chip temperature sensor</h2>
+
+<p class="warn"><strong>It reports die temperature, not ambient air.</strong> The
+chip self-heats under load, so an idle board typically reads a few degrees above
+room temperature and a busy one considerably more. Using it as a room thermometer
+will give you a plausible, wrong answer.</p>
+
+<p>Accuracy is roughly ±1&nbsp;°C after the part's factory trim, and is best near
+the middle of the selected measurement range &mdash; so pick the
+<code>Measure_Range</code> that brackets your expected readings rather than the
+widest one:</p>
+
+<pre><code>procedure Initialize (Span : Measure_Range := Range_Minus10_80);</code></pre>
+
+<p><code>Initialize</code> is optional: the first <code>Read</code> brings the
+sensor up with the default range if you skip it. The sensor is owned by a
+protected object, so concurrent reads from different tasks serialise
+automatically &mdash; each busy-waits microseconds for its conversion under that
+lock.</p>
+
+<p class="note">Bring-up is more involved than it looks, which is why it is worth
+having a driver for: gate the SAR peripheral clock, pulse-reset it, open the
+analog REGI2C bus, program the sensor's DAC range over that bus through a ROM
+call, then power the sensor up. Every reading then drives a dump-out/ready
+handshake to latch a fresh conversion before sampling.</p>
+
+<h2>The factory MAC addresses</h2>
+
+<p>Espressif allocates each part a block of <strong>four</strong>
+universally-administered addresses. The eFuse base is the Wi-Fi station MAC, and
+the others are derived from it:</p>
+
+<pre><code>type MAC_Address is array (0 .. 5) of Interfaces.Unsigned_8;
+
+function Base           return MAC_Address;   --  = Wi-Fi station
+function Wi_Fi_Station  return MAC_Address;   --  base + 0
+function Wi_Fi_SoftAP   return MAC_Address;   --  base + 1
+--  Bluetooth  = base + 2
+--  Ethernet   = base + 3</code></pre>
+
+<p>The practical use on a board with no Wi-Fi: give a
+<strong>W5500 Ethernet controller the <code>Ethernet</code> address</strong>
+instead of a hand-picked one. That is a real, manufacturer-assigned, globally
+unique MAC &mdash; which matters the moment two of your boards end up on the same
+network segment, and is free.</p>
+
+<p class="note">Every routine is a pure read of the eFuse shadow registers, which
+are latched at reset. No clock, no driver state, no initialisation &mdash; so
+these are safe to call from anywhere, at any time, under any profile.</p>
+"""),
+
+dict(
+slug="29-debugging",
 nav="Debugging",
 title="Debugging: GDB over the same cable",
 lede="The USB-Serial-JTAG port is both the console and a JTAG debug interface, "
@@ -1822,7 +2949,7 @@ unrelated.</p>
 
 # ---------------------------------------------------------------- 13
 dict(
-slug="17-troubleshooting",
+slug="30-troubleshooting",
 nav="Troubleshooting &amp; next steps",
 title="Troubleshooting, and where to go next",
 lede="The failure modes worth recognising on sight, a one-screen cheat sheet, "
@@ -1993,6 +3120,9 @@ a:hover { text-decoration-thickness: 2px; }
   gap: 0.35rem 1rem;
 }
 .masthead-inner a.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
   font-weight: 650;
   font-size: 1.02rem;
   color: var(--fg);
@@ -2000,6 +3130,14 @@ a:hover { text-decoration-thickness: 2px; }
   letter-spacing: -0.01em;
 }
 .masthead-inner a.brand:hover { color: var(--accent); }
+
+/* The Ada mascot is drawn with black outlines, which disappear on a dark
+   ground.  Inverting lightness and rotating the hue back keeps the blues
+   roughly themselves while lifting the linework off the background. */
+.logo { display: block; width: 30px; height: 30px; flex: none; }
+@media (prefers-color-scheme: dark) {
+  .logo { filter: invert(1) hue-rotate(180deg); }
+}
 .masthead .tagline {
   color: var(--fg-faint);
   font-size: 0.82rem;
@@ -2313,7 +3451,7 @@ PAGE = """<!DOCTYPE html>
 
 <header class="masthead">
   <div class="masthead-inner">
-    <a class="brand" href="index.html">{site}</a>
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">{site}</a>
     <span class="tagline">{tagline}</span>
   </div>
 </header>
@@ -2341,7 +3479,7 @@ PAGE = """<!DOCTYPE html>
 INDEX_BODY = """
     <p class="eyebrow">Start here</p>
     <h1>{site}</h1>
-    <p class="lede">{tagline} Seventeen short steps, one aspect each, from a
+    <p class="lede">{tagline} Thirty short steps, one aspect each, from a
     blank machine to your own Ada application running on both cores.</p>
 
     <p>The ESP32-S3 is normally programmed through Espressif's ESP-IDF: a large
@@ -2355,8 +3493,8 @@ INDEX_BODY = """
     <p>Each page below covers exactly one thing, and each links to the next.
     Steps 1 to 5 get an LED blinking. Steps 6 to 9 explain what you just did and
     how to configure it. Steps 10 and 11 are your own project and the driver
-    library, 12 to 15 go deep on the four peripherals you will reach for first
-    &mdash; GPIO, I2C, SPI and UART &mdash; and 16 and 17 are the debugger and
+    library. Steps 12 to 28 are the peripherals, one at a time &mdash; start with
+    whichever one your board actually has. Steps 29 and 30 are the debugger and
     what to do when something goes wrong.</p>
 
     <a class="start-cta" href="01-what-you-need.html">Begin with step 01 &rarr;</a>
@@ -2389,8 +3527,21 @@ BLURBS = {
     "13-i2c":             "An RAII session that cannot leak the bus lock, repeated START, and why payload length never reaches your code.",
     "14-spi":             "Per-device clock and mode on a shared host, chip select three ways, and DMA rules enforced as preconditions.",
     "15-uart":            "No setup call by design, interrupt-driven RX with a buffer Ada makes you declare just so, and a routing trap.",
-    "16-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
-    "17-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
+    "16-gdma":            "Five channel pairs claimed at run time, and the buffer rules PSRAM's cache imposes.",
+    "17-i2s":             "Audio with no CPU FIFO: DMA-only transfers, gapless looping, and capture underneath playback.",
+    "18-lcd":             "A command-driven i8080 bus and a continuously-refreshed RGB panel from one controller.",
+    "19-twai":            "CAN 2.0 with identifier widths the type system keeps apart, and the bus-off trap.",
+    "20-rmt":             "Arbitrary {level, duration} pulse trains for IR, WS2812 and 1-Wire.",
+    "21-ledc-sdm":        "Eight PWM channels for dimming, and eight density-modulated outputs that filter to analog.",
+    "22-mcpwm":           "Dead-time, a chopper carrier, and fault inputs that force the pins safe in hardware.",
+    "23-timers-pcnt":     "A 54-bit timer with an alarm, and four edge counters that wrap sooner than you think.",
+    "24-analog":          "The SAR ADC on fixed pins, and touch channels that count their way to a reading.",
+    "25-rtc":             "Deep sleep resets the chip; what survives is RTC memory and the pads you held.",
+    "26-crypto":          "SHA, AES and RSA acceleration, MD5 for flash verification, and why the RNG is not a CSPRNG here.",
+    "27-sd":              "SPI transport versus the native SD bus, and why the faster one runs on the lean runtime.",
+    "28-chip-id":         "Die temperature (not ambient) and the four factory MACs in eFuse.",
+    "29-debugging":       "OpenOCD and GDB over the same USB cable, editor integration, and decoding a Guru Meditation.",
+    "30-troubleshooting": "The failure modes worth recognising on sight, a cheat sheet, and where to read next.",
 }
 
 

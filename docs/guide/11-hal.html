@@ -11,7 +11,7 @@
 
 <header class="masthead">
   <div class="masthead-inner">
-    <a class="brand" href="index.html">Bare-Metal Ada on the ESP32-S3</a>
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
     <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
   </div>
 </header>
@@ -37,14 +37,27 @@
       <li><a href="13-i2c.html">I2C in depth</a></li>
       <li><a href="14-spi.html">SPI in depth</a></li>
       <li><a href="15-uart.html">UART in depth</a></li>
-      <li><a href="16-debugging.html">Debugging</a></li>
-      <li><a href="17-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li><a href="17-i2s.html">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-debugging.html">Debugging</a></li>
+      <li><a href="30-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
     </ol>
   </nav>
 
   <main>
     <nav class="pager-top"><a href="10-own-project.html">&larr; Your own project</a><a href="12-gpio.html">GPIO in depth &rarr;</a></nav>
-    <p class="eyebrow">Step 11 of 17</p>
+    <p class="eyebrow">Step 11 of 30</p>
     <h1>Talking to the hardware: the HAL</h1>
     <p class="lede">Twenty-five-plus drivers, each a private register engine hidden behind a task-safe gateway. Here is what using one looks like, and why they are shaped the way they are.</p>
 
@@ -161,14 +174,34 @@ wiring &mdash; internal loopback or GPIO sampling. Running the one for the
 peripheral you are about to use is the fastest way to confirm your board before
 you write any code against it.</p>
 
-<p>The next four steps take the four you will reach for first and go through
-them properly: <a href="12-gpio.html">GPIO</a> &mdash; the pin type, what is
-atomic in silicon, and pin interrupts; <a href="13-i2c.html">I2C</a> &mdash;
-session ownership, repeated START, and unbounded transfers;
-<a href="14-spi.html">SPI</a> &mdash; per-device clock and mode on a shared host,
-chip select three ways, and the DMA preconditions; and
-<a href="15-uart.html">UART</a> &mdash; why it has no setup call, interrupt-driven
-RX, and a pin-routing trap.</p>
+<p>The next seventeen steps go through the peripherals one at a time. The
+four you will reach for first come first &mdash; <a href="12-gpio.html">GPIO</a>,
+<a href="13-i2c.html">I2C</a>, <a href="14-spi.html">SPI</a> and
+<a href="15-uart.html">UART</a> &mdash; then the engine they and everything else
+are built on, <a href="16-gdma.html">GDMA</a>:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Peripheral</th><th>Why it has its own page</th></tr></thead>
+  <tbody>
+    <tr><td>12</td><td><a href="12-gpio.html">GPIO</a></td><td>The pin type, what is atomic in silicon, interrupts and the trampoline rule</td></tr>
+    <tr><td>13</td><td><a href="13-i2c.html">I2C</a></td><td>Session ownership, repeated START, unbounded transfers</td></tr>
+    <tr><td>14</td><td><a href="14-spi.html">SPI</a></td><td>Per-device clock and mode, chip select three ways, DMA preconditions</td></tr>
+    <tr><td>15</td><td><a href="15-uart.html">UART</a></td><td>No setup call, interrupt-driven RX, a pin-routing trap</td></tr>
+    <tr><td>16</td><td><a href="16-gdma.html">GDMA</a></td><td>Channels as a claimed resource, and the buffer rules PSRAM's cache imposes</td></tr>
+    <tr><td>17</td><td><a href="17-i2s.html">I2S</a></td><td>No CPU FIFO at all, gapless looping, capture under playback</td></tr>
+    <tr><td>18</td><td><a href="18-lcd.html">LCD</a></td><td>Command-driven i8080 and continuously-refreshed RGB</td></tr>
+    <tr><td>19</td><td><a href="19-twai.html">TWAI/CAN</a></td><td>Identifier widths kept apart by type, and the bus-off trap</td></tr>
+    <tr><td>20</td><td><a href="20-rmt.html">RMT</a></td><td>Arbitrary pulse trains; IR, WS2812, 1-Wire</td></tr>
+    <tr><td>21</td><td><a href="21-ledc-sdm.html">LEDC &amp; SDM</a></td><td>PWM dimming, and density modulation that filters to analog</td></tr>
+    <tr><td>22</td><td><a href="22-mcpwm.html">MCPWM</a></td><td>Dead-time and hardware fault shutdown</td></tr>
+    <tr><td>23</td><td><a href="23-timers-pcnt.html">Timers &amp; PCNT</a></td><td>A 54-bit timer with an alarm, and edge counters that wrap</td></tr>
+    <tr><td>24</td><td><a href="24-analog.html">ADC &amp; touch</a></td><td>Fixed-pin channels, attenuation, and relative touch detection</td></tr>
+    <tr><td>25</td><td><a href="25-rtc.html">RTC &amp; deep sleep</a></td><td>Waking is a reset; retained memory and pad hold</td></tr>
+    <tr><td>26</td><td><a href="26-crypto.html">Crypto &amp; RNG</a></td><td>SHA/AES/RSA, MD5's specific job, and the RNG caveat</td></tr>
+    <tr><td>27</td><td><a href="27-sd.html">SD cards</a></td><td>Two hosts, one block API, different profile requirements</td></tr>
+    <tr><td>28</td><td><a href="28-chip-id.html">Temperature &amp; MAC</a></td><td>Die temperature, and the four factory addresses</td></tr>
+  </tbody>
+</table>
 
 <p class="warn"><strong>Verify on your own board.</strong> The drivers were
 exercised on an ESP32-S3 during development, but nothing has been re-verified as

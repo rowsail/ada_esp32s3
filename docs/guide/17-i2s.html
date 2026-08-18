@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>I2S: audio that only moves by DMA &middot; Bare-Metal Ada on the ESP32-S3</title>
+<meta name="description" content="The S3's I2S has no CPU FIFO at all &mdash; samples reach the wire only through the DMA crossbar. That single fact shapes the whole API, including gapless playback and capture that runs underneath it.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <a class="brand" href="index.html"><img class="logo" src="ada.svg" alt="" width="30" height="30">Bare-Metal Ada on the ESP32-S3</a>
+    <span class="tagline">A step-by-step guide to running Ada on the ESP32-S3 with no ESP-IDF, no FreeRTOS, and no Python.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Guide contents">
+    <a class="home" href="index.html">&larr; Guide home</a>
+    <h2>The steps</h2>
+    <ol>
+      <li><a href="01-what-you-need.html">What you need</a></li>
+      <li><a href="02-toolchain.html">Installing the toolchain</a></li>
+      <li><a href="03-clone.html">Getting the code</a></li>
+      <li><a href="04-board.html">Board and serial port</a></li>
+      <li><a href="05-first-blink.html">Your first blink</a></li>
+      <li><a href="06-anatomy.html">Reset to Main</a></li>
+      <li><a href="07-build.html">What a build does</a></li>
+      <li><a href="08-profiles.html">Runtime profiles</a></li>
+      <li><a href="09-board-config.html">Board configuration</a></li>
+      <li><a href="10-own-project.html">Your own project</a></li>
+      <li><a href="11-hal.html">Talking to hardware</a></li>
+      <li><a href="12-gpio.html">GPIO in depth</a></li>
+      <li><a href="13-i2c.html">I2C in depth</a></li>
+      <li><a href="14-spi.html">SPI in depth</a></li>
+      <li><a href="15-uart.html">UART in depth</a></li>
+      <li><a href="16-gdma.html">GDMA</a></li>
+      <li class="current"><a href="17-i2s.html" aria-current="page">I2S audio</a></li>
+      <li><a href="18-lcd.html">LCD (i80 / RGB)</a></li>
+      <li><a href="19-twai.html">TWAI (CAN)</a></li>
+      <li><a href="20-rmt.html">RMT pulses</a></li>
+      <li><a href="21-ledc-sdm.html">LEDC &amp; sigma-delta</a></li>
+      <li><a href="22-mcpwm.html">MCPWM</a></li>
+      <li><a href="23-timers-pcnt.html">Timers &amp; pulse counting</a></li>
+      <li><a href="24-analog.html">ADC &amp; touch</a></li>
+      <li><a href="25-rtc.html">RTC, hold &amp; deep sleep</a></li>
+      <li><a href="26-crypto.html">Crypto &amp; RNG</a></li>
+      <li><a href="27-sd.html">SD cards</a></li>
+      <li><a href="28-chip-id.html">Temperature &amp; MAC</a></li>
+      <li><a href="29-debugging.html">Debugging</a></li>
+      <li><a href="30-troubleshooting.html">Troubleshooting &amp; next steps</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <nav class="pager-top"><a href="16-gdma.html">&larr; GDMA</a><a href="18-lcd.html">LCD (i80 / RGB) &rarr;</a></nav>
+    <p class="eyebrow">Step 17 of 30</p>
+    <h1>I2S: audio that only moves by DMA</h1>
+    <p class="lede">The S3's I2S has no CPU FIFO at all &mdash; samples reach the wire only through the DMA crossbar. That single fact shapes the whole API, including gapless playback and capture that runs underneath it.</p>
+
+<h2>No FIFO, so no polled path</h2>
+
+<p>Two controllers, <code>I2S0</code> and <code>I2S1</code>. Unlike the
+<a href="15-uart.html">UART</a>, neither has a CPU-accessible FIFO: data flows
+<em>only</em> through <a href="16-gdma.html">GDMA</a>. So bringing a port up
+claims a GDMA channel, and that is a heavyweight, once-per-port resource &mdash;
+which is why acquisition works slightly differently here:</p>
+
+<p class="note">The <strong>first</strong> <code>Acquire</code> of a port opens
+it at the given configuration and claims its channel. Later <code>Acquire</code>
+calls <em>reuse it as-is</em> &mdash; they do not re-open the port and do not
+inherit a new configuration. To change the audio format on a port you already
+hold, call <code>Reconfigure</code> (which re-claims the channel). This is the
+opposite of <a href="15-uart.html">UART</a>, where every <code>Acquire</code>
+re-applies the full state.</p>
+
+<pre><code>procedure Acquire
+  (S           : in out Session;
+   Port        : I2S_Port;
+   Sample_Rate : Positive     := 16_000;
+   Bits        : Sample_Bits  := Bits_16;      --  Bits_8 | 16 | 24 | 32
+   Mode        : I2S_Mode     := Standard;     --  Standard | PDM
+   Bclk, Ws, Dout, Din, Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin);</code></pre>
+
+<p>Every pin is optional, so a link routes only what it uses &mdash; omit
+<code>Din</code> for a TX-only DAC, omit <code>Dout</code> for an RX-only
+microphone. <code>Mclk</code> drives a codec's master-clock input and exists
+only on I2S0; leave it unrouted for codecs that clock from BCLK.</p>
+
+<h2>Typed sample buffers</h2>
+
+<pre><code>type PCM_8  is array (Natural range &lt;&gt;) of Interfaces.Integer_8;
+type PCM_16 is array (Natural range &lt;&gt;) of Interfaces.Integer_16;
+type PCM_32 is array (Natural range &lt;&gt;) of Interfaces.Integer_32;</code></pre>
+
+<p>The element type fixes the on-wire width, so the driver derives the byte count
+itself &mdash; no caller-side <code>* 2</code> &mdash; and the typed
+<code>Write</code>/<code>Read</code>/<code>Transfer</code> <strong>check the
+buffer's width against the port's configured <code>Bits</code></strong>. They are
+signed two's-complement, as PCM is. A <code>PCM_32</code> buffer carries both 24-
+and 32-bit samples, since both occupy a 32-bit slot. For already-framed bytes or
+an opaque bit pattern there are <code>*_Raw</code> primitives, including
+<code>DMA_Buffer</code> overloads with the usual alignment and size
+preconditions.</p>
+
+<h2>Standard and PDM are the same buffers</h2>
+
+<p><code>I2S_Mode</code> selects what sits between the buffer and the wire:</p>
+
+<ul>
+  <li><strong><code>Standard</code></strong> &mdash; ordinary I2S/TDM. The PCM
+      buffer appears verbatim on the data line, BCLK and WS framed. BCLK is
+      <code>Sample_Rate * Bits * 2</code>.</li>
+  <li><strong><code>PDM</code></strong> &mdash; the hardware sigma-delta
+      converters are inserted. On TX, PCM2PDM turns each sample into a 1-bit
+      pulse-density stream for a class-D amp or an RC low-pass; on RX, PDM2PCM
+      decimates a PDM microphone back to PCM. The serial clock runs at
+      <code>Sample_Rate * 128</code>, the oversample ratio.</li>
+</ul>
+
+<p>The DMA still moves ordinary PCM either way, so your transfer calls are
+unchanged &mdash; only the on-wire format differs.</p>
+
+<p class="warn">The PDM converters <strong>high-pass filter</strong>, removing
+DC. A constant level does not survive a PDM round trip, so do not write a
+self-test that expects one to.</p>
+
+<h2>Gapless playback</h2>
+
+<p>Three escalating options, all built on the GDMA behaviour from the previous
+step:</p>
+
+<table>
+  <thead><tr><th>Call</th><th>What it gives you</th></tr></thead>
+  <tbody>
+    <tr><td><code>Write</code> / <code>Read</code> / <code>Transfer</code></td>
+        <td>One blocking buffer, up to 4095 bytes.
+            <code>Transfer</code> is full duplex &mdash; shift out and capture
+            simultaneously, same length.</td></tr>
+    <tr><td><code>Start_Continuous</code></td>
+        <td>A self-looping descriptor replays one buffer forever with
+            <strong>no gap</strong> and no CPU involvement. The buffer must stay
+            valid, live in internal SRAM, and should hold a whole number of wave
+            periods so the wrap is seamless. <code>Stop</code> ends it.</td></tr>
+    <tr><td><code>Start_Stream</code> + <code>Await_Half</code></td>
+        <td>Gapless double-buffered streaming: the two halves of one buffer loop
+            forever, and <code>Await_Half</code> tells you which half the
+            hardware has finished so you can refill the other. This is how you
+            play audio longer than a buffer.</td></tr>
+  </tbody>
+</table>
+
+<h2>Capturing while playing</h2>
+
+<p><code>Read</code> drives the receive path as a transaction. When a continuous
+transmit is already running, use <code>Capture</code> instead &mdash; it fills a
+buffer <em>without disturbing the TX path</em>, so recording can run underneath
+playback. There is a streaming mirror of it too, the receive counterpart of
+<code>Start_Stream</code>.</p>
+
+<h2>Self-test without wiring</h2>
+
+<pre><code>procedure Enable_Loopback (S : Session; Pad : ESP32S3.GPIO.Pin_Id);</code></pre>
+
+<p>TX and RX share WS and BCK internally through the hardware
+<code>SIG_LOOPBACK</code> bit, with the data line looped through one pad, so
+<code>./x run esp32s3_i2s_loopback</code> proves the real DMA path in both
+directions byte-exact with nothing attached. <code>Configured_Bits</code> reports
+the width the held port is currently set to, which is what the typed transfers
+check against.</p>
+    <nav class="pager">
+      <a class="prev" href="16-gdma.html"><span class="dir">&larr; Previous</span><span class="name">GDMA</span></a>
+      <a class="next" href="18-lcd.html"><span class="dir">Next &rarr;</span><span class="name">LCD (i80 / RGB)</span></a>
+    </nav>
+
+  </main>
+
+</div>
+
+</body>
+</html>
