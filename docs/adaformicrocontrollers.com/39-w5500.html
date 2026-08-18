@@ -18,6 +18,96 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="38-gps.html">&larr; GPS receiver</a><a href="40-net-stack.html">The network stack &rarr;</a></nav>
+    <p class="eyebrow">Step 39 of 56</p>
+    <h1>W5500: Ethernet with the stack on the chip</h1>
+    <p class="lede">A hardwired TCP/IP controller with eight hardware sockets &mdash; and a layered driver that ends up looking like GNAT.Sockets.</p>
+
+<h2>The stack is not yours</h2>
+
+<p>The WIZnet W5500 is an SPI slave carrying an on-chip 10/100 PHY, a MAC,
+<strong>and a hardwired TCP/IP stack</strong> exposing eight independent hardware
+sockets. You are not writing a TCP implementation against it; you are driving one
+that already exists in silicon.</p>
+
+<p>The driver is built in layers, which is worth knowing because it decides
+which package you should be reaching for:</p>
+
+<table>
+  <thead><tr><th>Layer</th><th>What it gives you</th></tr></thead>
+  <tbody>
+    <tr><td><code>ESP32S3.W5500</code></td>
+        <td>The SPI frame transport, hardware/software reset, common registers
+            (identity, network config) and PHY link status.</td></tr>
+    <tr><td><code>.Sockets</code></td>
+        <td>The socket engine: TCP and UDP over the eight hardware sockets, with
+            a self-contained <code>Socket</code> handle and a
+            <code>Status</code> error model.</td></tr>
+    <tr><td><code>.DHCP</code></td>
+        <td>A minimal DHCP client &mdash; a software protocol over UDP, so it
+            sits above the socket engine rather than in the chip.</td></tr>
+    <tr><td><code>.Net_Device</code></td>
+        <td>The W5500 as a concrete <code>Net_Devices.Device</code>, so it can
+            back the chip-neutral <code>GNAT.Sockets</code> facade.</td></tr>
+    <tr><td><code>.Interrupts</code></td>
+        <td>The INTn line. The base layer configures it as a pulled-up input but
+            does not use it &mdash; the first pass is polling.</td></tr>
+  </tbody>
+</table>
+
+<h2>The SPI frame, and why CS is a GPIO</h2>
+
+<p>Every access is one frame in Variable Length Data Mode: a 16-bit offset, a
+control byte, then N data bytes, with the offset auto-incrementing inside the
+frame. VDM keeps the bus shareable rather than demanding an exclusive
+transaction per register.</p>
+
+<p class="note">CS is driven as a <strong>plain GPIO, not routed to the SPI
+peripheral</strong> &mdash; exactly as with <a href="28-sd.html">SD over
+SPI</a> &mdash; because it has to be held low across all three phases of the
+frame, and the peripheral's own CS pulses per transfer. Another concrete case for
+<a href="15-spi.html">SPI's <code>CS_Pin</code></a>. The chip runs in SPI mode
+0.</p>
+
+<h2>Two levels of concurrency</h2>
+
+<p>Each frame takes the SPI host's session for its own transfer and releases it
+&mdash; the "lock the bus only as long as necessary" idiom shared with the other
+SPI drivers &mdash; so every W5500 access is atomic against any other task or
+device on that bus.</p>
+
+<p>The socket layer then adds <strong>per-socket ownership</strong> on top. The
+eight sockets are genuinely independent, so different tasks can drive different
+sockets simultaneously, with the transport serialising the shared bus
+underneath. That is the arrangement that makes a multi-socket application
+straightforward rather than a locking exercise.</p>
+
+<h2>What is not there yet</h2>
+
+<ul>
+  <li><strong>Polling, not interrupts.</strong> The blocking operations
+      &mdash; <code>Connect</code>, and <code>Send</code>'s completion &mdash;
+      poll. INTn is wired and configured but unused at this layer.</li>
+  <li><strong>DHCP has no renewal.</strong> <code>Acquire_Lease</code> is
+      one-shot; call it again before the lease expires, because nothing will do
+      it for you and the failure mode is a silently dead network.</li>
+</ul>
+
+<p>A useful pairing: give the W5500 its address from
+<a href="29-chip-id.html">the eFuse MAC block</a>'s <code>Ethernet</code> entry
+&mdash; a real manufacturer-assigned address rather than one you invented, which
+matters as soon as two of your boards share a segment.</p>
+    <nav class="pager">
+      <a class="prev" href="38-gps.html"><span class="dir">&larr; Previous</span><span class="name">GPS receiver</span></a>
+      <a class="next" href="40-net-stack.html"><span class="dir">Next &rarr;</span><span class="name">The network stack</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,93 +226,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="38-gps.html">&larr; GPS receiver</a><a href="40-net-stack.html">The network stack &rarr;</a></nav>
-    <p class="eyebrow">Step 39 of 56</p>
-    <h1>W5500: Ethernet with the stack on the chip</h1>
-    <p class="lede">A hardwired TCP/IP controller with eight hardware sockets &mdash; and a layered driver that ends up looking like GNAT.Sockets.</p>
-
-<h2>The stack is not yours</h2>
-
-<p>The WIZnet W5500 is an SPI slave carrying an on-chip 10/100 PHY, a MAC,
-<strong>and a hardwired TCP/IP stack</strong> exposing eight independent hardware
-sockets. You are not writing a TCP implementation against it; you are driving one
-that already exists in silicon.</p>
-
-<p>The driver is built in layers, which is worth knowing because it decides
-which package you should be reaching for:</p>
-
-<table>
-  <thead><tr><th>Layer</th><th>What it gives you</th></tr></thead>
-  <tbody>
-    <tr><td><code>ESP32S3.W5500</code></td>
-        <td>The SPI frame transport, hardware/software reset, common registers
-            (identity, network config) and PHY link status.</td></tr>
-    <tr><td><code>.Sockets</code></td>
-        <td>The socket engine: TCP and UDP over the eight hardware sockets, with
-            a self-contained <code>Socket</code> handle and a
-            <code>Status</code> error model.</td></tr>
-    <tr><td><code>.DHCP</code></td>
-        <td>A minimal DHCP client &mdash; a software protocol over UDP, so it
-            sits above the socket engine rather than in the chip.</td></tr>
-    <tr><td><code>.Net_Device</code></td>
-        <td>The W5500 as a concrete <code>Net_Devices.Device</code>, so it can
-            back the chip-neutral <code>GNAT.Sockets</code> facade.</td></tr>
-    <tr><td><code>.Interrupts</code></td>
-        <td>The INTn line. The base layer configures it as a pulled-up input but
-            does not use it &mdash; the first pass is polling.</td></tr>
-  </tbody>
-</table>
-
-<h2>The SPI frame, and why CS is a GPIO</h2>
-
-<p>Every access is one frame in Variable Length Data Mode: a 16-bit offset, a
-control byte, then N data bytes, with the offset auto-incrementing inside the
-frame. VDM keeps the bus shareable rather than demanding an exclusive
-transaction per register.</p>
-
-<p class="note">CS is driven as a <strong>plain GPIO, not routed to the SPI
-peripheral</strong> &mdash; exactly as with <a href="28-sd.html">SD over
-SPI</a> &mdash; because it has to be held low across all three phases of the
-frame, and the peripheral's own CS pulses per transfer. Another concrete case for
-<a href="15-spi.html">SPI's <code>CS_Pin</code></a>. The chip runs in SPI mode
-0.</p>
-
-<h2>Two levels of concurrency</h2>
-
-<p>Each frame takes the SPI host's session for its own transfer and releases it
-&mdash; the "lock the bus only as long as necessary" idiom shared with the other
-SPI drivers &mdash; so every W5500 access is atomic against any other task or
-device on that bus.</p>
-
-<p>The socket layer then adds <strong>per-socket ownership</strong> on top. The
-eight sockets are genuinely independent, so different tasks can drive different
-sockets simultaneously, with the transport serialising the shared bus
-underneath. That is the arrangement that makes a multi-socket application
-straightforward rather than a locking exercise.</p>
-
-<h2>What is not there yet</h2>
-
-<ul>
-  <li><strong>Polling, not interrupts.</strong> The blocking operations
-      &mdash; <code>Connect</code>, and <code>Send</code>'s completion &mdash;
-      poll. INTn is wired and configured but unused at this layer.</li>
-  <li><strong>DHCP has no renewal.</strong> <code>Acquire_Lease</code> is
-      one-shot; call it again before the lease expires, because nothing will do
-      it for you and the failure mode is a silently dead network.</li>
-</ul>
-
-<p>A useful pairing: give the W5500 its address from
-<a href="29-chip-id.html">the eFuse MAC block</a>'s <code>Ethernet</code> entry
-&mdash; a real manufacturer-assigned address rather than one you invented, which
-matters as soon as two of your boards share a segment.</p>
-    <nav class="pager">
-      <a class="prev" href="38-gps.html"><span class="dir">&larr; Previous</span><span class="name">GPS receiver</span></a>
-      <a class="next" href="40-net-stack.html"><span class="dir">Next &rarr;</span><span class="name">The network stack</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

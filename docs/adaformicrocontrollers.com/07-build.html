@@ -18,6 +18,108 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="06-anatomy.html">&larr; Reset to Main</a><a href="08-profiles.html">Runtime profiles &rarr;</a></nav>
+    <p class="eyebrow">Step 07 of 56</p>
+    <h1>What a build actually does</h1>
+    <p class="lede">Five steps from your Ada to a flashable image, and two small host tools &mdash; both written in Ada &mdash; that replace <code>esptool</code> entirely.</p>
+
+<h2>The five steps</h2>
+
+<p><code>build.sh</code> sets the profile and heap size, then the shared
+<code>bare_build.sh</code>:</p>
+
+<ol>
+  <li><strong>Regenerates or selects the runtime crate</strong> for the chosen
+      profile. Cached after the first time.</li>
+  <li><strong>Compiles your Ada</strong> against that pinned runtime with
+      <code>gprbuild</code>, producing a <em>relocatable</em>
+      <code>app_main.o</code> (with <code>Main</code> renamed to
+      <code>_ada_main</code>).</li>
+  <li><strong>Compiles the shared bare boot</strong> &mdash;
+      <code>start.S</code>, the interrupt vectors, the heap, and a freestanding
+      libc &mdash; plus the example's C console glue.</li>
+  <li><strong>Links</strong> it all against the linker scripts into
+      <code>app.elf</code>.</li>
+  <li><strong>Packages</strong> <code>app.bin</code>: image header plus
+      segments.</li>
+</ol>
+
+<p>Then <code>flash.sh</code> writes three images: the 2nd-stage bootloader, the
+partition table, and <code>app.bin</code>.</p>
+
+<h2><code>esp_elf2image</code> &mdash; ELF to flash image</h2>
+
+<p>Turning <code>app.elf</code> into <code>app.bin</code> is more than a copy.
+The on-flash format the ROM and our bootloader expect has:</p>
+
+<ul>
+  <li><strong>Segments</strong>: the ELF's allocated <code>PROGBITS</code>
+      sections, merged where contiguous, each padded to a multiple of four.</li>
+  <li><strong>A 24-byte header</strong>: the 8-byte common part (magic
+      <code>16#E9#</code>, segment count, the flash-mode byte, the entry point)
+      plus a 16-byte extended part.</li>
+  <li><strong>Flash segments aligned to 64&nbsp;KB</strong>, with the RAM
+      segments written <em>interleaved as the alignment padding</em> &mdash; the
+      exact scheme the bootloader's MMU mapping relies on.</li>
+  <li><strong>An XOR checksum</strong> (seed <code>16#EF#</code>) as the last
+      byte of a 16-aligned block, and a <strong>SHA-256</strong> of the whole
+      image appended.</li>
+</ul>
+
+<h2><code>esp_flash</code> &mdash; writing it to the chip</h2>
+
+<p>The flasher speaks the chip's ROM serial bootloader protocol directly. It is
+100&nbsp;% Ada: the OS serial interface (termios raw mode, the
+<code>TIOCM*</code> DTR/RTS modem lines, poll/read/write) is bound to libc
+through <code>Interfaces.C</code>, with no C source. The sequence, with no RAM
+stub and no compression:</p>
+
+<ol>
+  <li><strong>Reset into download mode</strong> &mdash; the USB-JTAG DTR/RTS
+      pulse.</li>
+  <li><strong>SYNC</strong> &mdash; the handshake, repeated until the ROM
+      answers.</li>
+  <li><strong>SPI attach</strong> and <strong>set-params</strong> (flash
+      geometry).</li>
+  <li>Per file, <strong>flash_begin</strong> (erase) then
+      <strong>flash_data</strong> in 1&nbsp;KB blocks, each carrying the ROM's
+      XOR checksum.</li>
+  <li><strong>flash_end</strong>, then a hard reset to run.</li>
+</ol>
+
+<p>A typical invocation writes the three images at their flash offsets:</p>
+
+<pre><code>esp_flash -p /dev/ttyACM0 --flash-size 2MB \
+  0x0     bootloader.bin \
+  0x8000  partition-table.bin \
+  0x10000 app.bin</code></pre>
+
+<p>A ~225&nbsp;KB image flashes in about three seconds. That is ROM speed &mdash;
+no stub, no compression. Note that only <em>flash</em> is written; the external
+PSRAM is mapped at runtime by the 2nd-stage bootloader.</p>
+
+<h2>Everyday build tips</h2>
+
+<table>
+  <thead><tr><th>Goal</th><th>Command</th></tr></thead>
+  <tbody>
+    <tr><td>Rebuild after editing Ada</td><td><code>./build.sh</code> again, then <code>./flash.sh</code></td></tr>
+    <tr><td>Force the Ada to rebuild</td><td><code>rm -f obj/app_main.o</code></td></tr>
+    <tr><td>Force the runtime to regenerate</td><td><code>rm -rf crates/esp32s3_rts/*-esp32s3</code></td></tr>
+    <tr><td>Use esptool instead (optional fallback)</td><td><code>ESP_USE_ESPTOOL=1 ./build.sh</code> (and <code>./flash.sh</code>)</td></tr>
+  </tbody>
+</table>
+    <nav class="pager">
+      <a class="prev" href="06-anatomy.html"><span class="dir">&larr; Previous</span><span class="name">Reset to Main</span></a>
+      <a class="next" href="08-profiles.html"><span class="dir">Next &rarr;</span><span class="name">Runtime profiles</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,105 +238,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="06-anatomy.html">&larr; Reset to Main</a><a href="08-profiles.html">Runtime profiles &rarr;</a></nav>
-    <p class="eyebrow">Step 07 of 56</p>
-    <h1>What a build actually does</h1>
-    <p class="lede">Five steps from your Ada to a flashable image, and two small host tools &mdash; both written in Ada &mdash; that replace <code>esptool</code> entirely.</p>
-
-<h2>The five steps</h2>
-
-<p><code>build.sh</code> sets the profile and heap size, then the shared
-<code>bare_build.sh</code>:</p>
-
-<ol>
-  <li><strong>Regenerates or selects the runtime crate</strong> for the chosen
-      profile. Cached after the first time.</li>
-  <li><strong>Compiles your Ada</strong> against that pinned runtime with
-      <code>gprbuild</code>, producing a <em>relocatable</em>
-      <code>app_main.o</code> (with <code>Main</code> renamed to
-      <code>_ada_main</code>).</li>
-  <li><strong>Compiles the shared bare boot</strong> &mdash;
-      <code>start.S</code>, the interrupt vectors, the heap, and a freestanding
-      libc &mdash; plus the example's C console glue.</li>
-  <li><strong>Links</strong> it all against the linker scripts into
-      <code>app.elf</code>.</li>
-  <li><strong>Packages</strong> <code>app.bin</code>: image header plus
-      segments.</li>
-</ol>
-
-<p>Then <code>flash.sh</code> writes three images: the 2nd-stage bootloader, the
-partition table, and <code>app.bin</code>.</p>
-
-<h2><code>esp_elf2image</code> &mdash; ELF to flash image</h2>
-
-<p>Turning <code>app.elf</code> into <code>app.bin</code> is more than a copy.
-The on-flash format the ROM and our bootloader expect has:</p>
-
-<ul>
-  <li><strong>Segments</strong>: the ELF's allocated <code>PROGBITS</code>
-      sections, merged where contiguous, each padded to a multiple of four.</li>
-  <li><strong>A 24-byte header</strong>: the 8-byte common part (magic
-      <code>16#E9#</code>, segment count, the flash-mode byte, the entry point)
-      plus a 16-byte extended part.</li>
-  <li><strong>Flash segments aligned to 64&nbsp;KB</strong>, with the RAM
-      segments written <em>interleaved as the alignment padding</em> &mdash; the
-      exact scheme the bootloader's MMU mapping relies on.</li>
-  <li><strong>An XOR checksum</strong> (seed <code>16#EF#</code>) as the last
-      byte of a 16-aligned block, and a <strong>SHA-256</strong> of the whole
-      image appended.</li>
-</ul>
-
-<h2><code>esp_flash</code> &mdash; writing it to the chip</h2>
-
-<p>The flasher speaks the chip's ROM serial bootloader protocol directly. It is
-100&nbsp;% Ada: the OS serial interface (termios raw mode, the
-<code>TIOCM*</code> DTR/RTS modem lines, poll/read/write) is bound to libc
-through <code>Interfaces.C</code>, with no C source. The sequence, with no RAM
-stub and no compression:</p>
-
-<ol>
-  <li><strong>Reset into download mode</strong> &mdash; the USB-JTAG DTR/RTS
-      pulse.</li>
-  <li><strong>SYNC</strong> &mdash; the handshake, repeated until the ROM
-      answers.</li>
-  <li><strong>SPI attach</strong> and <strong>set-params</strong> (flash
-      geometry).</li>
-  <li>Per file, <strong>flash_begin</strong> (erase) then
-      <strong>flash_data</strong> in 1&nbsp;KB blocks, each carrying the ROM's
-      XOR checksum.</li>
-  <li><strong>flash_end</strong>, then a hard reset to run.</li>
-</ol>
-
-<p>A typical invocation writes the three images at their flash offsets:</p>
-
-<pre><code>esp_flash -p /dev/ttyACM0 --flash-size 2MB \
-  0x0     bootloader.bin \
-  0x8000  partition-table.bin \
-  0x10000 app.bin</code></pre>
-
-<p>A ~225&nbsp;KB image flashes in about three seconds. That is ROM speed &mdash;
-no stub, no compression. Note that only <em>flash</em> is written; the external
-PSRAM is mapped at runtime by the 2nd-stage bootloader.</p>
-
-<h2>Everyday build tips</h2>
-
-<table>
-  <thead><tr><th>Goal</th><th>Command</th></tr></thead>
-  <tbody>
-    <tr><td>Rebuild after editing Ada</td><td><code>./build.sh</code> again, then <code>./flash.sh</code></td></tr>
-    <tr><td>Force the Ada to rebuild</td><td><code>rm -f obj/app_main.o</code></td></tr>
-    <tr><td>Force the runtime to regenerate</td><td><code>rm -rf crates/esp32s3_rts/*-esp32s3</code></td></tr>
-    <tr><td>Use esptool instead (optional fallback)</td><td><code>ESP_USE_ESPTOOL=1 ./build.sh</code> (and <code>./flash.sh</code>)</td></tr>
-  </tbody>
-</table>
-    <nav class="pager">
-      <a class="prev" href="06-anatomy.html"><span class="dir">&larr; Previous</span><span class="name">Reset to Main</span></a>
-      <a class="next" href="08-profiles.html"><span class="dir">Next &rarr;</span><span class="name">Runtime profiles</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

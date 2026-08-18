@@ -18,6 +18,92 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="25-analog.html">&larr; ADC &amp; touch</a><a href="27-crypto.html">Crypto &amp; RNG &rarr;</a></nav>
+    <p class="eyebrow">Step 26 of 56</p>
+    <h1>RTC, pad hold and deep sleep</h1>
+    <p class="lede">Deep sleep is not a pause &mdash; the chip resets and re-runs from the start. What survives is RTC memory, and the pads you explicitly told to hold their level.</p>
+
+<h2>The mental model that matters</h2>
+
+<p class="warn"><strong>Waking from deep sleep is a reset, not a resume.</strong>
+The digital core &mdash; CPU and main RAM &mdash; is powered down; only the RTC
+domain stays alive. On wake the chip <em>restarts from the beginning</em>: your
+<code>Main</code> runs again from the top, every variable re-elaborated. Nothing
+in ordinary RAM survives. Code written as though sleep were a blocking delay will
+be wrong in a way that looks like a spontaneous reboot.</p>
+
+<p>Two things do survive: data you deliberately put in RTC memory, and RTC pads
+you told to hold.</p>
+
+<h2>Retained memory</h2>
+
+<pre><code>subtype Word_Index is Natural range 0 .. Slow_Memory_Size / 4 - 1;
+
+function  Read  (Index : Word_Index) return Interfaces.Unsigned_32;
+procedure Write (Index : Word_Index; Value : Interfaces.Unsigned_32);</code></pre>
+
+<p>There is also a generic typed retained object: instantiate it once per stored
+item and it gives you a distinct slot with a real type, rather than making you
+hand-manage word indices and remember which one held what. Prefer that for
+anything beyond a single counter.</p>
+
+<h2>Knowing why you are running</h2>
+
+<pre><code>type Wake_Cause is ...;                       --  power-on, timer, RTC-GPIO, ...
+function Last_Wake       return Wake_Cause;
+function Raw_Reset_Cause return Natural;      --  5 = deep-sleep wake
+function Raw_Wake_Cause  return Natural;</code></pre>
+
+<p>Because every wake re-runs your program, the first thing it usually has to do
+is ask <em>why</em>: a cold power-on initialises state, a timer wake continues a
+duty cycle, a pin wake handles an event. That branch is the shape of nearly every
+low-power application.</p>
+
+<h2>Entering sleep</h2>
+
+<pre><code>procedure Deep_Sleep_For (Wake_After : Duration);   --  timer wake
+--  plus a variant that sleeps until an RTC-capable pin reaches a level (EXT1)</code></pre>
+
+<p class="note">These <strong>do not return</strong>. If one does, the sleep FSM
+rejected the request &mdash; and <code>Raw_Reject_Cause</code> tells you why.
+Treat a return as an error path, not as normal control flow, because that is
+exactly what it is.</p>
+
+<h2>Pad hold: keeping a line asserted through the reset</h2>
+
+<p>GPIO0&nbsp;..&nbsp;GPIO21 are RTC-capable. The headline feature of
+<code>ESP32S3.RTC_IO</code> is <strong>hold</strong>: latch a pad at its current
+output level so it keeps driving while the rest of the chip changes &mdash;
+including through deep sleep and across the reset that waking causes.</p>
+
+<pre><code>subtype RTC_Pin is ESP32S3.GPIO.Pin_Id range 0 .. 21;
+
+procedure Hold    (Pin : RTC_Pin);
+procedure Release (Pin : RTC_Pin);
+function  Is_Held (Pin : RTC_Pin) return Boolean;
+procedure Set_Pull (Pin : RTC_Pin; Mode : Pull_Mode);   --  No_Pull | Up | Down</code></pre>
+
+<p>This is how you keep a load enabled or a peripheral's reset line asserted
+while you sleep &mdash; without it, every pad returns to a default input at the
+moment of sleep and your board resets its own sensors.</p>
+
+<p class="warn"><strong>A held pad ignores ordinary GPIO writes until you
+<code>Release</code> it.</strong> On the run after a wake, a pin that refuses to
+change is almost always one you held before sleeping and have not released.</p>
+
+<p class="note">Neither package needs a tasking runtime &mdash; both are register
+pokes &mdash; and RTC-IO works under every runtime profile.</p>
+    <nav class="pager">
+      <a class="prev" href="25-analog.html"><span class="dir">&larr; Previous</span><span class="name">ADC &amp; touch</span></a>
+      <a class="next" href="27-crypto.html"><span class="dir">Next &rarr;</span><span class="name">Crypto &amp; RNG</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,89 +222,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="25-analog.html">&larr; ADC &amp; touch</a><a href="27-crypto.html">Crypto &amp; RNG &rarr;</a></nav>
-    <p class="eyebrow">Step 26 of 56</p>
-    <h1>RTC, pad hold and deep sleep</h1>
-    <p class="lede">Deep sleep is not a pause &mdash; the chip resets and re-runs from the start. What survives is RTC memory, and the pads you explicitly told to hold their level.</p>
-
-<h2>The mental model that matters</h2>
-
-<p class="warn"><strong>Waking from deep sleep is a reset, not a resume.</strong>
-The digital core &mdash; CPU and main RAM &mdash; is powered down; only the RTC
-domain stays alive. On wake the chip <em>restarts from the beginning</em>: your
-<code>Main</code> runs again from the top, every variable re-elaborated. Nothing
-in ordinary RAM survives. Code written as though sleep were a blocking delay will
-be wrong in a way that looks like a spontaneous reboot.</p>
-
-<p>Two things do survive: data you deliberately put in RTC memory, and RTC pads
-you told to hold.</p>
-
-<h2>Retained memory</h2>
-
-<pre><code>subtype Word_Index is Natural range 0 .. Slow_Memory_Size / 4 - 1;
-
-function  Read  (Index : Word_Index) return Interfaces.Unsigned_32;
-procedure Write (Index : Word_Index; Value : Interfaces.Unsigned_32);</code></pre>
-
-<p>There is also a generic typed retained object: instantiate it once per stored
-item and it gives you a distinct slot with a real type, rather than making you
-hand-manage word indices and remember which one held what. Prefer that for
-anything beyond a single counter.</p>
-
-<h2>Knowing why you are running</h2>
-
-<pre><code>type Wake_Cause is ...;                       --  power-on, timer, RTC-GPIO, ...
-function Last_Wake       return Wake_Cause;
-function Raw_Reset_Cause return Natural;      --  5 = deep-sleep wake
-function Raw_Wake_Cause  return Natural;</code></pre>
-
-<p>Because every wake re-runs your program, the first thing it usually has to do
-is ask <em>why</em>: a cold power-on initialises state, a timer wake continues a
-duty cycle, a pin wake handles an event. That branch is the shape of nearly every
-low-power application.</p>
-
-<h2>Entering sleep</h2>
-
-<pre><code>procedure Deep_Sleep_For (Wake_After : Duration);   --  timer wake
---  plus a variant that sleeps until an RTC-capable pin reaches a level (EXT1)</code></pre>
-
-<p class="note">These <strong>do not return</strong>. If one does, the sleep FSM
-rejected the request &mdash; and <code>Raw_Reject_Cause</code> tells you why.
-Treat a return as an error path, not as normal control flow, because that is
-exactly what it is.</p>
-
-<h2>Pad hold: keeping a line asserted through the reset</h2>
-
-<p>GPIO0&nbsp;..&nbsp;GPIO21 are RTC-capable. The headline feature of
-<code>ESP32S3.RTC_IO</code> is <strong>hold</strong>: latch a pad at its current
-output level so it keeps driving while the rest of the chip changes &mdash;
-including through deep sleep and across the reset that waking causes.</p>
-
-<pre><code>subtype RTC_Pin is ESP32S3.GPIO.Pin_Id range 0 .. 21;
-
-procedure Hold    (Pin : RTC_Pin);
-procedure Release (Pin : RTC_Pin);
-function  Is_Held (Pin : RTC_Pin) return Boolean;
-procedure Set_Pull (Pin : RTC_Pin; Mode : Pull_Mode);   --  No_Pull | Up | Down</code></pre>
-
-<p>This is how you keep a load enabled or a peripheral's reset line asserted
-while you sleep &mdash; without it, every pad returns to a default input at the
-moment of sleep and your board resets its own sensors.</p>
-
-<p class="warn"><strong>A held pad ignores ordinary GPIO writes until you
-<code>Release</code> it.</strong> On the run after a wake, a pin that refuses to
-change is almost always one you held before sleeping and have not released.</p>
-
-<p class="note">Neither package needs a tasking runtime &mdash; both are register
-pokes &mdash; and RTC-IO works under every runtime profile.</p>
-    <nav class="pager">
-      <a class="prev" href="25-analog.html"><span class="dir">&larr; Previous</span><span class="name">ADC &amp; touch</span></a>
-      <a class="next" href="27-crypto.html"><span class="dir">Next &rarr;</span><span class="name">Crypto &amp; RNG</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

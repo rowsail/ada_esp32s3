@@ -18,6 +18,113 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="54-runtime.html">&larr; The runtime itself</a><a href="56-troubleshooting.html">Troubleshooting &amp; next steps &rarr;</a></nav>
+    <p class="eyebrow">Step 55 of 56</p>
+    <h1>Debugging: GDB over the same cable</h1>
+    <p class="lede">The USB-Serial-JTAG port is both the console and a JTAG debug interface, so one cable gets you breakpoints, both cores as GDB threads, and a live halt on a hung board.</p>
+
+<h2>Fetch the tools, once</h2>
+
+<pre><code>./x get-debug-tools      # pinned, SHA-256-verified OpenOCD + xtensa-esp32s3-elf-gdb
+./x debug gpio0_blink    # build, flash, start OpenOCD, attach GDB, rest at Main</code></pre>
+
+<p>Both are debug-only downloads; build, flash and run need neither.</p>
+
+<p class="warn">The S3 needs the <strong>S3-specific</strong>
+<code>xtensa-esp32s3-elf-gdb</code>. The Alire crate's esp32 (LX6) GDB silently
+fails on it &mdash; hardware-confirmed. <code>./x debug</code> selects the right
+one for you, which is the main reason to go through it rather than invoking GDB
+by hand.</p>
+
+<h2>Two options that matter on this target</h2>
+
+<ul>
+  <li><strong><code>--smp</code></strong> exposes <em>both</em> LX7 cores as GDB
+      threads, so <code>info threads</code> shows what each core is doing.
+      Essential for a cross-core hang.</li>
+  <li><strong><code>--attach</code></strong> halts the board <em>in place</em>
+      without resetting it, so you can examine a live hang or crash exactly
+      where it stopped.</li>
+</ul>
+
+<p>From there it is ordinary GDB on <code>app.elf</code>: breakpoints,
+<code>step</code>, <code>print</code>, <code>backtrace</code>. When you are done,
+<code>./x kill-openocd</code> releases the USB-JTAG port &mdash; a captured port
+is the usual reason the next flash fails.</p>
+
+<h2>In the editor</h2>
+
+<p>The split is deliberate and worth understanding: <strong>the Ada Language
+Server provides language features</strong> (completion, diagnostics,
+go-to-definition, hover) by reading a project's <code>.gpr</code> file, and
+<strong><code>./x</code> provides the actions</strong>. Any editor with an LSP
+client gets the first for free; the editor integration only has to wrap the
+second.</p>
+
+<ul>
+  <li><strong>VS Code</strong> &mdash; install the AdaCore <em>Ada &amp;
+      SPARK</em> extension for ALS, and <em>Native Debug</em>
+      (<code>webfreak.debug</code>) for debugging (cppdbg cannot walk the Xtensa
+      stack). The committed <code>.vscode/tasks.json</code> gives you
+      <code>Ada: build</code> (with a GNAT problem matcher), <code>flash</code>,
+      <code>monitor</code>, <code>run</code> and <code>clean</code>;
+      <code>launch.json</code> gives <code>Ada: debug (OpenOCD + GDB)</code>.
+      <kbd>Ctrl-Shift-B</kbd> builds, <kbd>F5</kbd> debugs.</li>
+  <li><strong>Vim / Neovim</strong> &mdash; the repository ships a plugin, and
+      one command installs it by symlinking it into Vim's and Neovim's native
+      package directory (so <code>git pull</code> updates it in place):
+      <pre><code>./x install-vim          # or, from a standalone project:  esp32-ada install-vim</code></pre>
+      Restart Vim and you get <code>:AdaEsp32New</code>,
+      <code>:AdaEsp32Build</code>, <code>:AdaEsp32Flash</code> and friends; they
+      auto-detect whether you are inside the repo (<code>./x</code>) or a
+      standalone project (<code>app.gpr</code> + <code>build.sh</code>) by
+      searching upward. Prefer to wire it yourself:
+      <pre><code>" vim-plug
+Plug '/path/to/ada_esp32s3/ide/vim-ada-esp32'
+" or, with no plugin manager:
+set runtimepath^=/path/to/ada_esp32s3/ide/vim-ada-esp32</code></pre>
+      For language features, point your LSP client at the
+      <code>ada_language_server</code> binary that ships inside the AdaCore
+      toolchain &mdash; with <code>nvim-lspconfig</code> that is
+      <code>require('lspconfig').als.setup{}</code>, having launched Neovim from
+      a shell that sourced <code>export.sh</code> so
+      <code>GPR_PROJECT_PATH</code> resolves the runtime and HAL projects.</li>
+</ul>
+
+<h2>Post-mortem: decoding a Guru Meditation</h2>
+
+<p>An unhandled fault prints a register dump and a backtrace of
+program-counter values over the console. You do not need a live debugger to read
+it &mdash; turn the addresses back into source:</p>
+
+<pre><code>xtensa-esp32s3-elf-addr2line -fe build/app.elf 0x4200abcd 0x4200ef01</code></pre>
+
+<p>In the dump, <strong><code>EXCVADDR</code></strong> is the faulting data
+address and <strong><code>EXCCAUSE</code></strong> the reason: a
+<code>LoadStoreError</code> is a bad data access; an
+<code>InstructionFetchError</code> is a wild jump, usually a corrupted stack or a
+stray pointer. Flash, reproduce, decode &mdash; that loop localises most faults
+without attaching anything.</p>
+
+<h2>What the runtime catches for you</h2>
+
+<p>Before you reach for a tool at all: every profile guards the <em>running</em>
+task with a hardware watchpoint a redzone above its stack limit, and the context
+switch re-arms it for the incoming thread on every switch. An overflowing write
+therefore faults <em>precisely</em>, at the instruction that did it, instead of
+silently corrupting a neighbouring task's stack and failing somewhere
+unrelated.</p>
+    <nav class="pager">
+      <a class="prev" href="54-runtime.html"><span class="dir">&larr; Previous</span><span class="name">The runtime itself</span></a>
+      <a class="next" href="56-troubleshooting.html"><span class="dir">Next &rarr;</span><span class="name">Troubleshooting &amp; next steps</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,110 +243,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="54-runtime.html">&larr; The runtime itself</a><a href="56-troubleshooting.html">Troubleshooting &amp; next steps &rarr;</a></nav>
-    <p class="eyebrow">Step 55 of 56</p>
-    <h1>Debugging: GDB over the same cable</h1>
-    <p class="lede">The USB-Serial-JTAG port is both the console and a JTAG debug interface, so one cable gets you breakpoints, both cores as GDB threads, and a live halt on a hung board.</p>
-
-<h2>Fetch the tools, once</h2>
-
-<pre><code>./x get-debug-tools      # pinned, SHA-256-verified OpenOCD + xtensa-esp32s3-elf-gdb
-./x debug gpio0_blink    # build, flash, start OpenOCD, attach GDB, rest at Main</code></pre>
-
-<p>Both are debug-only downloads; build, flash and run need neither.</p>
-
-<p class="warn">The S3 needs the <strong>S3-specific</strong>
-<code>xtensa-esp32s3-elf-gdb</code>. The Alire crate's esp32 (LX6) GDB silently
-fails on it &mdash; hardware-confirmed. <code>./x debug</code> selects the right
-one for you, which is the main reason to go through it rather than invoking GDB
-by hand.</p>
-
-<h2>Two options that matter on this target</h2>
-
-<ul>
-  <li><strong><code>--smp</code></strong> exposes <em>both</em> LX7 cores as GDB
-      threads, so <code>info threads</code> shows what each core is doing.
-      Essential for a cross-core hang.</li>
-  <li><strong><code>--attach</code></strong> halts the board <em>in place</em>
-      without resetting it, so you can examine a live hang or crash exactly
-      where it stopped.</li>
-</ul>
-
-<p>From there it is ordinary GDB on <code>app.elf</code>: breakpoints,
-<code>step</code>, <code>print</code>, <code>backtrace</code>. When you are done,
-<code>./x kill-openocd</code> releases the USB-JTAG port &mdash; a captured port
-is the usual reason the next flash fails.</p>
-
-<h2>In the editor</h2>
-
-<p>The split is deliberate and worth understanding: <strong>the Ada Language
-Server provides language features</strong> (completion, diagnostics,
-go-to-definition, hover) by reading a project's <code>.gpr</code> file, and
-<strong><code>./x</code> provides the actions</strong>. Any editor with an LSP
-client gets the first for free; the editor integration only has to wrap the
-second.</p>
-
-<ul>
-  <li><strong>VS Code</strong> &mdash; install the AdaCore <em>Ada &amp;
-      SPARK</em> extension for ALS, and <em>Native Debug</em>
-      (<code>webfreak.debug</code>) for debugging (cppdbg cannot walk the Xtensa
-      stack). The committed <code>.vscode/tasks.json</code> gives you
-      <code>Ada: build</code> (with a GNAT problem matcher), <code>flash</code>,
-      <code>monitor</code>, <code>run</code> and <code>clean</code>;
-      <code>launch.json</code> gives <code>Ada: debug (OpenOCD + GDB)</code>.
-      <kbd>Ctrl-Shift-B</kbd> builds, <kbd>F5</kbd> debugs.</li>
-  <li><strong>Vim / Neovim</strong> &mdash; the repository ships a plugin, and
-      one command installs it by symlinking it into Vim's and Neovim's native
-      package directory (so <code>git pull</code> updates it in place):
-      <pre><code>./x install-vim          # or, from a standalone project:  esp32-ada install-vim</code></pre>
-      Restart Vim and you get <code>:AdaEsp32New</code>,
-      <code>:AdaEsp32Build</code>, <code>:AdaEsp32Flash</code> and friends; they
-      auto-detect whether you are inside the repo (<code>./x</code>) or a
-      standalone project (<code>app.gpr</code> + <code>build.sh</code>) by
-      searching upward. Prefer to wire it yourself:
-      <pre><code>" vim-plug
-Plug '/path/to/ada_esp32s3/ide/vim-ada-esp32'
-" or, with no plugin manager:
-set runtimepath^=/path/to/ada_esp32s3/ide/vim-ada-esp32</code></pre>
-      For language features, point your LSP client at the
-      <code>ada_language_server</code> binary that ships inside the AdaCore
-      toolchain &mdash; with <code>nvim-lspconfig</code> that is
-      <code>require('lspconfig').als.setup{}</code>, having launched Neovim from
-      a shell that sourced <code>export.sh</code> so
-      <code>GPR_PROJECT_PATH</code> resolves the runtime and HAL projects.</li>
-</ul>
-
-<h2>Post-mortem: decoding a Guru Meditation</h2>
-
-<p>An unhandled fault prints a register dump and a backtrace of
-program-counter values over the console. You do not need a live debugger to read
-it &mdash; turn the addresses back into source:</p>
-
-<pre><code>xtensa-esp32s3-elf-addr2line -fe build/app.elf 0x4200abcd 0x4200ef01</code></pre>
-
-<p>In the dump, <strong><code>EXCVADDR</code></strong> is the faulting data
-address and <strong><code>EXCCAUSE</code></strong> the reason: a
-<code>LoadStoreError</code> is a bad data access; an
-<code>InstructionFetchError</code> is a wild jump, usually a corrupted stack or a
-stray pointer. Flash, reproduce, decode &mdash; that loop localises most faults
-without attaching anything.</p>
-
-<h2>What the runtime catches for you</h2>
-
-<p>Before you reach for a tool at all: every profile guards the <em>running</em>
-task with a hardware watchpoint a redzone above its stack limit, and the context
-switch re-arms it for the incoming thread on every switch. An overflowing write
-therefore faults <em>precisely</em>, at the instruction that did it, instead of
-silently corrupting a neighbouring task's stack and failing somewhere
-unrelated.</p>
-    <nav class="pager">
-      <a class="prev" href="54-runtime.html"><span class="dir">&larr; Previous</span><span class="name">The runtime itself</span></a>
-      <a class="next" href="56-troubleshooting.html"><span class="dir">Next &rarr;</span><span class="name">Troubleshooting &amp; next steps</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

@@ -18,6 +18,97 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="20-twai.html">&larr; TWAI (CAN)</a><a href="22-ledc-sdm.html">LEDC &amp; sigma-delta &rarr;</a></nav>
+    <p class="eyebrow">Step 21 of 56</p>
+    <h1>RMT: an arbitrary pulse generator</h1>
+    <p class="lede">Sequences of {level, duration} symbols in hardware &mdash; IR remotes, WS2812 LED strings, 1-Wire, and any timing you would otherwise bit-bang badly.</p>
+
+<h2>Symbols, not bits</h2>
+
+<p>RMT transmits and receives sequences of pulses. The unit is a
+<strong>symbol</strong>: two consecutive {level, duration} pairs packed into one
+32-bit word, laid out to match the hardware exactly:</p>
+
+<pre><code>type Tick_Count is range 0 .. 32_767;          --  15-bit duration
+
+type RMT_Symbol is record
+   Level0    : Boolean    := False;
+   Duration0 : Tick_Count := 0;
+   Level1    : Boolean    := False;
+   Duration1 : Tick_Count := 0;
+end record;
+
+for RMT_Symbol use record
+   Duration0 at 0 range  0 .. 14;
+   Level0    at 0 range 15 .. 15;
+   Duration1 at 0 range 16 .. 30;
+   Level1    at 0 range 31 .. 31;
+end record;
+for RMT_Symbol'Size use 32;</code></pre>
+
+<p>The representation clause is the point: you write ordinary Ada record fields
+and the compiler lays them out bit-exactly as the symbol RAM expects, so there is
+no shifting or masking anywhere in your code. Durations are in channel ticks,
+and a tick is <code>1 / Resolution_Hz</code> &mdash; set the resolution to
+1_000_000 and a tick is one microsecond, which is how IR protocol timings are
+usually written down.</p>
+
+<h2>Eight channels, split by direction</h2>
+
+<pre><code>type TX_Index is range 0 .. 3;
+type RX_Index is range 0 .. 3;
+
+type TX_Channel is limited private;
+type RX_Channel is limited private;</code></pre>
+
+<p>Channels 0&nbsp;..&nbsp;3 transmit and 4&nbsp;..&nbsp;7 receive, each with a
+48-symbol RAM block. They are claimed handles &mdash; limited, controlled, released
+on scope exit &mdash; and <strong>TX and RX are distinct types</strong>, so the
+two cannot be confused at a call site.</p>
+
+<h2>Borrowing RAM for longer bursts</h2>
+
+<p><code>Configure</code> takes a <code>Blocks</code> parameter of
+1&nbsp;..&nbsp;4, giving the channel that many consecutive 48-symbol RAM
+blocks.</p>
+
+<p class="warn"><code>Blocks &gt; 1</code> <strong>borrows the RAM of the
+higher-numbered TX channels</strong>. Claiming two blocks on channel 0 consumes
+channel 1's memory, so channel 1 is no longer usable. That is a real constraint
+on how many independent pulse trains you can run at once, and it is invisible
+unless you know to look for it.</p>
+
+<p>Beyond the symbol RAM, a longer burst is streamed by refilling the RAM in
+halves as it drains, so <code>Transmit</code> is not limited to what fits &mdash;
+it just costs CPU attention during the burst.</p>
+
+<pre><code>procedure Transmit (C : TX_Channel; Symbols : Symbol_Array);   --  blocking</code></pre>
+
+<h2>Receiving</h2>
+
+<pre><code>procedure Start   (C : RX_Channel);                                        --  arm
+procedure Receive (C : RX_Channel; Into : out Symbol_Array; Count : out Natural);</code></pre>
+
+<p><code>Start</code> arms the receiver and should be called <em>just</em> before
+the incoming burst; <code>Receive</code> blocks until reception ends and reports
+how many symbols were captured. Reception ends on an idle threshold, so a
+protocol whose inter-frame gap is shorter than your threshold will run two
+bursts together.</p>
+
+<p><code>./x run esp32s3_rmt_loopback</code> exercises both directions with a
+TX channel driving an RX channel through one pad &mdash; no IR LED, no
+receiver.</p>
+    <nav class="pager">
+      <a class="prev" href="20-twai.html"><span class="dir">&larr; Previous</span><span class="name">TWAI (CAN)</span></a>
+      <a class="next" href="22-ledc-sdm.html"><span class="dir">Next &rarr;</span><span class="name">LEDC &amp; sigma-delta</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,94 +227,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="20-twai.html">&larr; TWAI (CAN)</a><a href="22-ledc-sdm.html">LEDC &amp; sigma-delta &rarr;</a></nav>
-    <p class="eyebrow">Step 21 of 56</p>
-    <h1>RMT: an arbitrary pulse generator</h1>
-    <p class="lede">Sequences of {level, duration} symbols in hardware &mdash; IR remotes, WS2812 LED strings, 1-Wire, and any timing you would otherwise bit-bang badly.</p>
-
-<h2>Symbols, not bits</h2>
-
-<p>RMT transmits and receives sequences of pulses. The unit is a
-<strong>symbol</strong>: two consecutive {level, duration} pairs packed into one
-32-bit word, laid out to match the hardware exactly:</p>
-
-<pre><code>type Tick_Count is range 0 .. 32_767;          --  15-bit duration
-
-type RMT_Symbol is record
-   Level0    : Boolean    := False;
-   Duration0 : Tick_Count := 0;
-   Level1    : Boolean    := False;
-   Duration1 : Tick_Count := 0;
-end record;
-
-for RMT_Symbol use record
-   Duration0 at 0 range  0 .. 14;
-   Level0    at 0 range 15 .. 15;
-   Duration1 at 0 range 16 .. 30;
-   Level1    at 0 range 31 .. 31;
-end record;
-for RMT_Symbol'Size use 32;</code></pre>
-
-<p>The representation clause is the point: you write ordinary Ada record fields
-and the compiler lays them out bit-exactly as the symbol RAM expects, so there is
-no shifting or masking anywhere in your code. Durations are in channel ticks,
-and a tick is <code>1 / Resolution_Hz</code> &mdash; set the resolution to
-1_000_000 and a tick is one microsecond, which is how IR protocol timings are
-usually written down.</p>
-
-<h2>Eight channels, split by direction</h2>
-
-<pre><code>type TX_Index is range 0 .. 3;
-type RX_Index is range 0 .. 3;
-
-type TX_Channel is limited private;
-type RX_Channel is limited private;</code></pre>
-
-<p>Channels 0&nbsp;..&nbsp;3 transmit and 4&nbsp;..&nbsp;7 receive, each with a
-48-symbol RAM block. They are claimed handles &mdash; limited, controlled, released
-on scope exit &mdash; and <strong>TX and RX are distinct types</strong>, so the
-two cannot be confused at a call site.</p>
-
-<h2>Borrowing RAM for longer bursts</h2>
-
-<p><code>Configure</code> takes a <code>Blocks</code> parameter of
-1&nbsp;..&nbsp;4, giving the channel that many consecutive 48-symbol RAM
-blocks.</p>
-
-<p class="warn"><code>Blocks &gt; 1</code> <strong>borrows the RAM of the
-higher-numbered TX channels</strong>. Claiming two blocks on channel 0 consumes
-channel 1's memory, so channel 1 is no longer usable. That is a real constraint
-on how many independent pulse trains you can run at once, and it is invisible
-unless you know to look for it.</p>
-
-<p>Beyond the symbol RAM, a longer burst is streamed by refilling the RAM in
-halves as it drains, so <code>Transmit</code> is not limited to what fits &mdash;
-it just costs CPU attention during the burst.</p>
-
-<pre><code>procedure Transmit (C : TX_Channel; Symbols : Symbol_Array);   --  blocking</code></pre>
-
-<h2>Receiving</h2>
-
-<pre><code>procedure Start   (C : RX_Channel);                                        --  arm
-procedure Receive (C : RX_Channel; Into : out Symbol_Array; Count : out Natural);</code></pre>
-
-<p><code>Start</code> arms the receiver and should be called <em>just</em> before
-the incoming burst; <code>Receive</code> blocks until reception ends and reports
-how many symbols were captured. Reception ends on an idle threshold, so a
-protocol whose inter-frame gap is shorter than your threshold will run two
-bursts together.</p>
-
-<p><code>./x run esp32s3_rmt_loopback</code> exercises both directions with a
-TX channel driving an RX channel through one pad &mdash; no IR LED, no
-receiver.</p>
-    <nav class="pager">
-      <a class="prev" href="20-twai.html"><span class="dir">&larr; Previous</span><span class="name">TWAI (CAN)</span></a>
-      <a class="next" href="22-ledc-sdm.html"><span class="dir">Next &rarr;</span><span class="name">LEDC &amp; sigma-delta</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

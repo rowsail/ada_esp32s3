@@ -5202,6 +5202,10 @@ a:hover { text-decoration-thickness: 2px; }
   gap: 3rem;
   align-items: start;
 }
+/* The nav comes AFTER main in the source (so narrow screens get the article
+   first); place it explicitly to keep it on the left here. */
+.wrap > .toc  { grid-column: 1; grid-row: 1; }
+.wrap > main  { grid-column: 2; grid-row: 1; }
 
 /* ---- sidebar ---- */
 
@@ -5525,8 +5529,12 @@ footer.site {
     gap: 2rem;
     padding: 1.6rem 1.15rem 3rem;
   }
+  .wrap > .toc, .wrap > main { grid-column: 1; grid-row: auto; }
   .toc {
     position: static;
+    margin-top: 2.5rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 1.4rem;
     background: var(--panel);
     border: 1px solid var(--rule);
     border-radius: 8px;
@@ -5562,6 +5570,13 @@ PAGE = """<!DOCTYPE html>
 
 <div class="wrap">
 
+  <main>
+{content}
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -5569,10 +5584,6 @@ PAGE = """<!DOCTYPE html>
 {toc}
     </ol>
   </nav>
-
-  <main>
-{content}
-  </main>
 
 </div>
 

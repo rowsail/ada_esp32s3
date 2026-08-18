@@ -18,6 +18,66 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="44-modbus.html">&larr; Modbus TCP</a><a href="46-block-dev.html">Block devices &amp; wear levelling &rarr;</a></nav>
+    <p class="eyebrow">Step 45 of 56</p>
+    <h1>FTP: client and server</h1>
+    <p class="lede">Outbound-only transfers streamed through a callback, and an anonymous server that exposes your filesystems to a desktop &mdash; both on the socket facade.</p>
+
+<h2>The client: passive, binary, streamed</h2>
+
+<p>A small RFC 959 client written entirely against
+<a href="40-net-stack.html">GNAT.Sockets</a>, so like
+<a href="41-dns-ntp.html">DNS and NTP</a> the same source runs on a desktop and
+on the board.</p>
+
+<p class="note"><strong>Passive mode only, deliberately.</strong> An embedded
+client should only ever make <em>outbound</em> connections, so every transfer
+asks the server to listen (PASV) and the client connects to it. No listening
+socket, and NAT/firewall friendly. A session uses two sockets at a time &mdash;
+the persistent control connection plus one transient data connection per
+transfer &mdash; comfortably within the <a href="39-w5500.html">W5500</a>'s
+eight.</p>
+
+<p class="warn"><strong>Transfers are streamed through a caller callback</strong>,
+so a file never has to be held whole in RAM &mdash; which on a board with a few
+hundred KB is the difference between working and not. As with every callback in
+this HAL, the sink and source must obey the
+<a href="13-gpio.html">closure-free rule</a>: library-level, no captured state,
+context passed explicitly.</p>
+
+<p>Transfers are binary (<code>TYPE I</code>). There is no ASCII mode, which is
+the right call &mdash; ASCII mode's line-ending translation silently corrupts
+every non-text file.</p>
+
+<h2>The server: your filesystems, over the network</h2>
+
+<p>An anonymous passive-mode server that exposes one or more
+<a href="47-ext4.html">ext4</a> filesystems, so a desktop FTP client can browse,
+download, upload and manage the board's files.</p>
+
+<p>Filesystems are presented through <code>ESP32S3.Ext4.VFS</code>: register each
+under a name <em>before</em> calling <code>Run</code>, and they appear as
+top-level directories in one tree &mdash; <code>/flash</code>, <code>/sd</code>.
+The virtual root lists the mount names. Adding a second storage device later is
+one more <code>VFS.Add</code> call and nothing else changes.</p>
+
+<p class="warn"><strong>Anonymous</strong> means exactly that: no authentication.
+This is for a bench, a closed lab network or a deliberately isolated segment
+&mdash; not for anything reachable from a wider network. If the board is on a
+routable network, pin the socket to the interface you intend
+(<a href="40-net-stack.html"><code>Set_Interface</code></a>) rather than letting
+the routing table choose.</p>
+    <nav class="pager">
+      <a class="prev" href="44-modbus.html"><span class="dir">&larr; Previous</span><span class="name">Modbus TCP</span></a>
+      <a class="next" href="46-block-dev.html"><span class="dir">Next &rarr;</span><span class="name">Block devices &amp; wear levelling</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,63 +196,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="44-modbus.html">&larr; Modbus TCP</a><a href="46-block-dev.html">Block devices &amp; wear levelling &rarr;</a></nav>
-    <p class="eyebrow">Step 45 of 56</p>
-    <h1>FTP: client and server</h1>
-    <p class="lede">Outbound-only transfers streamed through a callback, and an anonymous server that exposes your filesystems to a desktop &mdash; both on the socket facade.</p>
-
-<h2>The client: passive, binary, streamed</h2>
-
-<p>A small RFC 959 client written entirely against
-<a href="40-net-stack.html">GNAT.Sockets</a>, so like
-<a href="41-dns-ntp.html">DNS and NTP</a> the same source runs on a desktop and
-on the board.</p>
-
-<p class="note"><strong>Passive mode only, deliberately.</strong> An embedded
-client should only ever make <em>outbound</em> connections, so every transfer
-asks the server to listen (PASV) and the client connects to it. No listening
-socket, and NAT/firewall friendly. A session uses two sockets at a time &mdash;
-the persistent control connection plus one transient data connection per
-transfer &mdash; comfortably within the <a href="39-w5500.html">W5500</a>'s
-eight.</p>
-
-<p class="warn"><strong>Transfers are streamed through a caller callback</strong>,
-so a file never has to be held whole in RAM &mdash; which on a board with a few
-hundred KB is the difference between working and not. As with every callback in
-this HAL, the sink and source must obey the
-<a href="13-gpio.html">closure-free rule</a>: library-level, no captured state,
-context passed explicitly.</p>
-
-<p>Transfers are binary (<code>TYPE I</code>). There is no ASCII mode, which is
-the right call &mdash; ASCII mode's line-ending translation silently corrupts
-every non-text file.</p>
-
-<h2>The server: your filesystems, over the network</h2>
-
-<p>An anonymous passive-mode server that exposes one or more
-<a href="47-ext4.html">ext4</a> filesystems, so a desktop FTP client can browse,
-download, upload and manage the board's files.</p>
-
-<p>Filesystems are presented through <code>ESP32S3.Ext4.VFS</code>: register each
-under a name <em>before</em> calling <code>Run</code>, and they appear as
-top-level directories in one tree &mdash; <code>/flash</code>, <code>/sd</code>.
-The virtual root lists the mount names. Adding a second storage device later is
-one more <code>VFS.Add</code> call and nothing else changes.</p>
-
-<p class="warn"><strong>Anonymous</strong> means exactly that: no authentication.
-This is for a bench, a closed lab network or a deliberately isolated segment
-&mdash; not for anything reachable from a wider network. If the board is on a
-routable network, pin the socket to the interface you intend
-(<a href="40-net-stack.html"><code>Set_Interface</code></a>) rather than letting
-the routing table choose.</p>
-    <nav class="pager">
-      <a class="prev" href="44-modbus.html"><span class="dir">&larr; Previous</span><span class="name">Modbus TCP</span></a>
-      <a class="next" href="46-block-dev.html"><span class="dir">Next &rarr;</span><span class="name">Block devices &amp; wear levelling</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

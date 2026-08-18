@@ -18,6 +18,72 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="34-expanders.html">&larr; Port expanders</a><a href="36-memory.html">Flash, EEPROM &amp; FRAM &rarr;</a></nav>
+    <p class="eyebrow">Step 35 of 56</p>
+    <h1>TX1812: addressable LEDs from RMT symbols</h1>
+    <p class="lede">A single-wire LED family driven by generating its pulse train in hardware &mdash; and a strip whose whole memory footprint is fixed at elaboration.</p>
+
+<h2>Timing as data</h2>
+
+<p>The TX1812 &mdash; like the WS2812 "NeoPixel" family &mdash; is a single-wire,
+daisy-chainable RGB LED. Twenty-four bits of colour are clocked in MSB-first as a
+precisely timed pulse train: a <code>1</code> is long-high/short-low, a
+<code>0</code> is short-high/long-low, and a low period over 80&nbsp;µs latches
+the frame.</p>
+
+<p>That is exactly the job <a href="21-rmt.html">RMT</a> exists for. The driver
+generates the waveform as <strong>one RMT symbol per data bit</strong>, so the
+timing is produced by hardware rather than by a delay loop that an interrupt
+could disturb.</p>
+
+<h2>A strip is sized at elaboration</h2>
+
+<pre><code>type Color is record ... end record;
+type Strip (Count : Positive) is limited private;</code></pre>
+
+<p class="note">The <code>Count</code> discriminant fixes the whole footprint:
+a <code>Strip</code> carries both the <code>Count</code>-pixel colour buffer
+<em>and</em> the <code>Count * 24</code> RMT-symbol frame buffer. Declaring
+<code>Panel : Strip (64)</code> reserves all of it at elaboration &mdash; no
+heap &mdash; and the linker verifies it fits. You find out at link time that a
+strip is too big for your RAM, not at run time.</p>
+
+<pre><code>procedure Acquire (...; Channel : ...; Pin : ...; Blocks : ...);
+function  Is_Valid (S : Strip) return Boolean;
+procedure Set     (S : in out Strip; Index : Positive; C : Color);   --  buffered
+procedure Set_All (S : in out Strip; C : Color);                     --  buffered
+procedure Show    (S : in out Strip);                                --  clock out + latch
+procedure Release (S : in out Strip);</code></pre>
+
+<p>A <code>Strip</code> is a claimed handle in the usual style: it takes an RMT
+transmit channel on <code>Acquire</code> and releases it on scope exit.
+<code>Set</code> and <code>Set_All</code> only write the buffer; nothing reaches
+the LEDs until <code>Show</code>.</p>
+
+<h2>The limitation, stated plainly</h2>
+
+<p class="warn"><strong>This driver currently drives a single LED.</strong> The
+underlying <code>RMT.Transmit</code> sends at most what fits in the channel's
+symbol RAM, so the practical case is <code>Strip (Count =&gt; 1)</code>; passing
+<code>Blocks</code> (1&nbsp;..&nbsp;4) borrows extra RMT RAM for roughly
+<code>Blocks * 2</code> LEDs &mdash; and borrowing blocks costs you the
+higher-numbered RMT channels, as <a href="21-rmt.html">step 20</a> explains.</p>
+
+<p>A longer string needs RMT wrap/refill support, which is a later step. The API
+is already shaped for it &mdash; <code>Count</code>, per-pixel <code>Set</code>
+&mdash; so only <code>Show</code>'s transport changes when it lands. Worth
+knowing before you design a panel around it.</p>
+    <nav class="pager">
+      <a class="prev" href="34-expanders.html"><span class="dir">&larr; Previous</span><span class="name">Port expanders</span></a>
+      <a class="next" href="36-memory.html"><span class="dir">Next &rarr;</span><span class="name">Flash, EEPROM &amp; FRAM</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,69 +202,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="34-expanders.html">&larr; Port expanders</a><a href="36-memory.html">Flash, EEPROM &amp; FRAM &rarr;</a></nav>
-    <p class="eyebrow">Step 35 of 56</p>
-    <h1>TX1812: addressable LEDs from RMT symbols</h1>
-    <p class="lede">A single-wire LED family driven by generating its pulse train in hardware &mdash; and a strip whose whole memory footprint is fixed at elaboration.</p>
-
-<h2>Timing as data</h2>
-
-<p>The TX1812 &mdash; like the WS2812 "NeoPixel" family &mdash; is a single-wire,
-daisy-chainable RGB LED. Twenty-four bits of colour are clocked in MSB-first as a
-precisely timed pulse train: a <code>1</code> is long-high/short-low, a
-<code>0</code> is short-high/long-low, and a low period over 80&nbsp;µs latches
-the frame.</p>
-
-<p>That is exactly the job <a href="21-rmt.html">RMT</a> exists for. The driver
-generates the waveform as <strong>one RMT symbol per data bit</strong>, so the
-timing is produced by hardware rather than by a delay loop that an interrupt
-could disturb.</p>
-
-<h2>A strip is sized at elaboration</h2>
-
-<pre><code>type Color is record ... end record;
-type Strip (Count : Positive) is limited private;</code></pre>
-
-<p class="note">The <code>Count</code> discriminant fixes the whole footprint:
-a <code>Strip</code> carries both the <code>Count</code>-pixel colour buffer
-<em>and</em> the <code>Count * 24</code> RMT-symbol frame buffer. Declaring
-<code>Panel : Strip (64)</code> reserves all of it at elaboration &mdash; no
-heap &mdash; and the linker verifies it fits. You find out at link time that a
-strip is too big for your RAM, not at run time.</p>
-
-<pre><code>procedure Acquire (...; Channel : ...; Pin : ...; Blocks : ...);
-function  Is_Valid (S : Strip) return Boolean;
-procedure Set     (S : in out Strip; Index : Positive; C : Color);   --  buffered
-procedure Set_All (S : in out Strip; C : Color);                     --  buffered
-procedure Show    (S : in out Strip);                                --  clock out + latch
-procedure Release (S : in out Strip);</code></pre>
-
-<p>A <code>Strip</code> is a claimed handle in the usual style: it takes an RMT
-transmit channel on <code>Acquire</code> and releases it on scope exit.
-<code>Set</code> and <code>Set_All</code> only write the buffer; nothing reaches
-the LEDs until <code>Show</code>.</p>
-
-<h2>The limitation, stated plainly</h2>
-
-<p class="warn"><strong>This driver currently drives a single LED.</strong> The
-underlying <code>RMT.Transmit</code> sends at most what fits in the channel's
-symbol RAM, so the practical case is <code>Strip (Count =&gt; 1)</code>; passing
-<code>Blocks</code> (1&nbsp;..&nbsp;4) borrows extra RMT RAM for roughly
-<code>Blocks * 2</code> LEDs &mdash; and borrowing blocks costs you the
-higher-numbered RMT channels, as <a href="21-rmt.html">step 20</a> explains.</p>
-
-<p>A longer string needs RMT wrap/refill support, which is a later step. The API
-is already shaped for it &mdash; <code>Count</code>, per-pixel <code>Set</code>
-&mdash; so only <code>Show</code>'s transport changes when it lands. Worth
-knowing before you design a panel around it.</p>
-    <nav class="pager">
-      <a class="prev" href="34-expanders.html"><span class="dir">&larr; Previous</span><span class="name">Port expanders</span></a>
-      <a class="next" href="36-memory.html"><span class="dir">Next &rarr;</span><span class="name">Flash, EEPROM &amp; FRAM</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

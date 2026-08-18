@@ -18,6 +18,85 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="07-build.html">&larr; What a build does</a><a href="09-board-config.html">Board configuration &rarr;</a></nav>
+    <p class="eyebrow">Step 08 of 56</p>
+    <h1>Choosing a runtime profile</h1>
+    <p class="lede">Three runtimes ship here, from a lean Jorvik kernel to the complete Ada tasking model. Picking one is a build-time switch, and most projects want the middle option.</p>
+
+<h2>The three</h2>
+
+<table>
+  <thead><tr><th>Profile</th><th>Tasking model</th><th>What you get</th></tr></thead>
+  <tbody>
+    <tr><td><code>light-tasking</code></td>
+        <td>Jorvik (Ravenscar+)</td>
+        <td>Periodic tasks, protected objects, SMP. No exception propagation,
+            no heap. The lean default.</td></tr>
+    <tr><td><code>embedded</code></td>
+        <td>Jorvik + ZCX</td>
+        <td>Adds full exception propagation <em>with names</em>,
+            controlled-type finalization, and a heap. <strong>The usual
+            choice</strong> &mdash; the HAL's RAII handles need it.</td></tr>
+    <tr><td><code>full</code></td>
+        <td>Complete GNARL</td>
+        <td>Lifts the Jorvik restrictions: rendezvous, selective
+            <code>accept</code>, dynamic and nested tasks, dynamic priorities,
+            <code>abort</code>, dynamic <code>Ada.Interrupts</code>.</td></tr>
+  </tbody>
+</table>
+
+<p><code>light-tasking</code> and <code>embedded</code> both set
+<code>pragma Profile (Jorvik)</code>; <code>full</code> is the unrestricted
+runtime.</p>
+
+<h2>Selecting one</h2>
+
+<p>Per build, from the dispatcher &mdash; <code>auto</code> (the default) uses
+whatever the example itself declares:</p>
+
+<pre><code>./x run esp32s3_heartbeat --profile embedded -p /dev/ttyACM0
+./x build esp32s3_heartbeat -P full</code></pre>
+
+<p>Or permanently, for one project, by setting <code>ESP32S3_RTS_PROFILE</code>
+in its <code>build.sh</code>. A freshly scaffolded project already contains that
+line, set to <code>embedded</code>:</p>
+
+<pre><code>export ESP32S3_RTS_PROFILE=embedded</code></pre>
+
+<p><code>./x list</code> shows every example alongside the profile it was
+written for.</p>
+
+<h2>Which to pick</h2>
+
+<p>Start with <strong><code>embedded</code></strong> unless you have a reason
+not to. Named exceptions and finalization are worth their cost while you are
+learning the board, and the HAL's RAII driver handles assume them.</p>
+
+<p>Drop to <strong><code>light-tasking</code></strong> when you want the
+smallest image and can live inside Jorvik: periodic tasks and protected objects
+with no heap and no exception propagation. Move up to
+<strong><code>full</code></strong> only when you specifically need rendezvous,
+dynamically created tasks, or <code>abort</code>.</p>
+
+<p class="note">Changing profile means regenerating a runtime, so the first
+build under a new profile is slow again. That is expected, not a fault.</p>
+
+<p>All three are exercised against the <strong>ACATS 4.2</strong> conformance
+suite on real hardware, with zero genuine failures on every profile. What
+remains non-passing is interactive tests, library units the bare runtime omits,
+correct <code>NOT-APPLICABLE</code> results, or documented limitations &mdash;
+the book's ACATS chapter has the breakdown.</p>
+    <nav class="pager">
+      <a class="prev" href="07-build.html"><span class="dir">&larr; Previous</span><span class="name">What a build does</span></a>
+      <a class="next" href="09-board-config.html"><span class="dir">Next &rarr;</span><span class="name">Board configuration</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,82 +215,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="07-build.html">&larr; What a build does</a><a href="09-board-config.html">Board configuration &rarr;</a></nav>
-    <p class="eyebrow">Step 08 of 56</p>
-    <h1>Choosing a runtime profile</h1>
-    <p class="lede">Three runtimes ship here, from a lean Jorvik kernel to the complete Ada tasking model. Picking one is a build-time switch, and most projects want the middle option.</p>
-
-<h2>The three</h2>
-
-<table>
-  <thead><tr><th>Profile</th><th>Tasking model</th><th>What you get</th></tr></thead>
-  <tbody>
-    <tr><td><code>light-tasking</code></td>
-        <td>Jorvik (Ravenscar+)</td>
-        <td>Periodic tasks, protected objects, SMP. No exception propagation,
-            no heap. The lean default.</td></tr>
-    <tr><td><code>embedded</code></td>
-        <td>Jorvik + ZCX</td>
-        <td>Adds full exception propagation <em>with names</em>,
-            controlled-type finalization, and a heap. <strong>The usual
-            choice</strong> &mdash; the HAL's RAII handles need it.</td></tr>
-    <tr><td><code>full</code></td>
-        <td>Complete GNARL</td>
-        <td>Lifts the Jorvik restrictions: rendezvous, selective
-            <code>accept</code>, dynamic and nested tasks, dynamic priorities,
-            <code>abort</code>, dynamic <code>Ada.Interrupts</code>.</td></tr>
-  </tbody>
-</table>
-
-<p><code>light-tasking</code> and <code>embedded</code> both set
-<code>pragma Profile (Jorvik)</code>; <code>full</code> is the unrestricted
-runtime.</p>
-
-<h2>Selecting one</h2>
-
-<p>Per build, from the dispatcher &mdash; <code>auto</code> (the default) uses
-whatever the example itself declares:</p>
-
-<pre><code>./x run esp32s3_heartbeat --profile embedded -p /dev/ttyACM0
-./x build esp32s3_heartbeat -P full</code></pre>
-
-<p>Or permanently, for one project, by setting <code>ESP32S3_RTS_PROFILE</code>
-in its <code>build.sh</code>. A freshly scaffolded project already contains that
-line, set to <code>embedded</code>:</p>
-
-<pre><code>export ESP32S3_RTS_PROFILE=embedded</code></pre>
-
-<p><code>./x list</code> shows every example alongside the profile it was
-written for.</p>
-
-<h2>Which to pick</h2>
-
-<p>Start with <strong><code>embedded</code></strong> unless you have a reason
-not to. Named exceptions and finalization are worth their cost while you are
-learning the board, and the HAL's RAII driver handles assume them.</p>
-
-<p>Drop to <strong><code>light-tasking</code></strong> when you want the
-smallest image and can live inside Jorvik: periodic tasks and protected objects
-with no heap and no exception propagation. Move up to
-<strong><code>full</code></strong> only when you specifically need rendezvous,
-dynamically created tasks, or <code>abort</code>.</p>
-
-<p class="note">Changing profile means regenerating a runtime, so the first
-build under a new profile is slow again. That is expected, not a fault.</p>
-
-<p>All three are exercised against the <strong>ACATS 4.2</strong> conformance
-suite on real hardware, with zero genuine failures on every profile. What
-remains non-passing is interactive tests, library units the bare runtime omits,
-correct <code>NOT-APPLICABLE</code> results, or documented limitations &mdash;
-the book's ACATS chapter has the breakdown.</p>
-    <nav class="pager">
-      <a class="prev" href="07-build.html"><span class="dir">&larr; Previous</span><span class="name">What a build does</span></a>
-      <a class="next" href="09-board-config.html"><span class="dir">Next &rarr;</span><span class="name">Board configuration</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

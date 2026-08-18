@@ -18,6 +18,79 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="45-ftp.html">&larr; FTP</a><a href="47-ext4.html">ext4 filesystem &rarr;</a></nav>
+    <p class="eyebrow">Step 46 of 56</p>
+    <h1>Block devices and wear levelling</h1>
+    <p class="lede">One abstraction the filesystems talk to, thin adapters underneath it, and a filter in the middle that stops a hot metadata block from killing one sector of your flash.</p>
+
+<h2>A vtable, not a tagged type</h2>
+
+<pre><code>type Sector       is array (0 .. 511) of Interfaces.Unsigned_8;
+type Sector_Index is new Interfaces.Unsigned_64;
+
+type Read_Proc  is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : out Sector);
+type Write_Proc is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : Sector);
+type Count_Func is access function  (Ctx : System.Address) return Sector_Index;</code></pre>
+
+<p><code>ESP32S3.Block_Dev</code> is a record of access-to-subprogram plus an
+opaque context &mdash; mirroring lwext4's <code>ext4_blockdev</code> vtable.
+<strong>No tagging, no finalization, swappable at run time.</strong> That keeps
+it usable from anywhere and makes a device something you can substitute in a
+test.</p>
+
+<p>Behind it sit thin adapters: <code>SD_SPI_Source</code> and
+<code>SDMMC_Source</code> for <a href="28-sd.html">SD cards</a>,
+<code>W25Q_Source</code> for <a href="36-memory.html">SPI NOR flash</a>, and a
+file-backed device in the host test harness &mdash; which is what lets the whole
+filesystem stack be developed and tested on a PC.</p>
+
+<p class="note">The error model is Ada's: the primitive Read/Write
+<strong>raise</strong> <code>Ada.IO_Exceptions.Device_Error</code> on a hardware
+failure, with the adapters converting the SD driver's <code>Status</code> enum
+into that raise. So a media error propagates rather than being quietly returned
+and ignored.</p>
+
+<h2>The wear-levelling filter</h2>
+
+<p>Flash wears out per erase block. A filesystem writes some blocks far more
+often than others &mdash; an ext4 metadata block, say &mdash; so without
+intervention one physical sector dies long before the rest of the chip.</p>
+
+<p><code>Block_Dev.WL</code> is a <strong>Block_Dev over a Block_Dev</strong>: it
+takes the raw medium and presents a smaller logical device whose sectors are
+remapped so that, over time, every logical 4&nbsp;KB block visits every physical
+4&nbsp;KB block. Because it is a plain filter it carries no flash-specific code
+and runs unchanged on the host, where it is brute-force tested.</p>
+
+<pre><code>--  a typical stack, bottom to top
+W25Q flash  ->  Block_Dev.W25Q_Source  ->  Block_Dev.WL  ->  Ext4</code></pre>
+
+<p class="note"><strong>O(1) state:</strong> just a move counter &mdash; there is
+no per-block map to keep in RAM or rebuild at mount. A move erases the
+destination block in one shot through the lower device's optional
+<code>Erase_Sectors</code> before copying, so each move costs exactly one
+erase.</p>
+
+<p class="warn"><strong>This is <em>dynamic</em> wear levelling only.</strong> It
+bounds how unevenly <em>write</em> activity wears the chip, but it does not
+actively relocate cold, never-written blocks &mdash; so data you write once and
+never touch keeps its physical block out of rotation. That is sufficient for a
+32&nbsp;MB part; it is not the same guarantee as static wear levelling.</p>
+
+<p>Config blocks are rewritten once per move, which is their wear cost. Raising
+<code>Update_Rate</code> trades levelling aggressiveness for less move and config
+overhead.</p>
+    <nav class="pager">
+      <a class="prev" href="45-ftp.html"><span class="dir">&larr; Previous</span><span class="name">FTP</span></a>
+      <a class="next" href="47-ext4.html"><span class="dir">Next &rarr;</span><span class="name">ext4 filesystem</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,76 +209,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="45-ftp.html">&larr; FTP</a><a href="47-ext4.html">ext4 filesystem &rarr;</a></nav>
-    <p class="eyebrow">Step 46 of 56</p>
-    <h1>Block devices and wear levelling</h1>
-    <p class="lede">One abstraction the filesystems talk to, thin adapters underneath it, and a filter in the middle that stops a hot metadata block from killing one sector of your flash.</p>
-
-<h2>A vtable, not a tagged type</h2>
-
-<pre><code>type Sector       is array (0 .. 511) of Interfaces.Unsigned_8;
-type Sector_Index is new Interfaces.Unsigned_64;
-
-type Read_Proc  is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : out Sector);
-type Write_Proc is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : Sector);
-type Count_Func is access function  (Ctx : System.Address) return Sector_Index;</code></pre>
-
-<p><code>ESP32S3.Block_Dev</code> is a record of access-to-subprogram plus an
-opaque context &mdash; mirroring lwext4's <code>ext4_blockdev</code> vtable.
-<strong>No tagging, no finalization, swappable at run time.</strong> That keeps
-it usable from anywhere and makes a device something you can substitute in a
-test.</p>
-
-<p>Behind it sit thin adapters: <code>SD_SPI_Source</code> and
-<code>SDMMC_Source</code> for <a href="28-sd.html">SD cards</a>,
-<code>W25Q_Source</code> for <a href="36-memory.html">SPI NOR flash</a>, and a
-file-backed device in the host test harness &mdash; which is what lets the whole
-filesystem stack be developed and tested on a PC.</p>
-
-<p class="note">The error model is Ada's: the primitive Read/Write
-<strong>raise</strong> <code>Ada.IO_Exceptions.Device_Error</code> on a hardware
-failure, with the adapters converting the SD driver's <code>Status</code> enum
-into that raise. So a media error propagates rather than being quietly returned
-and ignored.</p>
-
-<h2>The wear-levelling filter</h2>
-
-<p>Flash wears out per erase block. A filesystem writes some blocks far more
-often than others &mdash; an ext4 metadata block, say &mdash; so without
-intervention one physical sector dies long before the rest of the chip.</p>
-
-<p><code>Block_Dev.WL</code> is a <strong>Block_Dev over a Block_Dev</strong>: it
-takes the raw medium and presents a smaller logical device whose sectors are
-remapped so that, over time, every logical 4&nbsp;KB block visits every physical
-4&nbsp;KB block. Because it is a plain filter it carries no flash-specific code
-and runs unchanged on the host, where it is brute-force tested.</p>
-
-<pre><code>--  a typical stack, bottom to top
-W25Q flash  ->  Block_Dev.W25Q_Source  ->  Block_Dev.WL  ->  Ext4</code></pre>
-
-<p class="note"><strong>O(1) state:</strong> just a move counter &mdash; there is
-no per-block map to keep in RAM or rebuild at mount. A move erases the
-destination block in one shot through the lower device's optional
-<code>Erase_Sectors</code> before copying, so each move costs exactly one
-erase.</p>
-
-<p class="warn"><strong>This is <em>dynamic</em> wear levelling only.</strong> It
-bounds how unevenly <em>write</em> activity wears the chip, but it does not
-actively relocate cold, never-written blocks &mdash; so data you write once and
-never touch keeps its physical block out of rotation. That is sufficient for a
-32&nbsp;MB part; it is not the same guarantee as static wear levelling.</p>
-
-<p>Config blocks are rewritten once per move, which is their wear cost. Raising
-<code>Update_Rate</code> trades levelling aggressiveness for less move and config
-overhead.</p>
-    <nav class="pager">
-      <a class="prev" href="45-ftp.html"><span class="dir">&larr; Previous</span><span class="name">FTP</span></a>
-      <a class="next" href="47-ext4.html"><span class="dir">Next &rarr;</span><span class="name">ext4 filesystem</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

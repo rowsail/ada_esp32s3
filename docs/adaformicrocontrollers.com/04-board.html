@@ -18,6 +18,75 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="03-clone.html">&larr; Getting the code</a><a href="05-first-blink.html">Your first blink &rarr;</a></nav>
+    <p class="eyebrow">Step 04 of 56</p>
+    <h1>Plugging in the board and finding the port</h1>
+    <p class="lede">Two things go wrong here and only here: the wrong USB socket, and permissions on <code>/dev/ttyACM0</code>. Both take one minute to settle before you build anything.</p>
+
+<h2>Use the native USB port</h2>
+
+<p>Plug the cable into the port wired to the chip's built-in
+<strong>USB-Serial-JTAG</strong> controller, usually labelled <code>USB</code>.
+Boards that also carry a separate CH343/CP210x bridge label that one
+<code>UART</code>. The native port is the one that gives you the console and the
+JTAG debugger over the same cable, so prefer it.</p>
+
+<h2>Find the device node</h2>
+
+<pre><code>ls /dev/ttyACM*        # usually /dev/ttyACM0</code></pre>
+
+<p>Nothing there? Check <code>dmesg | tail</code> right after plugging in. A
+silent <code>dmesg</code> means the cable is charge-only or the socket is the
+wrong one.</p>
+
+<h2>Grant yourself access, once</h2>
+
+<pre><code>sudo usermod -aG dialout $USER          # then LOG OUT and back in</code></pre>
+
+<p>The log-out is not optional &mdash; group membership is established at login.
+Until then you will get <code>Permission denied</code> on
+<code>/dev/ttyACM0</code> and be tempted to run the flasher under
+<code>sudo</code>, which works but leaves root-owned build artifacts behind.</p>
+
+<h2>Forcing download mode</h2>
+
+<p>The flasher resets the board into the ROM download loader for you, by pulsing
+DTR and RTS. Occasionally &mdash; a wedged application, a board mid-deep-sleep
+&mdash; that does not take. Do it by hand:</p>
+
+<ol>
+  <li>Hold <strong>BOOT</strong>.</li>
+  <li>Tap <strong>RESET</strong>.</li>
+  <li>Release <strong>BOOT</strong>.</li>
+</ol>
+
+<p>The board is now sitting in the ROM loader waiting for a flash command, and
+will stay there until you reset it again.</p>
+
+<h2>Reading the console</h2>
+
+<p>Any serial terminal at <strong>115200&nbsp;8N1</strong> works. The
+<code>./x monitor</code> command in the next step picks one for you, but if you
+would rather drive it yourself:</p>
+
+<pre><code>screen /dev/ttyACM0 115200                 # quit: Ctrl-A then K
+# or:  python3 -m serial.tools.miniterm /dev/ttyACM0 115200
+# or:  cat /dev/ttyACM0</code></pre>
+
+<p class="note">Set <code>ESPPORT</code> in your environment and every command in
+this guide will pick it up, so you can drop the <code>-p</code> flag:
+<code>export ESPPORT=/dev/ttyACM0</code>.</p>
+    <nav class="pager">
+      <a class="prev" href="03-clone.html"><span class="dir">&larr; Previous</span><span class="name">Getting the code</span></a>
+      <a class="next" href="05-first-blink.html"><span class="dir">Next &rarr;</span><span class="name">Your first blink</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,72 +205,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="03-clone.html">&larr; Getting the code</a><a href="05-first-blink.html">Your first blink &rarr;</a></nav>
-    <p class="eyebrow">Step 04 of 56</p>
-    <h1>Plugging in the board and finding the port</h1>
-    <p class="lede">Two things go wrong here and only here: the wrong USB socket, and permissions on <code>/dev/ttyACM0</code>. Both take one minute to settle before you build anything.</p>
-
-<h2>Use the native USB port</h2>
-
-<p>Plug the cable into the port wired to the chip's built-in
-<strong>USB-Serial-JTAG</strong> controller, usually labelled <code>USB</code>.
-Boards that also carry a separate CH343/CP210x bridge label that one
-<code>UART</code>. The native port is the one that gives you the console and the
-JTAG debugger over the same cable, so prefer it.</p>
-
-<h2>Find the device node</h2>
-
-<pre><code>ls /dev/ttyACM*        # usually /dev/ttyACM0</code></pre>
-
-<p>Nothing there? Check <code>dmesg | tail</code> right after plugging in. A
-silent <code>dmesg</code> means the cable is charge-only or the socket is the
-wrong one.</p>
-
-<h2>Grant yourself access, once</h2>
-
-<pre><code>sudo usermod -aG dialout $USER          # then LOG OUT and back in</code></pre>
-
-<p>The log-out is not optional &mdash; group membership is established at login.
-Until then you will get <code>Permission denied</code> on
-<code>/dev/ttyACM0</code> and be tempted to run the flasher under
-<code>sudo</code>, which works but leaves root-owned build artifacts behind.</p>
-
-<h2>Forcing download mode</h2>
-
-<p>The flasher resets the board into the ROM download loader for you, by pulsing
-DTR and RTS. Occasionally &mdash; a wedged application, a board mid-deep-sleep
-&mdash; that does not take. Do it by hand:</p>
-
-<ol>
-  <li>Hold <strong>BOOT</strong>.</li>
-  <li>Tap <strong>RESET</strong>.</li>
-  <li>Release <strong>BOOT</strong>.</li>
-</ol>
-
-<p>The board is now sitting in the ROM loader waiting for a flash command, and
-will stay there until you reset it again.</p>
-
-<h2>Reading the console</h2>
-
-<p>Any serial terminal at <strong>115200&nbsp;8N1</strong> works. The
-<code>./x monitor</code> command in the next step picks one for you, but if you
-would rather drive it yourself:</p>
-
-<pre><code>screen /dev/ttyACM0 115200                 # quit: Ctrl-A then K
-# or:  python3 -m serial.tools.miniterm /dev/ttyACM0 115200
-# or:  cat /dev/ttyACM0</code></pre>
-
-<p class="note">Set <code>ESPPORT</code> in your environment and every command in
-this guide will pick it up, so you can drop the <code>-p</code> flag:
-<code>export ESPPORT=/dev/ttyACM0</code>.</p>
-    <nav class="pager">
-      <a class="prev" href="03-clone.html"><span class="dir">&larr; Previous</span><span class="name">Getting the code</span></a>
-      <a class="next" href="05-first-blink.html"><span class="dir">Next &rarr;</span><span class="name">Your first blink</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

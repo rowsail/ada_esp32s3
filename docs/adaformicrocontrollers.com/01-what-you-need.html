@@ -18,6 +18,107 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="index.html">&larr; Guide home</a><a href="02-toolchain.html">Installing the toolchain &rarr;</a></nav>
+    <p class="eyebrow">Step 01 of 56</p>
+    <h1>What you need (and what you don't)</h1>
+    <p class="lede">One board, one USB cable, and one package manager. No ESP-IDF, no <code>idf.py</code>, no esptool, no Python anywhere in the build or flash path.</p>
+
+<p>Most ESP32 tutorials open by telling you to install a 400&nbsp;MB SDK. This
+one does not. The whole toolchain here is <strong>Alire</strong>, the Ada
+package manager, which fetches a cross-compiler for you. Everything else &mdash;
+packaging the image, writing it to flash, reading the console &mdash; is done by
+tools that live in this repository and are themselves written in Ada.</p>
+
+<h2>Hardware</h2>
+
+<ul>
+  <li>An <strong>ESP32-S3</strong> devkit, using its <strong>native USB</strong>
+      port &mdash; the one wired to the chip's built-in USB-Serial-JTAG
+      controller. On most boards it is labelled <code>USB</code>, and the
+      <em>other</em> one is labelled <code>UART</code>. Pick the native one: it
+      carries the console <em>and</em> the debugger over a single cable.</li>
+  <li>A <strong>data-carrying</strong> USB cable. A charge-only cable will
+      enumerate nothing and waste an hour of your life.</li>
+</ul>
+
+<p>That is the minimum. An LED and a resistor on GPIO0 make the first example
+visible, but the console output alone proves it works.</p>
+
+<h2>Software</h2>
+
+<ul>
+  <li><strong>Alire</strong> (<code>alr</code>) &mdash; fetches three toolchains:
+      the <code>gnat_xtensa_esp32_elf</code> cross-compiler for the chip, a
+      native <code>gnat_native</code> for the host tools, and
+      <code>gprbuild</code>.</li>
+  <li><strong>git</strong> &mdash; optional. You can unzip a release archive
+      instead (<a href="03-clone.html">step 3</a>); there are no submodules to
+      fetch either way.</li>
+  <li>A <strong>host C compiler</strong> &mdash; used exactly once, to build the
+      <code>xtensa-dynconfig</code> core-config plugin the toolchain needs.</li>
+</ul>
+
+<p class="note"><strong>What you do <em>not</em> install:</strong> ESP-IDF,
+<code>idf.py</code>, esptool, or Python. The build path uses none of them.
+(<code>esptool</code> remains an optional fallback if you happen to have it and
+prefer it &mdash; see <a href="07-build.html">what a build does</a>.)</p>
+
+<h2>The big picture</h2>
+
+<p>Two commands drive everything. Here is what they set in motion:</p>
+
+<pre><code>  your Ada code  ─┐
+  Ada RTS        ─┤  ./build.sh ─&gt; gprbuild (Alire xtensa GNAT) ─&gt; app_main.o
+  (generated)     │             ─&gt; link (bare boot + vendored Xtensa support)
+  bare boot (Ada) ┘             ─&gt; esp_elf2image (Ada)           ─&gt; app.bin
+                                ─&gt; our 2nd-stage bootloader      ─&gt; bootloader.bin
+                     ./flash.sh ─&gt; esp_flash (Ada, over USB ROM) ─&gt; board runs it
+                                   0x0 bootloader | 0x8000 partitions | 0x10000 app</code></pre>
+
+<p>The Ada runtime is <em>generated</em> on the first build and cached; you never
+build it by hand. The two host tools (<code>esp_elf2image</code> and
+<code>esp_flash</code>) are compiled once, also on the first build. That is why
+the first build is slow and every one after it is fast.</p>
+
+<h2>Ours, and what is vendored</h2>
+
+<p>The <strong>2nd-stage bootloader is this project's own</strong>, not the
+vendor's. It is built from <code>examples/common/bare/bootloader/</code> &mdash;
+Ada (<code>boot_main</code>, <code>boot_psram</code>, <code>boot_glue</code>)
+plus an assembly prologue and linker scripts &mdash; into its own
+<code>bootloader.bin</code>, flashed at offset <code>0x0</code>. It is a separate
+image, not something linked into your application.</p>
+
+<p>What <em>is</em> vendored sits in <code>examples/common/bare/vendor/</code>,
+originates from ESP-IDF v5.4.4, and is committed in-tree rather than fetched:
+the Xtensa support (context save/restore, the vector table, interrupt tables),
+compiled here from that IDF source and verified instruction-identical to IDF's
+own build; the linker scripts and mask-ROM symbol addresses; a trivial
+single-app partition table; and two genuine opaque blobs that cannot be built
+from this tree &mdash; <code>libxt_hal.a</code>, the Cadence/Tensilica Xtensa
+HAL, and <code>libgcc.a</code> for the 64-bit divide helpers.</p>
+
+<p class="note">Those vendored files are the source of truth here and need no
+ESP-IDF to build &mdash; nothing is required from an IDF install at build time.
+The <em>only</em> reason to go back to ESP-IDF is a maintainer re-vendoring
+against a different release.</p>
+
+<h2>Time and platform</h2>
+
+<p>Budget about <strong>15 minutes</strong>, most of it the one-time toolchain
+download. The commands below are shown for Linux (Ubuntu/Debian). macOS is
+similar but untested; on Windows, use WSL2.</p>
+    <nav class="pager">
+      <a class="prev" href="index.html"><span class="dir">&larr; Back</span><span class="name">Guide home</span></a>
+      <a class="next" href="02-toolchain.html"><span class="dir">Next &rarr;</span><span class="name">Installing the toolchain</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,104 +237,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="index.html">&larr; Guide home</a><a href="02-toolchain.html">Installing the toolchain &rarr;</a></nav>
-    <p class="eyebrow">Step 01 of 56</p>
-    <h1>What you need (and what you don't)</h1>
-    <p class="lede">One board, one USB cable, and one package manager. No ESP-IDF, no <code>idf.py</code>, no esptool, no Python anywhere in the build or flash path.</p>
-
-<p>Most ESP32 tutorials open by telling you to install a 400&nbsp;MB SDK. This
-one does not. The whole toolchain here is <strong>Alire</strong>, the Ada
-package manager, which fetches a cross-compiler for you. Everything else &mdash;
-packaging the image, writing it to flash, reading the console &mdash; is done by
-tools that live in this repository and are themselves written in Ada.</p>
-
-<h2>Hardware</h2>
-
-<ul>
-  <li>An <strong>ESP32-S3</strong> devkit, using its <strong>native USB</strong>
-      port &mdash; the one wired to the chip's built-in USB-Serial-JTAG
-      controller. On most boards it is labelled <code>USB</code>, and the
-      <em>other</em> one is labelled <code>UART</code>. Pick the native one: it
-      carries the console <em>and</em> the debugger over a single cable.</li>
-  <li>A <strong>data-carrying</strong> USB cable. A charge-only cable will
-      enumerate nothing and waste an hour of your life.</li>
-</ul>
-
-<p>That is the minimum. An LED and a resistor on GPIO0 make the first example
-visible, but the console output alone proves it works.</p>
-
-<h2>Software</h2>
-
-<ul>
-  <li><strong>Alire</strong> (<code>alr</code>) &mdash; fetches three toolchains:
-      the <code>gnat_xtensa_esp32_elf</code> cross-compiler for the chip, a
-      native <code>gnat_native</code> for the host tools, and
-      <code>gprbuild</code>.</li>
-  <li><strong>git</strong> &mdash; optional. You can unzip a release archive
-      instead (<a href="03-clone.html">step 3</a>); there are no submodules to
-      fetch either way.</li>
-  <li>A <strong>host C compiler</strong> &mdash; used exactly once, to build the
-      <code>xtensa-dynconfig</code> core-config plugin the toolchain needs.</li>
-</ul>
-
-<p class="note"><strong>What you do <em>not</em> install:</strong> ESP-IDF,
-<code>idf.py</code>, esptool, or Python. The build path uses none of them.
-(<code>esptool</code> remains an optional fallback if you happen to have it and
-prefer it &mdash; see <a href="07-build.html">what a build does</a>.)</p>
-
-<h2>The big picture</h2>
-
-<p>Two commands drive everything. Here is what they set in motion:</p>
-
-<pre><code>  your Ada code  ─┐
-  Ada RTS        ─┤  ./build.sh ─&gt; gprbuild (Alire xtensa GNAT) ─&gt; app_main.o
-  (generated)     │             ─&gt; link (bare boot + vendored Xtensa support)
-  bare boot (Ada) ┘             ─&gt; esp_elf2image (Ada)           ─&gt; app.bin
-                                ─&gt; our 2nd-stage bootloader      ─&gt; bootloader.bin
-                     ./flash.sh ─&gt; esp_flash (Ada, over USB ROM) ─&gt; board runs it
-                                   0x0 bootloader | 0x8000 partitions | 0x10000 app</code></pre>
-
-<p>The Ada runtime is <em>generated</em> on the first build and cached; you never
-build it by hand. The two host tools (<code>esp_elf2image</code> and
-<code>esp_flash</code>) are compiled once, also on the first build. That is why
-the first build is slow and every one after it is fast.</p>
-
-<h2>Ours, and what is vendored</h2>
-
-<p>The <strong>2nd-stage bootloader is this project's own</strong>, not the
-vendor's. It is built from <code>examples/common/bare/bootloader/</code> &mdash;
-Ada (<code>boot_main</code>, <code>boot_psram</code>, <code>boot_glue</code>)
-plus an assembly prologue and linker scripts &mdash; into its own
-<code>bootloader.bin</code>, flashed at offset <code>0x0</code>. It is a separate
-image, not something linked into your application.</p>
-
-<p>What <em>is</em> vendored sits in <code>examples/common/bare/vendor/</code>,
-originates from ESP-IDF v5.4.4, and is committed in-tree rather than fetched:
-the Xtensa support (context save/restore, the vector table, interrupt tables),
-compiled here from that IDF source and verified instruction-identical to IDF's
-own build; the linker scripts and mask-ROM symbol addresses; a trivial
-single-app partition table; and two genuine opaque blobs that cannot be built
-from this tree &mdash; <code>libxt_hal.a</code>, the Cadence/Tensilica Xtensa
-HAL, and <code>libgcc.a</code> for the 64-bit divide helpers.</p>
-
-<p class="note">Those vendored files are the source of truth here and need no
-ESP-IDF to build &mdash; nothing is required from an IDF install at build time.
-The <em>only</em> reason to go back to ESP-IDF is a maintainer re-vendoring
-against a different release.</p>
-
-<h2>Time and platform</h2>
-
-<p>Budget about <strong>15 minutes</strong>, most of it the one-time toolchain
-download. The commands below are shown for Linux (Ubuntu/Debian). macOS is
-similar but untested; on Windows, use WSL2.</p>
-    <nav class="pager">
-      <a class="prev" href="index.html"><span class="dir">&larr; Back</span><span class="name">Guide home</span></a>
-      <a class="next" href="02-toolchain.html"><span class="dir">Next &rarr;</span><span class="name">Installing the toolchain</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

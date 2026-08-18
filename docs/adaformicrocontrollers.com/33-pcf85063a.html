@@ -18,6 +18,77 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="32-sensors.html">&larr; IMU &amp; environment</a><a href="34-expanders.html">Port expanders &rarr;</a></nav>
+    <p class="eyebrow">Step 33 of 56</p>
+    <h1>PCF85063A: a clock that tells you when not to trust it</h1>
+    <p class="lede">BCD calendar registers, a programmable alarm, and one flag that answers the only question that matters after a power loss.</p>
+
+<h2>The typed calendar</h2>
+
+<p>A small fixed-address (<code>0x51</code>) real-time clock. The time is not a
+blob of BCD bytes in the API — every field is a constrained subtype, so an
+impossible date cannot be constructed:</p>
+
+<pre><code>subtype Year_Number   is Natural range 2000 .. 2099;
+subtype Month_Number  is Natural range 1 .. 12;
+subtype Day_Number    is Natural range 1 .. 31;
+subtype Hour_Number   is Natural range 0 .. 23;      --  24-hour mode only
+subtype Minute_Number is Natural range 0 .. 59;
+subtype Second_Number is Natural range 0 .. 59;
+
+type Weekday is (Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday);
+type Time is record ... end record;</code></pre>
+
+<p class="note">Day-of-week is worth knowing about: in the chip it is just a free
+0&nbsp;..&nbsp;6 counter that nothing validates against the date. The
+<code>Weekday</code> naming is a convention the driver applies, not something the
+hardware enforces — so the chip will happily tell you a Tuesday that isn't
+one if something wrote it wrong.</p>
+
+<h2>The flag that matters</h2>
+
+<pre><code>procedure Get_Time (Dev : Device; T : out Time;
+                    Valid : out Boolean; Result : out Status);</code></pre>
+
+<p class="warn"><strong><code>Valid</code> is the whole point of using an RTC
+chip.</strong> It reflects the oscillator-stop flag: <code>False</code> means
+power was lost and the time it just handed you is meaningless. A clock that
+returns a plausible-looking wrong time is worse than one that admits it does not
+know, so branch on <code>Valid</code> before believing <code>T</code> — that is
+the difference between resuming a schedule and corrupting a log.</p>
+
+<p><code>Set_Time</code> stops the clock around the write, as the datasheet
+requires, and clears the flag.</p>
+
+<h2>The rest</h2>
+
+<ul>
+  <li><strong>Alarm</strong> on second, minute, hour, day or weekday — any
+      subset — asserting an active-low open-drain INT line. Attach it with the
+      <code>.Interrupts</code> child, observing the
+      <a href="13-gpio.html">callback rules</a>: latch in the handler, do the
+      I2C read in a task.</li>
+  <li><strong><code>Stop_Clock</code></strong> halts the counters via
+      <code>Control_1.STOP</code> without changing the loaded time.</li>
+  <li><strong><code>Reset</code></strong> returns every register to its power-on
+      default, which also stops the clock.</li>
+</ul>
+
+<p>Reads use the auto-incrementing pointer, and the pointer survives the STOP
+between the two transactions — so a one-byte write followed by a separate read
+streams correctly without needing
+<a href="14-i2c.html">repeated START</a>. Up to 400&nbsp;kHz.</p>
+    <nav class="pager">
+      <a class="prev" href="32-sensors.html"><span class="dir">&larr; Previous</span><span class="name">IMU &amp; environment</span></a>
+      <a class="next" href="34-expanders.html"><span class="dir">Next &rarr;</span><span class="name">Port expanders</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,74 +207,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="32-sensors.html">&larr; IMU &amp; environment</a><a href="34-expanders.html">Port expanders &rarr;</a></nav>
-    <p class="eyebrow">Step 33 of 56</p>
-    <h1>PCF85063A: a clock that tells you when not to trust it</h1>
-    <p class="lede">BCD calendar registers, a programmable alarm, and one flag that answers the only question that matters after a power loss.</p>
-
-<h2>The typed calendar</h2>
-
-<p>A small fixed-address (<code>0x51</code>) real-time clock. The time is not a
-blob of BCD bytes in the API — every field is a constrained subtype, so an
-impossible date cannot be constructed:</p>
-
-<pre><code>subtype Year_Number   is Natural range 2000 .. 2099;
-subtype Month_Number  is Natural range 1 .. 12;
-subtype Day_Number    is Natural range 1 .. 31;
-subtype Hour_Number   is Natural range 0 .. 23;      --  24-hour mode only
-subtype Minute_Number is Natural range 0 .. 59;
-subtype Second_Number is Natural range 0 .. 59;
-
-type Weekday is (Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday);
-type Time is record ... end record;</code></pre>
-
-<p class="note">Day-of-week is worth knowing about: in the chip it is just a free
-0&nbsp;..&nbsp;6 counter that nothing validates against the date. The
-<code>Weekday</code> naming is a convention the driver applies, not something the
-hardware enforces — so the chip will happily tell you a Tuesday that isn't
-one if something wrote it wrong.</p>
-
-<h2>The flag that matters</h2>
-
-<pre><code>procedure Get_Time (Dev : Device; T : out Time;
-                    Valid : out Boolean; Result : out Status);</code></pre>
-
-<p class="warn"><strong><code>Valid</code> is the whole point of using an RTC
-chip.</strong> It reflects the oscillator-stop flag: <code>False</code> means
-power was lost and the time it just handed you is meaningless. A clock that
-returns a plausible-looking wrong time is worse than one that admits it does not
-know, so branch on <code>Valid</code> before believing <code>T</code> — that is
-the difference between resuming a schedule and corrupting a log.</p>
-
-<p><code>Set_Time</code> stops the clock around the write, as the datasheet
-requires, and clears the flag.</p>
-
-<h2>The rest</h2>
-
-<ul>
-  <li><strong>Alarm</strong> on second, minute, hour, day or weekday — any
-      subset — asserting an active-low open-drain INT line. Attach it with the
-      <code>.Interrupts</code> child, observing the
-      <a href="13-gpio.html">callback rules</a>: latch in the handler, do the
-      I2C read in a task.</li>
-  <li><strong><code>Stop_Clock</code></strong> halts the counters via
-      <code>Control_1.STOP</code> without changing the loaded time.</li>
-  <li><strong><code>Reset</code></strong> returns every register to its power-on
-      default, which also stops the clock.</li>
-</ul>
-
-<p>Reads use the auto-incrementing pointer, and the pointer survives the STOP
-between the two transactions — so a one-byte write followed by a separate read
-streams correctly without needing
-<a href="14-i2c.html">repeated START</a>. Up to 400&nbsp;kHz.</p>
-    <nav class="pager">
-      <a class="prev" href="32-sensors.html"><span class="dir">&larr; Previous</span><span class="name">IMU &amp; environment</span></a>
-      <a class="next" href="34-expanders.html"><span class="dir">Next &rarr;</span><span class="name">Port expanders</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

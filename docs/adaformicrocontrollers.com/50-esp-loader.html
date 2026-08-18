@@ -18,6 +18,82 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="49-console-fonts.html">&larr; Console, text &amp; fonts</a><a href="51-simd.html">SIMD (PIE) &rarr;</a></nav>
+    <p class="eyebrow">Step 50 of 56</p>
+    <h1>Esp_Loader: your board as the programmer</h1>
+    <p class="lede">The ESP32 serial ROM protocol spoken as the <em>host</em>, so a jig or a product can flash another ESP32 &mdash; and none of them should have to run Python.</p>
+
+<h2>The device-side twin of esptool</h2>
+
+<p>This is the same protocol the SDK's own <code>espflash</code> host tool speaks
+from a PC (<a href="07-build.html">step 7</a>), implemented so that <em>the board
+itself</em> is the programmer. A production jig, a field programmer, or a product
+that reflashes its own daughterboard all need exactly this, and none of them
+should have to run Python.</p>
+
+<p>Every exchange is a SLIP frame (<code>0xC0</code> delimited,
+<code>0xDB</code> escaped) carrying a command and payload; the target answers
+with the same opcode and a status pair.</p>
+
+<p class="note">Only the ROM loader is spoken &mdash; no downloadable stub &mdash;
+so there is no compression and no stub-only command. That costs transfer time and
+nothing else: raise the rate with <code>Set_Baud</code> and a megabyte moves in a
+few seconds.</p>
+
+<h2>Streaming, so a megabyte costs a kilobyte</h2>
+
+<p><code>Begin_Image</code> declares the length, <code>Write</code> takes whatever
+chunks the source produces, and full 1&nbsp;KB blocks go out as they fill.
+Flashing a megabyte therefore costs a kilobyte of RAM &mdash; and a truncated
+source is an <em>error</em> rather than a corrupt target, because the declared
+length is checked against what arrived.</p>
+
+<h2>Knowing what you are talking to</h2>
+
+<p class="warn"><strong>The ROM protocol is not uniform across the family, and
+guessing wrong corrupts flash rather than failing cleanly.</strong> The original
+ESP32 ends every reply with four status bytes instead of two; the ESP32 and
+ESP8266 take a shorter <code>FLASH_BEGIN</code> payload; the ESP8266 has no
+<code>SPI_ATTACH</code> at all, plus a bug in how it sizes an erase.</p>
+
+<p>So <code>Connect</code> identifies the target first &mdash; via
+<code>GET_SECURITY_INFO</code> where the chip supports it (S3 and later), and the
+magic register otherwise. A chip newer than the table still connects, as
+<code>Unknown</code>, driven with the modern defaults.</p>
+
+<h2>Pass-through: the auto-reset circuit in software</h2>
+
+<p><code>Esp_Loader.Auto_Reset</code> is the circuit every ESP dev board has,
+implemented in software. When a board sits between a PC and a target as a
+USB-serial bridge, esptool on the PC expects to reach the target's ROM loader by
+wiggling DTR and RTS &mdash; this makes that work.</p>
+
+<p class="note">It reproduces the real circuit's <strong>cross-coupling</strong>,
+so a terminal emulator asserting both lines on open does not reset the target,
+and it emulates the capacitor so esptool's <code>ClassicReset</code> (which moves
+the lines one at a time) works regardless of what the target board has on its EN
+pin. Those two details are the difference between "usually works" and "works".</p>
+
+<p><code>Serial_Link</code> is the ready-made transport over a UART and two
+GPIOs, and <a href="27-crypto.html">MD5</a> is here for
+<code>SPI_FLASH_MD5</code>: the target hashes what its flash actually holds and
+you compare, so "programmed OK" means something.</p>
+
+<p class="warn">Host-verified only, against a simulated ROM that validates every
+frame and impersonates each chip family in turn (with the per-chip handling
+deliberately broken three ways to prove the checks bite). The real ROM's timing
+still wants a target board on a real UART.</p>
+    <nav class="pager">
+      <a class="prev" href="49-console-fonts.html"><span class="dir">&larr; Previous</span><span class="name">Console, text &amp; fonts</span></a>
+      <a class="next" href="51-simd.html"><span class="dir">Next &rarr;</span><span class="name">SIMD (PIE)</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,79 +212,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="49-console-fonts.html">&larr; Console, text &amp; fonts</a><a href="51-simd.html">SIMD (PIE) &rarr;</a></nav>
-    <p class="eyebrow">Step 50 of 56</p>
-    <h1>Esp_Loader: your board as the programmer</h1>
-    <p class="lede">The ESP32 serial ROM protocol spoken as the <em>host</em>, so a jig or a product can flash another ESP32 &mdash; and none of them should have to run Python.</p>
-
-<h2>The device-side twin of esptool</h2>
-
-<p>This is the same protocol the SDK's own <code>espflash</code> host tool speaks
-from a PC (<a href="07-build.html">step 7</a>), implemented so that <em>the board
-itself</em> is the programmer. A production jig, a field programmer, or a product
-that reflashes its own daughterboard all need exactly this, and none of them
-should have to run Python.</p>
-
-<p>Every exchange is a SLIP frame (<code>0xC0</code> delimited,
-<code>0xDB</code> escaped) carrying a command and payload; the target answers
-with the same opcode and a status pair.</p>
-
-<p class="note">Only the ROM loader is spoken &mdash; no downloadable stub &mdash;
-so there is no compression and no stub-only command. That costs transfer time and
-nothing else: raise the rate with <code>Set_Baud</code> and a megabyte moves in a
-few seconds.</p>
-
-<h2>Streaming, so a megabyte costs a kilobyte</h2>
-
-<p><code>Begin_Image</code> declares the length, <code>Write</code> takes whatever
-chunks the source produces, and full 1&nbsp;KB blocks go out as they fill.
-Flashing a megabyte therefore costs a kilobyte of RAM &mdash; and a truncated
-source is an <em>error</em> rather than a corrupt target, because the declared
-length is checked against what arrived.</p>
-
-<h2>Knowing what you are talking to</h2>
-
-<p class="warn"><strong>The ROM protocol is not uniform across the family, and
-guessing wrong corrupts flash rather than failing cleanly.</strong> The original
-ESP32 ends every reply with four status bytes instead of two; the ESP32 and
-ESP8266 take a shorter <code>FLASH_BEGIN</code> payload; the ESP8266 has no
-<code>SPI_ATTACH</code> at all, plus a bug in how it sizes an erase.</p>
-
-<p>So <code>Connect</code> identifies the target first &mdash; via
-<code>GET_SECURITY_INFO</code> where the chip supports it (S3 and later), and the
-magic register otherwise. A chip newer than the table still connects, as
-<code>Unknown</code>, driven with the modern defaults.</p>
-
-<h2>Pass-through: the auto-reset circuit in software</h2>
-
-<p><code>Esp_Loader.Auto_Reset</code> is the circuit every ESP dev board has,
-implemented in software. When a board sits between a PC and a target as a
-USB-serial bridge, esptool on the PC expects to reach the target's ROM loader by
-wiggling DTR and RTS &mdash; this makes that work.</p>
-
-<p class="note">It reproduces the real circuit's <strong>cross-coupling</strong>,
-so a terminal emulator asserting both lines on open does not reset the target,
-and it emulates the capacitor so esptool's <code>ClassicReset</code> (which moves
-the lines one at a time) works regardless of what the target board has on its EN
-pin. Those two details are the difference between "usually works" and "works".</p>
-
-<p><code>Serial_Link</code> is the ready-made transport over a UART and two
-GPIOs, and <a href="27-crypto.html">MD5</a> is here for
-<code>SPI_FLASH_MD5</code>: the target hashes what its flash actually holds and
-you compare, so "programmed OK" means something.</p>
-
-<p class="warn">Host-verified only, against a simulated ROM that validates every
-frame and impersonates each chip family in turn (with the per-chip handling
-deliberately broken three ways to prove the checks bite). The real ROM's timing
-still wants a target board on a real UART.</p>
-    <nav class="pager">
-      <a class="prev" href="49-console-fonts.html"><span class="dir">&larr; Previous</span><span class="name">Console, text &amp; fonts</span></a>
-      <a class="next" href="51-simd.html"><span class="dir">Next &rarr;</span><span class="name">SIMD (PIE)</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

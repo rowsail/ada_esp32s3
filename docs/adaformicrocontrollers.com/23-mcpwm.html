@@ -18,6 +18,99 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="22-ledc-sdm.html">&larr; LEDC &amp; sigma-delta</a><a href="24-timers-pcnt.html">Timers &amp; pulse counting &rarr;</a></nav>
+    <p class="eyebrow">Step 23 of 56</p>
+    <h1>MCPWM: PWM that can shut itself down</h1>
+    <p class="lede">Complementary outputs with dead-time so a half-bridge is never shorted, a chopper carrier, and a fault input that forces the pins safe in hardware &mdash; without waiting for your code.</p>
+
+<h2>What makes it different from LEDC</h2>
+
+<p>Two units, each with three independent generator channels and three capture
+channels. A generator channel is one timer plus one operator producing an
+edge-aligned PWM on output A: high at the start of each period, low when the
+up-counting timer reaches the duty comparator.</p>
+
+<pre><code>type MCPWM_Unit    is (MCPWM0, MCPWM1);
+type Channel_Index is (Ch0, Ch1, Ch2);
+
+procedure Claim (C : in out Channel; Unit : MCPWM_Unit; Index : Channel_Index);
+procedure Configure_Channel (...; Freq : ...; Complement_Pin : ... );  --  ~10 Hz .. 10 MHz
+procedure Start (C : Channel);
+procedure Stop  (C : Channel);
+procedure Set_Duty (C : Channel; Percent : Duty_Percent);</code></pre>
+
+<p><code>Set_Duty</code> is a single atomic register write. <code>Stop</code>
+halts the timer and the output <em>stays in its current state</em> &mdash; which
+is not necessarily the safe state, so think about which level your hardware wants
+before stopping a running bridge.</p>
+
+<h2>Complementary output and dead-time</h2>
+
+<p>Pass <code>Complement_Pin</code> and the channel drives a half-bridge or
+H-bridge pair: the A output plus an inverted B output from the same PWM, with
+programmable <strong>dead-time</strong> inserted between their edges so the two
+are never high together.</p>
+
+<p class="note">That dead-time is the whole reason this peripheral exists. In a
+half-bridge, both transistors conducting at once is a direct short across the
+supply &mdash; "shoot-through" &mdash; which destroys the bridge in microseconds.
+Software cannot be trusted to sequence the edges; the hardware inserts the gap.</p>
+
+<h2>Carrier modulation</h2>
+
+<pre><code>subtype Carrier_Prescale is Natural range 0 .. 15;
+subtype Carrier_Duty     is Natural range 1 .. 7;
+subtype Carrier_Pulse    is Natural range 0 .. 15;
+
+procedure Set_Carrier (...);</code></pre>
+
+<p>Chops the PWM output with a high-frequency carrier. This is what drives a
+gate-drive transformer (which cannot pass DC) or an IR emitter that expects a
+modulated burst.</p>
+
+<h2>Fault inputs: the safety feature</h2>
+
+<pre><code>type Fault_Input is (Fault0, Fault1, Fault2);
+type Fault_Mode  is (One_Shot, Cycle_By_Cycle);
+type Trip_Action is (No_Change, Force_Low, Force_High);
+
+procedure Configure_Fault  (Input : ...; Pin : ...; Active_High : ...);
+procedure Protect_Channel  (C : ...; Input : Fault_Input; Action : Trip_Action);</code></pre>
+
+<p>A fault pin &mdash; an over-current comparator, a driver's fault flag &mdash;
+forces the channel's A and B outputs to a chosen state <strong>in
+hardware</strong>. No interrupt latency, no scheduler, no chance that your task
+was busy elsewhere.</p>
+
+<table>
+  <thead><tr><th>Mode</th><th>Behaviour</th></tr></thead>
+  <tbody>
+    <tr><td><code>Cycle_By_Cycle</code></td>
+        <td>The output is forced while the fault is asserted and resumes on its
+            own once it clears. For recoverable conditions such as a current
+            limit.</td></tr>
+    <tr><td><code>One_Shot</code></td>
+        <td>The trip <em>latches</em>. The outputs stay forced until you
+            explicitly clear it, and clearing only re-enables them if the fault
+            has actually gone. For conditions that should require a deliberate
+            decision to restart.</td></tr>
+  </tbody>
+</table>
+
+<p>Set <code>Trip_Action</code> to the level that is safe for <em>your</em>
+hardware &mdash; <code>Force_Low</code> is right for a low-side switch, but not
+universally.</p>
+    <nav class="pager">
+      <a class="prev" href="22-ledc-sdm.html"><span class="dir">&larr; Previous</span><span class="name">LEDC &amp; sigma-delta</span></a>
+      <a class="next" href="24-timers-pcnt.html"><span class="dir">Next &rarr;</span><span class="name">Timers &amp; pulse counting</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,96 +229,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="22-ledc-sdm.html">&larr; LEDC &amp; sigma-delta</a><a href="24-timers-pcnt.html">Timers &amp; pulse counting &rarr;</a></nav>
-    <p class="eyebrow">Step 23 of 56</p>
-    <h1>MCPWM: PWM that can shut itself down</h1>
-    <p class="lede">Complementary outputs with dead-time so a half-bridge is never shorted, a chopper carrier, and a fault input that forces the pins safe in hardware &mdash; without waiting for your code.</p>
-
-<h2>What makes it different from LEDC</h2>
-
-<p>Two units, each with three independent generator channels and three capture
-channels. A generator channel is one timer plus one operator producing an
-edge-aligned PWM on output A: high at the start of each period, low when the
-up-counting timer reaches the duty comparator.</p>
-
-<pre><code>type MCPWM_Unit    is (MCPWM0, MCPWM1);
-type Channel_Index is (Ch0, Ch1, Ch2);
-
-procedure Claim (C : in out Channel; Unit : MCPWM_Unit; Index : Channel_Index);
-procedure Configure_Channel (...; Freq : ...; Complement_Pin : ... );  --  ~10 Hz .. 10 MHz
-procedure Start (C : Channel);
-procedure Stop  (C : Channel);
-procedure Set_Duty (C : Channel; Percent : Duty_Percent);</code></pre>
-
-<p><code>Set_Duty</code> is a single atomic register write. <code>Stop</code>
-halts the timer and the output <em>stays in its current state</em> &mdash; which
-is not necessarily the safe state, so think about which level your hardware wants
-before stopping a running bridge.</p>
-
-<h2>Complementary output and dead-time</h2>
-
-<p>Pass <code>Complement_Pin</code> and the channel drives a half-bridge or
-H-bridge pair: the A output plus an inverted B output from the same PWM, with
-programmable <strong>dead-time</strong> inserted between their edges so the two
-are never high together.</p>
-
-<p class="note">That dead-time is the whole reason this peripheral exists. In a
-half-bridge, both transistors conducting at once is a direct short across the
-supply &mdash; "shoot-through" &mdash; which destroys the bridge in microseconds.
-Software cannot be trusted to sequence the edges; the hardware inserts the gap.</p>
-
-<h2>Carrier modulation</h2>
-
-<pre><code>subtype Carrier_Prescale is Natural range 0 .. 15;
-subtype Carrier_Duty     is Natural range 1 .. 7;
-subtype Carrier_Pulse    is Natural range 0 .. 15;
-
-procedure Set_Carrier (...);</code></pre>
-
-<p>Chops the PWM output with a high-frequency carrier. This is what drives a
-gate-drive transformer (which cannot pass DC) or an IR emitter that expects a
-modulated burst.</p>
-
-<h2>Fault inputs: the safety feature</h2>
-
-<pre><code>type Fault_Input is (Fault0, Fault1, Fault2);
-type Fault_Mode  is (One_Shot, Cycle_By_Cycle);
-type Trip_Action is (No_Change, Force_Low, Force_High);
-
-procedure Configure_Fault  (Input : ...; Pin : ...; Active_High : ...);
-procedure Protect_Channel  (C : ...; Input : Fault_Input; Action : Trip_Action);</code></pre>
-
-<p>A fault pin &mdash; an over-current comparator, a driver's fault flag &mdash;
-forces the channel's A and B outputs to a chosen state <strong>in
-hardware</strong>. No interrupt latency, no scheduler, no chance that your task
-was busy elsewhere.</p>
-
-<table>
-  <thead><tr><th>Mode</th><th>Behaviour</th></tr></thead>
-  <tbody>
-    <tr><td><code>Cycle_By_Cycle</code></td>
-        <td>The output is forced while the fault is asserted and resumes on its
-            own once it clears. For recoverable conditions such as a current
-            limit.</td></tr>
-    <tr><td><code>One_Shot</code></td>
-        <td>The trip <em>latches</em>. The outputs stay forced until you
-            explicitly clear it, and clearing only re-enables them if the fault
-            has actually gone. For conditions that should require a deliberate
-            decision to restart.</td></tr>
-  </tbody>
-</table>
-
-<p>Set <code>Trip_Action</code> to the level that is safe for <em>your</em>
-hardware &mdash; <code>Force_Low</code> is right for a low-side switch, but not
-universally.</p>
-    <nav class="pager">
-      <a class="prev" href="22-ledc-sdm.html"><span class="dir">&larr; Previous</span><span class="name">LEDC &amp; sigma-delta</span></a>
-      <a class="next" href="24-timers-pcnt.html"><span class="dir">Next &rarr;</span><span class="name">Timers &amp; pulse counting</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

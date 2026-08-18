@@ -18,6 +18,91 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="31-es8311.html">&larr; ES8311 codec</a><a href="33-pcf85063a.html">PCF85063A RTC &rarr;</a></nav>
+    <p class="eyebrow">Step 32 of 56</p>
+    <h1>Sensors: the QMI8658C IMU and SHT41</h1>
+    <p class="lede">One register-mapped device and one command-based device &mdash; the two shapes almost every I2C sensor takes, and how each reports that its reading is trustworthy.</p>
+
+<h2>The shared shape</h2>
+
+<p>Every I2C device driver here follows the same pattern, and it is worth stating
+once because it repeats across the rest of these pages:</p>
+
+<p class="note"><strong>The driver hard-codes no board wiring.</strong> You tell
+<code>Setup</code> which host, which SDA/SCL pins, optionally which INT pin, and
+the address; the <code>Device</code> remembers them. Each operation then opens a
+<em>short-lived</em> <a href="14-i2c.html">I2C session</a> for one complete
+transaction and lets it release the host on scope exit. So devices share a bus
+safely, and a fault mid-transaction cannot leak the lock. A <code>Device</code>
+is limited — it owns the wiring it was set up with and cannot be copied.</p>
+
+<h2>QMI8658C: a register-mapped IMU</h2>
+
+<p>A 6-axis part — 3-axis accelerometer plus 3-axis gyroscope. SA0 selects
+address <code>0x6A</code> or <code>0x6B</code>.</p>
+
+<pre><code>type Accel_Range is (Range_2G, Range_4G, Range_8G, Range_16G);
+type Gyro_Range  is ...;
+type Output_Rate is ...;
+type Axes        is record ... end record;
+type Status      is (OK, Bus_Error);
+
+procedure Read_Accelerometer (Dev : Device; A : out Axes; Result : out Status);
+procedure Read_Gyroscope     (Dev : Device; G : out Axes; Result : out Status);
+procedure Read_Temperature   (Dev : Device; Raw : out Interfaces.Integer_16; Result : out Status);
+procedure Data_Ready (Dev : Device; Accel, Gyro : out Boolean; Result : out Status);</code></pre>
+
+<p>Reads use the chip's auto-incrementing address pointer, set by
+<code>Configure</code> via <code>CTRL1.ADDR_AI</code>: a one-byte write sets the
+pointer and the following read streams from it. The driver runs the device
+little-endian (<code>CTRL1.BE = 0</code>).</p>
+
+<p class="warn"><strong>Raw counts are not physical units, and the scale depends
+on the range you configured.</strong> That is what these two are for:</p>
+
+<pre><code>function Accel_LSB_Per_G   (Dev : Device) return Positive;
+function Gyro_LSB_Per_DPS  (Dev : Device) return Positive;</code></pre>
+
+<p>Ask the device rather than hard-coding a divisor, and changing
+<code>Accel_Range</code> later cannot silently scale every reading wrong. Both are
+SPARK-mode functions.</p>
+
+<h2>SHT41: a command-based sensor</h2>
+
+<p class="note"><strong>The SHT4x has no registers at all.</strong> A measurement
+is: write a one-byte command, wait the conversion time, read six bytes. That is a
+genuinely different protocol shape from the IMU, and it is why the driver exposes
+<code>Measure</code> rather than register accessors.</p>
+
+<pre><code>type Precision   is (Low, Medium, High);
+type Measurement is record ... end record;
+type Status      is (OK, Bus_Error, CRC_Error);
+
+procedure Measure (...);
+procedure Read_Serial_Number (...);
+procedure Reset (Dev : Device; Result : out Status);</code></pre>
+
+<p><code>Precision</code> trades conversion time against noise. The six returned
+bytes are two CRC-8-protected words, and the driver checks them — hence the third
+<code>Status</code> value:</p>
+
+<p class="warn"><code>CRC_Error</code> is <em>not</em> <code>Bus_Error</code>. The
+device ACKed and returned data, but the checksum failed — so the wiring is
+probably fine and you are looking at interference, an over-long cable, or too
+fast a bus. Treat it as "retry", not "device missing".</p>
+
+<p>There is no interrupt line: the sensor is read on request.</p>
+    <nav class="pager">
+      <a class="prev" href="31-es8311.html"><span class="dir">&larr; Previous</span><span class="name">ES8311 codec</span></a>
+      <a class="next" href="33-pcf85063a.html"><span class="dir">Next &rarr;</span><span class="name">PCF85063A RTC</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,88 +221,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="31-es8311.html">&larr; ES8311 codec</a><a href="33-pcf85063a.html">PCF85063A RTC &rarr;</a></nav>
-    <p class="eyebrow">Step 32 of 56</p>
-    <h1>Sensors: the QMI8658C IMU and SHT41</h1>
-    <p class="lede">One register-mapped device and one command-based device &mdash; the two shapes almost every I2C sensor takes, and how each reports that its reading is trustworthy.</p>
-
-<h2>The shared shape</h2>
-
-<p>Every I2C device driver here follows the same pattern, and it is worth stating
-once because it repeats across the rest of these pages:</p>
-
-<p class="note"><strong>The driver hard-codes no board wiring.</strong> You tell
-<code>Setup</code> which host, which SDA/SCL pins, optionally which INT pin, and
-the address; the <code>Device</code> remembers them. Each operation then opens a
-<em>short-lived</em> <a href="14-i2c.html">I2C session</a> for one complete
-transaction and lets it release the host on scope exit. So devices share a bus
-safely, and a fault mid-transaction cannot leak the lock. A <code>Device</code>
-is limited — it owns the wiring it was set up with and cannot be copied.</p>
-
-<h2>QMI8658C: a register-mapped IMU</h2>
-
-<p>A 6-axis part — 3-axis accelerometer plus 3-axis gyroscope. SA0 selects
-address <code>0x6A</code> or <code>0x6B</code>.</p>
-
-<pre><code>type Accel_Range is (Range_2G, Range_4G, Range_8G, Range_16G);
-type Gyro_Range  is ...;
-type Output_Rate is ...;
-type Axes        is record ... end record;
-type Status      is (OK, Bus_Error);
-
-procedure Read_Accelerometer (Dev : Device; A : out Axes; Result : out Status);
-procedure Read_Gyroscope     (Dev : Device; G : out Axes; Result : out Status);
-procedure Read_Temperature   (Dev : Device; Raw : out Interfaces.Integer_16; Result : out Status);
-procedure Data_Ready (Dev : Device; Accel, Gyro : out Boolean; Result : out Status);</code></pre>
-
-<p>Reads use the chip's auto-incrementing address pointer, set by
-<code>Configure</code> via <code>CTRL1.ADDR_AI</code>: a one-byte write sets the
-pointer and the following read streams from it. The driver runs the device
-little-endian (<code>CTRL1.BE = 0</code>).</p>
-
-<p class="warn"><strong>Raw counts are not physical units, and the scale depends
-on the range you configured.</strong> That is what these two are for:</p>
-
-<pre><code>function Accel_LSB_Per_G   (Dev : Device) return Positive;
-function Gyro_LSB_Per_DPS  (Dev : Device) return Positive;</code></pre>
-
-<p>Ask the device rather than hard-coding a divisor, and changing
-<code>Accel_Range</code> later cannot silently scale every reading wrong. Both are
-SPARK-mode functions.</p>
-
-<h2>SHT41: a command-based sensor</h2>
-
-<p class="note"><strong>The SHT4x has no registers at all.</strong> A measurement
-is: write a one-byte command, wait the conversion time, read six bytes. That is a
-genuinely different protocol shape from the IMU, and it is why the driver exposes
-<code>Measure</code> rather than register accessors.</p>
-
-<pre><code>type Precision   is (Low, Medium, High);
-type Measurement is record ... end record;
-type Status      is (OK, Bus_Error, CRC_Error);
-
-procedure Measure (...);
-procedure Read_Serial_Number (...);
-procedure Reset (Dev : Device; Result : out Status);</code></pre>
-
-<p><code>Precision</code> trades conversion time against noise. The six returned
-bytes are two CRC-8-protected words, and the driver checks them — hence the third
-<code>Status</code> value:</p>
-
-<p class="warn"><code>CRC_Error</code> is <em>not</em> <code>Bus_Error</code>. The
-device ACKed and returned data, but the checksum failed — so the wiring is
-probably fine and you are looking at interference, an over-long cable, or too
-fast a bus. Treat it as "retry", not "device missing".</p>
-
-<p>There is no interrupt line: the sensor is read on request.</p>
-    <nav class="pager">
-      <a class="prev" href="31-es8311.html"><span class="dir">&larr; Previous</span><span class="name">ES8311 codec</span></a>
-      <a class="next" href="33-pcf85063a.html"><span class="dir">Next &rarr;</span><span class="name">PCF85063A RTC</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

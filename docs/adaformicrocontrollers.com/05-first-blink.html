@@ -18,6 +18,118 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="04-board.html">&larr; Board and serial port</a><a href="06-anatomy.html">Reset to Main &rarr;</a></nav>
+    <p class="eyebrow">Step 05 of 56</p>
+    <h1>Your first blink</h1>
+    <p class="lede">One command builds a pure-Ada GPIO driver, packages a flash image, writes it over the chip's ROM bootloader, resets the board, and streams the console.</p>
+
+<h2>Run it</h2>
+
+<pre><code>./x list                                       # every example + its profile
+./x run esp32s3_gpio0_blink -p /dev/ttyACM0    # build + flash + monitor</code></pre>
+
+<p>The <code>esp32s3_</code> prefix is optional &mdash; <code>./x run
+gpio0_blink</code> does the same thing. If <code>ESPPORT</code> is set, drop the
+<code>-p</code> too.</p>
+
+<p class="warn"><strong>The first build is slow.</strong> It builds the
+<code>xtensa-dynconfig</code> plugin, generates the Ada runtime for the chosen
+profile, and compiles the two host tools. Several minutes is normal. Every build
+after that is incremental and takes seconds.</p>
+
+<h2>What you should see</h2>
+
+<pre><code>[C] GPIO0 blink (bare Ada driver, no FreeRTOS)
+[gpio0] HIGH
+[gpio0] low
+[gpio0] HIGH
+...</code></pre>
+
+<p>That is a library-level Ada task toggling GPIO0 every 250&nbsp;ms &mdash; a
+2&nbsp;Hz square wave on the pad &mdash; and printing each transition over the
+USB-Serial-JTAG console. Wire an LED and a resistor from GPIO0 to GND, or put a
+scope on the pin, to see it in the physical world.</p>
+
+<p>There is no FreeRTOS underneath this. Its scheduler is not even linked. The
+timing comes from the Ada runtime's own clock tick, and <code>delay until</code>
+is served by the board-support layer's alarm &mdash; which is why the period is
+exact rather than drifting.</p>
+
+<h2>The verbs, separately</h2>
+
+<p><code>./x run</code> is build + flash + monitor in one. When you want the
+pieces:</p>
+
+<pre><code>./x build   esp32s3_gpio0_blink            # cross-compile + link + package app.bin
+./x flash   esp32s3_gpio0_blink -p /dev/ttyACM0
+./x monitor -p /dev/ttyACM0                # just the serial console (115200)
+./x clean   esp32s3_gpio0_blink</code></pre>
+
+<p>And a handful that are easy to miss but worth knowing early:</p>
+
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>./x setup-device</code></td>
+        <td><strong>One-time</strong>, with sudo: installs the udev rule and
+            group membership for USB access &mdash; the scripted version of
+            <a href="04-board.html">step 4</a>'s permissions.</td></tr>
+    <tr><td><code>./x check-device [-p PORT]</code></td>
+        <td>Reports whether the board's port is actually accessible. Run this
+            before doubting your build.</td></tr>
+    <tr><td><code>./x stack &lt;example&gt; [--top N] [--run]</code></td>
+        <td>Static stack analysis, per frame &mdash; the counterpart to the
+            measured figure in <a href="52-stack-usage.html">step 51</a>.</td></tr>
+    <tr><td><code>./x mem &lt;example&gt;</code></td>
+        <td>Memory footprint: section sizes and bounds.</td></tr>
+    <tr><td><code>./x docs</code></td>
+        <td>Builds and runs the HAL reference generator, producing
+            <code>docs/HAL_Reference.pdf</code> from the driver specs.</td></tr>
+    <tr><td><code>./x install-ide</code> / <code>build-ide</code></td>
+        <td>Install the committed VS Code extension (no Node needed); the
+            <code>build-</code> form rebuilds the <code>.vsix</code> and is for
+            maintainers.</td></tr>
+  </tbody>
+</table>
+
+<p>Each example is also buildable from its own directory with the
+<code>./build.sh</code> and <code>./flash.sh</code> shims, if you prefer working
+inside one:</p>
+
+<pre><code>cd examples/esp32s3_gpio0_blink
+./build.sh
+./flash.sh /dev/ttyACM0                    # defaults to /dev/ttyACM0</code></pre>
+
+<h2>Other examples worth running next</h2>
+
+<table>
+  <thead><tr><th>Example</th><th>What it shows</th></tr></thead>
+  <tbody>
+    <tr><td><code>esp32s3_heartbeat</code></td><td>Single-core heartbeat, <code>[ADA] N</code> at 1&nbsp;Hz</td></tr>
+    <tr><td><code>esp32s3_psram</code></td><td>A 1&nbsp;MB static array placed in external PSRAM</td></tr>
+    <tr><td><code>esp32s3_smp</code></td><td>Cross-core mailbox over a protected-object entry</td></tr>
+    <tr><td><code>esp32s3_gdma_copy</code></td><td>GDMA memory-to-memory with an RAII channel handle</td></tr>
+    <tr><td><code>esp32s3_crypto</code></td><td>Hardware SHA and AES checked against FIPS vectors</td></tr>
+    <tr><td><code>esp32s3_embedded</code></td><td>The <code>embedded</code> profile: exceptions, finalization, dispatching</td></tr>
+    <tr><td><code>esp32s3_full_tasking</code></td><td>The <code>full</code> profile: dynamic tasks, <code>abort</code>, rendezvous</td></tr>
+  </tbody>
+</table>
+
+<p>The examples are written to be <em>read</em>. Each opens with a header saying
+what it demonstrates, what the console should print, and what hardware (if any)
+it needs; the magic numbers are named and the reasoning is in the code. Once
+you have one running, the source is the next thing to look at.</p>
+    <nav class="pager">
+      <a class="prev" href="04-board.html"><span class="dir">&larr; Previous</span><span class="name">Board and serial port</span></a>
+      <a class="next" href="06-anatomy.html"><span class="dir">Next &rarr;</span><span class="name">Reset to Main</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,115 +248,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="04-board.html">&larr; Board and serial port</a><a href="06-anatomy.html">Reset to Main &rarr;</a></nav>
-    <p class="eyebrow">Step 05 of 56</p>
-    <h1>Your first blink</h1>
-    <p class="lede">One command builds a pure-Ada GPIO driver, packages a flash image, writes it over the chip's ROM bootloader, resets the board, and streams the console.</p>
-
-<h2>Run it</h2>
-
-<pre><code>./x list                                       # every example + its profile
-./x run esp32s3_gpio0_blink -p /dev/ttyACM0    # build + flash + monitor</code></pre>
-
-<p>The <code>esp32s3_</code> prefix is optional &mdash; <code>./x run
-gpio0_blink</code> does the same thing. If <code>ESPPORT</code> is set, drop the
-<code>-p</code> too.</p>
-
-<p class="warn"><strong>The first build is slow.</strong> It builds the
-<code>xtensa-dynconfig</code> plugin, generates the Ada runtime for the chosen
-profile, and compiles the two host tools. Several minutes is normal. Every build
-after that is incremental and takes seconds.</p>
-
-<h2>What you should see</h2>
-
-<pre><code>[C] GPIO0 blink (bare Ada driver, no FreeRTOS)
-[gpio0] HIGH
-[gpio0] low
-[gpio0] HIGH
-...</code></pre>
-
-<p>That is a library-level Ada task toggling GPIO0 every 250&nbsp;ms &mdash; a
-2&nbsp;Hz square wave on the pad &mdash; and printing each transition over the
-USB-Serial-JTAG console. Wire an LED and a resistor from GPIO0 to GND, or put a
-scope on the pin, to see it in the physical world.</p>
-
-<p>There is no FreeRTOS underneath this. Its scheduler is not even linked. The
-timing comes from the Ada runtime's own clock tick, and <code>delay until</code>
-is served by the board-support layer's alarm &mdash; which is why the period is
-exact rather than drifting.</p>
-
-<h2>The verbs, separately</h2>
-
-<p><code>./x run</code> is build + flash + monitor in one. When you want the
-pieces:</p>
-
-<pre><code>./x build   esp32s3_gpio0_blink            # cross-compile + link + package app.bin
-./x flash   esp32s3_gpio0_blink -p /dev/ttyACM0
-./x monitor -p /dev/ttyACM0                # just the serial console (115200)
-./x clean   esp32s3_gpio0_blink</code></pre>
-
-<p>And a handful that are easy to miss but worth knowing early:</p>
-
-<table>
-  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
-  <tbody>
-    <tr><td><code>./x setup-device</code></td>
-        <td><strong>One-time</strong>, with sudo: installs the udev rule and
-            group membership for USB access &mdash; the scripted version of
-            <a href="04-board.html">step 4</a>'s permissions.</td></tr>
-    <tr><td><code>./x check-device [-p PORT]</code></td>
-        <td>Reports whether the board's port is actually accessible. Run this
-            before doubting your build.</td></tr>
-    <tr><td><code>./x stack &lt;example&gt; [--top N] [--run]</code></td>
-        <td>Static stack analysis, per frame &mdash; the counterpart to the
-            measured figure in <a href="52-stack-usage.html">step 51</a>.</td></tr>
-    <tr><td><code>./x mem &lt;example&gt;</code></td>
-        <td>Memory footprint: section sizes and bounds.</td></tr>
-    <tr><td><code>./x docs</code></td>
-        <td>Builds and runs the HAL reference generator, producing
-            <code>docs/HAL_Reference.pdf</code> from the driver specs.</td></tr>
-    <tr><td><code>./x install-ide</code> / <code>build-ide</code></td>
-        <td>Install the committed VS Code extension (no Node needed); the
-            <code>build-</code> form rebuilds the <code>.vsix</code> and is for
-            maintainers.</td></tr>
-  </tbody>
-</table>
-
-<p>Each example is also buildable from its own directory with the
-<code>./build.sh</code> and <code>./flash.sh</code> shims, if you prefer working
-inside one:</p>
-
-<pre><code>cd examples/esp32s3_gpio0_blink
-./build.sh
-./flash.sh /dev/ttyACM0                    # defaults to /dev/ttyACM0</code></pre>
-
-<h2>Other examples worth running next</h2>
-
-<table>
-  <thead><tr><th>Example</th><th>What it shows</th></tr></thead>
-  <tbody>
-    <tr><td><code>esp32s3_heartbeat</code></td><td>Single-core heartbeat, <code>[ADA] N</code> at 1&nbsp;Hz</td></tr>
-    <tr><td><code>esp32s3_psram</code></td><td>A 1&nbsp;MB static array placed in external PSRAM</td></tr>
-    <tr><td><code>esp32s3_smp</code></td><td>Cross-core mailbox over a protected-object entry</td></tr>
-    <tr><td><code>esp32s3_gdma_copy</code></td><td>GDMA memory-to-memory with an RAII channel handle</td></tr>
-    <tr><td><code>esp32s3_crypto</code></td><td>Hardware SHA and AES checked against FIPS vectors</td></tr>
-    <tr><td><code>esp32s3_embedded</code></td><td>The <code>embedded</code> profile: exceptions, finalization, dispatching</td></tr>
-    <tr><td><code>esp32s3_full_tasking</code></td><td>The <code>full</code> profile: dynamic tasks, <code>abort</code>, rendezvous</td></tr>
-  </tbody>
-</table>
-
-<p>The examples are written to be <em>read</em>. Each opens with a header saying
-what it demonstrates, what the console should print, and what hardware (if any)
-it needs; the magic numbers are named and the reasoning is in the code. Once
-you have one running, the source is the next thing to look at.</p>
-    <nav class="pager">
-      <a class="prev" href="04-board.html"><span class="dir">&larr; Previous</span><span class="name">Board and serial port</span></a>
-      <a class="next" href="06-anatomy.html"><span class="dir">Next &rarr;</span><span class="name">Reset to Main</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

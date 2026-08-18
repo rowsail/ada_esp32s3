@@ -18,6 +18,86 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="27-crypto.html">&larr; Crypto &amp; RNG</a><a href="29-chip-id.html">Temperature &amp; MAC &rarr;</a></nav>
+    <p class="eyebrow">Step 28 of 56</p>
+    <h1>SD cards: two hosts, one API shape</h1>
+    <p class="lede">The universal SPI transport and the native SD bus &mdash; different speeds, different profile requirements, and the same 512-byte logical block interface.</p>
+
+<h2>Two routes to the same card</h2>
+
+<table>
+  <thead><tr><th></th><th><code>SD_SPI</code></th><th><code>SDMMC</code></th></tr></thead>
+  <tbody>
+    <tr><td>Bus</td>
+        <td>The SPI master, 4 lines</td>
+        <td>The real SD bus: clock, bidirectional command line, 1 or 4 data lines</td></tr>
+    <tr><td>Data path</td>
+        <td>Through <a href="15-spi.html">SPI</a> (and its GDMA)</td>
+        <td>PIO/FIFO &mdash; the CPU pushes each 512-byte block through the controller's FIFO</td></tr>
+    <tr><td>Speed</td>
+        <td>Lower</td>
+        <td>Faster; how you reach an SDHC/SDXC card at speed</td></tr>
+    <tr><td>Profile</td>
+        <td><strong>embedded / full only</strong> (uses the SPI Session's finalization)</td>
+        <td><strong>every profile</strong>, light-tasking included</td></tr>
+  </tbody>
+</table>
+
+<p>That last row is the surprise, and it falls out of the implementation: because
+<code>SDMMC</code> moves data in PIO with no GDMA and no descriptors, it needs no
+finalization &mdash; a library-level protected object serialises the single
+shared controller. So the <em>faster</em> host is also the one available on the
+lean runtime.</p>
+
+<h2>The shared API shape</h2>
+
+<pre><code>type Block         is array (0 .. 511) of Interfaces.Unsigned_8;
+type Block_Address is new Interfaces.Unsigned_32;</code></pre>
+
+<p>Both are addressed in <strong>512-byte logical blocks (LBA)</strong>, always.
+SDHC and SDXC cards use block addressing while older SDSC cards use byte
+addressing; that difference is resolved inside the driver, so it never reaches
+your code. Both also initialise the card at ≤400&nbsp;kHz as the SD specification
+requires, then switch to <code>Data_Clock_Hz</code> &mdash; which is precisely
+what <a href="15-spi.html">SPI</a>'s <code>Set_Clock</code> mid-hold exists
+for.</p>
+
+<h2>Why SD-over-SPI needs a GPIO chip select</h2>
+
+<p class="note">The chip select is driven as a <strong>plain GPIO</strong>, not
+the SPI peripheral's hardware CS. The SD protocol needs CS held asserted across a
+whole command / response / data sequence, and the peripheral's own CS pulses per
+transfer &mdash; which the protocol cannot use. This is the concrete case behind
+the <code>CS_Pin</code> option on <a href="15-spi.html">SPI's
+<code>Acquire</code></a>.</p>
+
+<p><code>SD_SPI</code> layers the SD "SPI mode" command protocol on top of the
+task-safe SPI master: CMD0, CMD8, CMD58, ACMD41, CMD17, CMD24 and CRC7. Every
+operation takes the SPI host's session for the whole transaction, so concurrent
+callers serialise.</p>
+
+<pre><code>type Card_Kind is (Unknown, SD_V1, SD_V2_SC, SD_V2_HC);</code></pre>
+
+<p><code>SDMMC</code> has two slots (<code>Slot1</code>, <code>Slot2</code>), one
+card each, and a selectable <code>Bus_Width</code> of <code>Width_1</code> or
+<code>Width_4</code>. Its lines route through the GPIO matrix, so any free pins
+will do.</p>
+
+<p class="warn">Both drivers are marked in the repository's testing table as
+<strong>compiles, no-card smoke test only</strong>. They are the ones to verify
+against a real card before relying on them &mdash; see
+<a href="11-hal.html">step 11</a>.</p>
+    <nav class="pager">
+      <a class="prev" href="27-crypto.html"><span class="dir">&larr; Previous</span><span class="name">Crypto &amp; RNG</span></a>
+      <a class="next" href="29-chip-id.html"><span class="dir">Next &rarr;</span><span class="name">Temperature &amp; MAC</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,83 +216,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="27-crypto.html">&larr; Crypto &amp; RNG</a><a href="29-chip-id.html">Temperature &amp; MAC &rarr;</a></nav>
-    <p class="eyebrow">Step 28 of 56</p>
-    <h1>SD cards: two hosts, one API shape</h1>
-    <p class="lede">The universal SPI transport and the native SD bus &mdash; different speeds, different profile requirements, and the same 512-byte logical block interface.</p>
-
-<h2>Two routes to the same card</h2>
-
-<table>
-  <thead><tr><th></th><th><code>SD_SPI</code></th><th><code>SDMMC</code></th></tr></thead>
-  <tbody>
-    <tr><td>Bus</td>
-        <td>The SPI master, 4 lines</td>
-        <td>The real SD bus: clock, bidirectional command line, 1 or 4 data lines</td></tr>
-    <tr><td>Data path</td>
-        <td>Through <a href="15-spi.html">SPI</a> (and its GDMA)</td>
-        <td>PIO/FIFO &mdash; the CPU pushes each 512-byte block through the controller's FIFO</td></tr>
-    <tr><td>Speed</td>
-        <td>Lower</td>
-        <td>Faster; how you reach an SDHC/SDXC card at speed</td></tr>
-    <tr><td>Profile</td>
-        <td><strong>embedded / full only</strong> (uses the SPI Session's finalization)</td>
-        <td><strong>every profile</strong>, light-tasking included</td></tr>
-  </tbody>
-</table>
-
-<p>That last row is the surprise, and it falls out of the implementation: because
-<code>SDMMC</code> moves data in PIO with no GDMA and no descriptors, it needs no
-finalization &mdash; a library-level protected object serialises the single
-shared controller. So the <em>faster</em> host is also the one available on the
-lean runtime.</p>
-
-<h2>The shared API shape</h2>
-
-<pre><code>type Block         is array (0 .. 511) of Interfaces.Unsigned_8;
-type Block_Address is new Interfaces.Unsigned_32;</code></pre>
-
-<p>Both are addressed in <strong>512-byte logical blocks (LBA)</strong>, always.
-SDHC and SDXC cards use block addressing while older SDSC cards use byte
-addressing; that difference is resolved inside the driver, so it never reaches
-your code. Both also initialise the card at ≤400&nbsp;kHz as the SD specification
-requires, then switch to <code>Data_Clock_Hz</code> &mdash; which is precisely
-what <a href="15-spi.html">SPI</a>'s <code>Set_Clock</code> mid-hold exists
-for.</p>
-
-<h2>Why SD-over-SPI needs a GPIO chip select</h2>
-
-<p class="note">The chip select is driven as a <strong>plain GPIO</strong>, not
-the SPI peripheral's hardware CS. The SD protocol needs CS held asserted across a
-whole command / response / data sequence, and the peripheral's own CS pulses per
-transfer &mdash; which the protocol cannot use. This is the concrete case behind
-the <code>CS_Pin</code> option on <a href="15-spi.html">SPI's
-<code>Acquire</code></a>.</p>
-
-<p><code>SD_SPI</code> layers the SD "SPI mode" command protocol on top of the
-task-safe SPI master: CMD0, CMD8, CMD58, ACMD41, CMD17, CMD24 and CRC7. Every
-operation takes the SPI host's session for the whole transaction, so concurrent
-callers serialise.</p>
-
-<pre><code>type Card_Kind is (Unknown, SD_V1, SD_V2_SC, SD_V2_HC);</code></pre>
-
-<p><code>SDMMC</code> has two slots (<code>Slot1</code>, <code>Slot2</code>), one
-card each, and a selectable <code>Bus_Width</code> of <code>Width_1</code> or
-<code>Width_4</code>. Its lines route through the GPIO matrix, so any free pins
-will do.</p>
-
-<p class="warn">Both drivers are marked in the repository's testing table as
-<strong>compiles, no-card smoke test only</strong>. They are the ones to verify
-against a real card before relying on them &mdash; see
-<a href="11-hal.html">step 11</a>.</p>
-    <nav class="pager">
-      <a class="prev" href="27-crypto.html"><span class="dir">&larr; Previous</span><span class="name">Crypto &amp; RNG</span></a>
-      <a class="next" href="29-chip-id.html"><span class="dir">Next &rarr;</span><span class="name">Temperature &amp; MAC</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

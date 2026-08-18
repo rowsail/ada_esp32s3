@@ -18,6 +18,59 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="51-simd.html">&larr; SIMD (PIE)</a><a href="53-testing.html">Testing &amp; proof &rarr;</a></nav>
+    <p class="eyebrow">Step 52 of 56</p>
+    <h1>Stack usage: measuring what analysis cannot see</h1>
+    <p class="lede">Static worst-case analysis cannot see the prebuilt runtime, the C startup, ISRs or hand-written assembly. Painting the stack can.</p>
+
+<h2>How it works</h2>
+
+<p>Fill the unused part of a stack with a sentinel word, run the workload, then
+scan for the lowest word the program actually overwrote. The gap between that and
+the top is the peak depth ever reached.</p>
+
+<p>This is the <strong>measured</strong> counterpart to the static
+<code>x stack</code> worst-case analysis &mdash; and it is the only way to
+account for the parts static analysis structurally cannot see: the prebuilt
+runtime, the C startup, interrupt service routines, and hand-written
+assembly.</p>
+
+<h2>The direction of the error</h2>
+
+<p class="note">A sentinel-valued word that the program legitimately wrote looks
+pristine, so the scan stops at the <strong>first</strong> overwritten word from
+the bottom. That means it can only ever be <em>conservative</em>: it never
+under-reports the peak. Read the figure as "at least this much was used", never
+as an exact high-water mark.</p>
+
+<p class="warn">The measurement is only as good as the workload. A run that never
+takes the deep path reports a comfortable number that means nothing about the
+path you did not exercise &mdash; so drive a <em>real</em> workload, including
+the error paths and the interrupt load, before believing the headroom.</p>
+
+<h2>Why both approaches</h2>
+
+<p>Use the static analysis to find the theoretical worst case in code it can see,
+and this to catch what it cannot. Agreement between them is meaningful evidence;
+a measured figure that exceeds the static bound means the static model is missing
+a path, which is worth knowing before it is a
+<a href="55-debugging.html">stack overflow on hardware</a>.</p>
+
+<p class="note">The runtime already guards the running task with a hardware
+watchpoint a redzone above its stack limit, re-armed on every context switch
+(<a href="55-debugging.html">step 44</a>). That catches an overflow precisely when
+it happens; this tells you how close you were before it did.</p>
+    <nav class="pager">
+      <a class="prev" href="51-simd.html"><span class="dir">&larr; Previous</span><span class="name">SIMD (PIE)</span></a>
+      <a class="next" href="53-testing.html"><span class="dir">Next &rarr;</span><span class="name">Testing &amp; proof</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,56 +189,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="51-simd.html">&larr; SIMD (PIE)</a><a href="53-testing.html">Testing &amp; proof &rarr;</a></nav>
-    <p class="eyebrow">Step 52 of 56</p>
-    <h1>Stack usage: measuring what analysis cannot see</h1>
-    <p class="lede">Static worst-case analysis cannot see the prebuilt runtime, the C startup, ISRs or hand-written assembly. Painting the stack can.</p>
-
-<h2>How it works</h2>
-
-<p>Fill the unused part of a stack with a sentinel word, run the workload, then
-scan for the lowest word the program actually overwrote. The gap between that and
-the top is the peak depth ever reached.</p>
-
-<p>This is the <strong>measured</strong> counterpart to the static
-<code>x stack</code> worst-case analysis &mdash; and it is the only way to
-account for the parts static analysis structurally cannot see: the prebuilt
-runtime, the C startup, interrupt service routines, and hand-written
-assembly.</p>
-
-<h2>The direction of the error</h2>
-
-<p class="note">A sentinel-valued word that the program legitimately wrote looks
-pristine, so the scan stops at the <strong>first</strong> overwritten word from
-the bottom. That means it can only ever be <em>conservative</em>: it never
-under-reports the peak. Read the figure as "at least this much was used", never
-as an exact high-water mark.</p>
-
-<p class="warn">The measurement is only as good as the workload. A run that never
-takes the deep path reports a comfortable number that means nothing about the
-path you did not exercise &mdash; so drive a <em>real</em> workload, including
-the error paths and the interrupt load, before believing the headroom.</p>
-
-<h2>Why both approaches</h2>
-
-<p>Use the static analysis to find the theoretical worst case in code it can see,
-and this to catch what it cannot. Agreement between them is meaningful evidence;
-a measured figure that exceeds the static bound means the static model is missing
-a path, which is worth knowing before it is a
-<a href="55-debugging.html">stack overflow on hardware</a>.</p>
-
-<p class="note">The runtime already guards the running task with a hardware
-watchpoint a redzone above its stack limit, re-armed on every context switch
-(<a href="55-debugging.html">step 44</a>). That catches an overflow precisely when
-it happens; this tells you how close you were before it did.</p>
-    <nav class="pager">
-      <a class="prev" href="51-simd.html"><span class="dir">&larr; Previous</span><span class="name">SIMD (PIE)</span></a>
-      <a class="next" href="53-testing.html"><span class="dir">Next &rarr;</span><span class="name">Testing &amp; proof</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

@@ -18,6 +18,75 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="30-display-touch.html">&larr; Display &amp; touch</a><a href="32-sensors.html">IMU &amp; environment &rarr;</a></nav>
+    <p class="eyebrow">Step 31 of 56</p>
+    <h1>ES8311: the audio codec</h1>
+    <p class="lede">Control over I2C, audio over I2S, and a clocking relationship you have to get right &mdash; the ESP is the master, the codec follows.</p>
+
+<h2>Two buses, one device</h2>
+
+<p>The Everest ES8311 is a low-power mono codec that is <strong>controlled over
+I2C and carries audio over I2S</strong>. Both have to be right before a sound
+comes out, which is what makes it a more instructive device than it first
+looks.</p>
+
+<pre><code>subtype Address is ESP32S3.I2C.Slave_Address;   --  0x18 with CE/AD0 low, 0x19 with CE high</code></pre>
+
+<h2>The clocking relationship</h2>
+
+<p class="note">The ESP is the <strong>I2S master</strong> and generates MCLK,
+BCLK and WS; the codec runs as an <strong>I2S slave</strong> clocked from that
+MCLK. The driver fixes <code>MCLK = 256 &times; Sample_Rate</code> with 16-bit
+samples, and the register coefficients are calculated for that ratio &mdash; it
+is rate-independent, but not ratio-independent. This is why
+<a href="18-i2s.html">I2S</a>'s <code>Mclk</code> pin exists and why it is only
+available on I2S0.</p>
+
+<pre><code>procedure Setup (...; Sample_Rate : ...; Sda, Scl : ...; Asdout : ... := No_Pin;
+                 Ok : out Boolean);</code></pre>
+
+<p><code>Ok</code> is False if the codec never ACKed on I2C &mdash; the first
+thing to check is the address strap, since <code>0x18</code> and
+<code>0x19</code> differ only by the CE pin. <code>Asdout</code> is the codec's
+ADC data-out (the ESP's data-<em>in</em>): leave it <code>No_Pin</code> for
+output only, or wire it to bring up the microphone path as well, with PGA gain
+in 6&nbsp;dB steps from 0 to 42&nbsp;dB.</p>
+
+<h2>Playing</h2>
+
+<p>Audio output goes through a limited, controlled <code>Output</code> handle
+that owns the I2S port exclusively and releases it on scope exit. The playback
+calls mirror <a href="18-i2s.html">I2S</a>'s exactly, because they are built on
+them:</p>
+
+<table>
+  <thead><tr><th>Call</th><th>Use</th></tr></thead>
+  <tbody>
+    <tr><td><code>Play</code></td><td>One blocking buffer.</td></tr>
+    <tr><td><code>Play_Continuous</code></td><td>Self-looping DMA &mdash; a steady tone with no CPU involvement and no gap at the wrap.</td></tr>
+    <tr><td><code>Play_Stream</code> + <code>Await_Half</code></td><td>Gapless double-buffered playback: refill the half the hardware is not reading.</td></tr>
+    <tr><td><code>Capture</code> / <code>Capture_Stream</code> + <code>Await_Capture_Half</code></td><td>The microphone path, including while playback runs.</td></tr>
+    <tr><td><code>Duplex</code></td><td>Play and record simultaneously.</td></tr>
+  </tbody>
+</table>
+
+<pre><code>procedure Set_Volume (Percent : Natural; Ok : out Boolean);   --  0 .. 100, after Setup</code></pre>
+
+<p class="note">The register-init sequence and clock coefficients are ported from
+Espressif's own <code>es8311</code> driver &mdash; this is one place where the
+"from scratch" claim is honestly a port, because the sequence is a hardware
+recipe rather than a design decision.</p>
+    <nav class="pager">
+      <a class="prev" href="30-display-touch.html"><span class="dir">&larr; Previous</span><span class="name">Display &amp; touch</span></a>
+      <a class="next" href="32-sensors.html"><span class="dir">Next &rarr;</span><span class="name">IMU &amp; environment</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,72 +205,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="30-display-touch.html">&larr; Display &amp; touch</a><a href="32-sensors.html">IMU &amp; environment &rarr;</a></nav>
-    <p class="eyebrow">Step 31 of 56</p>
-    <h1>ES8311: the audio codec</h1>
-    <p class="lede">Control over I2C, audio over I2S, and a clocking relationship you have to get right &mdash; the ESP is the master, the codec follows.</p>
-
-<h2>Two buses, one device</h2>
-
-<p>The Everest ES8311 is a low-power mono codec that is <strong>controlled over
-I2C and carries audio over I2S</strong>. Both have to be right before a sound
-comes out, which is what makes it a more instructive device than it first
-looks.</p>
-
-<pre><code>subtype Address is ESP32S3.I2C.Slave_Address;   --  0x18 with CE/AD0 low, 0x19 with CE high</code></pre>
-
-<h2>The clocking relationship</h2>
-
-<p class="note">The ESP is the <strong>I2S master</strong> and generates MCLK,
-BCLK and WS; the codec runs as an <strong>I2S slave</strong> clocked from that
-MCLK. The driver fixes <code>MCLK = 256 &times; Sample_Rate</code> with 16-bit
-samples, and the register coefficients are calculated for that ratio &mdash; it
-is rate-independent, but not ratio-independent. This is why
-<a href="18-i2s.html">I2S</a>'s <code>Mclk</code> pin exists and why it is only
-available on I2S0.</p>
-
-<pre><code>procedure Setup (...; Sample_Rate : ...; Sda, Scl : ...; Asdout : ... := No_Pin;
-                 Ok : out Boolean);</code></pre>
-
-<p><code>Ok</code> is False if the codec never ACKed on I2C &mdash; the first
-thing to check is the address strap, since <code>0x18</code> and
-<code>0x19</code> differ only by the CE pin. <code>Asdout</code> is the codec's
-ADC data-out (the ESP's data-<em>in</em>): leave it <code>No_Pin</code> for
-output only, or wire it to bring up the microphone path as well, with PGA gain
-in 6&nbsp;dB steps from 0 to 42&nbsp;dB.</p>
-
-<h2>Playing</h2>
-
-<p>Audio output goes through a limited, controlled <code>Output</code> handle
-that owns the I2S port exclusively and releases it on scope exit. The playback
-calls mirror <a href="18-i2s.html">I2S</a>'s exactly, because they are built on
-them:</p>
-
-<table>
-  <thead><tr><th>Call</th><th>Use</th></tr></thead>
-  <tbody>
-    <tr><td><code>Play</code></td><td>One blocking buffer.</td></tr>
-    <tr><td><code>Play_Continuous</code></td><td>Self-looping DMA &mdash; a steady tone with no CPU involvement and no gap at the wrap.</td></tr>
-    <tr><td><code>Play_Stream</code> + <code>Await_Half</code></td><td>Gapless double-buffered playback: refill the half the hardware is not reading.</td></tr>
-    <tr><td><code>Capture</code> / <code>Capture_Stream</code> + <code>Await_Capture_Half</code></td><td>The microphone path, including while playback runs.</td></tr>
-    <tr><td><code>Duplex</code></td><td>Play and record simultaneously.</td></tr>
-  </tbody>
-</table>
-
-<pre><code>procedure Set_Volume (Percent : Natural; Ok : out Boolean);   --  0 .. 100, after Setup</code></pre>
-
-<p class="note">The register-init sequence and clock coefficients are ported from
-Espressif's own <code>es8311</code> driver &mdash; this is one place where the
-"from scratch" claim is honestly a port, because the sequence is a hardware
-recipe rather than a design decision.</p>
-    <nav class="pager">
-      <a class="prev" href="30-display-touch.html"><span class="dir">&larr; Previous</span><span class="name">Display &amp; touch</span></a>
-      <a class="next" href="32-sensors.html"><span class="dir">Next &rarr;</span><span class="name">IMU &amp; environment</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

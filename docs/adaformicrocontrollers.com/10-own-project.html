@@ -18,6 +18,127 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="09-board-config.html">&larr; Board configuration</a><a href="11-hal.html">Talking to hardware &rarr;</a></nav>
+    <p class="eyebrow">Step 10 of 56</p>
+    <h1>Your own project, outside the repo</h1>
+    <p class="lede">Don't edit an example. Treat the repository as an SDK: source <code>export.sh</code> once, then scaffold a self-contained project anywhere on disk, with no runtime source copied in and no paths baked into any file.</p>
+
+<h2>Source the SDK, scaffold, run</h2>
+
+<pre><code>. ~/ada_esp32s3/export.sh   # once per shell (add to ~/.bashrc)
+mkdir ~/myblink &amp;&amp; cd ~/myblink
+esp32-ada init                        # scaffold app.gpr, board.ads, src/main.adb
+#  ... edit src/main.adb ...
+esp32-ada run -p /dev/ttyACM0         # build + flash + monitor</code></pre>
+
+<p>That one <code>export.sh</code> does three things: it puts
+<code>esp32-ada</code> on your <code>PATH</code>, exports
+<code>ESP32S3_ADA_SDK</code> so a project anywhere can find the SDK, and adds the
+runtime and HAL projects to <code>GPR_PROJECT_PATH</code> &mdash; so both
+<code>gprbuild</code> <em>and</em> the Ada Language Server resolve
+<code>with "esp32s3_rts.gpr"</code> with no path in your project.</p>
+
+<h2>What <code>init</code> writes</h2>
+
+<pre><code>myblink/
+  app.gpr            # withs esp32s3_rts.gpr + esp32s3_hal.gpr (resolved by name)
+  board.ads          # this project's flash / PSRAM sizes
+  src/main.adb       # your code (procedure Main; boots both cores, then idles)
+  build.sh flash.sh  # thin shims into the SDK's shared bare-boot
+  .gitignore
+  .vscode/           # ALS project + build/flash/run tasks driving esp32-ada</code></pre>
+
+<p>Nothing from the SDK is copied in. <code>app.gpr</code> references the runtime
+and HAL <em>by name</em>, and the build shims reach the shared bare-boot through
+<code>$ESP32S3_ADA_SDK</code>. Check the folder into its own git repository if
+you like; it stays portable. To use another SDK library, add
+<code>with "&lt;name&gt;.gpr";</code> to <code>app.gpr</code> for anything under
+the SDK's <code>libs/</code>.</p>
+
+<p>A fresh project defaults to the <strong><code>embedded</code></strong>
+profile, set by an <code>ESP32S3_RTS_PROFILE</code> line in its
+<code>build.sh</code>. Change that line for <code>light-tasking</code> or
+<code>full</code>.</p>
+
+<h2>The verbs</h2>
+
+<p>Every <code>esp32-ada</code> verb mirrors the matching <code>./x</code> one.
+The only difference is the target: <code>./x build gpio0_blink</code> names an
+example inside the clone, while <code>esp32-ada build</code> operates on the
+folder you are standing in.</p>
+
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>esp32-ada init [<em>dir</em>]</code></td><td>Scaffold a project in <em>dir</em>, or the current folder.</td></tr>
+    <tr><td><code>esp32-ada build [-P <em>prof</em>]</code></td><td>Build to <code>app.bin</code>.</td></tr>
+    <tr><td><code>esp32-ada flash [-p <em>port</em>]</code></td><td>Build if needed, then flash over the USB ROM bootloader.</td></tr>
+    <tr><td><code>esp32-ada run [-p <em>port</em>] [-P <em>prof</em>]</code></td><td>Build, flash, and open the serial monitor.</td></tr>
+    <tr><td><code>esp32-ada monitor [-p <em>port</em>]</code></td><td>Just the serial console (115200).</td></tr>
+    <tr><td><code>esp32-ada clean</code></td><td>Remove this project's build artifacts.</td></tr>
+    <tr><td><code>esp32-ada config [show | flash-size <em>S</em> | psram-size <em>S</em>]</code></td><td>Show or set this project's sizes.</td></tr>
+    <tr><td><code>esp32-ada debug [-p <em>port</em>]</code></td><td>On-chip debug (OpenOCD + GDB), halting at <code>Main</code>.</td></tr>
+    <tr><td><code>esp32-ada kill-openocd</code></td><td>Kill every OpenOCD, releasing captured USB-JTAG ports.</td></tr>
+    <tr><td><code>esp32-ada install-ide</code> / <code>install-vim</code></td><td>Install the VS Code extension / symlink the Vim plugin.</td></tr>
+  </tbody>
+</table>
+
+<p><code>-p</code>/<code>--port</code> defaults to <code>$ESPPORT</code> or
+<code>/dev/ttyACM0</code>; <code>-C <em>dir</em></code> runs as if from
+<em>dir</em>.</p>
+
+<h2>Lifting an example out of tree</h2>
+
+<p class="warn">Copying a whole example directory elsewhere will <strong>not
+build</strong>. Examples are wired to their location: an Alire path-pin in
+<code>alire.toml</code>, a <code>&lt;name&gt;.gpr</code>, and build shims
+relative to <code>examples/common/bare/</code>.</p>
+
+<p>Scaffold a fresh project and bring the <em>sources</em> across instead. The
+scaffold already supplies the <code>app.gpr</code>, board config and shims that
+make them build:</p>
+
+<pre><code>. /path/to/ada_esp32s3/export.sh
+esp32-ada init ~/myblink &amp;&amp; cd ~/myblink
+SDK=$ESP32S3_ADA_SDK
+cp "$SDK"/examples/esp32s3_gpio0_blink/src/*.ad? src/   # the Ada sources, incl. main.adb
+esp32-ada build
+esp32-ada run -p /dev/ttyACM0</code></pre>
+
+<p>Four things make that copy build cleanly:</p>
+
+<ul>
+  <li><strong>Only <code>src/</code> is yours.</strong> The scaffold's
+      <code>app.gpr</code> already sets <code>Source_Dirs =&gt; "src"</code> and
+      <code>Main =&gt; "main.adb"</code>, so the example's units drop straight
+      in. Overwrite the scaffold's <code>src/main.adb</code>.</li>
+  <li><strong>Match the profile.</strong> The scaffold defaults to
+      <code>embedded</code>, which is what most examples assume. An example
+      written for <code>light-tasking</code> (shown by <code>./x list</code> and
+      in its README) needs the <code>ESP32S3_RTS_PROFILE</code> line
+      changed.</li>
+  <li><strong>Bring board config and C natives if customized.</strong> Copy the
+      example's <code>board.ads</code> if it sets a non-default size, and its
+      <code>glue.c</code> if it has C natives.</li>
+  <li><strong>Extra libraries.</strong> If the example withs more of the SDK's
+      <code>libs/</code> beyond the HAL, add the matching
+      <code>with "&lt;name&gt;.gpr";</code>.</li>
+</ul>
+
+<p class="note">There is no fixed "project location" and no <code>idf.py</code>.
+The SDK is found through <code>$ESP32S3_ADA_SDK</code>, so your project folder
+lives wherever you want it.</p>
+    <nav class="pager">
+      <a class="prev" href="09-board-config.html"><span class="dir">&larr; Previous</span><span class="name">Board configuration</span></a>
+      <a class="next" href="11-hal.html"><span class="dir">Next &rarr;</span><span class="name">Talking to hardware</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,124 +257,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="09-board-config.html">&larr; Board configuration</a><a href="11-hal.html">Talking to hardware &rarr;</a></nav>
-    <p class="eyebrow">Step 10 of 56</p>
-    <h1>Your own project, outside the repo</h1>
-    <p class="lede">Don't edit an example. Treat the repository as an SDK: source <code>export.sh</code> once, then scaffold a self-contained project anywhere on disk, with no runtime source copied in and no paths baked into any file.</p>
-
-<h2>Source the SDK, scaffold, run</h2>
-
-<pre><code>. ~/ada_esp32s3/export.sh   # once per shell (add to ~/.bashrc)
-mkdir ~/myblink &amp;&amp; cd ~/myblink
-esp32-ada init                        # scaffold app.gpr, board.ads, src/main.adb
-#  ... edit src/main.adb ...
-esp32-ada run -p /dev/ttyACM0         # build + flash + monitor</code></pre>
-
-<p>That one <code>export.sh</code> does three things: it puts
-<code>esp32-ada</code> on your <code>PATH</code>, exports
-<code>ESP32S3_ADA_SDK</code> so a project anywhere can find the SDK, and adds the
-runtime and HAL projects to <code>GPR_PROJECT_PATH</code> &mdash; so both
-<code>gprbuild</code> <em>and</em> the Ada Language Server resolve
-<code>with "esp32s3_rts.gpr"</code> with no path in your project.</p>
-
-<h2>What <code>init</code> writes</h2>
-
-<pre><code>myblink/
-  app.gpr            # withs esp32s3_rts.gpr + esp32s3_hal.gpr (resolved by name)
-  board.ads          # this project's flash / PSRAM sizes
-  src/main.adb       # your code (procedure Main; boots both cores, then idles)
-  build.sh flash.sh  # thin shims into the SDK's shared bare-boot
-  .gitignore
-  .vscode/           # ALS project + build/flash/run tasks driving esp32-ada</code></pre>
-
-<p>Nothing from the SDK is copied in. <code>app.gpr</code> references the runtime
-and HAL <em>by name</em>, and the build shims reach the shared bare-boot through
-<code>$ESP32S3_ADA_SDK</code>. Check the folder into its own git repository if
-you like; it stays portable. To use another SDK library, add
-<code>with "&lt;name&gt;.gpr";</code> to <code>app.gpr</code> for anything under
-the SDK's <code>libs/</code>.</p>
-
-<p>A fresh project defaults to the <strong><code>embedded</code></strong>
-profile, set by an <code>ESP32S3_RTS_PROFILE</code> line in its
-<code>build.sh</code>. Change that line for <code>light-tasking</code> or
-<code>full</code>.</p>
-
-<h2>The verbs</h2>
-
-<p>Every <code>esp32-ada</code> verb mirrors the matching <code>./x</code> one.
-The only difference is the target: <code>./x build gpio0_blink</code> names an
-example inside the clone, while <code>esp32-ada build</code> operates on the
-folder you are standing in.</p>
-
-<table>
-  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
-  <tbody>
-    <tr><td><code>esp32-ada init [<em>dir</em>]</code></td><td>Scaffold a project in <em>dir</em>, or the current folder.</td></tr>
-    <tr><td><code>esp32-ada build [-P <em>prof</em>]</code></td><td>Build to <code>app.bin</code>.</td></tr>
-    <tr><td><code>esp32-ada flash [-p <em>port</em>]</code></td><td>Build if needed, then flash over the USB ROM bootloader.</td></tr>
-    <tr><td><code>esp32-ada run [-p <em>port</em>] [-P <em>prof</em>]</code></td><td>Build, flash, and open the serial monitor.</td></tr>
-    <tr><td><code>esp32-ada monitor [-p <em>port</em>]</code></td><td>Just the serial console (115200).</td></tr>
-    <tr><td><code>esp32-ada clean</code></td><td>Remove this project's build artifacts.</td></tr>
-    <tr><td><code>esp32-ada config [show | flash-size <em>S</em> | psram-size <em>S</em>]</code></td><td>Show or set this project's sizes.</td></tr>
-    <tr><td><code>esp32-ada debug [-p <em>port</em>]</code></td><td>On-chip debug (OpenOCD + GDB), halting at <code>Main</code>.</td></tr>
-    <tr><td><code>esp32-ada kill-openocd</code></td><td>Kill every OpenOCD, releasing captured USB-JTAG ports.</td></tr>
-    <tr><td><code>esp32-ada install-ide</code> / <code>install-vim</code></td><td>Install the VS Code extension / symlink the Vim plugin.</td></tr>
-  </tbody>
-</table>
-
-<p><code>-p</code>/<code>--port</code> defaults to <code>$ESPPORT</code> or
-<code>/dev/ttyACM0</code>; <code>-C <em>dir</em></code> runs as if from
-<em>dir</em>.</p>
-
-<h2>Lifting an example out of tree</h2>
-
-<p class="warn">Copying a whole example directory elsewhere will <strong>not
-build</strong>. Examples are wired to their location: an Alire path-pin in
-<code>alire.toml</code>, a <code>&lt;name&gt;.gpr</code>, and build shims
-relative to <code>examples/common/bare/</code>.</p>
-
-<p>Scaffold a fresh project and bring the <em>sources</em> across instead. The
-scaffold already supplies the <code>app.gpr</code>, board config and shims that
-make them build:</p>
-
-<pre><code>. /path/to/ada_esp32s3/export.sh
-esp32-ada init ~/myblink &amp;&amp; cd ~/myblink
-SDK=$ESP32S3_ADA_SDK
-cp "$SDK"/examples/esp32s3_gpio0_blink/src/*.ad? src/   # the Ada sources, incl. main.adb
-esp32-ada build
-esp32-ada run -p /dev/ttyACM0</code></pre>
-
-<p>Four things make that copy build cleanly:</p>
-
-<ul>
-  <li><strong>Only <code>src/</code> is yours.</strong> The scaffold's
-      <code>app.gpr</code> already sets <code>Source_Dirs =&gt; "src"</code> and
-      <code>Main =&gt; "main.adb"</code>, so the example's units drop straight
-      in. Overwrite the scaffold's <code>src/main.adb</code>.</li>
-  <li><strong>Match the profile.</strong> The scaffold defaults to
-      <code>embedded</code>, which is what most examples assume. An example
-      written for <code>light-tasking</code> (shown by <code>./x list</code> and
-      in its README) needs the <code>ESP32S3_RTS_PROFILE</code> line
-      changed.</li>
-  <li><strong>Bring board config and C natives if customized.</strong> Copy the
-      example's <code>board.ads</code> if it sets a non-default size, and its
-      <code>glue.c</code> if it has C natives.</li>
-  <li><strong>Extra libraries.</strong> If the example withs more of the SDK's
-      <code>libs/</code> beyond the HAL, add the matching
-      <code>with "&lt;name&gt;.gpr";</code>.</li>
-</ul>
-
-<p class="note">There is no fixed "project location" and no <code>idf.py</code>.
-The SDK is found through <code>$ESP32S3_ADA_SDK</code>, so your project folder
-lives wherever you want it.</p>
-    <nav class="pager">
-      <a class="prev" href="09-board-config.html"><span class="dir">&larr; Previous</span><span class="name">Board configuration</span></a>
-      <a class="next" href="11-hal.html"><span class="dir">Next &rarr;</span><span class="name">Talking to hardware</span></a>
-    </nav>
-
-  </main>
 
 </div>
 

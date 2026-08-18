@@ -18,6 +18,108 @@
 
 <div class="wrap">
 
+  <main>
+    <nav class="pager-top"><a href="29-chip-id.html">&larr; Temperature &amp; MAC</a><a href="31-es8311.html">ES8311 codec &rarr;</a></nav>
+    <p class="eyebrow">Step 30 of 56</p>
+    <h1>ST7789 display and GT911 touch</h1>
+    <p class="lede">A write-only SPI display that cannot be probed, and a touch controller whose I2C address depends on a pin level at reset &mdash; the two halves of a touchscreen, each with its own trap.</p>
+
+<h2>ST7789: no reads, no probe</h2>
+
+<p class="warn"><strong>The panel never talks back.</strong> The ST77xx SPI
+interface is write-only as wired here, so there is no status read and no way to
+probe for the device. If nothing appears, the driver cannot tell you whether the
+panel is absent, mis-wired or simply off &mdash; you get silence either way.
+Check wiring before suspecting code.</p>
+
+<p>Three GPIOs are driven directly by the driver: <strong>DC</strong>
+(data/command), <strong>CS</strong>, and an optional <strong>RST</strong>. Pass
+<code>No_Pin</code> for RST and it falls back to a software reset.</p>
+
+<pre><code>type Color is mod 2**16;                                   --  RGB565, MSB-first
+function RGB (R, G, B : Natural) return Color;             --  each 0 .. 255
+type Color_Array is array (Natural range &lt;&gt;) of Color;      --  row-major
+type Rotation is (Rot_0, Rot_90, Rot_180, Rot_270);</code></pre>
+
+<p>Bring-up is <code>Setup</code> (records the wiring and geometry, brings the
+SPI host up in mode 0) then <code>Acquire</code> for an exclusive session, then
+<code>Init</code> to run the power-on sequence.</p>
+
+<pre><code>procedure Init         (S : Session);
+procedure Display_On   (S : Session);
+procedure Set_Rotation (S : Session; Rot : Rotation);        --  sets MADCTL
+procedure Invert       (S : Session; On : Boolean);
+procedure Sleep        (S : Session; On : Boolean);
+
+procedure Fill        (S : Session; C : Color);
+procedure Fill_Rect   (S : Session; X, Y, W, H : Natural; C : Color);
+procedure Set_Pixel   (S : Session; X, Y : Natural; C : Color);
+procedure Draw_Bitmap (S : Session; X, Y, W, H : Natural; Pixels : Color_Array);</code></pre>
+
+<h2>Two levels of locking</h2>
+
+<p class="note">The display has <em>two</em> guards, not one. The
+<code>Session</code> owns the <strong>display</strong> exclusively, while each
+operation locks the <strong>SPI host</strong> only for its own transfer &mdash;
+so another device on the same bus can interleave between your drawing calls, and
+a long <code>Fill</code> does not monopolise the bus.</p>
+
+<p>Those per-display guards are a fixed library-level array keyed by the CS pin,
+since a GPIO uniquely identifies one display. That is why no protected object
+lives inside a <code>Device</code>, and why <code>Device</code> values are cheap
+to hold.</p>
+
+<h2>GT911: the address is decided at reset</h2>
+
+<p>A Goodix 5-point capacitive controller on I2C. It is a
+<strong>16-bit-register</strong> device: every transaction sends the register
+address MSB-first, then reads or writes a run of bytes from the chip's
+auto-incrementing pointer. Multi-byte values inside the map &mdash; coordinates,
+firmware version, output range &mdash; are <em>little</em>-endian, so the address
+and the payload disagree about byte order.</p>
+
+<p class="warn"><strong>The chip latches its I2C address from the INT level while
+RST is released:</strong> INT low gives <code>0x5D</code> (the usual module
+strapping), INT high gives <code>0x14</code>. This driver never drives INT or
+RST, because on many boards RST is not even on an ESP pin &mdash; the Waveshare
+ESP32-S3-Touch-LCD-7 routes it through a <a href="34-expanders.html">CH422G</a>
+expander with INT weakly low. Releasing reset is therefore board wiring you do
+once at startup, <em>before</em> touching the chip. Get the order wrong and the
+part answers at the other address, which looks exactly like a dead device.</p>
+
+<h2>Reading touches</h2>
+
+<pre><code>type Touch_State is record ... end record;    --  up to 5 points, each with a track id
+type Status is (OK, Bus_Error);
+
+procedure Read_Touches (Dev : Device; State : out Touch_State; Result : out Status);
+procedure Read_Product_Id, Read_Firmware_Version, Read_Resolution ...</code></pre>
+
+<p>The chip scans continuously and latches one report per scan cycle: a status
+register with a buffer-ready flag and point count, then up to five
+track-id/X/Y/size records. <code>Read_Touches</code> drains one report
+<em>and re-arms the latch</em> by writing the flag back to zero &mdash; so
+forgetting to call it stalls further reports rather than queueing them.</p>
+
+<p>The INT line pulses on every fresh report. Attach a handler with the
+<code>.Interrupts</code> child and call <code>Read_Touches</code> from a task it
+wakes &mdash; remembering the <a href="13-gpio.html">callback rules</a>: latch a
+flag in the handler, do the I2C work at task level, never from the ISR.</p>
+
+<p>Like <a href="14-i2c.html">I2C</a>'s other clients, the driver hard-codes no
+wiring: you tell <code>Setup</code> the host, the SDA/SCL pins, the optional INT
+pin and the address, and each operation opens a short-lived controlled session
+for one complete transaction.</p>
+    <nav class="pager">
+      <a class="prev" href="29-chip-id.html"><span class="dir">&larr; Previous</span><span class="name">Temperature &amp; MAC</span></a>
+      <a class="next" href="31-es8311.html"><span class="dir">Next &rarr;</span><span class="name">ES8311 codec</span></a>
+    </nav>
+
+  </main>
+
+  <!-- After <main> in the source on purpose: on a narrow screen the nav then
+       falls BELOW the article instead of pushing it off the first screen.  On
+       wide screens the grid placement below puts it back on the left. -->
   <nav class="toc" aria-label="Guide contents">
     <a class="home" href="index.html">&larr; Guide home</a>
     <h2>The steps</h2>
@@ -136,105 +238,6 @@
       </li>
     </ol>
   </nav>
-
-  <main>
-    <nav class="pager-top"><a href="29-chip-id.html">&larr; Temperature &amp; MAC</a><a href="31-es8311.html">ES8311 codec &rarr;</a></nav>
-    <p class="eyebrow">Step 30 of 56</p>
-    <h1>ST7789 display and GT911 touch</h1>
-    <p class="lede">A write-only SPI display that cannot be probed, and a touch controller whose I2C address depends on a pin level at reset &mdash; the two halves of a touchscreen, each with its own trap.</p>
-
-<h2>ST7789: no reads, no probe</h2>
-
-<p class="warn"><strong>The panel never talks back.</strong> The ST77xx SPI
-interface is write-only as wired here, so there is no status read and no way to
-probe for the device. If nothing appears, the driver cannot tell you whether the
-panel is absent, mis-wired or simply off &mdash; you get silence either way.
-Check wiring before suspecting code.</p>
-
-<p>Three GPIOs are driven directly by the driver: <strong>DC</strong>
-(data/command), <strong>CS</strong>, and an optional <strong>RST</strong>. Pass
-<code>No_Pin</code> for RST and it falls back to a software reset.</p>
-
-<pre><code>type Color is mod 2**16;                                   --  RGB565, MSB-first
-function RGB (R, G, B : Natural) return Color;             --  each 0 .. 255
-type Color_Array is array (Natural range &lt;&gt;) of Color;      --  row-major
-type Rotation is (Rot_0, Rot_90, Rot_180, Rot_270);</code></pre>
-
-<p>Bring-up is <code>Setup</code> (records the wiring and geometry, brings the
-SPI host up in mode 0) then <code>Acquire</code> for an exclusive session, then
-<code>Init</code> to run the power-on sequence.</p>
-
-<pre><code>procedure Init         (S : Session);
-procedure Display_On   (S : Session);
-procedure Set_Rotation (S : Session; Rot : Rotation);        --  sets MADCTL
-procedure Invert       (S : Session; On : Boolean);
-procedure Sleep        (S : Session; On : Boolean);
-
-procedure Fill        (S : Session; C : Color);
-procedure Fill_Rect   (S : Session; X, Y, W, H : Natural; C : Color);
-procedure Set_Pixel   (S : Session; X, Y : Natural; C : Color);
-procedure Draw_Bitmap (S : Session; X, Y, W, H : Natural; Pixels : Color_Array);</code></pre>
-
-<h2>Two levels of locking</h2>
-
-<p class="note">The display has <em>two</em> guards, not one. The
-<code>Session</code> owns the <strong>display</strong> exclusively, while each
-operation locks the <strong>SPI host</strong> only for its own transfer &mdash;
-so another device on the same bus can interleave between your drawing calls, and
-a long <code>Fill</code> does not monopolise the bus.</p>
-
-<p>Those per-display guards are a fixed library-level array keyed by the CS pin,
-since a GPIO uniquely identifies one display. That is why no protected object
-lives inside a <code>Device</code>, and why <code>Device</code> values are cheap
-to hold.</p>
-
-<h2>GT911: the address is decided at reset</h2>
-
-<p>A Goodix 5-point capacitive controller on I2C. It is a
-<strong>16-bit-register</strong> device: every transaction sends the register
-address MSB-first, then reads or writes a run of bytes from the chip's
-auto-incrementing pointer. Multi-byte values inside the map &mdash; coordinates,
-firmware version, output range &mdash; are <em>little</em>-endian, so the address
-and the payload disagree about byte order.</p>
-
-<p class="warn"><strong>The chip latches its I2C address from the INT level while
-RST is released:</strong> INT low gives <code>0x5D</code> (the usual module
-strapping), INT high gives <code>0x14</code>. This driver never drives INT or
-RST, because on many boards RST is not even on an ESP pin &mdash; the Waveshare
-ESP32-S3-Touch-LCD-7 routes it through a <a href="34-expanders.html">CH422G</a>
-expander with INT weakly low. Releasing reset is therefore board wiring you do
-once at startup, <em>before</em> touching the chip. Get the order wrong and the
-part answers at the other address, which looks exactly like a dead device.</p>
-
-<h2>Reading touches</h2>
-
-<pre><code>type Touch_State is record ... end record;    --  up to 5 points, each with a track id
-type Status is (OK, Bus_Error);
-
-procedure Read_Touches (Dev : Device; State : out Touch_State; Result : out Status);
-procedure Read_Product_Id, Read_Firmware_Version, Read_Resolution ...</code></pre>
-
-<p>The chip scans continuously and latches one report per scan cycle: a status
-register with a buffer-ready flag and point count, then up to five
-track-id/X/Y/size records. <code>Read_Touches</code> drains one report
-<em>and re-arms the latch</em> by writing the flag back to zero &mdash; so
-forgetting to call it stalls further reports rather than queueing them.</p>
-
-<p>The INT line pulses on every fresh report. Attach a handler with the
-<code>.Interrupts</code> child and call <code>Read_Touches</code> from a task it
-wakes &mdash; remembering the <a href="13-gpio.html">callback rules</a>: latch a
-flag in the handler, do the I2C work at task level, never from the ISR.</p>
-
-<p>Like <a href="14-i2c.html">I2C</a>'s other clients, the driver hard-codes no
-wiring: you tell <code>Setup</code> the host, the SDA/SCL pins, the optional INT
-pin and the address, and each operation opens a short-lived controlled session
-for one complete transaction.</p>
-    <nav class="pager">
-      <a class="prev" href="29-chip-id.html"><span class="dir">&larr; Previous</span><span class="name">Temperature &amp; MAC</span></a>
-      <a class="next" href="31-es8311.html"><span class="dir">Next &rarr;</span><span class="name">ES8311 codec</span></a>
-    </nav>
-
-  </main>
 
 </div>
 
