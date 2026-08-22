@@ -75,9 +75,9 @@ package body ESP32S3.Stack_Usage is
    -- Paint --
    -----------
 
-   procedure Paint (Low, High : System.Address) is
-      Addr : Integer_Address := To_Integer (Low);
-      Top  : constant Integer_Address := To_Integer (High);
+   procedure Paint (Within : Region) is
+      Addr : Integer_Address := To_Integer (Within.Low);
+      Top  : constant Integer_Address := To_Integer (Within.High);
    begin
       while Addr < Top loop
          To_Ptr (To_Address (Addr)).all := Sentinel;
@@ -89,9 +89,9 @@ package body ESP32S3.Stack_Usage is
    -- High_Water --
    ----------------
 
-   function High_Water (Low, High : System.Address) return Natural is
-      Addr : Integer_Address := To_Integer (Low);
-      Top  : constant Integer_Address := To_Integer (High);
+   function High_Water (Within : Region) return Natural is
+      Addr : Integer_Address := To_Integer (Within.Low);
+      Top  : constant Integer_Address := To_Integer (Within.High);
    begin
       --  Scan up from the bottom; the first non-sentinel word is the deepest the
       --  stack ever reached.  Everything from there to High counts as used.
@@ -115,7 +115,7 @@ package body ESP32S3.Stack_Usage is
       --  Paint [__stack_start + redzone, here - guard): the still-unused region
       --  below us, stopping clear of the overflow guard's watchpoint.
       if To_Integer (Limit) > To_Integer (Paint_Base) then
-         Paint (Paint_Base, Limit);
+         Paint ((Low => Paint_Base, High => Limit));
       end if;
    end Paint_Env_Stack;
 
@@ -126,7 +126,7 @@ package body ESP32S3.Stack_Usage is
    function Env_Total return Natural
    is (Natural (Env_High - Env_Low));
    function Env_Used return Natural
-   is (High_Water (Paint_Base, Env_High));
+   is (High_Water ((Low => Paint_Base, High => Env_High)));
    function Env_Free return Natural
    is (Env_Total - Env_Used);
 
