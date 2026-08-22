@@ -36,10 +36,40 @@ package body ESP32S3.Stack_Usage is
    --  recover from down there.
    Overflow_Redzone : constant Storage_Offset := 2048;
 
-   --  The bottom of the painted region.  Paint_Env_Stack and High_Water must
-   --  use exactly the same base, or the unpainted redzone reads as "used" and
-   --  the high-water mark comes back as the whole stack.
-   Paint_Base : constant System.Address := Env_Low + Overflow_Redzone;
+   --  Width of the data-watchpoint the guard arms.  Bare_Glue does
+   --
+   --     DBREAKA1 := (limit + Stack_Ovf_Redzone) and not 63;
+   --     DBREAKC1 := StoreBreak or 16#3F#;
+   --
+   --  so the address is rounded DOWN to 64 and the break then covers 64 bytes
+   --  UPWARD from there.  Skipping exactly Overflow_Redzone therefore lands on
+   --  the first word of the watched window rather than clear of it.
+   Watch_Window : constant Storage_Offset := 64;
+
+   --  The bottom of the painted region: the first 64-byte boundary ABOVE the
+   --  watched window.  Paint_Env_Stack and High_Water must use exactly the
+   --  same base, or the unpainted redzone reads as "used" and the high-water
+   --  mark comes back as the whole stack.
+   --
+   --  This was Env_Low + Overflow_Redzone until 2026-08-22, which is the
+   --  bottom of the watched window, not past it.  Painting then tripped the
+   --  guard on its first store and raised Storage_Error in the ENVIRONMENT
+   --  task, where there is no handler -- so it reached the last-chance
+   --  handler and reset the board.  It only showed up sometimes because
+   --  DBREAKA1 is per-CORE and re-armed on every Enter_Task: if a task
+   --  pinned to the same core had already entered and re-armed the register
+   --  to its own redzone, the env watchpoint was no longer there to trip.
+   --  That race turns on code layout, so unrelated changes moved it.
+   --  Mirror the glue's own arithmetic, then step past the window it watches.
+   --  Rounding UP from Env_Low + Overflow_Redzone is NOT enough: that address
+   --  is already 64-aligned here, so rounding up leaves it exactly on the
+   --  window's first word.
+   Watch_Addr : constant Integer_Address :=
+     (To_Integer (Env_Low) + Integer_Address (Overflow_Redzone))
+     and not (Integer_Address (Watch_Window) - 1);
+
+   Paint_Base : constant System.Address :=
+     To_Address (Watch_Addr + Integer_Address (Watch_Window));
 
    -----------
    -- Paint --
