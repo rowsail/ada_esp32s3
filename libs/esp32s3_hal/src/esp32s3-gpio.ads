@@ -16,6 +16,19 @@
 --  them would hang the chip, so naming one is a compile-time error for a static
 --  value and a predicate check at run time.
 
+--  SPARK.  Contracts are per-subprogram rather than package-wide: the body
+--  holds a protected object (the Configure/Toggle lock), and tasking inside a
+--  SPARK region would demand a sequential elaboration policy of every client.
+--  So the four lock-free operations are verified and the two locked ones carry
+--  a contract with an unverified body -- callers are analysed either way.
+--
+--  The pad banks are external state owned by the generated register layer, so
+--  the contracts name them directly.  An abstract state would not work here: a
+--  Refined_State may only name state declared in THIS package, and these banks
+--  are shared with every other driver.
+with ESP32S3_Registers.GPIO;
+with ESP32S3_Registers.IO_MUX;
+
 package ESP32S3.GPIO is
    --  GPIO pad numbers as the silicon numbers them (0 .. 48); -1 is the "no pin"
    --  sentinel that drivers use for an optional line left unrouted (Optional_Pin).
@@ -58,17 +71,41 @@ package ESP32S3.GPIO is
    --  enabled; input pads get the input buffer enabled. (Routing a pad to a
    --  peripheral signal is the job of that peripheral's own Configure_Pins,
    --  which programs the matrix directly -- not this driver.)
+   --  The two banks the operations below touch.  Renamed once so the contracts
+   --  read as a list of modes rather than a wall of long names.
+   package Pad_Regs renames ESP32S3_Registers.GPIO;
+   package Mux_Regs renames ESP32S3_Registers.IO_MUX;
+
+   --  Body NOT in SPARK: read-modify-write through the lock.
    procedure Configure
      (Pin   : Pin_Id;
       Mode  : Pin_Mode;
       Pull  : Pull_Mode := Floating;
-      Drive : Drive_Strength := Drive_Medium);
+      Drive : Drive_Strength := Drive_Medium)
+   with SPARK_Mode => On,
+        Global => (In_Out => (Pad_Regs.GPIO_Periph, Mux_Regs.IO_MUX_Periph));
 
-   procedure Set (Pin : Pin_Id);              --  drive high  (atomic W1TS)
-   procedure Clear (Pin : Pin_Id);              --  drive low   (atomic W1TC)
-   procedure Toggle
-     (Pin : Pin_Id);              --  flip the current output level
-   procedure Write (Pin : Pin_Id; On : Boolean);
-   function Read (Pin : Pin_Id) return Boolean;  --  sample the input level
+   --  drive high (atomic W1TS)
+   procedure Set (Pin : Pin_Id)
+   with SPARK_Mode => On, Global => (In_Out => Pad_Regs.GPIO_Periph);
+
+   --  drive low (atomic W1TC)
+   procedure Clear (Pin : Pin_Id)
+   with SPARK_Mode => On, Global => (In_Out => Pad_Regs.GPIO_Periph);
+
+   --  Flip the current output level.  Body NOT in SPARK: locked.
+   procedure Toggle (Pin : Pin_Id)
+   with SPARK_Mode => On, Global => (In_Out => Pad_Regs.GPIO_Periph);
+
+   procedure Write (Pin : Pin_Id; On : Boolean)
+   with SPARK_Mode => On, Global => (In_Out => Pad_Regs.GPIO_Periph);
+
+   --  Sample the input level.  Volatile_Function, which is legal only because
+   --  the bank declares Effective_Reads => False -- sampling a pad does not
+   --  consume it.  Two calls with the same Pin may still differ: the pad is
+   --  driven from outside the program.
+   function Read (Pin : Pin_Id) return Boolean
+   with SPARK_Mode => On,
+        Volatile_Function, Global => (Input => Pad_Regs.GPIO_Periph);
 
 end ESP32S3.GPIO;
