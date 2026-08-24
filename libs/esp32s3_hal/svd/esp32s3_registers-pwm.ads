@@ -3345,10 +3345,18 @@ package ESP32S3_Registers.PWM is
 
    --  Motor Control Pulse-Width Modulation 0
    MCPWM0_Periph : aliased PWM_Peripheral
-     with Import, Address => MCPWM0_Base;
+     with Import, Address => MCPWM0_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
    --  Motor Control Pulse-Width Modulation 1
    MCPWM1_Periph : aliased PWM_Peripheral
-     with Import, Address => MCPWM1_Base;
+     with Import, Address => MCPWM1_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.PWM;

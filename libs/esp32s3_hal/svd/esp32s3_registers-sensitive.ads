@@ -7526,6 +7526,10 @@ package ESP32S3_Registers.SENSITIVE is
 
    --  SENSITIVE Peripheral
    SENSITIVE_Periph : aliased SENSITIVE_Peripheral
-     with Import, Address => SENSITIVE_Base;
+     with Import, Address => SENSITIVE_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.SENSITIVE;

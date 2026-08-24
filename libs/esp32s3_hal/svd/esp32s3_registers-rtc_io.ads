@@ -904,6 +904,10 @@ package ESP32S3_Registers.RTC_IO is
 
    --  Low-power Input/Output
    RTC_IO_Periph : aliased RTC_IO_Peripheral
-   with Import, Address => RTC_IO_Base;
+   with Import, Address => RTC_IO_Base, Volatile,
+        Async_Readers    => True,
+        Async_Writers    => True,
+        Effective_Reads  => False,
+        Effective_Writes => True;
 
 end ESP32S3_Registers.RTC_IO;

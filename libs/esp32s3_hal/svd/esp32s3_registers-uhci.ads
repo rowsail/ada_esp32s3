@@ -834,10 +834,18 @@ package ESP32S3_Registers.UHCI is
 
    --  Universal Host Controller Interface 0
    UHCI0_Periph : aliased UHCI_Peripheral
-     with Import, Address => UHCI0_Base;
+     with Import, Address => UHCI0_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
    --  Universal Host Controller Interface 1
    UHCI1_Periph : aliased UHCI_Peripheral
-     with Import, Address => UHCI1_Base;
+     with Import, Address => UHCI1_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.UHCI;

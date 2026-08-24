@@ -777,6 +777,10 @@ package ESP32S3_Registers.LEDC is
 
    --  LED Control PWM (Pulse Width Modulation)
    LEDC_Periph : aliased LEDC_Peripheral
-     with Import, Address => LEDC_Base;
+     with Import, Address => LEDC_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.LEDC;

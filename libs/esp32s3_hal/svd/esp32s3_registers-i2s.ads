@@ -1094,6 +1094,10 @@ package ESP32S3_Registers.I2S is
 
    --  I2S (Inter-IC Sound) Controller 0
    I2S0_Periph : aliased I2S0_Peripheral
-     with Import, Address => I2S0_Base;
+     with Import, Address => I2S0_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.I2S;

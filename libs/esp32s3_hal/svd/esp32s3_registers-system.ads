@@ -1369,6 +1369,10 @@ package ESP32S3_Registers.SYSTEM is
 
    --  System Configuration Registers
    SYSTEM_Periph : aliased SYSTEM_Peripheral
-   with Import, Address => SYSTEM_Base;
+   with Import, Address => SYSTEM_Base, Volatile,
+        Async_Readers    => True,
+        Async_Writers    => True,
+        Effective_Reads  => False,
+        Effective_Writes => True;
 
 end ESP32S3_Registers.SYSTEM;

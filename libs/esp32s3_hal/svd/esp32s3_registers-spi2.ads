@@ -1405,10 +1405,18 @@ package ESP32S3_Registers.SPI2 is
 
    --  SPI (Serial Peripheral Interface) Controller 2
    SPI2_Periph : aliased SPI2_Peripheral
-     with Import, Address => SPI2_Base;
+     with Import, Address => SPI2_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
    --  SPI (Serial Peripheral Interface) Controller 3
    SPI3_Periph : aliased SPI2_Peripheral
-     with Import, Address => SPI3_Base;
+     with Import, Address => SPI3_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.SPI2;

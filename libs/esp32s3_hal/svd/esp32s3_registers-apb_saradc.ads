@@ -859,6 +859,10 @@ package ESP32S3_Registers.APB_SARADC is
 
    --  SAR (Successive Approximation Register) Analog-to-Digital Converter
    APB_SARADC_Periph : aliased APB_SARADC_Peripheral
-   with Import, Address => APB_SARADC_Base;
+   with Import, Address => APB_SARADC_Base, Volatile,
+        Async_Readers    => True,
+        Async_Writers    => True,
+        Effective_Reads  => False,
+        Effective_Writes => True;
 
 end ESP32S3_Registers.APB_SARADC;

@@ -12,9 +12,10 @@
 #
 # NOTE: the Alire-indexed svd2ada is too old -- it leaves %s template
 # placeholders in dimensioned register arrays (e.g. RMT), which do not compile;
-# so we build the current source instead.  Two post-processes follow: qualify
+# so we build the current source instead.  Three post-processes follow: qualify
 # System->Standard.System in the SYSTEM peripheral (case-insensitive name clash),
-# and re-expand the flattened Apache header.
+# give the peripheral objects explicit SPARK external-state aspects, and
+# re-expand the flattened Apache header.
 #
 #   ./regenerate.sh            # fetches the pinned espressif/svd esp32s3.svd
 #   ESP32S3_SVD=/path.svd ./regenerate.sh
@@ -64,6 +65,102 @@ echo "[regen] qualified System -> Standard.System in the SYSTEM peripheral"
 
 # (The INTERRUPT_CORE1 base is correct in the v21 SVD -- 0x600C2000, shared with
 # INTERRUPT_CORE0 -- so the base patch the old Arduino v12 SVD needed is gone.)
+
+# Give every peripheral object explicit SPARK external-state aspects.
+#
+# svd2ada already marks the peripheral record type Volatile, so SPARK does see
+# a bank as external state.  What it does not do is say WHICH KIND, and the
+# default when the four aspects are left unstated is all True -- the most
+# conservative reading, in which a read is itself a state change.
+#
+# That default costs something concrete: SPARK rejects any Volatile_Function
+# over a bank outright ("function ... with volatile input global ... with
+# effective reads is not allowed in SPARK"), and a volatile function is the
+# standard way to bring a hardware reading into a contract.  Supplying the
+# aspects is what makes that legal.  Measured on a probe reading GPIO_Periph:
+# rejected before, fully proved after.
+#
+# The aspects are inert for code generation -- the firmware binary is
+# byte-identical with and without them.
+#
+# A post-process rather than a hand edit, for the reason the other two here
+# are: line 1 of this script is "rm -rf $HERE/svd", so an edit made in svd/ is
+# gone the next time anyone regenerates.
+#
+# The aspects apply to the OBJECT, and a peripheral is one object, so a bank
+# gets ONE characterisation covering all its registers.  That forces a choice
+# on Effective_Reads, and the two directions are not symmetric:
+#
+#   False on a bank whose reads consume is UNSOUND -- SPARK would then believe
+#         that reading a FIFO twice yields the same byte.
+#   True  on a bank whose reads do not consume is merely the default: it
+#         rejects some valid code and accepts nothing invalid.
+#
+# So a bank keeps True if ANY register in it has a consuming read.  The list
+# below is by inspection of the generated registers, not by name:
+#
+#   I2C0/I2C1  DATA.FIFO_RDATA        USB_DEVICE  EP1  (the console FIFO)
+#   RMT        CHDATA                 SDHOST      BUFFIFO
+#   UART0/1/2  FIFO.RXFIFO_RD_BYTE
+#
+# Banks whose names suggest a FIFO but whose reads do NOT consume, so they are
+# deliberately absent: DMA (INFIFO_*/OUTFIFO_* are counters and status), TWAI0
+# (DATA_0..12 is a buffer window; the FIFO advances on the RELEASE_BUF command,
+# not on the read), USB0 (GDFIFOCFG is configuration -- the DWC-OTG FIFO
+# windows are outside the bank), and SPI/I2S/LCD_CAM/UHCI/USB_WRAP (status and
+# configuration only).
+#
+# Volatile is repeated on the object although the type already carries it:
+# redundant today, and a safety net if svd2ada ever stops emitting it, since
+# the other three aspects are only meaningful on a volatile object.
+python3 - "$HERE/svd" <<'ANNOT'
+import glob, re, sys
+
+#  Banks holding at least one register whose READ consumes.
+CONSUMING = {"I2C0", "I2C1", "RMT", "SDHOST",
+             "UART0", "UART1", "UART2", "USB_DEVICE"}
+
+#  svd2ada emits the "with" line at either 3 or 5 spaces of indent, so the
+#  indent is captured and the added aspects are lined up under "Import".
+decl = re.compile(
+    r"^(   (\w+)_Periph : aliased \w+_Peripheral\n"
+    r"( +)with Import, Address => \w+_Base);$",
+    re.M)
+
+def replace(match):
+    pad = " " * (len(match.group(3)) + len("with "))
+    reads = "True" if match.group(2) in CONSUMING else "False"
+    return (match.group(1) + ", Volatile,\n"
+            + pad + "Async_Readers    => True,\n"
+            + pad + "Async_Writers    => True,\n"
+            + pad + "Effective_Reads  => " + reads + ",\n"
+            + pad + "Effective_Writes => True;")
+
+files = objects = 0
+for path in sorted(glob.glob(sys.argv[1] + "/*.ads")):
+    src = open(path, encoding="utf-8").read()
+    out, n = decl.subn(replace, src)
+    if n:
+        open(path, "w", encoding="utf-8").write(out)
+        files += 1
+        objects += n
+
+#  Every bank must end up annotated: a missed one silently reverts to the
+#  all-True default, which is exactly what this step exists to refine.
+#  Counted over the final text rather than over the substitutions, so a re-run
+#  on an already annotated tree is a no-op and not an error.
+declared = annotated = 0
+for path in glob.glob(sys.argv[1] + "/*.ads"):
+    text = open(path, encoding="utf-8").read()
+    declared += text.count("_Periph : aliased")
+    annotated += text.count("Effective_Writes => True;")
+if annotated != declared:
+    sys.exit("[regen] ERROR: %d of %d peripheral objects annotated -- the "
+             "declaration shape svd2ada emits has changed"
+             % (annotated, declared))
+print("[regen] annotated %d peripheral objects in %d files for SPARK "
+      "(%d already annotated)" % (objects, files, declared - objects))
+ANNOT
 
 # svd2ada flattens the SVD's Apache-2.0 header onto a single line.  Apache-2.0
 # requires the notice be retained; re-expand it to a readable comment block (the

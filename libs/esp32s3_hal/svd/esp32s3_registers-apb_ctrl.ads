@@ -941,6 +941,10 @@ package ESP32S3_Registers.APB_CTRL is
 
    --  APB (Advanced Peripheral Bus) Controller
    APB_CTRL_Periph : aliased APB_CTRL_Peripheral
-     with Import, Address => APB_CTRL_Base;
+     with Import, Address => APB_CTRL_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.APB_CTRL;

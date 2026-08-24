@@ -3258,6 +3258,10 @@ package ESP32S3_Registers.RTC_CNTL is
 
    --  Real-Time Clock Control
    RTC_CNTL_Periph : aliased RTC_CNTL_Peripheral
-   with Import, Address => RTC_CNTL_Base;
+   with Import, Address => RTC_CNTL_Base, Volatile,
+        Async_Readers    => True,
+        Async_Writers    => True,
+        Effective_Reads  => False,
+        Effective_Writes => True;
 
 end ESP32S3_Registers.RTC_CNTL;

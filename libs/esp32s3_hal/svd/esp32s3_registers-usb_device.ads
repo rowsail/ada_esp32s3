@@ -808,6 +808,10 @@ package ESP32S3_Registers.USB_DEVICE is
 
    --  Full-speed USB Serial/JTAG Controller
    USB_DEVICE_Periph : aliased USB_DEVICE_Peripheral
-   with Import, Address => USB_DEVICE_Base;
+   with Import, Address => USB_DEVICE_Base, Volatile,
+        Async_Readers    => True,
+        Async_Writers    => True,
+        Effective_Reads  => True,
+        Effective_Writes => True;
 
 end ESP32S3_Registers.USB_DEVICE;

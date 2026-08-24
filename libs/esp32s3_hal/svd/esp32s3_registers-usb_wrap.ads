@@ -171,6 +171,10 @@ package ESP32S3_Registers.USB_WRAP is
 
    --  USB_WRAP Peripheral
    USB_WRAP_Periph : aliased USB_WRAP_Peripheral
-     with Import, Address => USB_WRAP_Base;
+     with Import, Address => USB_WRAP_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.USB_WRAP;

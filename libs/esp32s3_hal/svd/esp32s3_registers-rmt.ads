@@ -1064,6 +1064,10 @@ package ESP32S3_Registers.RMT is
 
    --  Remote Control
    RMT_Periph : aliased RMT_Peripheral
-     with Import, Address => RMT_Base;
+     with Import, Address => RMT_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => True,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.RMT;

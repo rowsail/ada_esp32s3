@@ -2686,6 +2686,10 @@ package ESP32S3_Registers.INTERRUPT_CORE0 is
 
    --  Interrupt Controller (Core 0)
    INTERRUPT_CORE0_Periph : aliased INTERRUPT_CORE0_Peripheral
-   with Import, Address => INTERRUPT_CORE0_Base;
+   with Import, Address => INTERRUPT_CORE0_Base, Volatile,
+        Async_Readers    => True,
+        Async_Writers    => True,
+        Effective_Reads  => False,
+        Effective_Writes => True;
 
 end ESP32S3_Registers.INTERRUPT_CORE0;

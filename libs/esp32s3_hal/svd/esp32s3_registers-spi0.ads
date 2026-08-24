@@ -1754,6 +1754,10 @@ package ESP32S3_Registers.SPI0 is
 
    --  SPI (Serial Peripheral Interface) Controller 0
    SPI0_Periph : aliased SPI0_Peripheral
-     with Import, Address => SPI0_Base;
+     with Import, Address => SPI0_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.SPI0;

@@ -1187,6 +1187,10 @@ package ESP32S3_Registers.SDHOST is
 
    --  SD/MMC Host Controller
    SDHOST_Periph : aliased SDHOST_Peripheral
-     with Import, Address => SDHOST_Base;
+     with Import, Address => SDHOST_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => True,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.SDHOST;

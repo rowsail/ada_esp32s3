@@ -508,6 +508,10 @@ package ESP32S3_Registers.PCNT is
 
    --  Pulse Count Controller
    PCNT_Periph : aliased PCNT_Peripheral
-     with Import, Address => PCNT_Base;
+     with Import, Address => PCNT_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.PCNT;

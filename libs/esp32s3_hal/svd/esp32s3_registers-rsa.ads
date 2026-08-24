@@ -304,6 +304,10 @@ package ESP32S3_Registers.RSA is
 
    --  RSA (Rivest Shamir Adleman) Accelerator
    RSA_Periph : aliased RSA_Peripheral
-     with Import, Address => RSA_Base;
+     with Import, Address => RSA_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.RSA;

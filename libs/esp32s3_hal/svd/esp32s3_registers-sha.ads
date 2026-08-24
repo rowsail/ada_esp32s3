@@ -304,6 +304,10 @@ package ESP32S3_Registers.SHA is
 
    --  SHA (Secure Hash Algorithm) Accelerator
    SHA_Periph : aliased SHA_Peripheral
-   with Import, Address => SHA_Base;
+   with Import, Address => SHA_Base, Volatile,
+        Async_Readers    => True,
+        Async_Writers    => True,
+        Effective_Reads  => False,
+        Effective_Writes => True;
 
 end ESP32S3_Registers.SHA;

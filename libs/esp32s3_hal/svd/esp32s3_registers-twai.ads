@@ -744,6 +744,10 @@ package ESP32S3_Registers.TWAI is
 
    --  Two-Wire Automotive Interface
    TWAI0_Periph : aliased TWAI0_Peripheral
-     with Import, Address => TWAI0_Base;
+     with Import, Address => TWAI0_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.TWAI;

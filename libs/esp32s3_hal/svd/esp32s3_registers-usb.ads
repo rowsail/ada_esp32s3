@@ -4655,6 +4655,10 @@ package ESP32S3_Registers.USB is
 
    --  USB OTG (On-The-Go)
    USB0_Periph : aliased USB0_Peripheral
-     with Import, Address => USB0_Base;
+     with Import, Address => USB0_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.USB;

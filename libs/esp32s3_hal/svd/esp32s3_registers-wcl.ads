@@ -1356,6 +1356,10 @@ package ESP32S3_Registers.WCL is
 
    --  WCL Peripheral
    WCL_Periph : aliased WCL_Peripheral
-     with Import, Address => WCL_Base;
+     with Import, Address => WCL_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.WCL;

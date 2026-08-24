@@ -529,10 +529,18 @@ package ESP32S3_Registers.TIMG is
 
    --  Timer Group 0
    TIMG0_Periph : aliased TIMG_Peripheral
-     with Import, Address => TIMG0_Base;
+     with Import, Address => TIMG0_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
    --  Timer Group 1
    TIMG1_Periph : aliased TIMG_Peripheral
-     with Import, Address => TIMG1_Base;
+     with Import, Address => TIMG1_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.TIMG;

@@ -1054,10 +1054,18 @@ package ESP32S3_Registers.I2C is
 
    --  I2C (Inter-Integrated Circuit) Controller 0
    I2C0_Periph : aliased I2C_Peripheral
-     with Import, Address => I2C0_Base;
+     with Import, Address => I2C0_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => True,
+          Effective_Writes => True;
 
    --  I2C (Inter-Integrated Circuit) Controller 1
    I2C1_Periph : aliased I2C_Peripheral
-     with Import, Address => I2C1_Base;
+     with Import, Address => I2C1_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => True,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.I2C;

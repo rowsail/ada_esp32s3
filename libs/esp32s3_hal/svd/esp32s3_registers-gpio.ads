@@ -631,6 +631,10 @@ package ESP32S3_Registers.GPIO is
 
    --  General Purpose Input/Output
    GPIO_Periph : aliased GPIO_Peripheral
-   with Import, Address => GPIO_Base;
+   with Import, Address => GPIO_Base, Volatile,
+        Async_Readers    => True,
+        Async_Writers    => True,
+        Effective_Reads  => False,
+        Effective_Writes => True;
 
 end ESP32S3_Registers.GPIO;

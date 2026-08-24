@@ -207,6 +207,10 @@ package ESP32S3_Registers.PERI_BACKUP is
 
    --  PERI_BACKUP Peripheral
    PERI_BACKUP_Periph : aliased PERI_BACKUP_Peripheral
-     with Import, Address => PERI_BACKUP_Base;
+     with Import, Address => PERI_BACKUP_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.PERI_BACKUP;

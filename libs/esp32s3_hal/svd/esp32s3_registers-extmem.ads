@@ -1939,6 +1939,10 @@ package ESP32S3_Registers.EXTMEM is
 
    --  External Memory
    EXTMEM_Periph : aliased EXTMEM_Peripheral
-     with Import, Address => EXTMEM_Base;
+     with Import, Address => EXTMEM_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.EXTMEM;

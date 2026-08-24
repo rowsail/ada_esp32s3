@@ -187,6 +187,10 @@ package ESP32S3_Registers.IO_MUX is
 
    --  Input/Output Multiplexer
    IO_MUX_Periph : aliased IO_MUX_Peripheral
-   with Import, Address => IO_MUX_Base;
+   with Import, Address => IO_MUX_Base, Volatile,
+        Async_Readers    => True,
+        Async_Writers    => True,
+        Effective_Reads  => False,
+        Effective_Writes => True;
 
 end ESP32S3_Registers.IO_MUX;

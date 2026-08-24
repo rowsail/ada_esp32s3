@@ -2268,6 +2268,10 @@ package ESP32S3_Registers.SENS is
 
    --  SENS Peripheral
    SENS_Periph : aliased SENS_Peripheral
-   with Import, Address => SENS_Base;
+   with Import, Address => SENS_Base, Volatile,
+        Async_Readers    => True,
+        Async_Writers    => True,
+        Effective_Reads  => False,
+        Effective_Writes => True;
 
 end ESP32S3_Registers.SENS;

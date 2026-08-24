@@ -1723,6 +1723,10 @@ package ESP32S3_Registers.DMA is
 
    --  DMA (Direct Memory Access) Controller
    DMA_Periph : aliased DMA_Peripheral
-     with Import, Address => DMA_Base;
+     with Import, Address => DMA_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => False,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.DMA;

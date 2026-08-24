@@ -1254,14 +1254,26 @@ package ESP32S3_Registers.UART is
 
    --  UART (Universal Asynchronous Receiver-Transmitter) Controller 0
    UART0_Periph : aliased UART_Peripheral
-     with Import, Address => UART0_Base;
+     with Import, Address => UART0_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => True,
+          Effective_Writes => True;
 
    --  UART (Universal Asynchronous Receiver-Transmitter) Controller 1
    UART1_Periph : aliased UART_Peripheral
-     with Import, Address => UART1_Base;
+     with Import, Address => UART1_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => True,
+          Effective_Writes => True;
 
    --  UART (Universal Asynchronous Receiver-Transmitter) Controller 2
    UART2_Periph : aliased UART_Peripheral
-     with Import, Address => UART2_Base;
+     with Import, Address => UART2_Base, Volatile,
+          Async_Readers    => True,
+          Async_Writers    => True,
+          Effective_Reads  => True,
+          Effective_Writes => True;
 
 end ESP32S3_Registers.UART;
