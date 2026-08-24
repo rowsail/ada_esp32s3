@@ -151,7 +151,7 @@ package body ESP32S3.ADC is
       --  binary search below only asks "is it zero".  A stale non-zero simply
       --  steers one step the wrong way and the search recovers; there is no
       --  sensible way to abort a calibration this early in bring-up.
-      Done       : Boolean with Unreferenced;
+      Done       : Boolean;
    begin
       Set_Bias (Unit);
       Set_Encal_Gnd (Unit, True);
