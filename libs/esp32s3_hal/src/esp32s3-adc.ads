@@ -32,16 +32,39 @@ package ESP32S3.ADC is
    procedure Release (R : in out Reader);
 
    --  Read one sample from channel Ch at the given attenuation (blocking; a
-   --  conversion takes a few microseconds).  Returns 0 on an invalid handle.
-   function Read (R : Reader; Ch : Channel_Index; Atten : Attenuation := Db_12) return Raw_Value;
+   --  conversion takes a few microseconds).
+   --
+   --  Valid is the important half.  The conversion-done poll has a wall-clock
+   --  deadline, and if it expires the SAR's data register still holds whatever
+   --  it last latched -- so there is no value that can safely mean "no
+   --  reading".  This used to return that stale figure as though it were
+   --  fresh, with the DONE flag recorded only in a package-level global that
+   --  callers had to remember to consult and that two tasks could overwrite
+   --  for each other.  Reporting it per call is the only form that cannot be
+   --  ignored by accident.
+   --
+   --  Valid is likewise False for an unheld handle, which previously returned
+   --  a silent 0 -- indistinguishable from a genuine zero-current reading.
+   --
+   --  A procedure and not a function: starting a conversion writes the SAR
+   --  registers, and a function that writes state is both a poor description
+   --  of what this does and illegal in SPARK.
+   procedure Read
+     (R     : Reader;
+      Ch    : Channel_Index;
+      Value : out Raw_Value;
+      Valid : out Boolean;
+      Atten : Attenuation := Db_12);
 
    --  The GPIO a unit's channel is wired to (for routing / documentation).
    function Channel_Pin (Unit : ADC_Unit; Ch : Channel_Index) return ESP32S3.GPIO.Pin_Id;
 
-   --  Diagnostics: the self-calibrated initial code, and whether the most recent
-   --  conversion's DONE flag asserted (False => the SAR did not convert).
+   --  Diagnostics: the self-calibrated initial code.
+   --
+   --  (Last_Done is gone: conversion validity is now reported by Read itself,
+   --  per call, rather than through a global that any other task's conversion
+   --  could have overwritten before it was read.)
    function Cal_Code (Unit : ADC_Unit) return Natural;
-   function Last_Done return Boolean;
 
 private
    type Reader is new Ada.Finalization.Limited_Controlled with record

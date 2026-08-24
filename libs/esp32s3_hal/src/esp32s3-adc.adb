@@ -40,7 +40,6 @@ package body ESP32S3.ADC is
    --  matching one before each conversion -- calibrating at a single atten and
    --  reusing that code at the others skews every non-calibrated-atten reading.
    Cal_Codes : array (ADC_Unit, Attenuation) of Natural := (others => (others => 0));
-   Done_Flag : Boolean := False;
 
    procedure I2C (Reg, Msb, Lsb, Data : Unsigned_8) is
    begin
@@ -95,7 +94,10 @@ package body ESP32S3.ADC is
    --  Low-level digital one-shot conversion (atten + channel + start + read).
    ---------------------------------------------------------------------------
 
-   function Convert (Unit : ADC_Unit; Ch : Channel_Index; Atten : Attenuation) return Natural is
+   procedure Convert
+     (Unit : ADC_Unit; Ch : Channel_Index; Atten : Attenuation;
+      Value : out Natural; Done : out Boolean)
+   is
       Shift       : constant Natural := Natural (Ch) * 2;
       One_Hot     : constant Unsigned_16 := Shift_Left (Unsigned_16 (1), Natural (Ch));
       Atten_Value : constant UInt32 := Shift_Left (UInt32 (Attenuation'Pos (Atten)), Shift);
@@ -118,8 +120,8 @@ package body ESP32S3.ADC is
             loop
                null;
             end loop;
-            Done_Flag := SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DONE_SAR;
-            return Natural (SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DATA_SAR and 16#0FFF#);
+            Done  := SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DONE_SAR;
+            Value := Natural (SENS_Periph.SAR_MEAS1_CTRL2.MEAS1_DATA_SAR and 16#0FFF#);
 
          when ADC2 =>
             SENS_Periph.SAR_ATTEN2 := (SENS_Periph.SAR_ATTEN2 and not Atten_Mask) or Atten_Value;
@@ -131,8 +133,8 @@ package body ESP32S3.ADC is
             loop
                null;
             end loop;
-            Done_Flag := SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DONE_SAR;
-            return Natural (SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DATA_SAR and 16#0FFF#);
+            Done  := SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DONE_SAR;
+            Value := Natural (SENS_Periph.SAR_MEAS2_CTRL2.MEAS2_DATA_SAR and 16#0FFF#);
       end case;
    end Convert;
 
@@ -144,11 +146,17 @@ package body ESP32S3.ADC is
       Code_L     : Natural := 0;
       Trial_Code : Natural := 2048;
       Reading    : Natural;
+      --  Calibration ignores done-ness deliberately: a conversion that did
+      --  not complete reads as whatever the data register held, and the
+      --  binary search below only asks "is it zero".  A stale non-zero simply
+      --  steers one step the wrong way and the search recovers; there is no
+      --  sensible way to abort a calibration this early in bring-up.
+      Done       : Boolean with Unreferenced;
    begin
       Set_Bias (Unit);
       Set_Encal_Gnd (Unit, True);
       Set_Init_Code (Unit, Trial_Code);
-      Reading := Convert (Unit, 0, Atten);
+      Convert (Unit, 0, Atten, Reading, Done);
       while Code_H - Code_L > 1 loop
          if Reading = 0 then
             Code_H := Trial_Code;
@@ -157,7 +165,7 @@ package body ESP32S3.ADC is
          end if;
          Trial_Code := (Code_H + Code_L) / 2;
          Set_Init_Code (Unit, Trial_Code);
-         Reading := Convert (Unit, 0, Atten);
+         Convert (Unit, 0, Atten, Reading, Done);
       end loop;
       Set_Encal_Gnd (Unit, False);
       Set_Init_Code (Unit, Trial_Code);   --  leave the calibrated code in place
@@ -299,17 +307,28 @@ package body ESP32S3.ADC is
 
    function Cal_Code (Unit : ADC_Unit) return Natural
    is (Cal_Codes (Unit, Db_12));
-   function Last_Done return Boolean
-   is (Done_Flag);
 
-   function Read (R : Reader; Ch : Channel_Index; Atten : Attenuation := Db_12) return Raw_Value is
+
+   procedure Read
+     (R     : Reader;
+      Ch    : Channel_Index;
+      Value : out Raw_Value;
+      Valid : out Boolean;
+      Atten : Attenuation := Db_12)
+   is
+      Sample : Natural;
+      Done   : Boolean;
    begin
+      Value := 0;
+      Valid := False;
       if not R.Held then
-         return 0;
+         return;
       end if;
       --  Program the init code calibrated FOR THIS attenuation before converting.
       Set_Init_Code (R.Unit, Cal_Codes (R.Unit, Atten));
-      return Raw_Value (Convert (R.Unit, Ch, Atten));
+      Convert (R.Unit, Ch, Atten, Sample, Done);
+      Value := Raw_Value (Sample);
+      Valid := Done;
    end Read;
 
 end ESP32S3.ADC;

@@ -48,13 +48,24 @@ procedure Main is
    Low_Max  : constant Natural := 500;    --  "low"  read must stay under this
 
    --  Median of a few reads is cheap noise rejection: take three back-to-back
-   --  conversions on the channel and return their mean.
-   function Sample (R : Reader) return Natural is
-      First  : constant Natural := Read (R, Sense_Channel);
-      Second : constant Natural := Read (R, Sense_Channel);
-      Third  : constant Natural := Read (R, Sense_Channel);
+   --  conversions on the channel and return their mean.  All_Valid reports
+   --  whether every one of them actually converted -- a conversion that timed
+   --  out yields whatever the data register held, so averaging it in would
+   --  quietly corrupt the result.
+   procedure Sample
+     (R : Reader; Mean : out Natural; All_Valid : out Boolean)
+   is
+      Total : Natural := 0;
+      Value : Natural;
+      Valid : Boolean;
    begin
-      return (First + Second + Third) / 3;
+      All_Valid := True;
+      for Count in 1 .. 3 loop
+         Read (R, Sense_Channel, Value, Valid);
+         All_Valid := All_Valid and Valid;
+         Total := Total + Value;
+      end loop;
+      Mean := Total / 3;
    end Sample;
 begin
    delay until Clock + Milliseconds (200);
@@ -68,6 +79,8 @@ begin
       Low  : Natural := 0;
 
       Passed : Boolean;
+      High_Valid, Low_Valid : Boolean;
+      Readings_Valid : Boolean;
    begin
       --  Claim brings up the SAR analog front-end and self-calibrates it once.
       Claim (R, ADC1);
@@ -76,15 +89,19 @@ begin
       ESP32S3.GPIO.Configure (Sense_Pin, ESP32S3.GPIO.Output);
       ESP32S3.GPIO.Set (Sense_Pin);
       delay until Clock + Settle_Time;
-      High := Sample (R);
+      Sample (R, High, High_Valid);
 
       --  Drive the pad low, let it settle, read.
       ESP32S3.GPIO.Clear (Sense_Pin);
       delay until Clock + Settle_Time;
-      Low := Sample (R);
+      Sample (R, Low, Low_Valid);
 
       --  Clear separation: high near full scale, low near zero.
-      Passed := High > High_Min and then Low < Low_Max and then High > Low;
+      --  A reading that did not convert is not evidence of anything, so it
+      --  fails the check rather than being compared.
+      Readings_Valid := High_Valid and Low_Valid;
+      Passed := Readings_Valid
+        and then High > High_Min and then Low < Low_Max and then High > Low;
       Put ("[adc] ADC1 ch0: drive-high=");
       Put (High);
       Put ("  drive-low=");
@@ -93,8 +110,8 @@ begin
       Put_Line (if Passed then "PASS" else "FAIL");
       Put ("[adc]   cal_code=");
       Put (Cal_Code (ADC1));
-      Put ("  last_done=");
-      Put (Boolean'Pos (Last_Done));
+      Put ("  all_valid=");
+      Put (Boolean'Pos (Readings_Valid));
       New_Line;
    end;                                  --  R finalizes -> unit released
 
