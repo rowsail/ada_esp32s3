@@ -753,8 +753,11 @@ end LCD_Clk;
 
 \begin{lstlisting}
 procedure Claim (R : in out Reader; Unit : ADC_Unit);
-function Read (R : Reader; Ch : Channel_Index; Atten : Attenuation := Db_12)
-   return Raw_Value;                              --  0 .. 4095 (12-bit)
+procedure Read (R     : Reader;
+                Ch    : Channel_Index;
+                Value : out Raw_Value;           --  0 .. 4095 (12-bit)
+                Valid : out Boolean;
+                Atten : Attenuation := Db_12);
 \end{lstlisting}
 
 \textbf{Parameters.}
@@ -765,20 +768,43 @@ function Read (R : Reader; Ch : Channel_Index; Atten : Attenuation := Db_12)
 \item[\texttt{Atten}] input attenuation, trading range for resolution:
   \texttt{Db\_0} ($\sim$1.1\,V full scale), \texttt{Db\_2\_5} ($\sim$1.5\,V),
   \texttt{Db\_6} ($\sim$2.2\,V) or \texttt{Db\_12} ($\sim$3.3\,V, default).
-\item[returns] a \texttt{Raw\_Value}, \texttt{0\,..\,4095} (12-bit).
+\item[\texttt{Value}] a \texttt{Raw\_Value}, \texttt{0\,..\,4095} (12-bit).
+\item[\texttt{Valid}] whether the conversion completed. \emph{Check it.}
 \end{description}
+
+\textbf{Why this is a procedure.} It reads better as a function, and a function
+is the wrong shape. Starting a conversion writes the SAR registers, so a
+\texttt{Read} that returns a value is a function with an effect --- which SPARK
+rejects outright, and which hid a defect for as long as the signature stood.
+
+The conversion-done poll has a deadline. If it expires, the SAR's data register
+still holds whatever it last latched, so there is no code that can safely mean
+``no reading''. The old signature returned that stale figure as though it were
+fresh; the only evidence was a package-level \texttt{Last\_Done} flag that the
+caller had to remember to consult and that a second task could overwrite in
+between. \texttt{Valid} is likewise \texttt{False} for a handle that was never
+claimed, which previously returned a silent \texttt{0} --- indistinguishable
+from a genuine zero reading.
+
+A caller that ignores \texttt{Valid} is comparing a stale sample. In the
+firmware this driver was written for, that sample fed an overcurrent limit.
 
 \lstexample{Read a 12-bit sample.}
 \begin{lstlisting}
 with Ada.Text_IO; use Ada.Text_IO;
 with ESP32S3.ADC; use ESP32S3.ADC;
 procedure ADC_Read_Sample is
-   R : Reader;
-   V : Raw_Value;
+   R  : Reader;
+   V  : Raw_Value;
+   Ok : Boolean;
 begin
    Claim (R, ADC1);
-   V := Read (R, Ch => 0);     --  0 .. 4095 at full (12 dB) attenuation
-   Put_Line (Raw_Value'Image (V));
+   Read (R, Ch => 0, Value => V, Valid => Ok);
+   if Ok then
+      Put_Line (Raw_Value'Image (V));
+   else
+      Put_Line ("no reading");   --  V holds a stale code; do not use it
+   end if;
 end ADC_Read_Sample;
 \end{lstlisting}
 
@@ -787,12 +813,15 @@ end ADC_Read_Sample;
 with Ada.Text_IO; use Ada.Text_IO;
 with ESP32S3.ADC; use ESP32S3.ADC;
 procedure ADC_Atten is
-   R : Reader;
-   V : Raw_Value;
+   R  : Reader;
+   V  : Raw_Value;
+   Ok : Boolean;
 begin
    Claim (R, ADC1);
-   V := Read (R, Ch => 3, Atten => Db_0);   --  ~0..1.1 V full scale
-   Put_Line (Raw_Value'Image (V));
+   Read (R, Ch => 3, Value => V, Valid => Ok, Atten => Db_0);
+   if Ok then                               --  ~0..1.1 V full scale
+      Put_Line (Raw_Value'Image (V));
+   end if;
 end ADC_Atten;
 \end{lstlisting}
 

@@ -1082,27 +1082,33 @@ type Reader        is limited private;                --  auto-released
 procedure Claim   (R : in out Reader; Unit : ADC_Unit);
 function  Is_Valid (R : Reader) return Boolean;
 procedure Release (R : in out Reader);
-function  Read    (R : Reader; Ch : Channel_Index;
-                   Atten : Attenuation := Db_12) return Raw_Value;
+procedure Read    (R : Reader; Ch : Channel_Index;
+                   Value : out Raw_Value; Valid : out Boolean;
+                   Atten : Attenuation := Db_12);
 function  Channel_Pin (Unit : ADC_Unit; Ch : Channel_Index)
                        return ESP32S3.GPIO.Pin_Id;
 function  Cal_Code  (Unit : ADC_Unit) return Natural;
-function  Last_Done return Boolean;
 \end{lstlisting}
 
 \begin{lstlisting}
 declare
    R : Reader;
-   High, Low : Natural := 0;
+   High, Low : Raw_Value := 0;
+   Ok_High, Ok_Low : Boolean;
 begin
    Claim (R, ADC1);                         --  ADC1 ch0 -> GPIO1
    ESP32S3.GPIO.Configure (Pin, ESP32S3.GPIO.Output);
    ESP32S3.GPIO.Set (Pin);                  --  drive the sensed pad high
    delay until Clock + Milliseconds (2);
-   High := Read (R, Ch);                    --  expect near full scale
+   Read (R, Ch, High, Ok_High);             --  expect near full scale
    ESP32S3.GPIO.Clear (Pin);
    delay until Clock + Milliseconds (2);
-   Low := Read (R, Ch);                     --  expect near zero
+   Read (R, Ch, Low, Ok_Low);               --  expect near zero
+   --  A reading that did not convert is not evidence of anything: a
+   --  timed-out poll leaves the SAR's last latched code in place.
+   if not (Ok_High and Ok_Low) then
+      raise Program_Error with "ADC did not convert";
+   end if;
 end;                                        --  R finalizes -> unit released
 \end{lstlisting}
 

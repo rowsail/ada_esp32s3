@@ -71,8 +71,9 @@ the single change that made the ext4 and X.509 buffers provable.
 \section{What the proofs found}\index{bug!found by proof}
 
 A proof that goes through is quiet. A proof that will not go through is often pointing
-at a real defect, and this effort surfaced five, every one on a malformed-input path
-that testing had not reached:
+at a real defect, and this effort surfaced six. Five were on a malformed-input path
+that testing had not reached; the sixth was a different animal, and worth reading
+last:
 
 \begin{itemize}
   \item \textbf{Modbus \lstinline{Put_MBAP}} computed \lstinline{PDU_Len + 1} on an
@@ -89,20 +90,106 @@ that testing had not reached:
     as malformed.
   \item \textbf{The SHT41 CRC} loop bound \lstinline{while I + 2 <= Data'Last} overflowed
     in its own guard and underflowed on an empty buffer; rewritten as a group count.
+  \item \textbf{\lstinline{ADC.Read} returned a stale conversion.} SPARK refused it as
+    a ``function with output global'': it started a conversion --- writing the SAR
+    registers --- and recorded the result's validity in a package-level flag. The
+    conversion-done poll has a deadline, and on expiry the data register still holds
+    whatever it last latched, so the function returned that as though it were fresh.
+    The only evidence was a global that a second task could overwrite in between. It is
+    now a procedure reporting validity per call.
 \end{itemize}
 
-None was reachable by a well-formed message, which is exactly why the test suites had
-not caught them and why proving over the whole input space did.
+The first five were not reachable by a well-formed message, which is exactly why the
+test suites had not caught them and why proving over the whole input space did.
+
+The sixth is worth separating, because it was not an arithmetic slip on a hostile input
+and no amount of fuzzing would have found it: the \emph{signature was wrong}. A
+function that starts a conversion is not a function, and SPARK objects to the shape
+before it ever considers the values. That objection recurred four times in the
+application this driver was written for --- a current reading, a button poll, a fault
+flag, a console token cursor --- each a question that changed the world on the way to
+answering. Nothing about them looked alike in the source. The tool named them with the
+same sentence every time, which is a fair description of what a prover is for: not
+cleverness, but never tiring of the same question.
+
+\section{Proving code that touches registers}\index{SPARK!registers}\label{spark:registers}
+
+A memory-mapped register is not an ordinary variable, and until the generated register
+layer said so, no unit that touched one could be analysed. \texttt{svd2ada} marks each
+peripheral record \lstinline{Volatile}, which is enough for the compiler and not enough
+for a prover: with the four volatile aspects unstated they all default to
+\lstinline{True}, the most conservative reading, in which \emph{a read is itself a state
+change}. Under that default SPARK rejects any \lstinline{Volatile_Function} over a bank
+outright --- and a volatile function is how a hardware reading gets into a contract.
+
+The fix is to say which kind of external interaction each bank is:
+
+\begin{lstlisting}
+GPIO_Periph : aliased GPIO_Peripheral
+with Import, Address => GPIO_Base, Volatile,
+     Async_Readers    => True,
+     Async_Writers    => True,
+     Effective_Reads  => False,   --  reading a pad does not consume it
+     Effective_Writes => True;
+\end{lstlisting}
+
+The aspects apply to the \emph{object}, and a peripheral is one object, so a bank gets
+one characterisation covering all its registers. That forces a choice on
+\lstinline{Effective_Reads}, and the two directions are not symmetric.
+\lstinline{False} on a bank whose reads consume is \emph{unsound} --- the prover would
+believe that reading a FIFO twice yields the same byte. \lstinline{True} on a bank whose
+reads do not consume is merely pessimistic. So the banks with a consuming data port keep
+\lstinline{True}: \texttt{I2C0/1}, \texttt{RMT}, \texttt{SDHOST}, \texttt{UART0/1/2} and
+\texttt{USB\_DEVICE}, chosen by reading the generated registers rather than by name.
+\texttt{DMA} and \texttt{TWAI0} look like FIFOs and are not: their counters and buffer
+windows do not advance on a read.
+
+The aspects are inert for code generation --- an application binary was byte-identical
+before and after --- and they are applied by a post-process in
+\texttt{regenerate.sh} rather than by hand, since line~1 of that script is
+\lstinline{rm -rf $HERE/svd}.
+
+\textbf{What it buys, and what it costs.} \lstinline{ESP32S3.GPIO}'s lock-free pad
+operations --- \lstinline{Set}, \lstinline{Clear}, \lstinline{Write}, \lstinline{Read}
+--- are now proved. The substance is not the count but one property: pads
+\texttt{0\,..\,31} and \texttt{32\,..\,48} live in different register banks, and no path
+can reach one bank holding a pin belonging to the other. \lstinline{Configure} and
+\lstinline{Toggle} stay outside, because both serialise a read-modify-write through a
+protected object.
+
+The cost is a real constraint on how such code is written. A volatile read may not sit
+inside a larger expression, so
+
+\begin{lstlisting}
+return (Reg.GPIO_Periph.IN_k and Lo_Bit (Pin)) /= 0;   --  rejected
+\end{lstlisting}
+
+\noindent becomes a read into a local, then the mask. That is not pedantry: the pad is
+driven from outside the program, and the value must be fixed before anything else looks
+at it.
+
+Two further rules bite in practice. Contracts must be \emph{per-subprogram} rather than
+package-wide, because a package-wide \lstinline{SPARK_Mode} puts the driver's protected
+object inside a SPARK region and fails with ``tasking in SPARK requires sequential
+elaboration'' --- which would impose that policy on every client. And the banks must be
+named \emph{directly} in \lstinline{Global}: an abstract state cannot work, because a
+\lstinline{Refined_State} may only name state declared in the same package, and these
+banks belong to the generated layer and are shared with every other driver.
 
 \section{The edge of the subset}\index{SPARK!limits}
 
 Proof has an honest boundary, and naming it is part of the discipline. Three things sit
 outside it. First, code that is \emph{out of the SPARK subset by construction}: the
-volatile memory-mapped register drivers, the hardware crypto accelerators
-(SHA, AES, RSA), the controlled-type bus sessions with their \lstinline{Finalize}, the
-access-to-subprogram interrupt callbacks. These are verified by the other layers ---
-loopback self-tests and known-answer tests --- not by proof, and that is the right tool
-for them. Second, pure arithmetic that is \emph{inlined} in a register procedure, like a
+hardware crypto accelerators (SHA, AES, RSA), the controlled-type bus sessions with
+their \lstinline{Finalize}, the access-to-subprogram interrupt callbacks. These are
+verified by the other layers --- loopback self-tests and known-answer tests --- not by
+proof, and that is the right tool for them.
+
+This list used to begin with ``the volatile memory-mapped register drivers'', and that
+was wrong. It is left recorded rather than quietly removed, because the mistake is
+instructive: a tool's refusal had been read as a statement about what \emph{can} be
+proved, when it was a statement about what the code had \emph{told} it. Section
+\ref{spark:registers} is the correction. Second, pure arithmetic that is \emph{inlined} in a register procedure, like a
 baud prescaler or a dead-time divider; that logic \emph{can} be proved, but only after
 extracting it into a pure sibling package, which is exactly what was done for the
 TWAI, LEDC, RMT, and MCPWM timing math. Third, code that is provable \emph{in principle
