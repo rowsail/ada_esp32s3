@@ -7,7 +7,7 @@ analog voltage back **with no external wiring**.
 ```
 [adc] bare-metal SAR ADC one-shot self-test (drive+sense one pad, no wiring)
 [adc] ADC1 ch0: drive-high=4095  drive-low=0  PASS
-[adc]   cal_code=2241  last_done=1
+[adc]   cal_code=2241  all_valid=1
 ```
 
 ## What it checks
@@ -38,12 +38,22 @@ is claimed.
 with ESP32S3.ADC; use ESP32S3.ADC;
 
 declare
-   R : Reader;
+   R     : Reader;
+   V     : Raw_Value;
+   Valid : Boolean;
 begin
    Claim (R, ADC1);
-   V := Read (R, Ch => 0, Atten => Db_12);       -- 0 .. 4095
+   Read (R, Ch => 0, Value => V, Valid => Valid, Atten => Db_12);
+   --  V is 0 .. 4095, and MEANINGLESS unless Valid.
 end;                                             -- unit released
 ```
+
+`Read` is a procedure, and `Valid` is not decoration.  The conversion-done
+poll has a deadline; if it expires the SAR's data register still holds
+whatever it last latched, so there is no value that can safely mean "no
+reading".  `Valid` is likewise `False` for a handle that was never claimed,
+which used to return a silent `0` — indistinguishable from a genuine
+zero-current reading.
 
 Two units (ADC1 ch0..9 = GPIO1..10; ADC2 ch0..9 = GPIO11..20), 12-bit results,
 attenuation `Db_0` (~1.1 V) .. `Db_12` (~3.3 V full scale). Because the `Reader`
