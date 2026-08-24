@@ -60,6 +60,24 @@ package ESP32S3.Console is
 
    --  Total bytes dropped so far because no host was draining (saturating).  0
    --  means every byte handed to the console was delivered.
+   --  How long Write may WAIT for a confirmed-but-slow host before dropping.
+   --  Default 50_000 us (50 ms), which is the behaviour described above.
+   --
+   --  This is a BOUND, not a switch, because both extremes are wrong.  The
+   --  wait is a busy spin, so a caller holding a lock or a priority ceiling
+   --  across it stalls everything beneath -- 50 ms is a long time to a
+   --  control loop.  But dropping immediately is worse than it sounds: the
+   --  IN FIFO is one 64-byte packet drained at the host's polling interval,
+   --  about a millisecond, so a caller emitting several lines back to back
+   --  loses almost all of them even against a host that is keeping up.
+   --  Measured on the PSR firmware: with no wait at all, 107 drop
+   --  announcements in a 143-line log.
+   --
+   --  A few milliseconds covers a poll interval and bounds the stall to
+   --  something a control loop can absorb.  Zero means never wait.
+   procedure Set_Backpressure_Limit (Microseconds : Natural);
+   function Backpressure_Limit return Natural;
+
    function Dropped_Bytes return Interfaces.Unsigned_32;
 
    --  Reset the dropped-byte counter (e.g. after reporting it).

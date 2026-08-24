@@ -22,7 +22,15 @@ package body ESP32S3.Console is
    --  240 MHz core clock and wraps every ~17.9 s; the 50 ms window is well within
    --  one wrap, so modular subtraction is safe.
    Cycles_Per_Ms  : constant := 240_000;            --  240 MHz core clock
-   Timeout_Cycles : constant := 50 * Cycles_Per_Ms; --  ~50 ms
+   Cycles_Per_Us  : constant := 240;
+
+   --  Per-write wait budget, in CCOUNT cycles.  Settable; see the spec.
+   Limit_Cycles : Unsigned_32 := 50 * Cycles_Per_Ms with Atomic;
+
+   --  A single timeout is not evidence the host has gone -- with a short
+   --  budget an ordinary burst can exhaust it.  Only a RUN of them is.
+   Give_Up_After     : constant := 8;
+   Consecutive_Waits : Natural := 0;
 
    --  Line-coalescing TX buffer.  Many small Put/Write calls accumulate here and
    --  are pushed to the FIFO only on a newline, when the buffer fills, or on an
@@ -62,7 +70,7 @@ package body ESP32S3.Console is
       Start : constant Unsigned_32 := CCOUNT;
    begin
       while not Endpoint_Ready loop
-         if Unsigned_32'(CCOUNT - Start) >= Timeout_Cycles then
+         if Unsigned_32'(CCOUNT - Start) >= Limit_Cycles then
             return False;
          end if;
       end loop;
@@ -126,17 +134,26 @@ package body ESP32S3.Console is
       while I <= S'Last loop
          if not Endpoint_Ready then
             --  FIFO still holds the previous packet.
-            if not Host_Seen then
-               return S'Last - I + 1;   --  no host confirmed: drop, never wait
+            if not Host_Seen or else Limit_Cycles = 0 then
+               --  No host confirmed, or the caller allows no wait at all:
+               --  drop the remainder rather than spin.  Counted either way.
+               return S'Last - I + 1;
             elsif not Wait_Ready then
-               Host_Seen :=
-                 False;      --  confirmed host went away: stop blocking
+               --  Budget exhausted.  Drop this remainder, but only conclude
+               --  the host has GONE after a run of them -- otherwise a short
+               --  budget would mistake one burst for a disconnection and
+               --  then drop everything that followed.
+               Consecutive_Waits := Consecutive_Waits + 1;
+               if Consecutive_Waits >= Give_Up_After then
+                  Host_Seen := False;
+               end if;
                return S'Last - I + 1;
             end if;
          elsif Pending then
             Host_Seen :=
               True;      --  drained since our last write => host present
          end if;
+         Consecutive_Waits := 0;   --  the endpoint is free: not a run
 
          --  Endpoint is free: write up to one 64-byte packet and send it.
          Packet_Len := 0;
@@ -152,6 +169,14 @@ package body ESP32S3.Console is
       end loop;
       return 0;
    end Emit;
+
+   procedure Set_Backpressure_Limit (Microseconds : Natural) is
+   begin
+      Limit_Cycles := Unsigned_32 (Microseconds) * Cycles_Per_Us;
+   end Set_Backpressure_Limit;
+
+   function Backpressure_Limit return Natural
+   is (Natural (Limit_Cycles / Cycles_Per_Us));
 
    --------------------
    -- Announce_Drops --
