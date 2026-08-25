@@ -1,6 +1,23 @@
 with ESP32S3.Console;
 
-package body ESP32S3.Serial is
+package body ESP32S3.Serial with
+  Refined_State => (Output_Device => Current,
+                    Input_Device  => Current_In)
+is
+
+   --  The two mux slots, declared AHEAD of every subprogram body because a
+   --  body freezes the package's contract and nothing after that point may be
+   --  a constituent of an abstract state.
+   --
+   --  They cannot be given their real values here: those are The_Console /
+   --  The_Console_In, which are built from 'Access of the adapter bodies
+   --  below, so the values genuinely do not exist yet at this point.  Both are
+   --  still fully initialised at their declaration -- Device and In_Device
+   --  default every component to null -- and the package's own begin block at
+   --  the bottom binds them to the console before any client can run.  A null
+   --  vtable is safe by construction: Write and Read both test for it.
+   Current    : Device;
+   Current_In : In_Device;
 
    --  Adapters binding the USB Serial/JTAG console to the Device vtable.  The
    --  console is a singleton, so Ctx is unused.
@@ -21,7 +38,6 @@ package body ESP32S3.Serial is
       Flush => Console_Flush'Access,
       Ctx   => System.Null_Address);
 
-   Current : Device := The_Console;
 
    function Console_Device return Device
    is (The_Console);
@@ -66,7 +82,6 @@ package body ESP32S3.Serial is
    The_Console_In : constant In_Device :=
      (Read => Console_Read'Access, Ctx => System.Null_Address);
 
-   Current_In : In_Device := The_Console_In;
 
    function Console_In_Device return In_Device
    is (The_Console_In);
@@ -110,5 +125,10 @@ package body ESP32S3.Serial is
    end Text_IO_Sink;
 
 begin
+   --  Bind the mux to the built-in console.  This is the initialisation the
+   --  two declarations at the top could not perform themselves.
+   Current    := The_Console;
+   Current_In := The_Console_In;
+
    Install_Console_Hook (Text_IO_Sink'Access);
 end ESP32S3.Serial;

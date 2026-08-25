@@ -8,7 +8,15 @@ with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.IO_MUX;
 with ESP32S3_Registers.SYSTEM;
 
-package body ESP32S3.MCPWM is
+package body ESP32S3.MCPWM with
+  --  Split by what the state IS.  Channel_Periods is a plain array that starts
+  --  initialised; the two protected objects are synchronised state and are
+  --  likewise fully default-initialised, which is what lets a task started
+  --  after elaboration rely on them.
+  Refined_State => (Channel_Periods => Periods,
+                    Register_Guard  => CTRL_Guard,
+                    Claim_Pool      => Pool)
+is
 
    package GR renames ESP32S3_Registers.GPIO;     --  GPIO matrix register layer
    package MX renames ESP32S3_Registers.IO_MUX;   --  IO_MUX (per-pad config)
@@ -31,6 +39,32 @@ package body ESP32S3.MCPWM is
       procedure Enable_Fault
         (Unit : MCPWM_Unit; Input : Fault_Input; Active_High : Boolean);
    end CTRL_Guard;
+
+   --  EVERY remaining piece of body state is declared HERE, above the first
+   --  subprogram body, because a body freezes the package's contract and
+   --  nothing declared after that point may be a constituent of an abstract
+   --  state.  The declarations are unchanged; only their position is.
+   --  The protected BODIES stay where they were.
+
+   --  Per-channel period in timer ticks (= TIMER_PERIOD + 1), set by
+   --  Configure_Channel and read by Set_Duty.  Plain reads/writes of a Natural
+   --  are atomic on this target, and the owner is exclusive, so no lock is needed.
+   Periods : array (MCPWM_Unit, Channel_Index) of Natural := (others => (others => 1));
+
+   type Ch_Use_Map is array (MCPWM_Unit, Channel_Index) of Boolean;
+   type Cap_Use_Map is array (MCPWM_Unit, Cap_Index) of Boolean;
+   type Unit_Map is array (MCPWM_Unit) of Boolean;
+
+   protected Pool is
+      procedure Claim_Channel (Unit : MCPWM_Unit; Index : Channel_Index; Ok : out Boolean);
+      procedure Release_Channel (Unit : MCPWM_Unit; Index : Channel_Index);
+      procedure Claim_Capture (Unit : MCPWM_Unit; Index : Cap_Index; Ok : out Boolean);
+      procedure Release_Capture (Unit : MCPWM_Unit; Index : Cap_Index);
+   private
+      Ch_Use  : Ch_Use_Map := (others => (others => False));
+      Cap_Use : Cap_Use_Map := (others => (others => False));
+      Unit_Up : Unit_Map := (others => False);
+   end Pool;
 
    protected body CTRL_Guard is
       procedure Select_Timer (Unit : MCPWM_Unit; Ch : Channel_Index) is
@@ -100,11 +134,6 @@ package body ESP32S3.MCPWM is
    function Cap_Signal (Unit : MCPWM_Unit; Chan : Cap_Index) return Natural
    is ((if Unit = MCPWM0 then Sigs.PWM0_CAP0_IN else Sigs.PWM1_CAP0_IN) + Cap_Index'Pos (Chan));
 
-   --  Per-channel period in timer ticks (= TIMER_PERIOD + 1), set by
-   --  Configure_Channel and read by Set_Duty.  Plain reads/writes of a Natural
-   --  are atomic on this target, and the owner is exclusive, so no lock is needed.
-   Periods : array (MCPWM_Unit, Channel_Index) of Natural := (others => (others => 1));
-
    --  Bring a unit's clock up (PWM clock = 160 MHz): clock-gate, pulse reset,
    --  and force the reg-file clock on.  Run lazily, once per unit, from inside
    --  the Pool on the first Claim of any of the unit's channels -- so claiming a
@@ -136,21 +165,6 @@ package body ESP32S3.MCPWM is
    --  lazily on the first Claim of any of its channels.  Once claimed, only the
    --  holder touches that channel's registers -- the operations need no lock.
    --------------------------------------------------------------------------
-
-   type Ch_Use_Map is array (MCPWM_Unit, Channel_Index) of Boolean;
-   type Cap_Use_Map is array (MCPWM_Unit, Cap_Index) of Boolean;
-   type Unit_Map is array (MCPWM_Unit) of Boolean;
-
-   protected Pool is
-      procedure Claim_Channel (Unit : MCPWM_Unit; Index : Channel_Index; Ok : out Boolean);
-      procedure Release_Channel (Unit : MCPWM_Unit; Index : Channel_Index);
-      procedure Claim_Capture (Unit : MCPWM_Unit; Index : Cap_Index; Ok : out Boolean);
-      procedure Release_Capture (Unit : MCPWM_Unit; Index : Cap_Index);
-   private
-      Ch_Use  : Ch_Use_Map := (others => (others => False));
-      Cap_Use : Cap_Use_Map := (others => (others => False));
-      Unit_Up : Unit_Map := (others => False);
-   end Pool;
 
    protected body Pool is
 

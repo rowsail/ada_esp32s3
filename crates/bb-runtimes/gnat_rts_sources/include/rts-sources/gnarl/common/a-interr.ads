@@ -46,7 +46,15 @@ package Ada.Interrupts is
    function Is_Reserved (Interrupt : Interrupt_ID) return Boolean with
      SPARK_Mode,
      Volatile_Function,
-     Global => Ada.Task_Identification.Tasking_State;
+     Global => Ada.Task_Identification.Tasking_State,
+     --  This is a bare-board runtime with no reserved-interrupt table: the
+     --  attach path never consults one, and the body below raises rather than
+     --  answering.  Saying so as a postcondition is what lets a SPARK client
+     --  attach a handler without justifying "interrupt might be reserved" by
+     --  hand -- the claim now lives once, here, next to the runtime it is
+     --  about, instead of being re-argued in every application that attaches
+     --  an interrupt.
+     Post   => Is_Reserved'Result = False;
 
    function Is_Attached (Interrupt : Interrupt_ID) return Boolean with
      SPARK_Mode,

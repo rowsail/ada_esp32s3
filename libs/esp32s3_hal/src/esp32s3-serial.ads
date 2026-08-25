@@ -12,7 +12,13 @@ with System;
 --  procedures must be LIBRARY-LEVEL (No_Implicit_Dynamic_Code bars 'Access of a
 --  nested one -- no trampolines).
 
-package ESP32S3.Serial is
+package ESP32S3.Serial with
+  --  The currently selected output and input devices.  Declared as state so a
+  --  task started after elaboration can be told they are initialised: the
+  --  package's begin block binds both to the built-in console.
+  Abstract_State => (Output_Device, Input_Device),
+  Initializes    => (Output_Device, Input_Device)
+is
 
    type Write_Proc is access procedure (Ctx : System.Address; S : String);
    type Flush_Proc is access procedure (Ctx : System.Address);

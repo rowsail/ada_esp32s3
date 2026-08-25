@@ -26,7 +26,12 @@ with ESP32S3.GPIO;
 --  further locking.  Using finalization, this driver targets the embedded/full
 --  profile (excluded from the light-tasking build).
 
-package ESP32S3.MCPWM is
+package ESP32S3.MCPWM with
+  Abstract_State => (Channel_Periods,
+                     (Register_Guard with Synchronous, External),
+                     (Claim_Pool     with Synchronous, External)),
+  Initializes    => (Channel_Periods, Register_Guard, Claim_Pool)
+is
 
    type MCPWM_Unit is (MCPWM0, MCPWM1);
    type Channel_Index is (Ch0, Ch1, Ch2);    --  which generator channel of a unit

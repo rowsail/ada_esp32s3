@@ -14,7 +14,16 @@ with ESP32S3.GPIO;
 --  (non-copyable) and CONTROLLED (released automatically on scope exit).  Uses
 --  finalization, so it targets the embedded/full profile.
 
-package ESP32S3.ADC is
+package ESP32S3.ADC with
+  --  The self-calibration codes held in the body.  Declared as state so a
+  --  caller -- and any task started after elaboration -- can be told it is
+  --  initialised, which the array's own default value makes true but which is
+  --  invisible to an analyser that does not read this package's body.
+  Abstract_State => (Calibration,
+                     (Unit_Pool   with Synchronous, External),
+                     (Analog_Trim with External)),
+  Initializes    => (Calibration, Unit_Pool)
+is
 
    type ADC_Unit is (ADC1, ADC2);
    type Channel_Index is range 0 .. 9;

@@ -8,12 +8,35 @@ with ESP32S3_Registers.SENS; use ESP32S3_Registers.SENS;
 with ESP32S3_Registers.APB_SARADC;
 with ESP32S3_Registers.SYSTEM;
 
-package body ESP32S3.ADC is
+package body ESP32S3.ADC with
+  --  Every piece of body state, split by what it IS rather than by what uses
+  --  it.  Calibration is ours and starts initialised; Analog_Trim is two
+  --  memory-mapped analog registers, which are External because the hardware
+  --  writes them as well as we do.
+  Refined_State => (Calibration => Cal_Codes,
+                    Unit_Pool   => Pool,
+                    Analog_Trim => (ANA_Config, ANA_Config2))
+is
 
-   function Channel_Pin (Unit : ADC_Unit; Ch : Channel_Index) return ESP32S3.GPIO.Pin_Id
-   is (case Unit is
-         when ADC1 => ESP32S3.GPIO.Pin_Id (1 + Natural (Ch)),
-         when ADC2 => ESP32S3.GPIO.Pin_Id (11 + Natural (Ch)));
+   --  The SAR self-calibration init code is attenuation-DEPENDENT (each atten has
+   --  its own analog gain), so keep one per (unit, attenuation) and program the
+   --  matching one before each conversion -- calibrating at a single atten and
+   --  reusing that code at the others skews every non-calibrated-atten reading.
+   Cal_Codes : array (ADC_Unit, Attenuation) of Natural := (others => (others => 0));
+
+   type Use_Map is array (ADC_Unit) of Boolean;
+
+   protected Pool is
+      --  Claim the unit AND elect exactly one task to run Bring_Up (Do_Init).
+      procedure Claim (Unit : ADC_Unit; Ok : out Boolean; Do_Init : out Boolean);
+      procedure Mark_Inited;
+      function Is_Inited return Boolean;
+      procedure Release (Unit : ADC_Unit);
+   private
+      In_Use       : Use_Map := (others => False);
+      Init_Started : Boolean := False;   --  a task has taken responsibility to init
+      Inited       : Boolean := False;   --  Bring_Up has finished
+   end Pool;
 
    ---------------------------------------------------------------------------
    --  REGI2C (analog trim) access via the boot ROM, exactly as the temperature
@@ -32,14 +55,18 @@ package body ESP32S3.ADC is
    ANA_Config2 : UInt32
    with Volatile, Import, Address => System'To_Address (16#6000_E048#);
 
+   --  Moved BELOW the state declarations above.  This is an expression
+   --  function, so it is a body, and a body freezes the package's contract --
+   --  after which nothing may be added as a constituent of an abstract state.
+   --  Declaring the state first and this second is the whole of the fix; the
+   --  function itself is unchanged.
+   function Channel_Pin (Unit : ADC_Unit; Ch : Channel_Index) return ESP32S3.GPIO.Pin_Id
+   is (case Unit is
+         when ADC1 => ESP32S3.GPIO.Pin_Id (1 + Natural (Ch)),
+         when ADC2 => ESP32S3.GPIO.Pin_Id (11 + Natural (Ch)));
+
    I2C_SAR_ADC      : constant Unsigned_8 := 16#69#;   --  REGI2C block (SAR ADC)
    I2C_SAR_ADC_HOST : constant Unsigned_8 := 1;
-
-   --  The SAR self-calibration init code is attenuation-DEPENDENT (each atten has
-   --  its own analog gain), so keep one per (unit, attenuation) and program the
-   --  matching one before each conversion -- calibrating at a single atten and
-   --  reusing that code at the others skews every non-calibrated-atten reading.
-   Cal_Codes : array (ADC_Unit, Attenuation) of Natural := (others => (others => 0));
 
    procedure I2C (Reg, Msb, Lsb, Data : Unsigned_8) is
    begin
@@ -176,7 +203,6 @@ package body ESP32S3.ADC is
    --  Unit-ownership pool (one-time analog + digital bring-up).
    --------------------------------------------------------------------------
 
-   type Use_Map is array (ADC_Unit) of Boolean;
 
    --  One-time analog + digital bring-up: gate clocks, power the SAR on, and
    --  calibrate both units at every attenuation.  This runs at TASK level (from
@@ -220,17 +246,6 @@ package body ESP32S3.ADC is
       end loop;
    end Bring_Up;
 
-   protected Pool is
-      --  Claim the unit AND elect exactly one task to run Bring_Up (Do_Init).
-      procedure Claim (Unit : ADC_Unit; Ok : out Boolean; Do_Init : out Boolean);
-      procedure Mark_Inited;
-      function Is_Inited return Boolean;
-      procedure Release (Unit : ADC_Unit);
-   private
-      In_Use       : Use_Map := (others => False);
-      Init_Started : Boolean := False;   --  a task has taken responsibility to init
-      Inited       : Boolean := False;   --  Bring_Up has finished
-   end Pool;
 
    protected body Pool is
       procedure Claim (Unit : ADC_Unit; Ok : out Boolean; Do_Init : out Boolean) is
