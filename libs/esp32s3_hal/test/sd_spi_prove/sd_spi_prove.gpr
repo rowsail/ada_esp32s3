@@ -2,12 +2,16 @@
 --  SD-over-SPI driver (CRC7_Frame -- the poly x^7+x^3+1 used for CMD0/CMD8).
 --  The SPI/GDMA/card I/O is hardware and stays unmarked (SPARK_Mode off).  The
 --  SPI, GDMA and GPIO specs are host-portable (System / Ada.Finalization /
---  Interfaces only, no register layer), so this compiles natively.  No main.
+--  Interfaces), as are the two pad banks ESP32S3.GPIO's SPARK contracts name.
+--  No main.
 project SD_SPI_Prove is
-   for Source_Dirs use ("../../src");
+   for Source_Dirs use ("../../src", "../../svd");
    for Object_Dir use "obj";
    for Source_Files use
      ("esp32s3.ads",
+      "esp32s3_registers.ads",
+      "esp32s3_registers-gpio.ads",
+      "esp32s3_registers-io_mux.ads",
       "esp32s3-gpio.ads",
       "esp32s3-gdma.ads",
       "esp32s3-spi.ads",

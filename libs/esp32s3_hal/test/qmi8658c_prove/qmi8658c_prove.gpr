@@ -2,12 +2,16 @@
 --  16-bit combine of the QMI8658C IMU driver (Signed -- raw axis counts).  The
 --  I2C register I/O (Read_Regs / Read_Axes / Configure / ...) is hardware and
 --  stays unmarked (SPARK_Mode off).  The I2C and GPIO specs are host-portable
---  (no register layer), so this compiles natively.  No main.
+--  host-portable, as are the two pad banks
+--  ESP32S3.GPIO's SPARK contracts name.  No main.
 project QMI8658C_Prove is
-   for Source_Dirs use ("../../src");
+   for Source_Dirs use ("../../src", "../../svd");
    for Object_Dir use "obj";
    for Source_Files use
      ("esp32s3.ads",
+      "esp32s3_registers.ads",
+      "esp32s3_registers-gpio.ads",
+      "esp32s3_registers-io_mux.ads",
       "esp32s3-gpio.ads",
       "esp32s3-i2c.ads",
       "esp32s3-qmi8658c.ads",

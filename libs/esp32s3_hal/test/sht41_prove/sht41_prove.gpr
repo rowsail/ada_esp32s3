@@ -2,13 +2,17 @@
 --  temperature/humidity driver: the CRC-8 checksum (CRC8 / CRC_Good) and the
 --  integer datasheet conversions (Ticks / To_Temp_MC / To_Hum_MRH).  The I2C
 --  bus exchange (Transact / Measure / Setup / ...) is hardware and stays
---  unmarked (SPARK_Mode off).  The I2C and GPIO specs are host-portable (no
---  register layer in the spec), so this compiles natively.  No main.
+--  unmarked (SPARK_Mode off).  Host-portable: the only generated register specs
+--  here are the two pad banks ESP32S3.GPIO's SPARK contracts name, which are
+--  plain Interfaces/System.  No main.
 project SHT41_Prove is
-   for Source_Dirs use ("../../src");
+   for Source_Dirs use ("../../src", "../../svd");
    for Object_Dir use "obj";
    for Source_Files use
      ("esp32s3.ads",
+      "esp32s3_registers.ads",
+      "esp32s3_registers-gpio.ads",
+      "esp32s3_registers-io_mux.ads",
       "esp32s3-gpio.ads",
       "esp32s3-i2c.ads",
       "esp32s3-sht41.ads",

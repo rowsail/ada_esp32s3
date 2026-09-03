@@ -47,10 +47,18 @@ prove () {  #  $1 = project file, $2 = label, $3 = gnatprove tuning (optional)
    else
       echo "  no unproved run-time checks"
    fi
-   #  the object dir varies per project (obj / obj-prove); glob for the report.
-   sed -n '/SPARK Analysis results/,/^Total/p' \
-      "$(dirname "$1")"/obj*/gnatprove/gnatprove.out 2>/dev/null \
-      | grep -iE "Run-time Checks|^Total"
+   #  Take the report path from gnatprove itself ("Summary logged in ..."), not
+   #  from a glob of the project directory: libs/tls holds six object dirs, and
+   #  globbing there printed a stale run's numbers under a neighbour's heading.
+   local report
+   report="$(echo "$out" | sed -n 's/^Summary logged in //p' | tail -1)"
+   if [ -n "$report" ] && [ -f "$report" ]; then
+      sed -n '/SPARK Analysis results/,/^Total/p' "$report" \
+         | grep -iE "Run-time Checks|^Total"
+   else
+      echo "  (no summary report found)"
+      fail=1
+   fi
    echo
 }
 
