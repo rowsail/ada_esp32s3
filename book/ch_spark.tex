@@ -192,11 +192,32 @@ proved, when it was a statement about what the code had \emph{told} it. Section
 \ref{spark:registers} is the correction. Second, pure arithmetic that is \emph{inlined} in a register procedure, like a
 baud prescaler or a dead-time divider; that logic \emph{can} be proved, but only after
 extracting it into a pure sibling package, which is exactly what was done for the
-TWAI, LEDC, RMT, and MCPWM timing math. Third, code that is provable \emph{in principle
-but not in practice}: the P-256 signature check is legal SPARK and the tool runs, but
-proving it pulls in the entire vendored SPARKNaCl elliptic-curve contract closure, which
-did not converge under a long budget --- a dedicated, lemma-level effort rather than a
-harvest. Knowing which of the three a unit falls into is what keeps the surface honest.
+TWAI, LEDC, RMT, and MCPWM timing math. Third, code whose \emph{shape} is wrong rather than its content: a SPARK function may
+not have out parameters, which is the only reason \lstinline{Public_Key}, \lstinline{ECDH}
+and \lstinline{Sign} sit outside. Knowing which of the three a unit falls into is what
+keeps the surface honest.
+
+That third category used to name something else, and the replacement is the more
+instructive story. It read: the P-256 signature check is legal SPARK and the tool runs,
+but proving it does not converge under a long budget --- a dedicated, lemma-level effort
+rather than a harvest. The diagnosis was wrong. What defeated it was not the elliptic-curve
+mathematics but \emph{inlining}: GNATprove inlines a call to a local subprogram that
+carries no contract, and \lstinline{Verify} calls \lstinline{Scalar_Mul} twice, which
+loops 256 times over \lstinline{Dbl} and \lstinline{Add}, which call \lstinline{Mont_Mul},
+whose CIOS body is itself two nested loops. Unfolded into one verification condition that
+is hopeless, and no amount of lemma work on the modular arithmetic would have helped,
+because the arithmetic was never the obstacle.
+
+The fix is to stop the unfolding, and the weakest thing that does it is enough: any
+contract at all makes a call opaque, so the callee is proved once on its own and the
+caller reasons from its contract. Each primitive got \lstinline{Global => null} --- a
+statement that is simply true, since they are pure functions of their arguments, and one
+SPARK checks rather than takes on trust. \lstinline{Verify} and \lstinline{On_Curve} are
+now proved, and the unit proves in \emph{less} time than it did with them excluded
+altogether: 144 obligations in 2m33s, against 210 in 3m03s before, because inlining had
+been re-proving the same callee body at every call site. The lesson generalises past this
+unit --- when a proof will not converge, ask what the prover was handed before assuming
+the difficulty is real.
 
 \section{Running the proofs}\index{book!prove}
 

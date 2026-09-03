@@ -20,7 +20,8 @@ package P256 with SPARK_Mode => On is
    --  is the message digest reduced to 256 bits: for ECDSA-with-SHA-256 it is the
    --  32-byte digest; for SHA-384/512 the caller passes the leftmost 32 bytes.
    --  Returns True iff the signature verifies.
-   function Verify (Pub_X, Pub_Y : Bytes_32; Hash : Bytes_32; R, S : Bytes_32) return Boolean;
+   function Verify (Pub_X, Pub_Y : Bytes_32; Hash : Bytes_32; R, S : Bytes_32) return Boolean
+     with Global => null;
 
    --  ECDH key exchange on P-256 (for TLS ECDHE with secp256r1).  Public_Key sets
    --  (Pub_X, Pub_Y) = Priv*G -- the uncompressed public key to put in a key_share.

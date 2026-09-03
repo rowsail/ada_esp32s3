@@ -1,0 +1,24 @@
+--  Native project for SPARK-proving P256: the field and order arithmetic, the
+--  Jacobian point arithmetic, and the ECDSA Verify / On_Curve compositions over
+--  them.  P-256 here is pure limb arithmetic -- no target layer, no register
+--  access -- so it proves natively, which puts it in book/prove/prove.sh's fast
+--  pass rather than behind a cross build.  No main.
+--
+--  SPARKNaCl is on the source path only because the RFC-6979 signing glue names
+--  it (that glue is SPARK_Mode => Off).  Source_Files is explicit rather than
+--  the whole of libs/tls/src, which also holds the TLS client and the cert
+--  chain -- units that need the HAL and so do not build natively.
+project P256_Prove is
+   for Source_Dirs use ("src", "../../crates/sparknacl/src");
+   for Object_Dir use "obj-p256-prove";
+   for Source_Files use
+     ("p256.ads", "p256.adb",
+      "sparknacl.ads", "sparknacl.adb",
+      "sparknacl-car.ads", "sparknacl-car.adb",
+      "sparknacl-hashing.ads",
+      "sparknacl-hashing-sha2_common.ads", "sparknacl-hashing-sha2_common.adb",
+      "sparknacl-hashing-sha256.ads", "sparknacl-hashing-sha256.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnata", "-gnat2022");
+   end Compiler;
+end P256_Prove;

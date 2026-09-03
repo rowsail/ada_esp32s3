@@ -2,9 +2,23 @@ with Interfaces; use Interfaces;
 with SPARKNaCl;
 with SPARKNaCl.Hashing.SHA256;
 
---  The field/point arithmetic is proved for absence of run-time errors (via
---  tls.gpr, -u p256.adb).  The RFC-6979 signing path (SHA256/HMAC_SHA256/Sign)
---  calls into SPARKNaCl hashing and carries SPARK_Mode => Off.
+--  The field arithmetic, the point arithmetic AND the Verify / On_Curve
+--  compositions on top of them are proved free of run-time errors
+--  (libs/tls/p256_prove.gpr, run by book/prove/prove.sh).  The RFC-6979 signing
+--  path (SHA256/HMAC_SHA256/Sign) calls into SPARKNaCl hashing and carries
+--  SPARK_Mode => Off, as do Public_Key/ECDH/Sign -- not for want of proof but
+--  because a SPARK function may not have out parameters, which those three do.
+--
+--  Every helper below carries `Global => null`.  That is a true statement -- they
+--  are pure functions of their arguments -- but it is also load-bearing.
+--  GNATprove inlines a CONTRACT-LESS local subprogram into its caller, and
+--  transitively inlining Mont_Mul's nested CIOS loops through Dbl/Add into
+--  Scalar_Mul's 256 iterations builds a verification condition for Verify that
+--  does not converge.  A contract -- any contract -- makes the call opaque, so
+--  the callee is proved once on its own and the caller reasons from it.
+--  Measured at --level=1 --prover=z3 --timeout=10: 210 obligations in 3m03s with
+--  Verify/On_Curve outside the subset; no result after 28m with them inside and
+--  no contracts; 144 obligations in 2m33s with these.
 package body P256 with SPARK_Mode => On is
 
    subtype U32 is Unsigned_32;
@@ -68,39 +82,63 @@ package body P256 with SPARK_Mode => On is
    ---------------------------------------------------------------------------
    --  Plain 256-bit helpers.
    ---------------------------------------------------------------------------
-   function Is_Zero (A : Num) return Boolean is
+   function Is_Zero (A : Num) return Boolean
+     with Global => null,
+          Post   => Is_Zero'Result = (for all I in Num'Range => A (I) = 0)
+   is
    begin
       for I in Num'Range loop
          if A (I) /= 0 then
             return False;
          end if;
+         pragma Loop_Invariant (for all K in Num'First .. I => A (K) = 0);
       end loop;
       return True;
    end Is_Zero;
 
-   function "=" (A, B : Num) return Boolean is
+   function "=" (A, B : Num) return Boolean
+     with Global => null,
+          Post   => "="'Result = (for all I in Num'Range => A (I) = B (I))
+   is
    begin
       for I in Num'Range loop
          if A (I) /= B (I) then
             return False;
          end if;
+         pragma Loop_Invariant (for all K in Num'First .. I => A (K) = B (K));
       end loop;
       return True;
    end "=";
 
-   --  A >= B ?
-   function Geq (A, B : Num) return Boolean is
+   --  A >= B, as a lexicographic scan from the most significant limb down: the
+   --  first limb where they differ decides.  Stated as a ghost specification so
+   --  that Geq's callers (the range checks in Verify) reason from a definition
+   --  of ">=" rather than from an opaque Boolean.
+   function Geq_Spec (A, B : Num) return Boolean
+   is ((for all I in Num'Range => A (I) = B (I))
+       or else (for some I in Num'Range =>
+                  A (I) > B (I)
+                  and then (for all K in I + 1 .. Num'Last => A (K) = B (K))))
+   with Ghost, Global => null;
+
+   function Geq (A, B : Num) return Boolean
+     with Global => null,
+          Post   => Geq'Result = Geq_Spec (A, B)
+   is
    begin
       for I in reverse Num'Range loop
          if A (I) /= B (I) then
             return A (I) > B (I);
          end if;
+         pragma Loop_Invariant (for all K in I .. Num'Last => A (K) = B (K));
       end loop;
       return True;
    end Geq;
 
    --  A - B mod 2^256 (drops the final borrow).
-   function Sub_Raw (A, B : Num) return Num is
+   function Sub_Raw (A, B : Num) return Num
+     with Global => null
+   is
       --  R = A - B mod 2^256; Bor = borrow out of each limb; D = per-limb difference.
       R   : Num;
       Bor : U64 := 0;
@@ -115,7 +153,9 @@ package body P256 with SPARK_Mode => On is
    end Sub_Raw;
 
    --  A + B; sets Carry to the 257th bit.
-   procedure Add_Raw (A, B : Num; R : out Num; Carry : out U64) is
+   procedure Add_Raw (A, B : Num; R : out Num; Carry : out U64)
+     with Global => null
+   is
       S : U64 := 0;   --  running limb sum (low 32 bits stored, high 32 carried up)
    begin
       for I in Num'Range loop
@@ -127,7 +167,9 @@ package body P256 with SPARK_Mode => On is
    end Add_Raw;
 
    --  (A + B) mod M, for A, B < M.
-   function Add_Mod (A, B, M : Num) return Num is
+   function Add_Mod (A, B, M : Num) return Num
+     with Global => null
+   is
       R : Num;   --  A + B
       C : U64;   --  carry out of the top limb (the 257th bit)
    begin
@@ -139,7 +181,9 @@ package body P256 with SPARK_Mode => On is
    end Add_Mod;
 
    --  (A - B) mod M, for A, B < M.
-   function Sub_Mod (A, B, M : Num) return Num is
+   function Sub_Mod (A, B, M : Num) return Num
+     with Global => null
+   is
    begin
       if Geq (A, B) then
          return Sub_Raw (A, B);
@@ -159,7 +203,10 @@ package body P256 with SPARK_Mode => On is
    ---------------------------------------------------------------------------
 
    --  X^-1 mod 2^32 (X odd), Newton's iteration.
-   function Inv32 (X : U32) return U32 is
+   function Inv32 (X : U32) return U32
+     with Global => null,
+          Pre    => X mod 2 = 1          --  Newton needs an odd X to converge
+   is
       Y : U32 := X;   --  inverse approximation; Newton doubles the correct-bit count
    begin
       for I in 1 .. 5 loop
@@ -169,7 +216,9 @@ package body P256 with SPARK_Mode => On is
    end Inv32;
 
    --  CIOS Montgomery multiply: returns A*B*R^-1 mod M (A, B < M).
-   function Mont_Mul (A, B, M : Num; M0 : U32) return Num is
+   function Mont_Mul (A, B, M : Num; M0 : U32) return Num
+     with Global => null
+   is
       --  CIOS scratch: T = wide accumulator; CS/Cr = column sum and carry;
       --  MM = reduction multiplier m = T(0)*M0 mod 2^32; R = the reduced result.
       T  : array (0 .. Limbs + 1) of U32 := (others => 0);
@@ -212,7 +261,9 @@ package body P256 with SPARK_Mode => On is
    end Mont_Mul;
 
    --  R^2 mod M = 2^512 mod M, by 512 modular doublings (add/sub only).
-   function Compute_R2 (M : Num) return Num is
+   function Compute_R2 (M : Num) return Num
+     with Global => null
+   is
       X : Num := One;   --  1 doubled 512 times mod M yields 2^512 mod M
    begin
       for I in 1 .. 512 loop
@@ -228,13 +279,16 @@ package body P256 with SPARK_Mode => On is
    N_R2 : constant Num := Compute_R2 (NN);
 
    function To_Mont (A, M : Num; M0 : U32; R2 : Num) return Num
-   is (Mont_Mul (A, R2, M, M0));                       --  a*R mod M
+   is (Mont_Mul (A, R2, M, M0))
+   with Global => null;                       --  a*R mod M
 
    --  Montgomery form of 1 (= R mod M).
    P_One_M : constant Num := To_Mont (One, P, P_M0, P_R2);
 
    --  a^E mod M with a, result in Montgomery form (E a plain Num, MSB..LSB).
-   function Mont_Pow (A_M, E, M : Num; M0 : U32; One_M : Num) return Num is
+   function Mont_Pow (A_M, E, M : Num; M0 : U32; One_M : Num) return Num
+     with Global => null
+   is
       R : Num := One_M;   --  running Montgomery product (square-and-multiply)
    begin
       for I in reverse 0 .. 255 loop
@@ -247,7 +301,10 @@ package body P256 with SPARK_Mode => On is
    end Mont_Pow;
 
    --  Modular inverse of A (plain) mod M, returned plain.  Fermat: A^(M-2).
-   function Inv_Mod (A, M : Num; M0 : U32; R2, One_M : Num) return Num is
+   function Inv_Mod (A, M : Num; M0 : U32; R2, One_M : Num) return Num
+     with Global => null,
+          Pre    => M (0) >= 2           --  so M - 2 does not borrow (M odd)
+   is
       A_M  : constant Num := Mont_Mul (A, R2, M, M0);    --  to Montgomery
       Emin : Num := M;
       Inv  : Num;
@@ -259,7 +316,8 @@ package body P256 with SPARK_Mode => On is
 
    --  (A * B) mod M, plain in, plain out.
    function Mul_Mod (A, B, M : Num; M0 : U32; R2 : Num) return Num
-   is (Mont_Mul (Mont_Mul (A, R2, M, M0), B, M, M0));     --  (aR)*b*R^-1 = ab
+   is (Mont_Mul (Mont_Mul (A, R2, M, M0), B, M, M0))
+   with Global => null;     --  (aR)*b*R^-1 = ab
 
    ---------------------------------------------------------------------------
    --  Jacobian point arithmetic over GF(p); coordinates in Montgomery form.
@@ -271,15 +329,21 @@ package body P256 with SPARK_Mode => On is
    Infinity : constant Point := (Zero, Zero, Zero);
 
    function FMul (A, B : Num) return Num
-   is (Mont_Mul (A, B, P, P_M0));
+   is (Mont_Mul (A, B, P, P_M0))
+   with Global => null;
    function FAdd (A, B : Num) return Num
-   is (Add_Mod (A, B, P));
+   is (Add_Mod (A, B, P))
+   with Global => null;
    function FSub (A, B : Num) return Num
-   is (Sub_Mod (A, B, P));
+   is (Sub_Mod (A, B, P))
+   with Global => null;
    function FDbl (A : Num) return Num
-   is (Add_Mod (A, A, P));
+   is (Add_Mod (A, A, P))
+   with Global => null;
 
-   function Dbl (Q : Point) return Point is
+   function Dbl (Q : Point) return Point
+     with Global => null
+   is
       --  Jacobian doubling temps: Dlt = Z^2, Gamma = Y^2, Beta = X*Gamma,
       --  Alpha = 3*(X-Dlt)*(X+Dlt), G2 = Gamma^2, T scratch, (X3,Y3,Z3) result.
       Dlt, Gamma, Beta, Alpha, T, X3, Y3, Z3, G2 : Num;
@@ -307,7 +371,9 @@ package body P256 with SPARK_Mode => On is
       return (X3, Y3, Z3);
    end Dbl;
 
-   function Add (P1, P2 : Point) return Point is
+   function Add (P1, P2 : Point) return Point
+     with Global => null
+   is
       --  Jacobian add temps (add-2007-bl): Z1Z1/Z2Z2 = Zi^2, U1/U2 and S1/S2 the
       --  projected X and Y, H/I/J/Rr/V intermediates, (X3,Y3,Z3) result, T scratch.
       Z1Z1, Z2Z2, U1, U2, S1, S2, H, I, J, Rr, V, X3, Y3, Z3, T : Num;
@@ -349,7 +415,9 @@ package body P256 with SPARK_Mode => On is
    end Add;
 
    --  K (plain scalar) times P, double-and-add (MSB..LSB; variable-time is fine).
-   function Scalar_Mul (K : Num; Q : Point) return Point is
+   function Scalar_Mul (K : Num; Q : Point) return Point
+     with Global => null
+   is
       R : Point := Infinity;   --  running accumulator (double-and-add)
    begin
       for I in reverse 0 .. 255 loop
@@ -365,7 +433,9 @@ package body P256 with SPARK_Mode => On is
    --  Conversions.
    ---------------------------------------------------------------------------
    --  32 big-endian bytes -> Num.
-   function From_BE (Bz : Bytes_32) return Num is
+   function From_BE (Bz : Bytes_32) return Num
+     with Global => null
+   is
       R : Num;   --  the 8 little-endian limbs assembled from the big-endian bytes
    begin
       for I in 0 .. Limbs - 1 loop
@@ -381,15 +451,12 @@ package body P256 with SPARK_Mode => On is
 
    --  Affine (plain x, y) -> Jacobian with Montgomery coords (Z = 1).
    function To_Jacobian (X, Y : Num) return Point
-   is (X => Mont_Mul (X, P_R2, P, P_M0), Y => Mont_Mul (Y, P_R2, P, P_M0), Z => P_One_M);
+   is (X => Mont_Mul (X, P_R2, P, P_M0), Y => Mont_Mul (Y, P_R2, P, P_M0), Z => P_One_M)
+   with Global => null;
 
    --  Is (x, y) (plain affine) on the curve y^2 = x^3 - 3x + b mod p?
-   --  SPARK_Mode Off: like Verify, this composes many Mont_Mul/FMul calls, and
-   --  without postcondition contracts on those primitives GNATprove inlines them
-   --  and the nonlinear modular arithmetic does not converge (the primitives
-   --  prove individually; see the note on Verify).
    function On_Curve (X, Y : Num) return Boolean
-     with SPARK_Mode => Off
+     with Global => null
    is
       --  XM/YM/BM = x, y, b in Montgomery form; LHS = y^2; X3 = x^3 - 3x + b.
       XM  : constant Num := Mont_Mul (X, P_R2, P, P_M0);
@@ -406,15 +473,7 @@ package body P256 with SPARK_Mode => On is
    ---------------------------------------------------------------------------
    --  ECDSA verification.
    ---------------------------------------------------------------------------
-   --  SPARK_Mode Off: Verify chains dozens of Mont_Mul/FMul/point operations.
-   --  The field/point primitives it builds on are each proved free of run-time
-   --  errors (they are SPARK_Mode On), but proving Verify's composition would
-   --  need postcondition contracts on those primitives so the prover reasons
-   --  from contracts instead of inlining the nonlinear modular arithmetic -- a
-   --  dedicated lemma-level effort (see book/prove/README.md).  Deferred.
-   function Verify (Pub_X, Pub_Y : Bytes_32; Hash : Bytes_32; R, S : Bytes_32) return Boolean
-     with SPARK_Mode => Off
-   is
+   function Verify (Pub_X, Pub_Y : Bytes_32; Hash : Bytes_32; R, S : Bytes_32) return Boolean is
       --  ECDSA verify: (Qx,Qy) public key, (Rr,Ss) the signature (r,s), E = hash,
       --  W = s^-1 mod n, U1/U2 the scalars, RP = U1*G + U2*Q, Vx = recovered x.
       Qx             : constant Num := From_BE (Pub_X);
@@ -465,7 +524,9 @@ package body P256 with SPARK_Mode => On is
    ---------------------------------------------------------------------------
 
    --  Num -> 32 big-endian bytes.
-   function To_BE (A : Num) return Bytes_32 is
+   function To_BE (A : Num) return Bytes_32
+     with Global => null
+   is
       R : Bytes_32 := (others => 0);   --  big-endian bytes of A (loop fills all 32;
                                        --  the init lets flow analysis see it whole)
    begin
@@ -479,7 +540,9 @@ package body P256 with SPARK_Mode => On is
    end To_BE;
 
    --  Jacobian (Montgomery) -> plain affine (X, Y).  Ok False at infinity.
-   procedure To_Affine (Pt : Point; AX, AY : out Num; Ok : out Boolean) is
+   procedure To_Affine (Pt : Point; AX, AY : out Num; Ok : out Boolean)
+     with Global => null
+   is
       Zinv, Z2inv, Z3inv : Num;   --  Z^-1 and its square/cube, to divide out Jacobian Z
    begin
       AX := Zero;

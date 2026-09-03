@@ -18,6 +18,10 @@
 #                 and the '/'-separated path-component scanner (untrusted input)
 #    X509      -- the DER TLV reader AND the certificate parser (untrusted input)
 #    Der_Sig   -- the ECDSA-Sig-Value DER r/s parse (untrusted input): no over-read
+#    P256      -- the whole secp256r1 stack: field + order arithmetic (Montgomery
+#                 CIOS), Jacobian point add/double/scalar-mul, AND the ECDSA
+#                 Verify and On_Curve compositions over them (untrusted input --
+#                 an attacker supplies the key, the hash and the signature)
 #    NMEA      -- the NMEA-0183 GPS-sentence parser (untrusted input)
 #    Modbus    -- slave framing/dispatch (Process) and master PDU build/parse
 #    NTP       -- To_UTC civil-date math
@@ -67,6 +71,16 @@ prove "$T/mkfs_math_prove/mkfs_math_prove.gpr"       "ext4 mkfs single-group lay
 prove "$T/path_scan_prove/path_scan_prove.gpr"       "ext4 path-component scanner (untrusted path, in-bounds)"
 prove "$T/x509_prove/x509_prove.gpr"                 "X509 DER + certificate parser (untrusted input)"
 prove "$ROOT/libs/tls/der_sig_prove.gpr"             "ECDSA DER r/s signature parse (untrusted input)"
+#  P-256 is the slowest unit in this pass (~2.5 min): a single verification runs
+#  two 256-bit scalar multiplications, so the proof carries the CIOS inner loops
+#  through Dbl/Add and Scalar_Mul.  It is native because the arithmetic is pure
+#  limbs -- no register access, nothing target-specific.  Explicitly `-u p256.adb`:
+#  SPARKNaCl is in the project only because the RFC-6979 signing glue names it,
+#  and re-proving a vendored library that ships with its own proof setup is not
+#  this script's job.
+prove "$ROOT/libs/tls/p256_prove.gpr" \
+      "P-256 field/point arithmetic + ECDSA Verify/On_Curve (untrusted input)" \
+      "--level=1 --prover=z3 --timeout=10 -u p256.adb"
 prove "$T/nmea_prove/nmea_prove.gpr"                 "NMEA GPS-sentence parser (untrusted input)"
 prove "$T/dns_prove/dns_prove.gpr"                   "DNS response parser (untrusted input)"
 prove "$T/modbus_slave_host/modbus_slave_host.gpr"   "Modbus slave (framing + Process)"
@@ -106,15 +120,17 @@ prove "$ROOT/examples/common/bare/boot/heap_guard_prove.gpr" \
 #      XTENSA_GNU_CONFIG=.../xtensa_esp32s3.so
 #    gnatprove -P libs/tls/tls.gpr --level=1 --prover=z3 -j0 -u chain_verify.adb
 #
-#  P256 (libs/tls/p256) is SPARK_Mode On: its P-256 field + point arithmetic
-#  (modular add/sub, Montgomery multiply/inverse, Jacobian double/add, scalar-mul,
-#  byte conversions) proves silver -- 0 unproved run-time checks.  Verify / On_Curve
-#  (and the out-parameter Public_Key/ECDH/Sign + the SPARKNaCl hashing glue) carry
-#  SPARK_Mode => Off: proving Verify's composition needs postcondition contracts on
-#  the primitives so the prover reasons from contracts instead of inlining the
-#  nonlinear modular arithmetic -- a dedicated lemma-level effort, deferred.  Runs
-#  on the same CROSS tls.gpr (not the fast native pass):
-#    gnatprove -P libs/tls/tls.gpr --level=2 --prover=z3,cvc5,altergo -j0 -u p256.adb
+#  P256's Verify and On_Curve used to sit outside the subset, on the grounds that
+#  their composition needed postcondition contracts on the field primitives -- a
+#  lemma-level effort.  It did not: what blocked them was INLINING.  GNATprove
+#  inlines a contract-less local subprogram into its caller, so Verify's
+#  verification condition swallowed Mont_Mul's nested CIOS loops through Dbl/Add
+#  and Scalar_Mul's 256 iterations, and did not converge.  Giving each primitive
+#  `Global => null` -- true of every one of them, and the weakest contract that
+#  exists -- makes the call opaque, and the whole unit proves in less time than
+#  it took with Verify excluded.  Only Public_Key/ECDH/Sign remain Off, because a
+#  SPARK function may not have out parameters; that is a shape problem, not a
+#  proof one.
 
 echo "PROVE_EXIT: $fail"
 exit $fail

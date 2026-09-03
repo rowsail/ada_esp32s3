@@ -34,6 +34,7 @@ Alire toolchain (`~/.alire/bin/gnatprove`).
 | `ESP32S3.GPS.NMEA` | NMEA-0183 GPS-sentence parser — **untrusted input** | `nmea_prove.gpr` |
 | `DNS_Client.Parse` | DNS response parser incl. name-compression — **untrusted input** | `dns_prove.gpr` |
 | `Chain_Verify` | cert chain-walking (sig checks `Off`) — **untrusted input** | `tls.gpr` (cross) |
+| `P256` | secp256r1 field + order arithmetic (Montgomery CIOS), Jacobian point add/double/scalar-mul, **and the ECDSA `Verify` / `On_Curve` compositions** — **untrusted input** | `p256_prove.gpr` |
 | `Modbus` / `.Slave` / `.Master` | wire framing, slave `Process` dispatch, master PDU build/parse | `modbus_*_host.gpr` |
 | `NTP_Client.To_UTC` | SNTP → UTC civil-date math | `ntp_prove.gpr` |
 | `Net_Routes` | IPv4 longest-prefix-match routing | `net_routes_prove.gpr` |
@@ -55,9 +56,10 @@ helpers are marked `SPARK_Mode => On` in place (MMIO code stays unmarked); the T
 timing arithmetic was **extracted** into pure `*.Math` sibling packages (behaviour-neutral — exact
 expressions relocated, register writes untouched) so it could be proved in isolation.
 
-**~740 run-time checks discharged, 0 unproved.** The **untrusted-input parsers** are the
+**969 run-time checks discharged, 0 unproved** (1712 obligations in all, across 26 projects; `prove.sh` takes about nine minutes from a clean object tree, ~2 minutes when gnatprove's result cache is warm). The **untrusted-input parsers** are the
 highest-value proofs — `X509` (certificates), `NMEA` (GPS sentences), `DNS` (resolver
 replies, incl. self-referential name-compression pointers), `Chain_Verify` (cert chains),
+`P256.Verify` (an attacker supplies the key, the hash *and* the signature),
 and the `Modbus` slave/master (peer PDUs) all now provably have **no buffer overrun,
 overflow, or infinite loop on any malformed or malicious input** — a real security
 property rather than a crash guard.
@@ -85,18 +87,31 @@ Five real defects surfaced by proving — all on the untrusted-input / malformed
    proof runs there, avoiding cross-target/RTS setup).
 3. `book/prove/prove.sh` and triage: strengthen preconditions (as with
    `Put_MBAP`) or add loop invariants until 0 unproved.
+4. If a unit is slow or will not converge, suspect **inlining** before you suspect
+   the mathematics. GNATprove inlines a contract-less local subprogram into its
+   caller, so one deep call chain can build a single enormous verification
+   condition. Giving the callees a contract — `Global => null` is usually both true
+   and enough — makes each call opaque and each callee proved once. This is what
+   took `P256.Verify` from "does not converge" to proved; see the note at the foot
+   of `prove.sh`.
 
 ## Not SPARK (stays `SPARK_Mode => Off` / unmarked)
 
-The driver, DMA, session, and register layers are **out of the SPARK subset** by
-construction and are excluded, not "not yet done":
+The driver, DMA and session layers are **out of the SPARK subset** by construction
+and are excluded, not "not yet done":
 
 - **Controlled types** — the RAII `Session`/`Finalize` bus pattern (spi/i2c/uart/i2s).
 - **Access-to-subprogram callbacks** — interrupt handlers, hooks, dispatching drivers.
-- **Volatile memory-mapped registers** and machine-code/intrinsics (cache ops, SIMD).
+- **Machine-code and intrinsics** (cache ops, SIMD).
 - **I/O + dynamic memory** — e.g. `Block_Cache`/`Block_Dev` (`Unchecked_Deallocation`,
   `Device_Error`), which is why the ext4 *serializers* above `crc32c` need SPARK_Mode
   boundaries drawn around their I/O before they can be proven — a larger, separate effort.
+
+The **volatile memory-mapped registers** used to head that list. They do not belong on
+it: svd2ada marks each bank `Volatile` but says nothing about *which kind*, and the
+unstated default (all four aspects `True`, so a read is itself a state change) is what
+SPARK was rejecting. Naming the kind per bank puts them in reach — `ESP32S3.GPIO`'s
+lock-free pad operations are proved. See the book's SPARK chapter, "Register banks".
 
 ## The constrained-index refactor (done)
 
