@@ -3,7 +3,6 @@ with Interfaces;  use Interfaces;
 with ESP32S3.RNG;
 with ESP32S3.AES;
 with ESP32S3.AES.GCM;
-with X509;
 with Cert_Verify;
 with SPARKNaCl;   use SPARKNaCl;
 with SPARKNaCl.Scalar;
@@ -15,10 +14,6 @@ use TLS_Client.Scratch;
 
 package body TLS_Client is
 
-   use type Interfaces.Unsigned_8;
-   use type Interfaces.Unsigned_16;
-   use type Interfaces.Unsigned_64;
-   use type Interfaces.Integer_32;        --  arithmetic on SPARKNaCl N32 / I32
    use type X509.Key_Algorithm;
    use GNAT.Sockets;
 
@@ -146,14 +141,42 @@ package body TLS_Client is
    --  Record I/O over the socket.
    ---------------------------------------------------------------------------
 
-   procedure Send_Bytes (Sock : Socket_Type; Data : Byte_Array) is
+   --  Write a whole TLS record.  Two things the facade forces on every library
+   --  that sits on it (examples/STYLE.md rule 9), and a truncated record is not
+   --  a recoverable TLS state:
+   --
+   --    * Send_Socket may accept only PART of the buffer -- GNAT.Sockets.Send
+   --      returns a short Last when the NIC's TX buffer is full (it treats
+   --      Net_Devices.No_Space as success), so one call is not a whole record.
+   --      Loop until the record is out, and give up if a call accepts nothing.
+   --
+   --    * Socket_Error must not escape this library.  Unhandled, it is a board
+   --      reset rather than an error report -- measured once already, when a
+   --      dead route escaped DNS_Client through an unguarded Send_Socket and
+   --      reboot-looped the board mid-failover.
+   --
+   --  Either failure is sticky on the Session: the channel cannot be trusted
+   --  once a record went out short, so IO_Failed latches and Hello/Resume/Recv
+   --  report it (see IO_Failed in the spec).
+   procedure Send_Bytes (S : in out Session; Sock : Socket_Type; Data : Byte_Array) is
       Stream_Buf : Stream_Element_Array (1 .. Stream_Element_Offset (Data'Length));
+      Pos        : Stream_Element_Offset := 1;
       Last       : Stream_Element_Offset;
    begin
       for I in Data'Range loop
          Stream_Buf (Stream_Element_Offset (I - Data'First) + 1) := Stream_Element (Data (I));
       end loop;
-      Send_Socket (Sock, Stream_Buf, Last);
+      while Pos <= Stream_Buf'Last loop
+         Send_Socket (Sock, Stream_Buf (Pos .. Stream_Buf'Last), Last);
+         if Last < Pos then
+            S.IO_Failed := True;          --  nothing accepted: peer or link gone
+            return;
+         end if;
+         Pos := Last + 1;
+      end loop;
+   exception
+      when Socket_Error =>
+         S.IO_Failed := True;
    end Send_Bytes;
 
    --  Read exactly Buf'Length bytes (TLS records may straddle TCP segments).
@@ -178,6 +201,12 @@ package body TLS_Client is
          end loop;
          Ok := True;
       end if;
+   exception
+      --  The facade raises Socket_Error for a recv timeout and for a route that
+      --  went away mid-read.  Both are "no record arrived", which this reports
+      --  through Ok -- letting it propagate would reset the board.
+      when Socket_Error =>
+         Ok := False;
    end Recv_Exact;
 
    --  Read one TLS record: its content type and fragment.
@@ -317,7 +346,7 @@ package body TLS_Client is
       end;
       Patch16 (B, Rec_Mark);
 
-      Send_Bytes (Sock, B.Data (0 .. B.Len - 1));
+      Send_Bytes (S, Sock, B.Data (0 .. B.Len - 1));
       Transcript (B.Data (5 .. B.Len - 1));         --  handshake message (no record hdr)
    end Send_Client_Hello;
 
@@ -893,8 +922,8 @@ package body TLS_Client is
       Digest   : SHA.Digest;
    begin
       S.CV_OK := False;
-      if Cert_Len <= 0
-        or else Sig_Len <= 0
+      if Cert_Len = 0
+        or else Sig_Len = 0
         or else S.Cert_End = 0
         or else (S.CV_Alg /= 16#0804#               --  rsa_pss_rsae_sha256
                  and then S.CV_Alg /= 16#0403#       --  ecdsa_secp256r1_sha256
@@ -974,7 +1003,8 @@ package body TLS_Client is
    --  Encrypt Inner (plus its content-type byte) under (RKey, RIV) at Seq and send
    --  it as one TLS 1.3 application_data record.
    procedure Send_Encrypted
-     (Sock       : Socket_Type;
+     (S          : in out Session;
+      Sock       : Socket_Type;
       RKey, RIV  : Byte_Array;
       Seq        : Unsigned_64;
       Inner      : Byte_Array;
@@ -1017,7 +1047,7 @@ package body TLS_Client is
       for I in 0 .. 15 loop
          ER (5 + PLen + I) := Tag (I);
       end loop;
-      Send_Bytes (Sock, ER (0 .. 5 + RLen - 1));
+      Send_Bytes (S, Sock, ER (0 .. 5 + RLen - 1));
    end Send_Encrypted;
 
    --  Send our Finished and derive the application traffic keys -> channel open.
@@ -1148,14 +1178,14 @@ package body TLS_Client is
          S.Have_Res := True;
       end;
 
-      Send_Bytes (Sock, CCS);                                    --  middlebox-compat
+      Send_Bytes (S, Sock, CCS);                                    --  middlebox-compat
       if S.Cert_Req_Seen then
          --  Answer the CertificateRequest with an empty Certificate, then our
          --  Finished (client handshake key, sequence 0 then 1).
-         Send_Encrypted (Sock, S.Client_Key, S.Client_IV, 0, Empty_Cert, 22);
-         Send_Encrypted (Sock, S.Client_Key, S.Client_IV, 1, Fin, 22);
+         Send_Encrypted (S, Sock, S.Client_Key, S.Client_IV, 0, Empty_Cert, 22);
+         Send_Encrypted (S, Sock, S.Client_Key, S.Client_IV, 1, Fin, 22);
       else
-         Send_Encrypted (Sock, S.Client_Key, S.Client_IV, 0, Fin, 22);  --  our Finished
+         Send_Encrypted (S, Sock, S.Client_Key, S.Client_IV, 0, Fin, 22);  --  our Finished
       end if;
       S.Open := True;
    end Complete_Handshake;
@@ -1179,10 +1209,10 @@ package body TLS_Client is
       for Attempt in 1 .. 4 loop
          Recv_Record (Sock, CType, Frag, Len, Rec_OK);
          if not Rec_OK then
-            return;
+            exit;
          end if;
          if CType = CT_Alert then
-            return;                               --  server rejected us
+            exit;                                 --  server rejected us
          elsif CType = CT_Change_Cipher_Spec then
             null;                                 --  middlebox-compat, ignore
          elsif CType = CT_Handshake then
@@ -1207,9 +1237,11 @@ package body TLS_Client is
                   end if;
                end if;
             end if;
-            return;
+            exit;
          end if;
       end loop;
+      --  A transport that died mid-exchange is not a protocol result.
+      Ok := Ok and then not S.IO_Failed;
    end Hello;
 
    --  ClientHello for resumption: as Send_Client_Hello, but with the pre_shared_key
@@ -1352,7 +1384,7 @@ package body TLS_Client is
          end loop;
       end;
 
-      Send_Bytes (Sock, B.Data (0 .. B.Len - 1));
+      Send_Bytes (S, Sock, B.Data (0 .. B.Len - 1));
       Transcript (B.Data (5 .. B.Len - 1));         --  full CH including the real binder
    end Send_Resume_Client_Hello;
 
@@ -1387,10 +1419,10 @@ package body TLS_Client is
       for Attempt in 1 .. 4 loop
          Recv_Record (Sock, CType, Frag, Len, Rec_OK);
          if not Rec_OK then
-            return;
+            exit;
          end if;
          if CType = CT_Alert then
-            return;
+            exit;
          elsif CType = CT_Change_Cipher_Spec then
             null;
          elsif CType = CT_Handshake then
@@ -1413,9 +1445,11 @@ package body TLS_Client is
                   end if;
                end if;
             end if;
-            return;
+            exit;
          end if;
       end loop;
+      --  A transport that died mid-exchange is not a protocol result.
+      Ok := Ok and then not S.IO_Failed;
    end Resume;
 
    function Cipher_Suite (S : Session) return U16
@@ -1481,9 +1515,12 @@ package body TLS_Client is
    function Ready (S : Session) return Boolean
    is (S.Open);
 
+   function IO_Failed (S : Session) return Boolean
+   is (S.IO_Failed);
+
    procedure Send (S : in out Session; Sock : Socket_Type; Data : Byte_Array) is
    begin
-      Send_Encrypted (Sock, S.C_App_Key, S.C_App_IV, S.C_App_Seq, Data, 23);
+      Send_Encrypted (S, Sock, S.C_App_Key, S.C_App_IV, S.C_App_Seq, Data, 23);
       S.C_App_Seq := S.C_App_Seq + 1;
    end Send;
 
@@ -1590,7 +1627,7 @@ package body TLS_Client is
       loop
          Recv_Record (Sock, CType, Frag, Len, Rec_OK);
          if not Rec_OK then
-            return;
+            exit;
          end if;
          if CType = CT_Change_Cipher_Spec then
             null;                                          --  ignore
@@ -1598,10 +1635,21 @@ package body TLS_Client is
             Decrypt_Record
               (S.S_App_Key, S.S_App_IV, Frag, Len, S.S_App_Seq, Out_Len, Inner_Type, Dec_OK);
             if not Dec_OK then
-               return;
+               exit;
             end if;
             S.S_App_Seq := S.S_App_Seq + 1;
-            if Inner_Type = 23 then
+            if Inner_Type = 23 and then Out_Len = 0 then
+               --  A ZERO-LENGTH application_data record.  RFC 8446 5.1 allows
+               --  them ("Application Data fragments MAY be zero length"), and
+               --  peers do send them as padding or a keepalive.  It carries no
+               --  data, so read the next record rather than reporting it: the
+               --  "no bytes" encoding this procedure documents (Last =
+               --  Buf'First - 1) is not representable in Natural for the
+               --  Buf'First = 0 that every caller passes, so returning one used
+               --  to compute -1 and raise Constraint_Error out of the library.
+               null;
+
+            elsif Inner_Type = 23 then
                --  application_data
                declare
                   Copy_Len : constant Natural := Natural'Min (Out_Len, Buf'Length);
@@ -1611,19 +1659,21 @@ package body TLS_Client is
                   end loop;
                   Last := Buf'First + Copy_Len - 1;
                   Ok := True;
-                  return;
+                  exit;
                end;
             elsif Inner_Type = 21 then
                --  alert
-               return;
+               exit;
             elsif Inner_Type = 22 then
                --  NewSessionTicket
                Capture_Ticket (S, Out_Len);                   --  capture, then loop
             end if;
          else
-            return;
+            exit;
          end if;
       end loop;
+      --  A transport that died mid-exchange is not a protocol result.
+      Ok := Ok and then not S.IO_Failed;
    end Recv;
 
 end TLS_Client;

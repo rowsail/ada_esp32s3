@@ -533,7 +533,6 @@ package body Cert_Verify is
    --  verifies), and confirm it recovered exactly Message.
    function Ed25519_Verify (Message, Signature, Pub_Key : X509.Byte_Array) return Boolean is
       use type SPARKNaCl.I32;
-      use type SPARKNaCl.Byte;
       PKB : SPARKNaCl.Bytes_32;
       PK  : SPARKNaCl.Sign.Signing_PK;
    begin

@@ -24,6 +24,9 @@ project TLS is
 
    package Compiler is
       --  Keep run-time checks on (this is security code parsing untrusted input).
-      for Default_Switches ("Ada") use ("-O2", "-g");
+      --  Warnings on, and clean under them -- `./x test lib` fails the build on
+      --  any warning.  -gnatwJ / -gnatw.V for the reasons the HAL's .gpr gives.
+      for Default_Switches ("Ada") use
+        ("-O2", "-g", "-gnatwa", "-gnatwJ", "-gnatw.V");
    end Compiler;
 end TLS;

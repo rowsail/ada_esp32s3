@@ -59,7 +59,6 @@ package body DNS_TLS is
          if not Alive then
             return;
          end if;
-         exit when Last < Chunk'First;               --  empty record
          for I in Chunk'First .. Last loop
             exit when Have > Buf'Last;
             Buf (Buf'First + Have) := Chunk (I);
@@ -110,6 +109,12 @@ package body DNS_TLS is
             Framed (I + 2) := Q_Buf (I);
          end loop;
          TLS_Client.Send (Session, Sock, Framed);
+         --  Send has no status of its own; a truncated or failed write is
+         --  reported on the Session.  Bail here rather than waiting out a read
+         --  for a request that never left the board (Ok is already False).
+         if TLS_Client.IO_Failed (Session) then
+            return;
+         end if;
       end;
 
       --  The framed reply: length, then exactly that many bytes.
@@ -196,6 +201,12 @@ package body DNS_TLS is
             Request (Header'Length + I) := Q_Buf (I);
          end loop;
          TLS_Client.Send (Session, Sock, Request);
+         --  Send has no status of its own; a truncated or failed write is
+         --  reported on the Session.  Bail here rather than waiting out a read
+         --  for a request that never left the board (Ok is already False).
+         if TLS_Client.IO_Failed (Session) then
+            return;
+         end if;
       end;
 
       --  Accumulate the whole response ("Connection: close" bounds it), then
