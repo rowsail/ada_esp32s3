@@ -36,6 +36,46 @@ esp32s3_toolchain_on_path () {
         case ":$PATH:" in *":$d:"*) ;; *) PATH="$d:$PATH" ;; esac
     done
     export PATH
+    esp32s3_check_toolchain
+}
+
+# --- Known-good toolchain -----------------------------------------------------
+#
+# esp32s3_tc_bin picks the NEWEST match, so whatever Alire happens to have
+# installed wins.  That is convenient and it is also the whole risk: the bare
+# runtime is a patch series against specific GNAT/bb-runtimes sources
+# (crates/esp32s3_rts/full_overlay/patches), and a compiler bump can change
+# bare-metal codegen with nothing in the tree recording which version the boards
+# were actually validated on.  So: record it, and WARN (never fail) when the
+# resolved toolchain differs -- a newer compiler is usually fine and must stay
+# usable, but an unexplained regression should start by reading this line.
+ESP32S3_GNAT_KNOWN_GOOD="15.2.1"      # gnat_xtensa_esp32_elf + gnat_native
+ESP32S3_GPRBUILD_KNOWN_GOOD="26.0.1"
+export ESP32S3_GNAT_KNOWN_GOOD ESP32S3_GPRBUILD_KNOWN_GOOD
+
+# Version embedded in an Alire toolchain directory name: gnat_native_15.2.1_<hash>
+esp32s3_tc_version () {
+    local d="${1:-}"
+    [ -n "$d" ] || return 0
+    basename "$(dirname "$d")" | sed -nE 's/^[a-z0-9_]+_([0-9]+(\.[0-9]+)*)_[0-9a-f]+$/\1/p'
+}
+
+esp32s3_check_toolchain () {
+    [ -n "${ESP32S3_ADA_SKIP_TOOLCHAIN_CHECK:-}" ] && return 0
+    local v
+    v="$(esp32s3_tc_version "$ESP32S3_GNAT_XTENSA_BIN")"
+    if [ -n "$v" ] && [ "$v" != "$ESP32S3_GNAT_KNOWN_GOOD" ]; then
+        echo "[sdk] note: xtensa GNAT $v (validated on $ESP32S3_GNAT_KNOWN_GOOD)" >&2
+    fi
+    v="$(esp32s3_tc_version "$ESP32S3_GNAT_NATIVE_BIN")"
+    if [ -n "$v" ] && [ "$v" != "$ESP32S3_GNAT_KNOWN_GOOD" ]; then
+        echo "[sdk] note: native GNAT $v (validated on $ESP32S3_GNAT_KNOWN_GOOD)" >&2
+    fi
+    v="$(esp32s3_tc_version "$ESP32S3_GPRBUILD_BIN")"
+    if [ -n "$v" ] && [ "$v" != "$ESP32S3_GPRBUILD_KNOWN_GOOD" ]; then
+        echo "[sdk] note: gprbuild $v (validated on $ESP32S3_GPRBUILD_KNOWN_GOOD)" >&2
+    fi
+    return 0
 }
 
 # Build the xtensa-dynconfig plugin (the XTENSA_GNU_CONFIG .so) without Alire,
@@ -47,4 +87,30 @@ esp32s3_build_dynconfig () {
     [ -f "$dyncfg" ] && return 0
     echo "[sdk] building xtensa-dynconfig plugin (one-time, Alire-free)"
     ( cd "$dyndir" && bash ./scripts/setup.sh && make -C xtensa-dynconfig CC=gcc )
+}
+
+# Export XTENSA_GNU_CONFIG for the SDK checkout rooted at $1, building the
+# plugin first if it is missing.
+#
+# WHY THIS IS NOT OPTIONAL: the Xtensa back end reads XTENSA_GNU_CONFIG to learn
+# the core's configuration -- endianness included.  Without it the compiler does
+# not fail; it silently emits BIG-endian objects.  The HAL keeps one object
+# directory per profile, shared by every consumer, so a single `gprbuild -P
+# esp32s3_hal.gpr` in a shell that lacks the variable poisons obj-<profile> and
+# every later example dies at LINK time with
+#
+#     ld: ... compiled for a big endian system and target is little endian
+#     ld: cross-endian linking for ... esp32s3.o not supported
+#
+# -- a message that points at the linker, nowhere near the cause.  export.sh
+# advertises that a shell which sourced it can run gprbuild directly, so it must
+# set this too, not only bare_build.sh.
+esp32s3_export_dynconfig () {
+    local root="$1"
+    local dyndir="$root/crates/xtensa-dynconfig"
+    local dyncfg="$dyndir/xtensa-dynconfig/xtensa_esp32s3.so"
+    esp32s3_build_dynconfig "$dyndir" "$dyncfg" || return 1
+    [ -f "$dyncfg" ] || return 1
+    XTENSA_GNU_CONFIG="$(cd "$(dirname "$dyncfg")" && pwd)/$(basename "$dyncfg")"
+    export XTENSA_GNU_CONFIG
 }
