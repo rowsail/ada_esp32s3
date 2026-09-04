@@ -1,0 +1,67 @@
+
+<h2>What is a blob and what is not</h2>
+
+<p>The radio's MAC and PHY are undocumented, so the driver runs Espressif's
+closed libraries (<code>libnet80211</code>, <code>libpp</code>,
+<code>libphy</code>, <code>libcore</code>). Everything <em>around</em> them is
+Ada written against the embedded (Jorvik) runtime:</p>
+
+<table>
+  <thead><tr><th>Ours, in Ada</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>.OS_Adapter</code>, <code>.RTOS</code></td>
+        <td>Maps the blobs' RTOS calls onto Jorvik tasks &mdash; so
+            <strong>FreeRTOS still never runs</strong>.</td></tr>
+    <tr><td><code>.PHY</code></td><td>PHY/RF calibration, and persisting calibration data.</td></tr>
+    <tr><td><code>.Supplicant</code></td><td>The WPA2-PSK 4-way handshake.</td></tr>
+    <tr><td><code>.IP</code>, <code>.DHCP</code>, <code>.Net_Device</code></td>
+        <td>A software TCP/IP stack presenting the radio as a
+            <a href="40-net-stack.html">Net_Device</a>.</td></tr>
+    <tr><td><code>.Interrupt</code>, <code>.Port</code>, <code>.Core_Shim</code></td>
+        <td>The interrupt, timer and core glue the blobs expect.</td></tr>
+    <tr><td><code>.Sniffer</code></td><td>Promiscuous-mode capture.</td></tr>
+  </tbody>
+</table>
+
+<p class="note">The blobs are <strong>Apache-2.0 and fetched, not committed</strong>
+&mdash; <code>tools/fetch-wifi-blobs.sh</code> pins them to exact upstream
+commits and verifies each by sha256. So the repository still contains no opaque
+vendor binary for Wi-Fi; you choose to download them.</p>
+
+<h2>The supplicant is ours, deliberately</h2>
+
+<p>The 4-way handshake is pure Ada: derive the PMK with PBKDF2-HMAC-SHA1, run the
+handshake (PTK via SHA1-PRF, MIC via HMAC-SHA1, GTK via AES key-unwrap), and
+reply with message 2 of 4.</p>
+
+<p class="warn">That placement is the security-relevant part. Doing the handshake
+in Ada means <strong>your PSK and the derived keys never pass through blob
+code</strong> &mdash; the blob is handed an already-established association, not
+your passphrase. A driver that let the closed library do WPA2 would be trusting
+it with the one secret that matters.</p>
+
+<h2>Using it</h2>
+
+<pre><code>type Auth_Mode is ...;
+type AP_Record is record ... end record;
+type AP_List   is array (Positive range &lt;&gt;) of AP_Record;
+
+procedure Initialize (...);
+procedure Scan       (...);
+procedure Connect    (...);
+function  Connected        return Boolean;
+function  Current_Channel  return Natural;</code></pre>
+
+<p class="warn"><strong>Not re-entrant.</strong> This package drives a single
+radio and one caller &mdash; typically the environment task &mdash; owns it. Do
+not call <code>Scan</code> and <code>Connect</code> from two tasks.</p>
+
+<p class="note"><code>Connect</code> returns as soon as the association is
+<em>started</em>. The association and the 4-way handshake then run to completion
+on the internal Wi-Fi task, so poll <code>Connected</code> to learn when the link
+is actually up. Treating <code>Connect</code>'s return as "we are on the network"
+is the mistake to avoid.</p>
+
+<p>The version-locked C structs stay in the body; the spec exposes clean Ada
+records, so a blob update cannot ripple into your code. Examples run scan,
+promiscuous sniffing, DNS, HTTP and full HTTPS over the radio.</p>

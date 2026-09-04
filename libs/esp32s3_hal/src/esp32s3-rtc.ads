@@ -1,7 +1,6 @@
 with System;
 with System.Storage_Elements;
 with Interfaces;
-with ESP32S3.GPIO;
 with ESP32S3.RTC_IO;
 
 --  ESP32-S3 RTC low-power domain: retained memory, deep sleep, and wake sources.

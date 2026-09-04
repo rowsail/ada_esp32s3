@@ -1,0 +1,163 @@
+
+<h2>Why you cannot reach the registers</h2>
+
+<p>The unsynchronised register driver lives in a <em>private child</em>,
+<code>ESP32S3.I2C.Engine</code>, which cannot be <code>with</code>ed from outside
+that subtree. <code>ESP32S3.I2C</code> is the only interface an application sees,
+so the raw primitives cannot be called by accident. Access to the hardware is
+always mediated.</p>
+
+<h2>One-time setup</h2>
+
+<p>Call these once per host at startup, single-threaded, before any task contends
+for the bus:</p>
+
+<pre><code>procedure Setup (Host : I2C_Host; Clock_Hz : Positive := 100_000);
+
+procedure Configure_Pins
+  (Host : I2C_Host; Scl : ESP32S3.GPIO.Pin_Id; Sda : ESP32S3.GPIO.Pin_Id);</code></pre>
+
+<p><code>I2C_Host</code> is <code>I2C0</code> or <code>I2C1</code>.
+<code>Configure_Pins</code> routes SCL and SDA to physical pads as open-drain
+lines <em>with the internal pull-ups enabled</em>, so a quick bring-up needs no
+external resistors. The pin arguments are <code>Pin_Id</code>, so a reserved pad
+is rejected at compile or run time exactly as on the
+<a href="13-gpio.html">GPIO page</a>.</p>
+
+<p class="note">Internal pull-ups are weak. They are fine on a short bench wire
+at 100&nbsp;kHz; put real resistors on a production bus, especially at
+400&nbsp;kHz or with any cable length.</p>
+
+<h2>Ownership: the Session</h2>
+
+<p>Each host is guarded by a protected object, and <code>Acquire</code> hands out
+a <code>Session</code> that owns it exclusively. Other tasks suspend in
+<code>Acquire</code> until it is released.</p>
+
+<pre><code>type Session is limited private;    --  limited: cannot be copied
+                                   --  controlled: releases itself on scope exit</code></pre>
+
+<p>Because <code>Session</code> is a controlled type, it releases the host
+<strong>automatically on scope exit &mdash; including during exception
+unwinding</strong>. A fault between <code>Acquire</code> and <code>Release</code>
+cannot leak the lock and wedge every other task on the bus. <code>Release</code>
+remains available to hand the host back early, and is idempotent.</p>
+
+<p>Two exceptions enforce the ordering, rather than letting misuse fail
+quietly:</p>
+
+<table>
+  <thead><tr><th>Exception</th><th>Raised when</th></tr></thead>
+  <tbody>
+    <tr><td><code>Not_Initialized</code></td>
+        <td><code>Acquire</code> on a host that was never <code>Setup</code>.</td></tr>
+    <tr><td><code>Not_Owned</code></td>
+        <td>A transaction attempted with a session that holds no host. Both
+            <code>Write</code> and <code>Read</code> reach the hardware through
+            one ownership-checked gateway, so this fails loudly.</td></tr>
+  </tbody>
+</table>
+
+<p>The API also carries contracts: <code>Acquire</code> has
+<code>Post =&gt; Is_Held (S)</code>, the transactions have
+<code>Pre =&gt; Is_Held (S)</code>, and <code>Release</code> has
+<code>Post =&gt; not Is_Held (S)</code>.</p>
+
+<p class="note">The protected object arbitrates <em>ownership only</em>. The
+blocking transaction itself runs <strong>outside</strong> the lock &mdash; the
+lock is never held across the bus busy-wait, so a slow device cannot stall the
+protected object.</p>
+
+<h2>The three transactions</h2>
+
+<pre><code>procedure Write
+  (S : Session; Addr : Slave_Address; Data : Byte_Array;
+   Success : out Boolean; Check_Ack : Boolean := True);
+
+procedure Read
+  (S : Session; Addr : Slave_Address; Data : out Byte_Array;
+   Success : out Boolean);
+
+procedure Write_Read
+  (S : Session; Addr : Slave_Address; Tx : Byte_Array;
+   Rx : out Byte_Array; Success : out Boolean);</code></pre>
+
+<ul>
+  <li><strong><code>Write</code></strong> &mdash; START, <code>Addr&lt;&lt;1 |
+      W</code>, the data bytes, STOP. <code>Success</code> is True only if the
+      slave ACKed the address and every byte.</li>
+  <li><strong><code>Read</code></strong> &mdash; START, <code>Addr&lt;&lt;1 |
+      R</code>, then <code>Data'Length</code> bytes, ACKing all but the last and
+      NACKing the last, STOP. A zero-length read returns
+      <code>Success =&gt; False</code>.</li>
+  <li><strong><code>Write_Read</code></strong> &mdash; one transaction with a
+      <strong>REPEATED START</strong> between the phases and no STOP separating
+      them, so the slave sees a single command. This is what a "write the
+      register index, then read it back" device requires, and it is precisely
+      what back-to-back <code>Write</code> then <code>Read</code> calls
+      <em>cannot</em> express.</li>
+</ul>
+
+<h2>Length is not your problem</h2>
+
+<p>The package exports a constant that is easy to misread:</p>
+
+<pre><code>Max_Transfer : constant := 32;   --  the FIFO depth -- NOT a transfer limit</code></pre>
+
+<p>All three transactions take payloads of <strong>any length</strong>. The
+driver refills the transmit FIFO (or drains the receive FIFO) mid-transaction
+using the command FSM's <code>END</code> opcode, which pauses the sequence with
+the bus still held. The length is therefore invisible on the wire: a 200-byte
+write is still <em>one</em> START&hellip;STOP transaction.</p>
+
+<p>That matters more than it sounds. For a device where a STOP means
+end-of-command &mdash; an EEPROM page write, say &mdash; a driver that silently
+split at 32 bytes would produce a subtly corrupt device, not an error.</p>
+
+<h2>Scanning the bus</h2>
+
+<p>Passing a <code>Data</code> array of length zero does not skip the
+transaction &mdash; it sends a complete one with no payload: START, the
+address byte, then STOP. Nothing is written to the device, so the only thing
+the exchange can tell you is whether something out there pulled SDA low to
+acknowledge its address. That answer arrives in <code>Success</code>, which is
+exactly what a bus scan needs, so scanning is the same call in a loop over the
+address range:</p>
+
+{{sample:i2c_scan.adb}}
+
+<p>Two details in there are easy to get wrong. <code>(1 .. 0 =&gt; 0)</code> is
+how you write a null array aggregate &mdash; a range whose upper bound is below
+its lower one. And <code>Slave_Address</code> is a <code>Natural</code> subtype
+while <code>Put_Hex</code> takes an <code>Interfaces.Unsigned_32</code>, so the
+conversion is required; without it the compiler says
+<code>expected type "Interfaces.Unsigned_32", found type
+"Standard.Integer"</code>.</p>
+
+<p><code>Check_Ack =&gt; False</code> on <code>Write</code> does the opposite:
+it clocks the whole transaction out regardless of whether anything answers,
+which is how the self-test exercises the bus with no device attached.</p>
+
+<h2>The self-test, and what it cannot prove</h2>
+
+<p><code>./x run esp32s3_i2c_loopback</code> needs no wiring and no device. It
+checks three things: that an ACK-checked write to an absent address correctly
+reports NACK; that the same write with <code>Check_Ack =&gt; False</code> runs to
+completion; and that a session which goes out of scope through an
+<em>exception</em> still releases its host, so a following <code>Acquire</code>
+does not deadlock.</p>
+
+<p class="warn"><strong>There is no internal loopback for I2C, and there cannot
+be.</strong> SDA is a bidirectional open-drain (wired-AND) node: both ends must
+drive <em>and</em> read the same wire. The ESP32-S3's GPIO matrix gives each pad
+exactly one output source, so two on-chip controllers cannot be wired-AND onto
+one pad. Cross-coupling two pads breaks the master's mandatory write-readback; a
+single shared pad breaks the slave's mandatory ACK. Verifying the read direction
+and the ACK handshake needs a real shared bus &mdash; an external device, or a
+jumper tying two pads together.</p>
+
+<p class="note">The controlled <code>Session</code> needs finalization, so I2C is
+part of the HAL's <a href="08-profiles.html"><code>embedded</code></a> subset and
+is excluded under <code>light-tasking</code>. The loopback example's
+<code>build.sh</code> sets <code>ESP32S3_RTS_PROFILE=embedded</code>
+accordingly.</p>

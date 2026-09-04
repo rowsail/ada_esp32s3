@@ -1,4 +1,10 @@
 # ---- Build artifacts ----
+#  Host-test executables: each libs/*/test/<name>/ builds its binary in place
+#  (run.sh does), and one of them was committed once -- 1.8 MB of ELF whose
+#  source was not even in this repo.  Ignore them by construction.
+/libs/*/test/*/*_host
+/libs/*/test/*/*_test
+/libs/*/test/*/gnatprove/
 **/build/
 **/.objs/
 **/.ada_build/
@@ -21,6 +27,11 @@ dependencies.lock
 /examples/common/bare/bootloader/boot.map
 /examples/common/bare/bootloader/bootloader.bin
 **/__pycache__/
+
+# ---- Real Wi-Fi credentials (the .template beside them IS tracked) ----
+#  Repo-wide, not per-example: a new Wi-Fi example must not be able to leak an
+#  SSID/PSK by forgetting to add its own rule.
+**/wifi_credentials.ads
 
 # ---- Generated native runtime (regenerate via hwtest/native/main/build_ada.sh) ----
 /hwtest/native/rts/

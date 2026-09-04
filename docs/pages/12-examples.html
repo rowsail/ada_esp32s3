@@ -1,0 +1,35 @@
+
+<h2>How to use them</h2>
+
+<p>Every example builds and runs the same way, and the short name is
+enough:</p>
+
+<pre><code>./x list                       # names, profiles, directories
+./x run gpio0_blink            # build + flash + monitor
+./x run i2c_loopback -p /dev/ttyACM0</code></pre>
+
+<p class="note"><strong>Run the self-test before writing code.</strong> When a
+driver page here says a peripheral works, that is a claim about the authors'
+board. The matching example is how you turn it into a claim about yours &mdash;
+and most need <em>no external wiring at all</em>, using internal loopback or a
+pad the chip samples itself.</p>
+
+<p>They are also meant to be <em>read</em>. Each opens with a header saying what
+it demonstrates, what the console should print, and what hardware it needs;
+magic numbers are named and the reasoning is in the code.
+<code>examples/STYLE.md</code> records the bar, with
+<code>esp32s3_gpio0_blink</code> and <code>esp32s3_gdma_copy</code> as the
+models.</p>
+
+<p class="warn"><strong>Mind the profile column.</strong> An example built for
+<code>embedded</code> will not build under <code>light-tasking</code> &mdash; the
+RAII driver handles need finalization (<a href="08-profiles.html">step 8</a>).
+That is the first thing to check when a copied example fails to compile.</p>
+
+<h2>The catalogue</h2>
+
+<p>Generated from <code>./x list --json</code> and the examples' own headers, so
+it cannot drift from what the repository actually contains. The last column
+links to the step that explains the thing being demonstrated.</p>
+
+{{examples}}

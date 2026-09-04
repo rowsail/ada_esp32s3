@@ -1,0 +1,55 @@
+
+<h2>What it is</h2>
+
+<p><code>ESP32S3.SIMD</code> exposes the S3's <strong>PIE</strong> SIMD extension
+&mdash; the Xtensa LX7's 128-bit <code>q0</code>&ndash;<code>q7</code> registers
+&mdash; with the inner loops written as GNAT inline assembly
+(<code>System.Machine_Code</code>) inside Ada bodies.</p>
+
+<p>Application code <code>with</code>s the facade; the per-type kernels live in
+children by element family:</p>
+
+<table>
+  <thead><tr><th>Child</th><th>Element type</th></tr></thead>
+  <tbody>
+    <tr><td><code>ESP32S3.SIMD.I8</code></td><td><code>Integer_8</code></td></tr>
+    <tr><td><code>ESP32S3.SIMD.I16</code></td><td><code>Integer_16</code></td></tr>
+    <tr><td><code>ESP32S3.SIMD.I32</code></td><td><code>Integer_32</code></td></tr>
+    <tr><td><code>ESP32S3.SIMD.F32</code></td><td><code>IEEE_Float_32</code></td></tr>
+  </tbody>
+</table>
+
+<pre><code>procedure Add   (A, B : SIMD_F32_Vector; Result : in out SIMD_F32_Vector);
+procedure Sub   (A, B : SIMD_F32_Vector; Result : in out SIMD_F32_Vector);
+procedure Mul_Scalar (...);
+procedure MAC   (...);
+function  Sum         (A : SIMD_F32_Vector) return IEEE_Float_32;
+function  Dot_Product (A, B : SIMD_F32_Vector) return IEEE_Float_32;
+procedure Ceil  (A : SIMD_F32_Vector; Result : in out SIMD_F32_Vector; Max_Val : IEEE_Float_32);
+procedure Floor (...);
+procedure Neg / Abs_Val (...);</code></pre>
+
+<p>Contracts on these are intentionally explicit &mdash; the preconditions state
+the length and aliasing rules rather than leaving them to a comment.</p>
+
+<h2>Read this before you depend on it</h2>
+
+<p class="warn"><strong>Status: experimental / beta.</strong> Correctness is
+validated for a <em>subset</em> of operations through the benchmark harness; edge
+cases and operation interactions are not systematically exercised. The library's
+own README says not to rely on it in safety-critical contexts without independent
+verification, and repeating that here rather than quietly omitting it is the
+point.</p>
+
+<p class="note"><strong>Provenance:</strong> vendored from
+<code>rowsail/ada-esp32-s3-simd</code>, itself based on the low-level
+implementation ideas of the upstream <code>zliu43/esp_simd</code> project. It is
+not original work of this SDK, and the vendoring is recorded rather than
+blurred.</p>
+
+<h2>Enabling the coprocessor</h2>
+
+<p>PIE is coprocessor 3. The bare boot's <code>start.S</code> sets
+<code>CPENABLE = 0x09</code> to enable it &mdash; so unlike most of the HAL, this
+library depends on a startup detail rather than only on its own registers. If you
+port the boot code, that bit has to come with it or every kernel faults.</p>

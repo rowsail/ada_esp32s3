@@ -23,6 +23,7 @@ parts (language intelligence, the IDF-free build) already live in ALS + `./x`.
 ./x run     <example> [-p PORT] [-P PROF]  # build + flash + monitor
 ./x monitor [-p PORT]             # serial console @115200
 ./x clean   [<example>]           # remove build artifacts (all if omitted)
+./x test    [host|lib|examples]  # everything checkable without a board (what CI runs)
 ./x config  <example> [show|--json]   # show flash/PSRAM size (the example's board.ads)
 ./x config  <example> flash-size <SIZE>  # e.g. 4MB, 512KB, 0x800000, 8388608
 ./x config  <example> psram-size <SIZE>  # (rebuild the bootloader for it to take effect)
@@ -35,6 +36,20 @@ parts (language intelligence, the IDF-free build) already live in ALS + `./x`.
 - `PORT` defaults to `$ESPPORT` or `/dev/ttyACM0`.
 - The monitor picks the first available of `miniterm` / `picocom` / `screen`, then
   a raw `cat` fallback; override with `ESP_MONITOR="<cmd>"`.
+- `./x test` is the whole board-free gate in one command, and the same one
+  `.github/workflows/ci.yml` runs on every push:
+  - `host` — the native suites under `libs/*/test/*/run.sh` (ext4 vs `e2fsck`,
+    FAT16 vs `dosfstools`, FTP and DNS against local Python servers, Modbus
+    framing, the route table, the wear-levelling FTL, P-384, the bare heap).
+    Seconds, and no cross compiler needed.
+  - `lib` — every `libs/*/<name>.gpr`, on each runtime profile it supports. The
+    profiles come from the library's own `external ("ESP32S3_RTS_PROFILE", ...)`
+    default, so a new library needs no edit here. **Warnings are failures**:
+    `esp32s3_hal` and `tls` build clean under `-gnatwa`, and this is what holds
+    them there.
+  - `examples` — a build of every example, on its own profile.
+  Anything needing real silicon (the driver self-tests, the ACATS sweep) is
+  deliberately not here; it stays on the bench.
 
 ### Starting your own project
 

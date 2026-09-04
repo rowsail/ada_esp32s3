@@ -1,0 +1,48 @@
+
+<h2>Printing without a hosted runtime</h2>
+
+<p><code>ESP32S3.Log</code> is the formatted-output path the examples use. It
+routes through the ROM <code>printf</code> via fixed-signature C wrappers linked
+into every example, so you format <em>in Ada</em> rather than hand-writing a
+<code>glue.c</code> helper per message:</p>
+
+<pre><code>procedure Put       (S : String);
+procedure Put       (C : Character);
+procedure Put_Line  (S : String := "");
+procedure New_Line;
+procedure Put       (N : Integer; Width : Natural := 0; Pad : Character := ' ');
+procedure Put_Unsigned (N : Interfaces.Unsigned_32);
+procedure Put_Hex   (N : Interfaces.Unsigned_32; Width : Natural := 0);
+procedure Put_Fixed (...);</code></pre>
+
+<p class="note">Strings are passed to C NUL-terminated, built in a small
+<em>stack</em> buffer &mdash; no secondary stack, no heap. That is what keeps this
+usable from the lean profiles where <code>Ada.Text_IO</code> is unavailable, and
+why it is safe to call from places a heap allocation would not be. Each call is
+one short <code>esp_rom_printf</code>.</p>
+
+<p>Remember the type rule this implies, which
+<a href="14-i2c.html">the bus-scan sample</a> ran into:
+<code>Put_Hex</code> takes an <code>Interfaces.Unsigned_32</code>, so an
+<code>Integer</code>-family value needs an explicit conversion.</p>
+
+<h2>Fonts, separated from panels</h2>
+
+<p><code>ESP32S3.Fonts</code> is a panel-independent data model for proportional
+bitmap fonts. A <code>Font</code> is a light descriptor that <em>points</em> at
+flat glyph-atlas arrays generated offline by
+<code>libs/esp32s3_hal/tools/gen_font.py</code>: per-glyph metrics (advance,
+size, bearings, byte offset) plus packed coverage.</p>
+
+<p class="note"><strong>This package has no display dependency at all.</strong>
+It models glyph data and reads it through accessors; the rasterising and blitting
+live in the generic <code>ESP32S3.Fonts.Render</code>, instantiated per panel
+&mdash; <code>ESP32S3.ST7789.Fonts</code> being the worked case. So an atlas and
+its <code>Font</code> values are reusable across panels unchanged, and adding a
+new display type does not mean regenerating fonts.</p>
+
+<p>Two coverage encodings are supported, which is how the same model serves both
+crisp 1-bit glyphs and anti-aliased ones. The atlas being generated
+<em>offline</em> is the important structural choice: no font parsing, no
+rasteriser and no heap on the device &mdash; just indexed lookups into a constant
+array.</p>

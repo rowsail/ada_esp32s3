@@ -30,6 +30,14 @@ esac
 . "$ESP32S3_ADA_SDK/tools/sdk-env.sh"
 esp32s3_toolchain_on_path
 
+# XTENSA_GNU_CONFIG: the Xtensa core-config plugin every xtensa compile and link
+# reads.  Without it the compiler silently produces BIG-endian objects, so a
+# plain `gprbuild -P libs/esp32s3_hal/esp32s3_hal.gpr` in this shell would poison
+# the HAL's shared object directory and break every later example at link time.
+# See esp32s3_export_dynconfig in tools/sdk-env.sh.
+esp32s3_export_dynconfig "$ESP32S3_ADA_SDK" \
+  || echo "warning: could not build xtensa-dynconfig; xtensa builds will be wrong" >&2
+
 # Runtime project + every reusable library (libs/*/) on GPR_PROJECT_PATH, so
 # `with "esp32s3_rts.gpr"` / `with "esp32s3_hal.gpr"` resolve with no relative path
 # -- for gprbuild AND ada_language_server (IntelliSense).  Auto-discovered: adding a
@@ -44,4 +52,5 @@ done
 unset __gpp
 
 echo "ESP32-S3 Ada SDK: $ESP32S3_ADA_SDK"
+echo "  XTENSA_GNU_CONFIG=${XTENSA_GNU_CONFIG:-(unset -- xtensa builds WILL be wrong)}"
 echo "  'esp32-ada' is on PATH.  New project:  mkdir myapp && cd myapp && esp32-ada init"

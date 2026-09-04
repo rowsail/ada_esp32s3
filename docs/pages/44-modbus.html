@@ -1,0 +1,37 @@
+
+<h2>The data model, not stored here</h2>
+
+<p>Modbus is big-endian on the wire, with four tables: coils (1-bit read/write),
+discrete inputs, input registers and holding registers.</p>
+
+<p class="note"><strong>This library never stores any of them.</strong> The
+application owns its data: the master fills caller-supplied buffers, and the
+slave is implemented by <em>deriving</em> from <code>Modbus.Slave.Server</code>
+and overriding the accessors. That is the right split for an embedded device
+&mdash; your registers are usually views onto real state (a sensor reading, a
+relay's position), not a block of memory that happens to be addressed twice.</p>
+
+<h2>Master and slave</h2>
+
+<ul>
+  <li><strong><code>Modbus.Master</code></strong> &mdash; the client. Reads and
+      writes the four tables against a remote device, returning a status rather
+      than raising, so a dropped link is an ordinary control-flow case.</li>
+  <li><strong><code>Modbus.Slave</code></strong> &mdash; the server. You derive
+      the tagged type and put your data in the extension, so the library never
+      needs to know its shape or size.</li>
+</ul>
+
+<h2>Written against the facade</h2>
+
+<p>Like <a href="41-dns-ntp.html">DNS and NTP</a>, Modbus is written entirely
+against <a href="40-net-stack.html">GNAT.Sockets</a>, so the same source runs on
+a desktop and on the board. That is what makes an industrial protocol testable
+without a PLC on the bench: run the slave on a host, point a standard Modbus
+client at it, and you have exercised the wire format before any hardware is
+involved.</p>
+
+<p>On a multi-interface board, a Modbus connection follows
+<a href="40-net-stack.html">the routing table</a> like any other socket, or can
+be pinned to one interface &mdash; which is what you want when the PLC network is
+deliberately separate from the internet-facing one.</p>

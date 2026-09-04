@@ -1,0 +1,45 @@
+
+<h2>Install Alire</h2>
+
+<pre><code>cd ~
+wget https://github.com/alire-project/alire/releases/download/v2.1.0/alr-2.1.0-bin-x86_64-linux.zip
+unzip alr-2.1.0-bin-x86_64-linux.zip -d ~/alire
+export PATH="$HOME/alire/bin:$PATH"        # add to ~/.bashrc to make permanent
+alr version                                # -&gt; alr version 2.1.0</code></pre>
+
+<p>On an ARM64 host, take the <code>aarch64</code> asset instead. This guide was
+validated with <strong>alr 2.1.0</strong> and <strong>GNAT 15.2</strong>.</p>
+
+<p class="warn">Put that <code>export PATH=...</code> line in your
+<code>~/.bashrc</code> now. Nearly every "<code>gprbuild</code>: command not
+found" report traces back to a shell that never saw it.</p>
+
+<h2>Select the three toolchains</h2>
+
+<p>Two commands, because the native and cross toolchains are selected
+separately:</p>
+
+<pre><code>alr toolchain --select gnat_native gprbuild
+alr toolchain --select gnat_xtensa_esp32_elf
+alr toolchain                              # confirm all three are present</code></pre>
+
+<p>Why three, when you are only compiling for one chip?</p>
+
+<table>
+  <thead><tr><th>Toolchain</th><th>What it is for</th></tr></thead>
+  <tbody>
+    <tr><td><code>gnat_xtensa_esp32_elf</code></td>
+        <td>The cross-compiler. Turns your Ada into Xtensa LX7 code for the S3.</td></tr>
+    <tr><td><code>gnat_native</code></td>
+        <td>Builds the two <em>host</em> tools &mdash; the image packager and the
+            serial flasher &mdash; which run on your PC, not the board.</td></tr>
+    <tr><td><code>gprbuild</code></td>
+        <td>The Ada build driver both of the above are invoked through.</td></tr>
+  </tbody>
+</table>
+
+<p>That is the entire install. No SDK, no vendor installer, no environment
+script to source before every session.</p>
+
+<p class="next-hint">Next: get the code &mdash; and get the submodules with
+it.</p>

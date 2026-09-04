@@ -229,6 +229,23 @@ package body ESP32S3.SDMMC is
 
    --  Send one command and collect its response into R0..R3w.  Sets up the data
    --  path flags (BLKSIZ/BYTCNT are programmed by the caller before a data cmd).
+   --  Issue a command whose Status is deliberately not acted on here.  Some of
+   --  these carry no status worth having (CMD0 has no response at all); for the
+   --  rest the driver checks the EFFECT rather than the acknowledgement -- CMD2
+   --  and CMD9 are validated by the CID/CSD they leave in the response
+   --  registers, ACMD41 by the OCR busy bit, ACMD6 and CMD16 by the transfers
+   --  that follow.  Naming it keeps a dropped Status from reading like one
+   --  somebody forgot.
+   procedure Send
+     (Index   : Natural;
+      Arg     : UInt32;
+      Resp    : Resp_Kind;
+      Dir     : Data_Dir := No_Data;
+      Slot_No : Natural;
+      Init      : Boolean := False;
+      Auto_Stop : Boolean := False);
+
+
    function Issue
      (Index   : Natural;
       Arg     : UInt32;
@@ -297,6 +314,22 @@ package body ESP32S3.SDMMC is
       RINT := Int_Cmd_Done or Int_Resp_Err;
       return OK;
    end Issue;
+
+   procedure Send
+     (Index   : Natural;
+      Arg     : UInt32;
+      Resp    : Resp_Kind;
+      Dir     : Data_Dir := No_Data;
+      Slot_No : Natural;
+      Init      : Boolean := False;
+      Auto_Stop : Boolean := False)
+   is
+      Ignored : constant Status :=
+        Issue (Index, Arg, Resp, Dir, Slot_No, Init, Auto_Stop);
+      pragma Unreferenced (Ignored);
+   begin
+      null;
+   end Send;
 
    --  Wait for the card to stop signalling busy (DATA0 held low after R1b/write).
    procedure Wait_Not_Busy is
@@ -565,7 +598,7 @@ package body ESP32S3.SDMMC is
       Set_Card_Clock (Card_Index, C.Init_Hz);
 
       --  CMD0: 80 init clocks then go-idle (no response).
-      St := Issue (0, 0, No_Resp, Slot_No => Card_Index, Init => True);
+      Send (0, 0, No_Resp, Slot_No => Card_Index, Init => True);
 
       --  CMD8: voltage check.  No response => v1 card; else confirm 0xAA echo.
       St := Issue (8, 16#1AA#, Short_Resp, Slot_No => Card_Index);
@@ -574,7 +607,7 @@ package body ESP32S3.SDMMC is
       --  ACMD41 until the card powers up (OCR busy bit 31 set).
       OCR_Arg := (if V2 then 16#4030_0000# else 16#0030_0000#);   --  HCS + 3V3
       for Tries in 1 .. ACMD41_Tries loop
-         St := Issue (55, 0, Short_Resp, Slot_No => Card_Index);
+         Send (55, 0, Short_Resp, Slot_No => Card_Index);
          St := Issue (41, OCR_Arg, Short_NoCRC, Slot_No => Card_Index);
          if St = OK then
             Responded := True;
@@ -594,7 +627,7 @@ package body ESP32S3.SDMMC is
       C.Kind := (if C.Block_Addressed then SDHC else SDSC);
 
       --  CMD2: read CID (long response: R3w:R2w:R1w:R0 = CID[127:0]).
-      St := Issue (2, 0, Long_Resp, Slot_No => Card_Index);
+      Send (2, 0, Long_Resp, Slot_No => Card_Index);
       C.CID := (Unsigned_32 (R0), Unsigned_32 (R1w), Unsigned_32 (R2w), Unsigned_32 (R3w));
 
       --  CMD3: publish a relative card address (R6: RCA in the high half-word).
@@ -606,28 +639,28 @@ package body ESP32S3.SDMMC is
       C.RCA := Unsigned_16 (Shift_Right (R0, 16) and 16#FFFF#);
 
       --  CMD9: read CSD (addressed by RCA, valid in standby -> before CMD7).
-      St := Issue (9, Shift_Left (UInt32 (C.RCA), 16), Long_Resp, Slot_No => Card_Index);
+      Send (9, Shift_Left (UInt32 (C.RCA), 16), Long_Resp, Slot_No => Card_Index);
       C.CSD := (Unsigned_32 (R0), Unsigned_32 (R1w), Unsigned_32 (R2w), Unsigned_32 (R3w));
 
       --  CMD7: select the card (R1b -> may go busy).
-      St := Issue (7, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => Card_Index);
+      Send (7, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => Card_Index);
       Wait_Not_Busy;
 
       --  Optional 4-bit bus: ACMD6 then set the controller's card width.
       if C.Width = Width_4 then
-         St := Issue (55, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => Card_Index);
-         St := Issue (6, 2, Short_Resp, Slot_No => Card_Index);  --  bus width = 4
+         Send (55, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => Card_Index);
+         Send (6, 2, Short_Resp, Slot_No => Card_Index);         --  bus width = 4
          SDHOST_Periph.CTYPE.CARD_WIDTH4 := CTYPE_CARD_WIDTH4_Field (2**Card_Index);
       end if;
 
       --  CMD16: 512-byte blocks (required for SDSC, harmless for SDHC).
-      St := Issue (16, Block_Bytes, Short_Resp, Slot_No => Card_Index);
+      Send (16, Block_Bytes, Short_Resp, Slot_No => Card_Index);
 
       --  SCR (ACMD51): SD spec version + supported bus widths (8-byte data read).
       declare
          Buf : Small_Buf;
       begin
-         St := Issue (55, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => Card_Index);
+         Send (55, Shift_Left (UInt32 (C.RCA), 16), Short_Resp, Slot_No => Card_Index);
          Prepare_Data (8);
          St := Issue (51, 0, Short_Resp, Dir => Read_Data, Slot_No => Card_Index);
          if St = OK and then Read_Small (8, Buf) = OK then
@@ -1052,7 +1085,7 @@ package body ESP32S3.SDMMC is
 
       --  Generous response/data timeouts; conservative FIFO watermarks.
       SDHOST_Periph.TMOUT :=
-        (RESPONSE_TIMEOUT => 16#FF#, DATA_TIMEOUT => 16#FFFFFF#, others => <>);
+        (RESPONSE_TIMEOUT => 16#FF#, DATA_TIMEOUT => 16#FFFFFF#);
       SDHOST_Periph.FIFOTH :=
         (TX_WMARK => 8, RX_WMARK => 7, DMA_MULTIPLE_TRANSACTION_SIZE => 0, others => <>);
       SDHOST_Periph.RST_N.CARD_RESET := RST_N_CARD_RESET_Field (2**Card_Index);

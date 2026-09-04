@@ -1,0 +1,256 @@
+with Ada.Real_Time;
+with Ada.IO_Exceptions;
+with ESP32S3.GDMA;
+
+package body ESP32S3.W25Q is
+
+   package SPI renames ESP32S3.SPI;
+   subtype DMA_Buffer is ESP32S3.GDMA.DMA_Buffer;
+
+   --  Winbond command opcodes.  We put the chip in 4-byte ADDRESS MODE (0xB7)
+   --  at Initialize and then use the STANDARD opcodes, which then consume four
+   --  address bytes and reach the full 32 MB.  This is exactly what the
+   --  W25Q256FV datasheet's "Instruction Set Table 3 (4-Byte Address Mode)"
+   --  prescribes: Page Program is still 0x02, Sector Erase still 0x20, Block
+   --  Erase still 0xD8 -- the FV defines NO dedicated 4-byte program/erase
+   --  opcodes at all (the 0x12 / 0x21 / 0xDC set only exists on the later
+   --  W25Q256JV).  Only the *read* family gets 4-byte-address variants (0x13
+   --  etc.), which is why a 0x12/0x21 attempt is silently ignored here.
+   Cmd_Write_Enable : constant := 16#06#;
+   Cmd_Read_Status1 : constant := 16#05#;   --  status register 1; BUSY = bit 0
+   Cmd_Read_Status3 : constant := 16#15#;   --  status register 3; ADS = bit 0
+   Cmd_Enter_4Byte  : constant := 16#B7#;   --  enter 4-byte address mode
+   Cmd_JEDEC_ID     : constant := 16#9F#;
+   Cmd_Read         : constant := 16#03#;   --  read data (4 addr bytes in 4B mode)
+   Cmd_Page_Program : constant := 16#02#;   --  page program  ("    "    "    "   )
+   Cmd_Sector_Erase : constant := 16#20#;   --  4 KB sector erase ("  "    "    " )
+
+   Status_Busy : constant Unsigned_8 := 16#01#;   --  SR1 bit 0
+   Status3_ADS : constant Unsigned_8 := 16#01#;   --  SR3 bit 0: 4-byte mode active
+
+   --  Largest single transfer we build: opcode + 4 address bytes + a full page.
+   Header_Len : constant := 5;
+
+   --  Dummy MOSI source for the read data phase.  GDMA can only reach internal
+   --  SRAM, so this lives in package .bss rather than as a stack/.rodata constant
+   --  (a constant aggregate may be placed in XIP flash, which DMA cannot read).
+   --  Reads are serialised by the per-host SPI lock, so one shared source is safe.
+   Zero_Src : constant DMA_Buffer (0 .. 255) := (others => 0);
+
+   --  DMA bounce buffers, also in .bss (internal SRAM).  GDMA cannot reach the
+   --  caller-supplied Tx/Rx buffers when they live in PSRAM -- e.g. a task whose
+   --  stack is in external RAM, or an ext4 cache block on the PSRAM heap -- and
+   --  SPI.Transfer DMAs them directly (its GDMA precondition then fails).  Every
+   --  transfer here is small (<= Header_Len + Page_Size) and serialised by the
+   --  per-host SPI lock, so one shared scratch pair is safe.  Copies caller Tx in
+   --  and Rx out around the DMA.
+   --  Rounded UP to a whole cache line (DMA_Buffer / the DMA size precondition
+   --  require the FOOTPRINT be a 32-byte multiple; the transfer Length may be less).
+   Scratch_Len : constant :=
+     ((Header_Len + Page_Size + ESP32S3.GDMA.DMA_Alignment - 1)
+      / ESP32S3.GDMA.DMA_Alignment) * ESP32S3.GDMA.DMA_Alignment;
+   Scratch_Tx : DMA_Buffer (0 .. Scratch_Len - 1);
+   Scratch_Rx : DMA_Buffer (0 .. Scratch_Len - 1);
+   --  Written by the GDMA engine, never by Ada: an SPI transfer is full
+   --  duplex, so a receive buffer has to exist and be handed to the
+   --  hardware whether or not anything reads what lands in it.  GNAT sees
+   --  only the Ada side, hence the suppression rather than a dead store.
+   pragma Warnings (Off, Scratch_Rx);
+
+   ----------------------------------------------------------------------------
+   --  Low-level command helpers (all run while the host is already Acquired)
+   ----------------------------------------------------------------------------
+
+   --  Write the 32-bit address big-endian into Buf (1 .. 4), just past the
+   --  opcode at Buf'First.
+   procedure Put_Address (Buf : in out Byte_Array; Addr : Address) is
+   begin
+      Buf (Buf'First + 1) := Unsigned_8 (Shift_Right (Addr, 24) and 16#FF#);
+      Buf (Buf'First + 2) := Unsigned_8 (Shift_Right (Addr, 16) and 16#FF#);
+      Buf (Buf'First + 3) := Unsigned_8 (Shift_Right (Addr, 8) and 16#FF#);
+      Buf (Buf'First + 4) := Unsigned_8 (Addr and 16#FF#);
+   end Put_Address;
+
+   --  One full-duplex command: assert CS, shift Len bytes, deassert CS.  Bounces
+   --  the caller's Tx/Rx through internal-SRAM scratch (see Scratch_Tx above).
+   procedure Command (S : in out SPI.Session; Tx, Rx : System.Address; Len : Natural) is
+      Caller_Tx : Byte_Array (0 .. Len - 1) with Import, Address => Tx;
+      Caller_Rx : Byte_Array (0 .. Len - 1) with Import, Address => Rx;
+   begin
+      Scratch_Tx (0 .. Len - 1) := DMA_Buffer (Caller_Tx);
+      SPI.Select_Device (S, On => True);
+      SPI.Transfer (S, Scratch_Tx, Scratch_Rx, Len);   --  whole (line-multiple) bufs + Len
+      SPI.Select_Device (S, On => False);
+      Caller_Rx (0 .. Len - 1) := Byte_Array (Scratch_Rx (0 .. Len - 1));
+   end Command;
+
+   --  Latch the write-enable bit before an erase/program (its own CS pulse).
+   procedure Write_Enable (S : in out SPI.Session) is
+      Cmd : aliased Byte_Array := (0 => Cmd_Write_Enable);
+      Rsp : aliased Byte_Array (0 .. 0);
+   begin
+      Command (S, Cmd'Address, Rsp'Address, 1);
+   end Write_Enable;
+
+   --  Read a one-byte status register (opcode then one clocked-in status byte).
+   function Read_Register (S : in out SPI.Session; Opcode : Unsigned_8) return Unsigned_8 is
+      Cmd : aliased Byte_Array := (Opcode, 16#00#);
+      Rsp : aliased Byte_Array (0 .. 1);
+   begin
+      Command (S, Cmd'Address, Rsp'Address, 2);
+      return Rsp (1);                 --  Rsp(1): the byte clocked in after the opcode
+   end Read_Register;
+
+   --  Poll status register 1 until BUSY clears (erase/program complete).  Bound
+   --  it with a wall-clock deadline rather than an unbounded spin: a wedged part
+   --  (or a floating MISO) would otherwise hang the core forever.  The longest
+   --  legitimate wait here is a 4 KB sector erase (<=400 ms on the W25Q256FV);
+   --  a page program is <=3 ms.  1 s covers the worst case with margin.  A
+   --  wall-clock bound (not an iteration count) stays correct regardless of CPU
+   --  speed / optimisation -- the same rationale as the SDMMC driver.
+   Ready_Span : constant Ada.Real_Time.Time_Span := Ada.Real_Time.Milliseconds (1000);
+
+   --  True if the flash reported not-busy before the deadline; False on timeout.
+   --  Callers MUST act on False -- a program/erase that never cleared BUSY did
+   --  not persist, and treating it as done silently drops the write.
+   function Wait_Until_Ready (S : in out SPI.Session) return Boolean is
+      use type Ada.Real_Time.Time;
+      Deadline : constant Ada.Real_Time.Time := Ada.Real_Time.Clock + Ready_Span;
+   begin
+      while (Read_Register (S, Cmd_Read_Status1) and Status_Busy) /= 0 loop
+         if Ada.Real_Time.Clock >= Deadline then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Wait_Until_Ready;
+
+   --  Acquire the host for this flash, with its chip select (built-in CS_Pin or
+   --  a custom callback).
+   procedure Acquire (S : in out SPI.Session; Dev : Flash) is
+   begin
+      SPI.Acquire
+        (S,
+         Dev.Host,
+         Mode      => 0,
+         Clock_Hz  => Dev.Clock_Hz,
+         CS_Pin    => Dev.CS_Pin,
+         Select_CB => Dev.CS_CB,
+         Ctx       => Dev.Ctx);
+   end Acquire;
+
+   ----------------------------------------------------------------------------
+   --  Operations
+   ----------------------------------------------------------------------------
+
+   procedure Initialize (Dev : Flash; OK : out Boolean) is
+      S   : SPI.Session;
+      Cmd : aliased Byte_Array := (0 => Cmd_Enter_4Byte);
+      Rsp : aliased Byte_Array (0 .. 0);
+   begin
+      Acquire (S, Dev);
+      Command (S, Cmd'Address, Rsp'Address, 1);                --  enter 4-byte mode
+      OK := (Read_Register (S, Cmd_Read_Status3) and Status3_ADS) /= 0;
+      SPI.Release (S);
+   end Initialize;
+
+   procedure Read_Identification (Dev : Flash; ID : out JEDEC_ID) is
+      S   : SPI.Session;
+      Cmd : aliased Byte_Array := (Cmd_JEDEC_ID, 0, 0, 0);
+      Rsp : aliased Byte_Array (0 .. 3);
+   begin
+      Acquire (S, Dev);
+      Command (S, Cmd'Address, Rsp'Address, 4);
+      SPI.Release (S);
+      --  Rsp(0) is shifted in while the opcode goes out; the ID follows.
+      ID := (Manufacturer => Rsp (1), Memory_Type => Rsp (2), Capacity => Rsp (3));
+   end Read_Identification;
+
+   function Capacity_Bytes (ID : JEDEC_ID) return Address is
+      Code : constant Natural := Natural (ID.Capacity);
+   begin
+      --  Standard SPI-NOR density encoding: size = 2 ** capacity-byte.  Accept
+      --  64 KB (0x10) .. 64 MB (0x1A); anything else (0x00 / 0xFF / a vendor's
+      --  non-standard code) is reported as unknown.
+      if Code in 16#10# .. 16#1A# then
+         return Shift_Left (Address (1), Code);
+      else
+         return 0;
+      end if;
+   end Capacity_Bytes;
+
+   procedure Read (Dev : Flash; Addr : Address; Data : out Byte_Array) is
+      S      : SPI.Session;
+      Header : aliased Byte_Array (0 .. Header_Len - 1);
+      Pos    : Natural := Data'First;
+      Chunk  : Natural;
+   begin
+      Header (0) := Cmd_Read;
+      Put_Address (Header, Addr);
+
+      Acquire (S, Dev);
+      SPI.Select_Device (S, On => True);
+      --  Opcode + address, then keep CS asserted and stream the data out in
+      --  chunks -- the chip auto-increments, so successive transfers continue
+      --  reading sequential bytes.
+      --  Bounce through internal SRAM (Data may be a PSRAM ext4 cache block that
+      --  DMA cannot reach): send the header from Scratch_Tx, and read each chunk
+      --  into Scratch_Rx before copying it out to the caller's Data.
+      Scratch_Tx (0 .. Header_Len - 1) := DMA_Buffer (Header);
+      SPI.Transfer (S, Scratch_Tx, Scratch_Rx, Header_Len);
+      while Pos <= Data'Last loop
+         Chunk := Natural'Min (Zero_Src'Length, Data'Last - Pos + 1);
+         SPI.Transfer (S, Zero_Src, Scratch_Rx, Chunk);
+         Data (Pos .. Pos + Chunk - 1) := Byte_Array (Scratch_Rx (0 .. Chunk - 1));
+         Pos := Pos + Chunk;
+      end loop;
+      SPI.Select_Device (S, On => False);
+      SPI.Release (S);
+   end Read;
+
+   procedure Erase_Sector (Dev : Flash; Addr : Address) is
+      S   : SPI.Session;
+      Cmd : aliased Byte_Array (0 .. Header_Len - 1);
+      Rsp : aliased Byte_Array (0 .. Header_Len - 1);
+   begin
+      Cmd (0) := Cmd_Sector_Erase;
+      Put_Address (Cmd, Addr);
+
+      Acquire (S, Dev);
+      Write_Enable (S);
+      Command (S, Cmd'Address, Rsp'Address, Header_Len);
+      declare
+         Ok : constant Boolean := Wait_Until_Ready (S);
+      begin
+         SPI.Release (S);
+         if not Ok then
+            raise Ada.IO_Exceptions.Device_Error with "W25Q erase timed out (BUSY)";
+         end if;
+      end;
+   end Erase_Sector;
+
+   procedure Program_Page (Dev : Flash; Addr : Address; Data : Byte_Array) is
+      S   : SPI.Session;
+      Len : constant Natural := Data'Length;
+      Buf : aliased Byte_Array (0 .. Header_Len + Page_Size - 1);
+      Rsp : aliased Byte_Array (0 .. Header_Len + Page_Size - 1);
+   begin
+      --  Size + page-boundary rule is the precondition (see the spec).
+      Buf (0) := Cmd_Page_Program;
+      Put_Address (Buf, Addr);
+      Buf (Header_Len .. Header_Len + Len - 1) := Data;
+
+      Acquire (S, Dev);
+      Write_Enable (S);
+      Command (S, Buf'Address, Rsp'Address, Header_Len + Len);
+      declare
+         Ok : constant Boolean := Wait_Until_Ready (S);
+      begin
+         SPI.Release (S);
+         if not Ok then
+            raise Ada.IO_Exceptions.Device_Error with "W25Q program timed out (BUSY)";
+         end if;
+      end;
+   end Program_Page;
+
+end ESP32S3.W25Q;

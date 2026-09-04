@@ -13,6 +13,16 @@
 --
 --  Its units compile against the SAME runtime + profile as the consumer.
 --
+--  BEFORE BUILDING THIS PROJECT DIRECTLY, source the SDK's export.sh.  The
+--  Xtensa back end reads XTENSA_GNU_CONFIG for the core configuration, and
+--  endianness is part of it: with the variable unset the compiler does not
+--  fail, it emits BIG-endian objects.  Object_Dir below is shared by every
+--  consumer of a profile, so one such build poisons the directory and every
+--  later example fails at LINK time with "compiled for a big endian system and
+--  target is little endian" -- a message nowhere near the cause.  export.sh
+--  sets it (as does each example's build.sh via bare_build.sh); CI builds all
+--  three profiles so a regression here surfaces immediately.
+--
 --  PROFILE: these drivers TARGET the `embedded` profile, where full exception
 --  propagation lets the contracts (the GPIO valid-pin predicate, enabled by
 --  -gnata below) raise a catchable exception, and lets the task-safe SPI/I2C/UART
@@ -21,9 +31,10 @@
 --  The lock-free drivers (GPIO, RNG, Temperature) compile under ALL profiles,
 --  including light-tasking.  The RAII-handle drivers (SPI, I2C, UART, GDMA and
 --  MCPWM) use finalization (a controlled Session / Channel / Capture handle),
---  which light-tasking forbids (No_Finalization), so they are EXCLUDED from the
---  light-tasking build (Excluded_Source_Files below) -- light-tasking keeps the
---  lock-free subset.
+--  which light-tasking forbids (No_Finalization).  Which units a profile sees is
+--  decided by SOURCE DIRECTORY, not by an exclusion list: light-tasking sees
+--  "src" alone, embedded/full see "src/**".  See the Source_Dirs case below for
+--  the directory map and for which one a new file belongs in.
 with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
 
 project ESP32S3_HAL is
@@ -42,125 +53,41 @@ project ESP32S3_HAL is
    --  keying obj by profile avoids cross-profile staleness in the shared tree.
    for Object_Dir use "obj-" & Profile;
 
-   --  These drivers use controlled types (finalization) for RAII handles: the
-   --  SPI/I2C/UART Session, the GDMA Channel (which SPI also depends on), and the
-   --  MCPWM Channel/Capture.  Finalization is unavailable under light-tasking's
-   --  No_Finalization, so they are excluded there; light-tasking keeps GPIO, RNG
-   --  and Temperature.  The ext4 filesystem (src/ext4, ESP32S3.Ext4.*) uses
-   --  exceptions + finalization + secondary stack, so it is an embedded/full-only
-   --  source directory (not visible under light-tasking at all) -- and so are
-   --  the FAT16 filesystem (src/fat16, ESP32S3.Fat16.*) and the ESP serial
-   --  bootloader client (src/esp_loader, ESP32S3.Esp_Loader.*), for the same
-   --  reason.
+   --  PROFILE SCOPING IS BY SOURCE DIRECTORY, NOT BY AN EXCLUSION LIST.
+   --
+   --  Some drivers use controlled types (finalization) for RAII handles -- the
+   --  SPI/I2C/UART Session, the GDMA Channel, the MCPWM Channel/Capture -- and
+   --  the filesystems additionally use exceptions and the secondary stack.
+   --  Finalization is unavailable under light-tasking's No_Finalization, so
+   --  those units cannot be part of a light-tasking build at all.
+   --
+   --  This used to be spelled as a ~130-entry Excluded_Source_Files blacklist,
+   --  which meant a new driver was IN the light-tasking build until somebody
+   --  remembered to exclude it -- and the list drifted (children of excluded
+   --  parents, and whole units, were never added, so the library stopped
+   --  building under its own default profile).  The directories below invert
+   --  that: light-tasking sees exactly "src", and a unit that needs more is
+   --  placed in a subdirectory light-tasking never looks in.  Adding a file
+   --  now defaults to SAFE.
+   --
+   --    src/              lock-free / pure-logic core: every profile
+   --    src/peripherals/  on-chip drivers with an RAII Session/Channel handle
+   --    src/devices/      off-chip devices reached over those (sensors, panels,
+   --                      expanders, flash, codecs, GPS, SD-over-SPI)
+   --    src/net/          Net_Devices + the W5500 NIC, the GNAT.Sockets facade
+   --                      and everything on it (DNS, NTP, FTP, Modbus)
+   --    src/text_io/      ESP32S3.Text_IO (finalization + the ext4 filesystem)
+   --    src/eeprom/  src/fram/  src/ext4/  src/fat16/  src/esp_loader/
+   --
+   --  If you add a source directory under src/, embedded/full pick it up with
+   --  no edit here ("src/**" is recursive); light-tasking never will, which is
+   --  the safe default.  CI builds all three profiles, so a unit placed in the
+   --  wrong directory fails immediately instead of silently.
    case Profile is
       when "light-tasking" =>
-         for Source_Dirs use ("src", "src/eeprom", "src/fram", "svd");
-         for Excluded_Source_Files use
-           ("esp32s3-pcf85063a.ads",   "esp32s3-pcf85063a.adb",
-            "esp32s3-pcf85063a-interrupts.ads",
-            "esp32s3-pcf85063a-interrupts.adb",
-            "esp32s3-qmi8658c.ads",     "esp32s3-qmi8658c.adb",
-            "esp32s3-qmi8658c-interrupts.ads",
-            "esp32s3-qmi8658c-interrupts.adb",
-            "esp32s3-gt911.ads",        "esp32s3-gt911.adb",
-            "esp32s3-gt911-interrupts.ads",
-            "esp32s3-gt911-interrupts.adb",
-            "esp32s3-sht41.ads",        "esp32s3-sht41.adb",
-            "esp32s3-eeprom_24c.ads",
-            "esp32s3-eeprom_24c-driver.ads",
-            "esp32s3-eeprom_24c-driver.adb",
-            "esp32s3-eeprom_24c-at24c01.ads",
-            "esp32s3-eeprom_24c-at24c02.ads",
-            "esp32s3-eeprom_24c-lc1026.ads",
-            "esp32s3-eeprom_24c-m24128.ads",
-            "esp32s3-eeprom_24c-m24256.ads",
-            "esp32s3-eeprom_24c-m24512.ads",
-            "esp32s3-eeprom_24c-m24c01.ads",
-            "esp32s3-eeprom_24c-m24c02.ads",
-            "esp32s3-eeprom_24c-m24c04.ads",
-            "esp32s3-eeprom_24c-m24c08.ads",
-            "esp32s3-eeprom_24c-m24c16.ads",
-            "esp32s3-eeprom_24c-m24c32.ads",
-            "esp32s3-eeprom_24c-m24c64.ads",
-            "esp32s3-eeprom_24c-m24m01.ads",
-            "esp32s3-eeprom_24c-m24m02.ads",
-            "esp32s3-fram_i2c.ads",
-            "esp32s3-fram_i2c-driver.ads",
-            "esp32s3-fram_i2c-driver.adb",
-            "esp32s3-fram_i2c-kbit_4.ads",
-            "esp32s3-fram_i2c-kbit_16.ads",
-            "esp32s3-fram_i2c-kbit_64.ads",
-            "esp32s3-fram_i2c-kbit_128.ads",
-            "esp32s3-fram_i2c-kbit_256.ads",
-            "esp32s3-fram_i2c-kbit_512.ads",
-            "esp32s3-fram_i2c-mbit_1.ads",
-            "esp32s3-fram_spi.ads",
-            "esp32s3-fram_spi-driver.ads",
-            "esp32s3-fram_spi-driver.adb",
-            "esp32s3-fram_spi-kbit_4.ads",
-            "esp32s3-fram_spi-kbit_16.ads",
-            "esp32s3-fram_spi-kbit_64.ads",
-            "esp32s3-fram_spi-kbit_128.ads",
-            "esp32s3-fram_spi-kbit_256.ads",
-            "esp32s3-fram_spi-kbit_512.ads",
-            "esp32s3-fram_spi-mbit_1.ads",
-            "esp32s3-fram_spi-mbit_2.ads",
-            "esp32s3-fram_spi-mbit_4.ads",
-            "esp32s3-tca9555.ads",      "esp32s3-tca9555.adb",
-            "esp32s3-tca9555-interrupts.ads",
-            "esp32s3-tca9555-interrupts.adb",
-            "esp32s3-ch422g.ads",       "esp32s3-ch422g.adb",
-            "esp32s3-st7789.ads",       "esp32s3-st7789.adb",
-            "esp32s3-st7789-text.ads",  "esp32s3-st7789-text.adb",
-            "esp32s3-st7789-fonts.ads",
-            "esp32s3-hc595.ads",        "esp32s3-hc595.adb",
-            "esp32s3-gps.ads",          "esp32s3-gps.adb",
-            "esp32s3-gps-nmea.ads",     "esp32s3-gps-nmea.adb",
-            "esp32s3-gps-l76k.ads",     "esp32s3-gps-l76k.adb",
-            "esp32s3-spi.ads",         "esp32s3-spi.adb",
-            "esp32s3-spi-engine.ads",  "esp32s3-spi-engine.adb",
-            "esp32s3-i2c.ads",         "esp32s3-i2c.adb",
-            "esp32s3-i2c-engine.ads",  "esp32s3-i2c-engine.adb",
-            "esp32s3-uart.ads",        "esp32s3-uart.adb",
-            "esp32s3-uart-engine.ads", "esp32s3-uart-engine.adb",
-            "esp32s3-gdma.ads",        "esp32s3-gdma.adb",
-            "esp32s3-mcpwm.ads",       "esp32s3-mcpwm.adb",
-            "esp32s3-i2s.ads",         "esp32s3-i2s.adb",
-            "esp32s3-i2s-engine.ads",  "esp32s3-i2s-engine.adb",
-            "esp32s3-ledc.ads",        "esp32s3-ledc.adb",
-            "esp32s3-rmt.ads",         "esp32s3-rmt.adb",
-            "esp32s3-pcnt.ads",        "esp32s3-pcnt.adb",
-            "esp32s3-sdm.ads",         "esp32s3-sdm.adb",
-            "esp32s3-twai.ads",        "esp32s3-twai.adb",
-            "esp32s3-twai-engine.ads", "esp32s3-twai-engine.adb",
-            "esp32s3-timer.ads",       "esp32s3-timer.adb",
-            "esp32s3-lcd.ads",         "esp32s3-lcd.adb",
-            "esp32s3-lcd-engine.ads",  "esp32s3-lcd-engine.adb",
-            "esp32s3-adc.ads",         "esp32s3-adc.adb",
-            "esp32s3-sd_spi.ads",      "esp32s3-sd_spi.adb",
-            "esp32s3-w25q.ads",        "esp32s3-w25q.adb",
-            "esp32s3-tlv2556.ads",     "esp32s3-tlv2556.adb",
-            "esp32s3-es8311.ads",      "esp32s3-es8311.adb",
-            "esp32s3-tx1812.ads",      "esp32s3-tx1812.adb",
-            "esp32s3-w5500.ads",       "esp32s3-w5500.adb",
-            "esp32s3-w5500-sockets.ads", "esp32s3-w5500-sockets.adb",
-            "esp32s3-w5500-interrupts.ads", "esp32s3-w5500-interrupts.adb",
-            "esp32s3-w5500-dhcp.ads",  "esp32s3-w5500-dhcp.adb",
-            "esp32s3-w5500-net_device.ads", "esp32s3-w5500-net_device.adb",
-            "net_devices.ads",
-            "net_routes.ads",          "net_routes.adb",
-            "net_resolver.ads",        "net_resolver.adb",
-            "gnat-sockets.ads",        "gnat-sockets.adb",
-            "dns_client.ads",          "dns_client.adb",
-            "ntp_client.ads",          "ntp_client.adb",
-            "ftp_client.ads",          "ftp_client.adb",
-            "ftp_server.ads",          "ftp_server.adb",
-            "modbus-master.ads",       "modbus-master.adb",
-            "modbus-slave.ads",        "modbus-slave.adb");
+         for Source_Dirs use ("src", "svd");
       when "embedded" | "full" =>
-         for Source_Dirs use
-           ("src", "src/eeprom", "src/fram", "svd",
-            "src/ext4", "src/fat16", "src/esp_loader");
+         for Source_Dirs use ("src/**", "svd");
    end case;
 
    package Compiler is
@@ -175,13 +102,45 @@ project ESP32S3_HAL is
       --  libc (malloc/free/abort) that the heap-less profile doesn't link, so it
       --  is omitted there (a light-tasking build keeps the compile-time predicate
       --  warning but no run-time check).
+      --  WARNINGS ARE ON, AND THE HAL BUILDS CLEAN UNDER THEM.  This used to be
+      --  bare "-O2 -g", which let real defects sit unseen: unused with clauses,
+      --  assignments overwritten before they were ever read, and variables read
+      --  but never assigned.  CI fails the build on any warning, so the clean
+      --  state is the enforced state -- if you add a warning, fix it or justify
+      --  it with a scoped pragma Warnings (Off, ...) that says why.
+      --
+      --  Two of -gnatwa's warnings are turned back off, deliberately:
+      --
+      --    -gnatwJ  the obsolescent-() array-aggregate note.  Under -gnat2022
+      --             GNAT suggests [...] for every (...) aggregate: 355 hits,
+      --             all style, none a defect.  (The host test projects have
+      --             always passed -gnatwJ for the same reason.)
+      --
+      --    -gnatw.V the "reverse bit order in machine scalar" note.  It fires
+      --             ~8,500 times on svd/, the machine-generated register layer,
+      --             where the layout is dictated by silicon rather than chosen
+      --             -- and those encodings are checked for real by the
+      --             repclause_host and endian_host suites.  Left on, it buries
+      --             every warning that does mean something.
+      Warning_Switches := ("-gnatwa", "-gnatwJ", "-gnatw.V");
+
       case Profile is
          when "light-tasking" =>
-            for Default_Switches ("Ada") use ("-O2", "-g");
+            --  -gnatw.X additionally, for this profile only.  Under
+            --  No_Exception_Propagation, -gnatwa reports every implicit runtime
+            --  check that could reach Last_Chance_Handler -- 1,473 of them, one
+            --  per array index and range check in the library, which is what the
+            --  restriction MEANS rather than anything to fix.  The same sources
+            --  under embedded/full (where the checks are catchable) warn zero
+            --  times, so nothing is hidden here that the other two profiles do
+            --  not already cover.
+            for Default_Switches ("Ada") use
+              ("-O2", "-g") & Warning_Switches & ("-gnatw.X");
          when "embedded" | "full" =>
             --  -gnat2022: the ext4 filesystem uses Ada 2022 container ('[...]')
             --  aggregates.
-            for Default_Switches ("Ada") use ("-O2", "-g", "-gnata", "-gnat2022");
+            for Default_Switches ("Ada") use
+              ("-O2", "-g", "-gnata", "-gnat2022") & Warning_Switches;
       end case;
    end Compiler;
 end ESP32S3_HAL;

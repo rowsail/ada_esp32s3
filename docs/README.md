@@ -8,11 +8,21 @@ JavaScript, no external requests, one stylesheet.
 
 ```
 docs/
-  build.py                      the prose + the generator  (edit this)
+  pages/<slug>.html             THE PROSE — one HTML fragment per page (edit these)
+  build.py                      the page table + the template + the generator
   check_samples.sh              compile the samples, check the API, validate the HTML
   samples/                      real, compilable Ada, inlined into the pages
   adaformicrocontrollers.com/   THE SITE — generated, and nothing but publishables
 ```
+
+`build.py` holds the page **table** — slug, sidebar title, page title,
+standfirst — and the template. That is what has to stay consistent across
+pages, and it is the reason this generator exists. The prose is next door in
+`pages/`, one fragment per page: `build.py` was ~6,000 lines when the two lived
+together, and a wording change was a diff against a `.py` that no editor
+believed was HTML. The two halves are checked against each other — a page in
+`PAGES` with no `pages/<slug>.html`, or a file in `pages/` that no page claims,
+fails the build rather than publishing silently.
 
 **Everything that gets published lives in `adaformicrocontrollers.com/` and
 nothing else does.** That is the point of the split: putting the site online is a
@@ -22,9 +32,9 @@ page.
 
 ## Regenerating
 
-The prose lives in `build.py`; the `.html` files are generated from it so the
-navigation, step numbers and contents stay consistent. Edit the prose there,
-then:
+Edit the wording in `pages/<slug>.html`. To add, remove or reorder a page, edit
+`PAGES` in `build.py` **and** add the matching `pages/<slug>.html` — the
+navigation, step numbers and contents are all derived from that table. Then:
 
 ```sh
 python3 docs/build.py

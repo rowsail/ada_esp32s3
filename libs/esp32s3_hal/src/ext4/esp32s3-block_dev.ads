@@ -16,14 +16,6 @@ with Interfaces;
 
 package ESP32S3.Block_Dev is
 
-   type Sector is array (0 .. 511) of Interfaces.Unsigned_8;
-   type Sector_Index is new Interfaces.Unsigned_64;
-
-   type Read_Proc is
-     access procedure (Ctx : System.Address; LBA : Sector_Index; Data : out Sector);
-   type Write_Proc is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : Sector);
-   type Count_Func is access function (Ctx : System.Address) return Sector_Index;
-
    --  A run of consecutive sectors as one flat buffer; the length must be a
    --  whole number of sectors.  Runs exist because on SD the fixed cost is
    --  PER COMMAND, not per byte: each single-sector read pays the card's
@@ -31,6 +23,21 @@ package ESP32S3.Block_Dev is
    --  4 KiB filesystem block as eight one-sector commands is ~8x slower
    --  than one eight-sector command.
    type Sector_Run is array (Natural range <>) of Interfaces.Unsigned_8;
+
+   --  One sector is a CONSTRAINED SUBTYPE of a run, not a separate array type.
+   --  Sharing the root type is what makes `Sector (Run (A .. B))` a subtype
+   --  conversion -- a view of the existing bytes -- instead of a value
+   --  conversion that copies 512 bytes.  The per-sector fallback loops in
+   --  Read_Sectors / Write_Sectors do exactly that conversion once per sector,
+   --  so as two unrelated types it cost a full extra copy of every block a
+   --  device without run support ever moved.
+   subtype Sector is Sector_Run (0 .. 511);
+   type Sector_Index is new Interfaces.Unsigned_64;
+
+   type Read_Proc is
+     access procedure (Ctx : System.Address; LBA : Sector_Index; Data : out Sector);
+   type Write_Proc is access procedure (Ctx : System.Address; LBA : Sector_Index; Data : Sector);
+   type Count_Func is access function (Ctx : System.Address) return Sector_Index;
 
    --  OPTIONAL capabilities: read / write the run [First, First +
    --  Data'Length/512) in one device operation.  A device without one leaves

@@ -1,0 +1,53 @@
+
+<h2>A different shape entirely</h2>
+
+<p class="note">Every other device driver in this guide hands you a
+<code>Device</code> and lets you poll it. This one does not. It is a
+<strong>singleton background service</strong>: a library-level task owns one
+<a href="16-uart.html">UART</a> for its lifetime, continuously reads the
+receiver's NMEA-0183 stream, decodes it, and publishes results into a protected
+store. The application just reads that store. There is no handle.</p>
+
+<p>That follows from the device: a GPS talks whenever it likes, so something has
+to be listening the whole time. This is the concrete case for
+<a href="16-uart.html">interrupt-driven RX</a> &mdash; a receiver that streams
+asynchronously is exactly what would overflow a polled FIFO.</p>
+
+<pre><code>procedure Setup (...);          --  call once at startup; Rx is the only pin needed
+
+function Current_Position return Position_Reading;
+function Current_Fix      return Fix_Reading;
+function Current_Time     return Time_Reading;
+function Current_Date     return Date_Reading;
+--  ... plus velocity, signal and PPS readings</code></pre>
+
+<h2>Why a fix is one record</h2>
+
+<p class="warn"><strong>Latitude and longitude are a single
+<code>Position</code> record updated by one protected action.</strong> Split
+across two variables, a reader could catch a new latitude with an old longitude
+&mdash; a coordinate that describes somewhere you have never been, with nothing
+to signal it is wrong. Every published value is written and read under the
+store's lock, so a reader never sees a half-updated value, and a fix is always a
+consistent pair.</p>
+
+<h2>Staleness is explicit</h2>
+
+<p>Each value group carries the <code>Ada.Real_Time.Time</code> at which it was
+last refreshed, and the driver <strong>only refreshes a group from a valid
+sentence</strong> &mdash; a lost fix is not written at all.</p>
+
+<p class="warn">So a stale group keeps its <em>old</em> timestamp rather than
+being cleared, and <code>Current_Position</code> will happily return a position
+from twenty minutes ago that reads as perfectly plausible. Compare
+<code>Age (R.Updated_At)</code> against your own tolerance before trusting any
+reading. The API cannot decide for you how old is too old &mdash; that depends on
+whether you are tracking a ship or a pedestrian.</p>
+
+<pre><code>type Fix_Quality is (No_Fix, GPS_Fix, DGPS_Fix);
+type Fix_Type    is (Fix_None, Fix_2D, Fix_3D);
+type GNSS_System is (GPS, GLONASS, Galileo, BeiDou, QZSS, Other);</code></pre>
+
+<p>The satellite list and <code>GNSS_System</code> reflect that a modern receiver
+tracks several constellations at once. Uses the controlled UART session plus a
+task and protected objects, so it is embedded/full only.</p>

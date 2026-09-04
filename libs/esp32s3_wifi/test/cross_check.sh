@@ -5,12 +5,28 @@
 # pointers are 8 B).  Uses the xtensa GNAT + dynconfig via the SDK env; compiles
 # only the Wi-Fi closure (not the whole HAL).  Compile-only, no board.
 set -euo pipefail
-SDK="${ESP32S3_ADA_SDK:-$HOME/tempgit/ada_esp32s3}"
+#  The SDK root is THIS SCRIPT'S OWN location (libs/esp32s3_wifi/test/ -> ../../..),
+#  never a guess at where somebody keeps their checkout.  The fallback here used
+#  to be "$HOME/tempgit/ada_esp32s3", which is one developer's path: on any other
+#  machine -- a second clone, a colleague's box, CI -- it resolved to a directory
+#  that does not exist and the script died on the first line it used.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SDK="${ESP32S3_ADA_SDK:-$(cd "$HERE/../../.." && pwd)}"
 . "$SDK/export.sh" >/dev/null
 RTS="$SDK/crates/esp32s3_rts/embedded-esp32s3"
-HAL="$SDK/libs/esp32s3_hal/src"
+HAL="$SDK/libs/esp32s3_hal"
+# Every HAL source directory on the search path (-aI), collected from the tree:
+# the HAL scopes its runtime profiles BY DIRECTORY (src/peripherals, src/net,
+# ...), so naming them here would need an edit each time one is added.  svd/ is
+# included too -- ESP32S3.RNG, which the OS adapter pulls in, is written against
+# the generated register layer, and leaving it off is why this check could not
+# compile anything before.
+HAL_AI=""
+while IFS= read -r d; do HAL_AI="$HAL_AI -aI$d"; done <<EOF
+$(find "$HAL/src" "$HAL/svd" -type d | sort)
+EOF
 OUT="$(mktemp -d)"
 cd "$(dirname "$0")/../src"
 xtensa-esp32-elf-gnatmake -c -gnat2022 -gnatf --RTS="$RTS" \
-  -aI. -aI"$HAL" -D "$OUT" esp32s3-wifi.adb esp32s3-wifi-os_adapter.adb
+  -aI. $HAL_AI -D "$OUT" esp32s3-wifi.adb esp32s3-wifi-os_adapter.adb
 echo "OK: Wi-Fi Ada cross-compiles for esp32s3 (OS-adapter 480 B, ap_record 92 B)"

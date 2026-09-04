@@ -1,0 +1,108 @@
+
+<h2>Where it lives</h2>
+
+<table>
+  <tbody>
+    <tr><td><strong>Repository</strong></td>
+        <td><a href="https://github.com/rowsail/ada_esp32s3">github.com/rowsail/ada_esp32s3</a></td></tr>
+    <tr><td><strong>Releases</strong></td>
+        <td><a href="https://github.com/rowsail/ada_esp32s3/releases">/releases</a> &mdash; tagged source archives, and the book</td></tr>
+    <tr><td><strong>The book</strong></td>
+        <td><em>Bare-Metal Ada on the ESP32-S3</em>, a ~1.7&nbsp;MB PDF attached to the latest release &mdash; the long-form companion to this guide</td></tr>
+  </tbody>
+</table>
+
+<p class="note">This guide gets you running and explains each driver. The
+<strong>book</strong> is the design write-up behind it: the kernel and context
+switch, the interrupt model, the filesystems, the ACATS work, the full-profile
+limitations. Download it from the release page rather than building the LaTeX
+&mdash; <code>book/main.pdf</code> is gitignored, so a fresh checkout does not
+contain it.</p>
+
+<h2>Option A: unzip the latest release</h2>
+
+<p>Neither of these names a version, so they keep working as releases come and
+go. With the GitHub CLI:</p>
+
+<pre><code>gh release download --repo rowsail/ada_esp32s3 --archive=zip
+unzip ada_esp32s3-*.zip &amp;&amp; cd ada_esp32s3-*/</code></pre>
+
+<p>Or with nothing but <code>curl</code> and <code>unzip</code> &mdash;
+<code>/releases/latest</code> redirects to the current tag, so you can read the
+tag off the redirect and fetch that archive:</p>
+
+<pre><code>REPO=rowsail/ada_esp32s3
+TAG=$(curl -sSLo /dev/null -w '%{url_effective}'         https://github.com/$REPO/releases/latest | sed 's|.*/||')
+curl -LO https://github.com/$REPO/archive/refs/tags/$TAG.zip
+unzip $TAG.zip &amp;&amp; cd ada_esp32s3-${TAG#v}</code></pre>
+
+<p>About 11&nbsp;MB, and it is a complete build tree &mdash; every file the tag
+contains, symlinks included. No git required, and you get a fixed, known
+version. If you only want to build and run, this is the simplest route.</p>
+
+<h2>Getting the book without a version either</h2>
+
+<p>Release <em>assets</em> have a stable redirect, so the PDF needs no tag at
+all:</p>
+
+<pre><code>curl -LO https://github.com/rowsail/ada_esp32s3/releases/latest/download/Bare-Metal-Ada-on-the-ESP32-S3.pdf
+
+# or:
+gh release download --repo rowsail/ada_esp32s3 --pattern '*.pdf'</code></pre>
+
+<h2>Option B: clone</h2>
+
+<pre><code>git clone https://github.com/rowsail/ada_esp32s3.git
+cd ada_esp32s3</code></pre>
+
+<p>Choose this if you want <code>git pull</code> to bring updates, or intend to
+change anything and send it back.</p>
+
+<p class="warn"><strong>You do not need <code>--recurse-submodules</code>.</strong>
+The repository has no submodules &mdash; there is no <code>.gitmodules</code>
+file, and <code>git submodule status</code> prints nothing.
+<code>crates/bb-runtimes</code> (1,541 files) and
+<code>crates/xtensa-dynconfig</code> are vendored as ordinary tracked
+directories. Older instructions in <code>QUICKSTART.md</code>, the README and the
+book still say the flag is "not optional"; passing it is harmless, but nothing
+breaks without it, and no amount of <code>git submodule update</code> will fix a
+build problem.</p>
+
+<h2>What the two vendored directories are</h2>
+
+<ul>
+  <li><strong><code>crates/bb-runtimes</code></strong> &mdash; AdaCore's
+      bare-board runtime sources, forked here to add an <code>esp32s3</code>
+      board. This is the raw material the Ada runtime is generated from
+      (<a href="54-runtime.html">step 54</a>).</li>
+  <li><strong><code>crates/xtensa-dynconfig</code></strong> &mdash; the Xtensa
+      core-configuration plugin GNAT's Xtensa back end loads to learn the shape
+      of this core. Building it is what needs a host C compiler, and it happens
+      once.</li>
+</ul>
+
+<h2>What is in the tree</h2>
+
+<pre><code>crates/
+  esp32s3_rts/      the GNAT runtime crate (3 profiles) + gen_runtime.sh
+  bb-runtimes/      AdaCore bb-runtimes fork with the esp32s3 board
+  xtensa-dynconfig/ the Xtensa core-config plugin the toolchain needs
+libs/
+  esp32s3_hal/      the peripheral HAL + the pure-Ada ext4/FAT16 filesystems
+  tls/              the pure-Ada TLS 1.3 stack
+  esp32s3_wifi/     the Wi-Fi driver
+examples/           96 flashable examples (each owns its board.ads)
+  common/bare/      the shared FreeRTOS-free boot (bootloader, start.S, glue)
+book/               the long-form guide (LaTeX sources)
+x, export.sh        the ./x dispatcher and the esp32-ada launcher</code></pre>
+
+<p>Two entry points matter for now. <code>./x</code> at the root drives every
+example <em>inside</em> the tree. <code>export.sh</code> turns the tree into an
+SDK you can build your own projects against from anywhere on disk &mdash; that is
+<a href="10-own-project.html">step 10</a>.</p>
+
+<p class="note">Nothing is downloaded at build time except the Alire toolchains.
+The one exception is the optional Wi-Fi driver, whose lower-MAC and PHY blobs are
+Apache-2.0 binaries fetched (not committed) by
+<code>tools/fetch-wifi-blobs.sh</code>, pinned to exact upstream commits and
+verified by sha256.</p>

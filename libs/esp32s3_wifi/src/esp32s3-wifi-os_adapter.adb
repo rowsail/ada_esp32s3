@@ -15,7 +15,15 @@ with ESP32S3.RNG;
 with ESP32S3.WiFi.RTOS;
 with ESP32S3.WiFi.PHY;
 with ESP32S3.WiFi.Interrupt;
+--  System.BB.Threads is a GNAT-internal unit and has to be: this adapter maps
+--  the blob's "current task" queries onto the bare runtime's own thread record,
+--  and there is no public spelling of that.  Pinned by the recorded known-good
+--  toolchain in tools/sdk-env.sh.
+pragma Warnings (Off, "*internal GNAT unit*");
+pragma Warnings (Off, "*use of this unit is non-portable*");
 with System.BB.Threads;
+pragma Warnings (On, "*use of this unit is non-portable*");
+pragma Warnings (On, "*internal GNAT unit*");
 with System.Machine_Code; use System.Machine_Code;
 with System.Storage_Elements; use System.Storage_Elements;
 

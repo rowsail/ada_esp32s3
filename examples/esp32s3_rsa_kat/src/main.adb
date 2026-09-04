@@ -1,6 +1,10 @@
 --  ESP32-S3 RSA accelerator known-answer test (KAT)
 --  ================================================
---  What it demonstrates: one RSA-2048 modular exponentiation
+--  What it demonstrates: two modular exponentiations on the hardware RSA/MPI
+--    unit -- one at 2048 bits against a fixed vector, one at the engine's
+--    maximum 4096 bits against an answer that needs no vector.
+--
+--    (1) RSA-2048:
 --    Z = X^65537 mod M -- exactly an RSA signature *verify* (recover the padded
 --    hash from a signature X under public key (M, e=65537)) -- on the hardware
 --    RSA/MPI unit (ESP32S3.RSA.Mod_Exp), checked against a precomputed answer.
@@ -11,16 +15,26 @@
 --  Build & run: ./x run esp32s3_rsa_kat
 --    Uses the embedded runtime profile (build.sh sets ESP32S3_RTS_PROFILE=embedded).
 --
---  How to read the output: four lines after the banner.  PASS looks like:
---    [rsa] ESP32-S3 RSA accelerator KAT (X^65537 mod M, 2048-bit)
+--  How to read the output.  PASS looks like:
+--    [rsa] ESP32-S3 RSA accelerator KAT (2048-bit, then 4096-bit)
 --    [rsa] host-R2 : PASS
 --    [rsa] soft-R2 : PASS
+--    [rsa] 4096-bit: 12345**3 mod (2**4096 - 5)
+--    [rsa] 4096-bit: PASS  (N ms, includes software R^2)
 --    [rsa] done
 --    A "FAIL" means the hardware finished but the result mismatched the vector;
 --    a "hardware did not complete (timeout)" line means the accelerator never
---    signalled done within the bounded wait (a hardware fault).
+--    signalled done within the bounded wait (a hardware fault).  The elapsed
+--    milliseconds on the 4096-bit line are informational, not a pass criterion.
 --
 --  Hardware: none (self-contained -- the modexp engine is on-chip).
+--
+--    (2) RSA-4096: Z = 12345^3 mod (2^4096 - 5) at the engine's widest operand.
+--    The answer is self-evident rather than tabulated -- 12345^3 is far smaller
+--    than the modulus, so the reduction is the identity and Z must be exactly
+--    the cube in its low 64 bits with every other limb zero.  That makes the
+--    widest path checkable without carrying a 4096-bit literal, and it always
+--    takes the software-R^2 route (no host-supplied constant for this modulus).
 --
 --  Vector legend (all operands are 64-word little-endian limb arrays = 2048 bit):
 --    M_Mod   M  -- the RSA public modulus (an RSA-2048 N; odd, as every N is).

@@ -25,6 +25,14 @@ project ESP32S3_SIMD is
 
    package Compiler is
       --  -gnat2022: the sources use Ada 2022 (pragma Ada_2022 per unit).
+      --
+      --  NOT -gnatwa, unlike the HAL and libs/tls: these sources are VENDORED
+      --  (see the header), so rewriting them to satisfy a warning switch means
+      --  diverging from upstream.  -gnatwa does report something worth a look
+      --  here -- "writable actual for B overlaps with actual for Result" on the
+      --  in-place kernels -- but that is an upstream aliasing question, not a
+      --  tidy-up.  The DEFAULT warnings are on and clean, and `./x test lib`
+      --  fails the build on any of them.
       for Default_Switches ("Ada") use ("-O2", "-g", "-gnat2022");
    end Compiler;
 end ESP32S3_SIMD;

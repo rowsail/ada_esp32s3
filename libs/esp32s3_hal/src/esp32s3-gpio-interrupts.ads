@@ -1,5 +1,3 @@
-with Ada.Interrupts.Names;
-
 --  GPIO pin interrupts for the ESP32-S3 bare-metal (Jorvik) runtime.
 --
 --  The GPIO peripheral has one interrupt SOURCE (the OR of all pins' latched

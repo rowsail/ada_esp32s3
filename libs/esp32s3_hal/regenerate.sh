@@ -162,6 +162,30 @@ print("[regen] annotated %d peripheral objects in %d files for SPARK "
       "(%d already annotated)" % (objects, files, declared - objects))
 ANNOT
 
+# svd2ada emits "with System;" into every peripheral spec, whether or not the
+# spec goes on to name it -- and the HAL now builds with warnings on, with CI
+# failing on any warning, so one unused with clause in generated code would fail
+# an otherwise clean tree.  Drop it wherever nothing in the spec needs it.  (A
+# post-process, like the three above, because line 1 of this script deletes svd/.)
+python3 - "$HERE/svd" <<'WITHSYS'
+import glob, sys, re
+n = 0
+for f in glob.glob(sys.argv[1] + "/*.ads"):
+    lines = open(f, encoding="utf-8").read().split("\n")
+    try:
+        i = lines.index("with System;")
+    except ValueError:
+        continue
+    rest = "\n".join(lines[:i] + lines[i + 1:])
+    #  "System" may survive as Standard.System (see the qualification pass
+    #  above) or as a real reference; only drop the clause when nothing uses it.
+    if re.search(r"(?<!Standard\.)\bSystem\b", rest):
+        continue
+    open(f, "w", encoding="utf-8").write(rest)
+    n += 1
+print("[regen] dropped an unused \"with System;\" from %d file(s)" % n)
+WITHSYS
+
 # svd2ada flattens the SVD's Apache-2.0 header onto a single line.  Apache-2.0
 # requires the notice be retained; re-expand it to a readable comment block (the
 # license obligation is unchanged either way -- this is purely cosmetic).

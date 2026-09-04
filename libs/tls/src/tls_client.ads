@@ -105,7 +105,15 @@ package TLS_Client is
    --  derived) and the encrypted application channel is open.
    function Ready (S : Session) return Boolean;
 
-   --  Send application data over the channel (encrypted).
+   --  The transport under this session failed: a record could not be written in
+   --  full, or the socket raised Socket_Error on a read or a write.  Sticky, and
+   --  the only way Send reports trouble -- Send has no status of its own, so a
+   --  caller that must know its request actually left the board checks this
+   --  immediately after.  Hello, Resume and Recv fold it into their own Ok.
+   function IO_Failed (S : Session) return Boolean;
+
+   --  Send application data over the channel (encrypted).  Failure is reported
+   --  through IO_Failed (S), not an exception and not a status here.
    procedure Send (S : in out Session; Sock : GNAT.Sockets.Socket_Type; Data : Byte_Array)
    with Pre => Ready (S) and then Data'Length > 0;
 
@@ -226,5 +234,9 @@ private
       Offered_PSK    : Key32 := (others => 0);
       Offered_Age    : Interfaces.Unsigned_32 := 0;
       Resumed_PSK    : Boolean := False;         --  server accepted our offered PSK
+      --  Sticky transport failure: a record that went out short, or a
+      --  Socket_Error caught on the way in or out.  Latched, never cleared --
+      --  a TLS channel does not survive a truncated record.  See IO_Failed.
+      IO_Failed      : Boolean := False;
    end record;
 end TLS_Client;

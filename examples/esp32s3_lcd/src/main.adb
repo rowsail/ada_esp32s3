@@ -43,6 +43,9 @@ procedure Main is
      (Data => (0 => 14, 1 => 38, 2 => 18, 3 => 17, 4 => 10,
                5 => 39, 6 => 0, 7 => 45, 8 => 48, 9 => 47, 10 => 21,
                11 => 1, 12 => 2, 13 => 42, 14 => 41, 15 => 40),
+      --  The panel's data lines are wired straight through: RGB bit N leaves
+      --  on Data (N).  (Signals re-orders that fan-out for boards that don't.)
+      Signals => LCD.Identity_Signals,
       Pclk => 7, HSync => 46, VSync => 3, DE => 5);
 
    --  Four box positions, one per screen corner (inside the border).

@@ -1,0 +1,57 @@
+
+<h2>Scope</h2>
+
+<p><code>ESP32S3.Ext4</code> is a reimplementation of lwext4 in pure Ada: read
+<em>and</em> write &mdash; create, write, truncate, mkdir, rmdir, unlink, rename,
+link &mdash; with metadata checksums and JBD2 journal replay. It is pure logic
+over <a href="46-block-dev.html">Block_Dev</a>, so it also compiles host-native
+and is developed against a harness that checks every operation against
+<code>mke2fs</code>, <code>debugfs</code> and <code>e2fsck</code>.</p>
+
+<p>The pieces are separate children rather than one monolith: superblock, group
+descriptors, inodes, bitmaps, block map, block cache, directories, paths, files,
+the writer, the journal, mkfs, and a VFS layer that presents several mounted
+volumes as one tree.</p>
+
+<h2>The error model is Ada's</h2>
+
+<p class="note">Operations <strong>raise</strong> rather than returning status
+codes, and the IO-family exceptions are the standard ones from
+<code>Ada.IO_Exceptions</code> &mdash; chosen so a future
+<code>Ada.Streams.Stream_IO</code> bridge maps cleanly &mdash; plus a few
+filesystem-specific additions. That is a deliberate departure from the
+<code>Status</code>-out-parameter style used by the
+<a href="14-i2c.html">bus drivers</a>, and it is the right one here: a
+filesystem call has many more failure modes than a bus transaction, and threading
+them all through return values would drown the call sites.</p>
+
+<h2>Journal replay</h2>
+
+<p>The JBD2 journal lives in inode 8 as a regular file. On a volume whose
+superblock has the <code>RECOVER</code> incompat flag set, pending committed
+transactions are replayed into the filesystem before normal use, then the journal
+is reset and the flag cleared &mdash; which is what makes a power loss survivable
+rather than corrupting.</p>
+
+<p class="warn">Two things to know. The journal's on-disk structures are
+<strong>big-endian</strong>, unlike the rest of ext &mdash; a genuine trap when
+reading the code. And only the classic non-checksummed format is handled (ext3,
+and ext4 with <code>^metadata_csum</code>); a checksummed journal (CSUM_V2/V3)
+raises <code>Unsupported_Feature</code> rather than guessing.</p>
+
+<h2>Formatting on the device</h2>
+
+<p><code>Ext4.Mkfs</code> lays down a fresh minimal ext4 directly on a
+Block_Dev: one block group, a root directory and <code>lost+found</code>, no
+journal, no <code>metadata_csum</code>. The result mounts read-write with this
+filesystem and passes the host's <code>e2fsck</code> &mdash; which is the claim
+worth making, because it means the format is genuinely correct rather than merely
+self-consistent.</p>
+
+<p class="note">It writes only metadata and the two directory blocks, leaving
+data blocks untouched (the filesystem initialises each as it is allocated). So
+formatting a 32&nbsp;MB part is fast, but it also means <code>Mkfs</code> is not
+an erase &mdash; old file contents remain on the medium until overwritten.</p>
+
+<p class="warn">Targets the embedded/full runtimes: it needs exceptions,
+finalization, secondary stack and a heap.</p>

@@ -1,5 +1,4 @@
 with Ada.Task_Identification;
-with Ada.Finalization;
 with ESP32S3.Ext4.Superblock;
 with ESP32S3.Ext4.Block_Cache;
 with ESP32S3.Ext4.Path;

@@ -5,13 +5,36 @@
 --  Net_Device (a NIC).  Child units of ESP32S3, so it withs the HAL.  Built
 --  cross only, against the embedded (Jorvik) runtime; each example's bare-boot
 --  image adds the Wi-Fi blobs to its vendor link.  See BRINGUP.md.
+with "../../crates/esp32s3_rts/esp32s3_rts.gpr";
 with "esp32s3_hal.gpr";
 
 project Esp32s3_Wifi is
+   --  Target + Runtime, like every other library here.  Without them this
+   --  project builds against whatever the invoking tree defaults to -- fine
+   --  while it was only ever built inside an example (whose own .gpr sets
+   --  both), and wrong the moment anything builds it on its own, which is
+   --  exactly what `./x test lib` does.
+   for Target use "xtensa-esp32-elf";
+   for Runtime ("Ada") use Esp32s3_Rts.Runtime_Path;
+   --  Needs an exception-capable profile (the OS adapter and the software TCP
+   --  stack use finalization and the secondary stack), so it defaults to
+   --  embedded rather than inheriting the runtime crate's light-tasking.
+   type Profile_Kind is ("embedded", "full");
+   Profile : Profile_Kind := external ("ESP32S3_RTS_PROFILE", "embedded");
+
    for Source_Dirs use ("src");
-   for Object_Dir use "obj";
+   --  Per-profile, for the reason the HAL gives: one object directory shared
+   --  across profiles goes stale in ways that only show up at link time.
+   for Object_Dir use "obj-" & Profile;
 
    package Compiler is
+      --  NOT -gnatwa yet, unlike the HAL and libs/tls (which are clean under
+      --  it and are held there by `./x test lib`).  -gnatwa reports ~60 here,
+      --  and most are the OS adapter's blob-facing entry points, which look
+      --  unreferenced because only the blob calls them -- clearing that
+      --  honestly means marking each one, not deleting it, and it wants doing
+      --  with the adapter in front of you.  The DEFAULT warnings are on and
+      --  clean, and the test gate fails the build on any of them.
       for Default_Switches ("Ada") use ("-g", "-O2", "-gnat2022");
    end Compiler;
 end Esp32s3_Wifi;

@@ -3,7 +3,6 @@ with ESP32S3.Ext4.Mkfs.Math;
 
 package body ESP32S3.Ext4.Mkfs is
 
-   use type ESP32S3.Block_Dev.Sector_Index;
 
    BS  : constant := 4096;          --  block size
    SPB : constant := BS / 512;      --  512-byte sectors per block = 8

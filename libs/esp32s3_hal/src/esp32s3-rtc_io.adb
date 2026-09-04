@@ -1,5 +1,3 @@
-with System;
-with ESP32S3.GPIO;
 with ESP32S3_Registers; use ESP32S3_Registers;
 with ESP32S3_Registers.RTC_CNTL;
 with ESP32S3_Registers.RTC_IO;

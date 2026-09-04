@@ -2,7 +2,7 @@
 --  Net_Devices types with an injected up-state, so it builds and runs natively --
 --  no bare-metal runtime, no hardware.  See run.sh.
 project Net_Routes_Test is
-   for Source_Dirs use (".", "../../src");
+   for Source_Dirs use (".", "../../src/**");
    for Object_Dir use "obj";
    for Exec_Dir use ".";
    for Main use ("net_routes_test.adb");

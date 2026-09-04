@@ -1,0 +1,94 @@
+
+<h2>The layers, top to bottom</h2>
+
+<table>
+  <thead><tr><th>Layer</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Your application</strong></td>
+        <td>Ada packages and a <code>Main</code> procedure.</td></tr>
+    <tr><td><strong>The HAL</strong></td>
+        <td><code>libs/esp32s3_hal</code>: hand-written driver packages
+            (<code>ESP32S3.*</code>) over a generated register layer
+            (<code>ESP32S3_Registers.*</code>). Optional &mdash; a program may
+            poke registers itself &mdash; but it is where the device knowledge
+            lives.</td></tr>
+    <tr><td><strong>The binder output</strong></td>
+        <td><code>gnatbind</code> generates <code>b__main</code>, which
+            elaborates every unit in dependency order and then calls
+            <code>Main</code>.</td></tr>
+    <tr><td><strong>The Ada runtime</strong></td>
+        <td>The <code>System.*</code> and <code>Ada.*</code> bodies: secondary
+            stack, exceptions, text I/O over the USB-serial console, and the
+            tasking kernel &mdash; tasks, protected objects, delays,
+            scheduling.</td></tr>
+    <tr><td><strong>Board support</strong></td>
+        <td>The silicon-specific bottom of the runtime: the Xtensa windowed
+            context switch, interrupt entry/exit vectors, the clock tick, SMP
+            scheduling and the inter-core interrupt. Ada plus a little assembly
+            (<code>start.S</code>, <code>highint5.S</code>,
+            <code>context_switch.S</code>). <em>This is the layer an
+            off-the-shelf RTOS would otherwise provide.</em></td></tr>
+    <tr><td><strong>2nd-stage bootloader</strong></td>
+        <td>A minimal loader of our own that maps the flash cache/MMU, brings up
+            the octal PSRAM, and jumps to the application image. It replaces the
+            vendor's stock second-stage bootloader.</td></tr>
+    <tr><td><strong>Mask ROM</strong></td>
+        <td>On-chip, immutable. Loads the 2nd-stage bootloader from flash at
+            reset.</td></tr>
+  </tbody>
+</table>
+
+<h2>The boot path</h2>
+
+<pre><code>ROM ─&gt; 2nd-stage bootloader ─&gt; start.S ─&gt; adainit ─&gt; Main
+        cache/MMU, PSRAM      PLL, vectors,  elaboration
+                              release core 1</code></pre>
+
+<p><code>start.S</code> selects the 240&nbsp;MHz PLL, sets up the stack and the
+interrupt vectors, and on the SMP examples releases the second core. Then the
+runtime's startup calls <code>adainit</code>, which runs every package's
+elaboration &mdash; and that is where library-level tasks like the blinker come
+alive, <em>before</em> <code>Main</code> is entered. Finally
+<code>Main</code> runs.</p>
+
+<p>There is no vendor startup shim and no third-party scheduler in that chain.
+The Ada runtime is the only scheduler and it is linked from source.</p>
+
+<h2>Why the blink example's Main does nothing</h2>
+
+<p>Look at <code>examples/esp32s3_gpio0_blink/src/main.adb</code> and you find
+this:</p>
+
+<pre><code>with Ada.Real_Time; use Ada.Real_Time;
+
+--  The GPIO0 blink driver + its task live in package GPIO; withing it pulls the
+--  task into the program so it elaborates and runs.
+with GPIO;
+pragma Unreferenced (GPIO);
+
+procedure Main is
+begin
+   loop
+      delay until Clock + Seconds (3600);
+   end loop;
+end Main;</code></pre>
+
+<p>The work is done by a library-level task inside package <code>GPIO</code>,
+which starts at elaboration. <code>Main</code> becomes the environment task,
+which here just parks forever. Withing a package you never call is how you pull
+its tasks into the link closure; <code>pragma Unreferenced</code> tells the
+compiler that is deliberate.</p>
+
+<h2>A minimal application</h2>
+
+<p>If you would rather do the work in the main procedure itself, this is a
+complete program. (It is named <code>Blink_Min</code> here because it lives in
+<code>docs/samples/</code>, where <code>check_samples.sh</code> compiles
+it against the embedded runtime on every doc change &mdash; rename it
+<code>Main</code> in your own project.)</p>
+
+{{sample:blink_min.adb}}
+
+<p><code>delay until</code> is served by the board-support tick;
+<code>ESP32S3.GPIO</code> is the HAL; everything links against the runtime
+crate.</p>

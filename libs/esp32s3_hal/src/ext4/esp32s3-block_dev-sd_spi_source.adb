@@ -25,8 +25,21 @@ package body ESP32S3.Block_Dev.SD_SPI_Source is
       C  : constant Card_Access := To_Card (Ctx);
       St : ESP32S3.SD_SPI.Status;
    begin
+      --  ESP32S3.SD_SPI.Block and Block_Dev.Sector are separate array types in
+      --  separate packages, so this conversion copies the 512 bytes.  That is
+      --  the price of the layering and it is deliberate: giving them a shared
+      --  root type would mean the block-device abstraction and the SD driver
+      --  agreeing on one type, which is exactly the coupling this adapter
+      --  exists to prevent.  One copy per sector written, on a path already
+      --  dominated by the card's ~2 ms per-command latency.
+      pragma Warnings (Off, "value conversion implemented by copy");
+      pragma Warnings (Off, "use pair of types with same root type");
+      pragma Warnings (Off, "to avoid new object in RM 4.6*");
       ESP32S3.SD_SPI.Write_Block
         (C.all, ESP32S3.SD_SPI.Block_Address (LBA), ESP32S3.SD_SPI.Block (Data), St);
+      pragma Warnings (On, "to avoid new object in RM 4.6*");
+      pragma Warnings (On, "use pair of types with same root type");
+      pragma Warnings (On, "value conversion implemented by copy");
       if St /= ESP32S3.SD_SPI.OK then
          raise Ada.IO_Exceptions.Device_Error with "SD write failed";
       end if;

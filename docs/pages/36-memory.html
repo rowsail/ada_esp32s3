@@ -1,0 +1,91 @@
+
+<h2>W25Q: SPI NOR flash</h2>
+
+<p>Winbond W25Q-series, targeting the W25Q256FV (32&nbsp;MB, JEDEC ID
+<code>EF 40 19</code>), on a general-purpose <a href="15-spi.html">SPI</a> host
+with an <strong>application-driven chip select</strong> through the CS callback
+&mdash; so it shares a bus with other devices.</p>
+
+<pre><code>procedure Initialize          (Dev : Flash; OK : out Boolean);
+procedure Read_Identification (Dev : Flash; ID : out JEDEC_ID);
+function  Capacity_Bytes      (ID : JEDEC_ID) return Address;
+procedure Read         (Dev : Flash; Addr : Address; Data : out Byte_Array);
+procedure Erase_Sector (Dev : Flash; Addr : Address);
+procedure Program_Page (Dev : Flash; Addr : Address; Data : Byte_Array);</code></pre>
+
+<p class="warn"><strong>Over 16&nbsp;MB means 4-byte addressing.</strong>
+<code>Initialize</code> puts the chip into 4-byte address mode (opcode
+<code>0xB7</code>) once at startup, after which the <em>standard</em> opcodes
+&mdash; Read <code>0x03</code>, Page-Program <code>0x02</code>, Sector-Erase
+<code>0x20</code> &mdash; each take four address bytes, which is what the FV
+datasheet prescribes. The FV has <strong>no</strong> dedicated 4-byte
+program/erase opcodes; the <code>0x12</code>/<code>0x21</code>/<code>0xDC</code>
+set is a later W25Q256JV addition, and issuing them here is <em>silently
+ignored</em> &mdash; a failure that leaves your data unwritten with no error.</p>
+
+<p>Flash is erase-before-write: sectors erase to all-ones, and a page program can
+only clear bits. That asymmetry is why the API has both
+<code>Erase_Sector</code> and <code>Program_Page</code> rather than a
+<code>Write</code>.</p>
+
+<h2>The 24C EEPROM catalogue</h2>
+
+<p>Every part in the family &mdash; ST M24Cxx, Microchip 24AAxx/24LCxx, Atmel
+AT24Cxx, onsemi CAT24Cxx &mdash; speaks the same protocol: device-type code
+<code>1010</code>, a big-endian word address, page writes that <em>wrap</em>
+inside the page rather than advancing, a ~5&nbsp;ms program cycle that NACKs
+everything until it finishes, and a random read that turns the bus around on a
+<a href="14-i2c.html">repeated START</a>.</p>
+
+<p class="note">So a part is <strong>nothing but a geometry</strong>.
+<code>ESP32S3.EEPROM_24C.Driver</code> implements the protocol once, and each
+part is a child instantiation &mdash;
+<code>with ESP32S3.EEPROM_24C.M24C64;</code> costs you one part, not the whole
+catalogue.</p>
+
+<p>Two traps the catalogue exists to encode:</p>
+
+<p class="warn"><strong>Page size varies by vendor at the low end.</strong> ST's
+M24C01/M24C02 have a 16-byte page; Atmel's and Microchip's 1K/2K parts have 8.
+Guessing wrong does not fail loudly &mdash; the write wraps inside the page and
+<em>silently overwrites what you just wrote</em>. Hence separate AT24C01 and
+AT24C02 entries.</p>
+
+<p class="warn"><strong>High address bits eat chip-enable pins.</strong> A part
+whose array outruns its word address folds the surplus bits into the low bits of
+its own device-select byte, costing a strap each: E0, then E1, then E2. A 24C16
+folds three and has <em>no strap left</em> &mdash; only one can sit on a bus. The
+driver derives this from capacity and address width rather than taking it as a
+parameter. Microchip's 24LC1025 is the one part that breaks the rule, putting its
+block bit in the high position instead.</p>
+
+<p class="warn"><strong>Only parts marked <code>Verified</code> have been run
+against real silicon.</strong> The rest are transcribed from datasheets &mdash;
+the protocol is shared so they are very likely right, but nobody has watched them
+on a scope. Each instance re-exports its status as
+<code>Hardware_Verified</code> and says so in its spec banner.</p>
+
+<h2>FRAM: non-volatile RAM</h2>
+
+<p>Fujitsu MB85RS and Cypress/Infineon FM25 over SPI (and MB85RC/FM24 over I2C).
+The distinction from EEPROM is the interesting part:</p>
+
+<p class="note"><strong>FRAM is byte-writable, has no page boundary, and has no
+program cycle at all</strong> &mdash; a write is committed as it is clocked in.
+None of the EEPROM ceremony applies: no page-wrap trap, no ~5&nbsp;ms NACK-until-
+done wait, no erase. If you are logging frequently, that difference is the whole
+reason to pay for FRAM.</p>
+
+<p>Because the read/write protocol is identical across manufacturers, parts are
+keyed by <strong>density rather than part number</strong>:
+<code>with ESP32S3.FRAM_SPI.Kbit_256;</code>. Only the identity command differs
+by vendor, so <code>Read_Device_ID</code> returns the raw bytes rather than
+pretending to decode them.</p>
+
+<p>Address width follows density: 16&nbsp;Kbit&nbsp;..&nbsp;512&nbsp;Kbit use two
+address bytes, 1&nbsp;Mbit uses three, and the 4&nbsp;Kbit parts use
+<em>one</em>, with the ninth address bit carried in bit 3 of the opcode &mdash;
+the legacy 25040 convention.</p>
+
+<p class="warn">Status: <strong>no FRAM part has been run against real silicon
+yet</strong>. These are datasheet-derived.</p>

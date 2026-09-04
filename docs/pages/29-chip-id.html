@@ -1,0 +1,50 @@
+
+<h2>The on-chip temperature sensor</h2>
+
+<p class="warn"><strong>It reports die temperature, not ambient air.</strong> The
+chip self-heats under load, so an idle board typically reads a few degrees above
+room temperature and a busy one considerably more. Using it as a room thermometer
+will give you a plausible, wrong answer.</p>
+
+<p>Accuracy is roughly ±1&nbsp;°C after the part's factory trim, and is best near
+the middle of the selected measurement range &mdash; so pick the
+<code>Measure_Range</code> that brackets your expected readings rather than the
+widest one:</p>
+
+<pre><code>procedure Initialize (Span : Measure_Range := Range_Minus10_80);</code></pre>
+
+<p><code>Initialize</code> is optional: the first <code>Read</code> brings the
+sensor up with the default range if you skip it. The sensor is owned by a
+protected object, so concurrent reads from different tasks serialise
+automatically &mdash; each busy-waits microseconds for its conversion under that
+lock.</p>
+
+<p class="note">Bring-up is more involved than it looks, which is why it is worth
+having a driver for: gate the SAR peripheral clock, pulse-reset it, open the
+analog REGI2C bus, program the sensor's DAC range over that bus through a ROM
+call, then power the sensor up. Every reading then drives a dump-out/ready
+handshake to latch a fresh conversion before sampling.</p>
+
+<h2>The factory MAC addresses</h2>
+
+<p>Espressif allocates each part a block of <strong>four</strong>
+universally-administered addresses. The eFuse base is the Wi-Fi station MAC, and
+the others are derived from it:</p>
+
+<pre><code>type MAC_Address is array (0 .. 5) of Interfaces.Unsigned_8;
+
+function Base           return MAC_Address;   --  = Wi-Fi station
+function Wi_Fi_Station  return MAC_Address;   --  base + 0
+function Wi_Fi_SoftAP   return MAC_Address;   --  base + 1
+--  Bluetooth  = base + 2
+--  Ethernet   = base + 3</code></pre>
+
+<p>The practical use on a board with no Wi-Fi: give a
+<strong>W5500 Ethernet controller the <code>Ethernet</code> address</strong>
+instead of a hand-picked one. That is a real, manufacturer-assigned, globally
+unique MAC &mdash; which matters the moment two of your boards end up on the same
+network segment, and is free.</p>
+
+<p class="note">Every routine is a pure read of the eFuse shadow registers, which
+are latched at reset. No clock, no driver state, no initialisation &mdash; so
+these are safe to call from anywhere, at any time, under any profile.</p>

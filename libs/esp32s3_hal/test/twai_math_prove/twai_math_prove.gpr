@@ -3,7 +3,7 @@
 --  body stays unmarked (SPARK off).  The parent specs are host-portable, as are
 --  the two pad banks ESP32S3.GPIO's SPARK contracts name.  No main.
 project TWAI_Math_Prove is
-   for Source_Dirs use ("../../src", "../../svd");
+   for Source_Dirs use ("../../src/**", "../../svd");
    for Object_Dir use "obj";
    for Source_Files use
      ("esp32s3.ads",

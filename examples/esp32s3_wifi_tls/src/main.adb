@@ -316,6 +316,13 @@ begin
          Req_Bytes (I) := Interfaces.Unsigned_8 (Character'Pos (Req (Req'First + I)));
       end loop;
       TLS_Client.Send (Session, Sock, Req_Bytes);
+      --  Send reports a failed or truncated write on the session, not
+      --  through a status or an exception -- check it before reading a
+      --  reply to a request that may never have left the board.
+      if TLS_Client.IO_Failed (Session) then
+         Put_Line ("TLS: request send failed (link down)");
+         return;
+      end if;
 
       loop
          TLS_Client.Recv (Session, Sock, Buf, Last, Recv_Ok);

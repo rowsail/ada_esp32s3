@@ -1,3 +1,4 @@
+with Ada.Interrupts.Names;
 with ESP32S3_Registers; use ESP32S3_Registers;
 with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.INTERRUPT_CORE0;

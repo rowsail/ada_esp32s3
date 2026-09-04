@@ -1,0 +1,135 @@
+
+<h2>Channels are a resource, not a fixture</h2>
+
+<p>The S3 has one AHB GDMA block with <strong>five channel pairs</strong>
+(0&nbsp;..&nbsp;4). Each pair has an independent transmit (OUT) and receive (IN)
+path, and either can be wired to any peripheral through the GDMA crossbar. A
+channel is therefore something you <em>claim</em>, not something a peripheral
+owns:</p>
+
+<pre><code>type Channel_Id is mod 5;
+type Peripheral is (Mem2Mem, SPI2, SPI3, UHCI0, I2S0, I2S1, LCD_CAM, AES, SHA, ADC_DAC, RMT);
+
+procedure Claim (C : in out Channel; Peri : Peripheral);
+function  Is_Valid (C : Channel) return Boolean;
+procedure Release (C : in out Channel);</code></pre>
+
+<p><code>Claim</code> goes through a protected allocator, so two tasks can never
+be handed the same channel. The <code>Channel</code> handle is limited
+(non-copyable, so it cannot be aliased into another task) and controlled (it
+releases on scope exit, including on an exception, so a channel cannot leak or
+be reused through a stale copy). If all five are busy, <code>Claim</code> leaves
+the handle invalid rather than raising &mdash; check <code>Is_Valid</code>.</p>
+
+<p class="note">Once you hold a channel, only you touch its registers and
+descriptors, so the transfer operations themselves need no further locking. This
+is the same ownership pattern as <a href="15-spi.html">SPI</a> and
+<a href="14-i2c.html">I2C</a>, and for the same reason.</p>
+
+<h2>Why a buffer type exists</h2>
+
+<p>DMA needs DMA-capable memory, and on this chip that is not a single rule:</p>
+
+<ul>
+  <li><strong>Internal SRAM</strong> always qualifies, at any alignment.</li>
+  <li><strong>External PSRAM</strong> qualifies only when the buffer is
+      cache-line (32-byte) aligned &mdash; the GDMA reaches PSRAM
+      <em>through</em> the DCache, so the driver writes back and invalidates
+      around each transfer.</li>
+  <li><strong>Flash <code>.rodata</code></strong> is excluded. A
+      <code>constant</code> aggregate still cannot be DMA'd.</li>
+</ul>
+
+<pre><code>DMA_Alignment : constant := 32;
+
+type DMA_Buffer is array (Natural range &lt;&gt;) of Interfaces.Unsigned_8
+  with Alignment =&gt; DMA_Alignment;
+
+function Is_DMA_Capable (A : System.Address) return Boolean;</code></pre>
+
+<p class="warn"><strong>Alignment is only half of it.</strong> The type carries
+the aligned <em>start</em>; the operations' preconditions additionally demand a
+whole-cache-line <em>size</em>. That is not implied by alignment and it matters:
+the PSRAM write-back/invalidate rounds the region <strong>up</strong> to a whole
+line, so a buffer ending mid-line would have the maintenance touch its
+neighbour &mdash; discarding an adjacent object's dirty cached write. Size the
+payload up to a multiple of 32 (128 bytes for 100 useful ones).</p>
+
+<p>Hence the calling convention: <strong>pass the whole buffer plus a transfer
+length</strong>, never a slice. Slicing to the length would fail the size
+precondition, while the whole line-multiple buffer keeps every rounded
+maintenance op inside itself.</p>
+
+<pre><code>procedure Copy (C : Channel; Dst, Src : DMA_Buffer; Length : Natural)
+with Pre =&gt; Length &lt;= Src'Length and then Length &lt;= Dst'Length
+            and then Src'Length mod DMA_Alignment = 0
+            and then Dst'Length mod DMA_Alignment = 0;</code></pre>
+
+<p>These preconditions are pinned on with
+<code>pragma Assertion_Policy (Pre =&gt; Check)</code> in the spec, so they hold
+even when the build has assertions off &mdash; a buffer in flash or unaligned
+PSRAM corrupts the transfer <em>silently</em>, which is exactly the failure worth
+paying a check for.</p>
+
+<h2>The three shapes of transfer</h2>
+
+<table>
+  <thead><tr><th>Call</th><th>Behaviour</th></tr></thead>
+  <tbody>
+    <tr><td><code>Copy</code></td>
+        <td>Blocking memory-to-memory, completed by looping one channel's OUT
+            path into its own IN path. Buffers <em>and</em> the driver's
+            descriptors must be in internal SRAM, because the descriptor link
+            address is a 20-bit field.</td></tr>
+    <tr><td><code>Start</code></td>
+        <td>Arms a single-buffer peripheral transfer in one
+            <code>Direction</code> and returns immediately. You configure and
+            start the peripheral separately; the GDMA moves data as the
+            peripheral raises its DMA request.</td></tr>
+    <tr><td><code>Start_Loop</code></td>
+        <td>A single descriptor whose link points back at itself, so the engine
+            replays the buffer forever with no gap between passes and no CPU
+            involvement after the kick. Never completes on its own.</td></tr>
+  </tbody>
+</table>
+
+<p><code>Direction</code> is <code>Mem_To_Periph</code> (the OUT path reads RAM
+and feeds the peripheral) or <code>Periph_To_Mem</code>. A single descriptor
+caps at <code>Max_Transfer</code> = 4095 bytes, the hardware's 12-bit
+buffer-size field &mdash; which is where <a href="15-spi.html">SPI</a>'s
+1&nbsp;..&nbsp;4095 precondition comes from.</p>
+
+<h2>Beyond one descriptor: the framebuffer path</h2>
+
+<p>For a buffer larger than 4095 bytes there is a chained ring: up to
+<code>Max_Chain</code> = 256 descriptors that between them cover the buffer, the
+last linking back to the first. This is the display path &mdash; stream an LCD
+framebuffer to <code>LCD_CAM</code> continuously. The buffer may live in PSRAM
+(32-byte aligned) and is written back before the loop starts. After the CPU draws
+into a live framebuffer, <code>Flush</code> pushes the changes out so the running
+DMA re-reads them.</p>
+
+<p class="note">The descriptor ring is one shared internal-SRAM array, so exactly
+one chained loop runs at a time.</p>
+
+<h2>Completion, and an interrupt you must not take</h2>
+
+<p>Completion is interrupt-driven rather than polled: <code>Wait</code> suspends
+the calling task and the channel's end-of-transfer interrupt wakes it.</p>
+
+<p class="warn">This driver <strong>owns <code>Device_L3_1</code>
+(CPU_INT&nbsp;27)</strong>. An application must not attach its own handler
+there. It is a level-3 slot rather than a level-2 one because the LCD RGB bounce
+refill runs from this completion ISR and has to preempt the level-2 devices to
+make its deadline.</p>
+
+<h2>Proving the coherency path</h2>
+
+<pre><code>type Self_Test_Result is (Passed_PSRAM, Passed_SRAM, Failed, No_Channel);
+function Self_Test (Buf_A, Buf_B : System.Address) return Self_Test_Result;</code></pre>
+
+<p>A memory-to-memory round trip between two buffers <em>of your choosing</em>,
+which reports which memory it actually exercised. Hand it PSRAM buffers (from a
+task whose stack is in PSRAM) and a <code>Passed_PSRAM</code> result means the
+cache write-back/invalidate path really works on your board &mdash; not merely
+that DMA works in SRAM. Buffers must be 32-byte aligned and at least 64 bytes.</p>
