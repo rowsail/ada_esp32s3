@@ -44,15 +44,25 @@ jobs:
           version: 2.1.0
 
       - name: Install the toolchains
-        # --install, not --select: nothing here goes through `alr`.
-        # tools/sdk-env.sh finds the toolchains by globbing
-        # $ESP32S3_ADA_TOOLCHAINS (Alire's install dir by default), so they only
-        # need to be ON DISK.  The versions are the known-good pair recorded in
-        # sdk-env.sh; bump both together.
+        # `--select` is the only way to get a toolchain onto disk: alr 2.1.0 has
+        # no --install ("Unrecognized option"), and its --select both downloads
+        # and marks a default.
+        #
+        # WHICH ONE IS "DEFAULT" DOES NOT MATTER HERE, and that is the point of
+        # three separate calls.  Nothing in this repo invokes `alr` --
+        # tools/sdk-env.sh globs $ESP32S3_ADA_TOOLCHAINS (Alire's install dir by
+        # default) and takes the newest match, so the toolchains only need to
+        # EXIST.  Alire keeps every downloaded toolchain and marks the unselected
+        # ones "Available", so selecting the cross GNAT and then the native one
+        # leaves both on disk; only the label moves.  Verified against alr 2.1.0.
+        #
+        # -n so a prompt can never hang the runner.  Versions are the known-good
+        # set recorded in tools/sdk-env.sh -- bump them together.
         run: |
-          alr toolchain --install gnat_native=15.2.1
-          alr toolchain --install gprbuild=26.0.1
-          alr toolchain --install gnat_xtensa_esp32_elf=15.2.1
+          alr -n toolchain --select gprbuild=26.0.1
+          alr -n toolchain --select gnat_xtensa_esp32_elf=15.2.1
+          alr -n toolchain --select gnat_native=15.2.1
+          alr toolchain
           ls -1 "$HOME/.local/share/alire/toolchains"
 
       # xtensa-dynconfig is built from source by tools/sdk-env.sh on first use;
@@ -105,15 +115,25 @@ jobs:
         with:
           version: 2.1.0
       - name: Install the toolchains
-        # --install, not --select: nothing here goes through `alr`.
-        # tools/sdk-env.sh finds the toolchains by globbing
-        # $ESP32S3_ADA_TOOLCHAINS (Alire's install dir by default), so they only
-        # need to be ON DISK.  The versions are the known-good pair recorded in
-        # sdk-env.sh; bump both together.
+        # `--select` is the only way to get a toolchain onto disk: alr 2.1.0 has
+        # no --install ("Unrecognized option"), and its --select both downloads
+        # and marks a default.
+        #
+        # WHICH ONE IS "DEFAULT" DOES NOT MATTER HERE, and that is the point of
+        # three separate calls.  Nothing in this repo invokes `alr` --
+        # tools/sdk-env.sh globs $ESP32S3_ADA_TOOLCHAINS (Alire's install dir by
+        # default) and takes the newest match, so the toolchains only need to
+        # EXIST.  Alire keeps every downloaded toolchain and marks the unselected
+        # ones "Available", so selecting the cross GNAT and then the native one
+        # leaves both on disk; only the label moves.  Verified against alr 2.1.0.
+        #
+        # -n so a prompt can never hang the runner.  Versions are the known-good
+        # set recorded in tools/sdk-env.sh -- bump them together.
         run: |
-          alr toolchain --install gnat_native=15.2.1
-          alr toolchain --install gprbuild=26.0.1
-          alr toolchain --install gnat_xtensa_esp32_elf=15.2.1
+          alr -n toolchain --select gprbuild=26.0.1
+          alr -n toolchain --select gnat_xtensa_esp32_elf=15.2.1
+          alr -n toolchain --select gnat_native=15.2.1
+          alr toolchain
           ls -1 "$HOME/.local/share/alire/toolchains"
       - name: Cache the xtensa-dynconfig plugin
         uses: actions/cache@v4
