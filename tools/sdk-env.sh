@@ -19,16 +19,44 @@ if [ -n "${ESP32S3_ADA_SDK:-}" ] && [ -d "$ESP32S3_ADA_SDK/toolchains" ]; then
 fi
 export ESP32S3_ADA_TOOLCHAINS
 
+# --- Known-good toolchain ------------------------------------------------------
+#
+# The bare runtime is a patch series against specific GNAT/bb-runtimes sources
+# (crates/esp32s3_rts/full_overlay/patches), and a compiler bump can change
+# bare-metal codegen.  These are the versions the boards were validated on.
+#
+# They are PREFERRED, not required: esp32s3_tc_bin_pref below picks the recorded
+# version when it is installed and the newest available otherwise, warning in
+# that case.  A newer compiler stays usable -- but a box that has the validated
+# one uses it, rather than whatever happens to sort last.  (CI hit exactly that:
+# setup-alire brings its own newer native GNAT, so pinning at install time was
+# not enough and the runners were building with an unvalidated compiler.)
+ESP32S3_GNAT_KNOWN_GOOD="15.2.1"      # gnat_xtensa_esp32_elf + gnat_native
+ESP32S3_GPRBUILD_KNOWN_GOOD="26.0.1"
+export ESP32S3_GNAT_KNOWN_GOOD ESP32S3_GPRBUILD_KNOWN_GOOD
+
 # Newest bin/ under the search root matching glob $1 (or empty if none).
 esp32s3_tc_bin () { ls -d "$ESP32S3_ADA_TOOLCHAINS"/$1/bin 2>/dev/null | sort -V | tail -1; }
+
+# bin/ for crate $1: the known-good version $2 if that one is installed, else
+# the newest $1 there is.
+esp32s3_tc_bin_pref () {
+    local exact
+    exact="$(ls -d "$ESP32S3_ADA_TOOLCHAINS"/"$1"_"$2"_*/bin 2>/dev/null | head -1)"
+    if [ -n "$exact" ]; then
+        printf '%s' "$exact"
+    else
+        esp32s3_tc_bin "$1"'_*'
+    fi
+}
 
 # Put gprbuild + the xtensa cross GNAT + native GNAT on PATH (idempotent), and
 # export ESP32S3_GPRBUILD_BIN / ESP32S3_GNAT_NATIVE_BIN for callers that need an
 # explicit native-first PATH (the native host tools).
 esp32s3_toolchain_on_path () {
-    ESP32S3_GPRBUILD_BIN="$(esp32s3_tc_bin 'gprbuild_*')"
-    ESP32S3_GNAT_XTENSA_BIN="$(esp32s3_tc_bin 'gnat_xtensa_esp32_elf_*')"
-    ESP32S3_GNAT_NATIVE_BIN="$(esp32s3_tc_bin 'gnat_native_*')"
+    ESP32S3_GPRBUILD_BIN="$(esp32s3_tc_bin_pref gprbuild "$ESP32S3_GPRBUILD_KNOWN_GOOD")"
+    ESP32S3_GNAT_XTENSA_BIN="$(esp32s3_tc_bin_pref gnat_xtensa_esp32_elf "$ESP32S3_GNAT_KNOWN_GOOD")"
+    ESP32S3_GNAT_NATIVE_BIN="$(esp32s3_tc_bin_pref gnat_native "$ESP32S3_GNAT_KNOWN_GOOD")"
     export ESP32S3_GPRBUILD_BIN ESP32S3_GNAT_XTENSA_BIN ESP32S3_GNAT_NATIVE_BIN
     local d
     for d in "$ESP32S3_GPRBUILD_BIN" "$ESP32S3_GNAT_XTENSA_BIN" "$ESP32S3_GNAT_NATIVE_BIN"; do
@@ -38,20 +66,6 @@ esp32s3_toolchain_on_path () {
     export PATH
     esp32s3_check_toolchain
 }
-
-# --- Known-good toolchain -----------------------------------------------------
-#
-# esp32s3_tc_bin picks the NEWEST match, so whatever Alire happens to have
-# installed wins.  That is convenient and it is also the whole risk: the bare
-# runtime is a patch series against specific GNAT/bb-runtimes sources
-# (crates/esp32s3_rts/full_overlay/patches), and a compiler bump can change
-# bare-metal codegen with nothing in the tree recording which version the boards
-# were actually validated on.  So: record it, and WARN (never fail) when the
-# resolved toolchain differs -- a newer compiler is usually fine and must stay
-# usable, but an unexplained regression should start by reading this line.
-ESP32S3_GNAT_KNOWN_GOOD="15.2.1"      # gnat_xtensa_esp32_elf + gnat_native
-ESP32S3_GPRBUILD_KNOWN_GOOD="26.0.1"
-export ESP32S3_GNAT_KNOWN_GOOD ESP32S3_GPRBUILD_KNOWN_GOOD
 
 # Version embedded in an Alire toolchain directory name: gnat_native_15.2.1_<hash>
 esp32s3_tc_version () {

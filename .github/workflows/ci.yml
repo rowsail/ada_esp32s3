@@ -140,11 +140,13 @@ jobs:
         with:
           path: crates/xtensa-dynconfig/xtensa-dynconfig
           key: dynconfig-${{ runner.os }}-${{ hashFiles('crates/xtensa-dynconfig/**/*.c', 'crates/xtensa-dynconfig/scripts/setup.sh') }}
-      # check_samples.sh needs a generated runtime, which the first example
-      # build produces; then it compiles every sample the guide inlines, checks
-      # the API names its pages quote still exist, and validates the HTML.
-      - name: Build one example (generates the runtime)
-        run: ./x build gpio0_blink
+      # check_samples.sh compiles the guide's samples against the EMBEDDED
+      # runtime, which is generated rather than committed -- and gpio0_blink is
+      # a light-tasking example, so building it produced the wrong one and the
+      # check bailed with "no embedded runtime at ...".  i2c_loopback is the
+      # example its own error message suggests.
+      - name: Build an embedded example (generates the embedded runtime)
+        run: ./x build i2c_loopback
       - name: Check the guide
         run: ./docs/check_samples.sh
       # Cross-compile check for the Wi-Fi ABI rep clauses (host word size cannot

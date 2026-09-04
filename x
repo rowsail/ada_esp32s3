@@ -684,6 +684,21 @@ cmd_test () {
     fi
 
     if [ "$what" = all ] || [ "$what" = examples ]; then
+        #  The Wi-Fi examples with a network in them read wifi_credentials.ads,
+        #  which is deliberately gitignored so a real SSID and PSK can never be
+        #  committed.  That means it does not exist on a fresh clone or in CI,
+        #  and five examples cannot COMPILE without it.  Seed the placeholders
+        #  from the committed .template: this slice builds, it does not
+        #  associate, and the template exists to be copied.  A file already
+        #  there -- yours, with a real network in it -- is never touched.
+        local tmpl
+        for tmpl in "$EXROOT"/*/src/wifi_credentials.ads.template; do
+            [ -e "$tmpl" ] || continue
+            if [ ! -e "${tmpl%.template}" ]; then
+                cp "$tmpl" "${tmpl%.template}"
+                echo "  ..    seeded $(basename "$(dirname "$(dirname "$tmpl")")")/src/wifi_credentials.ads from its template"
+            fi
+        done
         echo "== examples =="
         local e
         for e in $(list_dirs); do
@@ -729,6 +744,14 @@ build_lib_clean () {
     #  compile needs XTENSA_GNU_CONFIG.
     . "$ROOT/export.sh" > /dev/null 2>&1
     [ -n "${XTENSA_GNU_CONFIG:-}" ] || { echo "no xtensa-dynconfig"; return 1; }
+    #  The runtime for this profile is GENERATED, not committed (from
+    #  crates/esp32s3_rts/packs/*.tar.zst).  An example build gets there via
+    #  build_ada.sh; a library build has no such path, so on a fresh clone every
+    #  library failed with "invalid runtime directory ...-esp32s3" before this.
+    #  gen_runtime.sh is idempotent -- it regenerates only when the output is
+    #  missing -- so this costs nothing on a warm tree.
+    out="$(ESP32S3_RTS_PROFILE="$prof" bash "$ROOT/crates/esp32s3_rts/gen_runtime.sh" 2>&1)" || {
+        printf '%s\n' "$out"; return 1; }
     out="$(ESP32S3_RTS_PROFILE="$prof" gprbuild -p -q -P "$gpr" -j"$(nproc)" 2>&1)" || {
         printf '%s\n' "$out"; return 1; }
     local warned
