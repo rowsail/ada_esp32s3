@@ -19,6 +19,19 @@ with SPARKNaCl.Hashing.SHA256;
 --  Measured at --level=1 --prover=z3 --timeout=10: 210 obligations in 3m03s with
 --  Verify/On_Curve outside the subset; no result after 28m with them inside and
 --  no contracts; 144 obligations in 2m33s with these.
+--
+--  `gnatprove --no-inlining` switches contextual analysis off for a whole run and
+--  proves this unit with no source contracts at all (95 obligations, 2m34s).  The
+--  aspects are here anyway because they travel with the source: the unit proves
+--  under any project and any invocation, the cross tls.gpr included, rather than
+--  only when whoever runs the tool remembers a switch.
+--
+--  The pre- and postconditions further down are NOT load-bearing.  Verify
+--  discharges exactly one check of its own (Inv_Mod's precondition, from NN's
+--  literal value) and On_Curve none, so those contracts prove nothing that the
+--  Global aspects do not already give.  They are kept as documentation that the
+--  compiler checks: assumptions that used to sit in comments, and the meaning of
+--  three comparison predicates that gate untrusted input.
 package body P256 with SPARK_Mode => On is
 
    subtype U32 is Unsigned_32;
@@ -111,9 +124,11 @@ package body P256 with SPARK_Mode => On is
    end "=";
 
    --  A >= B, as a lexicographic scan from the most significant limb down: the
-   --  first limb where they differ decides.  Stated as a ghost specification so
-   --  that Geq's callers (the range checks in Verify) reason from a definition
-   --  of ">=" rather than from an opaque Boolean.
+   --  first limb where they differ decides.  Geq_Spec pins that meaning down so
+   --  a future edit that inverts the scan direction, or compares from limb 0,
+   --  fails the proof rather than silently weakening the range checks in Verify
+   --  that gate r, s and the public-key coordinates.  Nothing CONSUMES it: Verify
+   --  reasons from the Global aspects, not from this.
    function Geq_Spec (A, B : Num) return Boolean
    is ((for all I in Num'Range => A (I) = B (I))
        or else (for some I in Num'Range =>

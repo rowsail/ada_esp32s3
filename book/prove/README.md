@@ -56,7 +56,12 @@ helpers are marked `SPARK_Mode => On` in place (MMIO code stays unmarked); the T
 timing arithmetic was **extracted** into pure `*.Math` sibling packages (behaviour-neutral — exact
 expressions relocated, register writes untouched) so it could be proved in isolation.
 
-**969 run-time checks discharged, 0 unproved** (1712 obligations in all, across 26 projects; `prove.sh` takes about nine minutes from a clean object tree, ~2 minutes when gnatprove's result cache is warm). The **untrusted-input parsers** are the
+**969 run-time checks discharged, 0 unproved** — 1712 obligations in all, across 26
+projects; `prove.sh` takes about nine minutes from a clean object tree, ~2 minutes
+when gnatprove's result cache is warm. Eight of those 969 sit inside `P256`'s own
+contract and ghost code — loop-invariant indexing, `Geq_Spec`, `Inv32`'s `X mod 2` —
+and never execute, so read the figure as obligations discharged rather than as
+machine instructions made safe. The **untrusted-input parsers** are the
 highest-value proofs — `X509` (certificates), `NMEA` (GPS sentences), `DNS` (resolver
 replies, incl. self-referential name-compression pointers), `Chain_Verify` (cert chains),
 `P256.Verify` (an attacker supplies the key, the hash *and* the signature),
@@ -90,10 +95,18 @@ Five real defects surfaced by proving — all on the untrusted-input / malformed
 4. If a unit is slow or will not converge, suspect **inlining** before you suspect
    the mathematics. GNATprove inlines a contract-less local subprogram into its
    caller, so one deep call chain can build a single enormous verification
-   condition. Giving the callees a contract — `Global => null` is usually both true
-   and enough — makes each call opaque and each callee proved once. This is what
-   took `P256.Verify` from "does not converge" to proved; see the note at the foot
-   of `prove.sh`.
+   condition. Two levers stop it, and try them in this order:
+   - `gnatprove --no-inlining` — switches contextual analysis off for the run, costs
+     no source edits, and tells you within one run whether inlining was the problem.
+     On `P256` it alone proves the unit (95 obligations, 2m34s, nothing annotated).
+   - a contract on each callee — `Global => null` is usually both true and enough.
+     More obligations than the switch (144 for `P256`), and worth it when the unit
+     should prove for *everyone*: a contract travels with the source, a switch has
+     to be remembered by whoever invokes the tool. That is why `P256` ships the
+     aspects even though the switch was sufficient.
+
+   Diagnose with the switch; ship the contracts only if the unit needs to prove
+   outside this script. See the note at the foot of `prove.sh`.
 
 ## Not SPARK (stays `SPARK_Mode => Off` / unmarked)
 

@@ -45,20 +45,29 @@ prove () {  #  $1 = project file, $2 = label, $3 = gnatprove tuning (optional)
    local tune="${3:---level=1 --prover=z3 --timeout=10}"
    local out
    out="$(gnatprove -P "$1" $tune -j0 --report=fail --output=oneline 2>&1)"
-   if echo "$out" | grep -qiE "medium:|high:|: *error:"; then
-      echo "$out" | grep -iE "medium:|high:|: *error:"
+   #  GNATprove grades a check message low:, medium: or high:.  Grepping only the
+   #  top two would pass a low: one silently, so the authority is the report's
+   #  Unproved column below; this grep is here to SHOW what failed, not to decide.
+   if echo "$out" | grep -qiE "low:|medium:|high:|: *error:"; then
+      echo "$out" | grep -iE "low:|medium:|high:|: *error:"
       fail=1
-   else
-      echo "  no unproved run-time checks"
    fi
    #  Take the report path from gnatprove itself ("Summary logged in ..."), not
    #  from a glob of the project directory: libs/tls holds six object dirs, and
    #  globbing there printed a stale run's numbers under a neighbour's heading.
-   local report
+   local report unproved
    report="$(echo "$out" | sed -n 's/^Summary logged in //p' | tail -1)"
    if [ -n "$report" ] && [ -f "$report" ]; then
       sed -n '/SPARK Analysis results/,/^Total/p' "$report" \
          | grep -iE "Run-time Checks|^Total"
+      #  The Total row's last column is the number of unproved obligations, or
+      #  "." for none.  Read it rather than trusting the severity grep above.
+      unproved="$(sed -n '/SPARK Analysis results/,/^Total/p' "$report" \
+                  | awk '/^Total/ { print $NF }' | tail -1)"
+      case "$unproved" in
+         ""|".") echo "  no unproved obligations" ;;
+         *) echo "  UNPROVED obligations reported: $unproved"; fail=1 ;;
+      esac
    else
       echo "  (no summary report found)"
       fail=1

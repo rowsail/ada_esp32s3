@@ -192,32 +192,54 @@ proved, when it was a statement about what the code had \emph{told} it. Section
 \ref{spark:registers} is the correction. Second, pure arithmetic that is \emph{inlined} in a register procedure, like a
 baud prescaler or a dead-time divider; that logic \emph{can} be proved, but only after
 extracting it into a pure sibling package, which is exactly what was done for the
-TWAI, LEDC, RMT, and MCPWM timing math. Third, code whose \emph{shape} is wrong rather than its content: a SPARK function may
-not have out parameters, which is the only reason \lstinline{Public_Key}, \lstinline{ECDH}
-and \lstinline{Sign} sit outside. Knowing which of the three a unit falls into is what
-keeps the surface honest.
+TWAI, LEDC, RMT, and MCPWM timing math. Third, code whose \emph{shape} is wrong rather than its content: a SPARK function may not
+have out parameters, which is why \lstinline{Public_Key}, \lstinline{ECDH} and
+\lstinline{Sign} sit outside --- and in \lstinline{Sign}'s case not the only why, since its
+body also calls SPARKNaCl's HMAC-SHA-256, which puts it in the first category as well.
+Knowing which of the three a unit falls into is what keeps the surface honest.
 
 That third category used to name something else, and the replacement is the more
-instructive story. It read: the P-256 signature check is legal SPARK and the tool runs,
-but proving it does not converge under a long budget --- a dedicated, lemma-level effort
-rather than a harvest. The diagnosis was wrong. What defeated it was not the elliptic-curve
-mathematics but \emph{inlining}: GNATprove inlines a call to a local subprogram that
-carries no contract, and \lstinline{Verify} calls \lstinline{Scalar_Mul} twice, which
-loops 256 times over \lstinline{Dbl} and \lstinline{Add}, which call \lstinline{Mont_Mul},
-whose CIOS body is itself two nested loops. Unfolded into one verification condition that
-is hopeless, and no amount of lemma work on the modular arithmetic would have helped,
-because the arithmetic was never the obstacle.
+instructive story. It read, in full: ``the P-256 signature check is legal SPARK and the
+tool runs, but proving it pulls in the entire vendored SPARKNaCl elliptic-curve contract
+closure, which did not converge under a long budget --- a dedicated, lemma-level effort
+rather than a harvest.'' Two claims, and both were wrong. SPARKNaCl was not being pulled
+in: it is named only by the RFC-6979 signing glue, which is outside the subset, and the
+proof never reaches it. And what defeated the analysis was not elliptic-curve mathematics
+but \emph{inlining}: GNATprove inlines a call to a local subprogram that carries no
+contract, and \lstinline{Verify} calls \lstinline{Scalar_Mul} twice, which loops 256 times
+over \lstinline{Dbl} and \lstinline{Add}, which call \lstinline{Mont_Mul}, whose CIOS body
+is itself two nested loops. Unfolded into one verification condition that is hopeless, and
+no amount of lemma work on the modular arithmetic would have helped, because the
+arithmetic was never the obstacle. A wrong diagnosis is worth quoting exactly, because the
+cost of this one was not the effort it predicted --- it was the years it would have
+deferred.
 
-The fix is to stop the unfolding, and the weakest thing that does it is enough: any
-contract at all makes a call opaque, so the callee is proved once on its own and the
-caller reasons from its contract. Each primitive got \lstinline{Global => null} --- a
-statement that is simply true, since they are pure functions of their arguments, and one
-SPARK checks rather than takes on trust. \lstinline{Verify} and \lstinline{On_Curve} are
-now proved, and the unit proves in \emph{less} time than it did with them excluded
-altogether: 144 obligations in 2m33s, against 210 in 3m03s before, because inlining had
-been re-proving the same callee body at every call site. The lesson generalises past this
-unit --- when a proof will not converge, ask what the prover was handed before assuming
-the difficulty is real.
+The fix is to stop the unfolding, and there are two levers for that. The blunt one is
+\texttt{gnatprove --no-inlining}, which switches contextual analysis off for the whole run:
+on the untouched source, with nothing but the two \lstinline{SPARK_Mode => Off} aspects
+removed, that alone proves the unit --- 95 obligations, none unproved, in 2m34s. It is
+worth knowing that a single switch was ever all it took. The lever this SDK actually
+ships is the other one: any contract at all makes a call opaque, so each primitive got
+\lstinline{Global => null} --- a statement that is simply true, since they are pure
+functions of their arguments, and one SPARK checks rather than takes on trust. That costs
+more obligations than the switch (144 against 95) and buys durability: a contract travels
+with the source, so the unit proves under any project and any invocation, including the
+cross \lstinline{tls.gpr}, while a switch has to be remembered by whoever runs the tool
+next.
+
+Either way \lstinline{Verify} and \lstinline{On_Curve} are now proved, and the unit proves
+in \emph{less} time than it did with them excluded altogether: 144 obligations in 2m33s,
+against 210 in 3m03s before, because inlining had been re-proving the same callee body at
+every call site. Two cautions on reading that number. It is \emph{absence of run-time
+errors} and nothing more --- the proof says \lstinline{Verify} cannot overflow or run off
+an array on any input an attacker chooses, not that it accepts exactly the valid
+signatures, which is what the known-answer test is for. And of the contracts added, only
+the \lstinline{Global} aspects do the proof any work: the pre- and postconditions on
+\lstinline{Inv32}, \lstinline{Inv_Mod}, \lstinline{Is_Zero}, \lstinline{"="} and
+\lstinline{Geq} discharge nothing in \lstinline{Verify} and were kept as checked
+documentation, not as load-bearing structure. The lesson generalises past this unit ---
+when a proof will not converge, ask what the prover was handed before assuming the
+difficulty is real.
 
 \section{Running the proofs}\index{book!prove}
 
