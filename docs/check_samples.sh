@@ -41,6 +41,16 @@ fi
 
 [ -d "$RTS" ] || fail "no embedded runtime at $RTS -- build an embedded example once (e.g. ./x build i2c_loopback)"
 
+# The HAL scopes its runtime profiles by SOURCE DIRECTORY (src/peripherals,
+# src/net, ...; see libs/esp32s3_hal/esp32s3_hal.gpr), so collect the include
+# flags from the tree rather than naming directories here -- a new one is picked
+# up with no edit.  -gnatc only needs to FIND the specs, so every directory is
+# on the path regardless of which profile would really compile it.
+HAL_INCLUDES=""
+while IFS= read -r d; do HAL_INCLUDES="$HAL_INCLUDES -I$d"; done <<EOF
+$(find "$HAL/src" "$HAL/svd" -type d | sort)
+EOF
+
 # ---- pass 1: compile every sample -------------------------------------------
 echo "== compiling docs/samples against the embedded runtime =="
 WORK="$(mktemp -d)"
@@ -53,7 +63,7 @@ for f in "$WORK"/*.adb "$WORK"/*.ads; do
     base="$(basename "$f")"
     #  A spec with a matching body is compiled via the body.
     if [ "${base##*.}" = "ads" ] && [ -e "${f%.ads}.adb" ]; then continue; fi
-    if out=$("$GCC" -c -gnatc --RTS="$RTS" -I"$WORK" -I"$HAL/src" -I"$HAL/svd" "$f" 2>&1); then
+    if out=$("$GCC" -c -gnatc --RTS="$RTS" -I"$WORK" $HAL_INCLUDES "$f" 2>&1); then
         printf '  ok    %s\n' "$base"
     else
         printf '  ERROR %s\n%s\n' "$base" "$out"
@@ -68,6 +78,18 @@ python3 - "$SITE" "$HAL" <<'PY' || exit 1
 import sys, os
 
 here, hal = sys.argv[1], sys.argv[2]
+
+
+def find_spec(hal, name):
+    """Locate a HAL spec by file name, wherever under src/ it now lives.
+
+    The HAL splits src/ into per-profile directories (peripherals/, devices/,
+    net/, ...), so the manifest below names specs, not paths -- moving a driver
+    between those directories must not break this check."""
+    for root, _dirs, files in os.walk(os.path.join(hal, "src")):
+        if name in files:
+            return os.path.join(root, name)
+    raise SystemExit("check_samples: no such HAL spec: %s" % name)
 
 #  An explicit manifest, deliberately: scraping identifiers out of the HTML
 #  drags in Ada keywords, project-file attributes, names from OTHER packages and
@@ -109,7 +131,7 @@ for page, specs, names in MANIFEST:
         bad.append("%s is missing -- regenerate with build.py" % page)
         continue
     html = open(page_path).read()
-    spec_src = "".join(open(os.path.join(hal, "src", s)).read() for s in specs)
+    spec_src = "".join(open(find_spec(hal, s)).read() for s in specs)
     for n in names.split():
         if n not in spec_src:
             bad.append("%s documents '%s', which no longer exists in %s"

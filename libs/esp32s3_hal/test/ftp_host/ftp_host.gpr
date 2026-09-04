@@ -4,7 +4,7 @@
 --  project source -- the whitelist below leaves it out), so the protocol logic can
 --  be exercised end to end against a local Python FTP server.  See run.sh.
 project FTP_Host is
-   for Source_Dirs use (".", "../../src");
+   for Source_Dirs use (".", "../../src/**");
    for Object_Dir use "obj";
    for Exec_Dir use ".";
    for Main use ("ftp_host.adb", "ftp_real.adb", "ftp_big.adb");

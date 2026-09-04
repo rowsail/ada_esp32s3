@@ -8,6 +8,27 @@ svd/   GENERATED register layer  -> ESP32S3_Registers.*   (svd2ada; do not hand-
 src/   hand-written drivers      -> ESP32S3.*             (the HAL API you use)
 ```
 
+`src/` is split into subdirectories, and the split is **load-bearing**: it is how
+a runtime profile decides which drivers it can see. `light-tasking` compiles
+`src/` alone; `embedded` and `full` compile `src/**`.
+
+| directory | what belongs there |
+|---|---|
+| `src/` | lock-free, `Preelaborate`, no finalization / secondary stack: GPIO, RNG, Temperature, SHA/AES/RSA/MD5, RTC, SDMMC, X509, strings/endian helpers |
+| `src/peripherals/` | on-chip drivers with an RAII `Session`/`Channel` handle: SPI, I2C, UART, GDMA, I2S, LEDC, RMT, PCNT, SDM, MCPWM, TWAI, Timer, LCD, ADC |
+| `src/devices/` | off-chip parts reached over those: ST7789, GT911, ES8311, W25Q, SD_SPI, TLV2556, TX1812, SHT41, QMI8658C, PCF85063A, TCA9555, CH422G, HC595, GPS |
+| `src/net/` | `Net_Devices` + the W5500 NIC, the `GNAT.Sockets` facade, and everything on it: DNS, NTP, FTP client/server, Modbus |
+| `src/ext4/` `src/fat16/` | the pure-Ada filesystems and the block-device layer |
+| `src/eeprom/` `src/fram/` | the 24Cxx / FRAM device families |
+| `src/esp_loader/` `src/text_io/` | the ESP serial-bootloader client; `ESP32S3.Text_IO` |
+
+**Putting a new file in the wrong directory is caught, not silent:** `./x test
+lib` builds this library on all three profiles, and CI runs it. (This replaced a
+~130-entry `Excluded_Source_Files` blacklist in the `.gpr`, under which a new
+driver was *in* the light-tasking build until somebody remembered to exclude it
+— and which had drifted far enough that the library no longer built under its
+own default profile.)
+
 - **`svd/`** — the full set of ESP32-S3 register-map packages (`ESP32S3_Registers`,
   `ESP32S3_Registers.GPIO`, `ESP32S3_Registers.IO_MUX`, … all ~46 peripherals),
   generated from a CMSIS-SVD file by `svd2ada` and committed. Typed bit-field
@@ -783,11 +804,17 @@ cost — and under the exception-capable profiles `-gnata` enforces it at run ti
 
 ## Adding the next peripheral (LCD_CAM camera / …)
 1. The registers are already in `svd/` (full layer generated).
-2. Add `ESP32S3.<Peri>` (spec + body) under `src/`, `with`-ing
-   `ESP32S3_Registers.<Peri>`; keep it `Preelaborate` / ZFP-safe (look at
-   `esp32s3-gpio.adb` for the read-modify-write + atomic-W1TS idiom).
+2. Add `ESP32S3.<Peri>` (spec + body) **in the right `src/` subdirectory** — see
+   the table at the top. `src/` itself only if the driver is lock-free and
+   `Preelaborate` (no finalization, exceptions or secondary stack), because
+   that is what `light-tasking` compiles; `src/peripherals/` if it hands out an
+   RAII handle. `with` `ESP32S3_Registers.<Peri>` and look at `esp32s3-gpio.adb`
+   for the read-modify-write + atomic-W1TS idiom.
 3. Consumers already have the `Source_Dirs`; they just `with ESP32S3.<Peri>`.
-4. Only re-run `regenerate.sh` if the SVD or svd2ada options change.
+4. `./x test lib` — it builds this library on every profile, so a driver in the
+   wrong directory fails there rather than in somebody's light-tasking app.
+   Warnings are failures: the HAL is clean under `-gnatwa`, keep it that way.
+5. Only re-run `regenerate.sh` if the SVD or svd2ada options change.
 
 ## Regeneration
 `./regenerate.sh` fetches the ESP32-S3 SVD from the official **espressif/svd**

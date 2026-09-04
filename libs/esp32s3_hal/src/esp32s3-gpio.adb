@@ -4,8 +4,6 @@
 --  OUT/ENABLE/IN banks with their atomic W1TS/W1TC set/clear. Pins 0..31 use the
 --  32-bit banks; pins 32..48 use the "*1" banks -- the split is hidden here.
 with ESP32S3_Registers; use ESP32S3_Registers;
-with ESP32S3_Registers.GPIO;
-with ESP32S3_Registers.IO_MUX;
 
 package body ESP32S3.GPIO is
 

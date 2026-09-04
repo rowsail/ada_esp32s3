@@ -1,0 +1,696 @@
+with ESP32S3_Registers;     use ESP32S3_Registers;
+with ESP32S3_Registers.I2S; use ESP32S3_Registers.I2S;
+with ESP32S3_Registers.I2S1;
+with ESP32S3_Registers.GPIO;
+with ESP32S3_Registers.SYSTEM;
+
+package body ESP32S3.I2S.Engine is
+
+   package GD renames ESP32S3.GDMA;            --  the DMA engine we consume
+   package GR renames ESP32S3_Registers.GPIO;  --  GPIO matrix register layer
+
+   Src_Hz : constant := 160_000_000;           --  CLK160 (PLL) I2S source clock
+
+   --  I2S1 register block overlaid with the I2S0 layout (the two svd peripheral
+   --  types are distinct but bit-identical), so one Periph_Ref drives either.
+   I2S1_As0 : aliased ESP32S3_Registers.I2S.I2S0_Peripheral
+   with Import, Volatile, Address => ESP32S3_Registers.I2S1.I2S1_Periph'Address;
+
+   function Regs_Of (Port : I2S_Port) return Periph_Ref
+   is (case Port is
+         when I2S0 => I2S0_Periph'Access,
+         when I2S1 => I2S1_As0'Access);
+
+   function GDMA_Periph (Port : I2S_Port) return GD.Peripheral
+   is (case Port is
+         when I2S0 => GD.I2S0,
+         when I2S1 => GD.I2S1);
+
+   --  GPIO-matrix signal indices (gpio_sig_map, ESP32-S3).  Output and input
+   --  share an index space, so SD_OUT and SD_IN are the same number.
+   type Sig is record
+      Bck_Out, Ws_Out, Sd_Out, Bck_In, Ws_In, Sd_In : Natural;
+      Mck_Out                                       :
+        Natural;          --  I2S master-clock output (0 => unsupported)
+   end record;
+
+   --  ESP32-S3 GPIO-matrix signal indices (gpio_sig_map.h).  I2S0_MCLK_OUT = 23
+   --  (sits between BCK_OUT=22 and WS_OUT=24); the I2S1 MCLK index is not used
+   --  here, so it is left 0 (Configure_Pins then skips routing it).
+   function Signals (Port : I2S_Port) return Sig
+   is (case Port is
+         when I2S0 =>
+           (Bck_Out => 22,
+            Ws_Out  => 24,
+            Sd_Out  => 25,
+            Bck_In  => 26,
+            Ws_In   => 27,
+            Sd_In   => 25,
+            Mck_Out => 23),
+         when I2S1 =>
+           (Bck_Out => 28,
+            Ws_Out  => 29,
+            Sd_Out  => 30,
+            Bck_In  => 31,
+            Ws_In   => 32,
+            Sd_In   => 30,
+            Mck_Out => 0));
+
+   function Data_Bits (Bits : Sample_Bits) return Natural
+   is (case Bits is
+         when Bits_8  => 8,
+         when Bits_16 => 16,
+         when Bits_24 => 24,
+         when Bits_32 => 32);
+
+   procedure Drive_Out (Pad : ESP32S3.GPIO.Pin_Id; Signal : Natural) is
+      Pad_Index : constant Natural := Natural (Pad);
+      Out_Cfg   : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index);
+   begin
+      ESP32S3.GPIO.Configure
+        (Pad, Mode => ESP32S3.GPIO.Output, Drive => ESP32S3.GPIO.Drive_Strong);
+      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Signal);
+      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index) := Out_Cfg;
+   end Drive_Out;
+
+   procedure Route_In (Signal : Natural; Pad : ESP32S3.GPIO.Pin_Id; As_Input : Boolean) is
+   begin
+      if As_Input then
+         ESP32S3.GPIO.Configure (Pad, Mode => ESP32S3.GPIO.Input);
+      end if;
+      GR.GPIO_Periph.FUNC_IN_SEL_CFG (Signal) :=
+        (IN_SEL => GR.FUNC_IN_SEL_CFG_IN_SEL_Field (Natural (Pad)), SEL => True, others => <>);
+   end Route_In;
+
+   ----------
+   -- Open --
+   ----------
+
+   procedure Open
+     (B : in out Bus; Port : I2S_Port; Sample_Rate : Positive; Bits : Sample_Bits; Mode : I2S_Mode)
+   is
+      use ESP32S3_Registers.SYSTEM;
+      Regs     : constant Periph_Ref := Regs_Of (Port);
+      DB       : constant Natural := Data_Bits (Bits);   --  data bits per sample
+      Is_PDM   : constant Boolean := Mode = ESP32S3.I2S.PDM;
+      --  Bit-clocks per audio-sample period.  Standard TDM: Bits per slot x two
+      --  slots (stereo).  PDM: the serial stream runs at 64x the sample rate (the
+      --  sigma-delta OSR) times the 2x ratio between the TX up-sampler (fp/fs =
+      --  960/480) and the RX decimator (DSR = 128); locked to one shared clock,
+      --  TX up and RX down net to unity.
+      Frame    : constant Natural := (if Is_PDM then 128 else DB * 2);
+      Bclk     : constant Natural := Sample_Rate * Frame;  --  serial bit clock
+      Bck_Div  : constant Natural := 8;                    --  BCK divider
+      Clkm_Div : constant Natural :=                       --  CLKM divider
+        Natural'Max (2, Natural'Min (255, (Src_Hz + (Bclk * Bck_Div) / 2) / (Bclk * Bck_Div)));
+   begin
+      --  Re-opening a port that is mid-continuous-transmit (Reconfigure while
+      --  streaming) must first halt TX and release its held GDMA channel -- the
+      --  reset below would otherwise clear B.Streaming with the channel (and its
+      --  running OUT-DMA) still held, leaking both (Stop then gates out).
+      if B.Valid and then B.Streaming then
+         Stop (B);
+      end if;
+      if B.Valid and then B.Capturing then
+         Stop_Capture (B);
+      end if;
+
+      --  Module clock-gate + reset pulse.
+      case Port is
+         when I2S0 =>
+            SYSTEM_Periph.PERIP_CLK_EN0.I2S0_CLK_EN := True;
+            SYSTEM_Periph.PERIP_RST_EN0.I2S0_RST := True;
+            SYSTEM_Periph.PERIP_RST_EN0.I2S0_RST := False;
+
+         when I2S1 =>
+            SYSTEM_Periph.PERIP_CLK_EN0.I2S1_CLK_EN := True;
+            SYSTEM_Periph.PERIP_RST_EN0.I2S1_RST := True;
+            SYSTEM_Periph.PERIP_RST_EN0.I2S1_RST := False;
+      end case;
+
+      --  Clock module: source = CLK160 (sel 2), integer divide by Clkm_Div, gate on.
+      Regs.TX_CLKM_DIV_CONF :=
+        (TX_CLKM_DIV_X   => 0,
+         TX_CLKM_DIV_Y   => 0,
+         TX_CLKM_DIV_Z   => 0,
+         TX_CLKM_DIV_YN1 => False,
+         others          => <>);
+      Regs.RX_CLKM_DIV_CONF :=
+        (RX_CLKM_DIV_X   => 0,
+         RX_CLKM_DIV_Y   => 0,
+         RX_CLKM_DIV_Z   => 0,
+         RX_CLKM_DIV_YN1 => False,
+         others          => <>);
+      Regs.TX_CLKM_CONF :=
+        (TX_CLKM_DIV_NUM => TX_CLKM_CONF_TX_CLKM_DIV_NUM_Field (Clkm_Div),
+         TX_CLK_SEL      => 2,
+         TX_CLK_ACTIVE   => True,
+         CLK_EN          => True,
+         others          => <>);
+      Regs.RX_CLKM_CONF :=
+        (RX_CLKM_DIV_NUM => RX_CLKM_CONF_RX_CLKM_DIV_NUM_Field (Clkm_Div),
+         RX_CLK_SEL      => 2,
+         RX_CLK_ACTIVE   => True,
+         others          => <>);
+
+      --  Slot format: stereo TDM, BCK divider Bck_Div, Philips (1-bit MSB shift).
+      Regs.TX_CONF1 :=
+        (TX_BCK_DIV_NUM      => TX_CONF1_TX_BCK_DIV_NUM_Field (Bck_Div - 1),
+         TX_BITS_MOD         => TX_CONF1_TX_BITS_MOD_Field (DB - 1),
+         TX_TDM_CHAN_BITS    => TX_CONF1_TX_TDM_CHAN_BITS_Field (DB - 1),
+         TX_TDM_WS_WIDTH     => TX_CONF1_TX_TDM_WS_WIDTH_Field (DB - 1),
+         TX_HALF_SAMPLE_BITS => TX_CONF1_TX_HALF_SAMPLE_BITS_Field (DB - 1),
+         TX_MSB_SHIFT        => True,
+         TX_BCK_NO_DLY       => False,
+         others              => <>);
+      Regs.RX_CONF1 :=
+        (RX_BCK_DIV_NUM      => RX_CONF1_RX_BCK_DIV_NUM_Field (Bck_Div - 1),
+         RX_BITS_MOD         => RX_CONF1_RX_BITS_MOD_Field (DB - 1),
+         RX_TDM_CHAN_BITS    => RX_CONF1_RX_TDM_CHAN_BITS_Field (DB - 1),
+         RX_TDM_WS_WIDTH     => RX_CONF1_RX_TDM_WS_WIDTH_Field (DB - 1),
+         RX_HALF_SAMPLE_BITS => RX_CONF1_RX_HALF_SAMPLE_BITS_Field (DB - 1),
+         RX_MSB_SHIFT        => True,
+         others              => <>);
+
+      --  Two TDM slots, both active.
+      Regs.TX_TDM_CTRL :=
+        (TX_TDM_TOT_CHAN_NUM => 1, TX_TDM_CHAN0_EN => True, TX_TDM_CHAN1_EN => True, others => <>);
+      Regs.RX_TDM_CTRL :=
+        (RX_TDM_TOT_CHAN_NUM => 1,
+         RX_TDM_PDM_CHAN0_EN => True,
+         RX_TDM_PDM_CHAN1_EN => True,
+         others              => <>);
+
+      --  TX = master, RX = slave.  SIG_LOOPBACK makes TX and RX share WS+BCK
+      --  internally (full-duplex master / self-test).
+      if Is_PDM then
+         --  PCM -> PDM up-converter on TX (sigma-delta); the record defaults
+         --  (OSR2 = 2, dither on, unity shifts) are the usual settings, and
+         --  TX_PCM2PDM_CONF1's reset fp/fs = 960/480 give the 2x up-sample.
+         Regs.TX_PCM2PDM_CONF := (PCM2PDM_CONV_EN => True, others => <>);
+         --  PDM is used with real external devices, so NO SIG_LOOPBACK -- the
+         --  receiver must read the actual data pad, not the TX side internally.
+         --  In PDM the RECEIVER owns the clock (it clocks the mic), so RX masters
+         --  and TX follows -- the reverse of the TDM roles, where TX masters.
+         Regs.TX_CONF :=
+           (TX_PDM_EN     => True,
+            TX_TDM_EN     => False,
+            TX_SLAVE_MOD  => True,
+            TX_MONO       => False,
+            TX_STOP_EN    => True,
+            TX_PCM_BYPASS => True,
+            SIG_LOOPBACK  => False,
+            others        => <>);
+         --  PDM -> PCM down-converter on RX; DSR_16_EN selects the 128 (2x)
+         --  decimation that matches the TX up-sample.
+         Regs.RX_CONF :=
+           (RX_PDM_EN             => True,
+            RX_PDM2PCM_EN         => True,
+            RX_PDM_SINC_DSR_16_EN => True,
+            RX_TDM_EN             => False,
+            RX_SLAVE_MOD          => False,
+            RX_MONO               => False,
+            RX_PCM_BYPASS         => True,
+            others                => <>);
+      else
+         --  Both TDM (standard I2S), no PDM.  TX masters the clock pads; RX
+         --  slaves off the matrix input signals, which Configure_Pins feeds
+         --  from those same pads -- so external capture (a codec ADC on Din)
+         --  samples on the true on-wire clock.  SIG_LOOPBACK stays OFF here
+         --  (with it on, RX reads the TX serial output internally and never
+         --  sees the pad); Enable_Loopback turns it on for the self-test loop.
+         Regs.TX_CONF :=
+           (TX_TDM_EN     => True,
+            TX_PDM_EN     => False,
+            TX_SLAVE_MOD  => False,
+            TX_MONO       => False,
+            TX_STOP_EN    => True,
+            TX_PCM_BYPASS => True,
+            SIG_LOOPBACK  => False,
+            others        => <>);
+         Regs.RX_CONF :=
+           (RX_TDM_EN     => True,
+            RX_PDM_EN     => False,
+            RX_SLAVE_MOD  => True,
+            RX_MONO       => False,
+            RX_PCM_BYPASS => True,
+            others        => <>);
+      end if;
+
+      --  Reset both data paths, then latch the config.  No DMA channel is
+      --  claimed here: transfers claim one transiently (a continuous transmit
+      --  holds one only until Stop), so an idle open port ties up none of the
+      --  five-channel pool.
+      Regs.TX_CONF.TX_RESET := True;
+      Regs.TX_CONF.TX_RESET := False;
+      Regs.TX_CONF.TX_FIFO_RESET := True;
+      Regs.TX_CONF.TX_FIFO_RESET := False;
+      Regs.RX_CONF.RX_RESET := True;
+      Regs.RX_CONF.RX_RESET := False;
+      Regs.RX_CONF.RX_FIFO_RESET := True;
+      Regs.RX_CONF.RX_FIFO_RESET := False;
+      --  Bounded latch waits: RX_UPDATE/TX_UPDATE do not always self-clear while
+      --  a continuous transfer drives the shared clock (see Capture), so never
+      --  spin unbounded here -- a Read/Transfer issued during Start_Continuous
+      --  would otherwise hang the task forever.
+      Regs.TX_CONF.TX_UPDATE := True;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.TX_CONF.TX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+      Regs.RX_CONF.RX_UPDATE := True;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.RX_CONF.RX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+
+      B.Regs := Regs;
+      B.Port := Port;
+      B.Streaming := False;
+      B.Capturing := False;
+      B.Valid := True;
+   end Open;
+
+   function Is_Open (B : Bus) return Boolean
+   is (B.Valid);
+
+   --------------------
+   -- Configure_Pins --
+   --------------------
+
+   procedure Configure_Pins
+     (B    : Bus;
+      Bclk : ESP32S3.GPIO.Optional_Pin;
+      Ws   : ESP32S3.GPIO.Optional_Pin;
+      Dout : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Din  : ESP32S3.GPIO.Optional_Pin := No_Pin;
+      Mclk : ESP32S3.GPIO.Optional_Pin := No_Pin)
+   is
+      use type ESP32S3.GPIO.Pad_Number;
+      Host_Sigs : constant Sig := Signals (B.Port);
+   begin
+      if not B.Valid then
+         return;
+      end if;
+      if Mclk /= No_Pin and then Host_Sigs.Mck_Out /= 0 then
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Mclk), Host_Sigs.Mck_Out);   --  master clock out
+
+      end if;
+      if Bclk /= No_Pin then
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Bclk), Host_Sigs.Bck_Out);
+      end if;
+      if Ws /= No_Pin then
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Ws), Host_Sigs.Ws_Out);
+      end if;
+      if Dout /= No_Pin then
+         Drive_Out (ESP32S3.GPIO.Pin_Id (Dout), Host_Sigs.Sd_Out);
+      end if;
+      if Din /= No_Pin then
+         Route_In (Host_Sigs.Sd_In, ESP32S3.GPIO.Pin_Id (Din), As_Input => True);
+         --  The RX block runs as a SLAVE (see Open), so it takes its bit and
+         --  word clocks from the matrix INPUT signals -- feed them from the very
+         --  pads the TX master drives, so RX samples on the true on-wire clock.
+         --  (Without this, slave RX has no clock at all and external capture
+         --  never completes; the internal loopback only worked because
+         --  SIG_LOOPBACK bypasses the matrix.)  As_Input False: the pads stay
+         --  output-driven and the matrix reads them back.
+         if Bclk /= No_Pin then
+            Route_In
+              (Host_Sigs.Bck_In, ESP32S3.GPIO.Pin_Id (Bclk), As_Input => False);
+         end if;
+         if Ws /= No_Pin then
+            Route_In
+              (Host_Sigs.Ws_In, ESP32S3.GPIO.Pin_Id (Ws), As_Input => False);
+         end if;
+      end if;
+   end Configure_Pins;
+
+   ---------------------
+   -- Enable_Loopback --
+   ---------------------
+
+   procedure Enable_Loopback (B : Bus; Pad : ESP32S3.GPIO.Pin_Id) is
+      Host_Sigs : constant Sig := Signals (B.Port);
+   begin
+      if not B.Valid then
+         return;
+      end if;
+      --  Turn on the internal self-test loop: SIG_LOOPBACK shares the TX
+      --  clock/WS with RX internally (Open leaves it OFF so ordinary capture
+      --  reads the real pads).  Re-latch both directions so it takes effect.
+      B.Regs.TX_CONF.SIG_LOOPBACK := True;
+      B.Regs.TX_CONF.TX_UPDATE := True;
+      B.Regs.RX_CONF.RX_UPDATE := True;
+      declare
+         Guard : Natural := 0;
+      begin
+         while (B.Regs.TX_CONF.TX_UPDATE or else B.Regs.RX_CONF.RX_UPDATE)
+           and then Guard < 100_000
+         loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+      --  Data-out on Pad, fed back into data-in (the clocks are shared
+      --  internally, so no clock pad is needed).
+      Drive_Out (Pad, Host_Sigs.Sd_Out);
+      Route_In (Host_Sigs.Sd_In, Pad, As_Input => False);
+   end Enable_Loopback;
+
+   ---------
+   -- Run --
+   ---------
+
+   --  Shared TX/RX engine.  Arms whichever directions are requested, kicks the
+   --  module, and blocks on the DMA EOF (RX if reading, else TX).
+   procedure Run (B : Bus; Tx, Rx : System.Address; Length : Natural; Do_Tx, Do_Rx : Boolean) is
+      Regs : constant Periph_Ref := B.Regs;
+      Chan : GD.Channel;          --  claimed transiently; released on return
+   begin
+      if not B.Valid or else Length = 0 or else Length > 4095 then
+         return;
+      end if;
+      GD.Claim (Chan, GDMA_Periph (B.Port));
+      if not GD.Is_Valid (Chan) then
+         --  pool momentarily exhausted
+         return;
+      end if;
+      --  Unbind the unused direction(s): only one channel may serve a
+      --  peripheral per direction, and an idle binding shadows the active one.
+      if not Do_Tx then
+         GD.Unbind (Chan, GD.Mem_To_Periph);
+      end if;
+      if not Do_Rx then
+         GD.Unbind (Chan, GD.Periph_To_Mem);
+      end if;
+
+      if Do_Tx then
+         Regs.TX_CONF.TX_FIFO_RESET := True;
+         Regs.TX_CONF.TX_FIFO_RESET := False;
+         GD.Start (Chan, GD.Mem_To_Periph, Tx, Length);
+      end if;
+      if Do_Rx then
+         Regs.RX_CONF.RX_FIFO_RESET := True;
+         Regs.RX_CONF.RX_FIFO_RESET := False;
+         Regs.RXEOF_NUM.RX_EOF_NUM := RXEOF_NUM_RX_EOF_NUM_Field (Length);
+         GD.Start (Chan, GD.Periph_To_Mem, Rx, Length);
+      end if;
+
+      --  Bounded latch waits: RX_UPDATE/TX_UPDATE do not always self-clear while
+      --  a continuous transfer drives the shared clock (see Capture), so never
+      --  spin unbounded here -- a Read/Transfer issued during Start_Continuous
+      --  would otherwise hang the task forever.
+      Regs.TX_CONF.TX_UPDATE := True;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.TX_CONF.TX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+      Regs.RX_CONF.RX_UPDATE := True;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.RX_CONF.RX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+
+      if Do_Rx then
+         Regs.RX_CONF.RX_START := True;
+      end if;
+      if Do_Tx then
+         Regs.TX_CONF.TX_START := True;
+      end if;
+
+      if Do_Rx then
+         GD.Wait (Chan, GD.Periph_To_Mem);
+      else
+         GD.Wait (Chan, GD.Mem_To_Periph);
+      end if;
+
+      --  For a transmit, the DMA completing only means the samples reached the TX
+      --  FIFO -- the serializer has NOT yet clocked the last of them out onto the
+      --  bus.  Stopping TX now (below) truncates whatever is still in the FIFO, so
+      --  the tail of the sound is cut off.  Wait for STATE.TX_IDLE (FIFO drained,
+      --  serializer done) first.  Same unbounded-poll style as TX_UPDATE above;
+      --  it is bounded in practice because TX is running and the FIFO must empty.
+      if Do_Tx then
+         --  Bounded: in PDM/slave modes with no external clock the FIFO may never
+         --  drain, so cap the drain wait rather than hang.
+         declare
+            Guard : Natural := 0;
+         begin
+            while not Regs.STATE.TX_IDLE and then Guard < 1_000_000 loop
+               Guard := Guard + 1;
+            end loop;
+         end;
+      end if;
+
+      Regs.TX_CONF.TX_START := False;
+      Regs.RX_CONF.RX_START := False;
+   end Run;   --  Chan finalizes here -> GD.Release returns it to the pool
+
+   procedure Write (B : Bus; Tx : System.Address; Length : Natural) is
+   begin
+      Run (B, Tx, System.Null_Address, Length, Do_Tx => True, Do_Rx => False);
+   end Write;
+
+   procedure Read (B : Bus; Rx : System.Address; Length : Natural) is
+   begin
+      Run (B, System.Null_Address, Rx, Length, Do_Tx => False, Do_Rx => True);
+   end Read;
+
+   procedure Transfer (B : Bus; Tx, Rx : System.Address; Length : Natural) is
+   begin
+      Run (B, Tx, Rx, Length, Do_Tx => True, Do_Rx => True);
+   end Transfer;
+
+   ----------------------
+   -- Start_Continuous --
+   ----------------------
+
+   procedure Start_Continuous (B : in out Bus; Tx : System.Address; Length : Natural) is
+      Regs : constant Periph_Ref := B.Regs;
+   begin
+      if not B.Valid or else B.Streaming or else Length = 0 or else Length > 4095 then
+         return;
+      end if;
+
+      --  A continuous transmit holds its channel until Stop (it is genuinely
+      --  transferring the whole time), so claim it into the Bus rather than a
+      --  local.
+      GD.Claim (B.Chan, GDMA_Periph (B.Port));
+      if not GD.Is_Valid (B.Chan) then
+         return;
+      end if;
+      GD.Unbind (B.Chan, GD.Periph_To_Mem);   --  TX only: free the RX binding
+      B.Streaming := True;
+
+      --  Clear TX_STOP_EN so a momentary FIFO underrun can never latch TX off;
+      --  with the self-looping DMA the FIFO stays fed, so the clock runs
+      --  continuously and the waveform repeats with no gap.
+      Regs.TX_CONF.TX_STOP_EN := False;
+      Regs.TX_CONF.TX_FIFO_RESET := True;
+      Regs.TX_CONF.TX_FIFO_RESET := False;
+      GD.Start_Loop (B.Chan, Tx, Length);
+      Regs.TX_CONF.TX_UPDATE := True;
+      while Regs.TX_CONF.TX_UPDATE loop
+         null;
+      end loop;
+      Regs.TX_CONF.TX_START := True;
+   end Start_Continuous;
+
+   ------------------
+   -- Start_Stream --
+   ------------------
+
+   procedure Start_Stream (B : in out Bus; Tx : System.Address; Half_Length : Natural) is
+      Regs : constant Periph_Ref := B.Regs;
+   begin
+      if not B.Valid or else B.Streaming or else Half_Length = 0
+        or else Half_Length > 4095
+      then
+         return;
+      end if;
+
+      --  Same held-channel, continuously-clocked setup as Start_Continuous, but
+      --  the DMA loops TWO half-buffers and reports each half's completion.
+      GD.Claim (B.Chan, GDMA_Periph (B.Port));
+      if not GD.Is_Valid (B.Chan) then
+         return;
+      end if;
+      GD.Unbind (B.Chan, GD.Periph_To_Mem);   --  TX only: free the RX binding
+      B.Streaming := True;
+
+      Regs.TX_CONF.TX_STOP_EN := False;
+      Regs.TX_CONF.TX_FIFO_RESET := True;
+      Regs.TX_CONF.TX_FIFO_RESET := False;
+      GD.Start_Stream (B.Chan, Tx, Half_Length);
+      Regs.TX_CONF.TX_UPDATE := True;
+      while Regs.TX_CONF.TX_UPDATE loop
+         null;
+      end loop;
+      Regs.TX_CONF.TX_START := True;
+   end Start_Stream;
+
+   ----------------
+   -- Await_Half --
+   ----------------
+
+   function Await_Half (B : Bus) return ESP32S3.GDMA.Ring_Half is (GD.Await_Half (B.Chan));
+
+   ----------
+   -- Stop --
+   ----------
+
+   procedure Stop (B : in out Bus) is
+   begin
+      if B.Valid then
+         B.Regs.TX_CONF.TX_START := False;
+         if B.Streaming then
+            GD.Stop (B.Chan, GD.Mem_To_Periph);   --  halt the loop, clear its state
+            GD.Release (B.Chan);          --  return the held channel to the pool
+            B.Streaming := False;
+         end if;
+      end if;
+   end Stop;
+
+   --------------------------
+   -- Start_Capture_Stream --
+   --------------------------
+
+   procedure Start_Capture_Stream
+     (B : in out Bus; Rx : System.Address; Half_Length : Natural)
+   is
+      Regs : constant Periph_Ref := B.Regs;
+   begin
+      if not B.Valid or else B.Capturing or else Half_Length = 0
+        or else Half_Length > 4095
+      then
+         return;
+      end if;
+
+      --  Own channel, so a concurrent streaming transmit keeps its own; the RX
+      --  block slaves off the shared on-wire clock (Configure_Pins routed it).
+      GD.Claim (B.Cap_Chan, GDMA_Periph (B.Port));
+      if not GD.Is_Valid (B.Cap_Chan) then
+         return;
+      end if;
+      GD.Unbind (B.Cap_Chan, GD.Mem_To_Periph);   --  RX only: free the TX binding
+      B.Capturing := True;
+
+      Regs.RX_CONF.RX_FIFO_RESET := True;
+      Regs.RX_CONF.RX_FIFO_RESET := False;
+      Regs.RXEOF_NUM.RX_EOF_NUM := RXEOF_NUM_RX_EOF_NUM_Field (Half_Length);
+      GD.Start_In_Stream (B.Cap_Chan, Rx, Half_Length);
+      --  Bounded latch (RX_UPDATE does not always self-clear while the shared
+      --  clock is being driven by a continuous transmit).
+      Regs.RX_CONF.RX_UPDATE := True;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.RX_CONF.RX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+      Regs.RX_CONF.RX_START := True;
+   end Start_Capture_Stream;
+
+   function Await_Capture_Half (B : Bus) return ESP32S3.GDMA.Ring_Half
+   is (GD.Await_In_Half (B.Cap_Chan));
+
+   ------------------
+   -- Stop_Capture --
+   ------------------
+
+   procedure Stop_Capture (B : in out Bus) is
+   begin
+      if B.Valid and then B.Capturing then
+         B.Regs.RX_CONF.RX_START := False;
+         GD.Stop (B.Cap_Chan, GD.Periph_To_Mem);
+         GD.Release (B.Cap_Chan);
+         B.Capturing := False;
+      end if;
+   end Stop_Capture;
+
+   -------------
+   -- Capture --
+   -------------
+
+   --  RX-only blocking transfer.  Deliberately touches ONLY the RX path (no
+   --  TX_UPDATE / TX_START), so a continuous transmit driving the shared master
+   --  clock keeps running while we sample the data-in line.
+   procedure Capture (B : Bus; Rx : System.Address; Length : Natural) is
+      Regs : constant Periph_Ref := B.Regs;
+      Chan : GD.Channel;          --  own transient RX channel (a continuous TX
+      --  transmit, if any, holds a separate one)
+   begin
+      if not B.Valid or else Length = 0 or else Length > 4095 then
+         return;
+      end if;
+      GD.Claim (Chan, GDMA_Periph (B.Port));
+      if not GD.Is_Valid (Chan) then
+         return;
+      end if;
+      GD.Unbind (Chan, GD.Mem_To_Periph);     --  RX only: free the TX binding
+
+      Regs.RX_CONF.RX_FIFO_RESET := True;
+      Regs.RX_CONF.RX_FIFO_RESET := False;
+      Regs.RXEOF_NUM.RX_EOF_NUM := RXEOF_NUM_RX_EOF_NUM_Field (Length);
+      GD.Start (Chan, GD.Periph_To_Mem, Rx, Length);
+      --  Latch RX config.  Bounded: while a continuous TX is driving the shared
+      --  clock, RX_UPDATE does not always self-clear, so never spin on it.
+      Regs.RX_CONF.RX_UPDATE := True;
+      declare
+         Guard : Natural := 0;
+      begin
+         while Regs.RX_CONF.RX_UPDATE and then Guard < 100_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+      Regs.RX_CONF.RX_START := True;
+      --  Wait for the RX success-EOF.  A capture is clock-paced: Length bytes
+      --  take Length/(rate*frame_bytes) seconds (tens of ms), far longer than
+      --  GD.Wait's short guard -- which would return early on a half-filled
+      --  buffer.  Spin on Done with a generous bound so the buffer is complete.
+      declare
+         Guard : Natural := 0;
+      begin
+         while not GD.Done (Chan, GD.Periph_To_Mem) and then Guard < 50_000_000 loop
+            Guard := Guard + 1;
+         end loop;
+      end;
+      Regs.RX_CONF.RX_START := False;
+   end Capture;   --  Chan finalizes -> released
+
+   -----------
+   -- Close --
+   -----------
+
+   procedure Close (B : in out Bus) is
+   begin
+      if B.Valid then
+         B.Regs.TX_CONF.TX_START := False;
+         B.Regs.RX_CONF.RX_START := False;
+         if B.Streaming then
+            GD.Stop (B.Chan, GD.Mem_To_Periph);
+            GD.Release (B.Chan);
+            B.Streaming := False;
+         end if;
+         if B.Capturing then
+            GD.Stop (B.Cap_Chan, GD.Periph_To_Mem);
+            GD.Release (B.Cap_Chan);
+            B.Capturing := False;
+         end if;
+         B.Valid := False;
+      end if;
+   end Close;
+
+end ESP32S3.I2S.Engine;

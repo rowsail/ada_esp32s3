@@ -1,6 +1,15 @@
 with Interfaces;                   use Interfaces;
 with System.Machine_Code;          use System.Machine_Code;
+--  System.Atomic_Primitives is a GNAT-internal unit, and deliberately so: the
+--  EP1 guard below needs a real test-and-set, and the bare runtime provides no
+--  portable one.  Pinned by the recorded known-good toolchain in
+--  tools/sdk-env.sh -- if a compiler bump moves this unit, that note is the
+--  first place to look.
+pragma Warnings (Off, "*internal GNAT unit*");
+pragma Warnings (Off, "*use of this unit is non-portable*");
 with System.Atomic_Primitives;
+pragma Warnings (On, "*use of this unit is non-portable*");
+pragma Warnings (On, "*internal GNAT unit*");
 with ESP32S3_Registers;            use ESP32S3_Registers;
 with ESP32S3_Registers.USB_DEVICE; use ESP32S3_Registers.USB_DEVICE;
 

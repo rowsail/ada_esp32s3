@@ -23,7 +23,6 @@ package body ESP32S3.Ext4.Block_Cache is
       Addr      : out System.Address;
       Size      : Storage_Count;
       Alignment : Storage_Count) is
-      use type System.Address;
    begin
       if P.Base = System.Null_Address then
          Addr := C_Malloc (Interfaces.Unsigned_32 (Size));
@@ -50,7 +49,6 @@ package body ESP32S3.Ext4.Block_Cache is
       Size      : Storage_Count;
       Alignment : Storage_Count) is
       pragma Unreferenced (Size, Alignment);
-      use type System.Address;
    begin
       --  Caller storage is never freed; heap blocks are.
       if P.Base = System.Null_Address then
@@ -86,7 +84,6 @@ package body ESP32S3.Ext4.Block_Cache is
       Entries    : Positive := 32;
       Storage    : System.Address := System.Null_Address;
       Storage_Bytes : Natural := 0) is
-      use type System.Address;
       Need_Meta : constant Natural := Meta_Bytes (Entries);
       Need_Data : constant Natural := Entries * Block_Size;
    begin

@@ -1,5 +1,3 @@
-with Interfaces;                 use Interfaces;
-with ESP32S3.GPIO;
 with ESP32S3_Registers;          use ESP32S3_Registers;
 with ESP32S3_Registers.RTC_CNTL; use ESP32S3_Registers.RTC_CNTL;
 with ESP32S3_Registers.SENS;     use ESP32S3_Registers.SENS;
@@ -44,8 +42,7 @@ package body ESP32S3.Touch is
       --  Charge/discharge voltage + measurement timing; enable bias + clock.
       RTC_CNTL_Periph.TOUCH_CTRL1 :=
         (TOUCH_MEAS_NUM     => 16#1000#,
-         TOUCH_SLEEP_CYCLES => 16#100#,
-         others             => <>);
+         TOUCH_SLEEP_CYCLES => 16#100#);
       RTC_CNTL_Periph.TOUCH_CTRL2 :=
         (TOUCH_DREFH        => 3,
          TOUCH_DREFL        => 0,

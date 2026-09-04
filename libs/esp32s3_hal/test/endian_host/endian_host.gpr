@@ -2,7 +2,7 @@
 --  REAL package (it depends only on Interfaces, so it is host-portable) and
 --  checks it against arithmetic references.  No hardware.
 project Endian_Host is
-   for Source_Dirs use (".", "../../src");
+   for Source_Dirs use (".", "../../src/**");
    for Object_Dir use "obj";
    for Exec_Dir use ".";
    for Main use ("endian_check.adb");

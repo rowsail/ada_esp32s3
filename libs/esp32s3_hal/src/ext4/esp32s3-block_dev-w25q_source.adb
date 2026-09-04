@@ -7,7 +7,6 @@ package body ESP32S3.Block_Dev.W25Q_Source is
 
    package W25Q renames ESP32S3.W25Q;
    use type W25Q.Byte_Array;
-   use type W25Q.Address;
 
    Sector_Bytes : constant := Sector'Length;   --  512
 

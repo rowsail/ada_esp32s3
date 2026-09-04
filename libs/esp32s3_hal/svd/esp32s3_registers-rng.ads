@@ -18,7 +18,6 @@ pragma Style_Checks (Off);
 
 pragma Restrictions (No_Elaboration_Code);
 
-with System;
 
 package ESP32S3_Registers.RNG is
    pragma Preelaborate;

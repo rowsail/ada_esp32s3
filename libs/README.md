@@ -44,6 +44,14 @@ your `main`'s closure, so unused library code costs nothing in `app.bin`.
 3. That's it — **no build-script edits**. `export.sh` and `bare_build.sh` discover
    `libs/*/` automatically and put each on `GPR_PROJECT_PATH`, so projects can
    `with "<name>.gpr";` immediately (re-`source export.sh` in an existing shell).
+4. `./x test lib` picks the new library up automatically too. It builds every
+   `libs/*/<name>.gpr` on each profile the project supports — read from the
+   default of its own `external ("ESP32S3_RTS_PROFILE", ...)`, so the `.gpr`
+   above (defaulting to `light-tasking`) is claiming it works on all three;
+   default it to `"embedded"` if the library needs finalization, exceptions or
+   the secondary stack. **Warnings fail that build**, so prefer
+   `("-O2", "-g", "-gnatwa", "-gnatwJ", "-gnatw.V")` in its `Compiler` package
+   (what `esp32s3_hal.gpr` and `tls.gpr` use, and what their headers explain).
 
 The per-profile `Object_Dir` (`obj-<profile>`) keeps a library's objects separate
 across runtime profiles, since the same library is shared by many consumers.

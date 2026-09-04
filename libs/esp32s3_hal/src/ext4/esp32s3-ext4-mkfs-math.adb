@@ -1,9 +1,7 @@
-with Interfaces;
 
 package body ESP32S3.Ext4.Mkfs.Math
   with SPARK_Mode => On
 is
-   use type Interfaces.Unsigned_32;   --  U32 arithmetic/comparison operators
 
    --------------------
    -- Compute_Layout --

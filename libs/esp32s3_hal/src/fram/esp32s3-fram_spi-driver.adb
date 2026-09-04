@@ -16,7 +16,6 @@ package body ESP32S3.FRAM_SPI.Driver is
    --  bytes.  Everything moves through DMA-reachable internal-SRAM scratch (a
    --  caller buffer may be on the stack or in PSRAM, which GDMA cannot reach).
    Chunk_Max  : constant := 256;
-   Header_Max : constant := 4;
    Scratch_Length : constant :=
      ((Chunk_Max + ESP32S3.GDMA.DMA_Alignment - 1)
       / ESP32S3.GDMA.DMA_Alignment) * ESP32S3.GDMA.DMA_Alignment;
@@ -26,9 +25,15 @@ package body ESP32S3.FRAM_SPI.Driver is
    type Scratch_Set is array (SPI.SPI_Host) of DMA_Buffer (0 .. Scratch_Length - 1);
    Scratch_Tx : Scratch_Set := (others => (others => 0));
    Scratch_Rx : Scratch_Set := (others => (others => 0));
+   --  Written by the GDMA engine, never by Ada (see the SPI receive buffers in
+   --  the other SPI drivers): not a constant, despite never being assigned to
+   --  from Ada code.
+   pragma Warnings (Off, Scratch_Rx);
 
    --  All-zeros source for read clocking (read-only, so it may be shared).
-   Zero_Source : DMA_Buffer (0 .. Chunk_Max - 1) := (others => 0);
+   --  A constant, but still an object in .bss rather than a literal: GDMA
+   --  reads it, and it can only reach internal SRAM.
+   Zero_Source : constant DMA_Buffer (0 .. Chunk_Max - 1) := (others => 0);
 
    ---------------------------------------------------------------------------
    --  Framing helpers.
