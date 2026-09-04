@@ -97,3 +97,10 @@ These bind library APIs (`libs/`), which the examples then get to trust.
 - Build it: `./x build <name>` (and on its real profile if non-default).
 - If you touched an example with a README that quotes the console output, make
   sure the strings still match.
+- If you touched anything under `libs/`, run **`./x test`** — the host suites,
+  every library on every profile it supports, and a build of all the examples.
+  It is what CI runs, it needs no board, and **warnings are failures** there:
+  the HAL and `libs/tls` build clean under `-gnatwa` and stay that way. A new
+  driver also has to go in the right `libs/esp32s3_hal/src/` subdirectory (that
+  is how the runtime profiles are scoped — see the HAL's README); `./x test lib`
+  is what tells you if it does not.

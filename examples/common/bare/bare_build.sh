@@ -270,8 +270,16 @@ echo "[bare] 3/4  link -> app.elf"
 #  __heap_end; point them at the leftover-DRAM arena (--defsym below).  embedded/
 #  full instead call C malloc -> bare_heap.c and never reference these symbols, so
 #  defining them unconditionally is harmless for those profiles.
+#  --no-warn-rwx-segments: this image HAS a read-write-execute LOAD segment and
+#  must.  The bare boot runs with the S3's memory protection off (W^X off) --
+#  the Ada task-body trampolines need it, see the README -- and IRAM holds both
+#  code and the interrupt stacks, so the segment is genuinely RWX.  Recent
+#  binutils warns about that on every link of every example; left on it is 96
+#  lines of noise per full build, which is how a linker warning that DOES mean
+#  something gets scrolled past.
 $GCC -nostdlib -no-pie \
     -T "$VENDOR/memory.ld" -T "$VENDOR/sections.ld" -T "$VENDOR/rom_syms.ld" $EXTRA_LD_ARGS \
+    -Wl,--no-warn-rwx-segments \
     -Wl,-e,_start -Wl,-Map="$EX/app.map" \
     -Wl,--defsym=ada_env_main=$ADA_MAIN \
     -Wl,--defsym=__env_stack_size=$ENV_STACK_RESERVE \

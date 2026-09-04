@@ -209,6 +209,13 @@ limited-controlled RAII handle), so concurrent access from multiple tasks is saf
 by construction. Most drivers ship with a self-test under `examples/`; see
 [Testing status](#testing-status) for what has actually been run on silicon.
 
+Which drivers a build sees is decided **by source directory**, not by a list:
+`light-tasking` compiles `src/` alone (the lock-free, finalization-free core),
+while `embedded` and `full` compile `src/**`. A driver that needs a controlled
+RAII handle, exceptions or the secondary stack lives in a subdirectory
+light-tasking never looks in, so adding a file defaults to safe — and `./x test
+lib` builds the library on all three profiles to keep it that way.
+
 ## The pure-Ada ext4 filesystem
 
 [`libs/esp32s3_hal/src/ext4`](libs/esp32s3_hal/src/ext4) is a from-scratch
@@ -299,6 +306,19 @@ ESP32-S3 during development — re-verify on your hardware):
 > SDM, MCPWM, GP Timer (TIMG), ADC, capacitive Touch, RTC, RTC-IO, LCD (i80),
 > TWAI/CAN, SHA, AES.
 
+External devices with an **on-board example** but no automatic self-test — each
+needs the part wired up, and the example prints what it saw:
+
+> W5500 Ethernet, Wi-Fi (radio + software TCP/IP), W25Q SPI NOR, ST7789 and i80
+> panels, GT911 touch, ES8311 codec, TX1812 LED string, TLV2556 ADC, SHT41,
+> QMI8658C, PCF85063A, TCA9555, CH422G, HC595, M24C64 / 24Cxx EEPROM, FRAM,
+> NMEA GPS.
+
+Protocol libraries that ride on the network stack — **DNS, NTP, FTP (client and
+server), Modbus (master and slave), X.509, TLS 1.3** — are exercised by host
+suites against real servers (`./x test host`), and each has an on-board example;
+the host suite is the automatic part, the board example is not.
+
 Drivers and components that are **not hardware-verified** and need testing:
 
 | Component | State | What's needed |
@@ -309,6 +329,14 @@ Drivers and components that are **not hardware-verified** and need testing:
 | ext4 filesystem | host-verified vs `e2fsck` only | validate on-device over SD |
 | FAT16 filesystem | host-verified vs `dosfstools` only | validate on-device over SPI NOR |
 | ESP serial bootloader client | host-verified vs a simulated ROM only | validate against a real target over UART |
+
+### What CI checks on every push
+
+`./x test` — the same command you can run locally — and nothing in it needs a
+board: every library on every runtime profile it supports (**warnings are
+failures**), a build of all 96 examples, and the host suites. Hardware
+validation stays on the bench; CI's job is that the tree still builds and the
+portable logic still passes.
 
 ## ACATS conformance
 
@@ -334,6 +362,10 @@ repository.)
 
 - **`./x`** — the in-repo dispatcher (build/flash/monitor/new/debug). `./x list`
   shows every example and its profile.
+- **`./x test`** — everything checkable without a board, in one command: the
+  host suites, every library on every profile it supports (warnings fail the
+  build), and a build of all 96 examples. This is exactly what CI runs.
+  Narrow it with `./x test host`, `./x test lib`, `./x test examples`.
 - **`esp32-ada`** — after `source export.sh`, scaffold and build projects in any
   empty folder, no runtime source copied.
 - **VS Code** — first-class target: build tasks plus on-chip GDB debugging over
@@ -352,6 +384,15 @@ crates/
   xtensa-dynconfig/ the Xtensa core-config plugin the toolchain needs
 libs/
   esp32s3_hal/      the reusable peripheral HAL + the pure-Ada ext4/FAT16 filesystems
+    src/            lock-free / pure-logic core -- available on EVERY profile
+    src/peripherals/  on-chip drivers with an RAII Session/Channel handle
+    src/devices/      off-chip parts reached over those (sensors, panels, flash)
+    src/net/          Net_Devices + W5500, the GNAT.Sockets facade, DNS/NTP/FTP/Modbus
+    src/ext4/ fat16/ eeprom/ fram/ esp_loader/ text_io/
+    svd/            the svd2ada register layer (generated; see regenerate.sh)
+  tls/              pure-Ada TLS 1.3 + X.509 path validation
+  esp32s3_wifi/     the Wi-Fi driver (Ada, over Espressif's fetched PHY/MAC blobs)
+  esp32s3_simd/     vendored Xtensa PIE SIMD kernels
 examples/           the flashable examples (each owns its board.ads)
   common/bare/      the shared FreeRTOS-free boot (bootloader, start.S, vectors, glue)
 book/               the long-form guide (LaTeX sources + main.pdf)

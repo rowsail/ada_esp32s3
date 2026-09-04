@@ -17,6 +17,10 @@
 #    ./x run     <example> [-p PORT] [-P PROF]  build + flash + monitor
 #    ./x monitor [-p PORT]             open the serial console (115200)
 #    ./x clean   [<example>]           remove build artifacts (all if omitted)
+#    ./x test    [host|lib|examples]  everything checkable without a board:
+#                                     host suites, the libraries on all three
+#                                     runtime profiles (warnings are failures),
+#                                     and a build of every example
 #    ./x stack   <example> [--top N] [--run]   static stack analysis (per-frame +
 #                                      worst-case call chains); --run adds the
 #                                      runtime high-water mark over serial
@@ -622,6 +626,116 @@ cmd_mem () {
     ( cd "$ROOT" && ./x config "$(short "$e")" 2>/dev/null ) | sed 's/^/   /'
 }
 
+# -- test ---------------------------------------------------------------------
+# Everything that can be checked without a board, in one command.  There are
+# three kinds and they are all cheap; before this existed each lived only in its
+# own run.sh and nothing ran the set, which is how a broken example and a HAL
+# that would not build under its own default profile both survived in the tree.
+#
+#   ./x test            host suites + all three HAL profiles + every example
+#   ./x test host       just the native host suites (seconds; no cross compiler)
+#   ./x test lib        just the HAL/library builds, all three runtime profiles
+#   ./x test examples   just the examples
+#
+# Warnings are failures for the libraries: the HAL builds clean under -gnatwa
+# (see its .gpr), and that only stays true if something enforces it.  The
+# machine-generated register layer in svd/ is exempt -- it is not hand-written
+# and is already exempt from -gnatw.v for the same reason.
+cmd_test () {
+    local what="${1:-all}"
+    local failures=0 ran=0
+    local log; log="$(mktemp -d)"; trap 'rm -rf "$log"' RETURN
+
+    run_one () {   # $1 = label, rest = command
+        local label="$1"; shift
+        ran=$((ran + 1))
+        if "$@" > "$log/out" 2>&1; then
+            printf '  \033[32mok\033[0m    %s\n' "$label"
+        else
+            printf '  \033[31mFAIL\033[0m  %s\n' "$label"
+            sed 's/^/        /' "$log/out" | tail -20
+            failures=$((failures + 1))
+        fi
+    }
+
+    #  Host suites: every libs/*/test/*/run.sh, plus the bare-boot heap test.
+    if [ "$what" = all ] || [ "$what" = host ]; then
+        echo "== host test suites =="
+        local r
+        for r in $(find "$ROOT/libs" -path '*/test/*/run.sh' | sort) \
+                 "$ROOT/examples/common/bare/boot/test/run.sh"; do
+            [ -f "$r" ] || continue
+            run_one "$(echo "${r#$ROOT/}" | sed 's|/run.sh$||')" bash "$r"
+        done
+    fi
+
+    #  Library builds, warnings fatal, on every profile the library supports.
+    if [ "$what" = all ] || [ "$what" = lib ]; then
+        echo "== libraries (every supported runtime profile; warnings are failures) =="
+        local prof gpr
+        for gpr in "$ROOT"/libs/*/[a-z]*.gpr; do
+            [ -f "$gpr" ] || continue
+            case "$(basename "$gpr")" in *_prove.gpr) continue ;; esac
+            for prof in $(profiles_of_lib "$gpr"); do
+                run_one "$(basename "${gpr%.gpr}")  [$prof]" \
+                        build_lib_clean "$gpr" "$prof"
+            done
+        done
+    fi
+
+    if [ "$what" = all ] || [ "$what" = examples ]; then
+        echo "== examples =="
+        local e
+        for e in $(list_dirs); do
+            run_one "$(short "$e")" bash "$ROOT/x" build "$(short "$e")"
+        done
+    fi
+
+    echo
+    if [ "$failures" -eq 0 ]; then
+        printf '\033[32mPASS\033[0m  %d checks\n' "$ran"
+    else
+        printf '\033[31mFAIL\033[0m  %d of %d checks\n' "$failures" "$ran"
+        return 1
+    fi
+}
+
+# Which runtime profiles a library supports, read from the library itself: its
+# .gpr declares the LOWEST profile it works on as the default of
+# external ("ESP32S3_RTS_PROFILE", ...), and the profiles are ordered
+# light-tasking < embedded < full by capability, so a library is testable on its
+# default and everything above it.  A .gpr that names no profile is treated as
+# embedded -- it inherits whatever its consumer picks, and a library with no
+# opinion is not a light-tasking library.  Adding a library needs no edit here.
+profiles_of_lib () {
+    local dflt
+    dflt="$(sed -nE 's/.*external *\( *"ESP32S3_RTS_PROFILE" *, *"([a-z-]+)".*/\1/p' "$1" \
+            | head -1)"
+    case "${dflt:-embedded}" in
+        light-tasking) echo "light-tasking embedded full" ;;
+        embedded)      echo "embedded full" ;;
+        full)          echo "full" ;;
+        *)             echo "embedded" ;;
+    esac
+}
+
+# Build one library project under one profile and fail on ANY warning.
+# gprbuild's exit status ignores warnings, so the output is searched instead;
+# svd/ is excluded (machine-generated, see cmd_test's header).
+build_lib_clean () {
+    local gpr="$1" prof="$2" out
+    #  export.sh, not just sdk-env.sh: a library may import another BY NAME
+    #  (esp32s3_wifi.gpr does), which needs GPR_PROJECT_PATH, and every xtensa
+    #  compile needs XTENSA_GNU_CONFIG.
+    . "$ROOT/export.sh" > /dev/null 2>&1
+    [ -n "${XTENSA_GNU_CONFIG:-}" ] || { echo "no xtensa-dynconfig"; return 1; }
+    out="$(ESP32S3_RTS_PROFILE="$prof" gprbuild -p -q -P "$gpr" -j"$(nproc)" 2>&1)" || {
+        printf '%s\n' "$out"; return 1; }
+    local warned
+    warned="$(printf '%s\n' "$out" | grep 'warning:' | grep -v '^esp32s3_registers' || true)"
+    [ -z "$warned" ] || { printf '%s\n' "$warned"; return 1; }
+}
+
 # -- dispatch -----------------------------------------------------------------
 # Skipped when this file is SOURCED (not executed) -- the standalone-project
 # launcher `tools/bin/esp32-ada` sources x to reuse its helpers (monitor_tool,
@@ -636,6 +750,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     run)             cmd_run "$@" ;;
     monitor|mon)     cmd_monitor "$@" ;;
     clean)           cmd_clean "$@" ;;
+    test)            cmd_test "$@" ;;
     stack)           cmd_stack "$@" ;;
     mem|memory)      cmd_mem "$@" ;;
     config|cfg)         cmd_config "$@" ;;

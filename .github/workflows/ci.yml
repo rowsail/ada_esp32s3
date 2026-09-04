@@ -1,0 +1,134 @@
+name: CI
+
+# Everything that can be checked without a board.
+#
+# Before this existed, the only workflow in this repo built the book PDF, and
+# nothing compiled the code.  Two regressions survived in the tree as a result:
+# examples/esp32s3_lcd stopped compiling when LCD.RGB_Pins gained a component
+# (136 commits, ~6 weeks), and the HAL would not build under light-tasking --
+# its OWN default profile -- because the exclusion list it used at the time had
+# drifted.  Neither could reach a release now: the job below builds the
+# libraries on every profile they support, builds all 96 examples, and runs the
+# host suites, and it is the same `./x test` a contributor runs locally.
+#
+# Not covered here, and deliberately: anything needing real silicon (the driver
+# self-tests, the ACATS sweep).  Those stay on the bench.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: build + host tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      # The cross GNAT, the native GNAT and gprbuild.  Alire is only a package
+      # manager here: nothing in the build calls `alr` (see tools/sdk-env.sh),
+      # it just puts the toolchains where ESP32S3_ADA_TOOLCHAINS looks.
+      # Versions are pinned to the known-good pair recorded in tools/sdk-env.sh
+      # -- sdk-env prints a note when they drift, and CI should not drift
+      # silently under the tree it is validating.
+      - name: Install Alire
+        uses: alire-project/setup-alire@v4
+        with:
+          version: 2.1.0
+
+      - name: Install the toolchains
+        # --install, not --select: nothing here goes through `alr`.
+        # tools/sdk-env.sh finds the toolchains by globbing
+        # $ESP32S3_ADA_TOOLCHAINS (Alire's install dir by default), so they only
+        # need to be ON DISK.  The versions are the known-good pair recorded in
+        # sdk-env.sh; bump both together.
+        run: |
+          alr toolchain --install gnat_native=15.2.1
+          alr toolchain --install gprbuild=26.0.1
+          alr toolchain --install gnat_xtensa_esp32_elf=15.2.1
+          ls -1 "$HOME/.local/share/alire/toolchains"
+
+      # xtensa-dynconfig is built from source by tools/sdk-env.sh on first use;
+      # it needs a host C toolchain and, on a cold cache, network access to
+      # fetch its upstream.  Cache the built plugin: it changes only when the
+      # pinned overlay does.
+      - name: Cache the xtensa-dynconfig plugin
+        uses: actions/cache@v4
+        with:
+          path: crates/xtensa-dynconfig/xtensa-dynconfig
+          key: dynconfig-${{ runner.os }}-${{ hashFiles('crates/xtensa-dynconfig/**/*.c', 'crates/xtensa-dynconfig/scripts/setup.sh') }}
+
+      - name: Python (the FTP and DNS host suites drive a local server)
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      # e2fsprogs/dosfstools: mkfs_host and fat16_host cross-check the images
+      # this repo's pure-Ada filesystems write against the host's own fsck.
+      - name: Filesystem cross-check tools
+        run: sudo apt-get update && sudo apt-get install -y e2fsprogs dosfstools
+
+      # The whole gate.  Libraries on every profile they support (warnings are
+      # failures), then all 96 examples, then the host suites.
+      - name: ./x test
+        run: ./x test
+
+  book:
+    name: book builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      # The release workflow (book.yml) publishes the PDF on a tag; this only
+      # proves the LaTeX still compiles, so a broken \ref or a renamed chapter
+      # fails on the pull request rather than on the tag.
+      - name: Build the book PDF
+        uses: xu-cheng/latex-action@v3
+        with:
+          working_directory: book
+          root_file: main.tex
+
+  docs:
+    name: guide samples compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: alire-project/setup-alire@v4
+        with:
+          version: 2.1.0
+      - name: Install the toolchains
+        # --install, not --select: nothing here goes through `alr`.
+        # tools/sdk-env.sh finds the toolchains by globbing
+        # $ESP32S3_ADA_TOOLCHAINS (Alire's install dir by default), so they only
+        # need to be ON DISK.  The versions are the known-good pair recorded in
+        # sdk-env.sh; bump both together.
+        run: |
+          alr toolchain --install gnat_native=15.2.1
+          alr toolchain --install gprbuild=26.0.1
+          alr toolchain --install gnat_xtensa_esp32_elf=15.2.1
+          ls -1 "$HOME/.local/share/alire/toolchains"
+      - name: Cache the xtensa-dynconfig plugin
+        uses: actions/cache@v4
+        with:
+          path: crates/xtensa-dynconfig/xtensa-dynconfig
+          key: dynconfig-${{ runner.os }}-${{ hashFiles('crates/xtensa-dynconfig/**/*.c', 'crates/xtensa-dynconfig/scripts/setup.sh') }}
+      # check_samples.sh needs a generated runtime, which the first example
+      # build produces; then it compiles every sample the guide inlines, checks
+      # the API names its pages quote still exist, and validates the HTML.
+      - name: Build one example (generates the runtime)
+        run: ./x build gpio0_blink
+      - name: Check the guide
+        run: ./docs/check_samples.sh
+      # Cross-compile check for the Wi-Fi ABI rep clauses (host word size cannot
+      # validate them).  This was broken -- it never had svd/ on its search
+      # path, so it could not compile anything -- and nothing noticed.
+      - name: Wi-Fi ABI cross-check
+        run: ./libs/esp32s3_wifi/test/cross_check.sh
