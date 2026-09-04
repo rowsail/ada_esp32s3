@@ -1,9 +1,61 @@
 with Interfaces;                   use Interfaces;
 with System.Machine_Code;          use System.Machine_Code;
+with System.Atomic_Primitives;
 with ESP32S3_Registers;            use ESP32S3_Registers;
 with ESP32S3_Registers.USB_DEVICE; use ESP32S3_Registers.USB_DEVICE;
 
 package body ESP32S3.Console is
+
+   ---------------------------------------------------------------------------
+   --  EP1 is one register for BOTH directions: writing appends to the TX
+   --  FIFO, reading pops the RX FIFO.  Sending a packet is therefore a
+   --  multi-access sequence on the same address that Read pops -- up to 64
+   --  byte writes followed by WR_DONE -- and nothing serialised the two.
+   --
+   --  They genuinely run at once on this part: a console task reads on one
+   --  core while any task's logging writes from either.  Observed downstream
+   --  as a console that answered the FIRST command after connecting with a
+   --  command nobody typed, and swallowed the real one -- the reader picking
+   --  up fragments of the writer's traffic, which at connect time is the
+   --  drop announcement this package emits because nothing drained during
+   --  boot.
+   --
+   --  The guard is a spin lock with interrupts masked, and both halves are
+   --  needed: the lock for the other core, the mask so an interrupt handler
+   --  on THIS core cannot deadlock against a task that holds it.
+   --
+   --  It covers only the register sequence, never a wait.  Emit's
+   --  backpressure wait happens before the packet build and stays outside,
+   --  so the masked region is bounded at ~64 MMIO writes -- a few
+   --  microseconds -- and can never be held for the milliseconds
+   --  Set_Backpressure_Limit allows.
+   ---------------------------------------------------------------------------
+   --  A plain byte: __atomic_test_and_set operates on one, and the intrinsic
+   --  takes its address rather than a typed flag.
+   EP1_Busy : aliased Unsigned_8 := 0 with Atomic;
+
+   --  Returns the interrupt state to restore.  rsil raises INTLEVEL and hands
+   --  back the previous PS, so it nests.
+   function Claim_EP1 return Unsigned_32 is
+      Saved : Unsigned_32;
+   begin
+      Asm ("rsil %0, 3",
+           Outputs  => Unsigned_32'Asm_Output ("=a", Saved),
+           Volatile => True);
+      while System.Atomic_Primitives.Atomic_Test_And_Set
+              (EP1_Busy'Address) loop
+         null;
+      end loop;
+      return Saved;
+   end Claim_EP1;
+
+   procedure Release_EP1 (Saved : Unsigned_32) is
+   begin
+      System.Atomic_Primitives.Atomic_Clear (EP1_Busy'Address);
+      Asm ("wsr.ps %0; rsync",
+           Inputs   => Unsigned_32'Asm_Input ("a", Saved),
+           Volatile => True);
+   end Release_EP1;
 
    --  The USB Serial/JTAG IN (device->host) FIFO holds one 64-byte packet; the
    --  packet is handed to the host when WR_DONE is written.  EP1_CONF.
@@ -156,16 +208,23 @@ package body ESP32S3.Console is
          Consecutive_Waits := 0;   --  the endpoint is free: not a run
 
          --  Endpoint is free: write up to one 64-byte packet and send it.
+         --  Guarded: this is the multi-access sequence on EP1 that a
+         --  concurrent Read must not interleave with.
          Packet_Len := 0;
-         while I <= S'Last and then Packet_Len < Fifo_Size loop
-            USB_DEVICE_Periph.EP1 :=
-              (RDWR_BYTE => Byte (Character'Pos (S (I))), others => <>);
-            I := I + 1;
-            Packet_Len := Packet_Len + 1;
-         end loop;
+         declare
+            Saved : constant Unsigned_32 := Claim_EP1;
+         begin
+            while I <= S'Last and then Packet_Len < Fifo_Size loop
+               USB_DEVICE_Periph.EP1 :=
+                 (RDWR_BYTE => Byte (Character'Pos (S (I))), others => <>);
+               I := I + 1;
+               Packet_Len := Packet_Len + 1;
+            end loop;
 
-         USB_DEVICE_Periph.EP1_CONF := (WR_DONE => True, others => <>);
-         Pending := True;
+            USB_DEVICE_Periph.EP1_CONF := (WR_DONE => True, others => <>);
+            Pending := True;
+            Release_EP1 (Saved);
+         end;
       end loop;
       return 0;
    end Emit;
@@ -308,13 +367,20 @@ package body ESP32S3.Console is
    --  stale value.
    procedure Read (C : out Character; Available : out Boolean) is
    begin
-      if USB_DEVICE_Periph.EP1_CONF.SERIAL_OUT_EP_DATA_AVAIL then
-         C := Character'Val (Natural (USB_DEVICE_Periph.EP1.RDWR_BYTE));
-         Available := True;
-      else
-         C := ASCII.NUL;
-         Available := False;
-      end if;
+      declare
+         Saved : constant Unsigned_32 := Claim_EP1;
+      begin
+         --  Test and pop under the guard: the flag test and the pop must not
+         --  be split by a writer's packet sequence on the same register.
+         if USB_DEVICE_Periph.EP1_CONF.SERIAL_OUT_EP_DATA_AVAIL then
+            C := Character'Val (Natural (USB_DEVICE_Periph.EP1.RDWR_BYTE));
+            Available := True;
+         else
+            C := ASCII.NUL;
+            Available := False;
+         end if;
+         Release_EP1 (Saved);
+      end;
    end Read;
 
 end ESP32S3.Console;
