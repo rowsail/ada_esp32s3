@@ -1,0 +1,197 @@
+
+<h2>The type that stops you first</h2>
+
+<p>Most GPIO APIs take an integer. This one takes a subtype whose predicate
+encodes which pads exist and which are already spoken for:</p>
+
+<pre><code>type Pad_Number is range -1 .. 48;
+
+No_Pin : constant Pad_Number := -1;      --  an optional line, left unrouted
+
+subtype Pin_Id is Pad_Number range 0 .. 48
+  with Static_Predicate =&gt; Pin_Id in 0 .. 21 | 38 .. 48;
+
+subtype Optional_Pin is Pad_Number
+  with Static_Predicate =&gt; Optional_Pin in -1 | 0 .. 21 | 38 .. 48;</code></pre>
+
+<p>Pads <strong>22&hellip;25</strong> do not exist on the ESP32-S3. Pads
+<strong>26&hellip;37</strong> are bonded to the in-package SPI flash and octal
+PSRAM. Driving any of them hangs the chip &mdash; not an exception you can catch,
+a dead board. So they are not in the subtype.</p>
+
+<p class="note"><strong>Why it is a <code>Static_Predicate</code> and not a
+dynamic one.</strong>
+Because it is static, naming a reserved pad as a <em>compile-time</em> value is a
+<strong>compile error</strong> (<code>static expression fails static predicate
+check</code>), not a runtime surprise. That only bites if the value is static
+&mdash; so declare your pin constants as <code>Pin_Id</code>, not as untyped
+numerals, and you get the check:</p>
+
+<pre><code>Led : constant ESP32S3.GPIO.Pin_Id := 30;   --  rejected at COMPILE time (PSRAM pad)
+Led : constant                     := 30;   --  just an integer; no check here</code></pre>
+
+<p>A value computed at run time is checked by the subtype predicate instead,
+wherever assertions are enabled (<code>-gnata</code>, which the HAL project turns
+on). There is deliberately no <code>Predicate_Failure</code> message: supplying
+one would drag in <code>Ada.Exceptions</code>, which the
+<code>light-tasking</code> runtime does not provide.</p>
+
+<h2>Configuring a pad</h2>
+
+<pre><code>procedure Configure
+  (Pin   : Pin_Id;
+   Mode  : Pin_Mode;                        --  Input | Output
+   Pull  : Pull_Mode      := Floating;      --  Floating | Pull_Up | Pull_Down
+   Drive : Drive_Strength := Drive_Medium);</code></pre>
+
+<p><code>Drive_Strength</code> is the IO_MUX <code>FUN_DRV</code> field &mdash;
+<code>Drive_Weak</code>, <code>Drive_Medium</code>, <code>Drive_Strong</code>,
+<code>Drive_Strongest</code>, roughly 5 / 10 / 20 / 40&nbsp;mA. Output pads get
+their driver enabled; input pads get the input buffer enabled.</p>
+
+<p class="warn"><strong><code>Configure</code> is for plain software GPIO
+only.</strong> It always routes the pad through the GPIO matrix as a
+software-controlled pin (IO_MUX <code>MCU_SEL = 1</code>, GPIO output index 256).
+Routing a pad to a <em>peripheral</em> signal is the job of that peripheral's own
+<code>Configure_Pins</code> &mdash; <code>ESP32S3.I2C.Configure_Pins</code>,
+<code>ESP32S3.SPI</code>'s, and so on &mdash; which programs the matrix directly.
+Calling <code>GPIO.Configure</code> on a pad you have handed to a peripheral
+takes it back.</p>
+
+<h2>What is atomic, and what is not</h2>
+
+<table>
+  <thead><tr><th>Operation</th><th>Mechanism</th><th>Concurrency</th></tr></thead>
+  <tbody>
+    <tr><td><code>Set (Pin)</code></td><td>Hardware W1TS bank</td><td>Atomic in silicon &mdash; safe to call concurrently as-is</td></tr>
+    <tr><td><code>Clear (Pin)</code></td><td>Hardware W1TC bank</td><td>Atomic in silicon</td></tr>
+    <tr><td><code>Write (Pin, On)</code></td><td>W1TS or W1TC</td><td>Atomic in silicon</td></tr>
+    <tr><td><code>Read (Pin)</code></td><td>A plain load</td><td>Pure read &mdash; always safe</td></tr>
+    <tr><td><code>Configure (…)</code></td><td>Read-modify-write</td><td>Serialised through a protected object</td></tr>
+    <tr><td><code>Toggle (Pin)</code></td><td>Read-modify-write</td><td>Serialised through a protected object</td></tr>
+  </tbody>
+</table>
+
+<p>The write-1-to-set and write-1-to-clear banks are why the first three need no
+lock at all: the CPU never reads the output register, so two tasks driving two
+different pins cannot lose each other's update. <code>Configure</code> and
+<code>Toggle</code> must read before they write, so they take the lock.</p>
+
+<p class="note">The lock keeps the <em>registers</em> consistent, not your
+<em>intent</em>. Two tasks driving the same pin still race over what the pin
+should be; that is the application's problem, and no driver can solve it for
+you. Note also that the protected object means this package needs a tasking
+runtime &mdash; every profile here has one.</p>
+
+<h2>Pin interrupts</h2>
+
+<p>The GPIO peripheral has exactly <strong>one</strong> interrupt source: the OR
+of every pin's latched status. <code>ESP32S3.GPIO.Interrupts</code> owns that
+source, routes it to the runtime's level-2 device slot
+(<code>Ada.Interrupts.Names.Device_L2_1</code>, CPU_INT 20), and demuxes by
+status to call your per-pin action. It takes a level-2 rather than a level-3
+slot because on an RGB-LCD board both L3 slots are already spoken for &mdash; the
+LCD engine's relock and the GDMA end-of-frame.</p>
+
+<pre><code>type Trigger is (Rising_Edge, Falling_Edge, Any_Edge, Low_Level, High_Level);
+type Callback is access procedure;
+
+procedure Enable (Pin : Pin_Id; On : Trigger; Action : Callback)
+  with Pre =&gt; Action /= null;
+
+procedure Disable (Pin : Pin_Id);</code></pre>
+
+<p>Jorvik attaches handlers statically, so you never pass an ISR &mdash; you
+register a callback that the module's own ISR invokes. The pin's input buffer
+must be on, which <code>GPIO.Configure</code> already arranges.</p>
+
+<h2>The one rule you cannot break</h2>
+
+<p class="warn"><strong>The callback must be closure-free and
+library-level.</strong> On this target, stacks live in the data-bus SRAM window,
+whose instruction-bus alias is a <em>different address</em>. A GNAT
+<strong>trampoline</strong> &mdash; the small stack stub emitted when you take
+<code>'Access</code> of a <em>nested</em> subprogram that references up-level
+variables &mdash; is therefore not executable, and calling it faults with
+<code>InstrFetchProhibited</code>: a silent hang, not a clean error.</p>
+
+<p>The cure is a restriction that makes the compiler <em>reject</em> the
+trampoline at the <code>'Access</code> line instead of emitting one:</p>
+
+<pre><code>pragma Restrictions (No_Implicit_Dynamic_Code);</code></pre>
+
+<p class="warn"><strong>Whether you already have it depends on your
+profile.</strong> Compiling a nested callback that captures a local, against each
+runtime in turn:</p>
+
+<table>
+  <thead><tr><th>Profile</th><th>Without the restriction</th><th>With it</th></tr></thead>
+  <tbody>
+    <tr><td><code>light-tasking</code></td>
+        <td><strong>Rejected</strong> — the restriction is implicit in this runtime</td>
+        <td>Rejected</td></tr>
+    <tr><td><code>embedded</code></td>
+        <td><strong>Compiles clean</strong> — and faults on hardware</td>
+        <td>Rejected</td></tr>
+    <tr><td><code>full</code></td>
+        <td><strong>Compiles clean</strong> — and faults on hardware</td>
+        <td>Rejected</td></tr>
+  </tbody>
+</table>
+
+<p>So on <code>embedded</code> and <code>full</code> — the profiles this guide
+recommends — nothing stops you by default. The HAL opts itself in, which is why
+driver code is safe; your own project is not until you do the same. It is two
+steps.</p>
+
+<p><strong>1. Create <code>no_dynamic_code.adc</code></strong> next to your
+<code>app.gpr</code>, containing exactly one line:</p>
+
+<pre><code>pragma Restrictions (No_Implicit_Dynamic_Code);</code></pre>
+
+<p><strong>2. Name it in <code>app.gpr</code>'s <code>Compiler</code>
+package</strong> — one attribute, alongside the switches the scaffold already
+wrote. The path is relative to the project file:</p>
+
+<pre><code>   package Compiler is
+      for Switches ("Ada") use ("-O2", "-g");
+      for Local_Configuration_Pragmas use "no_dynamic_code.adc";   --  &lt;-- add this
+   end Compiler;</code></pre>
+
+<p>From then on the mistake is a build error naming the file that forbade it,
+pointing at the exact column of the <code>'Access</code>:</p>
+
+<pre><code>u.adb:9:24: error: violation of restriction "No_Implicit_Dynamic_Code"
+                   at no_dynamic_code.adc:1</code></pre>
+
+<p>Under <code>light-tasking</code>, where the restriction is already implicit,
+the same mistake reads <code>violation of implicit restriction</code> and names
+no file.</p>
+
+<h2>The idiom that works</h2>
+
+<p>A library-level package holding an atomic flag, with the real work done by a
+task. This is the shape used by the in-tree interrupt clients:</p>
+
+<pre><code>--  imu_irq.ads -- library level, no enclosing subprogram, no closure
+package IMU_IRQ is
+   Fired : Boolean := False
+     with Atomic, Volatile;
+
+   procedure Handler;
+end IMU_IRQ;
+
+--  imu_irq.adb
+package body IMU_IRQ is
+   procedure Handler is
+   begin
+      Fired := True;   --  latch only; the task does the slow work
+   end Handler;
+end IMU_IRQ;</code></pre>
+
+<p>The callback runs in <strong>interrupt context</strong>, inside a protected
+action at the level-2 ceiling. Keep it short; do not call a lower-ceiling
+protected object; do not block; and do not touch a slow bus like I2C from
+inside it. Set an <code>Atomic</code> flag or a
+<code>Suspension_Object</code>, and let a normal task at task level do the
+rest.</p>

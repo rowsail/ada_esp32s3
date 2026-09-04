@@ -1,0 +1,76 @@
+
+<h2>One line to resolve a name</h2>
+
+<pre><code>function Resolve (...) return ...;    --  Net_Resolver</code></pre>
+
+<p><code>Net_Resolver</code> turns a host name into an address whatever is
+carrying the traffic. Resolution is <strong>a real DNS query of our own</strong>
+&mdash; a UDP A-record request that <code>DNS_Client</code> issues over
+<a href="40-net-stack.html">GNAT.Sockets</a> &mdash; so it works identically over
+Ethernet, Wi-Fi, cellular, or whatever the routing table points at.</p>
+
+<p class="note"><strong>Why not use the modem's own resolver?</strong> Because
+one was tried and removed. The BG95's <code>AT+QIDNSGIP</code> silently refused
+answers whose shape it did not like &mdash; a CNAME chain onto several A records
+failed where a bare A record resolved. Doing DNS ourselves means one code path
+with predictable behaviour, rather than a per-modem set of quirks.</p>
+
+<p><code>DNS_Client</code> offers both <code>Resolve</code> (UDP) and
+<code>Resolve_TCP</code>, the latter for answers too large for a datagram.
+<code>NTP_Client.Query</code> is the same shape &mdash; a UDP query reading the
+transmit timestamp out of the reply &mdash; with <code>To_UTC</code> to convert
+it.</p>
+
+<h2>Portability is the point</h2>
+
+<p>Neither client contains anything chip-specific. On the board you call
+<code>GNAT.Sockets.Initialize (Device)</code> once during bring-up; on a desktop
+sockets are always usable. The same source then compiles in both places, which
+is what lets these be tested on a host rather than only on hardware.</p>
+
+<h2>The shared wrinkle</h2>
+
+<p class="warn"><strong>Both keep package-global rotors</strong> &mdash; the
+transaction id and the default source port for DNS, a source-port counter for
+NTP. Concurrent calls from several tasks corrupt nothing, but two in-flight
+queries can land on the same source port, and one then fails its reply check.
+That surfaces as a <em>failed lookup</em>, not an exception or corruption. If you
+resolve from more than one task, either serialise the calls or accept the
+retry.</p>
+
+<p class="note">The source-port rotation is not incidental &mdash; a fixed source
+port is what made an earlier cellular setup fail, because the carrier's NAT
+poisoned the flow. Rotating ports is a deliberate hardening measure, and the
+collision above is its small cost.</p>
+
+<h2>Encrypted DNS</h2>
+
+<p>Plain DNS is readable by anything on the path, and on a shared or hostile
+network the names a device looks up leak what it is doing.
+<code>DNS_TLS</code> adds the two encrypted transports over the
+<a href="42-tls.html">pure-Ada TLS 1.3 stack</a>:</p>
+
+<table>
+  <thead><tr><th>Transport</th><th>How</th></tr></thead>
+  <tbody>
+    <tr><td><strong>DoT</strong> (RFC 7858)</td>
+        <td>The ordinary DNS message, inside TLS, on port 853.</td></tr>
+    <tr><td><strong>DoH</strong> (RFC 8484)</td>
+        <td>A minimal HTTP/1.1 <code>POST</code> of
+            <code>application/dns-message</code> over HTTPS, port 443 &mdash;
+            so it survives networks that block 853.</td></tr>
+  </tbody>
+</table>
+
+<p class="note"><strong>The message bytes are the same proven ones every
+transport shares.</strong> Only the carriage differs, so the parser and builder
+under UDP, TCP, DoT and DoH are one implementation with one set of tests
+(<a href="53-testing.html">step 52</a>) &mdash; not four chances to get a
+message wrong.</p>
+
+<p class="warn">Trust stays with the <em>application</em>, exactly as in the
+HTTPS examples: the caller establishes the TCP connection and supplies the trust
+anchors. The resolver does not carry a built-in root store or decide for you
+which resolver is trustworthy. Note also that a root-pinned DoT or DoH endpoint
+may need <a href="42-tls.html">P-384</a> rather than P-256, depending on whose
+certificate chain you are anchoring to.</p>

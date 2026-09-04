@@ -66,7 +66,7 @@ links to the step that explains the thing being demonstrated.</p>
     <tr><td><code>b612</code></td><td><code>embedded</code></td><td>B612 anti-aliased font on an ST7789 display</td><td><a href="49-console-fonts.html">49</a></td></tr>
     <tr><td><code>ch422g</code></td><td><code>embedded</code></td><td>CH422G I2C I/O-expander driver demo</td><td><a href="34-expanders.html">34</a></td></tr>
     <tr><td><code>crypto</code></td><td><code>embedded</code></td><td>Ada hardware-crypto self-test</td><td><a href="27-crypto.html">27</a></td></tr>
-    <tr><td><code>delay_test</code></td><td><code>embedded</code></td><td></td><td><a href="55-debugging.html">55</a></td></tr>
+    <tr><td><code>delay_test</code></td><td><code>embedded</code></td><td>the SYSTIMER alarm, idle-then-wake</td><td><a href="55-debugging.html">55</a></td></tr>
     <tr><td><code>dns_secure</code></td><td><code>embedded</code></td><td>One name, four DNS transports: UDP, TCP, DoT and DoH, over the W5500</td><td><a href="41-dns-ntp.html">41</a></td></tr>
     <tr><td><code>embedded</code></td><td><code>embedded</code></td><td>embedded runtime profile demo</td><td><a href="08-profiles.html">08</a></td></tr>
     <tr><td><code>es8311</code></td><td><code>embedded</code></td><td>ES8311 audio codec -- full-duplex 440 Hz loopback</td><td><a href="31-es8311.html">31</a></td></tr>
@@ -83,18 +83,18 @@ links to the step that explains the thing being demonstrated.</p>
     <tr><td><code>full_intr</code></td><td><code>full</code></td><td>full-profile interrupt-attach test (`ESP32S3_RTS_PROFILE=full`)</td><td><a href="08-profiles.html">08</a></td></tr>
     <tr><td><code>full_tasking</code></td><td><code>full</code></td><td>Full Ada tasking -- the constructs the Jorvik runtime profile forbids, here running over the BB kernel on core 0</td><td><a href="08-profiles.html">08</a></td></tr>
     <tr><td><code>gdma_copy</code></td><td><code>embedded</code></td><td>Ada GDMA self-test</td><td><a href="17-gdma.html">17</a></td></tr>
-    <tr><td><code>gpio0_blink</code></td><td><code>light-tasking</code></td><td>a bare-metal Ada peripheral driver (ESP32-S3, no FreeRTOS)</td><td><a href="13-gpio.html">13</a></td></tr>
+    <tr><td><code>gpio0_blink</code></td><td><code>light-tasking</code></td><td>a bare-metal Ada peripheral driver</td><td><a href="13-gpio.html">13</a></td></tr>
     <tr><td><code>gps</code></td><td><code>embedded</code></td><td>The reusable HAL GPS driver (ESP32S3.GPS): a task-driven UART NMEA receiver</td><td><a href="38-gps.html">38</a></td></tr>
     <tr><td><code>gps_display</code></td><td><code>embedded</code></td><td>Multi-sensor dashboard on a 240x240 ST7789 panel (bare-metal ESP32-S3, no FreeRTOS, no IDF)</td><td><a href="38-gps.html">38</a></td></tr>
     <tr><td><code>gt911</code></td><td><code>embedded</code></td><td>GT911 capacitive-touch driver demo</td><td><a href="30-display-touch.html">30</a></td></tr>
     <tr><td><code>hc595</code></td><td><code>embedded</code></td><td>A string of 74HC595 shift registers driven over SPI: MOSI-&gt;SER, SCLK-&gt;SRCLK, a GPIO RCLK latch and a GPIO /OE. It walks a single high output across the whole string ("chase"), so you can watch it on LEDs or a scope and confirm the wiring, the chip count, and the bit/chip ordering</td><td><a href="34-expanders.html">34</a></td></tr>
     <tr><td><code>heaptest</code></td><td><code>embedded</code></td><td>On-target malloc/free stress of the Ada TLSF allocator (ESP32-S3)</td><td><a href="09-board-config.html">09</a></td></tr>
-    <tr><td><code>heartbeat</code></td><td><code>light-tasking</code></td><td></td><td><a href="05-first-blink.html">05</a></td></tr>
+    <tr><td><code>heartbeat</code></td><td><code>light-tasking</code></td><td>the minimal periodic task</td><td><a href="05-first-blink.html">05</a></td></tr>
     <tr><td><code>i2c_loopback</code></td><td><code>embedded</code></td><td>An Ada I2C MASTER hardware self-test -- exercises the reusable HAL master driver (ESP32S3.I2C) with NO external wiring and no device on the bus</td><td><a href="14-i2c.html">14</a></td></tr>
     <tr><td><code>i2s_loopback</code></td><td><code>embedded</code></td><td>Ada I2S self-test</td><td><a href="18-i2s.html">18</a></td></tr>
     <tr><td><code>i2s_pdm</code></td><td><code>embedded</code></td><td>Ada I2S PDM microphone capture demo</td><td><a href="18-i2s.html">18</a></td></tr>
-    <tr><td><code>intr_levels</code></td><td><code>embedded</code></td><td></td><td><a href="55-debugging.html">55</a></td></tr>
-    <tr><td><code>lcd</code></td><td><code>embedded</code></td><td></td><td><a href="19-lcd.html">19</a></td></tr>
+    <tr><td><code>intr_levels</code></td><td><code>embedded</code></td><td>vector regression test</td><td><a href="55-debugging.html">55</a></td></tr>
+    <tr><td><code>lcd</code></td><td><code>embedded</code></td><td>tear-free double buffering at 800×480</td><td><a href="19-lcd.html">19</a></td></tr>
     <tr><td><code>lcd_i8080</code></td><td><code>embedded</code></td><td>Ada LCD (i80 8-bit parallel) self-test (no IDF)</td><td><a href="19-lcd.html">19</a></td></tr>
     <tr><td><code>ledc_pwm</code></td><td><code>embedded</code></td><td>Ada LEDC PWM self-test</td><td><a href="22-ledc-sdm.html">22</a></td></tr>
     <tr><td><code>m24c64</code></td><td><code>embedded</code></td><td>M24C64 I2C EEPROM driver demo</td><td><a href="36-memory.html">36</a></td></tr>
@@ -106,7 +106,7 @@ links to the step that explains the thing being demonstrated.</p>
     <tr><td><code>p256_kat</code></td><td><code>embedded</code></td><td>Known-answer test for the pure-Ada P-256 (secp256r1) ECDSA + ECDH (P256)</td><td><a href="27-crypto.html">27</a></td></tr>
     <tr><td><code>pcf85063a</code></td><td><code>embedded</code></td><td>PCF85063A real-time clock</td><td><a href="33-pcf85063a.html">33</a></td></tr>
     <tr><td><code>pcnt_count</code></td><td><code>embedded</code></td><td>Ada PCNT self-test</td><td><a href="24-timers-pcnt.html">24</a></td></tr>
-    <tr><td><code>psram</code></td><td><code>light-tasking</code></td><td>External PSRAM from Ada (ESP32-S3, no FreeRTOS, no ESP-IDF)</td><td><a href="09-board-config.html">09</a></td></tr>
+    <tr><td><code>psram</code></td><td><code>light-tasking</code></td><td>External PSRAM from Ada</td><td><a href="09-board-config.html">09</a></td></tr>
     <tr><td><code>qmi8658c</code></td><td><code>embedded</code></td><td>QMI8658C 6-axis IMU driver demo (bare-metal ESP32-S3, no FreeRTOS, no IDF)</td><td><a href="32-sensors.html">32</a></td></tr>
     <tr><td><code>rendezvous</code></td><td><code>full</code></td><td>Ada task RENDEZVOUS on the bare-metal dual-core ESP32-S3 -- synchronous task-to-task message passing (entries / `accept` / entry calls with `out` parameters): the full tasking model that lives beyond Jorvik</td><td><a href="08-profiles.html">08</a></td></tr>
     <tr><td><code>rmt_loopback</code></td><td><code>embedded</code></td><td>Ada RMT self-test</td><td><a href="21-rmt.html">21</a></td></tr>

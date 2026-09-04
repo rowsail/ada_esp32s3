@@ -1,0 +1,213 @@
+
+<h2>Using it</h2>
+
+<p>The HAL is a plain GPR library project &mdash;
+<code>libs/esp32s3_hal/esp32s3_hal.gpr</code> &mdash; <strong>not an Alire
+crate</strong>. It has no <code>alire.toml</code>, and nothing reaches it through
+Alire's dependency graph; the runtime (<code>crates/esp32s3_rts</code>) is the
+only crate here, path-pinned by each example. What you get instead is one line
+in your own project file, resolved either of two ways:</p>
+
+<pre><code>--  Standalone project: by name, via GPR_PROJECT_PATH (which export.sh sets)
+with "esp32s3_hal.gpr";
+
+--  In-repo example: by relative path, so the Ada Language Server resolves it
+--  with no environment set at all
+with "../../libs/esp32s3_hal/esp32s3_hal.gpr";</code></pre>
+
+<p><code>export.sh</code> puts <code>crates/esp32s3_rts</code> and every
+directory under <code>libs/</code> on <code>GPR_PROJECT_PATH</code>, so the
+by-name form resolves for <code>gprbuild</code> <em>and</em> for the Ada Language
+Server. Adding a library to the SDK needs no edit anywhere: dropping
+<code>libs/&lt;name&gt;/&lt;name&gt;.gpr</code> in is enough. The HAL's units
+compile against the same runtime and the same profile as whatever consumes them
+&mdash; the project reads <code>ESP32S3_RTS_PROFILE</code> itself and keys its
+object directory by it.</p>
+
+<p>Then <code>with</code> the driver you want. This is the whole body of the
+blink example's GPIO package &mdash; a real, complete driver client:</p>
+
+<pre><code>with System;
+with Ada.Real_Time; use Ada.Real_Time;
+
+with ESP32S3.GPIO;
+with ESP32S3.Log; use ESP32S3.Log;
+
+package body GPIO is
+
+   Pin : constant ESP32S3.GPIO.Pin_Id := 0;
+
+   --  Library-level task: toggle GPIO0 every 250 ms (2 Hz square wave) on core 0,
+   --  logging each transition over the USB-Serial-JTAG console.
+   task Blinker
+     with Priority =&gt; System.Priority'Last - 1, CPU =&gt; 1;
+
+   task body Blinker is
+      Period : constant Time_Span := Milliseconds (250);
+      Next   : Time;
+      High   : Boolean := False;
+   begin
+      ESP32S3.GPIO.Configure (Pin, ESP32S3.GPIO.Output,
+                              Drive =&gt; ESP32S3.GPIO.Drive_Strong);
+      Next := Clock + Period;
+      loop
+         delay until Next;
+         High := not High;
+         ESP32S3.GPIO.Write (Pin, High);
+         Put_Line ("[gpio0] " &amp; (if High then "HIGH" else "low "));
+         Next := Next + Period;
+      end loop;
+   end Blinker;
+
+end GPIO;</code></pre>
+
+<p>Three things in there are worth noticing.</p>
+
+<ul>
+  <li><strong><code>CPU =&gt; 1</code></strong> pins the task to a core. This is
+      a genuinely dual-core SMP runtime; tasks can be pinned per core and
+      protected-object entries work <em>across</em> cores.</li>
+  <li><strong><code>Next := Next + Period</code></strong>, not
+      <code>Clock + Period</code>. Absolute deadlines do not accumulate drift.
+      The interrupt-backed <code>delay until</code> gives exact, stable
+      periods.</li>
+  <li><strong>No register pokes.</strong> Everything goes through
+      <code>ESP32S3.GPIO</code>, which is where the device knowledge lives.</li>
+</ul>
+
+<h2>How the drivers are shaped</h2>
+
+<p>Each driver is a thin <em>private</em> register "engine" hidden behind a
+task-safe gateway &mdash; either a protected object or a limited-controlled RAII
+handle. Concurrent access from several tasks is therefore safe by construction
+rather than by convention, and a driver handle releases its peripheral when it
+goes out of scope.</p>
+
+<p class="warn"><strong>The profile decides what the HAL even contains.</strong>
+The RAII-handle drivers &mdash; SPI, I2C, UART, GDMA, MCPWM &mdash; are built on
+controlled types, and <code>light-tasking</code> forbids those
+(<code>No_Finalization</code>), so the HAL project <em>excludes those sources</em>
+under that profile; so are the ext4 and FAT16 filesystems and the ESP
+serial-bootloader client. What remains under <code>light-tasking</code> is the
+lock-free subset: GPIO, RNG, temperature. The drivers <em>target</em>
+<a href="08-profiles.html"><code>embedded</code></a>, where full exception
+propagation lets their <code>-gnata</code> contracts &mdash; the GPIO valid-pin
+predicate, for one &mdash; raise something you can catch.</p>
+
+<p>Under the drivers sits a generated register layer,
+<code>ESP32S3_Registers.*</code>, produced by svd2ada from the vendor's SVD
+description &mdash; typed record fields with representation clauses, not
+<code>volatile uint32_t*</code> arithmetic.</p>
+
+<h2>What is available</h2>
+
+<p>GPIO, SPI, I2C, UART, GDMA, I2S, LEDC, RMT, PCNT, SDM, MCPWM, general-purpose
+timers, ADC, capacitive touch, RTC and RTC-IO, LCD (i80), TWAI/CAN, hardware
+crypto (SHA/AES), RNG, and SD over both SPI and the native SDHOST. Alongside
+them, a pure-Ada ext2/3/4 filesystem with a JBD2 journal, and a pure-Ada FAT16
+reader and formatter for media a PC has to be able to mount.</p>
+
+<p>Most drivers ship with a self-test under <code>examples/</code> that needs no
+wiring &mdash; internal loopback or GPIO sampling. Running the one for the
+peripheral you are about to use is the fastest way to confirm your board before
+you write any code against it.</p>
+
+<p><a href="12-examples.html">Step 12</a> catalogues all 96 examples &mdash;
+which one to run for each peripheral, and under which profile. The steps after
+it go through the peripherals one at a time. The
+four you will reach for first come first &mdash; <a href="13-gpio.html">GPIO</a>,
+<a href="14-i2c.html">I2C</a>, <a href="15-spi.html">SPI</a> and
+<a href="16-uart.html">UART</a> &mdash; then the engine they and everything else
+are built on, <a href="17-gdma.html">GDMA</a>:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Peripheral</th><th>Why it has its own page</th></tr></thead>
+  <tbody>
+    <tr><td>13</td><td><a href="13-gpio.html">GPIO</a></td><td>The pin type, what is atomic in silicon, interrupts and the trampoline rule</td></tr>
+    <tr><td>14</td><td><a href="14-i2c.html">I2C</a></td><td>Session ownership, repeated START, unbounded transfers</td></tr>
+    <tr><td>15</td><td><a href="15-spi.html">SPI</a></td><td>Per-device clock and mode, chip select three ways, DMA preconditions</td></tr>
+    <tr><td>16</td><td><a href="16-uart.html">UART</a></td><td>No setup call, interrupt-driven RX, a pin-routing trap</td></tr>
+    <tr><td>17</td><td><a href="17-gdma.html">GDMA</a></td><td>Channels as a claimed resource, and the buffer rules PSRAM's cache imposes</td></tr>
+    <tr><td>18</td><td><a href="18-i2s.html">I2S</a></td><td>No CPU FIFO at all, gapless looping, capture under playback</td></tr>
+    <tr><td>19</td><td><a href="19-lcd.html">LCD</a></td><td>Command-driven i8080 and continuously-refreshed RGB</td></tr>
+    <tr><td>20</td><td><a href="20-twai.html">TWAI/CAN</a></td><td>Identifier widths kept apart by type, and the bus-off trap</td></tr>
+    <tr><td>21</td><td><a href="21-rmt.html">RMT</a></td><td>Arbitrary pulse trains; IR, WS2812, 1-Wire</td></tr>
+    <tr><td>22</td><td><a href="22-ledc-sdm.html">LEDC &amp; SDM</a></td><td>PWM dimming, and density modulation that filters to analog</td></tr>
+    <tr><td>23</td><td><a href="23-mcpwm.html">MCPWM</a></td><td>Dead-time and hardware fault shutdown</td></tr>
+    <tr><td>24</td><td><a href="24-timers-pcnt.html">Timers &amp; PCNT</a></td><td>A 54-bit timer with an alarm, and edge counters that wrap</td></tr>
+    <tr><td>25</td><td><a href="25-analog.html">ADC &amp; touch</a></td><td>Fixed-pin channels, attenuation, and relative touch detection</td></tr>
+    <tr><td>26</td><td><a href="26-rtc.html">RTC &amp; deep sleep</a></td><td>Waking is a reset; retained memory and pad hold</td></tr>
+    <tr><td>27</td><td><a href="27-crypto.html">Crypto &amp; RNG</a></td><td>SHA/AES/RSA, MD5's specific job, and the RNG caveat</td></tr>
+    <tr><td>28</td><td><a href="28-sd.html">SD cards</a></td><td>Two hosts, one block API, different profile requirements</td></tr>
+    <tr><td>29</td><td><a href="29-chip-id.html">Temperature &amp; MAC</a></td><td>Die temperature, and the four factory addresses</td></tr>
+  </tbody>
+</table>
+
+<p>Steps 29 to 38 then cover the <strong>external devices</strong> the SDK ships
+drivers for &mdash; parts on your board rather than inside the chip, each built
+on one of the buses above:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Device</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td>30</td><td><a href="30-display-touch.html">ST7789 &amp; GT911</a></td><td>SPI display and capacitive touch controller</td></tr>
+    <tr><td>31</td><td><a href="31-es8311.html">ES8311</a></td><td>Mono audio codec: I2C control, I2S audio</td></tr>
+    <tr><td>32</td><td><a href="32-sensors.html">QMI8658C &amp; SHT41</a></td><td>6-axis IMU, and temperature/humidity</td></tr>
+    <tr><td>33</td><td><a href="33-pcf85063a.html">PCF85063A</a></td><td>Real-time clock with an alarm</td></tr>
+    <tr><td>34</td><td><a href="34-expanders.html">TCA9555, CH422G, HC595</a></td><td>Port expanders and a shift register</td></tr>
+    <tr><td>35</td><td><a href="35-tx1812.html">TX1812</a></td><td>Addressable RGB LEDs</td></tr>
+    <tr><td>36</td><td><a href="36-memory.html">W25Q, 24C, FRAM</a></td><td>NOR flash, EEPROM catalogue, FRAM</td></tr>
+    <tr><td>37</td><td><a href="37-tlv2556.html">TLV2556</a></td><td>External 12-bit SPI ADC</td></tr>
+    <tr><td>38</td><td><a href="38-gps.html">GPS</a></td><td>NMEA receiver as a background service</td></tr>
+    <tr><td>39</td><td><a href="39-w5500.html">W5500</a></td><td>Ethernet with a hardwired TCP/IP stack</td></tr>
+  </tbody>
+</table>
+
+<p>Steps 39 to 43 are the <strong>networking stack</strong> above those
+interfaces &mdash; chip-neutral, so the same application code runs over Ethernet,
+Wi-Fi or anything else registered as a NIC:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Layer</th><th>What it gives you</th></tr></thead>
+  <tbody>
+    <tr><td>40</td><td><a href="40-net-stack.html">Sockets &amp; routing</a></td><td>One socket API over several NICs, longest-prefix routing, failover</td></tr>
+    <tr><td>41</td><td><a href="41-dns-ntp.html">DNS &amp; NTP</a></td><td>Name resolution and time, portable between host and board</td></tr>
+    <tr><td>42</td><td><a href="42-tls.html">TLS 1.3</a></td><td>A full client handshake and chain validation, no C library</td></tr>
+    <tr><td>43</td><td><a href="43-wifi.html">Wi-Fi</a></td><td>Pure Ada around the fetched radio blobs, WPA2 handshake included</td></tr>
+    <tr><td>44</td><td><a href="44-modbus.html">Modbus TCP</a></td><td>Industrial master and slave over the facade</td></tr>
+    <tr><td>45</td><td><a href="45-ftp.html">FTP</a></td><td>Streamed client, and a server over your filesystems</td></tr>
+  </tbody>
+</table>
+
+<p>Steps 45 to 51 are the rest of the SDK &mdash; storage, filesystems, text and
+the standalone tools:</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Component</th><th>What it gives you</th></tr></thead>
+  <tbody>
+    <tr><td>46</td><td><a href="46-block-dev.html">Block devices &amp; wear levelling</a></td><td>The vtable the filesystems sit on, and an FTL that spreads flash wear</td></tr>
+    <tr><td>47</td><td><a href="47-ext4.html">ext4</a></td><td>Read/write ext2/3/4 with JBD2 replay and on-device mkfs</td></tr>
+    <tr><td>48</td><td><a href="48-fat16.html">FAT16</a></td><td>The filesystem a PC can mount, read-only by design</td></tr>
+    <tr><td>49</td><td><a href="49-console-fonts.html">Console, text &amp; fonts</a></td><td>Formatted output with no hosted runtime; panel-independent glyphs</td></tr>
+    <tr><td>50</td><td><a href="50-esp-loader.html">Esp_Loader</a></td><td>Program another ESP32 from the board</td></tr>
+    <tr><td>51</td><td><a href="51-simd.html">SIMD (PIE)</a></td><td>128-bit vector kernels in inline assembly</td></tr>
+    <tr><td>52</td><td><a href="52-stack-usage.html">Stack measurement</a></td><td>Stack painting, to catch what static analysis cannot see</td></tr>
+  </tbody>
+</table>
+
+<p class="warn"><strong>Verify on your own board.</strong> The drivers were
+exercised on an ESP32-S3 during development, but nothing has been re-verified as
+it ships. A few components &mdash; the SD drivers, the temperature sensor, the
+filesystems' on-device paths, the ESP serial-bootloader client &mdash; are
+explicitly host-verified or smoke-tested only. The repository's <em>Testing
+status</em> table says which is which; treat every driver as needing
+confirmation on your hardware before you rely on it.</p>
+
+<h2>Console output</h2>
+
+<p><code>ESP32S3.Log</code> is the formatted-output path the examples use
+(<code>Put</code>, <code>Put_Line</code>, <code>Put_Hex</code>,
+<code>Put_Fixed</code>&hellip;) over the USB-Serial-JTAG console. On the
+<code>embedded</code> and <code>full</code> profiles
+<code>Ada.Text_IO</code> is available too, routed to the same console by the
+runtime.</p>

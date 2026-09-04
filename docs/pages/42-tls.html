@@ -1,0 +1,99 @@
+
+<h2>What it actually does</h2>
+
+<p>The headline claim is easy to under-read, so here is the pipeline the
+in-tree <code>esp32s3_tls_weather</code> example runs end to end against a live
+public server:</p>
+
+<pre><code>DNS -&gt; TCP connect :443 -&gt; TLS 1.3 handshake
+   (X25519 ECDHE, AES-128-GCM, HKDF, RSA-PSS CertificateVerify, Finished)
+-&gt; validate the server's chain to a PINNED root (ISRG Root X1)
+-&gt; encrypted HTTP GET -&gt; decrypt and parse the reply</code></pre>
+
+<p>No external C TLS library is involved. The crypto is Ada &mdash; SPARKNaCl
+plus this repository's own P-256/P-384 &mdash; over the
+<a href="27-crypto.html">chip's SHA and AES accelerators</a>.</p>
+
+<h2>The client surface</h2>
+
+<pre><code>type Session is limited private;
+
+procedure Hello (...);                                --  ClientHello / ServerHello
+function  Keys_Ready            (S : Session) return Boolean;
+function  Have_Server_Cert      (S : Session) return Boolean;
+function  Server_Cert_Verify_OK (S : Session) return Boolean;
+function  Server_Finished_OK    (S : Session) return Boolean;
+function  Ready                 (S : Session) return Boolean;
+
+procedure Send (S : in out Session; Sock : GNAT.Sockets.Socket_Type; Data : Byte_Array);
+procedure Recv (...);
+
+function  Has_Ticket          (S : Session) return Boolean;
+function  Server_Accepted_PSK (S : Session) return Boolean;
+procedure Resume (...);</code></pre>
+
+<p>The handshake state is inspectable rather than a single opaque boolean, which
+matters when a connection fails: you can tell "the certificate chain was
+rejected" from "the server never finished" from "we never got keys at all".</p>
+
+<p class="note"><code>Hello</code> runs the <strong>whole</strong> handshake,
+not just the opening exchange &mdash; ClientHello, ServerHello, the key schedule,
+the server's encrypted flight (EncryptedExtensions, Certificate,
+CertificateVerify, Finished) and our Finished. When it returns,
+<code>Ready</code> reports the application channel is open.</p>
+
+<p>A detail worth copying if you ever write a client: the ClientHello sends a
+<strong>key_share entry for both x25519 and P-256</strong>, not just the
+preferred one. Offering only one group costs a HelloRetryRequest round trip
+whenever the server prefers the other. Both paths are hardware-verified &mdash;
+a P-256-only ClientHello completes a handshake just as an x25519 one does.</p>
+
+<h2>Chain validation is the hard part</h2>
+
+<pre><code>function Validate (Chain, Anchors : Cert_List; Host : String;
+                   Now : X509.Time_64) return Result;</code></pre>
+
+<p>A handshake that completes proves you are talking to <em>somebody</em>. What
+makes it TLS is <code>Chain_Verify</code>, which puts the pieces together:</p>
+
+<ul>
+  <li>per-link signature verification;</li>
+  <li>validity dates &mdash; hence the <code>Now</code> parameter, and hence why
+      <a href="41-dns-ntp.html">NTP</a> is not optional;</li>
+  <li>hostname matching;</li>
+  <li>the X.509 v3 usage extensions &mdash; <code>basicConstraints</code>,
+      <code>keyUsage</code>, <code>extKeyUsage</code>;</li>
+  <li>anchoring to a <strong>pinned</strong> set of roots, not a system trust
+      store, because there isn't one.</li>
+</ul>
+
+<p class="note">The <code>Now</code> parameter is the detail worth internalising:
+without a real clock, certificate expiry cannot be checked, and a chain that
+expired years ago validates happily. On a board that means fetching the time
+before you can meaningfully verify anything &mdash; which is why NTP comes first
+in the pipeline above.</p>
+
+<h2>The elliptic curves</h2>
+
+<pre><code>function Verify     (Pub_X, Pub_Y, Hash, R, S : Bytes_32) return Boolean;
+function Public_Key (Priv : Bytes_32; Pub_X, Pub_Y : out Bytes_32) return Boolean;
+function ECDH       (...);
+function Sign       (Priv, Hash : Bytes_32; R, S : out Bytes_32) return Boolean;</code></pre>
+
+<p>P-256 and P-384 are pure Ada with no chip dependency. Two implementation
+choices are worth noting because they are the right ones:</p>
+
+<ul>
+  <li><strong>Signing is deterministic per RFC 6979</strong>, so it needs no
+      per-signature randomness. Given <a href="27-crypto.html">the RNG caveat</a>
+      &mdash; no real entropy source on this runtime &mdash; that is not a
+      stylistic preference, it removes a way to leak the private key.</li>
+  <li>Verification and ECDH operate entirely on public values, so ordinary
+      variable-time code is fine there; the sensitive arithmetic is Montgomery
+      (CIOS) with constants derived on the fly, and points are Jacobian.</li>
+</ul>
+
+<p>Examples: <code>esp32s3_tls_hello</code> (handshake),
+<code>esp32s3_tls_weather</code> (real-world HTTPS),
+<code>esp32s3_tls_resume</code> (session resumption), plus
+<code>esp32s3_wifi_tls</code> over the radio.</p>

@@ -1,0 +1,52 @@
+
+<h2>Why it exists alongside ext4</h2>
+
+<p><a href="47-ext4.html">ext4</a> is the better filesystem, but only Linux
+mounts it. When a device exposes its storage over USB mass storage it appears as
+a removable drive, and if it is formatted FAT then Windows, macOS and Linux all
+mount it with no driver and no ceremony: the user drops files on it and the
+device reads them back.</p>
+
+<p>That single use case sets the whole design.</p>
+
+<h2>The deliberate limits</h2>
+
+<table>
+  <thead><tr><th>Choice</th><th>Reason</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Read only</strong></td>
+        <td>The PC writes; the device reads. Nothing here needs to write, so
+            nothing here can corrupt a volume the user cares about.</td></tr>
+    <tr><td><strong>FAT16 only</strong></td>
+        <td>FAT12 and FAT32 volumes are <em>recognised and rejected</em> rather
+            than misread, so wrongly formatted media fails loudly instead of
+            returning plausible rubbish.</td></tr>
+    <tr><td><strong>Long filenames (VFAT)</strong></td>
+        <td>Because a user dropping files on a drive will not respect 8.3, and
+            silently mangling their names is not acceptable.</td></tr>
+  </tbody>
+</table>
+
+<p class="note">"Recognised and rejected" is the part worth copying as a design
+habit. A FAT32 volume read as FAT16 does not fail &mdash; it returns entries
+that look like files. Refusing is strictly better than a plausible wrong
+answer.</p>
+
+<h2>Formatting</h2>
+
+<p><code>Fat16.Mkfs</code> is a separate child that lays down an empty volume on
+blank media. It chooses 4&nbsp;KB clusters aligned to the NOR erase unit, so the
+block layer's read-modify-write stays one erase per cluster written &mdash;
+the filesystem's geometry chosen to suit the medium underneath it.</p>
+
+<p>It reads from either an MBR-partitioned disk (what Windows expects on a USB
+stick) or a bare boot sector at LBA 0, and sits on
+<a href="46-block-dev.html">Block_Dev</a> like everything else, so the same
+sources run over SPI NOR flash, an SD card, or a file-backed device in the test
+harness.</p>
+
+<p class="warn">Host-verified only. The development harness makes three
+independent implementations agree about every volume &mdash; this code, the
+host's <code>dosfstools</code>, and a FAT16 writer written from the
+specification rather than from this source &mdash; but the on-device path wants
+checking on your own hardware.</p>

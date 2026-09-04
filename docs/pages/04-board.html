@@ -1,0 +1,54 @@
+
+<h2>Use the native USB port</h2>
+
+<p>Plug the cable into the port wired to the chip's built-in
+<strong>USB-Serial-JTAG</strong> controller, usually labelled <code>USB</code>.
+Boards that also carry a separate CH343/CP210x bridge label that one
+<code>UART</code>. The native port is the one that gives you the console and the
+JTAG debugger over the same cable, so prefer it.</p>
+
+<h2>Find the device node</h2>
+
+<pre><code>ls /dev/ttyACM*        # usually /dev/ttyACM0</code></pre>
+
+<p>Nothing there? Check <code>dmesg | tail</code> right after plugging in. A
+silent <code>dmesg</code> means the cable is charge-only or the socket is the
+wrong one.</p>
+
+<h2>Grant yourself access, once</h2>
+
+<pre><code>sudo usermod -aG dialout $USER          # then LOG OUT and back in</code></pre>
+
+<p>The log-out is not optional &mdash; group membership is established at login.
+Until then you will get <code>Permission denied</code> on
+<code>/dev/ttyACM0</code> and be tempted to run the flasher under
+<code>sudo</code>, which works but leaves root-owned build artifacts behind.</p>
+
+<h2>Forcing download mode</h2>
+
+<p>The flasher resets the board into the ROM download loader for you, by pulsing
+DTR and RTS. Occasionally &mdash; a wedged application, a board mid-deep-sleep
+&mdash; that does not take. Do it by hand:</p>
+
+<ol>
+  <li>Hold <strong>BOOT</strong>.</li>
+  <li>Tap <strong>RESET</strong>.</li>
+  <li>Release <strong>BOOT</strong>.</li>
+</ol>
+
+<p>The board is now sitting in the ROM loader waiting for a flash command, and
+will stay there until you reset it again.</p>
+
+<h2>Reading the console</h2>
+
+<p>Any serial terminal at <strong>115200&nbsp;8N1</strong> works. The
+<code>./x monitor</code> command in the next step picks one for you, but if you
+would rather drive it yourself:</p>
+
+<pre><code>screen /dev/ttyACM0 115200                 # quit: Ctrl-A then K
+# or:  python3 -m serial.tools.miniterm /dev/ttyACM0 115200
+# or:  cat /dev/ttyACM0</code></pre>
+
+<p class="note">Set <code>ESPPORT</code> in your environment and every command in
+this guide will pick it up, so you can drop the <code>-p</code> flag:
+<code>export ESPPORT=/dev/ttyACM0</code>.</p>

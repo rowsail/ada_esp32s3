@@ -1,0 +1,46 @@
+
+<h2>The file</h2>
+
+<p>Every example owns one. Here is
+<code>examples/esp32s3_gpio0_blink/board.ads</code>:</p>
+
+<pre><code>package Board is
+   Flash_Size : constant := 2 * 1024 * 1024;   --  total SPI flash
+   PSRAM_Size : constant := 2 * 1024 * 1024;   --  external PSRAM @0x3D000000
+end Board;</code></pre>
+
+<p>It is ordinary Ada, not a config-file dialect, so it participates in the
+build like any other spec. Edit it and rebuild &mdash; <code>build.sh</code>
+regenerates the board config and the 2nd-stage bootloader automatically. There
+is no separate step to remember.</p>
+
+<h2>Or let the tooling edit it</h2>
+
+<pre><code>./x config gpio0_blink show
+./x config gpio0_blink flash-size 4MB
+./x config gpio0_blink psram-size 8MB</code></pre>
+
+<p>Sizes accept several spellings: <code>4MB</code>, <code>512KB</code>,
+<code>0x800000</code>, <code>8388608</code>. For a project outside the repo, the
+same verb exists on the launcher: <code>esp32-ada config psram-size 8MB</code>.</p>
+
+<h2>Why PSRAM size changes the bootloader</h2>
+
+<p>The 2nd-stage bootloader brings up the external octal PSRAM and maps it, so
+the size is baked into it. A project whose <code>PSRAM_Size</code> differs from
+the default gets its <strong>own</strong> bootloader built for it; projects that
+match the default reuse the prebuilt one. That is why changing PSRAM size costs
+a bootloader rebuild and changing flash size does not.</p>
+
+<p class="note">If you are curious what that bring-up involves: it is entirely
+from-source here, including a genuine 80&nbsp;MHz din-sampling timing sweep
+rather than a vendor default. The write-up is in
+<code>examples/common/bare/bootloader/PSRAM_BRINGUP_RESEARCH.md</code>.</p>
+
+<h2>Machine-readable</h2>
+
+<p>For editor plugins and scripts, both discovery commands emit JSON:</p>
+
+<pre><code>./x list   --json
+./x config --json
+# {"flash_size":2097152,"flash_size_str":"2MB","psram_size":2097152,"psram_pages":32}</code></pre>
