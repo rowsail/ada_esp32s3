@@ -5,7 +5,13 @@
 # pointers are 8 B).  Uses the xtensa GNAT + dynconfig via the SDK env; compiles
 # only the Wi-Fi closure (not the whole HAL).  Compile-only, no board.
 set -euo pipefail
-SDK="${ESP32S3_ADA_SDK:-$HOME/tempgit/ada_esp32s3}"
+#  The SDK root is THIS SCRIPT'S OWN location (libs/esp32s3_wifi/test/ -> ../../..),
+#  never a guess at where somebody keeps their checkout.  The fallback here used
+#  to be "$HOME/tempgit/ada_esp32s3", which is one developer's path: on any other
+#  machine -- a second clone, a colleague's box, CI -- it resolved to a directory
+#  that does not exist and the script died on the first line it used.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SDK="${ESP32S3_ADA_SDK:-$(cd "$HERE/../../.." && pwd)}"
 . "$SDK/export.sh" >/dev/null
 RTS="$SDK/crates/esp32s3_rts/embedded-esp32s3"
 HAL="$SDK/libs/esp32s3_hal"
