@@ -83,7 +83,7 @@ package body ESP32S3.WiFi.IP is
       while Shift_Right (Sum, 16) /= 0 loop
          Sum := (Sum and 16#FFFF#) + Shift_Right (Sum, 16);
       end loop;
-      return U16 (not Sum and 16#FFFF#);
+      return U16 ((not Sum) and 16#FFFF#);
    end Checksum;
 
    --  TCP/UDP checksum over the IPv4 pseudo-header (Src, Dst, Proto, segment
@@ -110,7 +110,7 @@ package body ESP32S3.WiFi.IP is
       while Shift_Right (Sum, 16) /= 0 loop
          Sum := (Sum and 16#FFFF#) + Shift_Right (Sum, 16);
       end loop;
-      return U16 (not Sum and 16#FFFF#);
+      return U16 ((not Sum) and 16#FFFF#);
    end L4_Checksum;
 
    function On_Subnet (Target : IPv4) return Boolean is

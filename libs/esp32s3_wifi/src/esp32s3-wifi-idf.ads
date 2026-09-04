@@ -51,7 +51,14 @@ private package ESP32S3.WiFi.IDF is
       Pairwise at 52 range 0 .. 31;
       Group    at 56 range 0 .. 31;
    end record;
+   --  The gaps in the layout above are real: this mirrors ESP-IDF's
+   --  wifi_ap_record_t byte for byte, and the fields this driver does not read
+   --  are left undeclared rather than padded with dummy components, so the
+   --  record reads as the parts we use.  'Size pins the 92-byte stride that
+   --  C_AP_Array indexing depends on.
+   pragma Warnings (Off, "* bits of ""C_AP_Record"" unused");
    for C_AP_Record'Size use 92 * 8;
+   pragma Warnings (On, "* bits of ""C_AP_Record"" unused");
 
    type C_AP_Array is array (Positive range <>) of C_AP_Record
      with Convention => C, Component_Size => 92 * 8;
