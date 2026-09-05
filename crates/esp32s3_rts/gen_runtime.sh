@@ -422,6 +422,67 @@ if [ "$PROFILE" = "full" ]; then
     fi
 fi
 
+# FULL idle-ATCB DOUBLE-LINK into All_Tasks_List.  Repair_Idle_After_Elaboration
+# (full_overlay/patches/07) rebuilds the boot CPU's idle ATCB by calling
+# Initialize_Idle a SECOND time -- and that reaches Tasking.Initialize_ATCB, whose
+# last act is unconditional:
+#
+#     T.Common.All_Tasks_Link := All_Tasks_List;
+#     All_Tasks_List := T;
+#
+# The boot-time Initialize already linked that same ATCB in, so the second run
+# links the node to ITSELF whenever it is the current head.  A self-linked node
+# makes All_Tasks_List non-terminating, and Vulnerable_Complete_Master
+# (s-tassta.adb) walks it holding Lock_RTS + Write_Lock (Self_ID) -- so the walk
+# spins for ever with the global RTS lock held and every other task freezes.
+#
+# Symptom: any program whose environment task waits for dependent tasks hangs.
+# The env task's own delay still works (it is the one spinning), so it presents as
+# "library-level and dynamically-allocated tasks never wake" -- e.g. the
+# esp32s3_full_tasking example stops after one heartbeat and one worker iteration,
+# and ACATS full hangs C761001 / C910003 / C93006 / CXC7001 / CXC7004.
+# (Root-caused by JTAG: All_Tasks_List walked to a node whose link was itself,
+# at the address of system__task_primitives__operations__idle_tasks.)
+#
+# Snapshot the two cells the re-insertion clobbers and restore them, so the list
+# keeps the idle ATCB exactly ONCE, in its original position.  Done here as well
+# as in the synthesis patch because full is normally UNPACKED from a pre-built
+# pack, so the synthesis patches do not run.
+if [ "$PROFILE" = "full" ]; then
+    TP="$RTS/gnarl/s-taprop.adb"
+    if [ -f "$TP" ] && grep -q 'Repair_Idle_After_Elaboration' "$TP" \
+       && ! grep -q 'Saved_All_Tasks_Head' "$TP"; then
+        python3 - "$TP" <<'FIXIDLE'
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+old = """            Idle_Task : Tasking.Ada_Task_Control_Block renames
+                           Idle_Tasks (CPU'First);
+         begin
+            Initialize_Idle (CPU'First);"""
+new = """            Idle_Task : Tasking.Ada_Task_Control_Block renames
+                           Idle_Tasks (CPU'First);
+            --  Initialize_Idle -> Initialize_ATCB unconditionally prepends the
+            --  ATCB to All_Tasks_List.  It is already on that list from the
+            --  boot-time Initialize, so a second insertion self-links it and the
+            --  list stops terminating.  Restore both cells afterwards.
+            Saved_All_Tasks_Head : constant Tasking.Task_Id :=
+                                     Tasking.All_Tasks_List;
+            Saved_All_Tasks_Link : constant Tasking.Task_Id :=
+                                     Idle_Task.Common.All_Tasks_Link;
+         begin
+            Initialize_Idle (CPU'First);
+            Idle_Task.Common.All_Tasks_Link := Saved_All_Tasks_Link;
+            Tasking.All_Tasks_List := Saved_All_Tasks_Head;"""
+if s.count(old) != 1:
+    sys.exit("gen_runtime: idle-ATCB fixup found %d sites, expected 1" % s.count(old))
+open(p, "w").write(s.replace(old, new))
+FIXIDLE
+        rm -f "$RTS/adalib/libgnat.a" "$RTS/adalib/libgnarl.a"   # force recompile
+        echo "[gen_runtime] s-taprop idle-ATCB All_Tasks_List double-link: fixed"
+    fi
+fi
+
 # 2. Compile the runtime and archive into libgnat.a / libgnarl.a (bb-runtimes
 #    cannot build a library project for xtensa-esp32-elf, so archive by hand).
 if [ ! -f "$RTS/adalib/libgnat.a" ]; then

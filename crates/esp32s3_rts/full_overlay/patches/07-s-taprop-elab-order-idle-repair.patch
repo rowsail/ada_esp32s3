@@ -49,7 +49,7 @@
     end Initialize;
  
     ----------------------
-@@ -995,4 +993,37 @@
+@@ -995,4 +993,62 @@
     function Stop_Task (T : ST.Task_Id) return Boolean is (False);
     function Continue_Task (T : ST.Task_Id) return Boolean is (False);
  
@@ -67,12 +67,37 @@
 +      --  elaboration), so no live kernel state references the descriptor.
 +      --  Slave CPUs are set up later, by Initialize_Slave.
 +
++      --  ONE THING MUST BE PUT BACK BY HAND.  Initialize_Idle reaches
++      --  Tasking.Initialize_ATCB, whose last act is unconditional:
++      --
++      --     T.Common.All_Tasks_Link := All_Tasks_List;
++      --     All_Tasks_List := T;
++      --
++      --  The boot-time Initialize already linked this very ATCB into that
++      --  list, so running it a SECOND time links the node to ITSELF whenever
++      --  it is the current head -- and a self-linked node makes All_Tasks_List
++      --  non-terminating.  Vulnerable_Complete_Master (s-tassta.adb) walks that
++      --  list holding Lock_RTS and Write_Lock (Self_ID), so the walk spins for
++      --  ever with the global RTS lock held: every other task freezes.  The
++      --  environment task's own delay still works (it is the one spinning), which
++      --  is why the symptom is "library-level and dynamically-allocated tasks
++      --  never wake" rather than an obvious hang at startup.
++      --
++      --  Snapshot the two cells the re-insertion clobbers and restore them, so
++      --  the list ends up exactly as it was: the idle ATCB present ONCE, in its
++      --  original position.
++
 +      if Environment_Task_Id /= null then
 +         declare
 +            Idle_Task : Tasking.Ada_Task_Control_Block renames
 +                           Idle_Tasks (CPU'First);
++            Saved_Head : constant Tasking.Task_Id := Tasking.All_Tasks_List;
++            Saved_Link : constant Tasking.Task_Id :=
++                           Idle_Task.Common.All_Tasks_Link;
 +         begin
 +            Initialize_Idle (CPU'First);
++            Idle_Task.Common.All_Tasks_Link := Saved_Link;
++            Tasking.All_Tasks_List := Saved_Head;
 +            Idle_Task.Common.LL.Thread :=
 +              Idle_Task.Common.LL.Thread_Desc'Access;
 +            System.OS_Interface.Thread_Create
