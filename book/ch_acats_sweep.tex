@@ -13,7 +13,17 @@ recovers hundreds of passes that a bundled sweep loses.
 not shipped in this distribution; they belong to the development repository.
 This chapter is kept as a record of the conformance methodology and results; the
 commands below are shown to document \emph{how} the sweep was run, not as steps to
-reproduce from this repository.}}
+reproduce from this repository.
+
+\smallskip
+\textbf{Superseded figures.} The counts in this chapter are those of the original
+Python sweep described here. The suite is now driven by a separate harness
+(\texttt{rowsail/Ada\_esp32s3\_acats}: a filter/producer/consumer pipeline that
+pulls this repository in as a submodule), and \emph{its} results are the current
+conformance evidence --- see \texttt{ACATS\_RESULTS.md} there, and the summary
+table in this repository's \texttt{README.md}. The methodology below --- one test
+per image, why bundling loses passes, how grades are parsed --- is unchanged and is
+why this chapter is still here.}}
 \medskip
 
 \section{Two ways to run the suite}\index{ACATS}\index{conformance testing}\index{test harness}

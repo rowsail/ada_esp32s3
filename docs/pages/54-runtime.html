@@ -82,19 +82,26 @@ runtime is run against the <strong>official ACATS 4.2</strong> suite on real
 hardware.</p>
 
 <table>
-  <thead><tr><th>Profile</th><th>Test list</th><th>PASS</th><th>Genuine failures</th></tr></thead>
+  <thead><tr><th>Profile</th><th>Applicable</th><th>PASS</th><th>Genuine port failures</th></tr></thead>
   <tbody>
-    <tr><td><code>light-tasking</code></td><td><code>jorvik_hw_runnable</code> (846)</td><td>~700</td><td><strong>0</strong></td></tr>
-    <tr><td><code>embedded</code></td><td><code>jorvik_hw_runnable</code> (846)</td><td>840+</td><td><strong>0</strong></td></tr>
-    <tr><td><code>full</code></td><td><code>full_applicable</code> (1,518)</td><td>1,286+</td><td><strong>0</strong></td></tr>
+    <tr><td><code>light-tasking</code></td><td>1132</td><td>674</td><td><strong>0</strong></td></tr>
+    <tr><td><code>embedded</code></td><td>1257</td><td>884</td><td><strong>0</strong></td></tr>
+    <tr><td><code>full</code></td><td>1559</td><td>908</td><td><strong>0</strong></td></tr>
   </tbody>
 </table>
 
-<p class="warn">"Zero genuine failures" needs its qualifier stated, not buried:
-every non-passing test is an <em>interactive</em> test needing a bench-generated
-stimulus, a build-drop (a library unit the bare runtime omits), a correct
-<code>NOT-APPLICABLE</code>, or a documented limitation. That is a different
-claim from "everything passes", and the honest version is the useful one.</p>
+<p>Reconciled across all three profiles, with a host-GNAT cross-check on every
+genuine signal: <strong>762 conformant, 151 profile-limited, 643 absent-unit,
+55 not-run, 2 not-ours, 1 known-limitation, and zero port-specific defects</strong>.</p>
+
+<p class="warn">"Zero genuine failures" needs its qualifier stated, not buried.
+Every non-passing test is one of: a deliberately-raised exception that cannot
+propagate under a leaner profile's restrictions (and passes on a richer one), a
+build-drop for a library unit the bare runtime omits, a correct
+<code>NOT-APPLICABLE</code>, one Annex E remote-call <em>server</em> that a
+single-node target can never satisfy, or two tests that fail identically on stock
+host x86 GNAT and so are not this port's at all. That is a different claim from
+"everything passes", and the honest version is the useful one.</p>
 
 <h2>How the sweep works</h2>
 

@@ -93,8 +93,8 @@ write-up:
   dynamic/nested tasks, dynamic priorities, task attributes, exception
   propagation, `abort`, and `Ada.Interrupts` handlers (static *and* dynamic).
 - **Single-precision FPU** state preserved across context switches.
-- **ACATS 4.2 conformance** on hardware — **0 genuine failures on every profile**
-  (`full`: 1,286+ PASS one-test-per-image; see below).
+- **ACATS 4.2 conformance** on hardware — **zero port-specific defects on every
+  profile** (`full`: 908 PASS of 1559 applicable, one test per image; see below).
 - **25+ peripheral drivers** and **pure-Ada ext4 + FAT16 filesystems** (most drivers
   ship with a hardware self-test; see [Testing status](#testing-status)).
 
@@ -340,23 +340,37 @@ portable logic still passes.
 
 ## ACATS conformance
 
-The runtime is exercised against the **ACATS 4.2** suite on real hardware, with
-the grade captured per test over the serial console — **0 genuine failures on
-every profile**:
+The runtime is exercised against the **ACATS 4.2** suite on real hardware, one
+test per flashed image, with the grade captured per test over the serial console.
+Last run **2026-09-05** against `a96a9a7`:
 
-| Profile | Test list | PASS | FAIL |
-|---|---|---:|---:|
-| `light-tasking` (Jorvik) | `jorvik_hw_runnable.txt` (846) | ~700 | **0** |
-| `embedded` (ZCX) | `jorvik_hw_runnable.txt` (846) | 840+ | **0** |
-| `full` (complete GNARL) | `full_applicable.txt` (1,518) | 1,286+ | **0** |
+| Profile | applicable | passed | na | exception | hung | nobuild |
+|---|---:|---:|---:|---:|---:|---:|
+| `light-tasking` (Jorvik) | 1132 | **674** | 3 | 93 | 0 | 361 |
+| `embedded` (ZCX) | 1257 | **884** | 3 | 2 | 0 | 368 |
+| `full` (complete GNARL) | 1559 | **908** | 5 | 2 | 1 | 643 |
 
-The `embedded`/`full` figures are from a **standalone one-test-per-image** sweep
-that parallelizes across many boards. Every non-passing test is an interactive
-test (needs a bench-generated stimulus), a build-drop (a library unit the bare
-runtime omits), a correct `NOT-APPLICABLE`, or a documented limitation. The
-book's ACATS chapter has the full breakdown. (The ACATS suite and its sweep
-harness are not shipped in this distribution; they live in the development
-repository.)
+Reconciled across all three profiles (richest = `full` as the reference, with a
+host-GNAT cross-check on every genuine signal): **762 conformant, 151
+profile-limited, 643 absent-unit, 55 not-run, 2 not-ours, 1 known-limitation, and
+zero port-specific defects**.
+
+* **exception** on light-tasking is overwhelmingly deliberately-raised exceptions
+  that cannot propagate under `No_Exception_Propagation` — they pass on the richer
+  profiles. **nobuild** is the absent-unit boundary (`Ada.Calendar`, file I/O,
+  `Ada.Finalization`).
+* The one **hung** is `CXE4006`, an Annex E remote-call *server*: a single-node
+  target has no client partition, so it waits forever. Inapplicable, not a defect.
+* The two **not-ours** (`C3A1005`, `CC51011`) fail identically on stock host x86
+  GNAT, so they are target-independent rather than this port's. Both are new tests
+  in ACATS Modification List 4.2A (June 2024); the RM analysis suggests the tests
+  themselves are at fault. See the full report for the rules and the reasoning.
+
+**Full report:
+[`Ada_esp32s3_acats/ACATS_RESULTS.md`](https://github.com/rowsail/Ada_esp32s3_acats/blob/master/ACATS_RESULTS.md)** —
+per-profile tallies, terminology, the reconciliation, and every bug the sweeps
+found and fixed. The suite and its harness are not shipped here; they live in that
+repository, which pulls this one in as a submodule.
 
 ## Tooling & debugging
 
