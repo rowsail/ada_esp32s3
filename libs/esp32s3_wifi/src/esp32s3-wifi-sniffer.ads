@@ -14,8 +14,6 @@
 --  (the environment task); they are not re-entrant.
 with Interfaces;
 
-private with System;
-
 package ESP32S3.WiFi.Sniffer is
 
    --  Put the (already Initialized) radio on Channel and start delivering

@@ -35,6 +35,7 @@ package body ESP32S3.GPIO is
          Mode  : Pin_Mode;
          Pull  : Pull_Mode;
          Drive : Drive_Strength);
+      procedure Route_Out (Pin : Pin_Id; Signal : Natural);
       procedure Toggle (Pin : Pin_Id);
    end Lock;
 
@@ -84,6 +85,20 @@ package body ESP32S3.GPIO is
          end case;
       end Configure;
 
+      --  Configure leaves the pad on OUT_SEL = 256 (plain GPIO); overwrite that
+      --  with the caller's matrix signal while still holding the lock, so no
+      --  concurrent Configure can land between the two writes.
+      procedure Route_Out (Pin : Pin_Id; Signal : Natural) is
+         Out_Cfg : Reg.FUNC_OUT_SEL_CFG_Register;
+      begin
+         Configure (Pin, Mode => Output, Pull => Floating, Drive => Drive_Strong);
+
+         Out_Cfg := Reg.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
+         Out_Cfg.OUT_SEL := Reg.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Signal);
+         Out_Cfg.OEN_SEL := False;         --  peripheral owns the output-enable
+         Reg.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := Out_Cfg;
+      end Route_Out;
+
       procedure Toggle (Pin : Pin_Id) is
          Currently_High : Boolean;
       begin
@@ -112,6 +127,12 @@ package body ESP32S3.GPIO is
    begin
       Lock.Configure (Pin, Mode, Pull, Drive);
    end Configure;
+
+   --------------------------------------------------------------------------
+   procedure Route_Out (Pin : Pin_Id; Signal : Natural) is
+   begin
+      Lock.Route_Out (Pin, Signal);
+   end Route_Out;
 
    --------------------------------------------------------------------------
    procedure Set (Pin : Pin_Id) with SPARK_Mode => On is

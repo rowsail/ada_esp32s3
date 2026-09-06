@@ -68,9 +68,9 @@ package ESP32S3.GPIO is
    --  Configure a pad as a plain GPIO: direction + pull + drive. The pad is
    --  always routed through the GPIO matrix as a software-controlled GPIO
    --  (IO_MUX MCU_SEL = 1, GPIO output index 256). Output pads get their driver
-   --  enabled; input pads get the input buffer enabled. (Routing a pad to a
-   --  peripheral signal is the job of that peripheral's own Configure_Pins,
-   --  which programs the matrix directly -- not this driver.)
+   --  enabled; input pads get the input buffer enabled. (Deciding WHICH
+   --  peripheral signal a pad carries stays with that peripheral's own
+   --  Configure_Pins; Route_Out below is only the shared mechanism it uses.)
    --  The two banks the operations below touch.  Renamed once so the contracts
    --  read as a list of modes rather than a wall of long names.
    package Pad_Regs renames ESP32S3_Registers.GPIO;
@@ -82,6 +82,27 @@ package ESP32S3.GPIO is
       Mode  : Pin_Mode;
       Pull  : Pull_Mode := Floating;
       Drive : Drive_Strength := Drive_Medium)
+   with SPARK_Mode => On,
+        Global => (In_Out => (Pad_Regs.GPIO_Periph, Mux_Regs.IO_MUX_Periph));
+
+   --  Configure Pin as a strong push-pull output AND route matrix output
+   --  Signal onto it -- the two steps every push-pull peripheral driver wants,
+   --  in the order it wants them.  Signal is a GPIO-matrix output index; pass a
+   --  constant from ESP32S3.GPIO_Signals (e.g. U0TXD_OUT), not a bare literal.
+   --
+   --  The output-enable is left under the PERIPHERAL's control (OEN_SEL =
+   --  False) rather than the GPIO ENABLE bank, so a peripheral that tri-states
+   --  its own output -- TWAI recessive, SPI half-duplex turnaround -- still
+   --  can.
+   --
+   --  Both writes happen under the same lock as Configure, so they land as one
+   --  update: a concurrent Configure of the same pad can no longer interleave
+   --  and leave it routed to plain GPIO (index 256) instead of Signal.
+   --
+   --  Open-drain buses are NOT served here -- I2C additionally sets PAD_DRIVER,
+   --  takes a weaker FUN_DRV and holds a pull-up, so ESP32S3.I2C.Engine keeps
+   --  its own pad setup.  Body NOT in SPARK: read-modify-write through the lock.
+   procedure Route_Out (Pin : Pin_Id; Signal : Natural)
    with SPARK_Mode => On,
         Global => (In_Out => (Pad_Regs.GPIO_Periph, Mux_Regs.IO_MUX_Periph));
 

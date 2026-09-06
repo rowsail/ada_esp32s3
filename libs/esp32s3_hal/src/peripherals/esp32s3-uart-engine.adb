@@ -272,17 +272,6 @@ package body ESP32S3.UART.Engine is
    -- Configure_Pins --
    --------------------
 
-   --  Drive Pad as a push-pull output sourced from the matrix signal Sig.
-   procedure Drive_Out (Pad : G.Pin_Id; Sig : Natural) is
-      Pad_Index : constant Natural := Natural (Pad);
-      Out_Cfg   : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index);
-   begin
-      G.Configure (Pad, Mode => G.Output, Drive => G.Drive_Strong);
-      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      Out_Cfg.OEN_SEL := False;                       --  peripheral output-enable
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index) := Out_Cfg;
-   end Drive_Out;
-
    --  Route Pad (input buffer on, pulled up) into the matrix input signal Sig.
    --  Pokes IO_MUX directly and leaves the OUTPUT driver untouched -- so a pad
    --  that is ALSO an output (a single-pad self-loopback of TXD->RXD or
@@ -345,7 +334,7 @@ package body ESP32S3.UART.Engine is
          if Driven_Tx (B.Port) /= Tx then
             Release_Pad (Driven_Tx (B.Port));
          end if;
-         Drive_Out (G.Pin_Id (Tx), Data_Sig);
+         G.Route_Out (G.Pin_Id (Tx), Data_Sig);
          Driven_Tx (B.Port) := Tx;
       end if;
       if Rx /= G.No_Pin then
@@ -359,7 +348,7 @@ package body ESP32S3.UART.Engine is
          if Driven_Rts (B.Port) /= Rts then
             Release_Pad (Driven_Rts (B.Port));
          end if;
-         Drive_Out (G.Pin_Id (Rts), Flow_Sig);
+         G.Route_Out (G.Pin_Id (Rts), Flow_Sig);
          Driven_Rts (B.Port) := Rts;
          B.Regs.MEM_CONF.RX_FLOW_THRHD :=
            MEM_CONF_RX_FLOW_THRHD_Field (Natural'Min (127, Natural'Max (1, Rx_Flow_Threshold)));

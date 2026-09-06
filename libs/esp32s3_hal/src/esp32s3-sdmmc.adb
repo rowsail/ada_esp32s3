@@ -143,17 +143,6 @@ package body ESP32S3.SDMMC is
    --  GPIO-matrix routing (single-threaded, from Setup).
    ---------------------------------------------------------------------------
 
-   --  Drive matrix signal Sig out onto Pad.
-   procedure Route_Out (Pad : ESP32S3.GPIO.Pin_Id; S : Natural) is
-      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
-   begin
-      ESP32S3.GPIO.Configure
-        (Pad, Mode => ESP32S3.GPIO.Output, Drive => ESP32S3.GPIO.Drive_Strong);
-      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (S);
-      Out_Cfg.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad)) := Out_Cfg;
-   end Route_Out;
-
    --  Enable Pad's input buffer (with pull-up) and feed it to matrix input Sig.
    procedure Route_In (S : Natural; Pad : ESP32S3.GPIO.Pin_Id) is
       Pad_Index : constant Natural := Natural (Pad);
@@ -170,7 +159,7 @@ package body ESP32S3.SDMMC is
    --  A bidirectional SD line: both driven out and sampled in, pulled up.
    procedure Route_Bidir (Pad : ESP32S3.GPIO.Pin_Id; S : Natural) is
    begin
-      Route_Out (Pad, S);
+      ESP32S3.GPIO.Route_Out (Pad, S);
       Route_In (S, Pad);
    end Route_Bidir;
 
@@ -1094,7 +1083,7 @@ package body ESP32S3.SDMMC is
       RINT := 16#FFFF#;                         --  clear stale raw ints
 
       --  Route the slot's lines through the GPIO matrix.
-      Route_Out (Clk, Slot_Sig.Cclk);           --  clock: output only
+      ESP32S3.GPIO.Route_Out (Clk, Slot_Sig.Cclk);           --  clock: output only
       Route_Bidir (Cmd, Slot_Sig.Ccmd);         --  command: bidirectional
       Route_Bidir (D0, Slot_Sig.Cdat (0));
       if D1 /= ESP32S3.GPIO.No_Pin then

@@ -21,6 +21,9 @@
 #                                     host suites, the libraries on all three
 #                                     runtime profiles (warnings are failures),
 #                                     and a build of every example
+#    ./x analyze [<lib>] [--update-baseline]   static analysis (adalang_analyzer):
+#                                     report findings NOT already in
+#                                     tools/analyzer-baselines/
 #    ./x stack   <example> [--top N] [--run]   static stack analysis (per-frame +
 #                                      worst-case call chains); --run adds the
 #                                      runtime high-water mark over serial
@@ -641,6 +644,113 @@ cmd_mem () {
 # (see its .gpr), and that only stays true if something enforces it.  The
 # machine-generated register layer in svd/ is exempt -- it is not hand-written
 # and is already exempt from -gnatw.v for the same reason.
+#  Static analysis with adalang_analyzer (an Alire crate: a Libadalang-based
+#  analyzer).  Deliberately NOT part of `./x test`: the tool is not in the
+#  toolchain this repo pins, so a plain clone would fail a check it cannot run.
+#
+#  Every finding present when a baseline was written is filtered out, so this
+#  reports only what is NEW.  The committed baselines are not an assertion that
+#  the code is clean -- the 2026-09 triage found the recommended rule set is
+#  dominated by false positives here (Asm output operands read as uninitialized,
+#  `return`/`raise` after a Free read as use-after-free, defensive out-parameter
+#  initialisation read as a dead store).  They are a "no new findings" tripwire.
+cmd_analyze () {
+    local update=0 only="" a
+    for a in "$@"; do
+        case "$a" in
+            --update-baseline|--update) update=1 ;;
+            -*) echo "x analyze: unknown option: $a" >&2; return 2 ;;
+            *)  only="$a" ;;
+        esac
+    done
+
+    if ! command -v adalang_analyzer > /dev/null 2>&1; then
+        cat >&2 <<'MSG'
+x analyze: adalang_analyzer is not on PATH.
+
+  It is an Alire community crate, not part of the pinned toolchain:
+
+      alr install adalang_analyzer          # installs into ~/.alire/bin
+      export PATH="$HOME/.alire/bin:$PATH"
+MSG
+        return 127
+    fi
+
+    #  export.sh, not sdk-env.sh: loading a project that imports another BY NAME
+    #  needs GPR_PROJECT_PATH, and resolving the cross compiler needs the xtensa
+    #  toolchain on PATH -- the same reasons build_lib_clean sources it.
+    . "$ROOT/export.sh" > /dev/null 2>&1
+
+    local base_dir="$ROOT/tools/analyzer-baselines"
+    mkdir -p "$base_dir"
+
+    local failures=0 ran=0 gpr name prof base rc
+    local log; log="$(mktemp -d)"; trap 'rm -rf "$log"' RETURN
+
+    if [ "$update" = 1 ]; then
+        echo "== static analysis (rewriting baselines) =="
+    else
+        echo "== static analysis (findings not already in tools/analyzer-baselines/) =="
+    fi
+
+    for gpr in "$ROOT"/libs/*/[a-z]*.gpr; do
+        [ -f "$gpr" ] || continue
+        case "$(basename "$gpr")" in *_prove.gpr) continue ;; esac
+        name="$(basename "${gpr%.gpr}")"
+        [ -z "$only" ] || [ "$only" = "$name" ] || continue
+        ran=$((ran + 1))
+
+        #  The WIDEST profile the library supports: esp32s3_hal scopes
+        #  Source_Dirs to ("src","svd") under light-tasking, so analysing that
+        #  profile would silently cover 102 of its 329 files.
+        prof="$(profiles_of_lib "$gpr" | tr ' ' '\n' | grep -vx light-tasking | head -1)"
+        base="$base_dir/$name.baseline"
+
+        if [ "$update" = 1 ]; then
+            adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
+                --recommended --write-baseline="$base" > "$log/out" 2>&1 || true
+            printf '  \033[32mok\033[0m    %-14s [%s]  baseline: %s finding(s)\n' \
+                   "$name" "$prof" "$(grep -cv '^#' "$base" 2>/dev/null || echo 0)"
+            continue
+        fi
+
+        if [ -f "$base" ]; then
+            adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
+                --recommended --baseline="$base" > "$log/out" 2>&1 && rc=0 || rc=$?
+        else
+            echo "  ..    $name: no baseline yet; run './x analyze $name --update-baseline'"
+            adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
+                --recommended > "$log/out" 2>&1 && rc=0 || rc=$?
+        fi
+
+        if [ "$rc" = 0 ]; then
+            printf '  \033[32mok\033[0m    %-14s [%s]  %s\n' "$name" "$prof" \
+                   "$(grep -m1 'Baseline matches:' "$log/out" || echo 'no findings')"
+        else
+            printf '  \033[31mNEW\033[0m   %-14s [%s]\n' "$name" "$prof"
+            #  Show the findings themselves, not the trailing summary block.
+            grep -E '^/.*: (warning|error):' "$log/out" \
+                | sed 's|^'"$ROOT"/'||;s|^|        |' | head -40 || true
+            failures=$((failures + 1))
+        fi
+    done
+
+    if [ "$ran" = 0 ]; then
+        echo "x analyze: no such library: $only" >&2; return 2
+    fi
+    echo
+    if [ "$failures" = 0 ]; then
+        printf '\033[32mPASS\033[0m  %s librar%s, no new findings\n' \
+               "$ran" "$([ "$ran" = 1 ] && echo y || echo ies)"
+    else
+        printf '\033[31mFAIL\033[0m  %s of %s librar%s %s new findings\n' \
+               "$failures" "$ran" "$([ "$ran" = 1 ] && echo y || echo ies)" \
+               "$([ "$failures" = 1 ] && echo has || echo have)"
+        echo "      Triage them; if they are noise, re-baseline with --update-baseline."
+    fi
+    return "$failures"
+}
+
 cmd_test () {
     local what="${1:-all}"
     local failures=0 ran=0
@@ -774,6 +884,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     monitor|mon)     cmd_monitor "$@" ;;
     clean)           cmd_clean "$@" ;;
     test)            cmd_test "$@" ;;
+    analyze)         cmd_analyze "$@" ;;
     stack)           cmd_stack "$@" ;;
     mem|memory)      cmd_mem "$@" ;;
     config|cfg)         cmd_config "$@" ;;
