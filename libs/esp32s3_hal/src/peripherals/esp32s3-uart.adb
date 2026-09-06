@@ -1,31 +1,13 @@
 with ESP32S3.UART.Engine;
+with ESP32S3.Ownership;
 
 package body ESP32S3.UART is
 
    package E renames ESP32S3.UART.Engine;   --  E: the low-level register engine
 
-   --  One protected guard per port -- arbitrates exclusive ownership.  The
-   --  guarded section is tiny (flip a flag); Write / Read run outside.
-   protected type Port_Guard is
-      entry Acquire;
-      procedure Release;
-   private
-      Held : Boolean := False;
-   end Port_Guard;
-
-   protected body Port_Guard is
-      entry Acquire when not Held is
-      begin
-         Held := True;
-      end Acquire;
-
-      procedure Release is
-      begin
-         Held := False;
-      end Release;
-   end Port_Guard;
-
-   Guards : array (UART_Port) of Port_Guard;
+   --  One ownership guard per port.  The guarded section is tiny (flip a flag);
+   --  Write / Read run outside it.
+   Guards : array (UART_Port) of ESP32S3.Ownership.Guard;
 
    ----------------------------------------------------------------------------
    --  State -- the single, ownership-checked gateway to the raw register bus.

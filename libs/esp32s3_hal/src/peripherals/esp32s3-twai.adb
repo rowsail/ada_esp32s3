@@ -1,4 +1,5 @@
 with ESP32S3.TWAI.Engine;
+with ESP32S3.Ownership;
 
 package body ESP32S3.TWAI is
 
@@ -8,23 +9,7 @@ package body ESP32S3.TWAI is
    --  Single-controller ownership guard.
    --------------------------------------------------------------------------
 
-   protected Guard is
-      entry Acquire;
-      procedure Release;
-   private
-      Held : Boolean := False;
-   end Guard;
-
-   protected body Guard is
-      entry Acquire when not Held is
-      begin
-         Held := True;
-      end Acquire;
-      procedure Release is
-      begin
-         Held := False;
-      end Release;
-   end Guard;
+   Guard : ESP32S3.Ownership.Guard;
 
    ----------------------------------------------------------------------------
    --  State -- the single, ownership-checked gateway to the controller.

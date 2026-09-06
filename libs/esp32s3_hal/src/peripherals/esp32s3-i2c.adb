@@ -1,32 +1,13 @@
 with ESP32S3.I2C.Engine;
+with ESP32S3.Ownership;
 
 package body ESP32S3.I2C is
 
    package E renames ESP32S3.I2C.Engine;
 
-   --  One protected guard per host -- arbitrates exclusive ownership.  The
-   --  guarded section is tiny (flip a flag); the actual transaction runs
-   --  outside.
-   protected type Host_Guard is
-      entry Acquire;
-      procedure Release;
-   private
-      Held : Boolean := False;
-   end Host_Guard;
-
-   protected body Host_Guard is
-      entry Acquire when not Held is
-      begin
-         Held := True;
-      end Acquire;
-
-      procedure Release is
-      begin
-         Held := False;
-      end Release;
-   end Host_Guard;
-
-   Guards : array (I2C_Host) of Host_Guard;
+   --  One ownership guard per host.  The guarded section is tiny (flip a flag);
+   --  the actual transaction runs outside it.
+   Guards : array (I2C_Host) of ESP32S3.Ownership.Guard;
 
    ----------------------------------------------------------------------------
    --  State -- the single, ownership-checked gateway to the raw register bus.
