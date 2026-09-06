@@ -60,12 +60,51 @@ nearly every call. It is a restriction, not a defect detector.
   calls, i.e. elaboration-order hazards. Worth watching in this repo specifically.
 - **`Missing_Loop_Variant` (11)** — SPARK loops that prove partial correctness but
   not termination.
-- **`Cyclomatic_Complexity` (75) and `Deep_Nesting` (45)** — quality metrics
-  against the configurable thresholds (`-complexity-threshold`,
-  `-nesting-threshold`). Not correctness, but the one genuinely additive thing
-  the DO-178C profile had to offer, so they are gated here rather than there.
+(`Cyclomatic_Complexity` and `Deep_Nesting` were briefly here, having been the
+one additive thing the DO-178C profile offered. They now live in `--style`,
+which is what they actually measure.)
 - **`Floating_Equality` (1)** — `if Magnitude /= 0.0` guarding a normalisation
   loop, where comparing exactly against zero is the correct test.
+
+## `--style`: the readability view
+
+`./x analyze --style` is the "is this code followable" view, as opposed to "is it
+correct" (`--recommended`) or "does it conform" (`--automotive`). 34 checks, its
+own baseline, **514 findings** — and **25 of the 34 currently find nothing**,
+which is the good part: they cost no baseline entries while they stay quiet, and
+each is a distinct way for code to become harder to read.
+
+| what it surfaces | n | worst case |
+|---|---:|---|
+| `Shadowed_Declaration` | 204 | an inner name hiding an outer one |
+| `Cyclomatic_Complexity` | 75 | **44** in `x509.adb:302` (threshold 10) |
+| `Null_Statement` | 66 | `null;` with no effect |
+| `Duplicate_Subprogram` | 53 | identical bodies |
+| `Too_Many_Parameters` | 45 | **15** in `esp32s3-es8311.adb:63` (threshold 6) |
+| `Deep_Nesting` | 45 | depth **10** in `esp32s3-ext4-journal.adb:31` (threshold 4) |
+| `Unnecessary_Else_After_Return` | 17 | an `else` after a returning branch |
+| `Ineffective_Operation`, `Identical_Branches`, `Redundant_Type_Conversion` | 9 | |
+
+Thresholds are the tool's defaults (complexity 10, nesting 4, parameters 6) and
+are adjustable with `-complexity-threshold`, `-nesting-threshold` and
+`-parameter-threshold` if the baseline should be tightened over time.
+
+### Four rules deliberately left out, having read their findings
+
+The set was chosen by **measuring all 126 checks**, not by reading names. These
+four sound like exactly what a style mode wants, and are not:
+
+| rule | n | why not |
+|---|---:|---|
+| `Naming_Convention` | 1,868 | every single one is the *same* objection — "one-character identifier used" (`R`, `V`, `I`, `K`). One house-style disagreement repeated, not 1,868 insights. |
+| `Magic_Number` | 2,940 (hand-written) | spread over 185 files. Register and protocol constants are this codebase's idiom, and the count grows with every driver. |
+| `No_Multiple_Return` | 180 | single-exit dogma. An early return is usually the *clearer* construct. |
+| `Long_Line` | 490–778 | hand-written source is already inside any sane limit — p99 is **90** columns and **nothing exceeds 120** — so every finding comes from generated `svd/`. Formatting is gnatformat's job. |
+
+Some checks (`Duplicate_Subprogram`, `Identical_Branches`, `Ineffective_Operation`,
+`Redundant_Type_Conversion`) appear in both this baseline and the recommended one.
+That is deliberate: `--style` is meant to stand alone as a view, so fixing one of
+those means re-baselining both.
 
 ## DO-178C: a report, not a gate
 
@@ -121,6 +160,8 @@ export PATH="$HOME/.alire/bin:$PATH"
 ./x analyze --automotive              # the correctness slice of the automotive profile
 ./x analyze --update-baseline         # accept the current findings
 ./x analyze --automotive --update-baseline
+./x analyze --style                   # readability: complexity, duplication, clarity
+./x analyze --style --update-baseline
 ./x analyze --do178c                  # DO-178C evidence reports -> build/do178c/
 ./x analyze --do178c=C tls            # one library, at Level C
 ```
