@@ -21,18 +21,15 @@
 #                                     host suites, the libraries on all three
 #                                     runtime profiles (warnings are failures),
 #                                     and a build of every example
-#    ./x analyze [<lib>] [--automotive] [--update-baseline]   static analysis
+#    ./x analyze [<lib>] [--style] [--update-baseline]   static analysis
 #                                     (adalang_analyzer): report findings NOT
 #                                     already in tools/analyzer-baselines/.
-#                                     --automotive adds the correctness-oriented
-#                                     rules from the automotive profile (its own
-#                                     baseline; the full profile is 39.5k
-#                                     restriction findings -- see the README).
-#                                     --style is the readability view: cognitive
-#                                     complexity, duplication and constructs that
-#                                     obscure intent.  --do178c[=A|B|C|D] instead
-#                                     WRITES per-objective DO-178C evidence
-#                                     reports to build/do178c/ (a report, not a gate)
+#                                     Default = defects; --style = readability
+#                                     (complexity, duplication, constructs that
+#                                     obscure intent), its own baseline.
+#                                     --do178c[=A|B|C|D] instead WRITES
+#                                     per-objective DO-178C evidence reports to
+#                                     build/do178c/ (a report, not a gate)
 #    ./x stack   <example> [--top N] [--run]   static stack analysis (per-frame +
 #                                      worst-case call chains); --run adds the
 #                                      runtime high-water mark over serial
@@ -663,14 +660,14 @@ cmd_mem () {
 #  dominated by false positives here (Asm output operands read as uninitialized,
 #  `return`/`raise` after a Free read as use-after-free, defensive out-parameter
 #  initialisation read as a dead store).  They are a "no new findings" tripwire.
-#  The automotive rules worth keeping.  `--automotive` as the tool ships it
-#  reports ~39.5k findings here, because most of that profile is MISRA/AUTOSAR
-#  RESTRICTIONS -- no dynamic allocation, no tasking, no controlled types, no
-#  address clauses, no representation clauses, no unexplained literals -- and a
-#  bare-metal register HAL is built out of exactly those.  25.5k of them are
-#  Magic_Number on register offsets alone.  Baselining that would bury the
-#  tripwire, so this is the subset that makes CORRECTNESS claims rather than
-#  conformance ones.
+#  Checks the --recommended preset does not enable, added to the default gate.
+#
+#  They came from the automotive profile, which used to be a mode of its own.
+#  It is not worth one: of its twelve checks only TWO overlapped --style, and
+#  the other ten are what is listed here -- correctness rules, not conformance
+#  ones, so they belong in the default gate rather than behind a flag nobody
+#  remembers to pass.  (`--recommended` and `-checks=` compose, so this is
+#  additive.)
 #
 #  The first six normally find nothing at all, which is the point: they are the
 #  copy-paste and logic-error detectors, they cost no baseline entries while
@@ -682,17 +679,17 @@ cmd_mem () {
 #  that can transitively raise, which in a stack that signals errors WITH
 #  exceptions (ext4 raises No_Space / Corrupt / Use_Error by design) is very
 #  nearly every call.  It is a restriction, not a defect detector.
-ANALYZE_AUTOMOTIVE_CHECKS="\
+ANALYZE_EXTRA_CHECKS="\
 Constant_Condition,Overlapping_Case_Ranges,Duplicate_Boolean_Operand,\
-Unreachable_Case_Alternative,Redundant_Abs,Redundant_Unary_Minus,\
-Floating_Equality,Non_Short_Circuit_Condition,Global_Contract_Mismatch,\
-Volatile_Atomic_Consistency,Library_Level_Initialization,\
-Missing_Loop_Variant"
+Unreachable_Case_Alternative,Floating_Equality,Non_Short_Circuit_Condition,\
+Global_Contract_Mismatch,Volatile_Atomic_Consistency,\
+Library_Level_Initialization,Missing_Loop_Variant"
+
 
 #  Style, comprehensibility and complexity: the "is this code readable" view,
-#  as opposed to "is it correct" (--recommended) or "does it conform"
-#  (--automotive).  Chosen by MEASURING all 126 checks rather than by name --
-#  three plausible-sounding rules were dropped once their findings were read:
+#  as opposed to "is it correct" (the default gate).  Chosen by MEASURING all
+#  126 checks rather than by name -- four plausible-sounding rules were dropped
+#  once their findings were read:
 #
 #    Naming_Convention  1868 findings, and every one of them is the SAME
 #                       objection -- "one-character identifier used" (R, V, I,
@@ -724,11 +721,10 @@ Reraise_Discards_Occurrence,Inefficient_String_Concatenation,Empty_If_Body,\
 Empty_Else_Body,No_Goto,No_Label"
 
 cmd_analyze () {
-    local update=0 only="" auto=0 style=0 do178="" a
+    local update=0 only="" style=0 do178="" a
     for a in "$@"; do
         case "$a" in
             --update-baseline|--update) update=1 ;;
-            --automotive)               auto=1 ;;
             --style)                    style=1 ;;
             --do178c)                   do178=A ;;
             --do178c=[ABCD])            do178="${a#--do178c=}" ;;
@@ -742,22 +738,14 @@ cmd_analyze () {
     #  keep SEPARATE baselines: they enable different checks, so one set of
     #  fingerprints cannot stand in for the other.
     local checks suffix label
-    if [ "$auto" = 1 ] && [ "$style" = 1 ]; then
-        echo "x analyze: --automotive and --style are separate views; pick one" >&2
-        return 2
-    fi
     if [ "$style" = 1 ]; then
         checks="-checks=$ANALYZE_STYLE_CHECKS"
         suffix=".style"
         label="style / comprehensibility / complexity"
-    elif [ "$auto" = 1 ]; then
-        checks="-checks=$ANALYZE_AUTOMOTIVE_CHECKS"
-        suffix=".automotive"
-        label="automotive subset"
     else
-        checks="--recommended"
+        checks="--recommended -checks=$ANALYZE_EXTRA_CHECKS"
         suffix=""
-        label="recommended"
+        label="defects"
     fi
 
     if ! command -v adalang_analyzer > /dev/null 2>&1; then
@@ -792,7 +780,7 @@ MSG
     #  all -- structural coverage, requirements-based testing, object-code
     #  verification, DO-330 tool qualification.
     if [ -n "$do178" ]; then
-        if [ "$auto" = 1 ] || [ "$style" = 1 ] || [ "$update" = 1 ]; then
+        if [ "$style" = 1 ] || [ "$update" = 1 ]; then
             echo "x analyze: --do178c takes no other mode flag and no --update-baseline" >&2
             return 2
         fi
@@ -869,7 +857,7 @@ MSG
             adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
                 $checks --baseline="$base" > "$log/out" 2>&1 && rc=0 || rc=$?
         else
-            echo "  ..    $name: no baseline yet; run './x analyze $name$([ "$auto" = 1 ] && echo ' --automotive')$([ "$style" = 1 ] && echo ' --style') --update-baseline'"
+            echo "  ..    $name: no baseline yet; run './x analyze $name$([ "$style" = 1 ] && echo ' --style') --update-baseline'"
             adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
                 $checks > "$log/out" 2>&1 && rc=0 || rc=$?
         fi

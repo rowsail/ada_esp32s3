@@ -140,18 +140,13 @@ jobs:
         if: steps.cache-analyzer.outputs.cache-hit != 'true'
         run: alr -n install adalang_analyzer
 
-      # Three gates, three baselines.  Each reports only findings that are NOT
+      # Two gates, two baselines.  Each reports only findings that are NOT
       # already in tools/analyzer-baselines/ and exits non-zero when one appears.
       # They are separate steps so the log says which view regressed.
       - name: ./x analyze (defects)
         run: |
           export PATH="$HOME/.alire/bin:$PATH"
           ./x analyze
-
-      - name: ./x analyze --automotive (correctness slice)
-        run: |
-          export PATH="$HOME/.alire/bin:$PATH"
-          ./x analyze --automotive
 
       - name: ./x analyze --style (readability)
         run: |
