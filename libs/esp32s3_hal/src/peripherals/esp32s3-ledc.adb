@@ -2,12 +2,10 @@ with ESP32S3.GPIO_Signals;
 with ESP32S3.LEDC.Math;
 with ESP32S3_Registers;      use ESP32S3_Registers;
 with ESP32S3_Registers.LEDC; use ESP32S3_Registers.LEDC;
-with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.SYSTEM;
 
 package body ESP32S3.LEDC is
 
-   package GR renames ESP32S3_Registers.GPIO;   --  GPIO matrix register layer
    package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
 
@@ -67,15 +65,6 @@ package body ESP32S3.LEDC is
    --  GPIO-matrix output signal for a channel (LEDC_LS_SIG_OUT0 .. OUT7).
    function Out_Signal (Idx : Channel_Index) return Natural
    is (Sigs.LEDC_LS_SIG_OUT0 + Natural (Idx));
-
-   procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
-      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
-   begin
-      G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
-      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      Out_Cfg.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := Out_Cfg;
-   end Drive_Out;
 
    --------------------------------------------------------------------------
    --  Channel-ownership pool (also brings the module + global clock up once).
@@ -215,7 +204,7 @@ package body ESP32S3.LEDC is
          DUTY_CYCLE => 1,
          DUTY_SCALE => 0);
 
-      Drive_Out (Pin, Out_Signal (C.Idx));
+      G.Route_Out (Pin, Out_Signal (C.Idx));
    end Configure;
 
    --------------

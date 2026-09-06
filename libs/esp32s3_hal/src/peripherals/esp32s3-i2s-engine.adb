@@ -63,16 +63,6 @@ package body ESP32S3.I2S.Engine is
          when Bits_24 => 24,
          when Bits_32 => 32);
 
-   procedure Drive_Out (Pad : ESP32S3.GPIO.Pin_Id; Signal : Natural) is
-      Pad_Index : constant Natural := Natural (Pad);
-      Out_Cfg   : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index);
-   begin
-      ESP32S3.GPIO.Configure
-        (Pad, Mode => ESP32S3.GPIO.Output, Drive => ESP32S3.GPIO.Drive_Strong);
-      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Signal);
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index) := Out_Cfg;
-   end Drive_Out;
-
    procedure Route_In (Signal : Natural; Pad : ESP32S3.GPIO.Pin_Id; As_Input : Boolean) is
    begin
       if As_Input then
@@ -299,17 +289,17 @@ package body ESP32S3.I2S.Engine is
          return;
       end if;
       if Mclk /= No_Pin and then Host_Sigs.Mck_Out /= 0 then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Mclk), Host_Sigs.Mck_Out);   --  master clock out
+         ESP32S3.GPIO.Route_Out (ESP32S3.GPIO.Pin_Id (Mclk), Host_Sigs.Mck_Out);   --  master clock out
 
       end if;
       if Bclk /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Bclk), Host_Sigs.Bck_Out);
+         ESP32S3.GPIO.Route_Out (ESP32S3.GPIO.Pin_Id (Bclk), Host_Sigs.Bck_Out);
       end if;
       if Ws /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Ws), Host_Sigs.Ws_Out);
+         ESP32S3.GPIO.Route_Out (ESP32S3.GPIO.Pin_Id (Ws), Host_Sigs.Ws_Out);
       end if;
       if Dout /= No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Dout), Host_Sigs.Sd_Out);
+         ESP32S3.GPIO.Route_Out (ESP32S3.GPIO.Pin_Id (Dout), Host_Sigs.Sd_Out);
       end if;
       if Din /= No_Pin then
          Route_In (Host_Sigs.Sd_In, ESP32S3.GPIO.Pin_Id (Din), As_Input => True);
@@ -358,7 +348,7 @@ package body ESP32S3.I2S.Engine is
       end;
       --  Data-out on Pad, fed back into data-in (the clocks are shared
       --  internally, so no clock pad is needed).
-      Drive_Out (Pad, Host_Sigs.Sd_Out);
+      ESP32S3.GPIO.Route_Out (Pad, Host_Sigs.Sd_Out);
       Route_In (Host_Sigs.Sd_In, Pad, As_Input => False);
    end Enable_Loopback;
 

@@ -61,15 +61,6 @@ package body ESP32S3.RMT is
    function Div_Of (Resolution_Hz : Positive) return Byte
    is (Byte (Math.Divider (Resolution_Hz)));
 
-   procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
-      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
-   begin
-      G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
-      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      Out_Cfg.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := Out_Cfg;
-   end Drive_Out;
-
    --  Route Pin into matrix input Sig WITHOUT disabling its output driver, so a
    --  TX channel driving the pad can be read back by an RX channel (loopback).
    procedure Route_In (Sig : Natural; Pin : G.Pin_Id) is
@@ -281,7 +272,7 @@ package body ESP32S3.RMT is
          CARRIER_EN     => False,
          CARRIER_EFF_EN => False,
          others         => <>);
-      Drive_Out (Pin, Sigs.RMT_SIG_OUT0 + Natural (C.Idx));
+      G.Route_Out (Pin, Sigs.RMT_SIG_OUT0 + Natural (C.Idx));
    end Configure;
 
    procedure Transmit (C : TX_Channel; Symbols : Symbol_Array) is

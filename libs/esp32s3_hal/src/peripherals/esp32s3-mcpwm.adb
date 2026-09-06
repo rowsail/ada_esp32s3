@@ -100,16 +100,6 @@ is
    function Out_Signal (Unit : MCPWM_Unit; Ch : Channel_Index) return Natural
    is ((if Unit = MCPWM0 then Sigs.PWM0_OUT0A else Sigs.PWM1_OUT0A) + 2 * Channel_Index'Pos (Ch));
 
-   --  Route a generator output signal to Pin as a push-pull matrix output.
-   procedure Route_Out (Pin : G.Pin_Id; Sig : Natural) is
-      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
-   begin
-      G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
-      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      Out_Cfg.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := Out_Cfg;
-   end Route_Out;
-
    --  Route Pin into the matrix input signal Sig (input buffer on + pull), WITHOUT
    --  disabling the pad's output driver -- so a fault/capture input can read a pin
    --  that is also being driven (e.g. capturing a PWM output looped on one pad).
@@ -378,9 +368,9 @@ is
 
       --  Route generator A (and, for a complementary pair, the dead-time B
       --  output = A signal + 1) to their pads as push-pull matrix outputs.
-      Route_Out (Pin, Out_Signal (Unit, Ch));
+      G.Route_Out (Pin, Out_Signal (Unit, Ch));
       if Has_B then
-         Route_Out (ESP32S3.GPIO.Pin_Id (Complement_Pin), Out_Signal (Unit, Ch) + 1);
+         G.Route_Out (ESP32S3.GPIO.Pin_Id (Complement_Pin), Out_Signal (Unit, Ch) + 1);
       end if;
    end Configure_Channel;
 

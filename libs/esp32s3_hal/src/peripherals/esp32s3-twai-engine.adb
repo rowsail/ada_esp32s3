@@ -56,15 +56,6 @@ package body ESP32S3.TWAI.Engine is
    function Get (Index : Natural) return Unsigned_8
    is (Unsigned_8 (Buf (Index).TX_BYTE_0));
 
-   procedure Drive_Out (Pad : G.Pin_Id; Sig : Natural) is
-      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
-   begin
-      G.Configure (Pad, Mode => G.Output, Drive => G.Drive_Strong);
-      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      Out_Cfg.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad)) := Out_Cfg;
-   end Drive_Out;
-
    --  Enable the pad's input buffer and route it to matrix input Sig.  Works
    --  whether the pad is an external input or one TX is driving (loopback).
    procedure Route_In (Sig : Natural; Pad : G.Pin_Id) is
@@ -143,7 +134,7 @@ package body ESP32S3.TWAI.Engine is
          return;
       end if;
       if Tx /= G.No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Tx), Sigs.TWAI_TX);
+         G.Route_Out (ESP32S3.GPIO.Pin_Id (Tx), Sigs.TWAI_TX);
       end if;
       if Rx /= G.No_Pin then
          Route_In (Sigs.TWAI_RX, ESP32S3.GPIO.Pin_Id (Rx));
@@ -160,7 +151,7 @@ package body ESP32S3.TWAI.Engine is
          return;
       end if;
       --  TX out and RX in share the matrix index; drive the pad and read it back.
-      Drive_Out (Pad, Sigs.TWAI_TX);
+      G.Route_Out (Pad, Sigs.TWAI_TX);
       Route_In (Sigs.TWAI_RX, Pad);
    end Enable_Loopback;
 

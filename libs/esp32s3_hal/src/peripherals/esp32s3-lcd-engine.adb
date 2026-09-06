@@ -7,7 +7,6 @@ with Ada.Synchronous_Task_Control;   use Ada.Synchronous_Task_Control;
 with Interfaces;                     use Interfaces;
 with ESP32S3_Registers;         use ESP32S3_Registers;
 with ESP32S3_Registers.LCD_CAM; use ESP32S3_Registers.LCD_CAM;
-with ESP32S3_Registers.GPIO;
 with ESP32S3_Registers.SYSTEM;
 with ESP32S3_Registers.INTERRUPT_CORE0;
 with ESP32S3.GPIO_Signals;
@@ -15,7 +14,6 @@ with ESP32S3.GPIO_Signals;
 package body ESP32S3.LCD.Engine is
 
    package GD renames ESP32S3.GDMA;
-   package GR renames ESP32S3_Registers.GPIO;
    package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
 
@@ -25,16 +23,6 @@ package body ESP32S3.LCD.Engine is
    RGB_Line_Bytes : Natural := 0 with Volatile;    --  bytes per scan line
    RGB_Px_Bytes   : Natural := 1 with Volatile;    --  bytes per pixel (1 or 2)
    RGB_V_Res      : Natural := 0 with Volatile;    --  active lines per frame
-
-   procedure Drive_Out (Pad : G.Pin_Id; Sig : Natural) is
-      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register :=   --  the pad's output-select config
-        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad));
-   begin
-      G.Configure (Pad, Mode => G.Output, Drive => G.Drive_Strong);
-      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      Out_Cfg.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pad)) := Out_Cfg;
-   end Drive_Out;
 
    ----------
    -- Open --
@@ -111,11 +99,11 @@ package body ESP32S3.LCD.Engine is
       end if;
       for I in Data'Range loop
          if Data (I) /= G.No_Pin then
-            Drive_Out (ESP32S3.GPIO.Pin_Id (Data (I)), Sigs.LCD_DATA_OUT0 + I);
+            G.Route_Out (ESP32S3.GPIO.Pin_Id (Data (I)), Sigs.LCD_DATA_OUT0 + I);
          end if;
       end loop;
       if Pclk /= G.No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Pclk), Sigs.LCD_PCLK);
+         G.Route_Out (ESP32S3.GPIO.Pin_Id (Pclk), Sigs.LCD_PCLK);
       end if;
    end Configure_Pins;
 
@@ -225,21 +213,21 @@ package body ESP32S3.LCD.Engine is
          if Pins.Data (I) /= G.No_Pin then
             --  Route line I from its mapped LCD_DATA_OUT signal (default I); a
             --  fan-out map lets one signal drive several lines (8-bit -> RGB565).
-            Drive_Out (ESP32S3.GPIO.Pin_Id (Pins.Data (I)),
+            G.Route_Out (ESP32S3.GPIO.Pin_Id (Pins.Data (I)),
                        Sigs.LCD_DATA_OUT0 + Pins.Signals (I));
          end if;
       end loop;
       if Pins.Pclk /= G.No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Pins.Pclk), Sigs.LCD_PCLK);
+         G.Route_Out (ESP32S3.GPIO.Pin_Id (Pins.Pclk), Sigs.LCD_PCLK);
       end if;
       if Pins.HSync /= G.No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Pins.HSync), Sigs.LCD_H_SYNC);
+         G.Route_Out (ESP32S3.GPIO.Pin_Id (Pins.HSync), Sigs.LCD_H_SYNC);
       end if;
       if Pins.VSync /= G.No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Pins.VSync), Sigs.LCD_V_SYNC);
+         G.Route_Out (ESP32S3.GPIO.Pin_Id (Pins.VSync), Sigs.LCD_V_SYNC);
       end if;
       if Pins.DE /= G.No_Pin then
-         Drive_Out (ESP32S3.GPIO.Pin_Id (Pins.DE), Sigs.LCD_H_ENABLE);
+         G.Route_Out (ESP32S3.GPIO.Pin_Id (Pins.DE), Sigs.LCD_H_ENABLE);
       end if;
    end Configure_RGB_Pins;
 
@@ -719,7 +707,7 @@ package body ESP32S3.LCD.Engine is
       if not B.Valid then
          return;
       end if;
-      Drive_Out (Pclk_Pad, Sigs.LCD_PCLK);
+      G.Route_Out (Pclk_Pad, Sigs.LCD_PCLK);
       --  Continuous output: the transaction never ends, so PCLK free-runs.
       LCD_CAM_Periph.LCD_USER.LCD_ALWAYS_OUT_EN := True;
       LCD_CAM_Periph.LCD_USER.LCD_DOUT := True;

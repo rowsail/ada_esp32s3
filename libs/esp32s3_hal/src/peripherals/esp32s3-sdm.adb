@@ -1,26 +1,15 @@
 with ESP32S3.GPIO_Signals;
 with ESP32S3_Registers;        use ESP32S3_Registers;
 with ESP32S3_Registers.GPIOSD; use ESP32S3_Registers.GPIOSD;
-with ESP32S3_Registers.GPIO;
 
 package body ESP32S3.SDM is
 
-   package GR renames ESP32S3_Registers.GPIO;
    package G renames ESP32S3.GPIO;
    package Sigs renames ESP32S3.GPIO_Signals;
 
    --  Output matrix signal for a channel (GPIO_SD0_OUT .. SD7_OUT).
    function Out_Signal (Idx : Channel_Index) return Natural
    is (Sigs.GPIO_SD0_OUT + Natural (Idx));
-
-   procedure Drive_Out (Pin : G.Pin_Id; Sig : Natural) is
-      Out_Cfg : GR.FUNC_OUT_SEL_CFG_Register := GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin));
-   begin
-      G.Configure (Pin, Mode => G.Output, Drive => G.Drive_Strong);
-      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Sig);
-      Out_Cfg.OEN_SEL := False;
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Natural (Pin)) := Out_Cfg;
-   end Drive_Out;
 
    --  Density 0..100 % -> the signed 8-bit SD_IN value, as a raw byte.  Density =
    --  (SD_IN + 128) / 256, so SD_IN = round(density*256) - 128, clamped -128..127.
@@ -123,7 +112,7 @@ package body ESP32S3.SDM is
          --  0 % (= -128 signed)
          SD_PRESCALE => SIGMADELTA_SD_PRESCALE_Field (Div - 1),
          others      => <>);
-      Drive_Out (Pin, Out_Signal (C.Idx));
+      G.Route_Out (Pin, Out_Signal (C.Idx));
    end Configure;
 
    -----------------

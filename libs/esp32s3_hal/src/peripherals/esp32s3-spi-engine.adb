@@ -35,17 +35,6 @@ package body ESP32S3.SPI.Engine is
          when SPI2 => GD.SPI2,
          when SPI3 => GD.SPI3);
 
-   procedure Drive_Out (Pad : ESP32S3.GPIO.Pin_Id; Signal : Natural) is
-      Pad_Index : constant Natural := Natural (Pad);
-      Out_Cfg   : GR.FUNC_OUT_SEL_CFG_Register :=   --  the pad's output-select config
-        GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index);
-   begin
-      ESP32S3.GPIO.Configure
-        (Pad, Mode => ESP32S3.GPIO.Output, Drive => ESP32S3.GPIO.Drive_Strong);
-      Out_Cfg.OUT_SEL := GR.FUNC_OUT_SEL_CFG_OUT_SEL_Field (Signal);
-      GR.GPIO_Periph.FUNC_OUT_SEL_CFG (Pad_Index) := Out_Cfg;
-   end Drive_Out;
-
    procedure Route_In (Signal : Natural; Pad : ESP32S3.GPIO.Pin_Id; As_Input : Boolean) is
    begin
       if As_Input then
@@ -221,7 +210,7 @@ package body ESP32S3.SPI.Engine is
       if Held /= Pad then
          Release_Pad (Held);
       end if;
-      Drive_Out (Pad, Sig);
+      ESP32S3.GPIO.Route_Out (Pad, Sig);
       Held := Pad;
    end Claim;
 

@@ -1,5 +1,4 @@
 with Interfaces;              use Interfaces;
-with Ada.Real_Time;           use Ada.Real_Time;
 with Ada.Unchecked_Conversion;
 with System;
 with System.Storage_Elements; use System.Storage_Elements;
