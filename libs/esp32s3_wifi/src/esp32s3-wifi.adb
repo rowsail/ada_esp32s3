@@ -4,7 +4,6 @@
 --  ESP32S3.WiFi.IDF.  See BRINGUP.md.
 with Interfaces;
 use type Interfaces.Integer_32, Interfaces.Unsigned_8;
-with System;
 with ESP32S3.Log;
 with ESP32S3.WiFi.IDF;
 with ESP32S3.WiFi.OS_Adapter;
@@ -142,7 +141,6 @@ package body ESP32S3.WiFi is
      (Supplicant.Diag_Gtk_Rc);
 
    function Send_Frame (Data : System.Address; Len : Natural) return Boolean is
-      use type Interfaces.Integer_32;
    begin
       return IDF.Esp_Wifi_Internal_Tx
                (IDF.WIFI_IF_STA, Data, Interfaces.Unsigned_16 (Len)) = IDF.ESP_OK;
@@ -184,7 +182,6 @@ package body ESP32S3.WiFi is
       BSSID      : MAC_Address := (others => 0);
       Result     : out Status)
    is
-      use type Interfaces.Unsigned_8;
       Config : array (1 .. IDF.Config_Size) of Interfaces.Unsigned_8 :=
                  (others => 0);
       SL : constant Natural := Natural'Min (SSID'Length, 32);
@@ -230,8 +227,15 @@ package body ESP32S3.WiFi is
          return;
       end if;
 
-      --  Open the 802.3 RX path (so EAPOL and data frames flow up).
+      --  Open the 802.3 RX path (so EAPOL and data frames flow up).  Checked,
+      --  like Set_Config above: if the RX callback does not register, the
+      --  station still associates but never receives a frame, which is a much
+      --  harder failure to read than a Radio_Error out of Connect.
       Rc := IDF.Esp_Wifi_Internal_Reg_Rxcb (IDF.WIFI_IF_STA, Rx_Cb'Address);
+      if Rc /= IDF.ESP_OK then
+         Result := Radio_Error;
+         return;
+      end if;
 
       --  The RSN IE is now published inline from Supplicant.Sta_Connect (the
       --  wifi task, right before the assoc) -- the OS-adapter task-identity fix

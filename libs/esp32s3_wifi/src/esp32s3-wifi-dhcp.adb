@@ -4,7 +4,6 @@ with Ada.Real_Time; use Ada.Real_Time;
 package body ESP32S3.WiFi.DHCP is
 
    package Net renames ESP32S3.WiFi.IP;
-   use type Net.IPv4;
 
    subtype Octet is Net.Octet;
    subtype Bytes is Net.Byte_Array;

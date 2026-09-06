@@ -25,6 +25,9 @@ package body ESP32S3.WiFi.Interrupt is
       procedure Handler
         with Attach_Handler => Ada.Interrupts.Names.Device_L2_1;
    end WMAC_ISR;
+   --  Nothing names it: the Attach_Handler aspect above is what puts it to
+   --  work, so "unreferenced" is true and expected.
+   pragma Unreferenced (WMAC_ISR);
 
    protected body WMAC_ISR is
       procedure Handler is

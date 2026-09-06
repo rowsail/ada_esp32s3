@@ -1,12 +1,10 @@
 with Interfaces;              use Interfaces;
-with Ada.Unchecked_Conversion;
 with System;
 with System.Storage_Elements; use System.Storage_Elements;
 with ESP32S3.SHA;
 with ESP32S3.RNG;
 with ESP32S3.MAC;
 with ESP32S3.AES;
-with ESP32S3.Log;
 
 package body ESP32S3.WiFi.Supplicant is
 
@@ -70,7 +68,6 @@ package body ESP32S3.WiFi.Supplicant is
    procedure Install_Slot
      (Slot : Natural; Mac : Bytes; Key : Bytes; Control_Hi : Interfaces.Unsigned_16)
    is
-      use type Interfaces.Unsigned_32;
       Base : constant Interfaces.Unsigned_32 :=
         16#6003_4400# + Interfaces.Unsigned_32 (Slot) * 40;
       function LE32 (B : Bytes; I : Natural) return Interfaces.Unsigned_32 is
@@ -99,7 +96,6 @@ package body ESP32S3.WiFi.Supplicant is
 
    --  Zero HW key slot Slot + drop its enable bit (replaces hal_crypto_clr_key_entry).
    procedure Clear_Slot (Slot : Natural) is
-      use type Interfaces.Unsigned_32;
       Base : constant Interfaces.Unsigned_32 :=
         16#6003_4400# + Interfaces.Unsigned_32 (Slot) * 40;
       En : Interfaces.Unsigned_32 with Import, Volatile,
@@ -165,7 +161,6 @@ package body ESP32S3.WiFi.Supplicant is
    function Wrap_Crypto_Enable
      (A0, A1, A2, A3 : Interfaces.Unsigned_32) return Interfaces.Unsigned_32
    is
-      use type Interfaces.Unsigned_32;
       pragma Unreferenced (A2);
       Arg0 : constant Interfaces.Unsigned_32 := A0 and 16#FF#;
       Arg1 : constant Interfaces.Unsigned_32 := A1 and 16#FF#;
@@ -279,6 +274,14 @@ package body ESP32S3.WiFi.Supplicant is
      (Ni : System.Address; Reason : Interfaces.Integer_32)
      with Import, Convention => C, External_Name => "cnx_node_join";
 
+   --  The four declarations above are the blob ABI as it was reverse-engineered,
+   --  each with the note explaining what it does and why this code does or does
+   --  not go through it.  They are deliberately not called: deleting them would
+   --  throw away the map, so they are marked instead.
+   pragma Unreferenced
+     (Sta_Rxcb_Cell, C_On_Wifi_Task, C_Set_Sta_Gtk_Index, C_Ic_Set_Sta,
+      C_Cnx_Node_Join);
+
    WPA_ALG_CCMP     : constant := 3;
    --  PAIRWISE|RX|TX -- NOT the MODIFY(0x01) variant: the blob maps MODIFY to an
    --  internal key-type 2 that skips ic_set_key, so the PTK never reaches the HW
@@ -298,6 +301,11 @@ package body ESP32S3.WiFi.Supplicant is
    WIFI_APPIE_RSN       : constant := 4;
    WIFI_APPIE_WPA       : constant := 3;
    WIFI_APPIE_ASSOC_REQ : constant := 1;   --  generic IEs appended to assoc-req
+
+   --  Recorded for the same reason: the key-flag values name a path that does
+   --  not land key material (see Install_Slot for the one that does), and the
+   --  APPIE ids document the slot numbering around the one we use.
+   pragma Unreferenced (KF_PTK_SET, KF_PTK_TX, WIFI_APPIE_WPA, WIFI_APPIE_ASSOC_REQ);
 
    --  ----------------------------------------------------------------------
    --  Crypto built on the hardware SHA-1 / AES.
@@ -621,7 +629,7 @@ package body ESP32S3.WiFi.Supplicant is
                        Interfaces.Integer_32 (Plain (I + 6) and 16#03#);
                      Set_Tx : constant Interfaces.Integer_32 :=
                        (if (Plain (I + 6) and 16#04#) /= 0 then 1 else 0);
-                     Gtk    : Bytes (0 .. 15) := Plain (I + 8 .. I + 23);
+                     Gtk    : constant Bytes (0 .. 15) := Plain (I + 8 .. I + 23);
                      Rsc    : Bytes (0 .. 5)  := Msg (Msg'First + O_RSC ..
                                                       Msg'First + O_RSC + 5);
                      Zero_Key : Bytes (0 .. 15) := (others => 0);
