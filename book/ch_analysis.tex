@@ -1,0 +1,238 @@
+\chapter{Static Analysis}
+\label{ch:analysis}\index{static analysis}\index{AdaLang Analyzer}
+
+Chapter~\ref{ch:testing} asks whether the code does the right thing on the inputs we
+tried. Chapter~\ref{ch:spark} asks whether it can go wrong on any input at all. A
+static analyser asks a third question, and a cheaper one: \emph{does this code contain
+shapes that are usually mistakes?} It never runs the program and it proves nothing. It
+reads the source, matches patterns a compiler is not obliged to complain about, and
+reports them.
+
+That makes it the weakest of the three layers, and the easiest to add. It also makes it
+the layer most likely to waste your afternoon, because a pattern that is a mistake in
+one codebase is the house idiom in another. This chapter is as much about reading the
+output as about running the tool.
+
+\cnote{The closest C equivalents are \texttt{clang-tidy}, \texttt{cppcheck} and the
+commercial MISRA checkers. The experience transfers, including the part where the
+first run buries one real finding under a thousand style opinions.}
+
+\section{The tool}\index{AdaLang Analyzer!installing}
+
+\textbf{AdaLang Analyzer} is a static analyser for Ada written by
+\textbf{Maurizio Martignano} of \textbf{Spazio~IT}. It is free software under the
+GPL-3.0. It is built on \textbf{Libadalang}, AdaCore's Ada parsing and semantic
+analysis library. That foundation is what lets it resolve names and types, rather
+than merely grep for text.
+
+It ships as an Alire crate, so installing it is one line:
+
+\begin{lstlisting}[style=sh]
+alr install adalang_analyzer      # lands in ~/.alire/bin
+\end{lstlisting}
+
+That build is not quick the first time. Libadalang is a source crate, so a cold install
+compiles it from scratch. The binary it produces is self-contained, though, which
+matters for continuous integration: see \emph{Running it in CI} below.
+
+The analyser offers around a hundred and twenty-six checks, a few named presets
+(\texttt{--recommended}, \texttt{--spark}, \texttt{--automotive}, \texttt{--do178c}),
+and an explicit \texttt{-checks=} list. It can also write a baseline of finding
+fingerprints and filter against it, which is the feature that turns it from a
+one-off audit into something a build can gate on.
+
+\section{The first run, honestly}\index{AdaLang Analyzer!false positives}
+
+Run over the four libraries in this repository, the recommended preset reported
+\textbf{953 findings across 381 files}. Not one of them was a real defect.
+
+That is worth sitting with, because it is the normal result and the documentation of
+no tool will tell you so. Each high-severity class turned out to be a systematic false
+positive with a single identifiable cause:
+
+\begin{itemize}
+\item \textbf{31 use-after-free}, every one of them a \lstinline{Free} followed by
+  \lstinline{return} or \lstinline{raise}. The analyser does not treat those as ending
+  the path, so it reads the next statement as executing after the free.
+\item \textbf{8 uninitialised reads}, every one a variable written through an
+  \lstinline{Asm} output constraint. Inline assembly is opaque to it.
+\item \textbf{90 uninitialised out-parameters}, all the defensive idiom this codebase
+  uses everywhere: set the outputs to a safe default, then overwrite them on the
+  success path.
+\item \textbf{415 swappable parameters}, almost all of them crypto operands declared
+  \lstinline{(A, B : Blk)}. Correct in principle, noise here.
+\end{itemize}
+
+The lesson is not that the tool is bad. It is that a finding is a \emph{question}, and
+the codebase answers it. Read enough of them and the answer becomes obvious in
+aggregate, which is faster than triaging one at a time.
+
+\section{The signal is in the empty classes}\index{AdaLang Analyzer!empty rules}
+
+The useful result of that first run was not in what it reported. It was in what it did
+not.
+
+Several checks find the errors that actually bite: a condition that is always true, two
+case alternatives whose ranges overlap, a boolean operand repeated, an alternative
+already covered by an earlier one. Across all four libraries every one of those
+reported \textbf{zero}. That is a real statement about the code, and it costs nothing
+to keep asking.
+
+There is a catch: those checks are not in the recommended preset. You have to ask for
+them by name. A preset is someone else's judgement about which rules matter, and it is
+worth overriding.
+
+\section{Choose checks by measuring, not by name}\index{AdaLang Analyzer!choosing checks}
+
+A rule's name tells you what it is for. It does not tell you how it behaves on your
+code, and the gap can be enormous.
+
+\lstinline{Exception_Propagation} is the cautionary example. It sounds like exactly
+what a bare-metal codebase wants, and under the automotive preset it reports twelve
+findings. Enabled on its own it reports \textbf{1,274} in the HAL alone. It fires on
+every call that can transitively raise. In a stack that signals errors \emph{with}
+exceptions that is very nearly every call: the ext4 layer raises
+\lstinline{No_Space}, \lstinline{Corrupt} and \lstinline{Use_Error} by design. It is a restriction,
+not a defect detector.
+
+The same discipline rejected four rules that sound like exactly what a readability
+check should be:
+
+\begin{itemize}
+\item \lstinline{Naming_Convention} reported 1,868 findings, and every single one was
+  the same objection: a one-character identifier. That is one house-style disagreement
+  repeated, not 1,868 insights.
+\item \lstinline{Magic_Number} reported 2,940 in hand-written source across 185 files.
+  Register and protocol constants are this codebase's idiom, and the count grows with
+  every driver written.
+\item \lstinline{No_Multiple_Return} reported 180. Single-exit is a doctrine, not a
+  fact; an early return is usually the clearer construct.
+\item \lstinline{Long_Line} looked reasonable until the source was measured. The 99th
+  percentile is 90 columns and nothing exceeds 120, so every finding came from
+  generated SVD files. Formatting belongs to \texttt{gnatformat} anyway.
+\end{itemize}
+
+Read the findings before you adopt the rule. Four of the five decisions above reversed
+once the output was actually inspected.
+
+\section{What it did find}\index{AdaLang Analyzer!duplicate glue}
+
+One finding paid for the whole exercise. \lstinline{Duplicate_Subprogram} reported that
+several peripheral drivers contained the same subprogram body.
+
+They did. Ten drivers had each grown a private copy of the same GPIO-matrix routing
+helper: configure the pad as a strong output, then point the matrix output at it. The
+analyser found eight of them and missed two more only because those had been named
+\lstinline{Route_Out} instead of \lstinline{Drive_Out}. Two of the ten had also
+drifted, and did not set \lstinline{OEN_SEL}, so the peripheral's control of its own
+output enable depended on a reset default.
+
+The copies are now one \lstinline{ESP32S3.GPIO.Route_Out}
+(Chapter~\ref{ch:driver-design}), which also moved the matrix write inside the same
+protected object as \lstinline{Configure}. That closed a window where a concurrent
+\lstinline{Configure} of the same pad could leave it routed to plain GPIO.
+
+The tool is worth having for the eleventh copy, not for the ten it found once.
+
+\section{Baselines, and the two gates}\index{AdaLang Analyzer!baseline}\index{x!analyze}
+
+A backlog of 953 known-benign findings is useless as a gate: nobody reads a report that
+is always red. A \emph{baseline} fixes that. The analyser writes a fingerprint for every
+current finding, and a later run filters them out and reports only what is new.
+
+The repository drives it through the same command surface as everything else:
+
+\begin{lstlisting}[style=sh]
+./x analyze                    # defects
+./x analyze --style            # readability, complexity, duplication
+./x analyze --update-baseline  # accept the current findings
+\end{lstlisting}
+
+The two gates keep separate baselines under \texttt{tools/analyzer-baselines/},
+because they enable different checks and neither set of fingerprints can stand in for
+the other. Each exits non-zero when a new finding appears.
+
+The fingerprints are not line numbers. Inserting code above a finding does not
+invalidate it, which is what makes the baseline survive ordinary editing.
+
+Two things are deliberately \emph{not} baselined. The DO-178C profile is a report
+rather than a gate, for reasons in the next section. And the analyser itself is not
+part of \texttt{./x test}: it is not in the toolchain this project pins, so a plain
+clone would fail a check it cannot run.
+
+\section{Reading the standards profiles}\index{AdaLang Analyzer!profiles}\index{DO-178C}\index{MISRA}
+
+The \texttt{--automotive} and \texttt{--do178c} presets encode industry coding
+standards. Both are informative here, and neither is usable as-is.
+
+\texttt{--automotive} reports \textbf{39,511 findings} on this codebase, forty-one
+times the recommended set. The bulk is MISRA and AUTOSAR \emph{restrictions}, and a
+bare-metal register HAL is built out of precisely what they forbid. There are 25,531
+\lstinline{Magic_Number} findings on register offsets alone, plus 1,671 representation
+clauses and 136 address clauses. The rest prohibits dynamic allocation, tasking,
+controlled types and dispatching, all of which this SDK uses on purpose. Ten of its checks are genuinely about
+correctness rather than conformance, and those ten now ride in the default gate. The
+rest is a measurement of how far this code sits from a standard it was never written
+to.
+
+\texttt{--do178c} is more interesting, and it is honest about itself. Level~A reports
+9,551 findings, of which 8,756 are per-subprogram \emph{process} obligations: 1,866
+subprograms lack a low-level requirement trace, 5,474 lack an explicit initialiser.
+Those grow with every subprogram written, so a baseline over them would need rewriting
+on every commit and would signal nothing. Only 120 findings were additive as code
+quality.
+
+What the profile does produce is a per-objective \emph{evidence report}, and
+\texttt{./x analyze --do178c} writes one per library. It earns its place by stating its
+own limits. It says up front that it is verification support, not a compliance
+determination. It flags its objective labels as the tool's own paraphrase rather than
+DO-178C's normative text. And it lists what it cannot speak to at all: structural
+coverage, requirements-based testing, object-code verification, and DO-330 tool
+qualification. Treat it as evidence \emph{input} for a certification process, not
+as a result.
+
+Two smaller notes on that profile, both non-obvious. Levels~A and~B enable an identical
+rule set and differ only in the recorded structural-coverage objective; level~D enables
+nothing at all. And two of its rules contradict each other:
+\lstinline{No_Compiler_Extensions} flags \lstinline{pragma Loop_Invariant} as
+implementation-defined, while \lstinline{Missing_Loop_Variant} demands the matching
+\lstinline{pragma Loop_Variant}.
+
+\section{The trap that hides two thirds of your code}\index{AdaLang Analyzer!project profiles}
+
+The analyser loads a GNAT project file, so it sees exactly the sources that project
+selects. This repository's HAL scopes \lstinline{Source_Dirs} by runtime profile: under
+\texttt{light-tasking} it compiles \texttt{src} and \texttt{svd} only, and under
+\texttt{embedded} it takes \texttt{src/**}.
+
+Analysing the default profile therefore covers \textbf{102 of 329 files} and reports a
+clean-looking result. The command always passes the widest profile a library supports,
+for that reason. If you drive the analyser by hand against a project with scenario
+variables, check the \texttt{Files scanned} line before believing the verdict.
+
+\section{Running it in CI}\index{AdaLang Analyzer!continuous integration}
+
+A gate nobody runs is not a gate. The analysis runs as its own job on every pull
+request, one step per rule set so the log says which view regressed.
+
+The job caches the \emph{binary}, not the Alire build tree. AdaLang Analyzer links
+Libadalang statically, so the installed executable stands alone. It is around
+137\,MB, its only dynamic dependency outside the C library is the native GNAT's
+\texttt{libgnarl}, and it runs correctly from a copy with the rest of
+\texttt{\textasciitilde/.alire} off the path.
+Caching one file instead of 1.8\,GB of build output turns a cold run of roughly half an
+hour into a restore of about ninety seconds.
+
+\section{Where it sits}\index{verification!layers}
+
+Static analysis is the cheapest layer and the least conclusive. It cannot tell you the
+code is right; a clean run means only that the patterns it knows did not match. Its
+value is narrow and real: it notices the copy that drifted, the parameter mode that
+lies, the identifier that shadows another, and it notices them the day they appear
+rather than the day they fail.
+
+Used that way it complements the layers around it rather than competing with them. The
+compiler rejects the ill-typed. The tests check the answers. The sweep checks the
+foundation. Proof rules out whole classes of failure. And the analyser, sitting
+underneath all of them, keeps the shape of the code from quietly drifting while the
+other four are busy being right.
