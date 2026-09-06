@@ -65,6 +65,10 @@ for S in dindirect dtrunc dunlink; do
    grep -hE "^(dindirect|dtrunc|dunlink):" /tmp/ext4_host.out | sed 's/^/      /'
 done
 
+echo "crash recovery (journal replay -- reached by nothing else here):"
+fresh; run_scenario replay replay
+grep -h '^replay:' /tmp/ext4_host.out | sed 's/^/      /'
+
 echo "exhaustion (writers must not leak their scratch buffer on No_Space):"
 fresh; run_scenario nospace nospace
 grep -h '^nospace:' /tmp/ext4_host.out | sed 's/^/      /'

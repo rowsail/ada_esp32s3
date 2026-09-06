@@ -63,6 +63,35 @@ package body ESP32S3.Ext4.Journal is
       Rev     : array (1 .. Max_Rev) of Rev_Rec;
       N_Rev   : Natural := 0;
 
+      --  A revoke block lists blocks that a LATER transaction supersedes, so
+      --  replay must skip them.  Lifted out of the Pass-1 scan: nested five
+      --  deep inside that loop it was the deepest code in the file, and it
+      --  needs nothing from there but the sequence number.
+      procedure Collect_Revokes (Seq : U64) is
+         Count : constant Natural := Natural (Get_U32_BE (Meta.all, 12));
+         Pos   : Natural := 16;
+         RSz   : constant Natural := (if Use_64 then 8 else 4);
+      begin
+         while Pos + RSz <= Count loop
+            declare
+               B : constant U64 :=
+                 (if Use_64
+                  then
+                    Shift_Left (U64 (Get_U32_BE (Meta.all, Pos)), 32)
+                    or U64 (Get_U32_BE (Meta.all, Pos + 4))
+                  else U64 (Get_U32_BE (Meta.all, Pos)));
+            begin
+               --  A full table silently stops recording; Max_Rev is generous and
+               --  over-replaying a revoked block is safer than refusing to mount.
+               if N_Rev < Max_Rev then
+                  N_Rev := N_Rev + 1;
+                  Rev (N_Rev) := (B, Seq);
+               end if;
+               Pos := Pos + RSz;
+            end;
+         end loop;
+      end Collect_Revokes;
+
       function Revoked (B, At_Seq : U64) return Boolean is
       begin
          for I in 1 .. N_Rev loop
@@ -72,6 +101,48 @@ package body ESP32S3.Ext4.Journal is
          end loop;
          return False;
       end Revoked;
+
+      --  Replay the data blocks a descriptor block tags, honouring revokes, and
+      --  leave Cur on the block after the last of them.  Lifted out of the
+      --  Pass-2 loop for the same reason as Collect_Revokes: at five levels in,
+      --  the actual write -- the only line here that changes the filesystem --
+      --  was the hardest thing in the file to find.
+      procedure Replay_Descriptor (Seq : U64; Cur : in out U64) is
+         Pos      : Natural := 12;
+         Data_Rel : U64 := Wrap (Cur + 1);
+         Last     : Boolean := False;
+      begin
+         while not Last and then Pos + 8 <= BS loop
+            declare
+               Lo    : constant U32 := Get_U32_BE (Meta.all, Pos);
+               Flags : constant U32 := Get16BE (Meta.all, Pos + 6);
+               Hi    : U32 := 0;
+            begin
+               Pos := Pos + 8;
+               if Use_64 then
+                  Hi := Get_U32_BE (Meta.all, Pos);
+                  Pos := Pos + 4;
+               end if;
+               if (Flags and FL_Same_UUID) = 0 then
+                  Pos := Pos + 16;
+               end if;
+               declare
+                  Target : constant U64 := Shift_Left (U64 (Hi), 32) or U64 (Lo);
+               begin
+                  RJ (Data_Rel, Data.all);
+                  if (Flags and FL_Escape) /= 0 then
+                     Put_U32_BE (Data.all, 0, Magic);
+                  end if;
+                  if not Revoked (Target, Seq) then
+                     Block_Cache.Write (V.Cache, Block_Number (Target), Data.all);
+                  end if;
+                  Data_Rel := Wrap (Data_Rel + 1);
+               end;
+               Last := (Flags and FL_Last) /= 0;
+            end;
+         end loop;
+         Cur := Data_Rel;
+      end Replay_Descriptor;
 
       --  Number of tags in the descriptor currently in Meta.
       function Tag_Count return Natural is
@@ -139,29 +210,8 @@ package body ESP32S3.Ext4.Journal is
                   if BType = BT_Descriptor then
                      Cur := Wrap (Cur + 1 + U64 (Tag_Count));
                   elsif BType = BT_Revoke then
-                     declare
-                        Count : constant Natural := Natural (Get_U32_BE (Meta.all, 12));
-                        Pos   : Natural := 16;
-                        RSz   : constant Natural := (if Use_64 then 8 else 4);
-                     begin
-                        while Pos + RSz <= Count loop
-                           declare
-                              B : constant U64 :=
-                                (if Use_64
-                                 then
-                                   Shift_Left (U64 (Get_U32_BE (Meta.all, Pos)), 32)
-                                   or U64 (Get_U32_BE (Meta.all, Pos + 4))
-                                 else U64 (Get_U32_BE (Meta.all, Pos)));
-                           begin
-                              if N_Rev < Max_Rev then
-                                 N_Rev := N_Rev + 1;
-                                 Rev (N_Rev) := (B, Seq);
-                              end if;
-                              Pos := Pos + RSz;
-                           end;
-                        end loop;
-                        Cur := Wrap (Cur + 1);
-                     end;
+                     Collect_Revokes (Seq);
+                     Cur := Wrap (Cur + 1);
                   elsif BType = BT_Commit then
                      Seq := Seq + 1;
                      End_Seq := Seq;
@@ -192,42 +242,7 @@ package body ESP32S3.Ext4.Journal is
                   BType : constant U32 := Get_U32_BE (Meta.all, 4);
                begin
                   if BType = BT_Descriptor then
-                     declare
-                        Pos      : Natural := 12;
-                        Data_Rel : U64 := Wrap (Cur + 1);
-                        Last     : Boolean := False;
-                     begin
-                        while not Last and then Pos + 8 <= BS loop
-                           declare
-                              Lo    : constant U32 := Get_U32_BE (Meta.all, Pos);
-                              Flags : constant U32 := Get16BE (Meta.all, Pos + 6);
-                              Hi    : U32 := 0;
-                           begin
-                              Pos := Pos + 8;
-                              if Use_64 then
-                                 Hi := Get_U32_BE (Meta.all, Pos);
-                                 Pos := Pos + 4;
-                              end if;
-                              if (Flags and FL_Same_UUID) = 0 then
-                                 Pos := Pos + 16;
-                              end if;
-                              declare
-                                 Target : constant U64 := Shift_Left (U64 (Hi), 32) or U64 (Lo);
-                              begin
-                                 RJ (Data_Rel, Data.all);
-                                 if (Flags and FL_Escape) /= 0 then
-                                    Put_U32_BE (Data.all, 0, Magic);
-                                 end if;
-                                 if not Revoked (Target, Seq) then
-                                    Block_Cache.Write (V.Cache, Block_Number (Target), Data.all);
-                                 end if;
-                                 Data_Rel := Wrap (Data_Rel + 1);
-                              end;
-                              Last := (Flags and FL_Last) /= 0;
-                           end;
-                        end loop;
-                        Cur := Data_Rel;
-                     end;
+                     Replay_Descriptor (Seq, Cur);
                   elsif BType = BT_Revoke then
                      Cur := Wrap (Cur + 1);
                   elsif BType = BT_Commit then
