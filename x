@@ -28,9 +28,11 @@
 #                                     rules from the automotive profile (its own
 #                                     baseline; the full profile is 39.5k
 #                                     restriction findings -- see the README).
-#                                     --do178c[=A|B|C|D] instead WRITES per-
-#                                     objective DO-178C evidence reports to
-#                                     build/do178c/ (a report, not a gate)
+#                                     --style is the readability view: cognitive
+#                                     complexity, duplication and constructs that
+#                                     obscure intent.  --do178c[=A|B|C|D] instead
+#                                     WRITES per-objective DO-178C evidence
+#                                     reports to build/do178c/ (a report, not a gate)
 #    ./x stack   <example> [--top N] [--run]   static stack analysis (per-frame +
 #                                      worst-case call chains); --run adds the
 #                                      runtime high-water mark over serial
@@ -685,14 +687,49 @@ Constant_Condition,Overlapping_Case_Ranges,Duplicate_Boolean_Operand,\
 Unreachable_Case_Alternative,Redundant_Abs,Redundant_Unary_Minus,\
 Floating_Equality,Non_Short_Circuit_Condition,Global_Contract_Mismatch,\
 Volatile_Atomic_Consistency,Library_Level_Initialization,\
-Missing_Loop_Variant,Cyclomatic_Complexity,Deep_Nesting"
+Missing_Loop_Variant"
+
+#  Style, comprehensibility and complexity: the "is this code readable" view,
+#  as opposed to "is it correct" (--recommended) or "does it conform"
+#  (--automotive).  Chosen by MEASURING all 126 checks rather than by name --
+#  three plausible-sounding rules were dropped once their findings were read:
+#
+#    Naming_Convention  1868 findings, and every one of them is the SAME
+#                       objection -- "one-character identifier used" (R, V, I,
+#                       K).  One house-style disagreement repeated, not 1868
+#                       insights.
+#    Magic_Number       2940 in hand-written source, spread over 185 files.
+#                       Register and protocol constants are this codebase's
+#                       idiom; the count grows with every driver written.
+#    No_Multiple_Return 180.  Single-exit dogma; an early return is usually the
+#                       clearer construct, not the worse one.
+#    Long_Line          Hand-written source is already inside it -- p99 is 90
+#                       columns and NOTHING exceeds 120 -- so every finding
+#                       would come from generated svd/.  Formatting is
+#                       gnatformat's job anyway.
+#
+#  25 of the 34 below currently find nothing at all.  That is the good part:
+#  they cost no baseline entries while they stay quiet, and each one is a
+#  distinct way for code to become harder to follow.
+ANALYZE_STYLE_CHECKS="\
+Cyclomatic_Complexity,Deep_Nesting,Too_Many_Parameters,Generic_Instantiation_Limit,\
+Dependency_Limit,Circular_Package_Dependency,Duplicate_Subprogram,Repeated_Statement,\
+Shadowed_Declaration,Unnecessary_Else_After_Return,Null_Statement,\
+Redundant_If_Boolean_Return,Redundant_Boolean_Comparison,Redundant_Final_Return,\
+Redundant_Abs,Redundant_Unary_Minus,Redundant_Type_Conversion,Ineffective_Operation,\
+Constant_Result_Operation,Duplicate_With_Clause,Duplicate_Exception_Choice,\
+Duplicate_Condition,Same_Operand,Identical_Case_Alternative,Identical_Branches,\
+Unreachable_Code,Unused_Variable,Missing_Overriding_Indicator,\
+Reraise_Discards_Occurrence,Inefficient_String_Concatenation,Empty_If_Body,\
+Empty_Else_Body,No_Goto,No_Label"
 
 cmd_analyze () {
-    local update=0 only="" auto=0 do178="" a
+    local update=0 only="" auto=0 style=0 do178="" a
     for a in "$@"; do
         case "$a" in
             --update-baseline|--update) update=1 ;;
             --automotive)               auto=1 ;;
+            --style)                    style=1 ;;
             --do178c)                   do178=A ;;
             --do178c=[ABCD])            do178="${a#--do178c=}" ;;
             --do178c=*) echo "x analyze: --do178c level must be A, B, C or D" >&2; return 2 ;;
@@ -705,7 +742,15 @@ cmd_analyze () {
     #  keep SEPARATE baselines: they enable different checks, so one set of
     #  fingerprints cannot stand in for the other.
     local checks suffix label
-    if [ "$auto" = 1 ]; then
+    if [ "$auto" = 1 ] && [ "$style" = 1 ]; then
+        echo "x analyze: --automotive and --style are separate views; pick one" >&2
+        return 2
+    fi
+    if [ "$style" = 1 ]; then
+        checks="-checks=$ANALYZE_STYLE_CHECKS"
+        suffix=".style"
+        label="style / comprehensibility / complexity"
+    elif [ "$auto" = 1 ]; then
         checks="-checks=$ANALYZE_AUTOMOTIVE_CHECKS"
         suffix=".automotive"
         label="automotive subset"
@@ -747,8 +792,8 @@ MSG
     #  all -- structural coverage, requirements-based testing, object-code
     #  verification, DO-330 tool qualification.
     if [ -n "$do178" ]; then
-        if [ "$auto" = 1 ] || [ "$update" = 1 ]; then
-            echo "x analyze: --do178c takes neither --automotive nor --update-baseline" >&2
+        if [ "$auto" = 1 ] || [ "$style" = 1 ] || [ "$update" = 1 ]; then
+            echo "x analyze: --do178c takes no other mode flag and no --update-baseline" >&2
             return 2
         fi
         local out_dir="$ROOT/build/do178c"
@@ -824,7 +869,7 @@ MSG
             adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
                 $checks --baseline="$base" > "$log/out" 2>&1 && rc=0 || rc=$?
         else
-            echo "  ..    $name: no baseline yet; run './x analyze $name$([ "$auto" = 1 ] && echo ' --automotive') --update-baseline'"
+            echo "  ..    $name: no baseline yet; run './x analyze $name$([ "$auto" = 1 ] && echo ' --automotive')$([ "$style" = 1 ] && echo ' --style') --update-baseline'"
             adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
                 $checks > "$log/out" 2>&1 && rc=0 || rc=$?
         fi
