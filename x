@@ -21,9 +21,13 @@
 #                                     host suites, the libraries on all three
 #                                     runtime profiles (warnings are failures),
 #                                     and a build of every example
-#    ./x analyze [<lib>] [--update-baseline]   static analysis (adalang_analyzer):
-#                                     report findings NOT already in
-#                                     tools/analyzer-baselines/
+#    ./x analyze [<lib>] [--automotive] [--update-baseline]   static analysis
+#                                     (adalang_analyzer): report findings NOT
+#                                     already in tools/analyzer-baselines/.
+#                                     --automotive adds the correctness-oriented
+#                                     rules from the automotive profile (its own
+#                                     baseline; the full profile is 39.5k
+#                                     restriction findings -- see the README)
 #    ./x stack   <example> [--top N] [--run]   static stack analysis (per-frame +
 #                                      worst-case call chains); --run adds the
 #                                      runtime high-water mark over serial
@@ -654,15 +658,56 @@ cmd_mem () {
 #  dominated by false positives here (Asm output operands read as uninitialized,
 #  `return`/`raise` after a Free read as use-after-free, defensive out-parameter
 #  initialisation read as a dead store).  They are a "no new findings" tripwire.
+#  The automotive rules worth keeping.  `--automotive` as the tool ships it
+#  reports ~39.5k findings here, because most of that profile is MISRA/AUTOSAR
+#  RESTRICTIONS -- no dynamic allocation, no tasking, no controlled types, no
+#  address clauses, no representation clauses, no unexplained literals -- and a
+#  bare-metal register HAL is built out of exactly those.  25.5k of them are
+#  Magic_Number on register offsets alone.  Baselining that would bury the
+#  tripwire, so this is the subset that makes CORRECTNESS claims rather than
+#  conformance ones.
+#
+#  The first six normally find nothing at all, which is the point: they are the
+#  copy-paste and logic-error detectors, they cost no baseline entries while
+#  they stay empty, and a new one appearing is a real signal.
+#
+#  Exception_Propagation is deliberately NOT here.  It looks like a correctness
+#  rule and reports only 12 findings under the full --automotive profile, but
+#  enabled on its own it reports 1274 in the HAL alone: it fires on every call
+#  that can transitively raise, which in a stack that signals errors WITH
+#  exceptions (ext4 raises No_Space / Corrupt / Use_Error by design) is very
+#  nearly every call.  It is a restriction, not a defect detector.
+ANALYZE_AUTOMOTIVE_CHECKS="\
+Constant_Condition,Overlapping_Case_Ranges,Duplicate_Boolean_Operand,\
+Unreachable_Case_Alternative,Redundant_Abs,Redundant_Unary_Minus,\
+Floating_Equality,Non_Short_Circuit_Condition,Global_Contract_Mismatch,\
+Volatile_Atomic_Consistency,Library_Level_Initialization,\
+Missing_Loop_Variant"
+
 cmd_analyze () {
-    local update=0 only="" a
+    local update=0 only="" auto=0 a
     for a in "$@"; do
         case "$a" in
             --update-baseline|--update) update=1 ;;
+            --automotive)               auto=1 ;;
             -*) echo "x analyze: unknown option: $a" >&2; return 2 ;;
             *)  only="$a" ;;
         esac
     done
+
+    #  Which rule set, and which baseline it is measured against.  The two modes
+    #  keep SEPARATE baselines: they enable different checks, so one set of
+    #  fingerprints cannot stand in for the other.
+    local checks suffix label
+    if [ "$auto" = 1 ]; then
+        checks="-checks=$ANALYZE_AUTOMOTIVE_CHECKS"
+        suffix=".automotive"
+        label="automotive subset"
+    else
+        checks="--recommended"
+        suffix=""
+        label="recommended"
+    fi
 
     if ! command -v adalang_analyzer > /dev/null 2>&1; then
         cat >&2 <<'MSG'
@@ -688,9 +733,9 @@ MSG
     local log; log="$(mktemp -d)"; trap 'rm -rf "$log"' RETURN
 
     if [ "$update" = 1 ]; then
-        echo "== static analysis (rewriting baselines) =="
+        echo "== static analysis, $label (rewriting baselines) =="
     else
-        echo "== static analysis (findings not already in tools/analyzer-baselines/) =="
+        echo "== static analysis, $label (findings not already in tools/analyzer-baselines/) =="
     fi
 
     for gpr in "$ROOT"/libs/*/[a-z]*.gpr; do
@@ -704,23 +749,23 @@ MSG
         #  Source_Dirs to ("src","svd") under light-tasking, so analysing that
         #  profile would silently cover 102 of its 329 files.
         prof="$(profiles_of_lib "$gpr" | tr ' ' '\n' | grep -vx light-tasking | head -1)"
-        base="$base_dir/$name.baseline"
+        base="$base_dir/$name$suffix.baseline"
 
         if [ "$update" = 1 ]; then
             adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
-                --recommended --write-baseline="$base" > "$log/out" 2>&1 || true
+                $checks --write-baseline="$base" > "$log/out" 2>&1 || true
             printf '  \033[32mok\033[0m    %-14s [%s]  baseline: %s finding(s)\n' \
-                   "$name" "$prof" "$(grep -cv '^#' "$base" 2>/dev/null || echo 0)"
+                   "$name" "$prof" "$({ grep -cv '^#' "$base" 2>/dev/null || true; })"
             continue
         fi
 
         if [ -f "$base" ]; then
             adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
-                --recommended --baseline="$base" > "$log/out" 2>&1 && rc=0 || rc=$?
+                $checks --baseline="$base" > "$log/out" 2>&1 && rc=0 || rc=$?
         else
-            echo "  ..    $name: no baseline yet; run './x analyze $name --update-baseline'"
+            echo "  ..    $name: no baseline yet; run './x analyze $name$([ "$auto" = 1 ] && echo ' --automotive') --update-baseline'"
             adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
-                --recommended > "$log/out" 2>&1 && rc=0 || rc=$?
+                $checks > "$log/out" 2>&1 && rc=0 || rc=$?
         fi
 
         if [ "$rc" = 0 ]; then
