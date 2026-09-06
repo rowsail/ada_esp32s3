@@ -28,13 +28,18 @@ project Esp32s3_Wifi is
    for Object_Dir use "obj-" & Profile;
 
    package Compiler is
-      --  NOT -gnatwa yet, unlike the HAL and libs/tls (which are clean under
-      --  it and are held there by `./x test lib`).  -gnatwa reports ~60 here,
-      --  and most are the OS adapter's blob-facing entry points, which look
-      --  unreferenced because only the blob calls them -- clearing that
-      --  honestly means marking each one, not deleting it, and it wants doing
-      --  with the adapter in front of you.  The DEFAULT warnings are on and
-      --  clean, and the test gate fails the build on any of them.
-      for Default_Switches ("Ada") use ("-g", "-O2", "-gnat2022");
+      --  The same warning set as the HAL and libs/tls, and held there the same
+      --  way: `./x test lib` builds this library on every profile it supports
+      --  with warnings as failures.
+      --
+      --  The 54 findings that used to block this were not what the earlier note
+      --  here guessed.  Most were the OS adapter's named halt-stubs, and they
+      --  were not blob-facing at all: every slot they stood in for had since
+      --  gained a real implementation, so they were unreachable scaffolding and
+      --  are gone.  What DID need marking rather than deleting was the
+      --  supplicant's reverse-engineered ABI -- imports and key-flag constants
+      --  kept as documentation -- which now carries pragma Unreferenced.
+      for Default_Switches ("Ada") use
+        ("-g", "-O2", "-gnat2022", "-gnatwa", "-gnatwJ", "-gnatw.V");
    end Compiler;
 end Esp32s3_Wifi;

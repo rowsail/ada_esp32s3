@@ -27,7 +27,6 @@ package body ESP32S3.WiFi.Sniffer is
    PKT_MGMT : constant := 0;
    PKT_DATA : constant := 2;
 
-   Cur_Chan : Unsigned_8 := 0;    --  channel we are currently parked on
 
    --  ----------------------------------------------------------------------
    --  Tiny logging helpers (2-digit hex, MAC).
@@ -239,7 +238,6 @@ package body ESP32S3.WiFi.Sniffer is
          Result := Radio_Error;
          return;
       end if;
-      Cur_Chan := Channel;
       Rc := C_Set_Channel (Channel, 0);   --  second chan = NONE
       Result := (if Rc = 0 then OK else Radio_Error);
    end Start;
@@ -268,11 +266,16 @@ package body ESP32S3.WiFi.Sniffer is
       Sta_Set := True;
    end Watch_Sta;
 
+   --  The declaration IS the channel switch, and the blob's status is not
+   --  actionable here, so there is nothing left for the body to do.  A Cur_Chan
+   --  shadow used to be assigned here as well; nothing ever read it, and the
+   --  sniffer's spec exposes no way to ask, so it went rather than growing an
+   --  accessor no caller wanted.
    procedure Set_Channel (Channel : Interfaces.Unsigned_8) is
-      Rc : Interfaces.Integer_32 := C_Set_Channel (Channel, 0);
+      Rc : constant Interfaces.Integer_32 := C_Set_Channel (Channel, 0);
       pragma Unreferenced (Rc);
    begin
-      Cur_Chan := Channel;
+      null;
    end Set_Channel;
 
 end ESP32S3.WiFi.Sniffer;

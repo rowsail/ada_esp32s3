@@ -1,7 +1,6 @@
 with Interfaces;               use Interfaces;
 with System;
 with System.Storage_Elements;  use System.Storage_Elements;
-with System.Machine_Code;      use System.Machine_Code;
 with ESP32S3.Log;
 with ESP32S3.MAC;
 

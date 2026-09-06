@@ -88,6 +88,7 @@ package body ESP32S3.WiFi.Port is
      return Interfaces.Integer_32
    is
       B : Interfaces.Unsigned_8 with Import, Address => Buf;
+      pragma Unreferenced (Fmt);   --  present for the C ABI; this stub formats nothing
    begin
       B := 0;
       return 0;

@@ -284,73 +284,27 @@ package body ESP32S3.WiFi.OS_Adapter is
    end Wifi_Reset_Mac;
 
    --  ------------------------------------------------------------------------
-   --  Named halt-stubs for the heavy slots (this wave): each prints its name.
+   --  Named halt-stubs for the slots that still have no implementation: each
+   --  prints which slot the blob asked for, where the catch-all Stub_Silent can
+   --  only say that some unnamed slot was reached.  Both halt.
+   --
+   --  There were 28 more of these, one per "heavy" slot of an earlier wave.
+   --  Every one of those slots now has a real implementation (RTOS.*, PHY.*, or
+   --  a local one), so the stubs were unreachable scaffolding, and -gnatwa saw
+   --  them as unreferenced because that is exactly what they were.  Wiring them
+   --  in would have replaced working mutexes, queues, tasks and PHY control
+   --  with halt loops; they are deleted instead.  Add one back only alongside a
+   --  slot that is genuinely still unfilled.
    --  ------------------------------------------------------------------------
-   procedure St_Wifi_Int_Disable   with Convention => C, No_Return;
-   procedure St_Wifi_Int_Restore   with Convention => C, No_Return;
    procedure St_Task_Yield_Isr     with Convention => C;
-   procedure St_Spin_Lock_Create   with Convention => C, No_Return;
-   procedure St_Semphr_Create      with Convention => C, No_Return;
-   procedure St_Semphr_Take        with Convention => C, No_Return;
-   procedure St_Semphr_Give        with Convention => C, No_Return;
-   procedure St_Thread_Semphr_Get  with Convention => C, No_Return;
-   procedure St_Mutex_Create       with Convention => C, No_Return;
-   procedure St_Recursive_Mutex    with Convention => C, No_Return;
-   procedure St_Mutex_Lock         with Convention => C, No_Return;
-   procedure St_Mutex_Unlock       with Convention => C, No_Return;
-   procedure St_Queue_Create       with Convention => C, No_Return;
-   procedure St_Queue_Send         with Convention => C, No_Return;
-   procedure St_Queue_Recv         with Convention => C, No_Return;
-   procedure St_Queue_Msg_Waiting  with Convention => C, No_Return;
    procedure St_Event_Group_Create with Convention => C, No_Return;
    procedure St_Event_Group_Wait   with Convention => C, No_Return;
-   procedure St_Task_Create_Pinned with Convention => C, No_Return;
-   procedure St_Task_Create        with Convention => C, No_Return;
-   procedure St_Task_Delay         with Convention => C, No_Return;
-   procedure St_Task_Get_Current   with Convention => C, No_Return;
-   procedure St_Event_Post         with Convention => C, No_Return;
-   procedure St_Phy_Enable         with Convention => C, No_Return;
-   procedure St_Phy_Disable        with Convention => C, No_Return;
-   procedure St_Read_Mac           with Convention => C, No_Return;
-   procedure St_Timer_Arm          with Convention => C, No_Return;
-   procedure St_Timer_Setfn        with Convention => C, No_Return;
-   procedure St_Wifi_Reset_Mac     with Convention => C, No_Return;
-   procedure St_Wifi_Clock_Enable  with Convention => C, No_Return;
    procedure St_Nvs_Open           with Convention => C, No_Return;
-   procedure St_Wifi_Create_Queue  with Convention => C, No_Return;
 
-   procedure St_Wifi_Int_Disable   is begin Halt ("wifi_int_disable");   end St_Wifi_Int_Disable;
-   procedure St_Wifi_Int_Restore   is begin Halt ("wifi_int_restore");   end St_Wifi_Int_Restore;
    procedure St_Task_Yield_Isr     is null;   --  ISR context: no work, no I/O
-   procedure St_Spin_Lock_Create   is begin Halt ("spin_lock_create");   end St_Spin_Lock_Create;
-   procedure St_Semphr_Create      is begin Halt ("semphr_create");      end St_Semphr_Create;
-   procedure St_Semphr_Take        is begin Halt ("semphr_take");        end St_Semphr_Take;
-   procedure St_Semphr_Give        is begin Halt ("semphr_give");        end St_Semphr_Give;
-   procedure St_Thread_Semphr_Get  is begin Halt ("wifi_thread_semphr_get"); end St_Thread_Semphr_Get;
-   procedure St_Mutex_Create       is begin Halt ("mutex_create");       end St_Mutex_Create;
-   procedure St_Recursive_Mutex    is begin Halt ("recursive_mutex_create"); end St_Recursive_Mutex;
-   procedure St_Mutex_Lock         is begin Halt ("mutex_lock");         end St_Mutex_Lock;
-   procedure St_Mutex_Unlock       is begin Halt ("mutex_unlock");       end St_Mutex_Unlock;
-   procedure St_Queue_Create       is begin Halt ("queue_create");       end St_Queue_Create;
-   procedure St_Queue_Send         is begin Halt ("queue_send");         end St_Queue_Send;
-   procedure St_Queue_Recv         is begin Halt ("queue_recv");         end St_Queue_Recv;
-   procedure St_Queue_Msg_Waiting  is begin Halt ("queue_msg_waiting");  end St_Queue_Msg_Waiting;
    procedure St_Event_Group_Create is begin Halt ("event_group_create"); end St_Event_Group_Create;
    procedure St_Event_Group_Wait   is begin Halt ("event_group_wait_bits"); end St_Event_Group_Wait;
-   procedure St_Task_Create_Pinned is begin Halt ("task_create_pinned_to_core"); end St_Task_Create_Pinned;
-   procedure St_Task_Create        is begin Halt ("task_create");        end St_Task_Create;
-   procedure St_Task_Delay         is begin Halt ("task_delay");         end St_Task_Delay;
-   procedure St_Task_Get_Current   is begin Halt ("task_get_current_task"); end St_Task_Get_Current;
-   procedure St_Event_Post         is begin Halt ("event_post");         end St_Event_Post;
-   procedure St_Phy_Enable         is begin Halt ("phy_enable");         end St_Phy_Enable;
-   procedure St_Phy_Disable        is begin Halt ("phy_disable");        end St_Phy_Disable;
-   procedure St_Read_Mac           is begin Halt ("read_mac");           end St_Read_Mac;
-   procedure St_Timer_Arm          is begin Halt ("timer_arm");          end St_Timer_Arm;
-   procedure St_Timer_Setfn        is begin Halt ("timer_setfn");        end St_Timer_Setfn;
-   procedure St_Wifi_Reset_Mac     is begin Halt ("wifi_reset_mac");     end St_Wifi_Reset_Mac;
-   procedure St_Wifi_Clock_Enable  is begin Halt ("wifi_clock_enable");  end St_Wifi_Clock_Enable;
    procedure St_Nvs_Open           is begin Halt ("nvs_open");           end St_Nvs_Open;
-   procedure St_Wifi_Create_Queue  is begin Halt ("wifi_create_queue");  end St_Wifi_Create_Queue;
 
    --  ------------------------------------------------------------------------
    procedure Install is
