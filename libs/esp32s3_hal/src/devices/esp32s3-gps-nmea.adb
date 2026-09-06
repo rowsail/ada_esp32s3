@@ -291,6 +291,246 @@ package body ESP32S3.GPS.NMEA with SPARK_Mode => On is
       end if;
    end System_Of;
 
+   --  $..GGA,time,lat,N/S,lon,E/W,qual,sats,hdop,alt,M,...
+   --  Same bound as Parse's own precondition, and discharged by it: Payload is a
+   --  slice of Sentence, so Payload'Last <= Sentence'Last.  It is what keeps the
+   --  fixed-offset index arithmetic in the field decoders provably in range.
+   procedure Parse_GGA (Payload : String; Result : in out Parsed)
+   with Pre => Payload'Last <= Integer'Last - 16
+   is
+      Tm   : constant String := Field (Payload, 1);   --  time  hhmmss.ss
+      La   : constant String := Field (Payload, 2);   --  latitude
+      Ns   : constant String := Field (Payload, 3);   --  N/S hemisphere
+      Lo   : constant String := Field (Payload, 4);   --  longitude
+      Ew   : constant String := Field (Payload, 5);   --  E/W hemisphere
+      Q    : constant Natural := To_Nat (Field (Payload, 6));  --  fix quality
+      Sats : constant String := Field (Payload, 7);   --  satellites used
+      Alt  : constant String := Field (Payload, 9);   --  altitude, metres
+   begin
+      if Tm /= "" then
+         Result.Has_Time := True;
+         Result.Time := To_Time (Tm);
+      end if;
+      Result.Has_Quality := True;
+      Result.Quality :=
+        (case Q is
+           when 1      => GPS_Fix,
+           when 2      => DGPS_Fix,
+           when others => No_Fix);
+      Result.Fix_Valid := Q > 0;
+      if Sats /= "" then
+         Result.Has_Sats := True;
+         Result.Satellites := To_Nat (Sats);
+      end if;
+      if Alt /= "" then
+         Result.Has_Altitude := True;
+         Result.Altitude_MM := Scaled (Alt, 3);
+      end if;
+      if Result.Fix_Valid and then La /= "" and then Lo /= "" then
+         Result.Has_Position := True;
+         Result.Pos :=
+           (Latitude  => Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
+            Longitude => Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
+      end if;
+   end Parse_GGA;
+
+   --  $..RMC,time,status,lat,N/S,lon,E/W,speed,course,date,...
+   --  Same bound as Parse's own precondition, and discharged by it: Payload is a
+   --  slice of Sentence, so Payload'Last <= Sentence'Last.  It is what keeps the
+   --  fixed-offset index arithmetic in the field decoders provably in range.
+   procedure Parse_RMC (Payload : String; Result : in out Parsed)
+   with Pre => Payload'Last <= Integer'Last - 16
+   is
+      Tm  : constant String := Field (Payload, 1);   --  time  hhmmss.ss
+      St  : constant String := Field (Payload, 2);   --  status ('A' valid)
+      La  : constant String := Field (Payload, 3);   --  latitude
+      Ns  : constant String := Field (Payload, 4);   --  N/S hemisphere
+      Lo  : constant String := Field (Payload, 5);   --  longitude
+      Ew  : constant String := Field (Payload, 6);   --  E/W hemisphere
+      Spd : constant String := Field (Payload, 7);   --  knots
+      Cog : constant String := Field (Payload, 8);   --  degrees true
+      Dt  : constant String := Field (Payload, 9);   --  ddmmyy
+   begin
+      Result.Fix_Valid := St = "A";
+      if Tm /= "" then
+         Result.Has_Time := True;
+         Result.Time := To_Time (Tm);
+      end if;
+      if Dt /= "" then
+         Result.Has_Date := True;
+         Result.Day := To_Date (Dt);
+      end if;
+      if Result.Fix_Valid and then La /= "" and then Lo /= "" then
+         Result.Has_Position := True;
+         Result.Pos :=
+           (Latitude  => Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
+            Longitude => Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
+      end if;
+      if Result.Fix_Valid and then (Spd /= "" or else Cog /= "") then
+         Result.Has_Velocity := True;
+         --  knots -> mm/s : 1 knot = 1852/3600 m/s.  Spd is milli-knots.
+         Result.Speed_MMS := Natural (LLI (Scaled (Spd, 3)) * 1852 / 3600);
+         Result.Course_CDeg := Scaled (Cog, 2);   --  centi-degrees
+
+      end if;
+   end Parse_RMC;
+
+   --  $..ZDA,time,day,month,year,...
+   --  Same bound as Parse's own precondition, and discharged by it: Payload is a
+   --  slice of Sentence, so Payload'Last <= Sentence'Last.  It is what keeps the
+   --  fixed-offset index arithmetic in the field decoders provably in range.
+   procedure Parse_ZDA (Payload : String; Result : in out Parsed)
+   with Pre => Payload'Last <= Integer'Last - 16
+   is
+   --  NOT gated on a fix, so it updates the clock before lock.  The
+   --  year is the full 4 digits here (unlike RMC's ddmmyy).
+      Tm : constant String := Field (Payload, 1);   --  time  hhmmss.ss
+      Dd : constant String := Field (Payload, 2);   --  day of month
+      Mm : constant String := Field (Payload, 3);   --  month
+      Yy : constant String := Field (Payload, 4);   --  year (4 digits)
+   begin
+      if Tm /= "" then
+         Result.Has_Time := True;
+         Result.Time := To_Time (Tm);
+      end if;
+      if Dd /= "" and then Mm /= "" and then Yy /= "" then
+         Result.Has_Date := True;
+         Result.Day := (Day => To_Nat (Dd), Month => To_Nat (Mm), Year => To_Nat (Yy));
+      end if;
+   end Parse_ZDA;
+
+   --  $..GLL,lat,N/S,lon,E/W,time,status,...
+   --  Same bound as Parse's own precondition, and discharged by it: Payload is a
+   --  slice of Sentence, so Payload'Last <= Sentence'Last.  It is what keeps the
+   --  fixed-offset index arithmetic in the field decoders provably in range.
+   procedure Parse_GLL (Payload : String; Result : in out Parsed)
+   with Pre => Payload'Last <= Integer'Last - 16
+   is
+      La : constant String := Field (Payload, 1);   --  latitude
+      Ns : constant String := Field (Payload, 2);   --  N/S hemisphere
+      Lo : constant String := Field (Payload, 3);   --  longitude
+      Ew : constant String := Field (Payload, 4);   --  E/W hemisphere
+      Tm : constant String := Field (Payload, 5);   --  time  hhmmss.ss
+      St : constant String := Field (Payload, 6);   --  status ('A' valid)
+   begin
+      Result.Fix_Valid := St = "A";
+      if Tm /= "" then
+         Result.Has_Time := True;
+         Result.Time := To_Time (Tm);
+      end if;
+      if Result.Fix_Valid and then La /= "" and then Lo /= "" then
+         Result.Has_Position := True;
+         Result.Pos :=
+           (Latitude  => Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
+            Longitude => Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
+      end if;
+   end Parse_GLL;
+
+   --  $..VTG,course,T,...,speed,N,speed,K,...
+   --  Same bound as Parse's own precondition, and discharged by it: Payload is a
+   --  slice of Sentence, so Payload'Last <= Sentence'Last.  It is what keeps the
+   --  fixed-offset index arithmetic in the field decoders provably in range.
+   procedure Parse_VTG (Payload : String; Result : in out Parsed)
+   with Pre => Payload'Last <= Integer'Last - 16
+   is
+   --  Velocity only.  The NMEA 2.3+ mode field (9) reports 'N' when the
+   --  data is invalid; absent mode is treated as valid.
+      Cog  : constant String := Field (Payload, 1);   --  true course, degrees
+      Spd  : constant String := Field (Payload, 5);   --  knots
+      Mode : constant String := Field (Payload, 9);   --  may be absent
+   begin
+      if Mode /= "N" and then (Spd /= "" or else Cog /= "") then
+         Result.Has_Velocity := True;
+         Result.Speed_MMS := Natural (LLI (Scaled (Spd, 3)) * 1852 / 3600);
+         Result.Course_CDeg := Scaled (Cog, 2);
+      end if;
+   end Parse_VTG;
+
+   --  $..GSV,msgs,msg,in-view,(prn,elev,azim,snr)x4
+   --  Same bound as Parse's own precondition, and discharged by it: Payload is a
+   --  slice of Sentence, so Payload'Last <= Sentence'Last.  It is what keeps the
+   --  fixed-offset index arithmetic in the field decoders provably in range.
+   --  GSV is the one sentence whose meaning depends on the talker id, so it
+   --  takes the CONSTELLATION rather than the raw Kind string: two adjacent
+   --  String parameters are swappable by a positional call without the compiler
+   --  noticing, and mapping the talker id belongs with the dispatcher that has
+   --  it in hand.
+   procedure Parse_GSV
+     (Payload : String; Sys : GNSS_System; Result : in out Parsed)
+   with Pre => Payload'Last <= Integer'Last - 16
+   is
+   --  Read only as many satellite blocks as this message actually holds
+   --  (derived from in_view + message number) -- otherwise a trailing
+   --  NMEA-4.10 signalId field is misread as a PRN.
+      --  Cap the wire-supplied counts: To_Nat can return ~2**31, and
+      --  4 * (Msg_No - 1) would then overflow Natural.  A GSV sequence is
+      --  a handful of messages listing at most a few dozen satellites.
+      Msg_No : constant Natural := Natural'Min (To_Nat (Field (Payload, 2)), 32);
+      View   : constant String := Field (Payload, 3);
+      In_V   : constant Natural := Natural'Min (To_Nat (View), 255);
+      Before : constant Natural := (if Msg_No >= 1 then 4 * (Msg_No - 1) else 0);
+      Here   : constant Natural :=
+        (if In_V > Before then Natural'Min (4, In_V - Before) else 0);
+      Best   : Natural := 0;
+      Count  : Natural := 0;   --  satellites decoded in this message
+   begin
+      if View /= "" then
+         Result.In_View := In_V;
+      end if;
+      for K in 0 .. Here - 1 loop
+         pragma Loop_Invariant (Count <= K);
+         declare
+            Prn : constant String := Field (Payload, 4 + 4 * K);  --  satellite id
+            Elv : constant String := Field (Payload, 5 + 4 * K);  --  elevation, deg
+            Azm : constant String := Field (Payload, 6 + 4 * K);  --  azimuth, deg
+            Snr : constant String := Field (Payload, 7 + 4 * K);  --  C/N0, dB-Hz
+         begin
+            if Prn /= "" then
+               Count := Count + 1;
+               Result.Sats (Count) :=
+                 (System    => Sys,
+                  PRN       => To_Nat (Prn),
+                  Elevation => To_Nat (Elv),
+                  Azimuth   => To_Nat (Azm),
+                  SNR       => To_Nat (Snr));
+               if Snr /= "" then
+                  Best := Natural'Max (Best, To_Nat (Snr));
+               end if;
+            end if;
+         end;
+      end loop;
+      Result.Sat_Count := Count;
+      Result.Max_SNR := Best;
+      Result.Has_Sky := View /= "" or else Count > 0;
+   end Parse_GSV;
+
+   --  $..GSA,mode,fix,(prn)x12,pdop,hdop,vdop
+   --  Same bound as Parse's own precondition, and discharged by it: Payload is a
+   --  slice of Sentence, so Payload'Last <= Sentence'Last.  It is what keeps the
+   --  fixed-offset index arithmetic in the field decoders provably in range.
+   procedure Parse_GSA (Payload : String; Result : in out Parsed)
+   with Pre => Payload'Last <= Integer'Last - 16
+   is
+      FT : constant Natural := To_Nat (Field (Payload, 2));  --  fix type (2D/3D)
+      Used_Count : Natural := 0;
+   begin
+      Result.Has_DOP := True;
+      Result.Mode :=
+        (case FT is
+           when 2      => Fix_2D,
+           when 3      => Fix_3D,
+           when others => Fix_None);
+      for K in 3 .. 14 loop
+         if Field (Payload, K) /= "" then
+            Used_Count := Used_Count + 1;
+         end if;
+      end loop;
+      Result.Used := Used_Count;
+      Result.PDOP_C := Scaled (Field (Payload, 15), 2);
+      Result.HDOP_C := Scaled (Field (Payload, 16), 2);
+      Result.VDOP_C := Scaled (Field (Payload, 17), 2);
+   end Parse_GSA;
+
    -----------
    -- Parse --
    -----------
@@ -311,219 +551,25 @@ package body ESP32S3.GPS.NMEA with SPARK_Mode => On is
          Payload : String renames Sentence (P_First .. P_Last);
          Kind    : constant String := Field (Payload, 0);
       begin
+         --  One procedure per sentence type; Recognised is set here so each
+         --  of them only has to fill in the fields its sentence carries.
+         Result.Recognised := True;
          if Is_Type (Kind, "GGA") then
-            --  $..GGA,time,lat,N/S,lon,E/W,qual,sats,hdop,alt,M,...
-            Result.Recognised := True;
-            declare
-               Tm   : constant String := Field (Payload, 1);   --  time  hhmmss.ss
-               La   : constant String := Field (Payload, 2);   --  latitude
-               Ns   : constant String := Field (Payload, 3);   --  N/S hemisphere
-               Lo   : constant String := Field (Payload, 4);   --  longitude
-               Ew   : constant String := Field (Payload, 5);   --  E/W hemisphere
-               Q    : constant Natural := To_Nat (Field (Payload, 6));  --  fix quality
-               Sats : constant String := Field (Payload, 7);   --  satellites used
-               Alt  : constant String := Field (Payload, 9);   --  altitude, metres
-            begin
-               if Tm /= "" then
-                  Result.Has_Time := True;
-                  Result.Time := To_Time (Tm);
-               end if;
-               Result.Has_Quality := True;
-               Result.Quality :=
-                 (case Q is
-                    when 1      => GPS_Fix,
-                    when 2      => DGPS_Fix,
-                    when others => No_Fix);
-               Result.Fix_Valid := Q > 0;
-               if Sats /= "" then
-                  Result.Has_Sats := True;
-                  Result.Satellites := To_Nat (Sats);
-               end if;
-               if Alt /= "" then
-                  Result.Has_Altitude := True;
-                  Result.Altitude_MM := Scaled (Alt, 3);
-               end if;
-               if Result.Fix_Valid and then La /= "" and then Lo /= "" then
-                  Result.Has_Position := True;
-                  Result.Pos :=
-                    (Latitude  => Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
-                     Longitude => Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
-               end if;
-            end;
-
+            Parse_GGA (Payload, Result);
          elsif Is_Type (Kind, "RMC") then
-            --  $..RMC,time,status,lat,N/S,lon,E/W,speed,course,date,...
-            Result.Recognised := True;
-            declare
-               Tm  : constant String := Field (Payload, 1);   --  time  hhmmss.ss
-               St  : constant String := Field (Payload, 2);   --  status ('A' valid)
-               La  : constant String := Field (Payload, 3);   --  latitude
-               Ns  : constant String := Field (Payload, 4);   --  N/S hemisphere
-               Lo  : constant String := Field (Payload, 5);   --  longitude
-               Ew  : constant String := Field (Payload, 6);   --  E/W hemisphere
-               Spd : constant String := Field (Payload, 7);   --  knots
-               Cog : constant String := Field (Payload, 8);   --  degrees true
-               Dt  : constant String := Field (Payload, 9);   --  ddmmyy
-            begin
-               Result.Fix_Valid := St = "A";
-               if Tm /= "" then
-                  Result.Has_Time := True;
-                  Result.Time := To_Time (Tm);
-               end if;
-               if Dt /= "" then
-                  Result.Has_Date := True;
-                  Result.Day := To_Date (Dt);
-               end if;
-               if Result.Fix_Valid and then La /= "" and then Lo /= "" then
-                  Result.Has_Position := True;
-                  Result.Pos :=
-                    (Latitude  => Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
-                     Longitude => Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
-               end if;
-               if Result.Fix_Valid and then (Spd /= "" or else Cog /= "") then
-                  Result.Has_Velocity := True;
-                  --  knots -> mm/s : 1 knot = 1852/3600 m/s.  Spd is milli-knots.
-                  Result.Speed_MMS := Natural (LLI (Scaled (Spd, 3)) * 1852 / 3600);
-                  Result.Course_CDeg := Scaled (Cog, 2);   --  centi-degrees
-
-               end if;
-            end;
-
+            Parse_RMC (Payload, Result);
          elsif Is_Type (Kind, "ZDA") then
-            --  $..ZDA,hhmmss.ss,dd,mm,yyyy,zonehh,zonemm -- UTC time + date,
-            --  NOT gated on a fix, so it updates the clock before lock.  The
-            --  year is the full 4 digits here (unlike RMC's ddmmyy).
-            Result.Recognised := True;
-            declare
-               Tm : constant String := Field (Payload, 1);   --  time  hhmmss.ss
-               Dd : constant String := Field (Payload, 2);   --  day of month
-               Mm : constant String := Field (Payload, 3);   --  month
-               Yy : constant String := Field (Payload, 4);   --  year (4 digits)
-            begin
-               if Tm /= "" then
-                  Result.Has_Time := True;
-                  Result.Time := To_Time (Tm);
-               end if;
-               if Dd /= "" and then Mm /= "" and then Yy /= "" then
-                  Result.Has_Date := True;
-                  Result.Day := (Day => To_Nat (Dd), Month => To_Nat (Mm), Year => To_Nat (Yy));
-               end if;
-            end;
-
+            Parse_ZDA (Payload, Result);
          elsif Is_Type (Kind, "GLL") then
-            --  $..GLL,lat,N/S,lon,E/W,hhmmss.ss,status,mode
-            Result.Recognised := True;
-            declare
-               La : constant String := Field (Payload, 1);   --  latitude
-               Ns : constant String := Field (Payload, 2);   --  N/S hemisphere
-               Lo : constant String := Field (Payload, 3);   --  longitude
-               Ew : constant String := Field (Payload, 4);   --  E/W hemisphere
-               Tm : constant String := Field (Payload, 5);   --  time  hhmmss.ss
-               St : constant String := Field (Payload, 6);   --  status ('A' valid)
-            begin
-               Result.Fix_Valid := St = "A";
-               if Tm /= "" then
-                  Result.Has_Time := True;
-                  Result.Time := To_Time (Tm);
-               end if;
-               if Result.Fix_Valid and then La /= "" and then Lo /= "" then
-                  Result.Has_Position := True;
-                  Result.Pos :=
-                    (Latitude  => Coord (La, (if Ns = "" then 'N' else Ns (Ns'First))),
-                     Longitude => Coord (Lo, (if Ew = "" then 'E' else Ew (Ew'First))));
-               end if;
-            end;
-
+            Parse_GLL (Payload, Result);
          elsif Is_Type (Kind, "VTG") then
-            --  $..VTG,course_true,T,course_mag,M,speed_kn,N,speed_kmh,K,mode
-            --  Velocity only.  The NMEA 2.3+ mode field (9) reports 'N' when the
-            --  data is invalid; absent mode is treated as valid.
-            Result.Recognised := True;
-            declare
-               Cog  : constant String := Field (Payload, 1);   --  true course, degrees
-               Spd  : constant String := Field (Payload, 5);   --  knots
-               Mode : constant String := Field (Payload, 9);   --  may be absent
-            begin
-               if Mode /= "N" and then (Spd /= "" or else Cog /= "") then
-                  Result.Has_Velocity := True;
-                  Result.Speed_MMS := Natural (LLI (Scaled (Spd, 3)) * 1852 / 3600);
-                  Result.Course_CDeg := Scaled (Cog, 2);
-               end if;
-            end;
-
+            Parse_VTG (Payload, Result);
          elsif Is_Type (Kind, "GSV") then
-            --  $..GSV,total,msg#,in_view,{prn,elev,azim,snr} x up to 4[,signalId]
-            --  Read only as many satellite blocks as this message actually holds
-            --  (derived from in_view + message number) -- otherwise a trailing
-            --  NMEA-4.10 signalId field is misread as a PRN.
-            Result.Recognised := True;
-            declare
-               --  Cap the wire-supplied counts: To_Nat can return ~2**31, and
-               --  4 * (Msg_No - 1) would then overflow Natural.  A GSV sequence is
-               --  a handful of messages listing at most a few dozen satellites.
-               Msg_No : constant Natural := Natural'Min (To_Nat (Field (Payload, 2)), 32);
-               View   : constant String := Field (Payload, 3);
-               In_V   : constant Natural := Natural'Min (To_Nat (View), 255);
-               Sys    : constant GNSS_System := System_Of (Kind);
-               Before : constant Natural := (if Msg_No >= 1 then 4 * (Msg_No - 1) else 0);
-               Here   : constant Natural :=
-                 (if In_V > Before then Natural'Min (4, In_V - Before) else 0);
-               Best   : Natural := 0;
-               Count  : Natural := 0;   --  satellites decoded in this message
-            begin
-               if View /= "" then
-                  Result.In_View := In_V;
-               end if;
-               for K in 0 .. Here - 1 loop
-                  pragma Loop_Invariant (Count <= K);
-                  declare
-                     Prn : constant String := Field (Payload, 4 + 4 * K);  --  satellite id
-                     Elv : constant String := Field (Payload, 5 + 4 * K);  --  elevation, deg
-                     Azm : constant String := Field (Payload, 6 + 4 * K);  --  azimuth, deg
-                     Snr : constant String := Field (Payload, 7 + 4 * K);  --  C/N0, dB-Hz
-                  begin
-                     if Prn /= "" then
-                        Count := Count + 1;
-                        Result.Sats (Count) :=
-                          (System    => Sys,
-                           PRN       => To_Nat (Prn),
-                           Elevation => To_Nat (Elv),
-                           Azimuth   => To_Nat (Azm),
-                           SNR       => To_Nat (Snr));
-                        if Snr /= "" then
-                           Best := Natural'Max (Best, To_Nat (Snr));
-                        end if;
-                     end if;
-                  end;
-               end loop;
-               Result.Sat_Count := Count;
-               Result.Max_SNR := Best;
-               Result.Has_Sky := View /= "" or else Count > 0;
-            end;
-
+            Parse_GSV (Payload, System_Of (Kind), Result);
          elsif Is_Type (Kind, "GSA") then
-            --  $..GSA,mode,fixtype,{prn} x12,PDOP,HDOP,VDOP
-            Result.Recognised := True;
-            declare
-               FT : constant Natural := To_Nat (Field (Payload, 2));  --  fix type (2D/3D)
-               Used_Count : Natural := 0;
-            begin
-               Result.Has_DOP := True;
-               Result.Mode :=
-                 (case FT is
-                    when 2      => Fix_2D,
-                    when 3      => Fix_3D,
-                    when others => Fix_None);
-               for K in 3 .. 14 loop
-                  if Field (Payload, K) /= "" then
-                     Used_Count := Used_Count + 1;
-                  end if;
-               end loop;
-               Result.Used := Used_Count;
-               Result.PDOP_C := Scaled (Field (Payload, 15), 2);
-               Result.HDOP_C := Scaled (Field (Payload, 16), 2);
-               Result.VDOP_C := Scaled (Field (Payload, 17), 2);
-            end;
+            Parse_GSA (Payload, Result);
+         else
+            Result.Recognised := False;
          end if;
       end;
    end Parse;

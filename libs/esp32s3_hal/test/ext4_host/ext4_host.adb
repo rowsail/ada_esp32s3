@@ -13,7 +13,9 @@ with ESP32S3.Block_Dev;
 with ESP32S3.Ext4;       use ESP32S3.Ext4;
 with ESP32S3.Ext4.FS;
 with ESP32S3.Ext4.Inode;
-with ESP32S3.Ext4.Bitmap;   --  Phantom_Free_Count tripwire (double-free guard)
+with ESP32S3.Ext4.Bitmap;
+with ESP32S3.Ext4.Journal;
+with ESP32S3.Ext4.Path;   --  Phantom_Free_Count tripwire (double-free guard)
 
 procedure Ext4_Host is
    package DIO is new Ada.Direct_IO (ESP32S3.Block_Dev.Sector);
@@ -168,6 +170,55 @@ begin
       M.Mkdir ("/", "ada_dir");
       M.Commit;                          --  operations transaction
       M.Close;
+   elsif Scenario = "replay" then
+      --  Journal REPLAY, which nothing else here reaches.  dirty_battery only
+      --  runs two clean sessions; without this the whole recovery path --
+      --  Journal.Replay, the revoke scan and the descriptor walk -- is never
+      --  executed by any test, on a filesystem whose entire point is surviving
+      --  a crash.
+      --
+      --  Commit_Crash stops right after the barrier: the transaction is in the
+      --  journal and RECOVER is set on disk, but the metadata was never
+      --  checkpointed to its final locations.  Re-opening writable must notice
+      --  that and replay it, so the files appear even though nothing but the
+      --  journal ever held them.
+      declare
+         N  : Inode_Number;
+         Big : constant := 200 * 1024;   --  spans enough blocks to tag many
+      begin
+         Make_File ("/", "before_crash.txt");
+         M.Commit;
+
+         N := M.Create_File ("/", "crashed.bin");
+         Build (N, Big);
+         M.Mkdir ("/", "crashed_dir");
+         M.Commit_Crash;                --  journal written, checkpoint skipped
+         M.Drop_Cache;                  --  and lose everything volatile
+
+         --  Re-mount: FS.Open must see Needs_Recovery and replay.
+         M.Open (Dev, Read_Only => False, Cache_Blocks => 16);
+         declare
+            Found : constant Inode_Number := M.Lookup ("/crashed.bin");
+            Dir   : constant Inode_Number := M.Lookup ("/crashed_dir");
+         begin
+            if Dir = 0 then
+               Put_Line ("replay: *** the crashed mkdir did not come back");
+               Set_Exit_Status (Failure);
+            end if;
+            if Found = 0 then
+               Put_Line ("replay: *** the crashed file did not come back");
+               Set_Exit_Status (Failure);
+            elsif not Verify (Found, Big) then
+               Put_Line ("replay: *** the crashed file came back CORRUPT");
+               Set_Exit_Status (Failure);
+            else
+               Put_Line ("replay: crashed.bin recovered, all"
+                         & Natural'Image (Big) & " bytes verified");
+            end if;
+         end;
+         M.Commit;
+         M.Close;
+      end;
    elsif Scenario = "nospace" then
       --  Fill the volume, then hammer the writers with operations that can only
       --  fail, and weigh the heap while they do.
