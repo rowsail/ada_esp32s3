@@ -25,6 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The release body is taken from the ANNOTATED TAG's message (below),
+          # and a shallow checkout does not fetch tag objects.
+          fetch-depth: 0
 
       # Full TeX Live in a container; latexmk runs pdflatex + makeindex and
       # reruns until the index and cross-references converge.  book/Ada.pdf is
@@ -48,10 +52,42 @@ jobs:
           if-no-files-found: error
 
       # Only when the ref is a tag: cut a Release with the PDF attached.
+      # THE TAG MESSAGE IS THE RELEASE NOTES.  generate_release_notes alone gives
+      # a bare list of PR titles, which is the wrong thing to show someone
+      # deciding whether to upgrade: v1.6 fixed a deadlock that hangs every
+      # full-profile program on v1.5, and moved the HAL sources in a way that
+      # breaks a flat source path -- neither was visible in a PR-title list, and
+      # both had to be pasted in by hand afterwards.  Annotate the tag with the
+      # warning and the compatibility notes and they land automatically; the
+      # generated PR list is appended underneath.
+      - name: Take the release notes from the annotated tag
+        if: startsWith(github.ref, 'refs/tags/')
+        id: tagmsg
+        run: |
+          TAG='${{ github.ref_name }}'
+          #  ONLY an annotated tag has a message of its own.  For a LIGHTWEIGHT
+          #  tag `git tag -l --format=%(contents)` silently falls back to the
+          #  tagged COMMIT's message, which would publish a commit log as the
+          #  release notes -- so check the object type first and emit nothing,
+          #  leaving the generated notes to stand alone.  (Verified both ways.)
+          {
+            echo 'body<<TAG_BODY_EOF'
+            if [ "$(git cat-file -t "$TAG" 2>/dev/null)" = tag ]; then
+              git tag -l --format='%(contents)' "$TAG"
+              echo
+              echo '---'
+              echo
+            fi
+            echo 'TAG_BODY_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
-          name: "Book ${{ github.ref_name }} — Bare-Metal Ada on the ESP32-S3"
+          #  Named for the RELEASE, not the book: the PDF is an asset of an SDK
+          #  release, not the whole of it.
+          name: "${{ github.ref_name }} — Bare-Metal Ada on the ESP32-S3"
+          body: ${{ steps.tagmsg.outputs.body }}
           files: Bare-Metal-Ada-on-the-ESP32-S3.pdf
           generate_release_notes: true
