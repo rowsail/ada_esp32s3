@@ -79,19 +79,33 @@ package body ESP32S3.Ext4.Writer is
          raise Use_Error with "already exists: " & Name;
       end if;
 
+      --  The inode is claimed here but nothing references it until Add_Entry,
+      --  which raises before it writes -- so any failure in between has to hand
+      --  it back, or a create that failed (a parent directory that cannot grow,
+      --  a full volume) leaves an unattached inode for e2fsck to find.
       Child := Bitmap.Alloc_Inode (V, As_Dir => False);
-      CI :=
-        (Mode       => 16#8180#,
-         --  S_IFREG | 0644
-         Size       => 0,
-         Flags      => 0,
-         --  indirect-mapped (no EXTENTS_FL)
-         Links      => 1,
-         Blocks_512 => 0,
-         I_Block    => [others => 0]);
-      Inode.Write (V, Child, CI, Fresh => True);
+      begin
+         CI :=
+           (Mode       => 16#8180#,
+            --  S_IFREG | 0644
+            Size       => 0,
+            Flags      => 0,
+            --  indirect-mapped (no EXTENTS_FL)
+            Links      => 1,
+            Blocks_512 => 0,
+            I_Block    => [others => 0]);
+         Inode.Write (V, Child, CI, Fresh => True);
 
-      Dir.Add_Entry (V, Dir_N, Dir_I, Name, Child, Dir.FT_Reg);
+         Dir.Add_Entry (V, Dir_N, Dir_I, Name, Child, Dir.FT_Reg);
+      exception
+         when others =>
+            --  Free_Inode clears the bitmap bit, but an inode that was already
+            --  written still carries links=1 in the table -- e2fsck reads that
+            --  as "unattached inode".  Mark_Deleted is how Unlink retires one.
+            Bitmap.Free_Inode (V, Child, Was_Dir => False);
+            Inode.Mark_Deleted (V, Child);
+            raise;
+      end;
       return Child;
    end Create_File;
 
@@ -349,7 +363,7 @@ package body ESP32S3.Ext4.Writer is
       Parent_N : Inode_Number;
       Parent_I : Inode.Info;
       New_N    : Inode_Number;
-      Blk      : Block_Number;
+      Blk      : Block_Number := 0;   --  0 = not yet claimed (see the rollback)
       DI       : Inode.Info;
       Buf      : Scratch (BS);
    begin
@@ -365,19 +379,17 @@ package body ESP32S3.Ext4.Writer is
          raise Use_Error with "already exists: " & Name;
       end if;
 
+      --  From here to Add_Entry, this call OWNS an inode (and then a block) that
+      --  nothing on disk references yet, so a failure has to hand them back --
+      --  the same invariant the duplicate-name check above exists to keep.
+      --  Alloc_Inode also bumps the group's used-dirs count, so leaving it
+      --  drifts the group descriptor (e2fsck: "Directories count wrong for
+      --  group #0"), and Add_Entry raises BEFORE it writes anything, which
+      --  makes it the last point at which rolling back is still correct: once
+      --  the entry lands, the inode IS referenced and must be kept.
       New_N := Bitmap.Alloc_Inode (V, As_Dir => True);
       begin
          Blk := Bitmap.Alloc_Block (V);
-      exception
-         when others =>
-            --  Alloc_Inode has already claimed the inode AND bumped this group's
-            --  used-dirs count.  Running out of blocks between the two calls
-            --  would otherwise leave both behind on a mkdir that failed --
-            --  e2fsck: "Directories count wrong for group #0" -- which is the
-            --  same invariant the duplicate-name check above exists to keep.
-            Bitmap.Free_Inode (V, New_N, Was_Dir => True);
-            raise;
-      end;
 
       --  Lay down "." (-> self) and ".." (-> parent), ".." spanning the block.
       Buf.Mem.all := [others => 0];
@@ -407,6 +419,18 @@ package body ESP32S3.Ext4.Writer is
       Inode.Write (V, New_N, DI, Fresh => True);
 
       Dir.Add_Entry (V, Parent_N, Parent_I, Name, New_N, Dir.FT_Dir);
+      exception
+         when others =>
+            if Blk /= 0 then
+               Bitmap.Free_Block (V, Blk);
+            end if;
+            --  Free_Inode clears the bitmap bit, but an inode that was already
+            --  written still carries links=1 in the table -- e2fsck reads that
+            --  as "unattached inode".  Mark_Deleted is how Unlink retires one.
+            Bitmap.Free_Inode (V, New_N, Was_Dir => True);
+            Inode.Mark_Deleted (V, New_N);
+            raise;
+      end;
 
       Parent_I.Links := Parent_I.Links + 1;    --  the new dir's ".." -> parent
       Inode.Write (V, Parent_N, Parent_I, Fresh => False);
@@ -912,40 +936,58 @@ package body ESP32S3.Ext4.Writer is
          raise Use_Error with "symlink target already exists: " & Name;
       end if;
 
+      --  As in Create_File: the inode -- and, on the slow path, the text block --
+      --  are claimed before anything references them, and Add_Entry raises
+      --  before it writes, so a failure up to that point must give both back.
       Child := Bitmap.Alloc_Inode (V, As_Dir => False);
-      CI :=
-        (Mode       => 16#A1FF#,
-         --  S_IFLNK | 0777
-         Size       => U64 (Target'Length),
-         Flags      => 0,
-         Links      => 1,
-         Blocks_512 => 0,
-         I_Block    => [others => 0]);
+      declare
+         Text_Blk : Block_Number := 0;   --  0 = not claimed (slow path only)
+      begin
+         CI :=
+           (Mode       => 16#A1FF#,
+            --  S_IFLNK | 0777
+            Size       => U64 (Target'Length),
+            Flags      => 0,
+            Links      => 1,
+            Blocks_512 => 0,
+            I_Block    => [others => 0]);
 
-      if Target'Length < 60 then
-         --  Fast symlink: the link text lives inline in the 60-byte i_block.
-         for K in 0 .. Target'Length - 1 loop
-            CI.I_Block (K) := Character'Pos (Target (Target'First + K));
-         end loop;
-         Inode.Write (V, Child, CI, Fresh => True);
-      else
-         --  Slow symlink: one data block holds the link text.
-         declare
-            Phys : constant Block_Number := Bitmap.Alloc_Block (V);
-            Buf  : Scratch (BS);
-         begin
-            Buf.Mem.all := [others => 0];
+         if Target'Length < 60 then
+            --  Fast symlink: the link text lives inline in the 60-byte i_block.
             for K in 0 .. Target'Length - 1 loop
-               Buf.Mem (K) := Character'Pos (Target (Target'First + K));
+               CI.I_Block (K) := Character'Pos (Target (Target'First + K));
             end loop;
-            ESP32S3.Ext4.Block_Cache.Write (V.Cache, Phys, Buf.Mem.all);
-            Put_U32 (CI.I_Block, 0, U32 (Phys));
-            CI.Blocks_512 := U64 (BS / 512);
             Inode.Write (V, Child, CI, Fresh => True);
-         end;
-      end if;
+         else
+            --  Slow symlink: one data block holds the link text.
+            declare
+               Buf : Scratch (BS);
+            begin
+               Text_Blk := Bitmap.Alloc_Block (V);
+               Buf.Mem.all := [others => 0];
+               for K in 0 .. Target'Length - 1 loop
+                  Buf.Mem (K) := Character'Pos (Target (Target'First + K));
+               end loop;
+               ESP32S3.Ext4.Block_Cache.Write (V.Cache, Text_Blk, Buf.Mem.all);
+               Put_U32 (CI.I_Block, 0, U32 (Text_Blk));
+               CI.Blocks_512 := U64 (BS / 512);
+               Inode.Write (V, Child, CI, Fresh => True);
+            end;
+         end if;
 
-      Dir.Add_Entry (V, Dir_N, Dir_I, Name, Child, Dir.FT_Symlink);
+         Dir.Add_Entry (V, Dir_N, Dir_I, Name, Child, Dir.FT_Symlink);
+      exception
+         when others =>
+            if Text_Blk /= 0 then
+               Bitmap.Free_Block (V, Text_Blk);
+            end if;
+            --  Free_Inode clears the bitmap bit, but an inode that was already
+            --  written still carries links=1 in the table -- e2fsck reads that
+            --  as "unattached inode".  Mark_Deleted is how Unlink retires one.
+            Bitmap.Free_Inode (V, Child, Was_Dir => False);
+            Inode.Mark_Deleted (V, Child);
+            raise;
+      end;
    end Make_Symlink;
 
 end ESP32S3.Ext4.Writer;

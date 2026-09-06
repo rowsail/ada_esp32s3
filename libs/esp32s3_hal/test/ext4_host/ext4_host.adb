@@ -7,6 +7,7 @@ with Ada.Direct_IO;
 with Ada.Text_IO; use Ada.Text_IO;
 with System;
 with Interfaces.C;
+with Ada.Exceptions;
 with Interfaces; use Interfaces;
 with ESP32S3.Block_Dev;
 with ESP32S3.Ext4;       use ESP32S3.Ext4;
@@ -185,7 +186,10 @@ begin
          Attempts : constant := 400;
          Chunk    : constant Byte_Array (0 .. 4095) := (others => 16#5A#);
          Before, After, Growth : Long_Long_Integer;
-         Filled, Failed, Other : Natural := 0;
+         Filled, Failed, Other, Created : Natural := 0;
+         Long_Target : constant String (1 .. 80) := (others => 't');
+         Other_Name  : String (1 .. 64) := (others => ' ');
+         Other_Len   : Natural := 0;
          Budget   : constant := 64 * 1024;   --  a leak would be 400 * 4 KiB
 
          function Nth (I : Natural) return String is
@@ -209,10 +213,49 @@ begin
          Before := In_Use;
          for I in 1 .. Attempts loop
             begin
-               M.Mkdir ("/", Nth (I));
+               M.Mkdir ("/", "d" & Nth (I));
             exception
                when ESP32S3.Ext4.No_Space => Failed := Failed + 1;
                when others                => Other := Other + 1;
+            end;
+            --  Slow symlink: >= 60 chars, so the link text needs its own block
+            --  and Alloc_Block is reached with the inode already claimed.
+            begin
+               --  Alternate the two symlink shapes: the long target needs its
+               --  own block (fails at Alloc_Block, before the inode is written),
+               --  the short one is inline (fails later, at Add_Entry, with the
+               --  inode already in the table).  Only covering one hides the other.
+               if I mod 2 = 0 then
+                  M.Symlink ("/", "s" & Nth (I), Long_Target);
+               else
+                  M.Symlink ("/", "s" & Nth (I), "short-target");
+               end if;
+            exception
+               when ESP32S3.Ext4.No_Space => Failed := Failed + 1;
+               when others                => Other := Other + 1;
+            end;
+            --  Create_File: the inode is claimed and written before Add_Entry
+            --  needs a fresh directory block, which is where it runs out.
+            begin
+               declare
+                  Ignored : constant Inode_Number :=
+                    M.Create_File ("/", "c" & Nth (I));
+               begin
+                  Created := Created + 1;
+               end;
+            exception
+               when ESP32S3.Ext4.No_Space => Failed := Failed + 1;
+               when E : others =>
+                  Other := Other + 1;
+                  if Other_Len = 0 then
+                     declare
+                        Nm : constant String := Ada.Exceptions.Exception_Name (E);
+                        L  : constant Natural := Natural'Min (Nm'Length, 64);
+                     begin
+                        Other_Name (1 .. L) := Nm (Nm'First .. Nm'First + L - 1);
+                        Other_Len := L;
+                     end;
+                  end if;
             end;
          end loop;
          After  := In_Use;
@@ -221,8 +264,11 @@ begin
          Put_Line ("nospace: filled=" & Natural'Image (Filled)
                    & " failed=" & Natural'Image (Failed)
                    & " other=" & Natural'Image (Other)
+                   & " created=" & Natural'Image (Created)
+                   & " other-exn=" & Other_Name (1 .. Other_Len)
                    & " heap-growth=" & Long_Long_Integer'Image (Growth)
-                   & " bytes over" & Natural'Image (Attempts) & " failed mkdirs");
+                   & " bytes over" & Natural'Image (Attempts)
+                   & " rounds of mkdir/symlink/create");
          if Failed = 0 then
             Put_Line ("nospace: *** INCONCLUSIVE: no call reported No_Space,"
                       & " so nothing was exercised");
