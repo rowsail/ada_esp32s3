@@ -112,6 +112,34 @@ time of writing.
   Vardanega) -- the rationale behind the restricted tasking profiles.
 \end{itemize}
 
+\section{Static analysis and proof}
+
+\begin{itemize}
+\item \textbf{AdaLang Analyzer} -- the Libadalang-based static analyser used in
+  Chapter~\ref{ch:analysis}, written by \textbf{Maurizio Martignano} of
+  \textbf{Spazio~IT} and released under the GPL-3.0.
+  \url{https://github.com/mmartign/AdaLang_Analyzer} and
+  \url{https://spazioit.com}. It installs from Alire as the crate
+  \texttt{adalang\_analyzer}; \texttt{-list-checks} prints every rule it offers,
+  which is the most useful page of its documentation.
+\item \textbf{Libadalang} -- AdaCore's Ada parsing and semantic-analysis library,
+  the foundation AdaLang Analyzer is built on and the reason it can resolve names
+  and types rather than match text.
+  \url{https://github.com/AdaCore/libadalang}.
+\item \textbf{SPARK and \texttt{gnatprove}} -- the proof toolchain of
+  Chapter~\ref{ch:spark}. The SPARK language was originally designed by
+  Bernard Carr\'e and colleagues at the University of Southampton, carried
+  forward by Program Validation Limited and then Praxis and Altran; the current
+  SPARK~2014 and \texttt{gnatprove} are developed by AdaCore with Capgemini
+  Engineering (formerly Altran). \url{https://www.adacore.com/sparkpro} and
+  \url{https://learn.adacore.com}.
+\item \textbf{DO-178C} and \textbf{MISRA} -- the standards behind the analyser's
+  \texttt{--do178c} and \texttt{--automotive} profiles. Both are licensed
+  documents: RTCA/EUROCAE DO-178C \emph{Software Considerations in Airborne
+  Systems and Equipment Certification}, and the MISRA guidelines from the MISRA
+  Consortium. Verify any tool's paraphrase of either against your own copy.
+\end{itemize}
+
 \section{This project}
 
 \begin{itemize}
