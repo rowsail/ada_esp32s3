@@ -1,4 +1,5 @@
 with Interfaces; use Interfaces;
+with Ada.Finalization;
 with Ada.Unchecked_Deallocation;
 with ESP32S3.Ext4.Bitmap;
 with ESP32S3.Ext4.Inode;
@@ -11,6 +12,37 @@ package body ESP32S3.Ext4.Writer is
 
    type Bytes_Ptr is access Byte_Array;
    procedure Free is new Ada.Unchecked_Deallocation (Byte_Array, Bytes_Ptr);
+
+   --  Scope guard for the one-block scratch buffer every writer below needs.
+   --  The buffer is on the heap because Block_Size is a runtime value and a
+   --  4 KiB frame does not belong on these stacks; making it controlled means it
+   --  is released on EVERY exit, not just the ones a hand-placed Free remembered
+   --  to cover.  That matters here because Bitmap.Alloc_Block / Alloc_Inode
+   --  raise No_Space from the middle of the buffer's lifetime -- so the path
+   --  that used to leak a block was a FULL filesystem, i.e. exactly the failure
+   --  a caller retries, on a target whose heap does not grow.  Same guarantee,
+   --  and the same reason, as Scoped_Lock in ESP32S3.Ext4.Fs.
+   type Scratch (Size : Natural) is new Ada.Finalization.Limited_Controlled with record
+      Mem : Bytes_Ptr;
+   end record;
+   overriding
+   procedure Initialize (S : in out Scratch);
+   overriding
+   procedure Finalize (S : in out Scratch);
+
+   overriding
+   procedure Initialize (S : in out Scratch) is
+   begin
+      S.Mem := new Byte_Array (0 .. S.Size - 1);
+   end Initialize;
+
+   overriding
+   procedure Finalize (S : in out Scratch) is
+   begin
+      --  Unchecked_Deallocation is a no-op on null and nulls what it frees, so
+      --  this is idempotent -- Finalize may legitimately run more than once.
+      Free (S.Mem);
+   end Finalize;
 
    procedure Guard (V : Volume.Context) is
    begin
@@ -72,14 +104,13 @@ package body ESP32S3.Ext4.Writer is
       PPB   : constant Natural := BS / 4;                  --  pointers per block
       N_Blk : constant Natural := (Data'Length + BS - 1) / BS;
       I     : Inode.Info;
-      Buf   : Bytes_Ptr := new Byte_Array (0 .. BS - 1);
+      Buf   : Scratch (BS);
       Ind   : Block_Number := 0;                           --  single-indirect block
       Meta  : Natural := 0;                                --  indirect metadata blocks
       Ptr   : Byte_Array (0 .. 3);
    begin
       Guard (V);
       if N_Blk > 12 + PPB then
-         Free (Buf);
          raise Use_Error with "file too large (single-indirect maximum)";
       end if;
 
@@ -98,9 +129,9 @@ package body ESP32S3.Ext4.Writer is
             Lo   : constant Natural := B * BS;
             Cnt  : constant Natural := Natural'Min (BS, Data'Length - Lo);
          begin
-            Buf.all := [others => 0];
-            Buf (0 .. Cnt - 1) := Data (Data'First + Lo .. Data'First + Lo + Cnt - 1);
-            ESP32S3.Ext4.Block_Cache.Write (V.Cache, Phys, Buf.all);
+            Buf.Mem.all := [others => 0];
+            Buf.Mem (0 .. Cnt - 1) := Data (Data'First + Lo .. Data'First + Lo + Cnt - 1);
+            ESP32S3.Ext4.Block_Cache.Write (V.Cache, Phys, Buf.Mem.all);
 
             if B < 12 then
                Put_U32 (I.I_Block, B * 4, U32 (Phys));
@@ -109,8 +140,8 @@ package body ESP32S3.Ext4.Writer is
                   --  first indirect ref
                   Ind := Bitmap.Alloc_Block (V);
                   Meta := Meta + 1;
-                  Buf.all := [others => 0];
-                  ESP32S3.Ext4.Block_Cache.Write (V.Cache, Ind, Buf.all);
+                  Buf.Mem.all := [others => 0];
+                  ESP32S3.Ext4.Block_Cache.Write (V.Cache, Ind, Buf.Mem.all);
                   Put_U32 (I.I_Block, 12 * 4, U32 (Ind));
                end if;
                Put_U32 (Ptr, 0, U32 (Phys));
@@ -122,7 +153,6 @@ package body ESP32S3.Ext4.Writer is
       I.Size := U64 (Data'Length);
       I.Blocks_512 := U64 (N_Blk + Meta) * U64 (BS / 512);
       Inode.Write (V, N, I, Fresh => False);
-      Free (Buf);
    end Write_Small;
 
    ------------
@@ -233,7 +263,7 @@ package body ESP32S3.Ext4.Writer is
       BS  : constant Natural := V.SB.Block_Size;
       PPB : constant Natural := BS / 4;
       I   : Inode.Info;
-      Buf : Bytes_Ptr := new Byte_Array (0 .. BS - 1);
+      Buf : Scratch (BS);
       Pos : U64;
       Src : Natural := Data'First;
 
@@ -255,20 +285,17 @@ package body ESP32S3.Ext4.Writer is
    begin
       Guard (V);
       if Data'Length = 0 then
-         Free (Buf);
          return;
       end if;
 
       Inode.Read (V, N, I);
       if not Inode.Is_Reg (I) then
-         Free (Buf);
          raise Use_Error with "append to a non-regular file";
       end if;
       Pos := I.Size;
 
       --  Reject an over-large final size up front, before allocating anything.
       if Natural ((Pos + U64 (Data'Length) + U64 (BS) - 1) / U64 (BS)) > 12 + PPB + PPB * PPB then
-         Free (Buf);
          raise Use_Error with "file too large (double-indirect maximum)";
       end if;
 
@@ -284,16 +311,16 @@ package body ESP32S3.Ext4.Writer is
                Phys    : constant Block_Number := Map_Or_Alloc (V, I, L_Block, Fresh);
             begin
                if Off = 0 and then Chunk = BS then
-                  Buf.all := Data (Src .. Src + BS - 1);
+                  Buf.Mem.all := Data (Src .. Src + BS - 1);
                else
                   if Fresh then
-                     Buf.all := [others => 0];
+                     Buf.Mem.all := [others => 0];
                   else
-                     ESP32S3.Ext4.Block_Cache.Read (V.Cache, Phys, Buf.all);
+                     ESP32S3.Ext4.Block_Cache.Read (V.Cache, Phys, Buf.Mem.all);
                   end if;
-                  Buf (Off .. Off + Chunk - 1) := Data (Src .. Src + Chunk - 1);
+                  Buf.Mem (Off .. Off + Chunk - 1) := Data (Src .. Src + Chunk - 1);
                end if;
-               ESP32S3.Ext4.Block_Cache.Write (V.Cache, Phys, Buf.all);
+               ESP32S3.Ext4.Block_Cache.Write (V.Cache, Phys, Buf.Mem.all);
                Pos := Pos + U64 (Chunk);
                Src := Src + Chunk;
                Left := Left - Chunk;
@@ -305,14 +332,12 @@ package body ESP32S3.Ext4.Writer is
             I.Size := Pos;
             I.Blocks_512 := I_Blocks (Pos);
             Inode.Write (V, N, I, Fresh => False);
-            Free (Buf);
             raise;
       end;
 
       I.Size := Pos;
       I.Blocks_512 := I_Blocks (Pos);
       Inode.Write (V, N, I, Fresh => False);
-      Free (Buf);
    end Append;
 
    -----------
@@ -326,40 +351,48 @@ package body ESP32S3.Ext4.Writer is
       New_N    : Inode_Number;
       Blk      : Block_Number;
       DI       : Inode.Info;
-      Buf      : Bytes_Ptr := new Byte_Array (0 .. BS - 1);
+      Buf      : Scratch (BS);
    begin
       Guard (V);
       Parent_N := Path.Resolve (V, Dir_Path);
       Inode.Read (V, Parent_N, Parent_I);
       if not Inode.Is_Dir (Parent_I) then
-         Free (Buf);
          raise Use_Error with "parent is not a directory";
       end if;
       --  Reject a duplicate name BEFORE allocating the inode/block, so a failed
       --  mkdir leaves nothing behind (no orphan inode for e2fsck to flag).
       if Dir.Lookup (V, Parent_I, Name) /= 0 then
-         Free (Buf);
          raise Use_Error with "already exists: " & Name;
       end if;
 
       New_N := Bitmap.Alloc_Inode (V, As_Dir => True);
-      Blk := Bitmap.Alloc_Block (V);
+      begin
+         Blk := Bitmap.Alloc_Block (V);
+      exception
+         when others =>
+            --  Alloc_Inode has already claimed the inode AND bumped this group's
+            --  used-dirs count.  Running out of blocks between the two calls
+            --  would otherwise leave both behind on a mkdir that failed --
+            --  e2fsck: "Directories count wrong for group #0" -- which is the
+            --  same invariant the duplicate-name check above exists to keep.
+            Bitmap.Free_Inode (V, New_N, Was_Dir => True);
+            raise;
+      end;
 
       --  Lay down "." (-> self) and ".." (-> parent), ".." spanning the block.
-      Buf.all := [others => 0];
-      Put_U32 (Buf.all, 0, U32 (New_N));
-      Put_U16 (Buf.all, 4, 12);
-      Put_U8 (Buf.all, 6, 1);
-      Put_U8 (Buf.all, 7, Dir.FT_Dir);
-      Buf (8) := Character'Pos ('.');
-      Put_U32 (Buf.all, 12, U32 (Parent_N));
-      Put_U16 (Buf.all, 16, U16 (BS - 12));
-      Put_U8 (Buf.all, 18, 2);
-      Put_U8 (Buf.all, 19, Dir.FT_Dir);
-      Buf (20) := Character'Pos ('.');
-      Buf (21) := Character'Pos ('.');
-      ESP32S3.Ext4.Block_Cache.Write (V.Cache, Blk, Buf.all);
-      Free (Buf);
+      Buf.Mem.all := [others => 0];
+      Put_U32 (Buf.Mem.all, 0, U32 (New_N));
+      Put_U16 (Buf.Mem.all, 4, 12);
+      Put_U8 (Buf.Mem.all, 6, 1);
+      Put_U8 (Buf.Mem.all, 7, Dir.FT_Dir);
+      Buf.Mem (8) := Character'Pos ('.');
+      Put_U32 (Buf.Mem.all, 12, U32 (Parent_N));
+      Put_U16 (Buf.Mem.all, 16, U16 (BS - 12));
+      Put_U8 (Buf.Mem.all, 18, 2);
+      Put_U8 (Buf.Mem.all, 19, Dir.FT_Dir);
+      Buf.Mem (20) := Character'Pos ('.');
+      Buf.Mem (21) := Character'Pos ('.');
+      ESP32S3.Ext4.Block_Cache.Write (V.Cache, Blk, Buf.Mem.all);
 
       DI :=
         (Mode       => 16#41ED#,
@@ -899,17 +932,16 @@ package body ESP32S3.Ext4.Writer is
          --  Slow symlink: one data block holds the link text.
          declare
             Phys : constant Block_Number := Bitmap.Alloc_Block (V);
-            Buf  : Bytes_Ptr := new Byte_Array (0 .. BS - 1);
+            Buf  : Scratch (BS);
          begin
-            Buf.all := [others => 0];
+            Buf.Mem.all := [others => 0];
             for K in 0 .. Target'Length - 1 loop
-               Buf (K) := Character'Pos (Target (Target'First + K));
+               Buf.Mem (K) := Character'Pos (Target (Target'First + K));
             end loop;
-            ESP32S3.Ext4.Block_Cache.Write (V.Cache, Phys, Buf.all);
+            ESP32S3.Ext4.Block_Cache.Write (V.Cache, Phys, Buf.Mem.all);
             Put_U32 (CI.I_Block, 0, U32 (Phys));
             CI.Blocks_512 := U64 (BS / 512);
             Inode.Write (V, Child, CI, Fresh => True);
-            Free (Buf);
          end;
       end if;
 

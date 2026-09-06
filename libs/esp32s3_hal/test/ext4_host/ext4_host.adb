@@ -6,6 +6,7 @@ with Ada.Command_Line; use Ada.Command_Line;
 with Ada.Direct_IO;
 with Ada.Text_IO; use Ada.Text_IO;
 with System;
+with Interfaces.C;
 with Interfaces; use Interfaces;
 with ESP32S3.Block_Dev;
 with ESP32S3.Ext4;       use ESP32S3.Ext4;
@@ -53,6 +54,24 @@ procedure Ext4_Host is
 
    M        : ESP32S3.Ext4.FS.Mount;
    Scenario : constant String := (if Argument_Count >= 2 then Argument (2) else "two");
+
+   --  Bytes currently handed out by the allocator, for the "nospace" scenario
+   --  below.  This has to be USE, not the program break: the fill phase leaves a
+   --  big free list behind, so leaked block-sized buffers are served from it and
+   --  sbrk never moves -- a break-based measure reports "no leak" either way.
+   --  glibc's mallinfo2 (2.33+) reports uordblks, which counts exactly the
+   --  chunks that were allocated and not returned.
+   type Mallinfo2 is record
+      Arena, Ordblks, Smblks, Hblks, Hblkhd,
+      Usmblks, Fsmblks, Uordblks, Fordblks, Keepcost : Interfaces.C.size_t;
+   end record
+     with Convention => C;
+
+   function Mallinfo return Mallinfo2
+     with Import, Convention => C, External_Name => "mallinfo2";
+
+   function In_Use return Long_Long_Integer
+   is (Long_Long_Integer (Mallinfo.Uordblks));
 
    procedure Make_File (Path, Name : String) is
       N    : Inode_Number;
@@ -148,6 +167,77 @@ begin
       M.Mkdir ("/", "ada_dir");
       M.Commit;                          --  operations transaction
       M.Close;
+   elsif Scenario = "nospace" then
+      --  Fill the volume, then hammer the writers with operations that can only
+      --  fail, and weigh the heap while they do.
+      --
+      --  Every writer allocates a block-sized scratch buffer in its declarative
+      --  part -- BEFORE it can discover there is no space -- and
+      --  Bitmap.Alloc_Block / Alloc_Inode raise No_Space from the middle of that
+      --  buffer's lifetime.  Mkdir, Write_Small and Make_Symlink have no
+      --  exception handler, so while the buffer was released by hand every one
+      --  of those raises walked past the Free: a device that merely ran out of
+      --  DISK leaked ~4 KiB of RAM per failed call, which is the one failure a
+      --  caller retries in a loop.  (Append is not the probe here -- it is the
+      --  one writer that DID have a when-others handler covering its loop.)
+      declare
+         N        : Inode_Number;
+         Attempts : constant := 400;
+         Chunk    : constant Byte_Array (0 .. 4095) := (others => 16#5A#);
+         Before, After, Growth : Long_Long_Integer;
+         Filled, Failed, Other : Natural := 0;
+         Budget   : constant := 64 * 1024;   --  a leak would be 400 * 4 KiB
+
+         function Nth (I : Natural) return String is
+            T : constant String := Natural'Image (I);
+         begin
+            return "d" & T (T'First + 1 .. T'Last);
+         end Nth;
+      begin
+         N := M.Create_File ("/", "fill.bin");
+         begin
+            loop
+               M.Append (N, Chunk);
+               Filled := Filled + 1;
+            end loop;
+         exception
+            when ESP32S3.Ext4.No_Space => null;
+         end;
+
+         --  Measure across the failures only, so the fill phase's own
+         --  allocations are not counted.
+         Before := In_Use;
+         for I in 1 .. Attempts loop
+            begin
+               M.Mkdir ("/", Nth (I));
+            exception
+               when ESP32S3.Ext4.No_Space => Failed := Failed + 1;
+               when others                => Other := Other + 1;
+            end;
+         end loop;
+         After  := In_Use;
+         Growth := After - Before;
+
+         Put_Line ("nospace: filled=" & Natural'Image (Filled)
+                   & " failed=" & Natural'Image (Failed)
+                   & " other=" & Natural'Image (Other)
+                   & " heap-growth=" & Long_Long_Integer'Image (Growth)
+                   & " bytes over" & Natural'Image (Attempts) & " failed mkdirs");
+         if Failed = 0 then
+            Put_Line ("nospace: *** INCONCLUSIVE: no call reported No_Space,"
+                      & " so nothing was exercised");
+            Set_Exit_Status (Failure);
+         elsif Growth > Budget then
+            Put_Line ("nospace: *** LEAK: the heap grew"
+                      & Long_Long_Integer'Image (Growth)
+                      & " bytes across failing writes (budget"
+                      & Natural'Image (Budget) & ")");
+            Set_Exit_Status (Failure);
+         else
+            Put_Line ("nospace: no leak across failing writes");
+         end if;
+         M.Close;
+      end;
    elsif Scenario = "stream" then
       --  Build a file with many small, block-crossing Appends (well into the
       --  single-indirect range), then read every byte back and check it.

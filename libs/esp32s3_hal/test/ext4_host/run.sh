@@ -7,6 +7,7 @@
 #     or put gprbuild/gnatmake on PATH yourself)
 #   * mkfs.ext4 + e2fsck (e2fsprogs; usually in /usr/sbin)
 set -e
+FAILED=0
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
 
@@ -36,9 +37,10 @@ fresh_nojournal() {
 
 run_scenario() { # $1 = scenario, $2 = label
    if ! ./ext4_host "$IMG" "$1" >/tmp/ext4_host.out 2>&1; then
-      # harness exits non-zero on a phantom free (double-free bug)
+      # harness exits non-zero on a phantom free (double-free bug) or a leak
       printf '  %-14s HARNESS FAIL: %s\n' "$2" \
-             "$(grep -i 'PHANTOM' /tmp/ext4_host.out | head -1)"
+             "$(grep -iE 'PHANTOM|LEAK|INCONCLUSIVE' /tmp/ext4_host.out | head -1)"
+      FAILED=1
    elif e2fsck -f -n "$IMG" >/tmp/ext4_host.fsck 2>&1; then
       printf '  %-14s e2fsck CLEAN\n' "$2"
    else
@@ -58,6 +60,10 @@ for S in dindirect dtrunc dunlink; do
    grep -hE "^(dindirect|dtrunc|dunlink):" /tmp/ext4_host.out | sed 's/^/      /'
 done
 
+echo "exhaustion (writers must not leak their scratch buffer on No_Space):"
+fresh; run_scenario nospace nospace
+grep -h '^nospace:' /tmp/ext4_host.out | sed 's/^/      /'
+
 echo "directory growth (hundreds of names -> multi-block dir):"
 fresh; run_scenario dirgrow dirgrow
 grep -h '^dirgrow:' /tmp/ext4_host.out | sed 's/^/      /'
@@ -67,3 +73,4 @@ echo "no-journal:"
 for S in one two battery stream; do fresh_nojournal; run_scenario "$S" "$S"; done
 grep -h '^stream:' /tmp/ext4_host.out | sed 's/^/      /'
 echo "done."
+exit "$FAILED"
