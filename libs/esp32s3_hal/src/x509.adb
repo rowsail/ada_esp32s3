@@ -299,9 +299,195 @@ package body X509 with SPARK_Mode => On is
       end loop;
    end Parse_Extensions;
 
+   --  validity ::= SEQUENCE { notBefore Time, notAfter Time }.  Both are read
+   --  with Want = 0: UTCTime and GeneralizedTime are both accepted and the tag
+   --  is recorded, because Valid_At needs it to pick the century rule.
+   procedure Parse_Validity
+     (Cert : Byte_Array; Validity : DER.TLV; Result : in out Certificate; Ok : in out Boolean)
+   is
+      Pos    : Natural := Validity.Content.First;
+      Last   : constant Natural := Validity.Content.Last;
+      NB, NA : DER.TLV;
+   begin
+      Expect (Cert, Pos, Last, 0, NB, Ok);
+      Result.Not_Before := NB.Content;
+      Result.NB_Tag := NB.Tag;
+      Pos := NB.Elem_Last + 1;
+      Expect (Cert, Pos, Last, 0, NA, Ok);
+      Result.Not_After := NA.Content;
+      Result.NA_Tag := NA.Tag;
+   end Parse_Validity;
+
+   --  The namedCurve OID inside an EC AlgorithmIdentifier.  Only the two curves
+   --  this stack can actually verify with are accepted; anything else clears Ok.
+   procedure Classify_EC_Curve
+     (Cert : Byte_Array; Curve : DER.TLV; Result : in out Certificate; Ok : in out Boolean) is
+   begin
+      if Ok and then OID_Match (Cert, Curve.Content, OID_P256_Curve) then
+         Result.Key_Kind := Key_EC_P256;
+      elsif Ok and then OID_Match (Cert, Curve.Content, OID_P384_Curve) then
+         Result.Key_Kind := Key_EC_P384;
+      else
+         Ok := False;                             --  unsupported curve
+      end if;
+   end Classify_EC_Curve;
+
+   --  AlgorithmIdentifier ::= SEQUENCE { algorithm OID, parameters ANY }.  Sets
+   --  Result.Key_Kind from the OID, and for EC also from the named-curve OID
+   --  that follows it.  Anything we cannot verify with clears Ok rather than
+   --  leaving Key_Other: a caller that forgot to reject Key_Other would
+   --  otherwise treat an unusable key as parsed.
+   procedure Classify_Key_Algorithm
+     (Cert : Byte_Array; AlgId : DER.TLV; Result : in out Certificate; Ok : in out Boolean)
+   is
+      Pos        : Natural := AlgId.Content.First;
+      Alg, Curve : DER.TLV;
+   begin
+      Expect (Cert, Pos, AlgId.Content.Last, 16#06#, Alg, Ok);
+      if not Ok then
+         return;
+      end if;
+
+      if OID_Match (Cert, Alg.Content, OID_RSA_Enc) then
+         Result.Key_Kind := Key_RSA;
+      elsif OID_Match (Cert, Alg.Content, OID_EC_PubKey) then
+         --  EC: the named curve is the OID that follows the algorithm OID.
+         Pos := Alg.Elem_Last + 1;
+         Expect (Cert, Pos, AlgId.Content.Last, 16#06#, Curve, Ok);
+         Classify_EC_Curve (Cert, Curve, Result, Ok);
+      elsif OID_Match (Cert, Alg.Content, OID_Ed25519) then
+         Result.Key_Kind := Key_Ed25519;          --  no params / no curve
+      else
+         Ok := False;                             --  unsupported key type
+      end if;
+   end Classify_Key_Algorithm;
+
+   --  RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER },
+   --  inside the subjectPublicKey BIT STRING after its unused-bits byte.
+   procedure Parse_RSA_Public_Key
+     (Cert : Byte_Array; Bits : DER.TLV; Result : in out Certificate; Ok : in out Boolean)
+   is
+      RSASeq : DER.TLV;
+   begin
+      Expect (Cert, Bits.Content.First + 1, Bits.Content.Last, 16#30#, RSASeq, Ok);
+      if not Ok then
+         return;
+      end if;
+      declare
+         Pos               : Natural := RSASeq.Content.First;
+         Last              : constant Natural := RSASeq.Content.Last;
+         Modulus, Exponent : DER.TLV;
+      begin
+         Expect (Cert, Pos, Last, 16#02#, Modulus, Ok);    --  modulus INTEGER
+         Result.RSA_Modulus := Modulus.Content;
+         Pos := Modulus.Elem_Last + 1;
+         Expect (Cert, Pos, Last, 16#02#, Exponent, Ok);   --  publicExponent
+         Result.RSA_Exponent := Exponent.Content;
+      end;
+   end Parse_RSA_Public_Key;
+
+   --  The subjectPublicKey BIT STRING, once Key_Kind is known.  Its content is
+   --  unused-bits(1) || key, so every offset below is measured from
+   --  Bits.Content.First + 1.  A shape that does not match the classified kind
+   --  clears Ok.
+   procedure Parse_Key_Bits
+     (Cert : Byte_Array; Bits : DER.TLV; Result : in out Certificate; Ok : in out Boolean) is
+   begin
+      if not Ok then
+         return;
+      end if;
+
+      --  A case on the classified kind rather than a chain of and-then guards:
+      --  each arm states the shape that kind requires.  Key_Other cannot reach
+      --  here -- Classify_Key_Algorithm clears Ok rather than leaving it set.
+      --
+      --  The two EC arms keep their LITERAL lengths and offsets instead of
+      --  sharing a Take_EC_Point (Size) helper.  That is deliberate: SPARK bounds
+      --  the index from the literal in the Length guard, and factoring the
+      --  coordinate width into a parameter -- or hoisting Bits.Content.First + 1
+      --  into a constant above the guard -- each cost proofs that the literal
+      --  form discharges for free.
+      case Result.Key_Kind is
+         when Key_RSA =>
+            if Length (Bits.Content) >= 2 then
+               Parse_RSA_Public_Key (Cert, Bits, Result, Ok);
+            else
+               Ok := False;
+            end if;
+
+         when Key_EC_P256 =>
+            --  unused-bits(1) || 0x04 || X(32) || Y(32)
+            if Length (Bits.Content) >= 66
+              and then Cert (Bits.Content.First + 1) = 16#04#
+            then
+               Result.EC_X := (First => Bits.Content.First + 2, Last => Bits.Content.First + 33);
+               Result.EC_Y := (First => Bits.Content.First + 34, Last => Bits.Content.First + 65);
+            else
+               Ok := False;
+            end if;
+
+         when Key_EC_P384 =>
+            --  unused-bits(1) || 0x04 || X(48) || Y(48)
+            if Length (Bits.Content) >= 98
+              and then Cert (Bits.Content.First + 1) = 16#04#
+            then
+               Result.EC_X := (First => Bits.Content.First + 2, Last => Bits.Content.First + 49);
+               Result.EC_Y := (First => Bits.Content.First + 50, Last => Bits.Content.First + 97);
+            else
+               Ok := False;
+            end if;
+
+         when Key_Ed25519 =>
+            --  unused-bits(1) || 32-byte public key -- no point prefix.
+            if Length (Bits.Content) >= 33 then
+               Result.Ed_Pub :=
+                 (First => Bits.Content.First + 1, Last => Bits.Content.First + 32);
+            else
+               Ok := False;
+            end if;
+
+         when Key_Other =>
+            Ok := False;
+      end case;
+   end Parse_Key_Bits;
+
+   --  subjectPublicKeyInfo ::= SEQUENCE { algorithm AlgorithmIdentifier,
+   --                                      subjectPublicKey BIT STRING }
+   procedure Parse_Public_Key
+     (Cert : Byte_Array; SPKI : DER.TLV; Result : in out Certificate; Ok : in out Boolean)
+   is
+      Pos   : Natural := SPKI.Content.First;
+      Last  : constant Natural := SPKI.Content.Last;
+      AlgId : DER.TLV;
+      Bits  : DER.TLV;
+   begin
+      Expect (Cert, Pos, Last, 16#30#, AlgId, Ok);        --  algorithm SEQUENCE
+      Classify_Key_Algorithm (Cert, AlgId, Result, Ok);
+      Pos := AlgId.Elem_Last + 1;
+      Expect (Cert, Pos, Last, 16#03#, Bits, Ok);         --  subjectPublicKey BIT STRING
+      Parse_Key_Bits (Cert, Bits, Result, Ok);
+   end Parse_Public_Key;
+
+   --  signatureAlgorithm's OID -> the algorithm it names, or Sig_Other.
+   --
+   --  A pure classification, so the "we cannot verify this, so it must not parse
+   --  as Valid" POLICY is stated once at the call site instead of being buried
+   --  in an Ok flag here.  (It also stops the parameter lying: an Ok that is only
+   --  ever written cannot honestly be `in out`, and cannot be `out` either --
+   --  the paths that recognise the OID must leave the caller's value alone.)
+   function Signature_Kind (Cert : Byte_Array; OID_Bytes : Slice) return Sig_Algorithm
+   is (if OID_Match (Cert, OID_Bytes, OID_RSA_SHA256) then Sig_RSA_SHA256
+       elsif OID_Match (Cert, OID_Bytes, OID_RSA_SHA384) then Sig_RSA_SHA384
+       elsif OID_Match (Cert, OID_Bytes, OID_RSA_SHA512) then Sig_RSA_SHA512
+       elsif OID_Match (Cert, OID_Bytes, OID_ECDSA_SHA256) then Sig_ECDSA_SHA256
+       elsif OID_Match (Cert, OID_Bytes, OID_ECDSA_SHA384) then Sig_ECDSA_SHA384
+       elsif OID_Match (Cert, OID_Bytes, OID_Ed25519) then Sig_Ed25519
+       else Sig_Other)
+   with Pre => In_Buffer (Cert, OID_Bytes);
+
    procedure Parse (Cert : Byte_Array; Result : out Certificate) is
       Ok                                                                  : Boolean := True;
-      Outer, Tbs, Elem, Validity, SPKI, Bits, RSASeq, SigAlg, OID, SigVal : DER.TLV;
+      Outer, Tbs, Elem, Validity, SPKI, SigAlg, OID, SigVal : DER.TLV;
       Pos, Limit                                                          : Natural;
    begin
       Result := (Valid => False, others => <>);
@@ -347,19 +533,7 @@ package body X509 with SPARK_Mode => On is
       --  validity SEQUENCE { notBefore Time, notAfter Time }
       Expect (Cert, Pos, Limit, 16#30#, Validity, Ok);
       if Ok then
-         declare
-            Validity_Pos  : Natural := Validity.Content.First;
-            Validity_Last : constant Natural := Validity.Content.Last;
-            NB, NA        : DER.TLV;
-         begin
-            Expect (Cert, Validity_Pos, Validity_Last, 0, NB, Ok);
-            Result.Not_Before := NB.Content;
-            Result.NB_Tag := NB.Tag;
-            Validity_Pos := NB.Elem_Last + 1;
-            Expect (Cert, Validity_Pos, Validity_Last, 0, NA, Ok);
-            Result.Not_After := NA.Content;
-            Result.NA_Tag := NA.Tag;
-         end;
+         Parse_Validity (Cert, Validity, Result, Ok);
       end if;
       Pos := Validity.Elem_Last + 1;
 
@@ -370,85 +544,7 @@ package body X509 with SPARK_Mode => On is
       --  subjectPublicKeyInfo SEQUENCE { algorithm, subjectPublicKey BIT STRING }
       Expect (Cert, Pos, Limit, 16#30#, SPKI, Ok);
       if Ok then
-         declare
-            SPKI_Pos  : Natural := SPKI.Content.First;
-            SPKI_Last : constant Natural := SPKI.Content.Last;
-            AlgId     : DER.TLV;
-         begin
-            Expect (Cert, SPKI_Pos, SPKI_Last, 16#30#, AlgId, Ok);  --  algorithm SEQUENCE
-            --  Classify the key algorithm from the first OID inside it.
-            declare
-               Alg_Pos    : Natural := AlgId.Content.First;
-               Alg, Curve : DER.TLV;
-            begin
-               Expect (Cert, Alg_Pos, AlgId.Content.Last, 16#06#, Alg, Ok);
-               if Ok then
-                  if OID_Match (Cert, Alg.Content, OID_RSA_Enc) then
-                     Result.Key_Kind := Key_RSA;
-                  elsif OID_Match (Cert, Alg.Content, OID_EC_PubKey) then
-                     --  EC: the next OID is the named curve; require prime256v1.
-                     Alg_Pos := Alg.Elem_Last + 1;
-                     Expect (Cert, Alg_Pos, AlgId.Content.Last, 16#06#, Curve, Ok);
-                     if Ok and then OID_Match (Cert, Curve.Content, OID_P256_Curve) then
-                        Result.Key_Kind := Key_EC_P256;
-                     elsif Ok and then OID_Match (Cert, Curve.Content, OID_P384_Curve) then
-                        Result.Key_Kind := Key_EC_P384;
-                     else
-                        Ok := False;                       --  unsupported curve
-                     end if;
-                  elsif OID_Match (Cert, Alg.Content, OID_Ed25519) then
-                     Result.Key_Kind := Key_Ed25519;       --  no params / no curve
-                  else
-                     Ok := False;                          --  unsupported key type
-                  end if;
-               end if;
-            end;
-            SPKI_Pos := AlgId.Elem_Last + 1;
-            Expect (Cert, SPKI_Pos, SPKI_Last, 16#03#, Bits, Ok);  --  subjectPublicKey BIT STRING
-
-            if Ok and then Result.Key_Kind = Key_RSA and then Length (Bits.Content) >= 2 then
-               --  Skip the BIT STRING's unused-bits byte; parse RSAPublicKey.
-               Expect (Cert, Bits.Content.First + 1, Bits.Content.Last, 16#30#, RSASeq, Ok);
-               if Ok then
-                  declare
-                     RSA_Pos           : Natural := RSASeq.Content.First;
-                     RSA_Last          : constant Natural := RSASeq.Content.Last;
-                     Modulus, Exponent : DER.TLV;
-                  begin
-                     Expect (Cert, RSA_Pos, RSA_Last, 16#02#, Modulus, Ok);   --  modulus INTEGER
-                     Result.RSA_Modulus := Modulus.Content;
-                     RSA_Pos := Modulus.Elem_Last + 1;
-                     Expect (Cert, RSA_Pos, RSA_Last, 16#02#, Exponent, Ok);  --  publicExponent
-                     Result.RSA_Exponent := Exponent.Content;
-                  end;
-               end if;
-
-            elsif Ok
-              and then Result.Key_Kind = Key_EC_P256
-              and then Length (Bits.Content) >= 66
-              and then Cert (Bits.Content.First + 1) = 16#04#   --  uncompressed point
-            then
-               --  BIT STRING content = unused-bits(1) || 0x04 || X(32) || Y(32).
-               Result.EC_X := (First => Bits.Content.First + 2, Last => Bits.Content.First + 33);
-               Result.EC_Y := (First => Bits.Content.First + 34, Last => Bits.Content.First + 65);
-
-            elsif Ok
-              and then Result.Key_Kind = Key_EC_P384
-              and then Length (Bits.Content) >= 98
-              and then Cert (Bits.Content.First + 1) = 16#04#   --  uncompressed point
-            then
-               --  BIT STRING content = unused-bits(1) || 0x04 || X(48) || Y(48).
-               Result.EC_X := (First => Bits.Content.First + 2, Last => Bits.Content.First + 49);
-               Result.EC_Y := (First => Bits.Content.First + 50, Last => Bits.Content.First + 97);
-
-            elsif Ok and then Result.Key_Kind = Key_Ed25519 and then Length (Bits.Content) >= 33
-            then
-               --  BIT STRING content = unused-bits(1) || 32-byte Ed25519 public key.
-               Result.Ed_Pub := (First => Bits.Content.First + 1, Last => Bits.Content.First + 32);
-            else
-               Ok := False;
-            end if;
-         end;
+         Parse_Public_Key (Cert, SPKI, Result, Ok);
       end if;
 
       --  extensions [3] EXPLICIT -- optional; we pull subjectAltName dNSNames.
@@ -466,23 +562,12 @@ package body X509 with SPARK_Mode => On is
       Expect (Cert, SigAlg.Content.First, SigAlg.Content.Last, 16#06#, OID, Ok);
       Result.Sig_Alg_OID := OID.Content;
       if Ok then
-         if OID_Match (Cert, OID.Content, OID_RSA_SHA256) then
-            Result.Sig_Kind := Sig_RSA_SHA256;
-         elsif OID_Match (Cert, OID.Content, OID_RSA_SHA384) then
-            Result.Sig_Kind := Sig_RSA_SHA384;
-         elsif OID_Match (Cert, OID.Content, OID_RSA_SHA512) then
-            Result.Sig_Kind := Sig_RSA_SHA512;
-         elsif OID_Match (Cert, OID.Content, OID_ECDSA_SHA256) then
-            Result.Sig_Kind := Sig_ECDSA_SHA256;
-         elsif OID_Match (Cert, OID.Content, OID_ECDSA_SHA384) then
-            Result.Sig_Kind := Sig_ECDSA_SHA384;
-         elsif OID_Match (Cert, OID.Content, OID_Ed25519) then
-            Result.Sig_Kind := Sig_Ed25519;
-         else
-            --  Unknown signatureAlgorithm: we cannot verify this certificate's
-            --  signature, so it must not parse as Valid (matches how an unknown
-            --  key type is rejected above).  Otherwise a caller that forgets to
-            --  reject Sig_Other treats an unverifiable cert as trusted.
+         Result.Sig_Kind := Signature_Kind (Cert, OID.Content);
+         --  An unknown signatureAlgorithm means we cannot verify this
+         --  certificate's signature, so it must not parse as Valid -- otherwise
+         --  a caller that forgets to reject Sig_Other treats an unverifiable
+         --  cert as trusted.  (Matches how an unknown key type is rejected.)
+         if Result.Sig_Kind = Sig_Other then
             Ok := False;
          end if;
       end if;
