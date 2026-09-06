@@ -44,8 +44,13 @@ run_scenario() { # $1 = scenario, $2 = label
    elif e2fsck -f -n "$IMG" >/tmp/ext4_host.fsck 2>&1; then
       printf '  %-14s e2fsck CLEAN\n' "$2"
    else
+      #  A corrupt image is a FAILURE, not a note.  This branch used to print and
+      #  carry on, so the suite reported PASS while e2fsck was reporting
+      #  "Directories count wrong for group #0" -- which is precisely the class
+      #  of defect this harness exists to catch.
       printf '  %-14s e2fsck ERRORS:\n' "$2"
       grep -iE 'wrong|invalid|unattached|deleted' /tmp/ext4_host.fsck | sed 's/^/      /'
+      FAILED=1
    fi
 }
 
