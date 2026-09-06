@@ -14,6 +14,24 @@ REPO="$(cd "$HERE/../.." && pwd)"
 export ESP32S3_RTS_PROFILE=embedded
 export HEAP_SIZE=65536 ENV_STACK_SIZE=65536 ENV_STACK_PSRAM=1
 
+# TLS scratch in PSRAM, not DRAM.  Two reasons, both load-bearing here:
+#
+#   * SIZE.  The dram variant's inbound record buffer is 4 KB, and a TLS record
+#     may be 2**14 + 256.  api.open-meteo.com's 3-certificate chain arrives as a
+#     4105-byte record, so Recv_Record rejected it, the server flight truncated,
+#     and the handshake failed with "0 certs -> MALFORMED" plus a CertificateVerify
+#     and Finished failure -- one cause, three symptoms.  The psram variant sizes
+#     RB/GC_C/GC_P for a full record.
+#   * SPACE.  Growing those three in DRAM instead costs 12-37 KB of the
+#     leftover-DRAM arena the Wi-Fi blob allocates from; measured, that makes the
+#     app crash on any run after the first.  Moving them OUT of DRAM frees ~38 KB
+#     for the radio rather than competing with it.
+#
+# EXT_RAM_BSS_SIZE reserves the .ext_ram.bss slice those buffers need; without it
+# they link at a bogus address and fault at Initialize.  128 KB covers the ~75 KB
+# of scratch with room to spare, and sits below the env stack at the window top.
+export TLS_BUFFERS=psram EXT_RAM_BSS_SIZE=131072
+
 # Wi-Fi + PHY blobs: a local ESP-IDF (IDF_PATH) if present, else the fetched,
 # checksum-verified copies under libs/esp32s3_wifi/blobs (auto-fetched here).
 if [ -n "${IDF_PATH:-}" ] && [ -d "$IDF_PATH/components/esp_wifi/lib/esp32s3" ]; then

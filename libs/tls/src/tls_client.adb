@@ -228,6 +228,16 @@ package body TLS_Client is
       CType := Hdr (0);
       Len := Natural (Hdr (3)) * 256 + Natural (Hdr (4));
       if Len > Frag'Length then
+         --  The record does not fit the inbound buffer, so it cannot be
+         --  decrypted (GCM needs the whole record) and the flight stops here.
+         --
+         --  This is NOT a protocol error, and it does not look like one to the
+         --  caller: the handshake then reports "0 certs" and a failed
+         --  CertificateVerify / Finished, because the Certificate message never
+         --  reached the transcript.  If you are chasing that, check this first.
+         --  RFC 8446 allows a record up to 2**14 + 256; the dram buffer variant
+         --  is 4 KB, so build with TLS_BUFFERS=psram (see libs/tls/tls.gpr) for
+         --  any peer whose chain or response does not fit.
          Ok := False;
          return;
       end if;
