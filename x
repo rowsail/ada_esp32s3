@@ -27,7 +27,10 @@
 #                                     --automotive adds the correctness-oriented
 #                                     rules from the automotive profile (its own
 #                                     baseline; the full profile is 39.5k
-#                                     restriction findings -- see the README)
+#                                     restriction findings -- see the README).
+#                                     --do178c[=A|B|C|D] instead WRITES per-
+#                                     objective DO-178C evidence reports to
+#                                     build/do178c/ (a report, not a gate)
 #    ./x stack   <example> [--top N] [--run]   static stack analysis (per-frame +
 #                                      worst-case call chains); --run adds the
 #                                      runtime high-water mark over serial
@@ -682,14 +685,17 @@ Constant_Condition,Overlapping_Case_Ranges,Duplicate_Boolean_Operand,\
 Unreachable_Case_Alternative,Redundant_Abs,Redundant_Unary_Minus,\
 Floating_Equality,Non_Short_Circuit_Condition,Global_Contract_Mismatch,\
 Volatile_Atomic_Consistency,Library_Level_Initialization,\
-Missing_Loop_Variant"
+Missing_Loop_Variant,Cyclomatic_Complexity,Deep_Nesting"
 
 cmd_analyze () {
-    local update=0 only="" auto=0 a
+    local update=0 only="" auto=0 do178="" a
     for a in "$@"; do
         case "$a" in
             --update-baseline|--update) update=1 ;;
             --automotive)               auto=1 ;;
+            --do178c)                   do178=A ;;
+            --do178c=[ABCD])            do178="${a#--do178c=}" ;;
+            --do178c=*) echo "x analyze: --do178c level must be A, B, C or D" >&2; return 2 ;;
             -*) echo "x analyze: unknown option: $a" >&2; return 2 ;;
             *)  only="$a" ;;
         esac
@@ -725,6 +731,61 @@ MSG
     #  needs GPR_PROJECT_PATH, and resolving the cross compiler needs the xtensa
     #  toolchain on PATH -- the same reasons build_lib_clean sources it.
     . "$ROOT/export.sh" > /dev/null 2>&1
+
+    #  DO-178C is a REPORT mode, not a gate, and the numbers are why.  Of the
+    #  9551 findings its Level A profile reports here, 8756 are per-subprogram
+    #  process obligations -- Missing_Requirement_Trace (1866, "no low-level
+    #  requirement trace") and Complete_Initialization (5474) dominate -- which
+    #  grow with every subprogram written.  A baseline over that would need
+    #  rewriting constantly and would signal nothing.  Only 120 of the 9551 are
+    #  additive as code quality (Cyclomatic_Complexity, Deep_Nesting), and those
+    #  are in the --automotive tripwire above, where they are stable.
+    #
+    #  What IS worth having is the artefact: a per-objective evidence report that
+    #  is honest about its own scope ("verification support only; not a
+    #  compliance determination") and names the objectives it cannot speak to at
+    #  all -- structural coverage, requirements-based testing, object-code
+    #  verification, DO-330 tool qualification.
+    if [ -n "$do178" ]; then
+        if [ "$auto" = 1 ] || [ "$update" = 1 ]; then
+            echo "x analyze: --do178c takes neither --automotive nor --update-baseline" >&2
+            return 2
+        fi
+        local out_dir="$ROOT/build/do178c"
+        mkdir -p "$out_dir"
+        echo "== DO-178C Level $do178 evidence reports (verification support, NOT a compliance determination) =="
+        local gpr name prof ran=0
+        for gpr in "$ROOT"/libs/*/[a-z]*.gpr; do
+            [ -f "$gpr" ] || continue
+            case "$(basename "$gpr")" in *_prove.gpr) continue ;; esac
+            name="$(basename "${gpr%.gpr}")"
+            [ -z "$only" ] || [ "$only" = "$name" ] || continue
+            ran=$((ran + 1))
+            prof="$(profiles_of_lib "$gpr" | tr ' ' '\n' | grep -vx light-tasking | head -1)"
+            adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
+                --do178c="$do178" --compliance-report=do178c \
+                --compliance-report-format=markdown \
+                --compliance-report-output="$out_dir/$name.md" \
+                > /dev/null 2>&1 || true
+            if [ -s "$out_dir/$name.md" ]; then
+                printf '  \033[32mok\033[0m    %-14s [%s]  -> build/do178c/%s.md\n' \
+                       "$name" "$prof" "$name"
+                #  The objective table is the point; show its open-finding column.
+                sed -n '/^| Objective /,/^$/p' "$out_dir/$name.md" \
+                    | awk -F'|' 'NR>2 && NF>3 {gsub(/^ +| +$/,"",$2); gsub(/^ +| +$/,"",$5);
+                                               printf "          %-26s open findings: %s\n", $2, $5}'
+            else
+                printf '  \033[31mFAIL\033[0m  %-14s [%s]  no report written\n' "$name" "$prof"
+            fi
+        done
+        if [ "$ran" = 0 ]; then
+            echo "x analyze: no such library: $only" >&2; return 2
+        fi
+        echo
+        echo "Reports in build/do178c/ (gitignored).  They are evidence INPUT, not a"
+        echo "pass/fail: read the scope caveat at the top of each one."
+        return 0
+    fi
 
     local base_dir="$ROOT/tools/analyzer-baselines"
     mkdir -p "$base_dir"
