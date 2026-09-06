@@ -42,14 +42,6 @@ package body ESP32S3.WiFi.OS_Adapter is
       end loop;
    end Halt;
 
-   --  A slot not yet named/implemented: announce it (can't say which, but flags
-   --  that an unhandled slot was reached) and halt.
-   procedure Stub_Silent with Convention => C, No_Return;
-   procedure Stub_Silent is
-   begin
-      Halt ("<unnamed slot (others)>");
-   end Stub_Silent;
-
    --  ------------------------------------------------------------------------
    --  Memory: the blob's allocations map onto the freestanding C heap, which is
    --  the leftover-DRAM arena -- internal, DMA-capable SRAM (correct for Wi-Fi
@@ -285,8 +277,8 @@ package body ESP32S3.WiFi.OS_Adapter is
 
    --  ------------------------------------------------------------------------
    --  Named halt-stubs for the slots that still have no implementation: each
-   --  prints which slot the blob asked for, where the catch-all Stub_Silent can
-   --  only say that some unnamed slot was reached.  Both halt.
+   --  prints which slot the blob asked for.  There is no longer a catch-all:
+   --  every slot is named, so an unimplemented one always reports itself.
    --
    --  There were 28 more of these, one per "heavy" slot of an earlier wave.
    --  Every one of those slots now has a real implementation (RTOS.*, PHY.*, or
@@ -301,14 +293,41 @@ package body ESP32S3.WiFi.OS_Adapter is
    procedure St_Event_Group_Wait   with Convention => C, No_Return;
    procedure St_Nvs_Open           with Convention => C, No_Return;
 
+   --  The rest of the NVS group.  This port runs with NVS dormant, so none of
+   --  these is implemented -- but they were reaching the catch-all, which can
+   --  only report "<unnamed slot (others)>".  Naming them costs nothing and
+   --  turns "something unimplemented was called" into "the blob wanted
+   --  nvs_set_blob", which is the whole point of the named stubs.
+   procedure St_Nvs_Set_I8      with Convention => C, No_Return;
+   procedure St_Nvs_Get_I8      with Convention => C, No_Return;
+   procedure St_Nvs_Set_U8      with Convention => C, No_Return;
+   procedure St_Nvs_Get_U8      with Convention => C, No_Return;
+   procedure St_Nvs_Set_U16     with Convention => C, No_Return;
+   procedure St_Nvs_Get_U16     with Convention => C, No_Return;
+   procedure St_Nvs_Close       with Convention => C, No_Return;
+   procedure St_Nvs_Commit      with Convention => C, No_Return;
+   procedure St_Nvs_Set_Blob    with Convention => C, No_Return;
+   procedure St_Nvs_Get_Blob    with Convention => C, No_Return;
+   procedure St_Nvs_Erase_Key   with Convention => C, No_Return;
+
    procedure St_Task_Yield_Isr     is null;   --  ISR context: no work, no I/O
    procedure St_Event_Group_Create is begin Halt ("event_group_create"); end St_Event_Group_Create;
    procedure St_Event_Group_Wait   is begin Halt ("event_group_wait_bits"); end St_Event_Group_Wait;
    procedure St_Nvs_Open           is begin Halt ("nvs_open");           end St_Nvs_Open;
+   procedure St_Nvs_Set_I8      is begin Halt ("nvs_set_i8"); end St_Nvs_Set_I8;
+   procedure St_Nvs_Get_I8      is begin Halt ("nvs_get_i8"); end St_Nvs_Get_I8;
+   procedure St_Nvs_Set_U8      is begin Halt ("nvs_set_u8"); end St_Nvs_Set_U8;
+   procedure St_Nvs_Get_U8      is begin Halt ("nvs_get_u8"); end St_Nvs_Get_U8;
+   procedure St_Nvs_Set_U16     is begin Halt ("nvs_set_u16"); end St_Nvs_Set_U16;
+   procedure St_Nvs_Get_U16     is begin Halt ("nvs_get_u16"); end St_Nvs_Get_U16;
+   procedure St_Nvs_Close       is begin Halt ("nvs_close"); end St_Nvs_Close;
+   procedure St_Nvs_Commit      is begin Halt ("nvs_commit"); end St_Nvs_Commit;
+   procedure St_Nvs_Set_Blob    is begin Halt ("nvs_set_blob"); end St_Nvs_Set_Blob;
+   procedure St_Nvs_Get_Blob    is begin Halt ("nvs_get_blob"); end St_Nvs_Get_Blob;
+   procedure St_Nvs_Erase_Key   is begin Halt ("nvs_erase_key"); end St_Nvs_Erase_Key;
 
    --  ------------------------------------------------------------------------
    procedure Install is
-      Stub : constant Slot := Stub_Silent'Address;
       Zero : constant Slot := Ret_Zero'Address;
       Void : constant Slot := Void_Noop'Address;
       MAlloc : constant Slot := C_Malloc'Address;
@@ -437,10 +456,23 @@ package body ESP32S3.WiFi.OS_Adapter is
          Wifi_Clock_Enable    => Void,
          Wifi_Clock_Disable   => Void,
          Nvs_Open             => St_Nvs_Open'Address,
-         Wifi_Create_Queue    => RTOS.Wifi_Create_Queue'Address,
-
-         --  anything not named above
-         others => Stub);
+         Nvs_Set_I8           => St_Nvs_Set_I8'Address,
+         Nvs_Get_I8           => St_Nvs_Get_I8'Address,
+         Nvs_Set_U8           => St_Nvs_Set_U8'Address,
+         Nvs_Get_U8           => St_Nvs_Get_U8'Address,
+         Nvs_Set_U16          => St_Nvs_Set_U16'Address,
+         Nvs_Get_U16          => St_Nvs_Get_U16'Address,
+         Nvs_Close            => St_Nvs_Close'Address,
+         Nvs_Commit           => St_Nvs_Commit'Address,
+         Nvs_Set_Blob         => St_Nvs_Set_Blob'Address,
+         Nvs_Get_Blob         => St_Nvs_Get_Blob'Address,
+         Nvs_Erase_Key        => St_Nvs_Erase_Key'Address,
+         Wifi_Create_Queue    => RTOS.Wifi_Create_Queue'Address);
+      --  NO `others` CLAUSE, deliberately.  Every slot in Osi_Funcs is now named
+      --  here, so the aggregate is exhaustive and the COMPILER enforces that:
+      --  adding a slot to the record fails this aggregate until someone decides
+      --  what belongs in it.  That is a better guarantee than the catch-all it
+      --  replaces, which silently absorbed any slot nobody had thought about.
    end Install;
 
 end ESP32S3.WiFi.OS_Adapter;
