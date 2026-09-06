@@ -60,8 +60,50 @@ nearly every call. It is a restriction, not a defect detector.
   calls, i.e. elaboration-order hazards. Worth watching in this repo specifically.
 - **`Missing_Loop_Variant` (11)** — SPARK loops that prove partial correctness but
   not termination.
+- **`Cyclomatic_Complexity` (75) and `Deep_Nesting` (45)** — quality metrics
+  against the configurable thresholds (`-complexity-threshold`,
+  `-nesting-threshold`). Not correctness, but the one genuinely additive thing
+  the DO-178C profile had to offer, so they are gated here rather than there.
 - **`Floating_Equality` (1)** — `if Magnitude /= 0.0` guarding a normalisation
   loop, where comparing exactly against zero is the correct test.
+
+## DO-178C: a report, not a gate
+
+`./x analyze --do178c[=A|B|C|D]` writes a per-objective evidence report per
+library into `build/do178c/` (gitignored). There is **no DO-178C baseline**, and
+that is deliberate.
+
+Level A reports 9,551 findings here, and the breakdown is the argument:
+
+| category | n | |
+|---|---:|---|
+| process / evidence obligations | 8,756 | `Missing_Requirement_Trace` (1,866 — "subprogram has no DO-178C low-level requirement trace"), `Complete_Initialization` (5,474), `Missing_Depends_Contract` (821), `Missing_Global_Contract` (595) |
+| restrictions | 307 | `No_Compiler_Extensions`, `No_Dynamic_Allocation`, `No_Dispatching_Call`, … |
+| already covered by the two modes above | 368 | `Uninitialized_Output`, `Dead_Store`, `Function_Side_Effect`, … |
+| **genuinely additive** | **120** | `Cyclomatic_Complexity` (75), `Deep_Nesting` (45) |
+
+Those last 120 are the only part worth gating on, and they are now in the
+`--automotive` curated set, where they are stable. Everything else either
+duplicates an existing mode or grows with every subprogram written — a baseline
+over `Missing_Requirement_Trace` would need rewriting on every commit and would
+signal nothing.
+
+Two things worth knowing about the profile:
+
+- **Levels A and B enable the identical rule set**; they differ only in the
+  recorded structural-coverage objective (MC/DC vs decision). C is a 5-rule
+  subset at statement coverage. **D enables nothing at all.**
+- **`No_Compiler_Extensions` and `Missing_Loop_Variant` contradict each other**:
+  the first flags `pragma Loop_Invariant` as implementation-defined, the second
+  demands the matching `pragma Loop_Variant`. Both are in the Level A profile.
+
+The report is worth generating anyway because it is honest about its own limits.
+It states its scope up front ("verification support only; not a compliance
+determination"), notes that its objective labels are the tool's own
+non-normative paraphrase rather than DO-178C's normative text, and lists what it
+cannot speak to at all: structural coverage, requirements-based testing,
+object-code verification, and DO-330 tool qualification. Treat it as evidence
+*input* for a certification process, never as a result.
 
 ## Running it
 
@@ -79,6 +121,8 @@ export PATH="$HOME/.alire/bin:$PATH"
 ./x analyze --automotive              # the correctness slice of the automotive profile
 ./x analyze --update-baseline         # accept the current findings
 ./x analyze --automotive --update-baseline
+./x analyze --do178c                  # DO-178C evidence reports -> build/do178c/
+./x analyze --do178c=C tls            # one library, at Level C
 ```
 
 Exit status is non-zero when anything new appears, so it drops straight into a
