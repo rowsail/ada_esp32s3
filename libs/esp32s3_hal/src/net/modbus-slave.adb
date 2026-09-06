@@ -97,6 +97,271 @@ package body Modbus.Slave with SPARK_Mode => On is
       Status := Illegal_Function;
    end On_Write_Multiple_Registers;
 
+   --  The request fields every handler needs, decoded once from the MBAP header.
+   --  They travel as one record so a handler takes five parameters instead of
+   --  seven -- Self, Buf, Req, PDU_Len, Exc -- and so a positional call cannot
+   --  transpose Unit and FC.
+   type Request is record
+      Unit    : Unit_Id;
+      FC      : Function_Code;
+      Req_Len : Natural;
+   end record;
+
+
+   --  FC 01/02 -- read coils / discrete inputs into a Bit_Array.
+   procedure Do_Read_Bits
+     (Self    : in out Server'Class;
+      Buf     : in out Byte_Array;
+      Req     : Request;
+      PDU_Len : out Natural;
+      Exc     : in out Exception_Code)
+   with Pre  => Buf'First = 0 and then Buf'Last = Max_ADU - 1
+                and then Req.Req_Len <= Buf'Length,
+        --  Every path through a handler sets PDU_Len, so it is `out` rather
+        --  than `in out`.  The bound its own Qty check already caps has to be
+        --  SAID now that it crosses a call boundary.
+        Post => PDU_Len <= Max_PDU
+   is
+         Addr : constant Address := Address (Get_U16 (Buf, 8));
+         --  Read Qty ONLY once the fields are present, and VALIDATE its range
+         --  before it is used to size any array -- an attacker-supplied (or
+         --  stale, on a short frame) Qty up to 65535 would otherwise allocate
+         --  a 65535-element array on the stack and overflow it (a remote DoS
+         --  that killed the whole server).
+         Qty  : constant Natural :=
+           (if Req.Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
+   begin
+      PDU_Len := 0;                 --  no reply unless this handler builds one
+      if Req.Req_Len < 12 or else Qty not in 1 .. Max_Read_Bits then
+         Exc := Illegal_Data_Value;                --  short frame or bad Qty
+         --  A guard clause, not an else: the else this replaces put the
+         --  whole decode one level deeper for no gain.
+         return;
+      end if;
+
+      declare
+         Bc   : constant Natural := (Qty + 7) / 8;   --  byte count; Qty bounded now
+         Bits : Bit_Array (0 .. Qty - 1) := (others => False);
+      begin
+         if Req.FC = FC_Read_Coils then
+            On_Read_Coils (Self, Req.Unit, Addr, Qty, Bits, Exc);
+         else
+            On_Read_Discrete_Inputs (Self, Req.Unit, Addr, Qty, Bits, Exc);
+         end if;
+         if Exc = None then
+            Buf (MBAP_Size) := Byte (Req.FC);
+            Buf (8) := Byte (Bc);
+            for I in 9 .. 9 + Bc - 1 loop
+               Buf (I) := 0;
+            end loop;
+            for I in 0 .. Qty - 1 loop
+               if Bits (I) then
+                  Buf (9 + I / 8) :=
+                    Buf (9 + I / 8) or Shift_Left (Byte'(1), I mod 8);
+               end if;
+            end loop;
+            PDU_Len := 2 + Bc;
+         end if;
+      end;
+   end Do_Read_Bits;
+
+   --  FC 03/04 -- read holding / input registers into a Word_Array.
+   procedure Do_Read_Registers
+     (Self    : in out Server'Class;
+      Buf     : in out Byte_Array;
+      Req     : Request;
+      PDU_Len : out Natural;
+      Exc     : in out Exception_Code)
+   with Pre  => Buf'First = 0 and then Buf'Last = Max_ADU - 1
+                and then Req.Req_Len <= Buf'Length,
+        --  Every path through a handler sets PDU_Len, so it is `out` rather
+        --  than `in out`.  The bound its own Qty check already caps has to be
+        --  SAID now that it crosses a call boundary.
+        Post => PDU_Len <= Max_PDU
+   is
+         Addr : constant Address := Address (Get_U16 (Buf, 8));
+         Qty  : constant Natural :=            --  validate before sizing (see above)
+           (if Req.Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
+   begin
+      PDU_Len := 0;                 --  no reply unless this handler builds one
+      if Req.Req_Len < 12 or else Qty not in 1 .. Max_Read_Registers then
+         Exc := Illegal_Data_Value;                --  short frame or bad Qty
+         --  A guard clause, not an else: the else this replaces put the
+         --  whole decode one level deeper for no gain.
+         return;
+      end if;
+
+      declare
+         Words : Word_Array (0 .. Qty - 1) := (others => 0);   --  Qty bounded
+      begin
+         if Req.FC = FC_Read_Holding_Registers then
+            On_Read_Holding_Registers (Self, Req.Unit, Addr, Qty, Words, Exc);
+         else
+            On_Read_Input_Registers (Self, Req.Unit, Addr, Qty, Words, Exc);
+         end if;
+         if Exc = None then
+            Buf (MBAP_Size) := Byte (Req.FC);
+            Buf (8) := Byte (2 * Qty);
+            for I in 0 .. Qty - 1 loop
+               Put_U16 (Buf, 9 + 2 * I, Words (I));
+            end loop;
+            PDU_Len := 2 + 2 * Qty;
+         end if;
+      end;
+   end Do_Read_Registers;
+
+   --  FC 05 -- write one coil; the reply echoes the request.
+   procedure Do_Write_Single_Coil
+     (Self    : in out Server'Class;
+      --  Read-only: a write request's reply is the request echoed back, so
+      --  these handlers never touch Buf -- only the read handlers build a
+      --  payload into it.
+      Buf     : Byte_Array;
+      Req     : Request;
+      PDU_Len : out Natural;
+      Exc     : in out Exception_Code)
+   with Pre  => Buf'First = 0 and then Buf'Last = Max_ADU - 1
+                and then Req.Req_Len <= Buf'Length,
+        --  Every path through a handler sets PDU_Len, so it is `out` rather
+        --  than `in out`.  The bound its own Qty check already caps has to be
+        --  SAID now that it crosses a call boundary.
+        Post => PDU_Len <= Max_PDU
+   is
+         Addr  : constant Address := Address (Get_U16 (Buf, 8));
+         Value : constant Word := Get_U16 (Buf, 10);
+   begin
+      PDU_Len := 0;                 --  no reply unless this handler builds one
+         if Req.Req_Len < 12 or else (Value /= 16#FF00# and then Value /= 16#0000#) then
+            Exc := Illegal_Data_Value;                --  short frame or bad value
+
+         else
+            On_Write_Single_Coil (Self, Req.Unit, Addr, Value = 16#FF00#, Exc);
+            if Exc = None then
+               PDU_Len := 5;
+            end if;   --  echo Req.FC+addr+value
+         end if;
+   end Do_Write_Single_Coil;
+
+   --  FC 06 -- write one register; the reply echoes the request.
+   procedure Do_Write_Single_Register
+     (Self    : in out Server'Class;
+      --  Read-only: a write request's reply is the request echoed back, so
+      --  these handlers never touch Buf -- only the read handlers build a
+      --  payload into it.
+      Buf     : Byte_Array;
+      Req     : Request;
+      PDU_Len : out Natural;
+      Exc     : in out Exception_Code)
+   with Pre  => Buf'First = 0 and then Buf'Last = Max_ADU - 1
+                and then Req.Req_Len <= Buf'Length,
+        --  Every path through a handler sets PDU_Len, so it is `out` rather
+        --  than `in out`.  The bound its own Qty check already caps has to be
+        --  SAID now that it crosses a call boundary.
+        Post => PDU_Len <= Max_PDU
+   is
+         Addr  : constant Address := Address (Get_U16 (Buf, 8));
+         Value : constant Word := Get_U16 (Buf, 10);
+   begin
+      PDU_Len := 0;                 --  no reply unless this handler builds one
+         if Req.Req_Len < 12 then
+            Exc := Illegal_Data_Value;                --  short frame
+
+         else
+            On_Write_Single_Register (Self, Req.Unit, Addr, Value, Exc);
+            if Exc = None then
+               PDU_Len := 5;
+            end if;    --  echo Req.FC+addr+value
+         end if;
+   end Do_Write_Single_Register;
+
+   --  FC 15 -- write a run of coils.
+   procedure Do_Write_Multiple_Coils
+     (Self    : in out Server'Class;
+      --  Read-only: a write request's reply is the request echoed back, so
+      --  these handlers never touch Buf -- only the read handlers build a
+      --  payload into it.
+      Buf     : Byte_Array;
+      Req     : Request;
+      PDU_Len : out Natural;
+      Exc     : in out Exception_Code)
+   with Pre  => Buf'First = 0 and then Buf'Last = Max_ADU - 1
+                and then Req.Req_Len <= Buf'Length,
+        --  Every path through a handler sets PDU_Len, so it is `out` rather
+        --  than `in out`.  The bound its own Qty check already caps has to be
+        --  SAID now that it crosses a call boundary.
+        Post => PDU_Len <= Max_PDU
+   is
+         Addr : constant Address := Address (Get_U16 (Buf, 8));
+         Qty  : constant Natural :=            --  guard reads; validate before sizing
+           (if Req.Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
+         Bc   : constant Natural :=            --  byte count
+           (if Req.Req_Len >= 13 then Natural (Buf (12)) else 0);
+   begin
+      PDU_Len := 0;                 --  no reply unless this handler builds one
+         if Req.Req_Len < 13 + Bc                          --  header+byte-count+data
+           or else Qty not in 1 .. Max_Write_Bits
+           or else Bc /= (Qty + 7) / 8
+         then
+            Exc := Illegal_Data_Value;
+         else
+            declare
+               Values : Bit_Array (0 .. Qty - 1) := (others => False);
+            begin
+               for I in 0 .. Qty - 1 loop
+                  Values (I) := (Buf (13 + I / 8) and Shift_Left (Byte'(1), I mod 8)) /= 0;
+               end loop;
+               On_Write_Multiple_Coils (Self, Req.Unit, Addr, Values, Exc);
+               if Exc = None then
+                  PDU_Len := 5;
+               end if;    --  echo Req.FC+addr+qty
+            end;
+         end if;
+   end Do_Write_Multiple_Coils;
+
+   --  FC 16 -- write a run of registers.
+   procedure Do_Write_Multiple_Registers
+     (Self    : in out Server'Class;
+      --  Read-only: a write request's reply is the request echoed back, so
+      --  these handlers never touch Buf -- only the read handlers build a
+      --  payload into it.
+      Buf     : Byte_Array;
+      Req     : Request;
+      PDU_Len : out Natural;
+      Exc     : in out Exception_Code)
+   with Pre  => Buf'First = 0 and then Buf'Last = Max_ADU - 1
+                and then Req.Req_Len <= Buf'Length,
+        --  Every path through a handler sets PDU_Len, so it is `out` rather
+        --  than `in out`.  The bound its own Qty check already caps has to be
+        --  SAID now that it crosses a call boundary.
+        Post => PDU_Len <= Max_PDU
+   is
+         Addr : constant Address := Address (Get_U16 (Buf, 8));
+         Qty  : constant Natural :=            --  guard reads; validate before sizing
+           (if Req.Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
+         Bc   : constant Natural :=            --  byte count
+           (if Req.Req_Len >= 13 then Natural (Buf (12)) else 0);
+   begin
+      PDU_Len := 0;                 --  no reply unless this handler builds one
+         if Req.Req_Len < 13 + Bc                          --  header+byte-count+data
+           or else Qty not in 1 .. Max_Write_Registers
+           or else Bc /= 2 * Qty
+         then
+            Exc := Illegal_Data_Value;
+         else
+            declare
+               Values : Word_Array (0 .. Qty - 1) := (others => 0);
+            begin
+               for I in 0 .. Qty - 1 loop
+                  Values (I) := Get_U16 (Buf, 13 + 2 * I);
+               end loop;
+               On_Write_Multiple_Registers (Self, Req.Unit, Addr, Values, Exc);
+               if Exc = None then
+                  PDU_Len := 5;
+               end if;    --  echo Req.FC+addr+qty
+            end;
+         end if;
+   end Do_Write_Multiple_Registers;
+
    ---------------------------------------------------------------------------
    --  Process one request ADU -> reply ADU (socket-free).
    ---------------------------------------------------------------------------
@@ -122,170 +387,26 @@ package body Modbus.Slave with SPARK_Mode => On is
       Get_MBAP (Buf, TID, Unit, Length);
       FC := Function_Code (Buf (MBAP_Size));
 
-      case FC is
-         when FC_Read_Coils | FC_Read_Discrete_Inputs             =>
-            declare
-               Addr : constant Address := Address (Get_U16 (Buf, 8));
-               --  Read Qty ONLY once the fields are present, and VALIDATE its range
-               --  before it is used to size any array -- an attacker-supplied (or
-               --  stale, on a short frame) Qty up to 65535 would otherwise allocate
-               --  a 65535-element array on the stack and overflow it (a remote DoS
-               --  that killed the whole server).
-               Qty  : constant Natural :=
-                 (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
-            begin
-               if Req_Len < 12 or else Qty not in 1 .. Max_Read_Bits then
-                  Exc := Illegal_Data_Value;                --  short frame or bad Qty
-
-               else
-                  declare
-                     Bc   : constant Natural := (Qty + 7) / 8;   --  byte count; Qty bounded now
-                     Bits : Bit_Array (0 .. Qty - 1) := (others => False);
-                  begin
-                     if FC = FC_Read_Coils then
-                        On_Read_Coils (Self, Unit, Addr, Qty, Bits, Exc);
-                     else
-                        On_Read_Discrete_Inputs (Self, Unit, Addr, Qty, Bits, Exc);
-                     end if;
-                     if Exc = None then
-                        Buf (MBAP_Size) := Byte (FC);
-                        Buf (8) := Byte (Bc);
-                        for I in 9 .. 9 + Bc - 1 loop
-                           Buf (I) := 0;
-                        end loop;
-                        for I in 0 .. Qty - 1 loop
-                           if Bits (I) then
-                              Buf (9 + I / 8) :=
-                                Buf (9 + I / 8) or Shift_Left (Byte'(1), I mod 8);
-                           end if;
-                        end loop;
-                        PDU_Len := 2 + Bc;
-                     end if;
-                  end;
-               end if;
-            end;
-
-         when FC_Read_Holding_Registers | FC_Read_Input_Registers =>
-            declare
-               Addr : constant Address := Address (Get_U16 (Buf, 8));
-               Qty  : constant Natural :=            --  validate before sizing (see above)
-                 (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
-            begin
-               if Req_Len < 12 or else Qty not in 1 .. Max_Read_Registers then
-                  Exc := Illegal_Data_Value;                --  short frame or bad Qty
-
-               else
-                  declare
-                     Words : Word_Array (0 .. Qty - 1) := (others => 0);   --  Qty bounded
-                  begin
-                     if FC = FC_Read_Holding_Registers then
-                        On_Read_Holding_Registers (Self, Unit, Addr, Qty, Words, Exc);
-                     else
-                        On_Read_Input_Registers (Self, Unit, Addr, Qty, Words, Exc);
-                     end if;
-                     if Exc = None then
-                        Buf (MBAP_Size) := Byte (FC);
-                        Buf (8) := Byte (2 * Qty);
-                        for I in 0 .. Qty - 1 loop
-                           Put_U16 (Buf, 9 + 2 * I, Words (I));
-                        end loop;
-                        PDU_Len := 2 + 2 * Qty;
-                     end if;
-                  end;
-               end if;
-            end;
-
-         when FC_Write_Single_Coil                                =>
-            declare
-               Addr  : constant Address := Address (Get_U16 (Buf, 8));
-               Value : constant Word := Get_U16 (Buf, 10);
-            begin
-               if Req_Len < 12 or else (Value /= 16#FF00# and then Value /= 16#0000#) then
-                  Exc := Illegal_Data_Value;                --  short frame or bad value
-
-               else
-                  On_Write_Single_Coil (Self, Unit, Addr, Value = 16#FF00#, Exc);
-                  if Exc = None then
-                     PDU_Len := 5;
-                  end if;   --  echo FC+addr+value
-               end if;
-            end;
-
-         when FC_Write_Single_Register                            =>
-            declare
-               Addr  : constant Address := Address (Get_U16 (Buf, 8));
-               Value : constant Word := Get_U16 (Buf, 10);
-            begin
-               if Req_Len < 12 then
-                  Exc := Illegal_Data_Value;                --  short frame
-
-               else
-                  On_Write_Single_Register (Self, Unit, Addr, Value, Exc);
-                  if Exc = None then
-                     PDU_Len := 5;
-                  end if;    --  echo FC+addr+value
-               end if;
-            end;
-
-         when FC_Write_Multiple_Coils                             =>
-            declare
-               Addr : constant Address := Address (Get_U16 (Buf, 8));
-               Qty  : constant Natural :=            --  guard reads; validate before sizing
-                 (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
-               Bc   : constant Natural :=            --  byte count
-                 (if Req_Len >= 13 then Natural (Buf (12)) else 0);
-            begin
-               if Req_Len < 13 + Bc                          --  header+byte-count+data
-                 or else Qty not in 1 .. Max_Write_Bits
-                 or else Bc /= (Qty + 7) / 8
-               then
-                  Exc := Illegal_Data_Value;
-               else
-                  declare
-                     Values : Bit_Array (0 .. Qty - 1) := (others => False);
-                  begin
-                     for I in 0 .. Qty - 1 loop
-                        Values (I) := (Buf (13 + I / 8) and Shift_Left (Byte'(1), I mod 8)) /= 0;
-                     end loop;
-                     On_Write_Multiple_Coils (Self, Unit, Addr, Values, Exc);
-                     if Exc = None then
-                        PDU_Len := 5;
-                     end if;    --  echo FC+addr+qty
-                  end;
-               end if;
-            end;
-
-         when FC_Write_Multiple_Registers                         =>
-            declare
-               Addr : constant Address := Address (Get_U16 (Buf, 8));
-               Qty  : constant Natural :=            --  guard reads; validate before sizing
-                 (if Req_Len >= 12 then Natural (Get_U16 (Buf, 10)) else 0);
-               Bc   : constant Natural :=            --  byte count
-                 (if Req_Len >= 13 then Natural (Buf (12)) else 0);
-            begin
-               if Req_Len < 13 + Bc                          --  header+byte-count+data
-                 or else Qty not in 1 .. Max_Write_Registers
-                 or else Bc /= 2 * Qty
-               then
-                  Exc := Illegal_Data_Value;
-               else
-                  declare
-                     Values : Word_Array (0 .. Qty - 1) := (others => 0);
-                  begin
-                     for I in 0 .. Qty - 1 loop
-                        Values (I) := Get_U16 (Buf, 13 + 2 * I);
-                     end loop;
-                     On_Write_Multiple_Registers (Self, Unit, Addr, Values, Exc);
-                     if Exc = None then
-                        PDU_Len := 5;
-                     end if;    --  echo FC+addr+qty
-                  end;
-               end if;
-            end;
-
-         when others                                              =>
-            Exc := Illegal_Function;
-      end case;
+      declare
+         Req : constant Request := (Unit => Unit, FC => FC, Req_Len => Req_Len);
+      begin
+         case FC is
+            when FC_Read_Coils | FC_Read_Discrete_Inputs             =>
+               Do_Read_Bits (Self, Buf, Req, PDU_Len, Exc);
+            when FC_Read_Holding_Registers | FC_Read_Input_Registers =>
+               Do_Read_Registers (Self, Buf, Req, PDU_Len, Exc);
+            when FC_Write_Single_Coil                                =>
+               Do_Write_Single_Coil (Self, Buf, Req, PDU_Len, Exc);
+            when FC_Write_Single_Register                            =>
+               Do_Write_Single_Register (Self, Buf, Req, PDU_Len, Exc);
+            when FC_Write_Multiple_Coils                             =>
+               Do_Write_Multiple_Coils (Self, Buf, Req, PDU_Len, Exc);
+            when FC_Write_Multiple_Registers                         =>
+               Do_Write_Multiple_Registers (Self, Buf, Req, PDU_Len, Exc);
+            when others                                              =>
+               Exc := Illegal_Function;
+         end case;
+      end;
 
       if Exc /= None then
          Buf (MBAP_Size) := Byte (FC or Exception_Flag);
