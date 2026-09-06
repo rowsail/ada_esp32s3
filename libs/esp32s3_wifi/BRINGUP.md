@@ -39,8 +39,9 @@ runtime**:
   suspension objects.
 - **PHY / RF** — `phy_init` with calibration data, `esp_phy_enable`, the 80 MHz
   APB clock request, RF/clock bring-up.
-- **Calibration storage** — the PHY cal blob lives in NVS in IDF; provide an
-  NVS-like shim (or full recalibration each boot to start).
+- **Calibration storage** — the PHY cal blob lives in NVS in IDF. ~~Provide an
+  NVS-like shim~~ — **resolved: NVS is switched off and replaced.** See
+  *NVS: designed out, not unfinished* below.
 - **Timers / events / RNG / time** — `esp_timer`, an event path (or status poll),
   hardware RNG, `esp_timer_get_time`, and DMA-capable heap alloc.
 - **Interrupts** — hook the WMAC interrupt (interrupt matrix) and dispatch to the
@@ -107,13 +108,61 @@ cache_tx_buf_num=0, csi_enable=0, ampdu_rx_enable=1, ampdu_tx_enable=1,
 amsdu_tx_enable=0, nvs_enable=1, nano_enable=0, rx_ba_win=6, wifi_task_core_id=0,
 beacon_max_len=752, mgmt_sbuf_num=32, feature_caps=0xA1 ((1<<0)|(1<<5)|(1<<7)),
 sta_disconnected_pm=1, espnow_max_encrypt_num=7, tx_hetb_queue_num=1,
-dump_hesigb_enable=0, magic=0x1F2F3F4F.  (`nvs_enable=1` -> need the NVS shim for
-PHY cal; the `wifi/scan` example's `main/scan.c` is the reference call sequence.)
+dump_hesigb_enable=0, magic=0x1F2F3F4F.  (The `wifi/scan` example's
+`main/scan.c` is the reference call sequence.  **We set `nvs_enable=0`**, not the
+IDF default of 1 — see below.)
+
+## NVS: designed out, not unfinished
+
+ESP-IDF's Wi-Fi stack reaches for NVS (its key/value store in a flash partition)
+for two things. This port does neither, and that is a decision rather than a gap.
+
+**1. PHY RF-calibration data.** IDF caches the calibration blob in NVS so a
+reboot can do a fast partial calibration instead of a full one. We set
+`nvs_enable = 0` in `wifi_init_config_t` (`ESP32S3.WiFi.Idf`), so the blob never
+looks, and offer the same capability through a hook pair instead:
+
+```ada
+procedure Set_Cal_Store (Load : Cal_Load_Hook; Store : Cal_Store_Hook);
+```
+
+The SDK keeps the full-versus-partial decision; the application supplies the
+storage — a flash partition, the external W25Q, anything. That is the better
+seam: a driver has no business knowing what medium a board persists to, and NVS
+would have bound us to one. The blob is opaque (1904 bytes), carries its own
+version and the chip's MAC, and the driver re-checks both before trusting it, so
+an image moved to another chip recalibrates rather than using someone else's
+numbers. Register nothing and the radio simply calibrates fully every boot,
+which is the current default.
+
+**2. Wi-Fi configuration.** `esp_wifi_set_storage (WIFI_STORAGE_FLASH)` persists
+SSID and PSK. We never call it, so configuration lives in RAM and is set on each
+boot.
+
+The `libcore.a` blob went the same way: its handful of referenced symbols are
+provided in Ada by `ESP32S3.WiFi.Core_Shim`, because the misc-NVS code behind
+them is dormant on an NVS-disabled port. One fewer Espressif binary.
+
+**What is left in the adapter.** All twelve NVS slots in `Osi_Funcs` are bound
+to named halt stubs (`nvs_open`, `nvs_set_blob`, …). They are a boundary marker,
+not a to-do list: if the blob ever reaches one it means a path we do not
+exercise has started wanting persistent storage, and the halt says which call it
+was. That table now has **no `others` clause at all** — every slot is named, so
+adding one to the record fails to compile until somebody decides what belongs
+there.
+
+**What genuinely is unfinished here** is a *real* calibration store. The only
+implementation of the hooks is `Cal_Store_Demo` in `examples/esp32s3_wifi_tls`,
+which prints the blob for pasting into a source constant. Writing it to flash
+and loading it back would turn every boot after the first into a fast partial
+calibration.
 
 ## Risks / open needs
 
 1. ~~Blobs + IDF version~~ — **resolved: v5.4.4 pinned** (above).
-2. PHY calibration data source (NVS shim vs recalibrate-each-boot).
+2. ~~PHY calibration data source (NVS shim vs recalibrate-each-boot)~~ —
+   **resolved: neither.** `ESP32S3.WiFi.Set_Cal_Store` lets the application own
+   the medium; see below.
 3. Interrupt priorities / Jorvik ceiling protocol vs the blob's expectations.
 4. DMA-capable heap sizing for Wi-Fi buffers.
 5. Hardware-only: none of this can be validated on the host.

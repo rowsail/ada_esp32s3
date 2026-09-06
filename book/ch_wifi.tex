@@ -184,6 +184,68 @@ engine so that frames are decrypted in silicon. (Getting that key to the right
 slot of the crypto engine was, for the record, the single most stubborn bug in
 the whole bring-up; JTAG earned its keep.)
 
+\section{The storage the driver does not have}\index{Wi-Fi!NVS}\index{NVS}\index{Wi-Fi!RF calibration}
+\label{ch:wifi:nvs}
+
+ESP-IDF's Wi-Fi stack expects a key/value store in flash, called NVS. Porting it
+looked at first like part of the work. It is not here, and leaving it out was a
+decision rather than a shortcut.
+
+NVS earns its place in ESP-IDF for two jobs. The first is caching the PHY
+calibration blob. Calibration tunes the radio to this particular chip and
+antenna, it takes tens of milliseconds, and it runs on every bring-up. Cache the
+result and the next boot can do a fast partial calibration instead. The second
+job is remembering the network: \texttt{esp\_wifi\_set\_storage} can persist an
+SSID and passphrase across reboots.
+
+This port does neither. The \texttt{wifi\_init\_config\_t} it hands the blob sets
+\lstinline{Nvs_Enable := 0}, so the blob never looks for a store, and nothing
+calls \texttt{esp\_wifi\_set\_storage}, so the configuration lives in RAM and is
+set on each boot.
+
+\cnote{In an ESP-IDF project you call \texttt{nvs\_flash\_init()} before
+\texttt{esp\_wifi\_init()}, and a missing or full NVS partition is a familiar
+early-boot failure. Nothing here needs that call, and there is no partition to
+get wrong.}
+
+The calibration capability does not disappear with the store, though. It moves
+to the application through a pair of hooks:
+
+\begin{lstlisting}
+procedure Set_Cal_Store (Load : Cal_Load_Hook; Store : Cal_Store_Hook);
+\end{lstlisting}
+
+The driver keeps the decision it is qualified to make, which is whether a full or
+a partial calibration is required. The application supplies the medium. That may
+be a flash partition, the external SPI NOR of Chapter~\ref{ch:storage}, or
+nothing at all, in which case the radio simply calibrates fully on every boot.
+
+That seam is the point. A driver has no business knowing how a particular board
+persists bytes, and NVS would have bound this one to a single answer. The blob it
+hands over is opaque, 1904 bytes, and carries its own version number and the
+chip's MAC address. The driver re-checks both before trusting a blob it is given,
+so an image moved to a second board recalibrates rather than tuning itself with
+another chip's numbers.
+
+The same reasoning retired a binary. Espressif's \texttt{libcore.a} was linked
+only for a handful of symbols behind its misc-NVS code, which is dormant once NVS
+is off. \texttt{ESP32S3.WiFi.Core\_Shim} provides those symbols in Ada, and the
+blob count drops by one.
+
+What remains in the OS adapter is a boundary marker. All twelve NVS slots are
+bound to named stubs that halt and print which call was attempted, so a request
+for \texttt{nvs\_set\_blob} says exactly that. They are not a list of unfinished
+work: reaching one would mean a code path we do not exercise has started wanting
+persistent storage. The adapter table carries no \lstinline{others} clause at
+all. Every one of its 120 slots is named, so adding a slot to the record fails to
+compile until somebody decides what belongs in it. That is a better guarantee
+than a catch-all, which quietly absorbs whatever nobody thought about.
+
+One piece here is genuinely unfinished. The calibration hooks exist, but the only
+implementation of them is a demonstration that prints the blob for pasting into a
+source constant. Writing it to flash and reading it back would make every boot
+after the first a fast partial calibration. The seam is ready for it.
+
 \section{Wi-Fi as just another NIC}\index{Wi-Fi!Net\_Device}\index{Net\_Devices}
 \label{ch:wifi:netdevice}
 
