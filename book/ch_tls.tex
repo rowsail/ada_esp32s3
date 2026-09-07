@@ -169,7 +169,7 @@ and uses whichever the server selects:
 
 \begin{lstlisting}
 if S.Group = 16#0017# then                       --  secp256r1 chosen
-   Ok := P256.ECDH (S.P256_Priv, Server_X, Server_Y, Shared);
+   Ok := P256.ECDH (S.P256_Priv, (X => Server_X, Y => Server_Y), Shared);
 else                                              --  x25519 (the default)
    Shared := SPARKNaCl.Scalar.Mult (S.Priv, S.Server_Pub);
 end if;

@@ -1,3 +1,5 @@
+with ECC_Bignum;
+with ECC_Curve;
 with Interfaces; use Interfaces;
 with SPARKNaCl;
 with SPARKNaCl.Hashing.SHA256;
@@ -9,16 +11,26 @@ with SPARKNaCl.Hashing.SHA256;
 --  SPARK_Mode => Off, as do Public_Key/ECDH/Sign -- not for want of proof but
 --  because a SPARK function may not have out parameters, which those three do.
 --
---  Every helper below carries `Global => null`.  That is a true statement -- they
---  are pure functions of their arguments -- but it is also load-bearing.
---  GNATprove inlines a CONTRACT-LESS local subprogram into its caller, and
---  transitively inlining Mont_Mul's nested CIOS loops through Dbl/Add into
---  Scalar_Mul's 256 iterations builds a verification condition for Verify that
---  does not converge.  A contract -- any contract -- makes the call opaque, so
---  the callee is proved once on its own and the caller reasons from it.
---  Measured at --level=1 --prover=z3 --timeout=10: 210 obligations in 3m03s with
+--  Almost none of that arithmetic is in THIS file.  The modular big-integer
+--  layer (Add_Mod through Mul_Mod) is the generic ECC_Bignum and the Jacobian
+--  point layer (Dbl, Add, Scalar_Mul, To_Jacobian, On_Curve) is the generic
+--  ECC_Curve; both are instantiated below, at eight limbs and P-256's five
+--  constants.  P384 instantiates the same two generics at twelve limbs.  What
+--  is left here is the curve constants, the big-endian byte conversions (they
+--  name Bytes_32, which is P-256's own type) and the compositions on top:
+--  Verify, To_Affine, and the ECDH / signing paths.
+--
+--  Every helper carries `Global => null`.  That is a true statement -- they are
+--  pure functions of their arguments -- but it is also load-bearing.  GNATprove
+--  inlines a CONTRACT-LESS local subprogram into its caller, and transitively
+--  inlining Mont_Mul's nested CIOS loops through Dbl/Add into Scalar_Mul's 256
+--  iterations builds a verification condition for Verify that does not
+--  converge.  A contract -- any contract -- makes the call opaque, so the
+--  callee is proved once on its own and the caller reasons from it.  Measured
+--  at --level=1 --prover=z3 --timeout=10: 210 obligations in 3m03s with
 --  Verify/On_Curve outside the subset; no result after 28m with them inside and
---  no contracts; 144 obligations in 2m33s with these.
+--  no contracts; 144 obligations in 2m33s with these, and the same 144 in 2m38s
+--  once the two layers moved into generics (the aspects moved with them).
 --
 --  `gnatprove --no-inlining` switches contextual analysis off for a whole run and
 --  proves this unit with no source contracts at all (95 obligations, 2m34s).  The
@@ -34,14 +46,12 @@ with SPARKNaCl.Hashing.SHA256;
 --  three comparison predicates that gate untrusted input.
 package body P256 with SPARK_Mode => On is
 
-   subtype U32 is Unsigned_32;
-   subtype U64 is Unsigned_64;
-
-   Limbs : constant := 8;                       --  8 x 32 = 256 bit
-   type Num is array (0 .. Limbs - 1) of U32;   --  little-endian limbs (0 = LSW)
-
-   Zero : constant Num := (others => 0);
-   One  : constant Num := (0 => 1, others => 0);
+   --  The modular arithmetic, at 256 bits.  Everything the curve layer below
+   --  calls -- Add_Mod, Mont_Mul, Inv_Mod, the Num type itself -- comes from
+   --  here; only the CONSTANTS are P-256's, and they are declared once the
+   --  generic's Inv32 and Compute_R2 are available to derive them.
+   package BN is new ECC_Bignum (Limbs => 8);   --  8 x 32 = 256 bit
+   use BN;
 
    ---------------------------------------------------------------------------
    --  Curve parameters (NIST P-256), little-endian limbs.
@@ -92,357 +102,23 @@ package body P256 with SPARK_Mode => On is
       16#FE1A7F9B#,
       16#4FE342E2#);
 
-   ---------------------------------------------------------------------------
-   --  Plain 256-bit helpers.
-   ---------------------------------------------------------------------------
-   function Is_Zero (A : Num) return Boolean
-     with Global => null,
-          Post   => Is_Zero'Result = (for all I in Num'Range => A (I) = 0)
-   is
-   begin
-      for I in Num'Range loop
-         if A (I) /= 0 then
-            return False;
-         end if;
-         pragma Loop_Invariant (for all K in Num'First .. I => A (K) = 0);
-      end loop;
-      return True;
-   end Is_Zero;
-
-   function "=" (A, B : Num) return Boolean
-     with Global => null,
-          Post   => "="'Result = (for all I in Num'Range => A (I) = B (I))
-   is
-   begin
-      for I in Num'Range loop
-         if A (I) /= B (I) then
-            return False;
-         end if;
-         pragma Loop_Invariant (for all K in Num'First .. I => A (K) = B (K));
-      end loop;
-      return True;
-   end "=";
-
-   --  A >= B, as a lexicographic scan from the most significant limb down: the
-   --  first limb where they differ decides.  Geq_Spec pins that meaning down so
-   --  a future edit that inverts the scan direction, or compares from limb 0,
-   --  fails the proof rather than silently weakening the range checks in Verify
-   --  that gate r, s and the public-key coordinates.  Nothing CONSUMES it: Verify
-   --  reasons from the Global aspects, not from this.
-   function Geq_Spec (A, B : Num) return Boolean
-   is ((for all I in Num'Range => A (I) = B (I))
-       or else (for some I in Num'Range =>
-                  A (I) > B (I)
-                  and then (for all K in I + 1 .. Num'Last => A (K) = B (K))))
-   with Ghost, Global => null;
-
-   function Geq (A, B : Num) return Boolean
-     with Global => null,
-          Post   => Geq'Result = Geq_Spec (A, B)
-   is
-   begin
-      for I in reverse Num'Range loop
-         if A (I) /= B (I) then
-            return A (I) > B (I);
-         end if;
-         pragma Loop_Invariant (for all K in I .. Num'Last => A (K) = B (K));
-      end loop;
-      return True;
-   end Geq;
-
-   --  A - B mod 2^256 (drops the final borrow).
-   function Sub_Raw (A, B : Num) return Num
-     with Global => null
-   is
-      --  R = A - B mod 2^256; Bor = borrow out of each limb; D = per-limb difference.
-      R   : Num;
-      Bor : U64 := 0;
-      D   : U64;
-   begin
-      for I in Num'Range loop
-         D := (U64 (A (I)) - U64 (B (I)) - Bor) and 16#FFFF_FFFF_FFFF_FFFF#;
-         R (I) := U32 (D and 16#FFFF_FFFF#);
-         Bor := (if U64 (A (I)) < U64 (B (I)) + Bor then 1 else 0);
-      end loop;
-      return R;
-   end Sub_Raw;
-
-   --  A + B; sets Carry to the 257th bit.
-   procedure Add_Raw (A, B : Num; R : out Num; Carry : out U64)
-     with Global => null
-   is
-      S : U64 := 0;   --  running limb sum (low 32 bits stored, high 32 carried up)
-   begin
-      for I in Num'Range loop
-         S := U64 (A (I)) + U64 (B (I)) + S;
-         R (I) := U32 (S and 16#FFFF_FFFF#);
-         S := Shift_Right (S, 32);
-      end loop;
-      Carry := S;
-   end Add_Raw;
-
-   --  (A + B) mod M, for A, B < M.
-   function Add_Mod (A, B, M : Num) return Num
-     with Global => null
-   is
-      R : Num;   --  A + B
-      C : U64;   --  carry out of the top limb (the 257th bit)
-   begin
-      Add_Raw (A, B, R, C);
-      if C /= 0 or else Geq (R, M) then
-         R := Sub_Raw (R, M);
-      end if;
-      return R;
-   end Add_Mod;
-
-   --  (A - B) mod M, for A, B < M.
-   function Sub_Mod (A, B, M : Num) return Num
-     with Global => null
-   is
-   begin
-      if Geq (A, B) then
-         return Sub_Raw (A, B);
-      else
-         declare
-            R : Num;   --  wrapped difference, then + M
-            C : U64;   --  discarded carry
-         begin
-            Add_Raw (Sub_Raw (A, B), M, R, C);   --  (A - B + 2^256) + M, keep low
-            return R;
-         end;
-      end if;
-   end Sub_Mod;
-
-   ---------------------------------------------------------------------------
-   --  Montgomery arithmetic (CIOS).  R = 2^256.
-   ---------------------------------------------------------------------------
-
-   --  X^-1 mod 2^32 (X odd), Newton's iteration.
-   function Inv32 (X : U32) return U32
-     with Global => null,
-          Pre    => X mod 2 = 1          --  Newton needs an odd X to converge
-   is
-      Y : U32 := X;   --  inverse approximation; Newton doubles the correct-bit count
-   begin
-      for I in 1 .. 5 loop
-         Y := Y * (2 - X * Y);          --  doubles the number of correct bits
-      end loop;
-      return Y;
-   end Inv32;
-
-   --  CIOS Montgomery multiply: returns A*B*R^-1 mod M (A, B < M).
-   function Mont_Mul (A, B, M : Num; M0 : U32) return Num
-     with Global => null
-   is
-      --  CIOS scratch: T = wide accumulator; CS/Cr = column sum and carry;
-      --  MM = reduction multiplier m = T(0)*M0 mod 2^32; R = the reduced result.
-      T  : array (0 .. Limbs + 1) of U32 := (others => 0);
-      CS : U64;
-      Cr : U64;
-      MM : U64;
-      R  : Num;
-   begin
-      for I in 0 .. Limbs - 1 loop
-         Cr := 0;
-         for J in 0 .. Limbs - 1 loop
-            CS := U64 (T (J)) + U64 (A (J)) * U64 (B (I)) + Cr;
-            T (J) := U32 (CS and 16#FFFF_FFFF#);
-            Cr := Shift_Right (CS, 32);
-         end loop;
-         CS := U64 (T (Limbs)) + Cr;
-         T (Limbs) := U32 (CS and 16#FFFF_FFFF#);
-         T (Limbs + 1) := U32 (Shift_Right (CS, 32));
-
-         MM := (U64 (T (0)) * U64 (M0)) and 16#FFFF_FFFF#;
-         CS := U64 (T (0)) + MM * U64 (M (0));
-         Cr := Shift_Right (CS, 32);
-         for J in 1 .. Limbs - 1 loop
-            CS := U64 (T (J)) + MM * U64 (M (J)) + Cr;
-            T (J - 1) := U32 (CS and 16#FFFF_FFFF#);
-            Cr := Shift_Right (CS, 32);
-         end loop;
-         CS := U64 (T (Limbs)) + Cr;
-         T (Limbs - 1) := U32 (CS and 16#FFFF_FFFF#);
-         T (Limbs) := T (Limbs + 1) + U32 (Shift_Right (CS, 32));
-         T (Limbs + 1) := 0;
-      end loop;
-      for K in Num'Range loop
-         R (K) := T (K);
-      end loop;
-      if T (Limbs) /= 0 or else Geq (R, M) then
-         R := Sub_Raw (R, M);
-      end if;
-      return R;
-   end Mont_Mul;
-
-   --  R^2 mod M = 2^512 mod M, by 512 modular doublings (add/sub only).
-   function Compute_R2 (M : Num) return Num
-     with Global => null
-   is
-      X : Num := One;   --  1 doubled 512 times mod M yields 2^512 mod M
-   begin
-      for I in 1 .. 512 loop
-         X := Add_Mod (X, X, M);
-      end loop;
-      return X;
-   end Compute_R2;
-
    --  Per-modulus Montgomery constants.
    P_M0 : constant U32 := U32 (0) - Inv32 (P (0));    --  -P^-1 mod 2^32
    N_M0 : constant U32 := U32 (0) - Inv32 (NN (0));
    P_R2 : constant Num := Compute_R2 (P);
    N_R2 : constant Num := Compute_R2 (NN);
 
-   function To_Mont (A, M : Num; M0 : U32; R2 : Num) return Num
-   is (Mont_Mul (A, R2, M, M0))
-   with Global => null;                       --  a*R mod M
-
    --  Montgomery form of 1 (= R mod M).
    P_One_M : constant Num := To_Mont (One, P, P_M0, P_R2);
 
-   --  a^E mod M with a, result in Montgomery form (E a plain Num, MSB..LSB).
-   function Mont_Pow (A_M, E, M : Num; M0 : U32; One_M : Num) return Num
-     with Global => null
-   is
-      R : Num := One_M;   --  running Montgomery product (square-and-multiply)
-   begin
-      for I in reverse 0 .. 255 loop
-         R := Mont_Mul (R, R, M, M0);
-         if (Shift_Right (E (I / 32), I mod 32) and 1) = 1 then
-            R := Mont_Mul (R, A_M, M, M0);
-         end if;
-      end loop;
-      return R;
-   end Mont_Pow;
-
-   --  Modular inverse of A (plain) mod M, returned plain.  Fermat: A^(M-2).
-   function Inv_Mod (A, M : Num; M0 : U32; R2, One_M : Num) return Num
-     with Global => null,
-          Pre    => M (0) >= 2           --  so M - 2 does not borrow (M odd)
-   is
-      A_M  : constant Num := Mont_Mul (A, R2, M, M0);    --  to Montgomery
-      Emin : Num := M;
-      Inv  : Num;
-   begin
-      Emin := Sub_Raw (Emin, (0 => 2, others => 0));     --  M - 2 (M odd, M(0) >= 3)
-      Inv := Mont_Pow (A_M, Emin, M, M0, One_M);         --  (a^-1) in Montgomery
-      return Mont_Mul (Inv, One, M, M0);                 --  back to plain
-   end Inv_Mod;
-
-   --  (A * B) mod M, plain in, plain out.
-   function Mul_Mod (A, B, M : Num; M0 : U32; R2 : Num) return Num
-   is (Mont_Mul (Mont_Mul (A, R2, M, M0), B, M, M0))
-   with Global => null;     --  (aR)*b*R^-1 = ab
-
-   ---------------------------------------------------------------------------
-   --  Jacobian point arithmetic over GF(p); coordinates in Montgomery form.
-   --  Z = 0 marks the point at infinity.
-   ---------------------------------------------------------------------------
-   type Point is record
-      X, Y, Z : Num;
-   end record;
-   Infinity : constant Point := (Zero, Zero, Zero);
-
-   function FMul (A, B : Num) return Num
-   is (Mont_Mul (A, B, P, P_M0))
-   with Global => null;
-   function FAdd (A, B : Num) return Num
-   is (Add_Mod (A, B, P))
-   with Global => null;
-   function FSub (A, B : Num) return Num
-   is (Sub_Mod (A, B, P))
-   with Global => null;
-   function FDbl (A : Num) return Num
-   is (Add_Mod (A, A, P))
-   with Global => null;
-
-   function Dbl (Q : Point) return Point
-     with Global => null
-   is
-      --  Jacobian doubling temps: Dlt = Z^2, Gamma = Y^2, Beta = X*Gamma,
-      --  Alpha = 3*(X-Dlt)*(X+Dlt), G2 = Gamma^2, T scratch, (X3,Y3,Z3) result.
-      Dlt, Gamma, Beta, Alpha, T, X3, Y3, Z3, G2 : Num;
-   begin
-      if Is_Zero (Q.Z) or else Is_Zero (Q.Y) then
-         return Infinity;
-      end if;
-      Dlt := FMul (Q.Z, Q.Z);                 --  Z^2
-      Gamma := FMul (Q.Y, Q.Y);                 --  Y^2
-      Beta := FMul (Q.X, Gamma);               --  X*Y^2
-      --  alpha = 3*(X-delta)*(X+delta)
-      Alpha := FMul (FSub (Q.X, Dlt), FAdd (Q.X, Dlt));
-      Alpha := FAdd (FDbl (Alpha), Alpha);      --  *3
-      --  X3 = alpha^2 - 8*beta
-      T := FDbl (FDbl (FDbl (Beta)));           --  8*beta
-      X3 := FSub (FMul (Alpha, Alpha), T);
-      --  Z3 = (Y+Z)^2 - gamma - delta
-      Z3 := FMul (FAdd (Q.Y, Q.Z), FAdd (Q.Y, Q.Z));
-      Z3 := FSub (FSub (Z3, Gamma), Dlt);
-      --  Y3 = alpha*(4*beta - X3) - 8*gamma^2
-      T := FSub (FDbl (FDbl (Beta)), X3);       --  4*beta - X3
-      G2 := FMul (Gamma, Gamma);
-      G2 := FDbl (FDbl (FDbl (G2)));             --  8*gamma^2
-      Y3 := FSub (FMul (Alpha, T), G2);
-      return (X3, Y3, Z3);
-   end Dbl;
-
-   function Add (P1, P2 : Point) return Point
-     with Global => null
-   is
-      --  Jacobian add temps (add-2007-bl): Z1Z1/Z2Z2 = Zi^2, U1/U2 and S1/S2 the
-      --  projected X and Y, H/I/J/Rr/V intermediates, (X3,Y3,Z3) result, T scratch.
-      Z1Z1, Z2Z2, U1, U2, S1, S2, H, I, J, Rr, V, X3, Y3, Z3, T : Num;
-   begin
-      if Is_Zero (P1.Z) then
-         return P2;
-      end if;
-      if Is_Zero (P2.Z) then
-         return P1;
-      end if;
-      Z1Z1 := FMul (P1.Z, P1.Z);
-      Z2Z2 := FMul (P2.Z, P2.Z);
-      U1 := FMul (P1.X, Z2Z2);
-      U2 := FMul (P2.X, Z1Z1);
-      S1 := FMul (FMul (P1.Y, P2.Z), Z2Z2);
-      S2 := FMul (FMul (P2.Y, P1.Z), Z1Z1);
-      if U1 = U2 then
-         if S1 = S2 then
-            return Dbl (P1);
-         else
-            return Infinity;                     --  P + (-P)
-         end if;
-      end if;
-      H := FSub (U2, U1);
-      I := FDbl (H);
-      I := FMul (I, I);          --  (2H)^2
-      J := FMul (H, I);
-      Rr := FDbl (FSub (S2, S1));                 --  2*(S2-S1)
-      V := FMul (U1, I);
-      --  X3 = r^2 - J - 2V
-      X3 := FSub (FSub (FMul (Rr, Rr), J), FDbl (V));
-      --  Y3 = r*(V - X3) - 2*S1*J
-      T := FMul (FDbl (S1), J);
-      Y3 := FSub (FMul (Rr, FSub (V, X3)), T);
-      --  Z3 = ((Z1+Z2)^2 - Z1Z1 - Z2Z2) * H
-      Z3 := FMul (FAdd (P1.Z, P2.Z), FAdd (P1.Z, P2.Z));
-      Z3 := FMul (FSub (FSub (Z3, Z1Z1), Z2Z2), H);
-      return (X3, Y3, Z3);
-   end Add;
-
-   --  K (plain scalar) times P, double-and-add (MSB..LSB; variable-time is fine).
-   function Scalar_Mul (K : Num; Q : Point) return Point
-     with Global => null
-   is
-      R : Point := Infinity;   --  running accumulator (double-and-add)
-   begin
-      for I in reverse 0 .. 255 loop
-         R := Dbl (R);
-         if (Shift_Right (K (I / 32), I mod 32) and 1) = 1 then
-            R := Add (R, Q);
-         end if;
-      end loop;
-      return R;
-   end Scalar_Mul;
+   --  The point arithmetic, at P-256's constants.  Point, Infinity, Dbl, Add,
+   --  Scalar_Mul, To_Jacobian and On_Curve all come from here; the generic is
+   --  written for any a = -3 short-Weierstrass curve, and P384 instantiates it
+   --  at twelve limbs with its own five constants.
+   package CV is new ECC_Curve
+     (BN => BN, P => P, P_M0 => P_M0, P_R2 => P_R2, P_One_M => P_One_M,
+      Curve_B => B);
+   use CV;
 
    ---------------------------------------------------------------------------
    --  Conversions.
@@ -453,7 +129,7 @@ package body P256 with SPARK_Mode => On is
    is
       R : Num;   --  the 8 little-endian limbs assembled from the big-endian bytes
    begin
-      for I in 0 .. Limbs - 1 loop
+      for I in Num'Range loop
          --  word I = bytes [28-4I .. 31-4I]
          R (I) :=
            Shift_Left (U32 (Bz (28 - 4 * I)), 24)
@@ -464,37 +140,17 @@ package body P256 with SPARK_Mode => On is
       return R;
    end From_BE;
 
-   --  Affine (plain x, y) -> Jacobian with Montgomery coords (Z = 1).
-   function To_Jacobian (X, Y : Num) return Point
-   is (X => Mont_Mul (X, P_R2, P, P_M0), Y => Mont_Mul (Y, P_R2, P, P_M0), Z => P_One_M)
-   with Global => null;
-
-   --  Is (x, y) (plain affine) on the curve y^2 = x^3 - 3x + b mod p?
-   function On_Curve (X, Y : Num) return Boolean
-     with Global => null
-   is
-      --  XM/YM/BM = x, y, b in Montgomery form; LHS = y^2; X3 = x^3 - 3x + b.
-      XM  : constant Num := Mont_Mul (X, P_R2, P, P_M0);
-      YM  : constant Num := Mont_Mul (Y, P_R2, P, P_M0);
-      BM  : constant Num := Mont_Mul (B, P_R2, P, P_M0);
-      LHS : constant Num := FMul (YM, YM);
-      X3  : Num := FMul (FMul (XM, XM), XM);
-      TX  : constant Num := FAdd (FDbl (XM), XM);         --  3x
-   begin
-      X3 := FAdd (FSub (X3, TX), BM);
-      return LHS = X3;
-   end On_Curve;
 
    ---------------------------------------------------------------------------
    --  ECDSA verification.
    ---------------------------------------------------------------------------
-   function Verify (Pub_X, Pub_Y : Bytes_32; Hash : Bytes_32; R, S : Bytes_32) return Boolean is
+   function Verify (Key : Public_Point; Sig : Signature; Hash : Bytes_32) return Boolean is
       --  ECDSA verify: (Qx,Qy) public key, (Rr,Ss) the signature (r,s), E = hash,
       --  W = s^-1 mod n, U1/U2 the scalars, RP = U1*G + U2*Q, Vx = recovered x.
-      Qx             : constant Num := From_BE (Pub_X);
-      Qy             : constant Num := From_BE (Pub_Y);
-      Rr             : constant Num := From_BE (R);
-      Ss             : constant Num := From_BE (S);
+      Qx             : constant Num := From_BE (Key.X);
+      Qy             : constant Num := From_BE (Key.Y);
+      Rr             : constant Num := From_BE (Sig.R);
+      Ss             : constant Num := From_BE (Sig.S);
       E              : Num := From_BE (Hash);
       W, U1, U2, Vx  : Num;
       G_Pt, Q_Pt, RP : Point;
@@ -545,7 +201,7 @@ package body P256 with SPARK_Mode => On is
       R : Bytes_32 := (others => 0);   --  big-endian bytes of A (loop fills all 32;
                                        --  the init lets flow analysis see it whole)
    begin
-      for I in 0 .. Limbs - 1 loop
+      for I in Num'Range loop
          R (31 - 4 * I) := Byte (A (I) and 16#FF#);
          R (30 - 4 * I) := Byte (Shift_Right (A (I), 8) and 16#FF#);
          R (29 - 4 * I) := Byte (Shift_Right (A (I), 16) and 16#FF#);
@@ -574,7 +230,7 @@ package body P256 with SPARK_Mode => On is
       Ok := True;
    end To_Affine;
 
-   function Public_Key (Priv : Bytes_32; Pub_X, Pub_Y : out Bytes_32) return Boolean
+   function Public_Key (Priv : Bytes_32; Pub : out Public_Point) return Boolean
      with SPARK_Mode => Off
    is
       D      : constant Num := From_BE (Priv);   --  private scalar
@@ -582,8 +238,7 @@ package body P256 with SPARK_Mode => On is
       AX, AY : Num;                              --  affine result
       Ok     : Boolean;
    begin
-      Pub_X := (others => 0);
-      Pub_Y := (others => 0);
+      Pub := (X => (others => 0), Y => (others => 0));
       if Is_Zero (D) or else Geq (D, NN) then
          return False;
       end if;
@@ -592,19 +247,18 @@ package body P256 with SPARK_Mode => On is
       if not Ok then
          return False;
       end if;
-      Pub_X := To_BE (AX);
-      Pub_Y := To_BE (AY);
+      Pub := (X => To_BE (AX), Y => To_BE (AY));
       return True;
    end Public_Key;
 
    function ECDH
-     (Priv : Bytes_32; Peer_X, Peer_Y : Bytes_32; Shared_X : out Bytes_32) return Boolean
+     (Priv : Bytes_32; Peer : Public_Point; Shared_X : out Bytes_32) return Boolean
      with SPARK_Mode => Off
    is
       --  D = private scalar; (QX,QY) = peer public point; R = D*Q; (AX,AY) = shared point.
       D      : constant Num := From_BE (Priv);
-      QX     : constant Num := From_BE (Peer_X);
-      QY     : constant Num := From_BE (Peer_Y);
+      QX     : constant Num := From_BE (Peer.X);
+      QY     : constant Num := From_BE (Peer.Y);
       R      : Point;
       AX, AY : Num;
       Ok     : Boolean;
@@ -678,7 +332,7 @@ package body P256 with SPARK_Mode => On is
       return SHA256 (Outer);
    end HMAC_SHA256;
 
-   function Sign (Priv, Hash : Bytes_32; R, S : out Bytes_32) return Boolean
+   function Sign (Priv, Hash : Bytes_32; Sig : out Signature) return Boolean
      with SPARK_Mode => Off
    is
       --  RFC 6979: D = private key, E = hash mod n, N_One_M = 1 (Montgomery, mod n);
@@ -690,8 +344,7 @@ package body P256 with SPARK_Mode => On is
       K       : Bytes_32 := (others => 16#00#);
       Count   : Natural := 0;
    begin
-      R := (others => 0);
-      S := (others => 0);
+      Sig := (R => (others => 0), S => (others => 0));
       if Is_Zero (D) or else Geq (D, NN) then
          --  private key in [1, n-1]
          return False;
@@ -748,8 +401,7 @@ package body P256 with SPARK_Mode => On is
                         Sn := Inv_Mod (Kk, NN, N_M0, N_R2, N_One_M);
                         Sn := Mul_Mod (Sn, T, NN, N_M0, N_R2);
                         if not Is_Zero (Sn) then
-                           R := To_BE (Rn);
-                           S := To_BE (Sn);
+                           Sig := (R => To_BE (Rn), S => To_BE (Sn));
                            return True;
                         end if;
                      end if;

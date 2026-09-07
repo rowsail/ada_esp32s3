@@ -132,6 +132,32 @@ The copies are now one \lstinline{ESP32S3.GPIO.Route_Out}
 protected object as \lstinline{Configure}. That closed a window where a concurrent
 \lstinline{Configure} of the same pad could leave it routed to plain GPIO.
 
+It found a second one, in a much less comfortable place. \lstinline{P256} and
+\lstinline{P384} -- the two NIST prime curves, used to authenticate certificate
+chains -- had twenty-four subprograms in common, and the bodies were identical
+apart from two integer literals. That is exactly what a generic is for, but it is
+also SPARK-proven cryptography, so the refactor had to be paid for rather than
+asserted: \lstinline{P256} carried 144 proof obligations at zero unproved, and the
+only acceptable outcome was the same 144 afterwards.
+
+The arithmetic became two generics, \lstinline{ECC_Bignum} (modular big-integer
+arithmetic over a limb count) and \lstinline{ECC_Curve} (Jacobian point arithmetic
+for an $a = -3$ short-Weierstrass curve), instantiated at eight limbs and twelve.
+The two literals turn out to be the interesting part: \lstinline{Mont_Pow} scanned
+the exponent from bit 255 or 383, and \lstinline{Compute_R2} doubled 512 or 768
+times. Neither is checkable by the compiler, both are now derived from the limb
+count, and getting either wrong in a hand-written copy would have produced a
+verifier that silently accepted nothing.
+
+The proof survived unchanged at 144. The unexpected dividend was on the other side:
+\lstinline{P384} had no \lstinline{SPARK_Mode} at all, so the curve that verifies
+public DoT/DoH roots had been running on the assumption that it matched its proven
+sibling. Sharing the source made that assumption testable, and \lstinline{P384}
+now proves in its own right -- 135 obligations, zero unproved. GNATprove verifies
+generic \emph{instances}, not generics, so this is a genuinely separate result and
+needs its own project; what the refactor bought was that the bodies under it are
+the ones already known to be right.
+
 The tool is worth having for the eleventh copy, not for the ten it found once.
 
 \section{Baselines, and the two gates}\index{AdaLang Analyzer!baseline}\index{x!analyze}

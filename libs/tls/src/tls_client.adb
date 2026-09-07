@@ -65,7 +65,7 @@ package body TLS_Client is
    procedure Make_Key_Pair (S : in out Session) is
       Rnd        : ESP32S3.RNG.Byte_Array (0 .. 31);
       Priv       : P256.Bytes_32;
-      PubX, PubY : P256.Bytes_32;
+      Pub        : P256.Public_Point;
       Ok         : Boolean := False;
    begin
       --  X25519 ephemeral.
@@ -81,14 +81,14 @@ package body TLS_Client is
          for I in 0 .. 31 loop
             Priv (I) := P256.Byte (Rnd (I));
          end loop;
-         Ok := P256.Public_Key (Priv, PubX, PubY);
+         Ok := P256.Public_Key (Priv, Pub);
          exit when Ok;
       end loop;
       if Ok then
          for I in 0 .. 31 loop
             S.P256_Priv (I) := U8 (Priv (I));
-            S.P256_Pub_X (I) := U8 (PubX (I));
-            S.P256_Pub_Y (I) := U8 (PubY (I));
+            S.P256_Pub_X (I) := U8 (Pub.X (I));
+            S.P256_Pub_Y (I) := U8 (Pub.Y (I));
          end loop;
       end if;
    end Make_Key_Pair;
@@ -530,15 +530,16 @@ package body TLS_Client is
       if S.Group = 16#0017# then
          --  secp256r1 (P-256 ECDH)
          declare
-            Priv, PX, PY, ShB : P256.Bytes_32;
+            Priv, ShB : P256.Bytes_32;
+            Peer      : P256.Public_Point;
             Ok                : Boolean;
          begin
             for I in 0 .. 31 loop
                Priv (I) := P256.Byte (S.P256_Priv (I));
-               PX (I) := P256.Byte (S.Server_P256_X (I));
-               PY (I) := P256.Byte (S.Server_P256_Y (I));
+               Peer.X (I) := P256.Byte (S.Server_P256_X (I));
+               Peer.Y (I) := P256.Byte (S.Server_P256_Y (I));
             end loop;
-            Ok := P256.ECDH (Priv, PX, PY, ShB);
+            Ok := P256.ECDH (Priv, Peer, ShB);
             if Ok then
                for I in 0 .. 31 loop
                   Shared (Index_32 (I)) := SPARKNaCl.Byte (ShB (I));
