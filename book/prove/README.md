@@ -6,59 +6,71 @@ data. This is the payoff surface for formal methods: proving *absence of
 run-time errors* (no overflow, no buffer overrun, no division by zero, all loops
 terminate) on the code most exposed to malformed input.
 
+That is the **silver** floor, and most units sit on it. A growing set goes further and
+proves what the code *computes* — see [Beyond silver](#beyond-silver-gold-and-platinum) —
+because silver says a router cannot crash on any destination, not that it picks the
+right interface.
+
 ## Run it
 
 ```sh
-book/prove/prove.sh        # gnatprove --level=1 (silver) over the SPARK_Mode => On units
+book/prove/prove.sh        # gnatprove over the SPARK_Mode => On units
 ```
 
 Exits non-zero if any run-time check is unproved. `gnatprove` ships with the
 Alire toolchain (`~/.alire/bin/gnatprove`).
 
-## Proven so far (silver — 0 unproved checks)
+## Proven so far (0 unproved obligations)
 
-| Unit | What | Project |
-|------|------|---------|
-| `ESP32S3.Ext4` | `Get_*`/`Put_*` byte serialization helpers | `ext4_host.gpr` |
-| `ESP32S3.Ext4.CRC32C` | ext4 metadata checksum (Castagnoli) | `ext4_host.gpr` |
-| `ESP32S3.Ext4.Superblock` | superblock `Encode` + queries | `ext4_host.gpr` |
-| `ESP32S3.Ext4.Inode` | inode `Decode`/`Encode` + queries | `ext4_host.gpr` |
-| `ESP32S3.Ext4.Group_Desc` | group-descriptor `Decode`/`Encode` | `ext4_host.gpr` |
-| `ESP32S3.Ext4.Bitmap` | bit set/clear/test math | `ext4_host.gpr` |
-| `ESP32S3.Ext4.Block_Map` | direct/indirect + extent-node decode/validate | `ext4_host.gpr` |
-| `ESP32S3.Ext4.Dir` | dir-entry header decode + name copy | `ext4_host.gpr` |
-| `ESP32S3.Ext4.File` | EOF-clamped read/chunk size math | `ext4_host.gpr` |
-| `ESP32S3.Ext4.Mkfs.Math` | mkfs single-group layout: inode count / table size / block positions bounded + consistent | `mkfs_math_prove.gpr` |
-| `ESP32S3.Ext4.Path_Scan` | `/`-separated path-component scanner (untrusted input): never slices outside the string | `path_scan_prove.gpr` |
-| `X509.DER` + `X509` | DER TLV reader **and the certificate parser** — **untrusted input** | `x509_prove.gpr` |
-| `ESP32S3.GPS.NMEA` | NMEA-0183 GPS-sentence parser — **untrusted input** | `nmea_prove.gpr` |
-| `DNS_Client.Parse` | DNS response parser incl. name-compression — **untrusted input** | `dns_prove.gpr` |
-| `Chain_Verify` | cert chain-walking (sig checks `Off`) — **untrusted input** | `tls.gpr` (cross) |
-| `P256` | secp256r1 field + order arithmetic (Montgomery CIOS), Jacobian point add/double/scalar-mul, **and the ECDSA `Verify` / `On_Curve` compositions** — **untrusted input** | `p256_prove.gpr` |
-| `Modbus` / `.Slave` / `.Master` | wire framing, slave `Process` dispatch, master PDU build/parse | `modbus_*_host.gpr` |
-| `NTP_Client.To_UTC` | SNTP → UTC civil-date math | `ntp_prove.gpr` |
-| `Net_Routes` | IPv4 longest-prefix-match routing | `net_routes_prove.gpr` |
-| `ESP32S3.AES.GCM` | GHASH GF(2^128) multiply + CTR increment (block cipher HW `Off`) | `aes_gcm_prove.gpr` |
-| `ESP32S3.SHT41` | CRC-8 + datasheet integer conversions | `sht41_prove.gpr` |
-| `ESP32S3.SD_SPI` | CRC-7 command-frame checksum | `sd_spi_prove.gpr` |
-| `ESP32S3.PCF85063A` | RTC packed BCD ↔ binary conversions | `pcf85063a_prove.gpr` |
-| `ESP32S3.QMI8658C` | IMU sign-extension + sensitivity scaling | `qmi8658c_prove.gpr` |
-| `ESP32S3.TLV2556` | ADC count → millivolts | `tlv2556_prove.gpr` |
-| `ESP32S3.ES8311` | codec volume % → DAC register | `es8311_prove.gpr` |
-| `ESP32S3.TWAI.Math` | CAN baud-rate prescaler / bit-timing | `twai_math_prove.gpr` |
-| `ESP32S3.LEDC.Math` | LED-PWM clock divider (Q10.8) + Float duty scaling | `ledc_math_prove.gpr` |
-| `ESP32S3.RMT.Math` | RMT tick divider | `rmt_math_prove.gpr` |
-| `ESP32S3.MCPWM.Math` | motor-PWM period / prescale / dead-time + Float duty scaling | `mcpwm_math_prove.gpr` |
-| `ESP32S3.Endian` | LE/BE byte join/split primitives | `endian_host.gpr` |
+`Level` is blank for silver (absence of run-time errors). **G** = gold, key behavioural
+properties proved; **P** = platinum, the contract is the whole specification of that
+subprogram.
+
+| Unit | What | Level | Project |
+|------|------|-------|---------|
+| `ESP32S3.Ext4` | `Get_*`/`Put_*` byte serialization helpers |   | `ext4_host.gpr` |
+| `ESP32S3.Ext4.CRC32C` | ext4 metadata checksum (Castagnoli) — the table walk **and the table's construction** proved equal to the bit-at-a-time polynomial definition, for every seed and every input | **P** | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Superblock` | superblock `Encode` + queries |   | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Inode` | inode `Decode`/`Encode` + queries |   | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Group_Desc` | group-descriptor `Decode`/`Encode` |   | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Bitmap` | bit set/clear/test math |   | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Block_Map` | direct/indirect + extent-node decode/validate |   | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Dir` | dir-entry header decode + name copy |   | `ext4_host.gpr` |
+| `ESP32S3.Ext4.File` | EOF-clamped read/chunk size math |   | `ext4_host.gpr` |
+| `ESP32S3.Ext4.Mkfs.Math` | mkfs single-group layout: inode count / table size / block positions bounded + consistent |   | `mkfs_math_prove.gpr` |
+| `ESP32S3.Ext4.Path_Scan` | `/`-separated path-component scanner (**untrusted input**): never slices outside the string, a component holds no `/`, only separators are skipped, and it always **makes progress** — the clause a caller's loop termination rests on | **P** | `path_scan_prove.gpr` |
+| `X509.DER` + `X509` | DER TLV reader **and the certificate parser** — **untrusted input** |   | `x509_prove.gpr` |
+| `ESP32S3.GPS.NMEA` | NMEA-0183 GPS-sentence parser — **untrusted input** |   | `nmea_prove.gpr` |
+| `DNS_Client.Parse` | DNS response parser incl. name-compression — **untrusted input** |   | `dns_prove.gpr` |
+| `Chain_Verify` | cert chain-walking (sig checks `Off`) — **untrusted input** |   | `tls.gpr` (cross) |
+| `Der_Sig` | ECDSA-Sig-Value DER `r`/`s` parse — **untrusted input**: no over-read, and on **any** rejection the output is all-zero, so ignoring the `Ok` flag cannot leave attacker-chosen bytes in an `r` or `s` | **G** | `der_sig_prove.gpr` |
+| `P256` | secp256r1 field + order arithmetic (Montgomery CIOS), Jacobian point add/double/scalar-mul, **and the ECDSA `Verify` / `On_Curve` compositions** — **untrusted input** |   | `p256_prove.gpr` |
+| `Modbus` / `.Slave` / `.Master` | wire framing, slave `Process` dispatch, master PDU build/parse |   | `modbus_*_host.gpr` |
+| `NTP_Client.To_UTC` | SNTP → UTC civil-date math — the fields denote **exactly** the instant they were made from (round-trip through a ghost `days_from_civil`), with `Day <= Days_In_Month` for uniqueness | **P** | `ntp_prove.gpr` |
+| `Net_Routes` | IPv4 longest-prefix-match routing — `Resolve` returns only an interface on a route covering the destination, and the ranking is proved to beat **every** eligible route, not just the ones scanned so far | **G** | `net_routes_prove.gpr` |
+| `ESP32S3.AES.GCM` | GHASH GF(2^128) multiply + CTR increment (block cipher HW `Off`) |   | `aes_gcm_prove.gpr` |
+| `ESP32S3.SHT41` | CRC-8 + datasheet integer conversions — `CRC_Good` is an *iff* over **every** 3-byte group, so no group can be skipped | **P** | `sht41_prove.gpr` |
+| `ESP32S3.SD_SPI` | CRC-7 command-frame checksum — the trailing byte is a well-formed frame terminator (CRC in bits 7..1, stop bit set) | **G** | `sd_spi_prove.gpr` |
+| `ESP32S3.PCF85063A` | RTC packed BCD ↔ binary — `To_BCD` round-trips through `From_BCD`; `From_BCD` additionally bounds what a *malformed* register byte (the dead-VBAT case) can produce | **P** | `pcf85063a_prove.gpr` |
+| `ESP32S3.QMI8658C` | IMU sign-extension + sensitivity scaling |   | `qmi8658c_prove.gpr` |
+| `ESP32S3.TLV2556` | ADC count → millivolts |   | `tlv2556_prove.gpr` |
+| `ESP32S3.ES8311` | codec volume % → DAC register |   | `es8311_prove.gpr` |
+| `ESP32S3.TWAI.Math` | CAN baud-rate prescaler / bit-timing |   | `twai_math_prove.gpr` |
+| `ESP32S3.LEDC.Math` | LED-PWM clock divider (Q10.8) + Float duty scaling |   | `ledc_math_prove.gpr` |
+| `ESP32S3.RMT.Math` | RMT tick divider |   | `rmt_math_prove.gpr` |
+| `ESP32S3.MCPWM.Math` | motor-PWM period / prescale / dead-time + Float duty scaling |   | `mcpwm_math_prove.gpr` |
+| `ESP32S3.Endian` | LE/BE byte join/split — each Join pinned to the positional sum that *defines* the byte order, each Split round-trips through its Join | **P** | `endian_host.gpr` |
 
 The last two groups are *pure math from hardware drivers*: the SHT41/SD_SPI/RTC/IMU/ADC/codec
 helpers are marked `SPARK_Mode => On` in place (MMIO code stays unmarked); the TWAI/LEDC/RMT/MCPWM
 timing arithmetic was **extracted** into pure `*.Math` sibling packages (behaviour-neutral — exact
 expressions relocated, register writes untouched) so it could be proved in isolation.
 
-**969 run-time checks discharged, 0 unproved** — 1712 obligations in all, across 26
-projects; `prove.sh` takes about nine minutes from a clean object tree, ~2 minutes
-when gnatprove's result cache is warm. Eight of those 969 sit inside `P256`'s own
+**1076 run-time checks discharged, 0 unproved** — 1939 obligations in all, across 26
+projects, of which **273 are functional contracts** (the pre- and postconditions that
+say what the code computes) and 111 are assertions and loop invariants. `prove.sh` takes
+about nine minutes from a clean object tree, ~2 minutes when gnatprove's result cache is
+warm. Eight of those run-time checks sit inside `P256`'s own
 contract and ghost code — loop-invariant indexing, `Geq_Spec`, `Inv32`'s `X mod 2` —
 and never execute, so read the figure as obligations discharged rather than as
 machine instructions made safe. The **untrusted-input parsers** are the
@@ -84,6 +96,68 @@ property rather than a crash guard.
   an empty buffer — rewritten as a group-count loop.
 
 Five real defects surfaced by proving — all on the untrusted-input / malformed-input paths.
+
+### Gaps found by *specifying* (which silver could not see)
+
+Silver is a claim about faulting, so it is blind to a routine that returns a wrong
+answer without crashing. Writing the specifications above turned up three such gaps —
+none of them reachable by strengthening a precondition or adding a loop invariant,
+because none of them was a run-time error:
+
+- `Path_Scan.Next_Component`'s postcondition promised `Next >= From`, not `Next > From`.
+  It was true of the body, but unstated — so **no caller's walk over a path had a proof
+  of termination**. `Ext4.Path` and `Ext4.VFS` both walk untrusted paths through it.
+- `Der_Sig.Read_Integer`'s comment had always promised the output is all-zero on a
+  malformed signature, and the body had always done it, but nothing proved it. A caller
+  that mishandled `Ok` had no guarantee it was not holding attacker-chosen bytes in an
+  ECDSA `r` or `s`.
+- `NTP_Client.To_UTC` promised `Day in 1 .. 31`, which admits **February 31st**. Worse,
+  adding the round-trip did not fix it: Hinnant's day-number arithmetic maps 1970-02-30
+  to the same number as 1970-03-02, so the round-trip alone still admits the impostor.
+  Only `Day <= Days_In_Month (Year, Month)` makes the answer unique.
+
+## Beyond silver: gold and platinum
+
+Three patterns cover almost every unit that made it past silver here. Picking the right
+one is most of the work — the prover is rarely the bottleneck.
+
+**Round-trip against an inverse.** Often the strongest specification is also the cheapest
+to write: say the operation composes with its opposite to the identity. `Endian.Split_LE`
+promises `Join_LE (B0, B1, B2, B3) = W`, and because `Join_LE` is injective that one
+clause pins all four bytes. `To_UTC` does it at larger scale against a ghost
+`Days_From_Civil`. **Caveat:** a round-trip pins the answer only when the inverse is
+injective over everything the other clauses still allow — see the February 30th trap above.
+
+**Fast implementation against a slow definition.** Where a unit exists because the naive
+algorithm is too slow, the naive algorithm *is* the specification. `Ext4.CRC32C` ships the
+bit-at-a-time polynomial division in six lines and proves the 256-entry table walk equal
+to it. The table's *construction* is proved against the same definition, so all 256
+entries are covered — not the handful a test vector touches.
+
+**Argmax over a set.** Selection loops fail by comparing the winner only against what
+they have already seen. The postcondition has to quantify over *all* candidates:
+`Net_Routes` proves no eligible route outranks the winner, for every route in the table.
+
+### What does *not* repay a contract
+
+A postcondition that restates the body buys nothing. The datasheet conversions
+(`LEDC`, `MCPWM`, `RMT`, `TWAI`, `TLV2556`, `ES8311`, `QMI8658C`) are in that class: their
+"correct answer" *is* the formula, so silver plus a hardware test is the right level.
+The same goes for a bit-at-a-time CRC — `SHT41.CRC8` and `SD_SPI.CRC7_Frame` are already
+the definition of their polynomials, so there is nothing independent to check them
+against. The content there is elsewhere: that `CRC_Good` examines **every** group, and
+that the SD command frame's stop bit is set.
+
+### Where the callback stopped us
+
+`Net_Routes` learns interface liveness through an access-to-function, which SPARK has no
+contract for and cannot reason through — so the full ranking property was not directly
+statable. The fix was to move the boundary rather than weaken the claim: `Resolve` samples
+eligibility once per route into an array, and the ranking is proved over the array. The
+unprovable part shrank to four lines that do no ranking at all. The snapshot also fixed a
+real wart — liveness can no longer change midway through a single decision, so a route
+rejected as down can no longer lose to one admitted as up moments later.
+
 
 ## Adding a unit
 

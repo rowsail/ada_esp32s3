@@ -21,14 +21,17 @@ dereference, and the termination of every loop. When it succeeds it has proved, 
 an SMT solver rather than a test, that the code is free of run-time errors --- the
 \emph{silver} level of SPARK adoption, absence of run-time errors (\index{AoRTE}AoRTE).
 No \lstinline{Constraint_Error}, no \lstinline{Storage_Error} from an unbounded loop,
-no buffer overrun, on any input the types allow.
+no buffer overrun, on any input the types allow. That is the floor, not the ceiling:
+give the tool contracts of your own and it will prove what the code \emph{computes} as
+well as that it cannot fault, which is where Section~\ref{spark:gold} goes.
 
 \section{What is proved}\index{proof!surface}
 
 The proof surface is the pure, bounded logic of the HAL: the parsers, serializers,
 checksums, and conversions that compute over bytes rather than poke registers. Around
-thirty units carry \lstinline{SPARK_Mode => On} and discharge some seven hundred and
-eighty run-time checks with zero unproved. The set falls into natural groups: the
+thirty units carry \lstinline{SPARK_Mode => On}. Together they discharge just over a
+thousand run-time checks and some two hundred and seventy functional contracts, with
+zero unproved. The set falls into natural groups: the
 ext4 on-disk serializers and their byte helpers (Chapter~\ref{ch:storage}); the
 network and protocol parsers; the software half of the cryptography; and a scattering
 of pure arithmetic --- civil-date math, longest-prefix routing, sensor conversions,
@@ -44,6 +47,76 @@ name can contain a \emph{compression pointer} back into the message, and a malic
 pointer that points at itself would loop a naive parser forever. The proof required a
 \lstinline{Loop_Variant} showing the cursor strictly advances, so termination on a
 self-referential pointer is not tested but guaranteed.
+
+\section{Beyond silver: proving what the code means}\index{proof!gold}\index{proof!platinum}\label{spark:gold}
+
+Silver is a claim about failure, not about answers. It says a routine cannot fault
+on any input; it says nothing about whether the value it returns is the right one. The
+gap is wider than it first sounds, and the cheapest way to see it is to write a
+postcondition that a wrong implementation would also satisfy. A calendar routine that
+promises only \lstinline{Day in 1 .. 31} is satisfied by one returning 1970-01-01 for
+every input --- and it also admits February 31st. A router that promises only not to
+crash is satisfied by one that always answers ``the first interface''.
+
+AdaCore's adoption ladder names the levels above: \emph{gold} adds proof of key
+integrity properties that you state as contracts, and \emph{platinum} adds full
+functional correctness --- a complete specification, proved. The obligations at silver
+come from the language; the obligations above it come from you. That is the real cost.
+Deciding what a subprogram \emph{means}, precisely enough to write down, is design work.
+And a loop invariant strong enough to carry a functional property is a different animal
+from one that only has to keep an index in range.
+
+Several units here now carry that weight. Three patterns cover almost all of them, and
+they are worth naming because the choice of pattern is most of the difficulty.
+
+\textbf{Round-trip against an inverse.} The strongest specification is often the
+cheapest to write: state that the operation composes with its opposite to the identity.
+\lstinline{ESP32S3.Endian}'s \lstinline{Split_LE} promises
+\lstinline{Join_LE (B0, B1, B2, B3) = W}, and because \lstinline{Join_LE} is
+injective that single clause pins all four output bytes --- a transposed shift stops
+proving instead of quietly reversing a word. \lstinline{NTP_Client.To_UTC} does the
+same at a larger scale: a ghost \lstinline{Days_From_Civil} reconstructs the Unix
+second from the calendar fields, and the postcondition demands it come back equal.
+
+That example also shows how a round-trip can fool you. Hinnant's day-number arithmetic
+maps the non-date 1970-02-30 to the same number as 1970-03-02, so the round-trip alone
+does \emph{not} pin the answer --- until \lstinline{Day in 1 .. Days_In_Month (Year, Month)}
+rules the impostor out. Uniqueness is the property you actually want, and a round-trip
+gives it only when the inverse is injective over everything the other clauses allow.
+
+\textbf{Fast implementation against a slow definition.} Where a unit exists because
+the obvious algorithm is too slow, the obvious algorithm is the specification.
+\lstinline{ESP32S3.Ext4.CRC32C} computes its checksum through a 256-entry table. The
+package now carries the bit-at-a-time polynomial division too, in six lines. The
+contracts say the table walk equals it, for every seed and every input. The table's
+\emph{construction} is proved against the same definition, so all 256 entries are
+covered --- not the handful any test vector touches. What stood behind that code
+before was one known-answer vector --- and a typo outside its path would have passed it
+and then mis-checksummed a filesystem.
+
+\textbf{Argmax over a set.} Selection loops have a characteristic bug. The winner is
+compared only against the candidates seen so far, and a rule that is not a total order
+then lets an earlier entry survive one it should have lost to. The cure is a
+postcondition quantified over \emph{all} candidates rather than a prefix of them.
+\lstinline{Net_Routes} ranks routes by longest prefix, then by metric. Its proof
+obligation is that no eligible route outranks the winner --- for every route in the
+table, not for the ones already scanned. That is the property Ethernet-to-cellular
+failover rests on, and a first-match-wins slip in it is a silent wrong-interface bug in
+the field rather than a crash.
+
+Two lessons generalise. The first is that a callback can stop you: \lstinline{Net_Routes}
+learns interface liveness through an access-to-function, which SPARK has no contract for
+and cannot reason through. The fix was not to weaken the property but to move the
+boundary --- \lstinline{Resolve} samples eligibility once per route into an array, and
+the ranking is proved over the array. The unprovable part shrank to four lines that do
+no ranking at all, and the snapshot fixed a real wart besides: liveness can no longer
+change midway through one decision.
+
+The second is that going up a level often costs nothing at run time and little in proof
+time. Most of these units still discharge at \lstinline{--level=1}. Every one of the new
+specification functions is either \lstinline{Ghost} --- compiled out entirely --- or,
+like the CRC reference, already needed by the code. The expensive step is deciding what
+to write, not making the prover swallow it.
 
 \section{Drawing the boundary}\index{SPARK!boundary}
 
@@ -244,9 +317,11 @@ difficulty is real.
 \section{Running the proofs}\index{book!prove}
 
 The proofs run the way the tests do, from one script. \texttt{book/prove/prove.sh}
-invokes \texttt{gnatprove} at the silver level over each native prove project and exits
-non-zero if any run-time check is unproved, so a change that breaks a proof breaks the
-build just as a failing test would. The proofs run host-native because run-time-error
+invokes \texttt{gnatprove} over each native prove project and exits non-zero if any
+obligation is unproved --- run-time check or functional contract alike --- so a change
+that breaks a proof breaks the build just as a failing test would. Most projects run at
+\texttt{--level=1}; the handful whose contracts reach past silver (Section~\ref{spark:gold})
+carry their own tuning line in the script, with a comment saying why. The proofs run host-native because run-time-error
 freedom of pure logic is target-independent --- the same argument as the host tests,
 one layer up. The companion \texttt{book/prove/README.md} lists the proved units, the
 factoring pattern, and the toolchain gotchas learned along the way. Formal proof does

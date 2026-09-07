@@ -1,7 +1,5 @@
 package body Der_Sig with SPARK_Mode => On is
 
-   use type Interfaces.Unsigned_8;
-
    ------------------
    -- Read_Integer --
    ------------------
