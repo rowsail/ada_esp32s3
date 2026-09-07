@@ -130,6 +130,12 @@ prove "$T/mkfs_math_prove/mkfs_math_prove.gpr"       "ext4 mkfs single-group lay
 prove "$T/path_scan_prove/path_scan_prove.gpr"       "ext4 path-component scanner (untrusted path, in-bounds)"
 prove "$T/x509_prove/x509_prove.gpr"                 "X509 DER + certificate parser (untrusted input)"
 prove "$ROOT/libs/tls/der_sig_prove.gpr"             "ECDSA DER r/s signature parse (untrusted input)"
+#  The TLS client's two reads of server-chosen bytes.  Level 2 because several
+#  bounds here compare a length against a position derived from another length,
+#  which z3 alone will not close.
+prove "$ROOT/libs/tls/tls_scan_prove.gpr" \
+      "TLS ServerHello + handshake-flight walk (untrusted input, pre-authentication)" \
+      "--level=2 --timeout=30"
 #  P-256 is the slowest unit in this pass (~2.5 min): a single verification runs
 #  two 256-bit scalar multiplications, so the proof carries the CIOS inner loops
 #  through Dbl/Add and Scalar_Mul.  It is native because the arithmetic is pure

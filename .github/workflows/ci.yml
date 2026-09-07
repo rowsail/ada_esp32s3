@@ -94,6 +94,40 @@ jobs:
       - name: ./x test
         run: ./x test
 
+  prove:
+    name: SPARK proofs
+    runs-on: ubuntu-latest
+    # p256 alone is ~2.5 minutes and the TLS walk runs at level 2; the whole
+    # sweep is well inside this, with room for a slower runner.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Alire
+        uses: alire-project/setup-alire@v4
+        with:
+          version: 2.1.0
+
+      # The native compiler (the prove projects are all native -- run-time-error
+      # freedom of pure logic is target-independent) and gprbuild to load them.
+      - name: Install the toolchains
+        run: |
+          alr -n toolchain --select gprbuild=26.0.1
+          alr -n toolchain --select gnat_native=15.2.1
+
+      # gnatprove is a crate, not a toolchain: `alr install` puts it in
+      # ~/.alire/bin, which is where prove.sh looks.
+      - name: Install GNATprove
+        run: |
+          alr -n install gnatprove
+          "$HOME/.alire/bin/gnatprove" --version
+
+      # Exits non-zero if any project reports an unproved obligation, and prints
+      # the Run-time Checks / Assertions / Functional Contracts rows for each so
+      # a drop in coverage is visible in the log even when nothing fails.
+      - name: book/prove/prove.sh
+        run: ./book/prove/prove.sh
+
   analyze:
     name: static analysis
     runs-on: ubuntu-latest
