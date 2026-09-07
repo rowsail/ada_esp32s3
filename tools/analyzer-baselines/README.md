@@ -59,7 +59,12 @@ is very nearly every call. It is a restriction, not a defect detector.
 - **`Global_Contract_Mismatch` (31, all in `libs/tls`)** — "global `One` is read
   but its Global contract mode does not allow it". `One` is a *constant*; under
   SPARK RM 6.1.4 a constant without variable inputs is not a Global item, so
-  `Global => null` is correct, and gnatprove agrees.
+  `Global => null` is correct, and gnatprove agrees.  Since the ECC arithmetic
+  became the generics `ECC_Bignum` / `ECC_Curve`, the same rule fires on the
+  generic formal object `Limbs` for the same reason -- a formal object of mode
+  `in` IS a constant.  One of those reads it as "read *and written*", which a
+  constant cannot be; gnatprove's Data Dependencies check passes with none of
+  this, and it is the authority on SPARK contracts.
 - **`Non_Short_Circuit_Condition` (8)** — all plain Booleans with no side effects
   (`RINT_Bits` is a single register snapshot, so `or` reads nothing extra).
 - **`Library_Level_Initialization` (15)** — library-level initializers containing

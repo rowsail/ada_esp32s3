@@ -464,7 +464,10 @@ package body Cert_Verify is
       if not Ok then
          return False;
       end if;
-      return P256.Verify (To_P256 (Pub_X), To_P256 (Pub_Y), To_P256 (Hash32), R32, S32);
+      return P256.Verify
+        (Key  => (X => To_P256 (Pub_X), Y => To_P256 (Pub_Y)),
+         Sig  => (R => R32, S => S32),
+         Hash => To_P256 (Hash32));
    end ECDSA_Core;
 
    function ECDSA_P256_SHA256 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean
@@ -521,7 +524,9 @@ package body Cert_Verify is
          return False;
       end if;
       return P384.Verify
-        (To_P384 (Pub_X), To_P384 (Pub_Y), To_P384 (Hash48), R48, S48);
+        (Key  => (X => To_P384 (Pub_X), Y => To_P384 (Pub_Y)),
+         Sig  => (R => R48, S => S48),
+         Hash => To_P384 (Hash48));
    end ECDSA_P384_SHA384;
 
    ---------------------------------------------------------------------------

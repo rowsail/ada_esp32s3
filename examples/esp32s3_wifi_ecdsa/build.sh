@@ -1,0 +1,65 @@
+#!/bin/bash
+# esp32s3_wifi_ecdsa -- authenticate an ALL-ECDSA certificate chain over pure-Ada
+# TLS 1.3, to exercise libs/tls/p256.adb and p384.adb on real hardware.
+#
+# The sibling wifi_tls example proves the HTTPS pipeline, but the chain it walks
+# (api.open-meteo.com -> ISRG Root X1) is RSA, so it never calls P256.Verify or
+# P384.Verify.  The repo's only other P-384 exercise, esp32s3_dns_secure, needs a
+# W5500 on SPI2.  This one needs nothing but the radio.
+#
+# Same build as wifi_tls: Wi-Fi driver + blobs, embedded profile, TLS scratch in
+# PSRAM.  See that example's build.sh for why each setting is load-bearing.
+set -e
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$HERE/../.." && pwd)"
+
+# Embedded (Jorvik) profile + heap: the OS-adapter maps Wi-Fi malloc onto the
+# leftover-DRAM arena (DMA-capable internal SRAM).
+export ESP32S3_RTS_PROFILE=embedded
+export HEAP_SIZE=65536 ENV_STACK_SIZE=65536 ENV_STACK_PSRAM=1
+
+# TLS scratch in PSRAM, not DRAM.  Two reasons, both load-bearing here:
+#
+#   * SIZE.  The dram variant's inbound record buffer is 4 KB, and a TLS record
+#     may be 2**14 + 256.  api.open-meteo.com's 3-certificate chain arrives as a
+#     4105-byte record, so Recv_Record rejected it, the server flight truncated,
+#     and the handshake failed with "0 certs -> MALFORMED" plus a CertificateVerify
+#     and Finished failure -- one cause, three symptoms.  The psram variant sizes
+#     RB/GC_C/GC_P for a full record.
+#   * SPACE.  Growing those three in DRAM instead costs 12-37 KB of the
+#     leftover-DRAM arena the Wi-Fi blob allocates from; measured, that makes the
+#     app crash on any run after the first.  Moving them OUT of DRAM frees ~38 KB
+#     for the radio rather than competing with it.
+#
+# EXT_RAM_BSS_SIZE reserves the .ext_ram.bss slice those buffers need; without it
+# they link at a bogus address and fault at Initialize.  128 KB covers the ~75 KB
+# of scratch with room to spare, and sits below the env stack at the window top.
+export TLS_BUFFERS=psram EXT_RAM_BSS_SIZE=131072
+
+# Wi-Fi + PHY blobs: a local ESP-IDF (IDF_PATH) if present, else the fetched,
+# checksum-verified copies under libs/esp32s3_wifi/blobs (auto-fetched here).
+if [ -n "${IDF_PATH:-}" ] && [ -d "$IDF_PATH/components/esp_wifi/lib/esp32s3" ]; then
+    W="$IDF_PATH/components/esp_wifi/lib/esp32s3"
+    P="$IDF_PATH/components/esp_phy/lib/esp32s3"
+else
+    W="$REPO/libs/esp32s3_wifi/blobs"; P="$W"
+    [ -f "$W/libnet80211.a" ] || bash "$REPO/tools/fetch-wifi-blobs.sh"
+fi
+# --start-group: the archives cross-reference, so order-independent resolution.
+# libcore.a (misc_nvs.o) is RETIRED -- its 6 referenced symbols are provided in
+# Ada by ESP32S3.WiFi.Core_Shim (misc NVS is dormant on our NVS-disabled port).
+# One fewer Espressif blob.  See research/wifi-re.
+export EXTRA_OBJS="-Wl,--start-group $W/libnet80211.a $W/libpp.a $P/libphy.a -Wl,--end-group"
+
+# DE-BLOB (no crypto in a blob): retire ALL blob cipher-engine programming by
+# redirecting it to Ada replacements in libs/esp32s3_wifi.  hal_crypto_set_key_
+# entry / hal_crypto_clr_key_entry (key slots) -> Wrap_Set_Key / Wrap_Clr;
+# hal_crypto_enable (engine-mode regs) -> Wrap_Crypto_Enable.  None of the blob's
+# crypto functions execute, and no key byte reaches blob C.
+WRAP_CRYPTO="hal_crypto_set_key_entry hal_crypto_clr_key_entry hal_crypto_enable"
+for fn in $WRAP_CRYPTO; do EXTRA_OBJS="$EXTRA_OBJS -Wl,--wrap=$fn"; done
+
+# ROM symbol addresses the blobs call (lower-MAC/PHY/newlib routines in ROM).
+export EXTRA_LD="$HERE/wifi_rom.ld"
+
+exec bash "$HERE/../common/bare/bare_build.sh" "$HERE" "_ada_main"

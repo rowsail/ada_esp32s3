@@ -189,6 +189,7 @@ put your network in the gitignored `src/wifi_credentials.ads`)
 | `esp32s3_wifi_dns` | Associate + resolve a hostname (`DNS_Client`) |
 | `esp32s3_wifi_http` | GET a URL over the pure-Ada software TCP stack |
 | `esp32s3_wifi_tls` | **Pure-Ada TLS 1.3 HTTPS** end-to-end: assoc → DHCP → DNS → NTP → TLS handshake → chain-validate to ISRG Root X1 → live fetch |
+| `esp32s3_wifi_ecdsa` | **Pure-Ada P-256 / P-384** authenticating a real all-ECDSA chain: same pipeline, but the peer's chain is ECDSA to the root, so `P256.Verify` and `P384.Verify` do the work (reports which primitive verified which link) |
 
 **Diagnostics**
 | Example | What it is |

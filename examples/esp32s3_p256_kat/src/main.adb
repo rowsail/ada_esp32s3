@@ -350,7 +350,7 @@ procedure Main is
       16#3A#,
       16#CD#,
       16#A8#);
-   Sign_R, Sign_S     : P256.Bytes_32;
+   Sign_Sig           : P256.Signature;
    Sign_OK, Sign_Pass : Boolean := False;
 
    --  ECDH vector: our private scalar D, and the public key D*G we expect
@@ -556,8 +556,7 @@ procedure Main is
       16#71#,
       16#4C#);
    --  Public_Key outputs: the derived public key point (X, Y).
-   Derived_Pub_X : P256.Bytes_32;
-   Derived_Pub_Y : P256.Bytes_32;
+   Derived_Pub   : P256.Public_Point;
 
    --  ECDH output: the X-coordinate of the computed shared secret.
    Derived_Shared_X : P256.Bytes_32;
@@ -578,7 +577,10 @@ procedure Main is
 begin
    Put_Line ("[p256] ECDSA P-256 verify KAT");
 
-   Genuine_Valid := P256.Verify (KAT_Qx, KAT_Qy, KAT_Hash, KAT_R, KAT_S);
+   Genuine_Valid := P256.Verify
+     (Key  => (X => KAT_Qx, Y => KAT_Qy),
+      Sig  => (R => KAT_R, S => KAT_S),
+      Hash => KAT_Hash);
    Put_Line
      ("[p256] genuine signature  -> "
       & (if Genuine_Valid then "VALID (PASS)" else "INVALID (FAIL)"));
@@ -586,27 +588,32 @@ begin
    --  Flip one bit of the hash so the signature no longer matches: a correct
    --  verifier must now reject it.
    Tampered_Hash (0) := Tampered_Hash (0) xor 1;
-   Tampered_Valid := P256.Verify (KAT_Qx, KAT_Qy, Tampered_Hash, KAT_R, KAT_S);
+   Tampered_Valid := P256.Verify
+     (Key  => (X => KAT_Qx, Y => KAT_Qy),
+      Sig  => (R => KAT_R, S => KAT_S),
+      Hash => Tampered_Hash);
    Put_Line
      ("[p256] tampered hash      -> "
       & (if Tampered_Valid then "VALID (FAIL)" else "INVALID (PASS)"));
 
    --  ECDSA sign: the deterministic (RFC 6979) signature must match the published
    --  vector bit-for-bit and then verify under the same public key.
-   Sign_OK := P256.Sign (Sign_Priv, Sign_Hash, Sign_R, Sign_S);
-   Sign_Pass := Sign_OK and then Sign_R = Sign_Want_R and then Sign_S = Sign_Want_S;
+   Sign_OK := P256.Sign (Sign_Priv, Sign_Hash, Sign_Sig);
+   Sign_Pass :=
+     Sign_OK and then Sign_Sig.R = Sign_Want_R and then Sign_Sig.S = Sign_Want_S;
    Put_Line
      ("[p256] deterministic sign -> " & (if Sign_Pass then "MATCH (PASS)" else "MISMATCH (FAIL)"));
 
    --  ECDH: derive our public key from the private scalar, then the shared
    --  secret against the peer's public key, and compare both to the vectors.
-   Public_Key_OK := P256.Public_Key (ECDH_D, Derived_Pub_X, Derived_Pub_Y);
+   Public_Key_OK := P256.Public_Key (ECDH_D, Derived_Pub);
    Put_Line
      ("[p256] ECDH public key    -> "
-      & (if Public_Key_OK and Derived_Pub_X = ECDH_MyX and Derived_Pub_Y = ECDH_MyY
+      & (if Public_Key_OK and Derived_Pub.X = ECDH_MyX and Derived_Pub.Y = ECDH_MyY
          then "MATCH (PASS)"
          else "MISMATCH (FAIL)"));
-   ECDH_OK := P256.ECDH (ECDH_D, ECDH_PeerX, ECDH_PeerY, Derived_Shared_X);
+   ECDH_OK := P256.ECDH
+     (ECDH_D, (X => ECDH_PeerX, Y => ECDH_PeerY), Derived_Shared_X);
    Put_Line
      ("[p256] ECDH shared secret -> "
       & (if ECDH_OK and Derived_Shared_X = ECDH_Shared
@@ -614,8 +621,8 @@ begin
          else "MISMATCH (FAIL)"));
    ECDH_Pass :=
      Public_Key_OK
-     and then Derived_Pub_X = ECDH_MyX
-     and then Derived_Pub_Y = ECDH_MyY
+     and then Derived_Pub.X = ECDH_MyX
+     and then Derived_Pub.Y = ECDH_MyY
      and then ECDH_OK
      and then Derived_Shared_X = ECDH_Shared;
 

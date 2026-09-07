@@ -27,18 +27,20 @@ procedure P384_Host is
    Bad_H : P384.Bytes_48 := KAT_H;
 begin
    Check ("valid signature verifies",
-          P384.Verify (KAT_X, KAT_Y, KAT_H, KAT_R, KAT_S));
+          P384.Verify ((X => KAT_X, Y => KAT_Y), (R => KAT_R, S => KAT_S), KAT_H));
 
    Bad_R (47) := Bad_R (47) xor 1;
    Check ("tampered r rejected",
-          not P384.Verify (KAT_X, KAT_Y, KAT_H, Bad_R, KAT_S));
+          not P384.Verify ((X => KAT_X, Y => KAT_Y), (R => Bad_R, S => KAT_S), KAT_H));
 
    Bad_H (0) := Bad_H (0) xor 16#80#;
    Check ("wrong message rejected",
-          not P384.Verify (KAT_X, KAT_Y, Bad_H, KAT_R, KAT_S));
+          not P384.Verify ((X => KAT_X, Y => KAT_Y), (R => KAT_R, S => KAT_S), Bad_H));
 
+   --  Still expressible with the record: the pair is named, so this is a
+   --  DELIBERATE swap rather than one a positional call could make by accident.
    Check ("swapped X/Y rejected",
-          not P384.Verify (KAT_Y, KAT_X, KAT_H, KAT_R, KAT_S));
+          not P384.Verify ((X => KAT_Y, Y => KAT_X), (R => KAT_R, S => KAT_S), KAT_H));
 
    Put_Line ("P384:" & Natural'Image (Passed) & " passed,"
              & Natural'Image (Failed) & " failed");

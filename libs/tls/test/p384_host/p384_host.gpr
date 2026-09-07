@@ -3,7 +3,9 @@ project P384_Host is
    for Object_Dir use "obj";
    for Exec_Dir use ".";
    for Main use ("p384_host.adb");
-   for Source_Files use ("p384_host.adb", "p384.ads", "p384.adb");
+   for Source_Files use ("p384_host.adb", "p384.ads", "p384.adb",
+                          "ecc_bignum.ads", "ecc_bignum.adb",
+                          "ecc_curve.ads", "ecc_curve.adb");
    package Compiler is
       for Default_Switches ("Ada") use ("-g", "-O2", "-gnat2022");
    end Compiler;

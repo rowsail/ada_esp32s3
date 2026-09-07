@@ -15,16 +15,38 @@ package P256 with SPARK_Mode => On is
    type Bytes is array (Natural range <>) of Byte;
    subtype Bytes_32 is Bytes (0 .. 31);
 
-   --  Verify an ECDSA signature (r, s) of the message digest Hash under the public
-   --  key (Pub_X, Pub_Y).  All five inputs are 32-byte big-endian integers.  Hash
-   --  is the message digest reduced to 256 bits: for ECDSA-with-SHA-256 it is the
-   --  32-byte digest; for SHA-384/512 the caller passes the leftmost 32 bytes.
-   --  Returns True iff the signature verifies.
-   function Verify (Pub_X, Pub_Y : Bytes_32; Hash : Bytes_32; R, S : Bytes_32) return Boolean
+   --  An EC point and an ECDSA signature, as the PAIRS they actually are.
+   --  These exist for a safety reason, not a tidiness one.  Verify used to
+   --  take five Bytes_32 in a row (Pub_X, Pub_Y, Hash, R, S) and every caller
+   --  passed them positionally, so any transposition -- x for y, r for s, the
+   --  hash into a coordinate -- compiled silently.  Nothing could catch it:
+   --  one type, one mode, five slots.  It fails CLOSED (a swap makes the point
+   --  fail On_Curve, or the final comparison fail), so it cannot forge a
+   --  signature, but it turns authentication off in the rejecting direction,
+   --  which is a hard bug to find in a certificate chain.
+   --
+   --  Wrapped this way, Verify takes three parameters of three DISTINCT types
+   --  and the transposition is a compile error instead.  Write the aggregates
+   --  with named association -- (X => ..., Y => ...) -- and the pairs inside
+   --  are safe too.
+   type Public_Point is record
+      X, Y : Bytes_32;
+   end record;
+
+   type Signature is record
+      R, S : Bytes_32;
+   end record;
+
+   --  Verify the ECDSA signature Sig of the message digest Hash under the
+   --  public key Key.  Every component is a 32-byte big-endian integer.  Hash
+   --  is the message digest reduced to 256 bits: for ECDSA-with-SHA-256 it is
+   --  the 32-byte digest; for SHA-384/512 the caller passes the leftmost 32
+   --  bytes.  Returns True iff the signature verifies.
+   function Verify (Key : Public_Point; Sig : Signature; Hash : Bytes_32) return Boolean
      with Global => null;
 
    --  ECDH key exchange on P-256 (for TLS ECDHE with secp256r1).  Public_Key sets
-   --  (Pub_X, Pub_Y) = Priv*G -- the uncompressed public key to put in a key_share.
+   --  Pub = Priv*G -- the uncompressed public key to put in a key_share.
    --  ECDH sets Shared_X = the X-coordinate of Priv*Peer -- the shared secret.  Both
    --  take/return 32-byte big-endian values and return False on invalid input (Priv
    --  not in [1, n-1], or Peer not a valid curve point).
@@ -35,21 +57,21 @@ package P256 with SPARK_Mode => On is
    --  These return via out-parameters, which a SPARK *function* may not have, so
    --  they carry SPARK_Mode => Off; the field/point arithmetic they call is proved
    --  on its own (every SPARK_Mode => On body is analysed regardless of caller).
-   function Public_Key (Priv : Bytes_32; Pub_X, Pub_Y : out Bytes_32) return Boolean
+   function Public_Key (Priv : Bytes_32; Pub : out Public_Point) return Boolean
      with SPARK_Mode => Off;
    function ECDH
-     (Priv : Bytes_32; Peer_X, Peer_Y : Bytes_32; Shared_X : out Bytes_32) return Boolean
+     (Priv : Bytes_32; Peer : Public_Point; Shared_X : out Bytes_32) return Boolean
      with SPARK_Mode => Off;
 
    --  Produce an ECDSA signature (R, S) over the 32-byte message digest Hash with
    --  the private key Priv (a 32-byte big-endian scalar in [1, n-1]).  The nonce is
    --  derived deterministically from Priv and Hash (RFC 6979, HMAC-SHA-256), so the
    --  same inputs always yield the same signature and no RNG is required -- which
-   --  also removes the catastrophic nonce-reuse failure mode.  R and S are 32-byte
-   --  big-endian.  Returns False only if Priv is out of range.
+   --  also removes the catastrophic nonce-reuse failure mode.  Sig.R and Sig.S are
+   --  32-byte big-endian.  Returns False only if Priv is out of range.
    --  RFC-6979 deterministic-nonce signing calls SPARKNaCl HMAC-SHA256; its body
    --  is outside this AoRTE proof (the field/point arithmetic it builds on is in).
-   function Sign (Priv, Hash : Bytes_32; R, S : out Bytes_32) return Boolean
+   function Sign (Priv, Hash : Bytes_32; Sig : out Signature) return Boolean
      with SPARK_Mode => Off;
 
 end P256;

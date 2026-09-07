@@ -1,0 +1,6 @@
+obj/
+.noidf/
+app.bin
+app.elf
+app.map
+src/wifi_credentials.ads

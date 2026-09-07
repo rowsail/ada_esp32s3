@@ -13,6 +13,8 @@ project P256_Prove is
    for Object_Dir use "obj-p256-prove";
    for Source_Files use
      ("p256.ads", "p256.adb",
+      "ecc_bignum.ads", "ecc_bignum.adb",
+      "ecc_curve.ads", "ecc_curve.adb",
       "sparknacl.ads", "sparknacl.adb",
       "sparknacl-car.ads", "sparknacl-car.adb",
       "sparknacl-hashing.ads",

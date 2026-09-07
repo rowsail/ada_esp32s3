@@ -22,6 +22,12 @@
 #                 CIOS), Jacobian point add/double/scalar-mul, AND the ECDSA
 #                 Verify and On_Curve compositions over them (untrusted input --
 #                 an attacker supplies the key, the hash and the signature)
+#    P384      -- the same stack at secp384r1.  The arithmetic is literally the
+#                 same source (the generics ECC_Bignum + ECC_Curve, instantiated
+#                 at twelve limbs), but GNATprove proves generic INSTANCES, not
+#                 generics: P256's run says nothing about the twelve-limb one, so
+#                 it has its own project and its own obligations.  NOT in this
+#                 pass -- see the note at the bottom; it is far too slow
 #    NMEA      -- the NMEA-0183 GPS-sentence parser (untrusted input)
 #    Modbus    -- slave framing/dispatch (Process) and master PDU build/parse
 #    NTP       -- To_UTC civil-date math
@@ -122,6 +128,18 @@ prove "$ROOT/examples/common/bare/boot/heap_guard_prove.gpr" \
       "malloc/calloc request-size + overflow guards (Heap_Guard)" \
       "--level=3 --prover=z3,cvc5,altergo --timeout=30"
 
+#  P-384 (libs/tls/p384_prove.gpr) is proven silver too -- 135 obligations, 0
+#  unproved -- but it is NOT in this pass.  Twelve-limb CIOS is a much larger
+#  verification condition than eight, and Mont_Mul alone dominates the run: ~13
+#  minutes against P-256's ~2.5, which is five times the cost of the current
+#  slowest unit for a result that moves only when P-256's does.  To check it:
+#    gnatprove -P libs/tls/p384_prove.gpr --level=1 --prover=z3 --timeout=10 \
+#      -j0 --report=fail -u p384.adb
+#  The bodies it proves are the SAME SOURCE P-256 proves here (ECC_Bignum and
+#  ECC_Curve, instantiated at twelve limbs instead of eight), so this pass still
+#  covers the code; what the P-384 run adds is that the twelve-limb instance of
+#  it discharges too.
+#
 #  Cert chain-walking (libs/tls/chain_verify) is also proven silver, but via the
 #  CROSS tls.gpr (target xtensa) + the SPARKNaCl closure -- slow to re-verify, so it
 #  is not in this fast native pass.  To check it:
