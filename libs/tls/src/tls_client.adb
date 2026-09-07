@@ -39,7 +39,6 @@ package body TLS_Client is
    CT_Alert              : constant U8 := 21;
    CT_Handshake          : constant U8 := 22;
    HS_Client_Hello       : constant U8 := 1;
-   HS_Server_Hello       : constant U8 := 2;
 
    ---------------------------------------------------------------------------
    --  X25519 key pair (SPARKNaCl, seeded from the hardware RNG).

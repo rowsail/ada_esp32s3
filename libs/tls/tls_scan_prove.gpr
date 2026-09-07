@@ -7,7 +7,7 @@
 --  schedule) is not needed and is not analysed.  Run gnatprove at --level=2.
 project TLS_Scan_Prove is
    for Source_Dirs use
-     ("src", external ("ADA_ESP32S3", "..") & "/libs/esp32s3_hal/src");
+     ("src", external ("ADA_ESP32S3", "../..") & "/libs/esp32s3_hal/src");
    for Object_Dir use "obj-scan-prove";
    for Source_Files use
      ("tls_client.ads", "tls_client-scan.ads", "tls_client-scan.adb",

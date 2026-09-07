@@ -1,6 +1,6 @@
-with Interfaces; use type Interfaces.Unsigned_8;
-
 package body TLS_Client.Scan with SPARK_Mode => On is
+
+   use type U8;
 
    procedure Parse_Hello (Buf : Byte_Array; Len : Natural; Info : out Hello_Info) is
       HS_Server_Hello : constant U8 := 2;
