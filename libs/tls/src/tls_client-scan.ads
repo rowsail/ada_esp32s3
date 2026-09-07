@@ -43,6 +43,33 @@ package TLS_Client.Scan with SPARK_Mode => On is
       Cert_Req_Seen : Boolean := False;
    end record;
 
+   --  A key share, either curve: 32 bytes for X25519, or the two 32-byte
+   --  coordinates of an uncompressed P-256 point.  Its own type, like
+   --  Cert_Span above, so the walk depends on nothing private to the parent.
+   subtype Share32 is Byte_Array (0 .. 31);
+
+   --  What the ServerHello said.  Suite = 0 means it was not a ServerHello, or
+   --  not one this client can use.
+   type Hello_Info is record
+      Suite       : U16 := 0;
+      Group       : U16 := 0;      --  0x001D x25519, 0x0017 P-256
+      Have_Share  : Boolean := False;
+      Resumed_PSK : Boolean := False;
+      X25519      : Share32 := (others => 0);
+      P256_X      : Share32 := (others => 0);
+      P256_Y      : Share32 := (others => 0);
+   end record;
+
+   --  Parse a ServerHello out of Buf (Buf'First .. Buf'First + Len - 1).  This
+   --  is the FIRST thing the server sends that this client reads, before any
+   --  key is agreed and so before anything is authenticated -- every byte of it
+   --  is attacker-chosen even on a connection that will later be fine.
+   procedure Parse_Hello (Buf : Byte_Array; Len : Natural; Info : out Hello_Info)
+   with
+     Pre => Buf'First = 0
+            and then Buf'Last < Natural'Last / 2
+            and then Len <= Buf'Last + 1;
+
    --  Walk Buf (Buf'First .. Buf'First + Len - 1) as a sequence of handshake
    --  messages.  Nothing is trusted: a message that does not fit, or that is
    --  too short for the fields it claims, ends the walk or is passed over.

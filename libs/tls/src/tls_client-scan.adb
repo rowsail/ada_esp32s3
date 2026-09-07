@@ -1,4 +1,93 @@
+with Interfaces; use type Interfaces.Unsigned_8;
+
 package body TLS_Client.Scan with SPARK_Mode => On is
+
+   procedure Parse_Hello (Buf : Byte_Array; Len : Natural; Info : out Hello_Info) is
+      HS_Server_Hello : constant U8 := 2;
+      Pos             : Natural := 0;
+
+      function U16_At (I : Natural) return Natural
+      is (Natural (Buf (I)) * 256 + Natural (Buf (I + 1)))
+      with Pre  => Buf'First = 0
+                   and then Buf'Last < Natural'Last / 2
+                   and then Len <= Buf'Last + 1
+                   and then Len >= 2
+                   and then I <= Len - 2,
+           Post => U16_At'Result <= 65_535;
+   begin
+      Info := (others => <>);
+
+      --  A ServerHello is at least: type(1) length(3) version(2) random(32)
+      --  session_id_len(1) suite(2) compression(1) ext_len(2).
+      if Len < 44 or else Buf (0) /= HS_Server_Hello then
+         return;
+      end if;
+
+      Pos := 4 + 2 + 32;                      --  header, legacy_version, random
+      --  legacy_session_id_echo, whose length the server chooses.
+      if Natural (Buf (Pos)) > Len - Pos - 1 then
+         return;                              --  echo runs past the message
+      end if;
+      Pos := Pos + 1 + Natural (Buf (Pos));
+
+      if Pos > Len - 6 then                   --  suite(2) compression(1) ext_len(2)
+         return;
+      end if;
+      Info.Suite := U16 (U16_At (Pos));
+      Pos := Pos + 2 + 1 + 2;                 --  suite, compression, ext_len
+
+      --  Walk the extensions for key_share (51) and pre_shared_key (41).
+      while Pos <= Len - 4 loop
+         pragma Loop_Invariant (Pos <= Len - 4);
+         pragma Loop_Variant (Increases => Pos);
+         declare
+            Ext_Type : constant Natural := U16_At (Pos);
+            Ext_Len  : constant Natural := U16_At (Pos + 2);
+            Body_At  : constant Natural := Pos + 4;
+         begin
+            --  The body has to be present before anything inside it is read:
+            --  the loop condition only guarantees the four header bytes.
+            if Ext_Len <= Len - Body_At then
+               if Ext_Type = 51 and then Ext_Len >= 4 then
+                  declare
+                     Group  : constant Natural := U16_At (Body_At);
+                     Sh_Len : constant Natural := U16_At (Body_At + 2);
+                  begin
+                     if Group = 16#001D#
+                       and then Sh_Len = 32
+                       and then Ext_Len >= 36
+                     then
+                        for I in 0 .. 31 loop
+                           Info.X25519 (I) := Buf (Body_At + 4 + I);
+                        end loop;
+                        Info.Group := 16#001D#;
+                        Info.Have_Share := True;
+
+                     elsif Group = 16#0017#
+                       and then Sh_Len = 65
+                       and then Ext_Len >= 69
+                       and then Buf (Body_At + 4) = 16#04#   --  uncompressed
+                     then
+                        for I in 0 .. 31 loop
+                           Info.P256_X (I) := Buf (Body_At + 5 + I);
+                           Info.P256_Y (I) := Buf (Body_At + 37 + I);
+                        end loop;
+                        Info.Group := 16#0017#;
+                        Info.Have_Share := True;
+                     end if;
+                  end;
+
+               elsif Ext_Type = 41 then
+                  --  pre_shared_key: the server took our only offer.
+                  Info.Resumed_PSK := True;
+               end if;
+            end if;
+
+            exit when Ext_Len > Len - Body_At - 1;   --  nothing further fits
+            Pos := Body_At + Ext_Len;
+         end;
+      end loop;
+   end Parse_Hello;
 
    procedure Walk (Buf : Byte_Array; Len : Natural; Info : out Flight_Info) is
       Pos : Natural := 0;

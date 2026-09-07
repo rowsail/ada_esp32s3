@@ -365,78 +365,30 @@ package body TLS_Client is
    --  ServerHello parse: cipher suite + key_share
    ---------------------------------------------------------------------------
 
+   --  Parse a ServerHello into the Session.  The parsing itself is
+   --  TLS_Client.Scan.Parse_Hello, which is proved: these are the first bytes
+   --  the server sends and nothing about them is authenticated yet.
    procedure Parse_Server_Hello
      (S : in out Session; Frag : Byte_Array; Len : Natural; Ok : out Boolean)
    is
-      Pos  : Natural := Frag'First;
-      Last : constant Natural := Frag'First + Len - 1;
-
-      function U16_At (I : Natural) return U16
-      is (U16 (Frag (I)) * 256 + U16 (Frag (I + 1)));
+      Info : Scan.Hello_Info;
    begin
-      Ok := False;
-      if Len < 40 or else Frag (Pos) /= HS_Server_Hello then
-         return;
-      end if;
-      Pos := Pos + 4;                              --  hs type + 3-byte length
-      Pos := Pos + 2;                              --  legacy_version
-      Pos := Pos + 32;                             --  random
-      if Pos > Last then
-         return;
-      end if;
-      Pos := Pos + 1 + Natural (Frag (Pos));       --  legacy_session_id_echo
-      if Pos + 2 > Last then
-         return;
-      end if;
-      S.Suite := U16_At (Pos);
-      Pos := Pos + 2;          --  cipher_suite
-      Pos := Pos + 1;                              --  legacy_compression_method
-      if Pos + 1 > Last then
-         return;
-      end if;
-      Pos := Pos + 2;                              --  extensions length
+      Scan.Parse_Hello (Frag, Len, Info);
 
-      --  Walk extensions for key_share (51).
-      while Pos + 4 <= Last + 1 loop
-         declare
-            Ext_Type : constant U16 := U16_At (Pos);
-            Ext_Len  : constant Natural := Natural (U16_At (Pos + 2));
-            Ext_Body : constant Natural := Pos + 4;
-         begin
-            --  Require the whole extension body to be present in Frag before any
-            --  inner read: the outer loop only guarantees the 4-byte header, so a
-            --  short fragment with a large Ext_Len would otherwise index past it.
-            if Ext_Type = 51 and then Ext_Len >= 4
-              and then Ext_Body + Ext_Len <= Last + 1
-            then
-               --  KeyShareEntry: group (2) + length (2) + key_exchange.
-               if U16_At (Ext_Body) = 16#001D# and then Natural (U16_At (Ext_Body + 2)) = 32
-                 and then Ext_Body + 36 <= Last + 1        --  4 + 32 key bytes
-               then
-                  for I in 0 .. 31 loop
-                     S.Server_Pub (I) := Frag (Ext_Body + 4 + I);
-                  end loop;
-                  S.Group := 16#001D#;
-                  S.Have_Share := True;
-               elsif U16_At (Ext_Body) = 16#0017#
-                 and then Natural (U16_At (Ext_Body + 2)) = 65
-                 and then Ext_Body + 69 <= Last + 1        --  5 + 64 point bytes
-                 and then Frag (Ext_Body + 4) = 16#04#      --  uncompressed point
-               then
-                  for I in 0 .. 31 loop
-                     S.Server_P256_X (I) := Frag (Ext_Body + 5 + I);
-                     S.Server_P256_Y (I) := Frag (Ext_Body + 37 + I);
-                  end loop;
-                  S.Group := 16#0017#;
-                  S.Have_Share := True;
-               end if;
-            elsif Ext_Type = 41 then
-               --  pre_shared_key: server accepted
-               S.Resumed_PSK := True;           --  selected_identity is our only offer
-            end if;
-            Pos := Ext_Body + Ext_Len;
-         end;
-      end loop;
+      S.Suite := Info.Suite;
+      S.Group := Info.Group;
+      S.Have_Share := Info.Have_Share;
+      if Info.Resumed_PSK then
+         S.Resumed_PSK := True;
+      end if;
+      if Info.Have_Share then
+         if Info.Group = 16#001D# then
+            S.Server_Pub := Info.X25519;
+         else
+            S.Server_P256_X := Info.P256_X;
+            S.Server_P256_Y := Info.P256_Y;
+         end if;
+      end if;
       Ok := S.Suite /= 0;
    end Parse_Server_Hello;
 
