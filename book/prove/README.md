@@ -66,7 +66,7 @@ helpers are marked `SPARK_Mode => On` in place (MMIO code stays unmarked); the T
 timing arithmetic was **extracted** into pure `*.Math` sibling packages (behaviour-neutral — exact
 expressions relocated, register writes untouched) so it could be proved in isolation.
 
-**1077 run-time checks discharged, 0 unproved** — 1940 obligations in all, across 26
+**1076 run-time checks discharged, 0 unproved** — 1939 obligations in all, across 26
 projects, of which **273 are functional contracts** (the pre- and postconditions that
 say what the code computes) and 111 are assertions and loop invariants. `prove.sh` takes
 about nine minutes from a clean object tree, ~2 minutes when gnatprove's result cache is

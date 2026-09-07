@@ -80,8 +80,6 @@ package body Net_Routes with SPARK_Mode => On is
       Found    : out Boolean;
       Pick     : out Route_Total)
    is
-      Best_Len    : Integer := -1;   --  so the first eligible route always wins
-      Best_Metric : Natural := 0;
    begin
       Found := False;
       Iface := 0;
@@ -91,30 +89,23 @@ package body Net_Routes with SPARK_Mode => On is
          --  the table scanned so far.  The last conjunct is what turns "best
          --  of what I have seen" into "best of all of them" at loop exit.
          pragma Loop_Invariant (Found = (for some J in 1 .. I - 1 => Eligible (J)));
-         pragma Loop_Invariant (if not Found then Pick = 0 and then Best_Len = -1);
+         pragma Loop_Invariant (if not Found then Pick = 0);
          pragma Loop_Invariant
            (if Found then
               Pick in 1 .. I - 1
               and then Eligible (Pick)
               and then Iface = T (Pick).Iface
-              and then Best_Len = Prefix_Len (T (Pick).Mask)
-              and then Best_Metric = T (Pick).Metric
               and then (for all J in 1 .. I - 1 =>
                           (if Eligible (J) then not Outranks (T, J, Pick))));
-         if Eligible (I) then
-            declare
-               Len : constant Natural := Prefix_Len (T (I).Mask);
-            begin
-               if Len > Best_Len
-                 or else (Len = Best_Len and then T (I).Metric < Best_Metric)
-               then
-                  Best_Len    := Len;
-                  Best_Metric := T (I).Metric;
-                  Iface       := T (I).Iface;
-                  Pick        := I;
-                  Found       := True;
-               end if;
-            end;
+         --  The ranking rule is Outranks, and it is named ONCE -- there is no
+         --  second copy here to drift from the one the postcondition is
+         --  written against.  Nothing caches the incumbent's prefix length or
+         --  metric either: Pick already identifies it, so the cache could only
+         --  ever disagree with the table.
+         if Eligible (I) and then (not Found or else Outranks (T, I, Pick)) then
+            Iface := T (I).Iface;
+            Pick  := I;
+            Found := True;
          end if;
       end loop;
    end Select_Route;
