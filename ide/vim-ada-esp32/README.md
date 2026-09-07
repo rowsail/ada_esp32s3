@@ -83,7 +83,7 @@ This starts OpenOCD in the background, waits for its GDB server, then opens
 temporary hardware breakpoint armed at `app_main` (the shared boot-glue entry —
 these GNAT images have no C `main`). Then, in termdebug:
 
-- **`:Continue`** — run to `app_main`; the source window jumps to `bare_glue.c`
+- **`:Continue`** — run to `app_main`; the source window jumps to `bare_glue.adb`
   with the current-line sign.
 - **`:Break src/gpio.adb:53`** (or `:Break` on the cursor line) — set an Ada
   breakpoint; `:Continue` lands on your Ada source.

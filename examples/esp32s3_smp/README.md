@@ -24,7 +24,7 @@ This is a fully IDF-free **bare-boot** image: there is no FreeRTOS at any point
 (`../common/bare/bootloader/`) sets up the flash-XIP cache/MMU and jumps to
 `_start` (`../common/bare/start.S`), which selects the 240 MHz PLL and calls
 `start_c()` (`bare_boot.adb`).  `start_c()` calls `app_main()` directly (the
-shared bare-boot glue, `../common/bare/bare_glue.c`), which then takes over so
+shared bare-boot glue, `../common/bare/boot/bare_glue.adb`), which then takes over so
 the GNARL Ada runtime owns BOTH cores:
 1. cold-starts core 1: points the APP_CPU at our bare entry, un-gates its clock
    and pulses its reset (the bare bootloader never started it), bringing it up
@@ -37,7 +37,7 @@ the GNARL Ada runtime owns BOTH cores:
    systimer tick to corrupt the slave clock.
 
 The cross-core poke (CPU_INT 31, a FROM_CPU matrix source) and the CCOMPARE2
-tick (CPU_INT 16) both reach our `xt_highint5` level-5 vector.  `bare_glue.c`
+tick (CPU_INT 16) both reach our `xt_highint5` level-5 vector.  `bare_glue`
 is the shared bare-boot template every dual-core example copies; this example's
 own `glue.c` provides only its example-specific C natives.
 

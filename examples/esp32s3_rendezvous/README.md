@@ -42,9 +42,9 @@ What this exercises (all impossible under Jorvik): a task **entry** with `in`/
 Same bare-metal setup as `esp32s3_full_tasking`: there is **no ESP-IDF** in the
 loop. Our own 2nd-stage bootloader sets up cache/MMU and jumps to `_start`
 (`start.S`) → 240 MHz PLL → `start_c()` (`bare_boot.adb`) → `app_main()`
-(`examples/common/bare/bare_glue.c`), which takes over **both** cores; FreeRTOS
+(`examples/common/bare/boot/bare_glue.adb`), which takes over **both** cores; FreeRTOS
 never runs (it never starts). Core 0 becomes the Ada environment task; core 1 is
-cold-started straight into the GNARL slave scheduler. `bare_glue.c` provides the
+cold-started straight into the GNARL slave scheduler. `bare_glue` provides the
 env-task stack (`ada_env_stack`, sized by `ENV_STACK_SIZE`) and, for the
 exception-capable profiles, the Ada heap (`HEAP_SIZE`); every Ada task's own
 stack is carved from that heap, not placed by a per-example hook. This example

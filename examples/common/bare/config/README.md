@@ -25,7 +25,7 @@ one. Edit a project's file directly or via `./x config <example> …` / `esp32-a
 |---|---|
 | `elf2image` (Ada) | `--flash-size <bytes>` from the project (compiled-in `Board.Flash_Size` = fallback only) |
 | `esp_flash` (Ada) | `--flash-size <bytes>` from the project (fallback `Board.Flash_Size`) |
-| bootloader `psram_boot.c` (C) | `#include "board_config.h"` → `BOARD_PSRAM_PAGES` (= `PSRAM_Size`/64 KB) |
+| bootloader `boot_psram.adb` (Ada) | `build.sh` reads `BOARD_PSRAM_PAGES` (= `PSRAM_Size`/64 KB) out of `board_config.h` and generates a `board_cfg.ads` on the bootloader's source path |
 | build/flash scripts (shell) | source the project's `.noidf/board_config.env` → `BOARD_*` |
 
 `gen_board_config.sh <board.ads> <outdir>` derives `board_config.{h,env}`; the

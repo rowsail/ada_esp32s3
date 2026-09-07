@@ -24,11 +24,16 @@ parts (language intelligence, the IDF-free build) already live in ALS + `./x`.
 ./x monitor [-p PORT]             # serial console @115200
 ./x clean   [<example>]           # remove build artifacts (all if omitted)
 ./x test    [host|lib|examples]  # everything checkable without a board (what CI runs)
+./x analyze [<lib>] [--style]     # static analysis, new findings only (see below)
+./x stack   <example> [--top N] [--run]   # worst-case stack per call chain
+./x mem     <example>             # section sizes against the linker's bounds
 ./x config  <example> [show|--json]   # show flash/PSRAM size (the example's board.ads)
 ./x config  <example> flash-size <SIZE>  # e.g. 4MB, 512KB, 0x800000, 8388608
 ./x config  <example> psram-size <SIZE>  # (rebuild the bootloader for it to take effect)
 ./x get-debug-tools               # fetch the pinned OpenOCD + s3 GDB (debug only)
 ./x debug   <example>             # on-chip debug: OpenOCD + GDB on app.elf
+./x install-ide | install-vim     # drop the editor integration into place
+./x docs                          # regenerate libs/esp32s3_hal/docs/HAL_Reference.*
 ```
 
 - `<example>` accepts the **short** name (`gpio0_blink`) or the full directory
@@ -50,6 +55,34 @@ parts (language intelligence, the IDF-free build) already live in ALS + `./x`.
   - `examples` — a build of every example, on its own profile.
   Anything needing real silicon (the driver self-tests, the ACATS sweep) is
   deliberately not here; it stays on the bench.
+
+### Static analysis, stack and footprint
+
+Three board-free reports that `./x test` deliberately leaves out, because each
+answers a question a build cannot:
+
+```sh
+./x analyze                     # defects, all libraries, new findings only
+./x analyze tls --style         # the readability set (complexity, duplication)
+./x analyze --do178c=A          # per-objective evidence reports -> build/do178c/
+./x analyze esp32s3_hal --update-baseline   # accept the current findings
+./x stack  w5500_http --top 10 --run        # deepest call chains + measured HWM
+./x mem    w5500_http                       # .text/.data/.bss vs the linker bounds
+```
+
+`./x analyze` filters its output against the fingerprints in
+[`tools/analyzer-baselines/`](tools/analyzer-baselines), so a clean run means
+"nothing new", not "nothing there". The defects set and the `--style` set enable
+different checks and keep separate baselines; neither stands in for the other.
+Adding a finding to a baseline is a deliberate act (`--update-baseline`), which
+is what makes the gate meaningful. `--do178c` is the exception: it writes a
+report rather than gating, and it is explicit that it is verification *input*,
+not a compliance determination.
+
+The analyser is an Alire crate (`alr install adalang_analyzer`) and is not part
+of the pinned toolchain, so `./x test` cannot assume it. That is why it has its
+own verb. `tools/analyzer-baselines/README.md` explains which checks are enabled
+and why each folded-in finding is not a bug.
 
 ### Starting your own project
 

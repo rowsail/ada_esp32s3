@@ -9,10 +9,21 @@ libs/
   esp32s3_hal/        the peripheral-driver HAL: ESP32S3.GPIO + the svd register layer
     esp32s3_hal.gpr   ->  with "esp32s3_hal.gpr";
     src/  svd/  …
+  tls/                pure-Ada TLS 1.3 + X.509 path validation (P-256/P-384, SPARKNaCl)
+  esp32s3_wifi/       the Wi-Fi driver, over Espressif's fetched Apache-2.0 PHY/MAC blobs
+  esp32s3_simd/       Xtensa PIE (SIMD) vector kernels behind an Ada interface
   <your_lib>/         middleware, a logger, a CLI, a protocol stack, …
     <your_lib>.gpr    ->  with "<your_lib>.gpr";
     src/
 ```
+
+The four shipped libraries differ in what runtime they need, and each `.gpr`
+says so itself: `esp32s3_hal` defaults to `light-tasking` and builds on all
+three profiles, while `tls`, `esp32s3_wifi` and `esp32s3_simd` default to
+`embedded` (they want exceptions, finalization and a heap). `tls` carries one
+more knob: `TLS_BUFFERS` places its ~38 KB of static scratch in internal RAM
+(`dram`, the default) or in PSRAM (`psram`), for an app whose leftover-DRAM heap
+is squeezed. The app must map PSRAM and provide the section.
 
 ## Using a library
 

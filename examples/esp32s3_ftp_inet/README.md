@@ -62,8 +62,14 @@ The `FTP_Client` protocol is verified on the host against real servers — both
 `pyftpdlib` (RFC-compliant, `vsftpd`-class) and the live **`ftp.gnu.org`** over
 the internet (`SIZE`/`RETR` byte-exact); see `libs/esp32s3_hal/test/ftp_host`
 (`run.sh` offline, `run_real.sh` against the real server). This example is the
-same `FTP_Client` source over the W5500 backend and **builds for the target**;
-it has not yet been run on a board (the only piece host testing can't cover is
-the W5500 holding the control + data sockets open at once). The plain-LAN
-`esp32s3_ftp` example pairs with the bundled local test server for a
-self-contained run.
+same `FTP_Client` source over the W5500 backend, and it **has run on a board**:
+the `RETR` from `ftp.gnu.org` worked first try over the W5500.
+
+The upload direction is where the board disagreed with the host, and it is worth
+knowing about. Two bugs lived in the W5500 send path that no host test could
+reach, because a desktop's socket buffers are megabytes deep and its close is
+graceful: `Send` gave up with `No_Space` instead of waiting for the peer to drain
+the 2 KB transmit buffer, and `Close` issued the abrupt `CLOSE` instead of a
+`DISCON`, so the server never saw end-of-stream. Both are fixed, and
+[`esp32s3_ftp`](../esp32s3_ftp) now verifies a 1 MiB `STOR` byte-for-byte
+against a local server. The book's networking chapter tells the whole story.

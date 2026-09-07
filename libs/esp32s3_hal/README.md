@@ -106,16 +106,16 @@ own default profile.)
   >   object, so the single SDHOST controller is serialised across both slots.
   >
   > Each of the above was HW-validated under multi-task contention on the Jorvik
-  > runtime — **except the two SD-card drivers**, which use these same patterns
-  > but have not yet been validated on real hardware (see *Verification status*).
+  > runtime — **except `SD_SPI`**, which uses these same patterns but has not yet
+  > been validated against a real card (see *Verification status*).
 
 ## Verification status
 
 Every driver below the line is exercised by an example that runs a self-test on
 real silicon; "confirmed on silicon" means that self-test passed on an ESP32-S3.
-The two SD-card drivers are the current exception — they cannot be self-tested
-without a physical card, so they are compile-verified and smoke-run only, with the
-on-card test left to the user.
+`SD_SPI` is the current exception — it cannot be self-tested without a physical
+card, so it is compile-verified and smoke-run only, with the on-card test left to
+the user.
 
 **✅ Confirmed working on silicon** (self-test passes on hardware):
 
@@ -145,6 +145,7 @@ on-card test left to the user.
 | `AES` | FIPS-197 AES-128/256 vectors (`esp32s3_crypto`) |
 | `W25Q` | W25Q256FV JEDEC ID + erase/program/read-back round-trip (`esp32s3_w25q`) |
 | `TLV2556` | TI 12-bit SPI ADC: self-test voltages 0/2048/4095 + channel read (`esp32s3_tlv2556`) |
+| `SDMMC` | a real SDHC card in 1-bit mode: CID/CSD decode, High Speed at 50 MHz, block read (`esp32s3_sdmmc_ch422g`), then ext4 mounted and written over it (`esp32s3_ext4_sdmmc`, `esp32s3_ext4_write`) |
 
 **🟡 Needs on-card testing** (compile-verified + no-card smoke run only — boots,
 runs the init path on silicon, reports `No_Card` cleanly; the on-card read/write
@@ -152,8 +153,8 @@ PASS is left to the user):
 
 | Driver | State | Notes |
 |--------|-------|-------|
-| `SD_SPI` | compile + no-card smoke | lower-risk; reuses the verified SPI master (`esp32s3_sd_spi`) |
-| `SDMMC` | compile + light-tasking + no-card smoke | least-verified; native-host clock tree likely needs bring-up (`esp32s3_sdmmc`) |
+| `SD_SPI` | compile + no-card smoke | reuses the verified SPI master (`esp32s3_sd_spi`) |
+| `SDMMC`, 4-bit bus | 1-bit is card-verified; 4-bit is not | the generic 4-bit wiring of `esp32s3_sdmmc` has not been run on a card. The card-verified path is 1-bit (`esp32s3_sdmmc_ch422g`) |
 
 ## How a project consumes it
 One `with` in the project's `.gpr` — no `Source_Dirs`, no paths:
@@ -376,12 +377,13 @@ finalization-based SPI/SD_SPI). Two slots; lines route through the GPIO matrix
 (pull-ups on CMD/DATA). Init at ≤400 kHz then `Data_Clock_Hz`; the API is 512-byte
 LBA (SDSC/SDHC addressing handled internally).
 
-> **Maturity:** **compile-verified + a no-card smoke run only** (boots, runs the
-> init path on silicon, reports `No_Card` cleanly, 0 panics) — *not yet brought up
-> on a real card*. The native host has clock-tree/timing details (the SDHOST
-> functional-clock source `Src_Hz`, CLK-edge phase) that need a card on a scope to
-> tune; expect on-card bring-up (`examples/esp32s3_sdmmc`). For low-risk storage,
-> prefer `ESP32S3.SD_SPI`.
+> **Maturity:** **card-verified in 1-bit mode.** `esp32s3_sdmmc_ch422g` identifies
+> a real SDHC card, decodes CID/CSD, runs at 50 MHz with High Speed on, and reads
+> block 0; `esp32s3_ext4_sdmmc` and `esp32s3_ext4_write` then mount and write a
+> real ext4 filesystem over it, and the card passes `e2fsck -f` on a Linux host
+> afterwards. The **4-bit** bus of the generic `esp32s3_sdmmc` example has not
+> been run on a card: that path still wants a scope for the clock-tree details
+> (the SDHOST functional-clock source `Src_Hz`, CLK-edge phase).
 
 ## I2C example (task-safe master)
 ```ada

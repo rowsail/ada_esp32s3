@@ -1,8 +1,8 @@
 # Vendored artifacts for the IDF-free bare boot
 
 Everything the bare boot needs is **committed here in-tree** — the examples build
-and flash with **no ESP-IDF install and no esptool**, only Alire GNAT (branch
-`no-idf`).  Nothing in this directory is fetched or required from ESP-IDF at build
+and flash with **no ESP-IDF install and no esptool**, only Alire GNAT.  Nothing
+in this directory is fetched or required from ESP-IDF at build
 time; the files below merely *originated* from ESP-IDF v5.4.4 / the toolchain
 (recorded for provenance + license).  They fall into three groups:
 

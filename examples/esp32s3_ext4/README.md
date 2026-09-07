@@ -19,10 +19,17 @@ silicon; the OK lines need a real card).
 ## Maturity
 
 The filesystem itself is **extensively host-verified** on x86 against real
-`mke2fs` images with `e2fsck`/the Linux kernel as the oracle (read ext2/3/4 + checksums, full write path, JBD2 journal replay +
-commit; 55/55). This on-device example is **compile-verified + a no-card smoke
-run**; the on-card read/write itself depends on the `ESP32S3.SD_SPI` block driver,
-which is **not yet on-card-verified** (see its README) — bring that up first.
+`mke2fs` images with `e2fsck`/the Linux kernel as the oracle (read ext2/3/4 +
+checksums, full write path, JBD2 journal replay + commit). This on-device example
+is **compile-verified + a no-card smoke run**; the on-card read/write itself
+depends on the `ESP32S3.SD_SPI` block driver, which is **not yet
+on-card-verified** (see its README) — bring that up first.
+
+For ext4 on a card *today*, use the SDMMC pair instead:
+[`esp32s3_ext4_sdmmc`](../esp32s3_ext4_sdmmc) (read) and
+[`esp32s3_ext4_write`](../esp32s3_ext4_write) (the journaled write battery). Both
+run on a real `mkfs.ext4` card over the native SDHOST. What is missing here is
+the SPI block driver under the filesystem, not the filesystem.
 
 ## Card setup (on a Linux host)
 

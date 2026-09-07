@@ -2,7 +2,7 @@
 
 Our own minimal 2nd-stage bootloader for the ESP32-S3, replacing the vendored
 ESP-IDF `bootloader.bin`. The first-stage **mask ROM** loads this into SRAM and
-runs it; from there everything is ours. It is what makes the `no-idf` examples
+runs it; from there everything is ours. It is what makes the examples
 build and boot with **no ESP-IDF and no esptool** — only the Alire GNAT toolchain,
 our own Ada host tools (`esp_elf2image` / `esp_flash`), and the on-chip mask ROM.
 
@@ -20,20 +20,23 @@ It is flashed at `0x0` (over the partition table / app already on flash) and:
 ## What's in each language — and why
 
 The point of this stage is the honest "**Ada from reset**": the loader is Ada,
-with C and assembly only at the irreducible edges.
+with assembly only at the irreducible edge. **There is no C here any more** — the
+vendored IDF PSRAM objects and the C shims over them are gone, replaced unit for
+unit by Ada.
 
 | File | Lang | Role |
 |---|---|---|
-| `src/boot_main.adb` + `boot_main.ads` | **ZFP-style Ada** | the **loader core** — image parse, RAM-segment copy, flash-cache map, jump. Direct MMIO (`R : Unsigned_32 with Import, Volatile, Address => …`) + ROM/C imports; the entry handoff is an `access procedure with Convention => C` |
+| `src/boot_main.adb` + `boot_main.ads` | **ZFP-style Ada** | the **loader core** — image parse, RAM-segment copy, flash-cache map, jump. Direct MMIO (`R : Unsigned_32 with Import, Volatile, Address => …`) + ROM imports; the entry handoff is an `access procedure with Convention => C` |
+| `src/boot_psram.adb` + `.ads` | **ZFP-style Ada** | the whole octal-PSRAM bring-up: MSPI pin/clock config, mode-register programming through the ROM OPI helper, the cache-MMU map, and a real 80 MHz din-sampling calibration. Exports `psram_bringup`, so `boot_main`'s import resolves unchanged |
+| `src/boot_glue.adb` + `.ads` | **ZFP-style Ada** | the freestanding `abort` / `__assert_func` that GCC and the ROM expect (`mem*` come from the shared Ada `Bare_Mem`) |
 | `start.S` | asm | the reset prologue (SP / `PS` / `WINDOWSTART`, clear `.bss`) — must run before any high-level language |
-| `psram_boot.c` | C | thin shim `psram_bringup()` over the vendored PSRAM blobs (octal pin config + `esp_psram_impl_enable` + the din-mode force + the d-bus MMU map) |
-| `psram_glue.c` | C | freestanding `mem*` / `abort` / stubs the vendored objects reference |
 | `boot.gpr` | — | compile-only project (no `Main`, no binder) for the Ada loader |
 | `rom.ld`, `boot.ld` | — | mask-ROM symbol `PROVIDE`s + the SRAM memory/section layout |
 
-The vendored octal-PSRAM + MSPI-timing objects come from
-`../../esp32s3_psram/vendor_psram/` (IDF v5.4.4, the genuinely fiddly
-SPI/timing code we don't reimplement).
+Only documented ROM functions are called from outside this directory. How the
+former blobs were reverse-engineered over JTAG, and why the din tune has to run
+at the real 80 MHz, is in
+[`PSRAM_BRINGUP_RESEARCH.md`](PSRAM_BRINGUP_RESEARCH.md).
 
 ### The loader really is runtime-free
 
@@ -50,16 +53,17 @@ Only the ROM/C imports — no `__gnat*`. `start.S` calls `boot_main` directly.
 ## Build & flash
 
 **You normally don't run these by hand** — `bare_build.sh` (any example's
-`./build.sh` / `./x build`) rebuilds + re-vendors this bootloader automatically
-when `config/board.ads` (PSRAM/flash size) or a bootloader source changes, and
-`./x flash` then flashes it (it *is* `vendor/bootloader.bin`).
+`./build.sh` / `./x build`) rebuilds this bootloader automatically when
+`config/board.ads` (PSRAM/flash size) or a bootloader source changes, and puts
+the result in the example's own `.noidf/bootloader.bin`, which is what
+`./x flash` writes at `0x0`.
 
 Manually, for just the bootloader:
 
 ```sh
-./build.sh                 # gprbuild the Ada loader + cc the C/asm + link -> boot.elf,
-                           #   package with our Ada esp_elf2image (no esptool),
-                           #   and copy to ../vendor/bootloader.bin (re-vendor)
+./build.sh                 # gprbuild the Ada loader + assemble start.S + link -> boot.elf,
+                           #   then package with our Ada esp_elf2image (no esptool)
+                           #   -> ./bootloader.bin  (override with $BOOT_OUT)
 ./flash.sh /dev/ttyACM0    # write_flash 0x0 bootloader.bin  (overlays only 0x0)
 ```
 
@@ -75,6 +79,7 @@ falls back).
   a body-only `Export` is rejected ("requires separate spec").
 - The Ada object is named after the **unit** (`boot_main.o`).
 - The bootloader brings up PSRAM unconditionally; for a non-PSRAM app the app's
-  `start.S` simply wipes the d-bus map on re-init (harmless). Why the din-mode
-  has to be forced, and the whole PSRAM bring-up story, is in
-  `../BOOTLOADER_STAGE0.md`.
+  `start.S` simply wipes the d-bus map on re-init (harmless). The din tune, and
+  the whole PSRAM bring-up story, is in
+  [`PSRAM_BRINGUP_RESEARCH.md`](PSRAM_BRINGUP_RESEARCH.md); the first-stage
+  picture is in [`../BOOTLOADER_STAGE0.md`](../BOOTLOADER_STAGE0.md).

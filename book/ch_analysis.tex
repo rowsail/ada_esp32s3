@@ -173,9 +173,12 @@ The tool is worth having for the eleventh copy, not for the ten it found once.
 
 \section{Baselines, and the two gates}\index{AdaLang Analyzer!baseline}\index{x!analyze}
 
-A backlog of 953 known-benign findings is useless as a gate: nobody reads a report that
-is always red. A \emph{baseline} fixes that. The analyser writes a fingerprint for every
-current finding, and a later run filters them out and reports only what is new.
+A backlog on the scale of that first run is useless as a gate: nobody reads a report
+that is always red. A \emph{baseline} fixes that. The analyser writes a fingerprint for
+every current finding, and a later run filters them out and reports only what is new. The
+defects gate currently carries 1{,}153 such fingerprints (907 in the HAL, 96 in
+\texttt{tls}, 77 in \texttt{esp32s3\_simd}, 73 in \texttt{esp32s3\_wifi}), and a clean run
+means ``nothing new'' rather than ``nothing there.''
 
 The repository drives it through the same command surface as everything else:
 
@@ -196,6 +199,59 @@ Two things are deliberately \emph{not} baselined. The DO-178C profile is a repor
 rather than a gate, for reasons in the next section. And the analyser itself is not
 part of \texttt{./x test}: it is not in the toolchain this project pins, so a plain
 clone would fail a check it cannot run.
+
+\section{What the style gate bought}\index{AdaLang Analyzer!complexity}\index{cyclomatic complexity}\index{nesting depth}
+
+The defects gate finds bugs. The style gate finds subprograms that are too big to
+reason about, which is a different and slower payoff. Four of them were worth
+acting on, and all four sat on code that reads input from outside the chip.
+
+\lstinline{X509.Parse} was the worst subprogram in the SDK: 200 lines, cyclomatic
+complexity 44 against a threshold of 10, nesting depth 6, parsing untrusted
+certificates. It was split along the structure DER already has, into
+\lstinline{Parse_Validity}, \lstinline{Parse_Public_Key} and
+\lstinline{Signature_Kind}. \lstinline{Parse} is now a flat sequence of
+\lstinline{Expect} calls at complexity 15, with the nesting finding gone.
+\lstinline{NMEA.Parse} was the same shape at 230 lines and complexity 41: one
+\lstinline{if}/\lstinline{elsif} chain that dispatched on the sentence type and
+then decoded it inline. It became seven parsers, one per sentence type, with
+\lstinline{Parse} left as the dispatcher and nothing else. \lstinline{Modbus.Slave.Process}
+decoded every function code inline at complexity 37, and became six handlers, one
+per function code. All three files now report \emph{zero} complexity and nesting
+findings, rather than reduced ones.
+
+Two things are worth recording about those splits, because neither is obvious.
+
+\textbf{The proofs had to survive.} All three units are \lstinline{SPARK_Mode => On}
+with their own proof projects, and the only acceptable outcome was zero unproved
+afterwards as well. It was, but the obligation counts move in a way that reads
+oddly at first: \lstinline{NMEA} went from 360 obligations to 333, because the
+same statements are no longer re-analysed once per inlined branch, while its
+functional contracts rose by exactly seven, which is the seven new preconditions
+now checked at each call site. In \lstinline{X509} the proof also pushed back
+twice. Hoisting an index expression above a length guard cost three proofs: it is
+the ordering, length checked first and index formed second, that lets SPARK bound
+the index. Factoring two elliptic-curve arms into a shared helper cost two more,
+because the literal size in each guard is what bounds the index and a parameter is
+not. Both arms stay written out, with a comment saying why, so the next reader does
+not helpfully undo them.
+
+\textbf{Splitting code can expose what the tests never covered.} The fourth
+refactor lifted the two deepest blocks out of the ext4 journal's
+\lstinline{Replay}, taking it from complexity 22 and nesting 10 to 14 and 5. In
+the middle of doing it the real problem surfaced: \emph{nothing exercised journal
+replay at all}. The scenario named \texttt{dirty\_battery} ran two clean sessions,
+and no test had ever crashed a transaction, so the entire recovery path had no
+coverage on a filesystem whose purpose is surviving a crash. Refactoring it on the
+strength of ``sixteen scenarios pass'' would have meant nothing. The commit adds a
+\texttt{replay} scenario that writes a file and a directory, commits the journal
+without checkpointing, drops the cache, and requires every byte back after a
+remount, which is reachable only through \lstinline{Replay}. It was then checked
+that the test bites: with one call stubbed out, the suite fails and exits non-zero.
+
+That is the honest summary of a complexity gate. It does not find defects. It
+points at the routines where a defect would be hardest to see, and acting on it is
+what surfaces the untested path underneath.
 
 \section{Reading the standards profiles}\index{AdaLang Analyzer!profiles}\index{DO-178C}\index{MISRA}
 
