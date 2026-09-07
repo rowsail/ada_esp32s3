@@ -14,6 +14,66 @@ package body TLS_Client.Scan with SPARK_Mode => On is
                    and then Len >= 2
                    and then I <= Len - 2,
            Post => U16_At'Result <= 65_535;
+      --  A curve's share, copied out of a key_share entry.  One procedure per
+      --  curve: the offsets differ and each is easier to check on its own than
+      --  as another arm of a chain of and-thens.
+      procedure Take_X25519 (At_Key : Natural)
+      with Pre => Buf'First = 0
+                  and then Buf'Last < Natural'Last / 2
+                  and then Len <= Buf'Last + 1
+                  and then Len >= 32
+                  and then At_Key <= Len - 32
+      is
+      begin
+         for I in 0 .. 31 loop
+            Info.X25519 (I) := Buf (At_Key + I);
+         end loop;
+         Info.Group := 16#001D#;
+         Info.Have_Share := True;
+      end Take_X25519;
+
+      procedure Take_P256 (At_Point : Natural)
+      with Pre => Buf'First = 0
+                  and then Buf'Last < Natural'Last / 2
+                  and then Len <= Buf'Last + 1
+                  and then Len >= 64
+                  and then At_Point <= Len - 64
+      is
+      begin
+         for I in 0 .. 31 loop
+            Info.P256_X (I) := Buf (At_Point + I);
+            Info.P256_Y (I) := Buf (At_Point + 32 + I);
+         end loop;
+         Info.Group := 16#0017#;
+         Info.Have_Share := True;
+      end Take_P256;
+
+      --  The key_share extension: one entry, whichever group the server picked.
+      procedure Take_Key_Share (Body_At, Ext_Len : Natural)
+      with Pre => Buf'First = 0
+                  and then Buf'Last < Natural'Last / 2
+                  and then Len <= Buf'Last + 1
+                  and then Len >= 2
+                  and then Body_At <= Len
+                  and then Ext_Len <= Len - Body_At
+      is
+         Group, Sh_Len : Natural;
+      begin
+         if Ext_Len < 4 then
+            return;                          --  no group and length in it
+         end if;
+         Group := U16_At (Body_At);
+         Sh_Len := U16_At (Body_At + 2);
+
+         if Group = 16#001D# and then Sh_Len = 32 and then Ext_Len >= 36 then
+            Take_X25519 (Body_At + 4);
+         elsif Group = 16#0017# and then Sh_Len = 65 and then Ext_Len >= 69 then
+            --  An uncompressed point, or nothing this client can use.
+            if Buf (Body_At + 4) = 16#04# then
+               Take_P256 (Body_At + 5);
+            end if;
+         end if;
+      end Take_Key_Share;
    begin
       Info := (others => <>);
 
@@ -48,35 +108,8 @@ package body TLS_Client.Scan with SPARK_Mode => On is
             --  The body has to be present before anything inside it is read:
             --  the loop condition only guarantees the four header bytes.
             if Ext_Len <= Len - Body_At then
-               if Ext_Type = 51 and then Ext_Len >= 4 then
-                  declare
-                     Group  : constant Natural := U16_At (Body_At);
-                     Sh_Len : constant Natural := U16_At (Body_At + 2);
-                  begin
-                     if Group = 16#001D#
-                       and then Sh_Len = 32
-                       and then Ext_Len >= 36
-                     then
-                        for I in 0 .. 31 loop
-                           Info.X25519 (I) := Buf (Body_At + 4 + I);
-                        end loop;
-                        Info.Group := 16#001D#;
-                        Info.Have_Share := True;
-
-                     elsif Group = 16#0017#
-                       and then Sh_Len = 65
-                       and then Ext_Len >= 69
-                       and then Buf (Body_At + 4) = 16#04#   --  uncompressed
-                     then
-                        for I in 0 .. 31 loop
-                           Info.P256_X (I) := Buf (Body_At + 5 + I);
-                           Info.P256_Y (I) := Buf (Body_At + 37 + I);
-                        end loop;
-                        Info.Group := 16#0017#;
-                        Info.Have_Share := True;
-                     end if;
-                  end;
-
+               if Ext_Type = 51 then
+                  Take_Key_Share (Body_At, Ext_Len);
                elsif Ext_Type = 41 then
                   --  pre_shared_key: the server took our only offer.
                   Info.Resumed_PSK := True;
@@ -116,6 +149,160 @@ package body TLS_Client.Scan with SPARK_Mode => On is
                    and then Len >= 2
                    and then I <= Len - 2,
            Post => U16_At'Result <= 65_535;
+      --  CertificateVerify's fixed fields: two bytes of algorithm and two of
+      --  signature length, present only if the body is long enough for them.
+      procedure Take_Cert_Verify (Body_At, MLen : Natural)
+      with Pre  => Buf'First = 0
+                   and then Buf'Last < Natural'Last / 2
+                   and then Len <= Buf'Last + 1
+                   and then Len >= 2
+                   and then Body_At <= Len
+                   and then MLen <= Len - Body_At
+                   --  It may return without touching these, so what holds on
+                   --  the way out has to hold on the way in.
+                   and then (if Info.CV_Sig_First <= Info.CV_Sig_Last
+                             then Info.CV_Sig_Last < Len),
+           Post => (if Info.CV_Sig_First <= Info.CV_Sig_Last
+                    then Info.CV_Sig_Last < Len)
+                   and then Info.Chain_Count = Info.Chain_Count'Old
+                   and then Info.Chain = Info.Chain'Old
+                   and then Info.Have_Cert = Info.Have_Cert'Old
+                   and then Info.Cert_First = Info.Cert_First'Old
+                   and then Info.Cert_Last = Info.Cert_Last'Old
+                   and then Info.Fin_First = Info.Fin_First'Old
+                   and then Info.Fin_Last = Info.Fin_Last'Old
+      is
+         Sig_Len : Natural;
+      begin
+         if MLen < 4 then
+            return;                          --  nothing to read it from
+         end if;
+         Info.CV_Alg := U16 (U16_At (Body_At));
+         Sig_Len := U16_At (Body_At + 2);
+         --  The signature must fill the body exactly.
+         if Sig_Len = MLen - 4 and then Sig_Len > 0 then
+            Info.CV_Sig_First := Body_At + 4;
+            Info.CV_Sig_Last := Body_At + 4 + Sig_Len - 1;
+         end if;
+      end Take_Cert_Verify;
+
+      --  Note one certificate of the list: in the chain, and as the leaf if it
+      --  is the first.  A chain longer than Max_Chain keeps its first entries.
+      procedure Record_Cert (Cert_At, Cert_Len : Natural)
+      with Pre  => Cert_Len > 0
+                   and then Cert_At <= Len - Cert_Len
+                   and then Info.Chain_Count <= Max_Chain
+                   and then (if Info.Have_Cert
+                             then Info.Cert_First <= Info.Cert_Last
+                                  and then Info.Cert_Last < Len)
+                   and then (for all K in 1 .. Info.Chain_Count =>
+                               Info.Chain (K).First <= Info.Chain (K).Last
+                               and then Info.Chain (K).Last < Len),
+           Post => Info.Chain_Count <= Max_Chain
+                   and then Info.Have_Cert
+                   and then Info.Cert_First <= Info.Cert_Last
+                   and then Info.Cert_Last < Len
+                   and then (for all K in 1 .. Info.Chain_Count =>
+                               Info.Chain (K).First <= Info.Chain (K).Last
+                               and then Info.Chain (K).Last < Len)
+                   and then Info.CV_Sig_First = Info.CV_Sig_First'Old
+                   and then Info.CV_Sig_Last = Info.CV_Sig_Last'Old
+                   and then Info.Fin_First = Info.Fin_First'Old
+                   and then Info.Fin_Last = Info.Fin_Last'Old
+      is
+      begin
+         if Info.Chain_Count < Max_Chain then
+            Info.Chain_Count := Info.Chain_Count + 1;
+            Info.Chain (Info.Chain_Count) :=
+              (First => Cert_At, Last => Cert_At + Cert_Len - 1);
+         end if;
+         if not Info.Have_Cert then
+            Info.Cert_First := Cert_At;                     --  the leaf
+            Info.Cert_Last := Cert_At + Cert_Len - 1;
+            Info.Have_Cert := True;
+         end if;
+      end Record_Cert;
+
+      --  The certificate_list of a Certificate message: [len(3)][DER]
+      --  [extlen(2)][exts], repeated.  Its own procedure -- the walk that calls
+      --  it is nested deeply enough already, and this is the part a reader
+      --  needs to check most carefully.
+      procedure Take_Certificates (Body_At, MLen : Natural)
+      with Pre => Buf'First = 0
+                  and then Buf'Last < Natural'Last / 2
+                  and then Len <= Buf'Last + 1
+                  and then Len >= 3
+                  and then Body_At <= Len
+                  and then MLen <= Len - Body_At
+                  and then Info.Chain_Count <= Max_Chain
+                  and then (if Info.Have_Cert
+                            then Info.Cert_First <= Info.Cert_Last
+                                 and then Info.Cert_Last < Len)
+                  and then (for all K in 1 .. Info.Chain_Count =>
+                              Info.Chain (K).First <= Info.Chain (K).Last
+                              and then Info.Chain (K).Last < Len),
+           Post => Info.Chain_Count <= Max_Chain
+                   and then (if Info.Have_Cert
+                             then Info.Cert_First <= Info.Cert_Last
+                                  and then Info.Cert_Last < Len)
+                   and then (for all K in 1 .. Info.Chain_Count =>
+                               Info.Chain (K).First <= Info.Chain (K).Last
+                               and then Info.Chain (K).Last < Len)
+                   and then Info.CV_Sig_First = Info.CV_Sig_First'Old
+                   and then Info.CV_Sig_Last = Info.CV_Sig_Last'Old
+                   and then Info.Fin_First = Info.Fin_First'Old
+                   and then Info.Fin_Last = Info.Fin_Last'Old
+      is
+         Msg_End  : constant Natural := Body_At + MLen;
+         Ctx_Len  : Natural;
+         Cert_Pos : Natural;
+         List_End : Natural;
+      begin
+         --  The body must hold the context-length byte and the three-byte list
+         --  length before either is read.
+         if MLen < 4 then
+            return;
+         end if;
+         Ctx_Len := Natural (Buf (Body_At));
+         if Ctx_Len > MLen - 4 then
+            return;                          --  context runs past the message
+         end if;
+
+         Cert_Pos := Body_At + 1 + Ctx_Len;
+         List_End := Natural'Min (Cert_Pos + 3 + U24_At (Cert_Pos), Msg_End);
+         Cert_Pos := Cert_Pos + 3;
+
+         while Cert_Pos + 3 <= List_End loop
+            pragma Loop_Invariant (Cert_Pos + 3 <= List_End);
+            pragma Loop_Invariant (List_End <= Len);
+            pragma Loop_Invariant (Info.Chain_Count <= Max_Chain);
+            pragma Loop_Invariant
+              (if Info.Have_Cert
+               then Info.Cert_First <= Info.Cert_Last
+                    and then Info.Cert_Last < Len);
+            pragma Loop_Invariant
+              (for all K in 1 .. Info.Chain_Count =>
+                 Info.Chain (K).First <= Info.Chain (K).Last
+                 and then Info.Chain (K).Last < Len);
+            pragma Loop_Invariant (Info.CV_Sig_First = Info.CV_Sig_First'Loop_Entry);
+            pragma Loop_Invariant (Info.CV_Sig_Last = Info.CV_Sig_Last'Loop_Entry);
+            pragma Loop_Invariant (Info.Fin_First = Info.Fin_First'Loop_Entry);
+            pragma Loop_Invariant (Info.Fin_Last = Info.Fin_Last'Loop_Entry);
+            pragma Loop_Variant (Increases => Cert_Pos);
+
+            declare
+               Cert_Len : constant Natural := U24_At (Cert_Pos);
+               Cert_At  : constant Natural := Cert_Pos + 3;
+            begin
+               exit when Cert_Len = 0 or else Cert_Len > List_End - Cert_At;
+               Record_Cert (Cert_At, Cert_Len);
+
+               Cert_Pos := Cert_At + Cert_Len;
+               exit when Cert_Pos + 2 > List_End;           --  no extensions
+               Cert_Pos := Cert_Pos + 2 + U16_At (Cert_Pos);
+            end;
+         end loop;
+      end Take_Certificates;
    begin
       Info := (others => <>);
 
@@ -142,100 +329,29 @@ package body TLS_Client.Scan with SPARK_Mode => On is
          begin
             exit when MLen > Len - Body_At;          --  not fully present yet
 
-            case MType is
-               when 11 =>                            --  Certificate
-                  --  The body must hold the context-length byte and the
-                  --  three-byte list length before either is read.
-                  if MLen >= 4 then
-                     declare
-                        Ctx_Len  : constant Natural := Natural (Buf (Body_At));
-                        Msg_End  : constant Natural := Body_At + MLen;
-                        Cert_Pos : Natural;
-                        List_End : Natural;
-                     begin
-                        if Ctx_Len <= MLen - 4 then
-                           Cert_Pos := Body_At + 1 + Ctx_Len;
-                           List_End :=
-                             Natural'Min (Cert_Pos + 3 + U24_At (Cert_Pos), Msg_End);
-                           Cert_Pos := Cert_Pos + 3;
+            --  An if-chain rather than a case: every other message type is
+            --  simply passed over, and a case would need an empty branch to
+            --  say so.
+            if MType = 11 then                       --  Certificate
+               Take_Certificates (Body_At, MLen);
+               Info.Cert_End := Body_At + MLen;
 
-                           --  [cert len(3)][cert DER][ext len(2)][exts], repeated.
-                           while Cert_Pos + 3 <= List_End loop
-                              pragma Loop_Invariant (Cert_Pos + 3 <= List_End);
-                              pragma Loop_Invariant (List_End <= Len);
-                              pragma Loop_Invariant (Info.Chain_Count <= Max_Chain);
-                              pragma Loop_Invariant
-                                (if Info.Have_Cert
-                                 then Info.Cert_First <= Info.Cert_Last
-                                      and then Info.Cert_Last < Len);
-                              pragma Loop_Invariant
-                                (for all K in 1 .. Info.Chain_Count =>
-                                   Info.Chain (K).First <= Info.Chain (K).Last
-                                   and then Info.Chain (K).Last < Len);
-                              pragma Loop_Variant (Increases => Cert_Pos);
+            elsif MType = 15 then                    --  CertificateVerify
+               Take_Cert_Verify (Body_At, MLen);
+               Info.CV_End := Body_At + MLen;
 
-                              declare
-                                 Cert_Len : constant Natural := U24_At (Cert_Pos);
-                                 Cert_At  : constant Natural := Cert_Pos + 3;
-                              begin
-                                 exit when Cert_Len = 0
-                                   or else Cert_Len > List_End - Cert_At;
+            elsif MType = 13 then                    --  CertificateRequest
+               --  We hold no client certificate, but RFC 8446 4.4.2 still
+               --  requires an (empty) Certificate message before Finished.
+               Info.Cert_Req_Seen := True;
 
-                                 if Info.Chain_Count < Max_Chain then
-                                    Info.Chain_Count := Info.Chain_Count + 1;
-                                    Info.Chain (Info.Chain_Count) :=
-                                      (First => Cert_At,
-                                       Last  => Cert_At + Cert_Len - 1);
-                                 end if;
-                                 if not Info.Have_Cert then
-                                    Info.Cert_First := Cert_At;      --  the leaf
-                                    Info.Cert_Last := Cert_At + Cert_Len - 1;
-                                    Info.Have_Cert := True;
-                                 end if;
-
-                                 Cert_Pos := Cert_At + Cert_Len;
-                                 --  This entry's extensions, if they are there.
-                                 exit when Cert_Pos + 2 > List_End;
-                                 Cert_Pos := Cert_Pos + 2 + U16_At (Cert_Pos);
-                              end;
-                           end loop;
-                        end if;
-                     end;
-                  end if;
-                  Info.Cert_End := Body_At + MLen;
-
-               when 15 =>                            --  CertificateVerify
-                  --  Two bytes of algorithm and two of length, if the body is
-                  --  long enough to hold them.
-                  if MLen >= 4 then
-                     declare
-                        Sig_Len : constant Natural := U16_At (Body_At + 2);
-                     begin
-                        Info.CV_Alg := U16 (U16_At (Body_At));
-                        --  The signature must fill the body exactly.
-                        if Sig_Len = MLen - 4 and then Sig_Len > 0 then
-                           Info.CV_Sig_First := Body_At + 4;
-                           Info.CV_Sig_Last := Body_At + 4 + Sig_Len - 1;
-                        end if;
-                     end;
-                  end if;
-                  Info.CV_End := Body_At + MLen;
-
-               when 13 =>                            --  CertificateRequest
-                  --  We hold no client certificate, but RFC 8446 4.4.2 still
-                  --  requires an (empty) Certificate message before Finished.
-                  Info.Cert_Req_Seen := True;
-
-               when 20 =>                            --  Finished
-                  if MLen > 0 then
-                     Info.Fin_First := Body_At;
-                     Info.Fin_Last := Body_At + MLen - 1;
-                  end if;
-                  Info.Saw_Finished := True;
-
-               when others =>
-                  null;
-            end case;
+            elsif MType = 20 then                    --  Finished
+               if MLen > 0 then
+                  Info.Fin_First := Body_At;
+                  Info.Fin_Last := Body_At + MLen - 1;
+               end if;
+               Info.Saw_Finished := True;
+            end if;
 
             Pos := Body_At + MLen;
          end;
