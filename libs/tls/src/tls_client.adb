@@ -10,6 +10,7 @@ with SPARKNaCl.Hashing.SHA256;
 with SPARKNaCl.HKDF;
 with P256;
 with TLS_Client.Scratch;
+with TLS_Client.Scan;
 use TLS_Client.Scratch;
 
 package body TLS_Client is
@@ -708,118 +709,34 @@ package body TLS_Client is
    end Decrypt_Record;
 
    --  Walk the reassembled handshake messages: note the Certificate (extract the
-   --  leaf) and whether a Finished was seen.
+   --  leaf) and whether a Finished was seen.  The walk itself is TLS_Client.Scan,
+   --  which is proved: it is the first code a hostile server reaches, and its
+   --  postcondition is that every offset it hands back is inside the buffer it
+   --  was given.  This applies what it found to the Session.
    procedure Scan_Messages (S : in out Session; Saw_Finished : out Boolean) is
-      Pos : Natural := 0;
+      Info : Scan.Flight_Info;
    begin
-      Saw_Finished := False;
-      while Pos + 4 <= HSB_Len loop
-         declare
-            MType : constant U8 := HSB (Pos);
-            MLen  : constant Natural :=
-              Natural (HSB (Pos + 1))
-              * 65536
-              + Natural (HSB (Pos + 2)) * 256
-              + Natural (HSB (Pos + 3));
-         begin
-            exit when Pos + 4 + MLen > HSB_Len;      --  message not fully present yet
-            if MType = 11 then
-               --  Certificate
-               declare
-                  Msg_End  : constant Natural := Pos + 4 + MLen;   --  end of this message
-                  Cert_Pos : Natural := Pos + 4;
-                  List_End : Natural := Pos + 4;
-               begin
-                  Cert_Pos := Cert_Pos + 1 + Natural (HSB (Cert_Pos));  --  cert_request_context
-                  --  A bogus context length could push Cert_Pos past the message
-                  --  (and near HSB's end, past the 8 KB buffer); bound the 3-byte
-                  --  ListLen read before indexing.
-                  if Cert_Pos + 3 > Msg_End or else Cert_Pos + 2 > HSB_Len then
-                     S.Chain_Count := 0;
-                     List_End := Cert_Pos;                 --  empty walk below
-                  else
-                     declare
-                        ListLen : constant Natural :=
-                          Natural (HSB (Cert_Pos))
-                          * 65536
-                          + Natural (HSB (Cert_Pos + 1)) * 256
-                          + Natural (HSB (Cert_Pos + 2));
-                     begin
-                        Cert_Pos := Cert_Pos + 3;         --  start of certificate_list
-                        List_End := Natural'Min (Cert_Pos + ListLen, HSB_Len);
-                     end;
-                  end if;
-                  --  Walk every entry: [cert len(3)][cert DER][ext len(2)][exts].
-                  S.Chain_Count := 0;
-                  while Cert_Pos + 3 <= List_End loop
-                     declare
-                        Cert_Len : constant Natural :=
-                          Natural (HSB (Cert_Pos))
-                          * 65536
-                          + Natural (HSB (Cert_Pos + 1)) * 256
-                          + Natural (HSB (Cert_Pos + 2));
-                     begin
-                        Cert_Pos := Cert_Pos + 3;
-                        exit when Cert_Len = 0 or else Cert_Pos + Cert_Len > List_End;
-                        if S.Chain_Count < Max_Chain then
-                           S.Chain_Count := S.Chain_Count + 1;
-                           S.Chain (S.Chain_Count) :=
-                             (First => Cert_Pos, Last => Cert_Pos + Cert_Len - 1);
-                        end if;
-                        if S.Chain_Count = 1 then
-                           --  leaf: kept for CertificateVerify
-                           S.Cert_First := Cert_Pos;
-                           S.Cert_Last := Cert_Pos + Cert_Len - 1;
-                           S.Have_Cert := True;
-                        end if;
-                        Cert_Pos := Cert_Pos + Cert_Len;
-                        exit when Cert_Pos + 2 > List_End;   --  skip this entry's extensions
-                        Cert_Pos :=
-                          Cert_Pos
-                          + 2
-                          + Natural (HSB (Cert_Pos)) * 256
-                          + Natural (HSB (Cert_Pos + 1));
-                     end;
-                  end loop;
-                  S.Cert_End := Pos + 4 + MLen;       --  transcript point for CertVerify
-               end;
-            elsif MType = 15 then
-               --  CertificateVerify
-               S.CV_Alg := U16 (HSB (Pos + 4)) * 256 + U16 (HSB (Pos + 5));
-               declare
-                  Sig_Len : constant Natural :=
-                    Natural (HSB (Pos + 6)) * 256 + Natural (HSB (Pos + 7));
-               begin
-                  --  The signature must exactly fill the message body (2 alg + 2
-                  --  len + Sig_Len = MLen).  Reject anything else: a bogus wire
-                  --  length (up to 65535) would otherwise push CV_Sig_Last past
-                  --  the message -- and past the 8 KB HSB -- so Verify_Cert_Verify
-                  --  sizes a giant stack array and reads out of bounds.
-                  if MLen >= 4 and then Sig_Len = MLen - 4 then
-                     S.CV_Sig_First := Pos + 8;
-                     S.CV_Sig_Last := Pos + 8 + Sig_Len - 1;
-                  else
-                     S.CV_Sig_First := 1;
-                     S.CV_Sig_Last := 0;      --  Sig_Len <= 0 => Verify rejects it
-                  end if;
-               end;
-               S.CV_End := Pos + 4 + MLen;            --  transcript point for Finished
-            elsif MType = 13 then
-               --  CertificateRequest: the server wants (optional) client auth.
-               --  We hold no client certificate, but RFC 8446 4.4.2 still
-               --  requires us to answer with an (empty) Certificate message
-               --  before Finished -- else the server aborts with
-               --  unexpected_message.  Complete_Handshake does that.
-               S.Cert_Req_Seen := True;
-            elsif MType = 20 then
-               --  Finished
-               S.Fin_First := Pos + 4;
-               S.Fin_Last := Pos + 4 + MLen - 1;
-               Saw_Finished := True;
-            end if;
-            Pos := Pos + 4 + MLen;
-         end;
+      Scan.Walk (HSB, HSB_Len, Info);
+
+      Saw_Finished := Info.Saw_Finished;
+      S.Chain_Count := Natural'Min (Info.Chain_Count, Max_Chain);
+      for K in 1 .. S.Chain_Count loop
+         S.Chain (K) := (First => Info.Chain (K).First,
+                         Last  => Info.Chain (K).Last);
       end loop;
+      S.Have_Cert := Info.Have_Cert;
+      S.Cert_First := Info.Cert_First;
+      S.Cert_Last := Info.Cert_Last;
+      S.Cert_End := Info.Cert_End;
+      S.CV_Alg := Info.CV_Alg;
+      S.CV_Sig_First := Info.CV_Sig_First;
+      S.CV_Sig_Last := Info.CV_Sig_Last;
+      S.CV_End := Info.CV_End;
+      S.Fin_First := Info.Fin_First;
+      S.Fin_Last := Info.Fin_Last;
+      if Info.Cert_Req_Seen then
+         S.Cert_Req_Seen := True;    --  latched across the flight's records
+      end if;
    end Scan_Messages;
 
    procedure Read_Server_Flight (S : in out Session; Sock : Socket_Type; Ok : out Boolean) is
