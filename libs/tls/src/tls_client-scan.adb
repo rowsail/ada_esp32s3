@@ -2,6 +2,14 @@ package body TLS_Client.Scan with SPARK_Mode => On is
 
    use type U8;
 
+   --  A stretch of the buffer: where it starts and how long it is.  One
+   --  parameter rather than two Naturals side by side, which a positional call
+   --  can swap without anything noticing.
+   type Region is record
+      At_Byte : Natural;
+      Length  : Natural;
+   end record;
+
    procedure Parse_Hello (Buf : Byte_Array; Len : Natural; Info : out Hello_Info) is
       HS_Server_Hello : constant U8 := 2;
       Pos             : Natural := 0;
@@ -49,28 +57,31 @@ package body TLS_Client.Scan with SPARK_Mode => On is
       end Take_P256;
 
       --  The key_share extension: one entry, whichever group the server picked.
-      procedure Take_Key_Share (Body_At, Ext_Len : Natural)
+      procedure Take_Key_Share (Ext : Region)
       with Pre => Buf'First = 0
                   and then Buf'Last < Natural'Last / 2
                   and then Len <= Buf'Last + 1
                   and then Len >= 2
-                  and then Body_At <= Len
-                  and then Ext_Len <= Len - Body_At
+                  and then Ext.At_Byte <= Len
+                  and then Ext.Length <= Len - Ext.At_Byte
       is
          Group, Sh_Len : Natural;
       begin
-         if Ext_Len < 4 then
+         if Ext.Length < 4 then
             return;                          --  no group and length in it
          end if;
-         Group := U16_At (Body_At);
-         Sh_Len := U16_At (Body_At + 2);
+         Group := U16_At (Ext.At_Byte);
+         Sh_Len := U16_At (Ext.At_Byte + 2);
 
-         if Group = 16#001D# and then Sh_Len = 32 and then Ext_Len >= 36 then
-            Take_X25519 (Body_At + 4);
-         elsif Group = 16#0017# and then Sh_Len = 65 and then Ext_Len >= 69 then
+         if Group = 16#001D# and then Sh_Len = 32 and then Ext.Length >= 36 then
+            Take_X25519 (Ext.At_Byte + 4);
+         elsif Group = 16#0017#
+           and then Sh_Len = 65
+           and then Ext.Length >= 69
+         then
             --  An uncompressed point, or nothing this client can use.
-            if Buf (Body_At + 4) = 16#04# then
-               Take_P256 (Body_At + 5);
+            if Buf (Ext.At_Byte + 4) = 16#04# then
+               Take_P256 (Ext.At_Byte + 5);
             end if;
          end if;
       end Take_Key_Share;
@@ -109,7 +120,7 @@ package body TLS_Client.Scan with SPARK_Mode => On is
             --  the loop condition only guarantees the four header bytes.
             if Ext_Len <= Len - Body_At then
                if Ext_Type = 51 then
-                  Take_Key_Share (Body_At, Ext_Len);
+                  Take_Key_Share ((At_Byte => Body_At, Length => Ext_Len));
                elsif Ext_Type = 41 then
                   --  pre_shared_key: the server took our only offer.
                   Info.Resumed_PSK := True;
@@ -151,13 +162,13 @@ package body TLS_Client.Scan with SPARK_Mode => On is
            Post => U16_At'Result <= 65_535;
       --  CertificateVerify's fixed fields: two bytes of algorithm and two of
       --  signature length, present only if the body is long enough for them.
-      procedure Take_Cert_Verify (Body_At, MLen : Natural)
+      procedure Take_Cert_Verify (Msg : Region)
       with Pre  => Buf'First = 0
                    and then Buf'Last < Natural'Last / 2
                    and then Len <= Buf'Last + 1
                    and then Len >= 2
-                   and then Body_At <= Len
-                   and then MLen <= Len - Body_At
+                   and then Msg.At_Byte <= Len
+                   and then Msg.Length <= Len - Msg.At_Byte
                    --  It may return without touching these, so what holds on
                    --  the way out has to hold on the way in.
                    and then (if Info.CV_Sig_First <= Info.CV_Sig_Last
@@ -174,23 +185,23 @@ package body TLS_Client.Scan with SPARK_Mode => On is
       is
          Sig_Len : Natural;
       begin
-         if MLen < 4 then
+         if Msg.Length < 4 then
             return;                          --  nothing to read it from
          end if;
-         Info.CV_Alg := U16 (U16_At (Body_At));
-         Sig_Len := U16_At (Body_At + 2);
+         Info.CV_Alg := U16 (U16_At (Msg.At_Byte));
+         Sig_Len := U16_At (Msg.At_Byte + 2);
          --  The signature must fill the body exactly.
-         if Sig_Len = MLen - 4 and then Sig_Len > 0 then
-            Info.CV_Sig_First := Body_At + 4;
-            Info.CV_Sig_Last := Body_At + 4 + Sig_Len - 1;
+         if Sig_Len = Msg.Length - 4 and then Sig_Len > 0 then
+            Info.CV_Sig_First := Msg.At_Byte + 4;
+            Info.CV_Sig_Last := Msg.At_Byte + 4 + Sig_Len - 1;
          end if;
       end Take_Cert_Verify;
 
       --  Note one certificate of the list: in the chain, and as the leaf if it
       --  is the first.  A chain longer than Max_Chain keeps its first entries.
-      procedure Record_Cert (Cert_At, Cert_Len : Natural)
-      with Pre  => Cert_Len > 0
-                   and then Cert_At <= Len - Cert_Len
+      procedure Record_Cert (Cert : Region)
+      with Pre  => Cert.Length > 0
+                   and then Cert.At_Byte <= Len - Cert.Length
                    and then Info.Chain_Count <= Max_Chain
                    and then (if Info.Have_Cert
                              then Info.Cert_First <= Info.Cert_Last
@@ -214,11 +225,11 @@ package body TLS_Client.Scan with SPARK_Mode => On is
          if Info.Chain_Count < Max_Chain then
             Info.Chain_Count := Info.Chain_Count + 1;
             Info.Chain (Info.Chain_Count) :=
-              (First => Cert_At, Last => Cert_At + Cert_Len - 1);
+              (First => Cert.At_Byte, Last => Cert.At_Byte + Cert.Length - 1);
          end if;
          if not Info.Have_Cert then
-            Info.Cert_First := Cert_At;                     --  the leaf
-            Info.Cert_Last := Cert_At + Cert_Len - 1;
+            Info.Cert_First := Cert.At_Byte;                     --  the leaf
+            Info.Cert_Last := Cert.At_Byte + Cert.Length - 1;
             Info.Have_Cert := True;
          end if;
       end Record_Cert;
@@ -227,13 +238,13 @@ package body TLS_Client.Scan with SPARK_Mode => On is
       --  [extlen(2)][exts], repeated.  Its own procedure -- the walk that calls
       --  it is nested deeply enough already, and this is the part a reader
       --  needs to check most carefully.
-      procedure Take_Certificates (Body_At, MLen : Natural)
+      procedure Take_Certificates (Msg : Region)
       with Pre => Buf'First = 0
                   and then Buf'Last < Natural'Last / 2
                   and then Len <= Buf'Last + 1
                   and then Len >= 3
-                  and then Body_At <= Len
-                  and then MLen <= Len - Body_At
+                  and then Msg.At_Byte <= Len
+                  and then Msg.Length <= Len - Msg.At_Byte
                   and then Info.Chain_Count <= Max_Chain
                   and then (if Info.Have_Cert
                             then Info.Cert_First <= Info.Cert_Last
@@ -253,22 +264,22 @@ package body TLS_Client.Scan with SPARK_Mode => On is
                    and then Info.Fin_First = Info.Fin_First'Old
                    and then Info.Fin_Last = Info.Fin_Last'Old
       is
-         Msg_End  : constant Natural := Body_At + MLen;
+         Msg_End  : constant Natural := Msg.At_Byte + Msg.Length;
          Ctx_Len  : Natural;
          Cert_Pos : Natural;
          List_End : Natural;
       begin
          --  The body must hold the context-length byte and the three-byte list
          --  length before either is read.
-         if MLen < 4 then
+         if Msg.Length < 4 then
             return;
          end if;
-         Ctx_Len := Natural (Buf (Body_At));
-         if Ctx_Len > MLen - 4 then
+         Ctx_Len := Natural (Buf (Msg.At_Byte));
+         if Ctx_Len > Msg.Length - 4 then
             return;                          --  context runs past the message
          end if;
 
-         Cert_Pos := Body_At + 1 + Ctx_Len;
+         Cert_Pos := Msg.At_Byte + 1 + Ctx_Len;
          List_End := Natural'Min (Cert_Pos + 3 + U24_At (Cert_Pos), Msg_End);
          Cert_Pos := Cert_Pos + 3;
 
@@ -295,7 +306,7 @@ package body TLS_Client.Scan with SPARK_Mode => On is
                Cert_At  : constant Natural := Cert_Pos + 3;
             begin
                exit when Cert_Len = 0 or else Cert_Len > List_End - Cert_At;
-               Record_Cert (Cert_At, Cert_Len);
+               Record_Cert ((At_Byte => Cert_At, Length => Cert_Len));
 
                Cert_Pos := Cert_At + Cert_Len;
                exit when Cert_Pos + 2 > List_End;           --  no extensions
@@ -333,11 +344,11 @@ package body TLS_Client.Scan with SPARK_Mode => On is
             --  simply passed over, and a case would need an empty branch to
             --  say so.
             if MType = 11 then                       --  Certificate
-               Take_Certificates (Body_At, MLen);
+               Take_Certificates ((At_Byte => Body_At, Length => MLen));
                Info.Cert_End := Body_At + MLen;
 
             elsif MType = 15 then                    --  CertificateVerify
-               Take_Cert_Verify (Body_At, MLen);
+               Take_Cert_Verify ((At_Byte => Body_At, Length => MLen));
                Info.CV_End := Body_At + MLen;
 
             elsif MType = 13 then                    --  CertificateRequest
