@@ -158,6 +158,17 @@ generic \emph{instances}, not generics, so this is a genuinely separate result a
 needs its own project; what the refactor bought was that the bodies under it are
 the ones already known to be right.
 
+Proof is not a substitute for running the thing, and the hardware side had the
+same gap: the one on-board exercise of P-384 needed a W5500, and the HTTPS
+example's certificate chain is RSA from leaf to root, so neither curve was
+actually executing on the board. The \texttt{esp32s3\_wifi\_ecdsa} example fixes
+that by choosing a peer for the shape of its chain rather than its content --
+\texttt{letsencrypt.org} is ECDSA up to the same pinned ISRG Root X1 the repo
+already ships. Validating it runs \lstinline{P384.Verify} three times and
+\lstinline{P256.Verify} once, and the example prints which primitive verified
+which link instead of asserting it, so it fails loudly if the CA re-issues under
+a key that no longer exercises either.
+
 The tool is worth having for the eleventh copy, not for the ten it found once.
 
 \section{Baselines, and the two gates}\index{AdaLang Analyzer!baseline}\index{x!analyze}
