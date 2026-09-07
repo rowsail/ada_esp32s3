@@ -973,35 +973,52 @@ package body TLS_Client is
          Signed (64 + Ctx'Length + 1 + I) := U8 (Digest (Index_32 (I)));
       end loop;
 
-      if S.CV_Alg = 16#0804# then
-         S.CV_OK :=
-           Cert.Key_Kind = X509.Key_RSA
-           and then Cert_Verify.RSA_PSS_SHA256
-                      (Message   => Signed,
-                       Signature => Sig,
-                       Modulus   => CertBuf (Cert.RSA_Modulus.First .. Cert.RSA_Modulus.Last),
-                       Exponent  => CertBuf (Cert.RSA_Exponent.First .. Cert.RSA_Exponent.Last));
-      elsif S.CV_Alg = 16#0403# then
-         --  ecdsa_secp256r1_sha256
-         S.CV_OK :=
-           Cert.Key_Kind = X509.Key_EC_P256
-           and then Cert_Verify.ECDSA_P256_SHA256
-                      (Message => Signed,
-                       Sig_DER => Sig,
-                       Pub_X   => CertBuf (Cert.EC_X.First .. Cert.EC_X.Last),
-                       Pub_Y   => CertBuf (Cert.EC_Y.First .. Cert.EC_Y.Last));
-      else
-         --  ecdsa_secp384r1_sha384 (P-384 leaf; the Signed message still
-         --  carries the SHA-256 transcript hash -- only the CertVerify digest
-         --  is SHA-384).
-         S.CV_OK :=
-           Cert.Key_Kind = X509.Key_EC_P384
-           and then Cert_Verify.ECDSA_P384_SHA384
-                      (Message => Signed,
-                       Sig_DER => Sig,
-                       Pub_X   => CertBuf (Cert.EC_X.First .. Cert.EC_X.Last),
-                       Pub_Y   => CertBuf (Cert.EC_Y.First .. Cert.EC_Y.Last));
-      end if;
+      --  Cert_Verify takes one distinct type per role, so these conversions are
+      --  what states which value is the signature and which is the key -- the
+      --  compiler rejects them in the wrong order.  Views, not copies.
+      declare
+         subtype Signed_B is Cert_Verify.Signed_Bytes;
+         subtype Sig_B    is Cert_Verify.Signature_Bytes;
+         subtype Mod_B    is Cert_Verify.Modulus_Bytes;
+         subtype Exp_B    is Cert_Verify.Exponent_Bytes;
+         subtype X_B      is Cert_Verify.Coord_X_Bytes;
+         subtype Y_B      is Cert_Verify.Coord_Y_Bytes;
+
+         EC_X : X509.Byte_Array renames CertBuf (Cert.EC_X.First .. Cert.EC_X.Last);
+         EC_Y : X509.Byte_Array renames CertBuf (Cert.EC_Y.First .. Cert.EC_Y.Last);
+      begin
+         if S.CV_Alg = 16#0804# then
+            S.CV_OK :=
+              Cert.Key_Kind = X509.Key_RSA
+              and then Cert_Verify.RSA_PSS_SHA256
+                         (Message   => Signed_B (Signed),
+                          Signature => Sig_B (Sig),
+                          Modulus   => Mod_B (CertBuf (Cert.RSA_Modulus.First
+                                                       .. Cert.RSA_Modulus.Last)),
+                          Exponent  => Exp_B (CertBuf (Cert.RSA_Exponent.First
+                                                       .. Cert.RSA_Exponent.Last)));
+         elsif S.CV_Alg = 16#0403# then
+            --  ecdsa_secp256r1_sha256
+            S.CV_OK :=
+              Cert.Key_Kind = X509.Key_EC_P256
+              and then Cert_Verify.ECDSA_P256_SHA256
+                         (Message => Signed_B (Signed),
+                          Sig_DER => Sig_B (Sig),
+                          Pub_X   => X_B (EC_X),
+                          Pub_Y   => Y_B (EC_Y));
+         else
+            --  ecdsa_secp384r1_sha384 (P-384 leaf; the Signed message still
+            --  carries the SHA-256 transcript hash -- only the CertVerify digest
+            --  is SHA-384).
+            S.CV_OK :=
+              Cert.Key_Kind = X509.Key_EC_P384
+              and then Cert_Verify.ECDSA_P384_SHA384
+                         (Message => Signed_B (Signed),
+                          Sig_DER => Sig_B (Sig),
+                          Pub_X   => X_B (EC_X),
+                          Pub_Y   => Y_B (EC_Y));
+         end if;
+      end;
    end Verify_Cert_Verify;
 
    ---------------------------------------------------------------------------

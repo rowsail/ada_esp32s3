@@ -242,14 +242,26 @@ package body Cert_Verify is
       end;
    end RSA_PKCS1_Core;
 
-   function RSA_PKCS1_SHA256 (TBS, Signature, Modulus, Exponent : Byte_Array) return Boolean
-   is (RSA_PKCS1_Core (SHA256_BA (TBS), DI_SHA256, Signature, Modulus, Exponent));
+   function RSA_PKCS1_SHA256
+     (TBS : Signed_Bytes; Signature : Signature_Bytes;
+      Modulus : Modulus_Bytes; Exponent : Exponent_Bytes) return Boolean
+   is (RSA_PKCS1_Core (SHA256_BA (Byte_Array (TBS)), DI_SHA256,
+                       Byte_Array (Signature), Byte_Array (Modulus),
+                       Byte_Array (Exponent)));
 
-   function RSA_PKCS1_SHA384 (TBS, Signature, Modulus, Exponent : Byte_Array) return Boolean
-   is (RSA_PKCS1_Core (SHA384_BA (TBS), DI_SHA384, Signature, Modulus, Exponent));
+   function RSA_PKCS1_SHA384
+     (TBS : Signed_Bytes; Signature : Signature_Bytes;
+      Modulus : Modulus_Bytes; Exponent : Exponent_Bytes) return Boolean
+   is (RSA_PKCS1_Core (SHA384_BA (Byte_Array (TBS)), DI_SHA384,
+                       Byte_Array (Signature), Byte_Array (Modulus),
+                       Byte_Array (Exponent)));
 
-   function RSA_PKCS1_SHA512 (TBS, Signature, Modulus, Exponent : Byte_Array) return Boolean
-   is (RSA_PKCS1_Core (SHA512_BA (TBS), DI_SHA512, Signature, Modulus, Exponent));
+   function RSA_PKCS1_SHA512
+     (TBS : Signed_Bytes; Signature : Signature_Bytes;
+      Modulus : Modulus_Bytes; Exponent : Exponent_Bytes) return Boolean
+   is (RSA_PKCS1_Core (SHA512_BA (Byte_Array (TBS)), DI_SHA512,
+                       Byte_Array (Signature), Byte_Array (Modulus),
+                       Byte_Array (Exponent)));
 
    ---------------------------------------------------------------------------
    --  RSASSA-PSS (MGF1-SHA-256, salt length 32).  SHA256_BA is defined above.
@@ -286,7 +298,10 @@ package body Cert_Verify is
       return Mask;
    end MGF1;
 
-   function RSA_PSS_SHA256 (Message, Signature, Modulus, Exponent : Byte_Array) return Boolean is
+   function RSA_PSS_SHA256
+     (Message : Signed_Bytes; Signature : Signature_Bytes;
+      Modulus : Modulus_Bytes; Exponent : Exponent_Bytes) return Boolean
+   is
       M_First : Natural := Modulus'First;
    begin
       if Modulus'Length >= 1 and then Modulus (Modulus'First) = 0 then
@@ -313,9 +328,9 @@ package body Cert_Verify is
             Top_Bits     : Natural := 0;              --  bit width of the modulus top byte
             Top_Byte     : U8 := Modulus (M_First);
          begin
-            BE_To_Words (Modulus (M_First .. Modulus'Last), Mod_Words);
-            BE_To_Words (Signature, Sig_Words);
-            BE_To_Words (Exponent, Exp_Words);
+            BE_To_Words (Byte_Array (Modulus (M_First .. Modulus'Last)), Mod_Words);
+            BE_To_Words (Byte_Array (Signature), Sig_Words);
+            BE_To_Words (Byte_Array (Exponent), Exp_Words);
             Mod_Exp (Sig_Words, Exp_Words, Mod_Words, Result_Words, Ok);  --  EM = sig^e mod n
             if not Ok then
                return False;
@@ -333,7 +348,7 @@ package body Cert_Verify is
                EM_Off   : constant Natural := K - EmLen;
                DBLen    : constant Natural := EmLen - hLen - 1;
                ZeroN    : constant Natural := EmLen - hLen - sLen - 2;
-               mHash    : constant Byte_Array := SHA256_BA (Message);
+               mHash    : constant Byte_Array := SHA256_BA (Byte_Array (Message));
                H        : Byte_Array (0 .. hLen - 1);
             begin
                if EmLen < hLen + sLen + 2 or else EM_Off + EmLen /= K then
@@ -470,11 +485,17 @@ package body Cert_Verify is
          Hash => To_P256 (Hash32));
    end ECDSA_Core;
 
-   function ECDSA_P256_SHA256 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean
-   is (ECDSA_Core (SHA256_BA (Message), Sig_DER, Pub_X, Pub_Y));
+   function ECDSA_P256_SHA256
+     (Message : Signed_Bytes; Sig_DER : Signature_Bytes;
+      Pub_X : Coord_X_Bytes; Pub_Y : Coord_Y_Bytes) return Boolean
+   is (ECDSA_Core (SHA256_BA (Byte_Array (Message)), Byte_Array (Sig_DER),
+                   Byte_Array (Pub_X), Byte_Array (Pub_Y)));
 
-   function ECDSA_P256_SHA384 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean
-   is (ECDSA_Core (SHA384_BA_32 (Message), Sig_DER, Pub_X, Pub_Y));
+   function ECDSA_P256_SHA384
+     (Message : Signed_Bytes; Sig_DER : Signature_Bytes;
+      Pub_X : Coord_X_Bytes; Pub_Y : Coord_Y_Bytes) return Boolean
+   is (ECDSA_Core (SHA384_BA_32 (Byte_Array (Message)), Byte_Array (Sig_DER),
+                   Byte_Array (Pub_X), Byte_Array (Pub_Y)));
 
    ---------------------------------------------------------------------------
    --  ECDSA/P-384.  Mirrors ECDSA_Core, widened to 48-byte values; the digest
@@ -503,9 +524,11 @@ package body Cert_Verify is
       Out48 := P384.Bytes_48 (Tmp);
    end DER_Int_48;
 
-   function ECDSA_P384_SHA384 (Message, Sig_DER, Pub_X, Pub_Y : X509.Byte_Array) return Boolean
+   function ECDSA_P384_SHA384
+     (Message : Signed_Bytes; Sig_DER : Signature_Bytes;
+      Pub_X : Coord_X_Bytes; Pub_Y : Coord_Y_Bytes) return Boolean
    is
-      Hash48   : constant Byte_Array := SHA384_BA (Message);
+      Hash48   : constant Byte_Array := SHA384_BA (Byte_Array (Message));
       Pos      : Natural;
       Ok       : Boolean := True;
       R48, S48 : P384.Bytes_48;
@@ -518,13 +541,14 @@ package body Cert_Verify is
          return False;
       end if;
       Pos := Sig_DER'First + 2;                      --  past SEQUENCE tag + length
-      DER_Int_48 (Sig_DER, Pos, Sig_DER'Last, R48, Ok);
-      DER_Int_48 (Sig_DER, Pos, Sig_DER'Last, S48, Ok);
+      DER_Int_48 (Byte_Array (Sig_DER), Pos, Sig_DER'Last, R48, Ok);
+      DER_Int_48 (Byte_Array (Sig_DER), Pos, Sig_DER'Last, S48, Ok);
       if not Ok then
          return False;
       end if;
       return P384.Verify
-        (Key  => (X => To_P384 (Pub_X), Y => To_P384 (Pub_Y)),
+        (Key  => (X => To_P384 (Byte_Array (Pub_X)),
+                  Y => To_P384 (Byte_Array (Pub_Y))),
          Sig  => (R => R48, S => S48),
          Hash => To_P384 (Hash48));
    end ECDSA_P384_SHA384;
@@ -536,7 +560,10 @@ package body Cert_Verify is
    --  Detached verify: NaCl exposes the combined form (signature || message), so
    --  reconstruct SM = Signature || Message, run Open (which cryptographically
    --  verifies), and confirm it recovered exactly Message.
-   function Ed25519_Verify (Message, Signature, Pub_Key : X509.Byte_Array) return Boolean is
+   function Ed25519_Verify
+     (Message : Signed_Bytes; Signature : Signature_Bytes;
+      Pub_Key : Ed_Key_Bytes) return Boolean
+   is
       use type SPARKNaCl.I32;
       PKB : SPARKNaCl.Bytes_32;
       PK  : SPARKNaCl.Sign.Signing_PK;
