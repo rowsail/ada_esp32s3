@@ -88,13 +88,29 @@ package body ESP32S3.SHT41 is
    end Transact;
 
    --  True iff every 3-byte (word + CRC) group in Data checks out.
+   --
+   --  CRC8 above is the bit-at-a-time definition of the polynomial, so there is
+   --  nothing independent to check IT against.  This is where the content is:
+   --  the Post is an "iff" over every group, so the loop is proved to examine
+   --  all of them -- no off-by-one dropping the last word, no early exit
+   --  skipping one.  A gap there is the bug that matters, because it accepts
+   --  corrupted sensor data as good rather than merely rejecting good data.
    function CRC_Good (Data : Byte_Array) return Boolean
      with SPARK_Mode => On,
-          Pre => Data'First >= 0 and then Data'Last <= Natural'Last - 3
+          Pre  => Data'First >= 0 and then Data'Last <= Natural'Last - 3,
+          Post => CRC_Good'Result =
+                    (for all K in 0 .. Data'Length / 3 - 1 =>
+                       CRC8 (Data (Data'First + K * 3),
+                             Data (Data'First + K * 3 + 1))
+                         = Data (Data'First + K * 3 + 2))
    is
       Groups : constant Natural := Data'Length / 3;   --  whole 3-byte groups
    begin
       for K in 0 .. Groups - 1 loop
+         pragma Loop_Invariant
+           (for all J in 0 .. K - 1 =>
+              CRC8 (Data (Data'First + J * 3), Data (Data'First + J * 3 + 1))
+                = Data (Data'First + J * 3 + 2));
          declare
             Base : constant Natural := Data'First + K * 3;   --  group start
          begin

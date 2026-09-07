@@ -59,8 +59,17 @@ package body ESP32S3.SD_SPI is
    --  CRC7 of a command frame's first 5 bytes, returned already shifted into the
    --  frame's trailing byte (<<1 | stop bit).  Required for CMD0/CMD8; harmless
    --  (ignored by the card) for the rest, which run with CRC checking off.
+   --
+   --  The CRC itself is computed bit-at-a-time, i.e. straight from the
+   --  polynomial's definition, so there is no independent reference to state a
+   --  postcondition against -- the loop IS the specification.  What the Post
+   --  pins instead is the part callers depend on and a refactor could silently
+   --  break: the byte is a well-formed frame terminator, CRC in bits 7 .. 1 and
+   --  the mandatory stop bit set.  A card rejects a frame whose stop bit is
+   --  clear regardless of whether the CRC was right.
    function CRC7_Frame (Cmd : Unsigned_8; Arg : Unsigned_32) return Unsigned_8
-     with SPARK_Mode => On
+     with SPARK_Mode => On,
+          Post => (CRC7_Frame'Result and 1) = 1        --  stop bit
    is
       Crc : Unsigned_8 := 0;
 

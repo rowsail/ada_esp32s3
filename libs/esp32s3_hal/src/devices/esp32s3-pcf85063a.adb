@@ -29,15 +29,37 @@ package body ESP32S3.PCF85063A is
    --  BCD <-> binary (the chip stores two packed decimal digits per byte).
    ---------------------------------------------------------------------------
 
-   --  Two packed decimal digits in one byte.  The chip's fields are all two
-   --  digits (0 .. 59 / 0 .. 99), so V <= 99 keeps the packed byte <= 16#99#.
-   function To_BCD (V : Natural) return Byte
-   is (Byte ((V / 10) * 16 + (V mod 10)))
-   with SPARK_Mode => On, Pre => V <= 99;
-
+   --  From_BCD is declared first so To_BCD's postcondition can name it.
+   --
+   --  A register byte is NOT trustworthy: a chip that lost VBAT (see Get_Time)
+   --  hands back bytes whose nibbles are not decimal digits at all, so the Post
+   --  says what happens in BOTH cases -- a well-formed byte decodes to 0 .. 99,
+   --  and the worst a malformed one can produce is 165 (16#FF#).  That bound is
+   --  what keeps the Time fields Get_Time builds from it in range.
    function From_BCD (B : Byte) return Natural
    is (Natural (B / 16) * 10 + Natural (B mod 16))
-   with SPARK_Mode => On;
+   with SPARK_Mode => On,
+        Post => From_BCD'Result <= 165
+                and then (if B / 16 <= 9 and then B mod 16 <= 9
+                          then From_BCD'Result <= 99);
+
+   --  Two packed decimal digits in one byte.  The chip's fields are all two
+   --  digits (0 .. 59 / 0 .. 99), so V <= 99 keeps the packed byte <= 16#99#.
+   --
+   --  The Post is the whole specification: the result is a well-formed packed
+   --  BCD byte, and it decodes back to exactly V.  Since From_BCD is injective
+   --  over well-formed bytes, that round-trip alone fixes the answer -- a
+   --  transposed nibble or a mod/div swap in the expression stops proving,
+   --  which is the failure the Set_Time / Get_Time pair would otherwise only
+   --  show as a wrong wall-clock reading on real hardware.
+   function To_BCD (V : Natural) return Byte
+   is (Byte ((V / 10) * 16 + (V mod 10)))
+   with SPARK_Mode => On,
+        Pre  => V <= 99,
+        Post => To_BCD'Result <= 16#99#
+                and then To_BCD'Result / 16 <= 9
+                and then To_BCD'Result mod 16 <= 9
+                and then From_BCD (To_BCD'Result) = V;
 
    ---------------------------------------------------------------------------
    --  Register access on an already-acquired Session.  The public operations
@@ -84,10 +106,17 @@ package body ESP32S3.PCF85063A is
       Write_Regs (S, Reg, Reg_Value, Result);
    end Update_Reg;
 
-   --  An alarm register byte: the BCD value, or the "disabled" sentinel.
+   --  An alarm register byte: the BCD value, or the "disabled" sentinel.  The
+   --  Post pins the AEN_x bit, which is the only thing the chip reads here: a
+   --  field the caller asked for never comes back disabled, and one it did not
+   --  ask for always does.  (A BCD field is <= 16#99#, so bit 7 is clear.)
    function Alarm_Field (Use_It : Boolean; Value : Byte) return Byte
    is (if Use_It then Value else Alarm_Disable)
-   with SPARK_Mode => On;
+   with SPARK_Mode => On,
+        Post => (if not Use_It
+                 then (Alarm_Field'Result and Alarm_Disable) /= 0
+                 elsif Value <= 16#7F#
+                 then (Alarm_Field'Result and Alarm_Disable) = 0);
 
    -----------
    -- Setup --

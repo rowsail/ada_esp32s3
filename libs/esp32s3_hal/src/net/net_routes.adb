@@ -3,13 +3,12 @@ with Interfaces; use Interfaces;
 package body Net_Routes with SPARK_Mode => On is
 
    --  Pack a dotted address into a 32-bit value for masking/compare.
-   function U32 (Addr : Net_Devices.IPv4_Address) return Unsigned_32
+   function Pack (Addr : Net_Devices.IPv4_Address) return Unsigned_32
    is (Shift_Left (Unsigned_32 (Addr (0)), 24)
        or Shift_Left (Unsigned_32 (Addr (1)), 16)
        or Shift_Left (Unsigned_32 (Addr (2)), 8)
        or Unsigned_32 (Addr (3)));
 
-   --  Prefix length = number of set bits in the mask (works for any mask, /0..32).
    function Prefix_Len (Mask : Unsigned_32) return Natural is
       Count : Natural := 0;
    begin
@@ -22,17 +21,21 @@ package body Net_Routes with SPARK_Mode => On is
       return Count;
    end Prefix_Len;
 
-   type Route is record
-      Dest, Mask : Unsigned_32 := 0;
-      Iface      : Interface_Id := 0;
-      Metric     : Natural := 0;
-      Valid      : Boolean := False;
-   end record;
+   Table    : Route_Table;
+   N_Routes : Route_Total := 0;
+   Up       : Up_Query := null;
 
-   Max_Routes : constant := 16;
-   Table      : array (1 .. Max_Routes) of Route;
-   N_Routes   : Integer range 0 .. Max_Routes := 0;
-   Up         : Up_Query := null;
+   --  ---- proof model -------------------------------------------------------
+
+   function Route_Count return Route_Total is (N_Routes);
+
+   function Route_Covers (I : Route_Index; Dest : Net_Devices.IPv4_Address) return Boolean
+   is (Covers (Table (I), Pack (Dest)));
+
+   function Route_Iface (I : Route_Index) return Interface_Id
+   is (Table (I).Iface);
+
+   --  ---- table maintenance -------------------------------------------------
 
    procedure Configure (Is_Up : Up_Query) is
    begin
@@ -53,11 +56,10 @@ package body Net_Routes with SPARK_Mode => On is
       if N_Routes < Max_Routes then
          N_Routes := N_Routes + 1;
          Table (N_Routes) :=
-           (Dest   => U32 (Dest),
-            Mask   => U32 (Mask),
+           (Dest   => Pack (Dest),
+            Mask   => Pack (Mask),
             Iface  => Iface,
-            Metric => Metric,
-            Valid  => True);
+            Metric => Metric);
       end if;
    end Add_Route;
 
@@ -66,38 +68,83 @@ package body Net_Routes with SPARK_Mode => On is
       Add_Route ((0, 0, 0, 0), (0, 0, 0, 0), Iface, Metric);
    end Set_Default;
 
-   procedure Resolve
-     (Dest : Net_Devices.IPv4_Address; Iface : out Interface_Id; Found : out Boolean)
+   ------------------
+   -- Select_Route --
+   ------------------
+
+   procedure Select_Route
+     (T        : Route_Table;
+      Eligible : Eligibility;
+      N        : Route_Total;
+      Iface    : out Interface_Id;
+      Found    : out Boolean;
+      Pick     : out Route_Total)
    is
-      Dest_Bits   : constant Unsigned_32 := U32 (Dest);
-      Best_Len    : Integer := -1;          --  so the first match always wins
+      Best_Len    : Integer := -1;   --  so the first eligible route always wins
       Best_Metric : Natural := 0;
    begin
       Found := False;
       Iface := 0;
-      for I in 1 .. N_Routes loop
-         declare
-            Route_Rec : Route renames Table (I);
-         begin
-            if Route_Rec.Valid
-              and then (Dest_Bits and Route_Rec.Mask) = (Route_Rec.Dest and Route_Rec.Mask)
-              and then (Up = null or else Up (Route_Rec.Iface))    --  interface up
-            then
-               declare
-                  Len : constant Natural := Prefix_Len (Route_Rec.Mask);
-               begin
-                  if Len > Best_Len
-                    or else (Len = Best_Len and then Route_Rec.Metric < Best_Metric)
-                  then
-                     Best_Len := Len;
-                     Best_Metric := Route_Rec.Metric;
-                     Iface := Route_Rec.Iface;
-                     Found := True;
-                  end if;
-               end;
-            end if;
-         end;
+      Pick  := 0;
+      for I in 1 .. N loop
+         --  Everything the postcondition claims, restricted to the prefix of
+         --  the table scanned so far.  The last conjunct is what turns "best
+         --  of what I have seen" into "best of all of them" at loop exit.
+         pragma Loop_Invariant (Found = (for some J in 1 .. I - 1 => Eligible (J)));
+         pragma Loop_Invariant (if not Found then Pick = 0 and then Best_Len = -1);
+         pragma Loop_Invariant
+           (if Found then
+              Pick in 1 .. I - 1
+              and then Eligible (Pick)
+              and then Iface = T (Pick).Iface
+              and then Best_Len = Prefix_Len (T (Pick).Mask)
+              and then Best_Metric = T (Pick).Metric
+              and then (for all J in 1 .. I - 1 =>
+                          (if Eligible (J) then not Outranks (T, J, Pick))));
+         if Eligible (I) then
+            declare
+               Len : constant Natural := Prefix_Len (T (I).Mask);
+            begin
+               if Len > Best_Len
+                 or else (Len = Best_Len and then T (I).Metric < Best_Metric)
+               then
+                  Best_Len    := Len;
+                  Best_Metric := T (I).Metric;
+                  Iface       := T (I).Iface;
+                  Pick        := I;
+                  Found       := True;
+               end if;
+            end;
+         end if;
       end loop;
+   end Select_Route;
+
+   -------------
+   -- Resolve --
+   -------------
+
+   procedure Resolve
+     (Dest : Net_Devices.IPv4_Address; Iface : out Interface_Id; Found : out Boolean)
+   is
+      Dest_Bits : constant Unsigned_32 := Pack (Dest);
+      Cand      : Eligibility := (others => False);
+      Pick      : Route_Total;
+   begin
+      --  Sample the candidates once, then rank them.  Is_Up is still consulted
+      --  only for routes whose prefix matches, exactly as before -- the `and
+      --  then` keeps the callback off interfaces the destination cannot use.
+      for I in 1 .. N_Routes loop
+         Cand (I) := Covers (Table (I), Dest_Bits)
+                     and then (Up = null or else Up (Table (I).Iface));
+      end loop;
+
+      Select_Route (Table, Cand, N_Routes, Iface, Found, Pick);
+
+      --  Pick is the witness Resolve's own postcondition needs -- "the answer
+      --  came from a route that covers Dest" is proved by pointing at one, and
+      --  Pick is the one.  Naming it here says so; the assertion itself is
+      --  free (it compiles away without -gnata).
+      pragma Assert (if Found then Pick in 1 .. N_Routes and then Cand (Pick));
    end Resolve;
 
 end Net_Routes;

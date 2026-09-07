@@ -1,7 +1,13 @@
 #!/bin/bash
-#  Formally prove -- with SPARK / GNATprove at --level=1 ("silver": absence of
-#  run-time errors: no overflow, no array-index-out-of-range, no division by
-#  zero, all loops terminate) -- the HAL units marked `with SPARK_Mode => On`.
+#  Formally prove -- with SPARK / GNATprove -- the HAL units marked
+#  `with SPARK_Mode => On`.
+#
+#  Most units are proved at --level=1 to the "silver" standard: absence of
+#  run-time errors (no overflow, no array-index-out-of-range, no division by
+#  zero, all loops terminate).  A growing number go further and prove what the
+#  code MEANS, not only that it cannot fault -- see the "beyond silver" list
+#  below.  The distinction matters: silver says a router cannot crash on any
+#  destination, gold/platinum says it picks the right interface.
 #
 #  Runs against the NATIVE host / prove projects, so there is no cross-target or
 #  embedded-RTS friction: the proven units are pure logic (parsers, serializers,
@@ -11,13 +17,23 @@
 #  and body (I/O / access / raising ops at the boundary get `SPARK_Mode => Off`);
 #  GNATprove then analyses the On subset automatically.
 #
-#  Currently proven (silver, 0 unproved checks):
-#    ext4      -- Get_*/Put_* byte helpers, CRC32C, and Superblock/Inode/Group_Desc
+#  Currently proven (0 unproved checks; "PLATINUM"/"GOLD" marks the units whose
+#  contracts specify behaviour rather than only bounding it):
+#    ext4      -- Get_*/Put_* byte helpers, CRC32C (PLATINUM: the 256-entry table
+#                 AND the table-driven walk are proved equal to the bit-at-a-time
+#                 polynomial definition, for every seed and every input -- what
+#                 stood behind them before was one known-answer vector), and
+#                 Superblock/Inode/Group_Desc
 #                 /Bitmap/Block_Map/Dir/File serialization + validation; plus the
 #                 mkfs single-group layout geometry (bounded + internally consistent);
-#                 and the '/'-separated path-component scanner (untrusted input)
+#                 and the '/'-separated path-component scanner (untrusted input --
+#                 PLATINUM: a component holds no '/', only separators are skipped,
+#                 the scan stops only at a separator, and it always makes PROGRESS,
+#                 which is what makes a caller's walk over a hostile path terminate)
 #    X509      -- the DER TLV reader AND the certificate parser (untrusted input)
-#    Der_Sig   -- the ECDSA-Sig-Value DER r/s parse (untrusted input): no over-read
+#    Der_Sig   -- the ECDSA-Sig-Value DER r/s parse (untrusted input): no over-read,
+#                 and (GOLD) on ANY rejection the output is all-zero -- so ignoring
+#                 the Ok flag cannot leave attacker-chosen bytes in an r or s
 #    P256      -- the whole secp256r1 stack: field + order arithmetic (Montgomery
 #                 CIOS), Jacobian point add/double/scalar-mul, AND the ECDSA
 #                 Verify and On_Curve compositions over them (untrusted input --
@@ -30,13 +46,38 @@
 #                 pass -- see the note at the bottom; it is far too slow
 #    NMEA      -- the NMEA-0183 GPS-sentence parser (untrusted input)
 #    Modbus    -- slave framing/dispatch (Process) and master PDU build/parse
-#    NTP       -- To_UTC civil-date math
-#    Net_Routes-- IPv4 longest-prefix-match routing
-#    Endian    -- LE/BE byte join/split
+#    NTP       -- To_UTC civil-date math (PLATINUM: the fields are proved to
+#                 denote exactly the instant they were made from, by round-trip
+#                 through a ghost days_from_civil, AND Day <= the month's real
+#                 length -- without that second clause the round-trip alone still
+#                 admits February 30th, which maps to the same day number as
+#                 March 2nd.  Together they admit exactly one answer per input)
+#    Net_Routes-- IPv4 longest-prefix-match routing (GOLD: Resolve never returns an
+#                 interface that is not on a route covering the destination, and
+#                 the ranking itself -- longest prefix, then lowest metric, winner
+#                 beaten by NO eligible route rather than just by none seen so far
+#                 -- is proved of Select_Route.  This is what decides Ethernet->
+#                 cellular failover)
+#    Endian    -- LE/BE byte join/split (PLATINUM: each Join is pinned to the
+#                 positional sum that defines the byte order and each Split
+#                 round-trips through it, so the contracts are the whole meaning)
 #    TLSF      -- allocator size-class + bit math; bucket indices PROVABLY in
 #                 range (beyond silver: functional postconditions, --level=4)
 #    Heap_Guard-- malloc/calloc request-size + overflow guards; a wrapping size
 #                 request can never yield a live under-sized buffer
+#    SHT41     -- CRC-8 + datasheet conversions.  CRC8 is itself the bit-at-a-time
+#                 definition, so there is nothing independent to check it against;
+#                 the content is in CRC_Good, whose Post is an "iff" over EVERY
+#                 3-byte group -- a gap there accepts corrupt sensor data as good
+#    SD_SPI    -- CRC-7 command frame; likewise bitwise, so the Post pins the part
+#                 callers depend on: the trailing byte is a well-formed frame
+#                 terminator (CRC in bits 7..1, mandatory stop bit set)
+#    PCF85063A -- BCD<->binary (PLATINUM for To_BCD: the result is well-formed
+#                 packed BCD and decodes back to exactly the input, so a
+#                 transposed nibble stops proving instead of showing up as a
+#                 wrong wall-clock reading on hardware).  From_BCD additionally
+#                 bounds what a MALFORMED register byte can produce, which is the
+#                 case a chip that lost VBAT actually hands back
 #    LEDC/MCPWM-- Set_Duty Float duty scaling: the Float->count conversion has no
 #                 range error / NaN for any Percent (0 .. 100)
 #
@@ -64,8 +105,11 @@ prove () {  #  $1 = project file, $2 = label, $3 = gnatprove tuning (optional)
    local report unproved
    report="$(echo "$out" | sed -n 's/^Summary logged in //p' | tail -1)"
    if [ -n "$report" ] && [ -f "$report" ]; then
+      #  Assertions and Functional Contracts are the rows that move when a unit
+      #  is specified rather than merely bounded, so show them alongside the
+      #  run-time checks instead of only the silver row.
       sed -n '/SPARK Analysis results/,/^Total/p' "$report" \
-         | grep -iE "Run-time Checks|^Total"
+         | grep -iE "Run-time Checks|Assertions|Functional Contracts|^Total"
       #  The Total row's last column is the number of unproved obligations, or
       #  "." for none.  Read it rather than trusting the severity grep above.
       unproved="$(sed -n '/SPARK Analysis results/,/^Total/p' "$report" \
@@ -100,7 +144,13 @@ prove "$T/nmea_prove/nmea_prove.gpr"                 "NMEA GPS-sentence parser (
 prove "$T/dns_prove/dns_prove.gpr"                   "DNS response parser (untrusted input)"
 prove "$T/modbus_slave_host/modbus_slave_host.gpr"   "Modbus slave (framing + Process)"
 prove "$T/modbus_master_host/modbus_master_host.gpr" "Modbus master (PDU build/parse)"
-prove "$T/ntp_prove/ntp_prove.gpr"                   "NTP To_UTC civil-date math"
+#  To_UTC is specified by round-trip through its own inverse, so the proof has to
+#  carry Hinnant's civil-from-days arithmetic (a chain of integer divisions by
+#  146097 / 1460 / 36524 / 365 / 153) through the equality.  z3 alone at level 1
+#  does not close it; the full prover set at level 2 does, in a few seconds.
+prove "$T/ntp_prove/ntp_prove.gpr" \
+      "NTP To_UTC civil-date math (round-trips through days_from_civil)" \
+      "--level=2 --prover=z3,cvc5,altergo --timeout=60"
 prove "$T/net_routes_prove/net_routes_prove.gpr"     "Net_Routes longest-prefix match"
 prove "$T/aes_gcm_prove/aes_gcm_prove.gpr"           "AES-GCM GHASH GF(2^128) + CTR"
 prove "$T/sht41_prove/sht41_prove.gpr"               "SHT41 CRC-8 + datasheet conversions"
