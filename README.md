@@ -103,7 +103,7 @@ write-up:
 ```sh
 git clone https://github.com/rowsail/ada_esp32s3.git
 cd ada_esp32s3                # or unzip a release archive -- no submodules
-./x flash smp_empty           # build + flash the empty SMP skeleton
+./x flash gpio0_blink         # build + flash the pure-Ada GPIO0 blink
 ./x monitor                   # watch the console
 ```
 
@@ -131,7 +131,7 @@ unrestricted runtime. See the book's profile chapter and the
 
 ## Examples
 
-All 96 examples share the same FreeRTOS-free bare boot
+All 97 examples share the same FreeRTOS-free bare boot
 ([`examples/common/bare/`](examples/common/bare)); build/flash any with
 `./x flash <short-name>` (the `esp32s3_` prefix is optional). Run `./x list` for
 the full set with each one's runtime profile — the tables below are a selection.
@@ -179,6 +179,30 @@ the full set with each one's runtime profile — the tables below are a selectio
 | `esp32s3_rendezvous` | `full` profile: a server task with entries served by selective `accept` |
 | `esp32s3_full_intr` | `full` profile: `pragma Attach_Handler` / `Ada.Interrupts` on HW |
 
+**Wired networking & protocols** (a W5500 Ethernet module on SPI2; the socket
+API is the chip-neutral `GNAT.Sockets` facade, so the same code runs over Wi-Fi)
+| Example | What it is |
+|---|---|
+| `esp32s3_w5500` | The whole Ethernet stack, then a `GNAT.Sockets` echo server |
+| `esp32s3_w5500_dhcp` / `esp32s3_w5500_dns` / `esp32s3_w5500_ntp` | DHCP with lease maintenance / `DNS_Client` lookup / SNTP time |
+| `esp32s3_w5500_http` / `esp32s3_w5500_weather` | HTTP GET over `GNAT.Sockets` / a real weather forecast |
+| `esp32s3_w5500_control` / `esp32s3_w5500_lowpower` | The control registers / PHY power-down |
+| `esp32s3_multinic` | Two interfaces at once: longest-prefix routing, per-socket pinning |
+| `esp32s3_modbus_master` / `esp32s3_modbus_slave` | Modbus TCP, both ends |
+| `esp32s3_ftp` / `esp32s3_ftp_inet` / `esp32s3_ftp_server` | FTP client (local, then a real internet server) / an anonymous server over the ext4 flash |
+| `esp32s3_dns_secure` | One name, four DNS transports: UDP, TCP, DoT, DoH |
+| `esp32s3_tls_hello` / `esp32s3_tls_weather` / `esp32s3_tls_resume` | Pure-Ada TLS 1.3: a handshake walkthrough / a live HTTPS fetch / resumption with a PSK ticket |
+
+**Crypto and X.509 known-answer tests** (no wiring, no network: the vectors are
+baked in, so each one is a self-contained PASS/FAIL on the board)
+| Example | What it is |
+|---|---|
+| `esp32s3_p256_kat` | Pure-Ada P-256 ECDSA verify + ECDH, against the standard vectors |
+| `esp32s3_rsa_kat` / `esp32s3_aes_gcm_kat` | The RSA accelerator's modexp / AES-GCM authenticated encryption |
+| `esp32s3_sparknacl_kat` | SPARKNaCl, the formally-verified crypto library, on the S3 |
+| `esp32s3_x509_kat` / `esp32s3_x509_verify` | DER certificate parsing / certificate signature verification |
+| `esp32s3_x509_chain` / `esp32s3_x509_policy` | Chain validation / validity window + hostname (SAN) matching |
+
 **Wi-Fi** (link the fetched Apache-2.0 Espressif blobs — run
 [`tools/fetch-wifi-blobs.sh`](tools/fetch-wifi-blobs.sh) once, or set `IDF_PATH`;
 put your network in the gitignored `src/wifi_credentials.ads`)
@@ -195,6 +219,11 @@ put your network in the gitignored `src/wifi_credentials.ads`)
 | Example | What it is |
 |---|---|
 | `esp32s3_intr_levels` | Interrupt-vector regression test (L2/L3/L5 dispatch + context preservation) |
+| `esp32s3_shared_l2` | Two drivers sharing one level-2 interrupt |
+| `esp32s3_delay_test` | `delay until` accuracy: the SYSTIMER alarm, idle-then-wake |
+| `esp32s3_stack_usage` | The runtime's own stack high-water mark, read back on the board |
+| `esp32s3_heaptest` / `esp32s3_stress` | TLSF `malloc`/`free` under stress / the runtime stress suite |
+| `esp32s3_mac` | The factory MAC addresses, read from eFuse |
 
 ## The peripheral HAL
 
@@ -224,9 +253,15 @@ ext2/3/4 implementation in Ada (a reimplementation in the spirit of lwext4):
 read **and** write (create/write/truncate/mkdir/rmdir/unlink/rename/link),
 metadata checksums, and JBD2 journal replay + commit. It is developed against a
 rootless host test harness that checks every operation against
-`mke2fs`/`debugfs`/`e2fsck` (that harness lives in the development repository).
-It is **host-verified only** — the on-device path (`examples/esp32s3_ext4`, over
-the SD driver) has not yet been validated on hardware.
+`mke2fs`/`debugfs`/`e2fsck`
+([`test/ext4_host`](libs/esp32s3_hal/test/ext4_host), one of the suites
+`./x test host` runs): 17 scenarios, each ending in a clean `e2fsck -fn`.
+It also runs **on a card**: `esp32s3_ext4_sdmmc` mounts a real `mkfs.ext4` SD
+card over the native SDHOST, `esp32s3_ext4_write` puts the write battery through
+it as one journaled transaction, and the card passes `e2fsck -f` on a Linux host
+afterwards. On SPI NOR flash it runs over the wear-leveling FTL, including
+on-device `Ext4.Mkfs`. The one block adapter still unproven on a card is
+`SD_SPI_Source` (SD over SPI), which is what `examples/esp32s3_ext4` uses.
 
 ## The pure-Ada FAT16 filesystem
 
@@ -245,7 +280,8 @@ are recognised and *refused* rather than misread. Both sit on
 `ESP32S3.Block_Dev`, so the same sources run over SPI NOR flash, an SD card, or
 a file-backed device in the test harness.
 
-It is **host-verified**: the development repository's harness makes three
+It is **host-verified**: the harness
+([`test/fat16_host`](libs/esp32s3_hal/test/fat16_host)) makes three
 independent implementations agree about every volume — the Ada code, the host's
 own `dosfstools` (`mkfs.fat` writes volumes it must read, `fsck.fat` checks
 volumes it writes), and a FAT16 writer written from the specification rather
@@ -288,8 +324,9 @@ open does not reset the target — and emulates its capacitor, so esptool's
 `ClassicReset` (which moves the lines one at a time) works regardless of what
 the target board has on its EN pin.
 
-It is **host-verified only**: the development repository drives it against a
-simulated ROM that validates every frame it is sent, impersonating each chip
+It is **host-verified only**:
+[`test/esp_loader_host`](libs/esp32s3_hal/test/esp_loader_host) drives it against
+a simulated ROM that validates every frame it is sent, impersonating each chip
 family in turn — and deliberately breaks the per-chip handling three ways to
 prove those checks bite. The real ROM's timing and quirks still want a target
 board on the end of a real UART.
@@ -310,10 +347,10 @@ ESP32-S3 during development — re-verify on your hardware):
 External devices with an **on-board example** but no automatic self-test — each
 needs the part wired up, and the example prints what it saw:
 
-> W5500 Ethernet, Wi-Fi (radio + software TCP/IP), W25Q SPI NOR, ST7789 and i80
-> panels, GT911 touch, ES8311 codec, TX1812 LED string, TLV2556 ADC, SHT41,
-> QMI8658C, PCF85063A, TCA9555, CH422G, HC595, M24C64 / 24Cxx EEPROM, FRAM,
-> NMEA GPS.
+> W5500 Ethernet, Wi-Fi (radio + software TCP/IP), SDMMC (a real ext4 card, read
+> and written), W25Q SPI NOR, ST7789 and i80 panels, GT911 touch, ES8311 codec,
+> TX1812 LED string, TLV2556 ADC, SHT41, QMI8658C, PCF85063A, TCA9555, CH422G,
+> HC595, M24C64 / 24Cxx EEPROM, FRAM, NMEA GPS.
 
 Protocol libraries that ride on the network stack — **DNS, NTP, FTP (client and
 server), Modbus (master and slave), X.509, TLS 1.3** — are exercised by host
@@ -325,9 +362,7 @@ Drivers and components that are **not hardware-verified** and need testing:
 | Component | State | What's needed |
 |---|---|---|
 | `SD_SPI` (SD card over SPI) | compiles; no-card smoke test only | test against a real card |
-| `SDMMC` (native SDHOST) | compiles; no-card smoke test only | test against a real card |
 | Temperature sensor | compiles | run on hardware |
-| ext4 filesystem | host-verified vs `e2fsck` only | validate on-device over SD |
 | FAT16 filesystem | host-verified vs `dosfstools` only | validate on-device over SPI NOR |
 | ESP serial bootloader client | host-verified vs a simulated ROM only | validate against a real target over UART |
 
@@ -335,9 +370,46 @@ Drivers and components that are **not hardware-verified** and need testing:
 
 `./x test` — the same command you can run locally — and nothing in it needs a
 board: every library on every runtime profile it supports (**warnings are
-failures**), a build of all 96 examples, and the host suites. Hardware
+failures**), a build of all 97 examples, and the host suites. Hardware
 validation stays on the bench; CI's job is that the tree still builds and the
 portable logic still passes.
+
+## Proof and static analysis
+
+Two board-free gates sit alongside the test suites, and neither is a claim that
+the code is clean: each one is a tripwire that only reports something new.
+
+**SPARK proof.** `book/prove/prove.sh` runs GNATprove over the pure, bounded
+units: the parsers, serializers and checksums that handle untrusted or
+integrity-critical data. **32 units, 1,939 obligations, zero unproved** — 1,076
+of them run-time checks (no overflow, no buffer overrun, every loop terminates),
+and 273 functional contracts that say what the code *computes*. The
+untrusted-input parsers are the point: `X509`, `NMEA`, `DNS_Client.Parse`,
+`Chain_Verify`, `P256.Verify` and the `Modbus` slave and master provably cannot
+overrun, overflow or loop forever on any malformed input. Nine units go past
+that floor to gold or platinum, where the contract pins the answer rather than
+just the safety. Proving found five real defects and three specification gaps
+that silver could not see — an `X509` hostname match that could index out of
+range, a `Chain_Verify` null dereference, an `NTP_Client` conversion that
+admitted February 31st. The unit table, the levels and the bug list are in
+**[`book/prove/README.md`](book/prove/README.md)**; the book's *Formal Proof
+with SPARK* and *Static Analysis* chapters cover the method.
+
+**Static analysis.** `./x analyze` runs
+[adalang_analyzer](https://github.com/mmartign/AdaLang_Analyzer) (Maurizio
+Martignano's Libadalang-based analyser, an Alire crate) over each library and
+filters out everything already fingerprinted in
+[`tools/analyzer-baselines/`](tools/analyzer-baselines), so it prints only what a
+change introduced. `./x analyze --style` is the second rule set (complexity,
+duplication, constructs that obscure intent) against its own baseline, and
+`./x analyze --do178c` writes per-objective DO-178C evidence reports — a report
+for a certification process to consume, not a gate. The analyzer is deliberately
+*not* part of `./x test`: it is not in the toolchain this project pins, so a
+plain clone would fail a check it cannot run.
+
+**Footprint.** `./x stack <example>` reports per-frame and worst-case call-chain
+stack use (`--run` adds the measured high-water mark over serial), and
+`./x mem <example>` reports section sizes against the linker's bounds.
 
 ## ACATS conformance
 
@@ -379,8 +451,13 @@ repository, which pulls this one in as a submodule.
   shows every example and its profile.
 - **`./x test`** — everything checkable without a board, in one command: the
   host suites, every library on every profile it supports (warnings fail the
-  build), and a build of all 96 examples. This is exactly what CI runs.
+  build), and a build of all 97 examples. This is exactly what CI runs.
   Narrow it with `./x test host`, `./x test lib`, `./x test examples`.
+- **`./x analyze`** — static analysis against a per-library baseline, so only new
+  findings are reported (`--style` for the readability set, `--do178c` for
+  evidence reports). See [Proof and static analysis](#proof-and-static-analysis).
+- **`./x stack` / `./x mem`** — worst-case stack per call chain (`--run` measures
+  the real high-water mark) and the image's section sizes against the linker map.
 - **`esp32-ada`** — after `source export.sh`, scaffold and build projects in any
   empty folder, no runtime source copied.
 - **VS Code** — first-class target: build tasks plus on-chip GDB debugging over
@@ -411,6 +488,10 @@ libs/
 examples/           the flashable examples (each owns its board.ads)
   common/bare/      the shared FreeRTOS-free boot (bootloader, start.S, vectors, glue)
 book/               the long-form guide (LaTeX sources + main.pdf)
+  prove/            the SPARK proof surface (prove.sh + what is proved, and to what level)
+docs/               the static getting-started site (adaformicrocontrollers.com)
+tools/              fetch-wifi-blobs.sh, the analyzer baselines, host helpers
+ide/                the VS Code and Vim integrations
 x, export.sh        the ./x dispatcher and the esp32-ada launcher
 QUICKSTART.md, TOOLING.md
 ```

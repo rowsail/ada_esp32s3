@@ -135,19 +135,37 @@ begin
 end;                                                 -- Mount finalizes (flush + close)
 ```
 
-On the chip, build a `Device` with
-`ESP32S3.Block_Dev.SD_SPI_Source.Make (Card'Access)`; see
-[`examples/esp32s3_ext4/`](../../../../examples/esp32s3_ext4/).
+On the chip, build a `Device` from whichever adapter matches the medium:
+`SD_SPI_Source` (SD over SPI), `SDMMC_Source` (native SDHOST) or `W25Q_Source`
+(SPI NOR flash, usually under `Block_Dev.WL` for wear leveling). Four examples
+show the combinations:
+
+| Example | Medium | What it does |
+|---|---|---|
+| [`esp32s3_ext4`](../../../../examples/esp32s3_ext4/) | SD over SPI | mount, list, read a file |
+| [`esp32s3_ext4_sdmmc`](../../../../examples/esp32s3_ext4_sdmmc/) | SD over SDMMC | the same, read-only, on the native SDHOST |
+| [`esp32s3_ext4_write`](../../../../examples/esp32s3_ext4_write/) | SD over SDMMC | the write battery as one journaled transaction |
+| [`esp32s3_ext4_flash`](../../../../examples/esp32s3_ext4_flash/) / [`esp32s3_ext4_mkfs`](../../../../examples/esp32s3_ext4_mkfs/) | SPI NOR + WL | an installed image / `Ext4.Mkfs` formatting the flash on-device |
 
 ## Testing & status
 
-A host test harness runs the filesystem on x86 against real `mke2fs` images,
-byte-comparing reads to the source files and validating every write with `e2fsck`, and
-cross-checking journal replay + commit against the kernel — **62 checks, all
-passing**. The same code cross-compiles for the ESP32-S3 (xtensa, embedded).
+A host test harness ([`test/ext4_host`](../../test/ext4_host), run by
+`./x test host`) runs the filesystem on x86 against real `mke2fs` images:
+it byte-compares reads to the source files, and every scenario ends in a clean
+`e2fsck -fn` from the host kernel. **17 scenarios pass**, covering journaled and
+no-journal writes, double-indirect append/truncate/unlink past 4 MiB, crash
+recovery by journal replay, directory growth to a multi-block directory, and
+disk exhaustion (a failing write must hand back its scratch buffer). The same
+code cross-compiles for the ESP32-S3 (xtensa, embedded).
 
-Remaining (enhancement-tier): double/triple-indirect + extent *allocation* on
-write, `metadata_csum`-filesystem writes, large-file `data=ordered` journaling, a
-checksummed-journal (CSUM_V3), and on-card bring-up (rides on the `ESP32S3.SD_SPI`
-block driver). See the memory note `noidf-ext4-pure-ada-fs` and
-[`REFERENCES.md`](REFERENCES.md).
+**On-card bring-up is done.** The filesystem mounts and writes a real
+`mkfs.ext4` SD card on the board over `SDMMC_Source`, and the card then passes
+`e2fsck -f` on a Linux host, which is where the tree, the symlink target, the
+hard-link inode sharing and a 1 MiB file's contents are checked. The SPI NOR
+path (`W25Q_Source` under `Block_Dev.WL`) runs on the board too, including
+on-device `Ext4.Mkfs`. The one adapter still without an on-card run is
+`SD_SPI_Source`.
+
+Remaining (enhancement-tier): triple-indirect + extent *allocation* on write,
+`metadata_csum`-filesystem writes, large-file `data=ordered` journaling, and a
+checksummed journal (CSUM_V3). See [`REFERENCES.md`](REFERENCES.md).

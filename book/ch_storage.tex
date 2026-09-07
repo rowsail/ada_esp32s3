@@ -395,7 +395,8 @@ kernel and \texttt{e2fsck} as the oracle: every read is byte-compared to the
 source file, every mutation is checked with \texttt{e2fsck -fn}, and journal
 replay and commit are cross-checked against the kernel's own recovery. The same
 code cross-compiles for the ESP32-S3 and runs over the SD drivers above. See
-\texttt{tests/ext4\_host/} and \texttt{libs/esp32s3\_hal/src/ext4/REFERENCES.md}.
+\texttt{libs/esp32s3\_hal/test/ext4\_host/} and
+\texttt{libs/esp32s3\_hal/src/ext4/REFERENCES.md}.
 
 \subsection{Scope: deliberately smaller than Linux ext4}\index{ext4 scope}\index{HTree}\index{delayed allocation}\index{metadata\_csum}
 

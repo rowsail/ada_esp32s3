@@ -162,7 +162,7 @@ prefer \textbf{X25519}, which SPARKNaCl provides with a constant-time
 implementation, so for that group the client simply calls
 \texttt{SPARKNaCl.Scalar.Mult}. But some hardened or FIPS-configured servers
 disable X25519 and require the NIST curve \textbf{P-256}, which SPARKNaCl does not
-implement. So the project carries its own P-256 in \texttt{libs/tls/p256.adb}:
+implement. So the project carries its own P-256 in \texttt{libs/tls/src/p256.adb}:
 256-bit modular arithmetic in Montgomery form (the CIOS algorithm), Jacobian point
 operations, and a double-and-add scalar multiply. The client offers both groups
 and uses whichever the server selects:

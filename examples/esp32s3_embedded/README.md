@@ -28,7 +28,7 @@ The repo's `./x` dispatcher drives the IDF-free bare-boot flow (use
 `idf.py`, `sdkconfig`, `CMakeLists.txt`, `menuconfig` or FreeRTOS. At boot our
 own 2nd-stage bootloader sets up flash-XIP cache/MMU and jumps to `_start`
 (`start.S`), which selects the 240 MHz PLL and calls `start_c()`
-(`bare_boot.adb`); that hands off to `bare_glue.c`'s `app_main()`, which owns
+(`bare_boot.adb`); that hands off to `bare_glue.adb`'s `app_main`, which owns
 both cores directly — core 0 runs the env task, core 1 is cold-started into the
 GNARL slave scheduler. FreeRTOS never runs.
 
@@ -43,7 +43,7 @@ linked).
 ZCX exception support does **not** depend on any IDF `CONFIG_…` knob. The
 linker script brackets the `.eh_frame` block with `__eh_frame_start`, and the
 bare-boot registers the DWARF unwind frames itself before any exception can be
-raised: `bare_glue.c` calls `bare_register_eh_frames()`, whose strong override
+raised: `bare_glue.adb` calls `bare_register_eh_frames`, whose strong override
 (`bare_crt.adb`, exception-capable profiles only) calls `__register_frame` on
 `__eh_frame_start`. For the light-tasking profile that hook is a weak no-op.
 

@@ -17,6 +17,13 @@ commits, verifies each against its sha256, and writes them here. The example
 `build.sh` scripts run this automatically if a blob is missing. If you already
 have ESP-IDF, set `IDF_PATH` and the build will use your local copies instead.
 
+**Four are fetched; not every example links four.** `libcore.a` is retired on the
+de-blobbed path (`esp32s3_wifi_tls`, `esp32s3_wifi_ecdsa`): the handful of symbols
+it was pulled in for are provided in Ada by `ESP32S3.WiFi.Core_Shim`, because the
+misc-NVS code behind them is dormant on a port with no NVS. The other examples
+still link it. See [`../BRINGUP.md`](../BRINGUP.md) for that story and for the
+crypto the driver no longer takes from a blob either.
+
 ## Provenance
 
 Matching **ESP-IDF v5.4.4**:

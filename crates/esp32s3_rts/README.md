@@ -3,7 +3,7 @@
 A native **dual-core SMP Ada (GNAT Jorvik/Ravenscar)** bare-metal runtime for
 the **ESP32-S3** (Xtensa LX7), generated from the forked `bb-runtimes` esp32s3
 board.  Hardware-validated: SMP scheduler on both cores, own VECBASE / tick /
-interrupt dispatch (FreeRTOS reduced to a dormant boot artifact), 240 MHz,
+interrupt dispatch (FreeRTOS is not linked at all), 240 MHz,
 idiomatic `pragma Attach_Handler` interrupt handlers, and hardware
 single-precision FPU preserved across context switches.
 

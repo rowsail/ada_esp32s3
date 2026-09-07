@@ -393,8 +393,10 @@ The three from-source bring-up files (`psram_boot.c`, `psram_impl_src.c`,
 `src/boot_psram.adb` (`Boot_Psram`), completing the SDK's pure-Ada goal for the
 bootloader.  It exports the C symbol `psram_bringup`, so `boot_main.adb` is
 unchanged.  Only ROM functions (`esp_rom_opiflash_exec_cmd`, `Cache_*`,
-`esp_rom_spi_set_dtr_swap_mode`, `esp_rom_printf`) and the freestanding libc
-(`psram_glue.c`: memcpy/memset/memcmp/abort) remain C.  `BOARD_PSRAM_PAGES` is
+`esp_rom_spi_set_dtr_swap_mode`, `esp_rom_printf`) are still external; the
+freestanding libc that was `psram_glue.c` is Ada too now (`mem*` from the shared
+`Bare_Mem`, `abort`/`__assert_func` from `src/boot_glue.adb`), so no C is left in
+this directory.  `BOARD_PSRAM_PAGES` is
 passed via a generated `board_cfg.ads` (build.sh) on the gpr source path
 (`BOOT_GEN_DIR`).  The three C files are deleted.
 

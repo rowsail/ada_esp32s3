@@ -19,11 +19,14 @@ With **no card wired** it prints `init: No_Card` and stops cleanly — which is 
 the in-tree smoke build shows (boots, runs the init path on silicon, reports
 `No_Card`, 0 panics). The PASS line needs a real card.
 
-> **Maturity:** this driver is **compile-verified + a no-card smoke run only** — it
-> has *not* been brought up against a real card yet. The native host has clock-tree
-> and timing details (the SDHOST functional clock source, `Src_Hz`, CLK-edge phase)
-> that can only be tuned with a card on a scope; expect some on-card bring-up. The
-> simpler `ESP32S3.SD_SPI` is the lower-risk path if you just need storage.
+> **Maturity:** the driver *is* card-verified, but in **1-bit** mode, not the
+> 4-bit bus this example brings up. [`esp32s3_sdmmc_ch422g`](../esp32s3_sdmmc_ch422g)
+> identifies a real SDHC card and reads block 0 at 50 MHz, and
+> [`esp32s3_ext4_sdmmc`](../esp32s3_ext4_sdmmc) /
+> [`esp32s3_ext4_write`](../esp32s3_ext4_write) mount and write a real ext4
+> filesystem over it. What is unproven here is the 4-bit wiring and its
+> clock-tree details (the SDHOST functional clock source, `Src_Hz`, CLK-edge
+> phase), which want a card on a scope to tune.
 
 ## Wiring
 

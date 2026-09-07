@@ -42,7 +42,7 @@ ATC. It is selected with `ESP32S3_RTS_PROFILE=full`; `light-tasking` and
 > "wild jump" was exactly this — heap exhaustion misread for hours as window-spill
 > corruption: 6 concurrent 20 KB task stacks overran the bare DRAM heap.) And
 > `Finalize_TCB` frees the *owned* primary stack via `__gnat_task_stack_free`
-> (`examples/common/bare/bare_heap.c`, with a reaping-race handshake), so
+> (`examples/common/bare/boot/bare_heap.adb`, with a reaping-race handshake), so
 > heap-allocated task stacks are reclaimed on termination rather than leaking
 > across a multi-task batch.
 >
