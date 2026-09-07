@@ -45,49 +45,73 @@ package body Chain_Verify with SPARK_Mode => On is
       --  TBS = the child's To-Be-Signed certificate body; Sig = its signature bits.
       TBS : X509.Byte_Array renames Child_Buf (Child.TBS.First .. Child.TBS.Last);
       Sig : X509.Byte_Array renames Child_Buf (Child.Signature.First .. Child.Signature.Last);
+
+      --  Short local names for Cert_Verify's role types.  Each argument below is
+      --  converted at the point of use, so the ROLE is stated next to the value
+      --  rather than inferred from position -- and no two arguments of a call
+      --  share a type, so the compiler rejects a transposition outright.  The
+      --  conversions are views, not copies: same representation, passed by
+      --  reference like any unconstrained array.
+      subtype Signed_B is Cert_Verify.Signed_Bytes;
+      subtype Sig_B    is Cert_Verify.Signature_Bytes;
+      subtype Mod_B    is Cert_Verify.Modulus_Bytes;
+      subtype Exp_B    is Cert_Verify.Exponent_Bytes;
+      subtype X_B      is Cert_Verify.Coord_X_Bytes;
+      subtype Y_B      is Cert_Verify.Coord_Y_Bytes;
+      subtype Ed_B     is Cert_Verify.Ed_Key_Bytes;
+
+      --  The issuer's key material, named once.
+      RSA_M : X509.Byte_Array renames
+        Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last);
+      RSA_E : X509.Byte_Array renames
+        Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last);
+      EC_X  : X509.Byte_Array renames Iss_Buf (Iss.EC_X.First .. Iss.EC_X.Last);
+      EC_Y  : X509.Byte_Array renames Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last);
    begin
       case Child.Sig_Kind is
          when X509.Sig_RSA_SHA256   =>
             return
               Iss.Key_Kind = X509.Key_RSA
               and then Cert_Verify.RSA_PKCS1_SHA256
-                         (TBS,
-                          Sig,
-                          Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
-                          Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
+                         (TBS       => Signed_B (TBS),
+                          Signature => Sig_B (Sig),
+                          Modulus   => Mod_B (RSA_M),
+                          Exponent  => Exp_B (RSA_E));
 
          when X509.Sig_RSA_SHA384   =>
             return
               Iss.Key_Kind = X509.Key_RSA
               and then Cert_Verify.RSA_PKCS1_SHA384
-                         (TBS,
-                          Sig,
-                          Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
-                          Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
+                         (TBS       => Signed_B (TBS),
+                          Signature => Sig_B (Sig),
+                          Modulus   => Mod_B (RSA_M),
+                          Exponent  => Exp_B (RSA_E));
 
          when X509.Sig_RSA_SHA512   =>
             return
               Iss.Key_Kind = X509.Key_RSA
               and then Cert_Verify.RSA_PKCS1_SHA512
-                         (TBS,
-                          Sig,
-                          Iss_Buf (Iss.RSA_Modulus.First .. Iss.RSA_Modulus.Last),
-                          Iss_Buf (Iss.RSA_Exponent.First .. Iss.RSA_Exponent.Last));
+                         (TBS       => Signed_B (TBS),
+                          Signature => Sig_B (Sig),
+                          Modulus   => Mod_B (RSA_M),
+                          Exponent  => Exp_B (RSA_E));
 
          when X509.Sig_Ed25519      =>
             return
               Iss.Key_Kind = X509.Key_Ed25519
               and then Cert_Verify.Ed25519_Verify
-                         (TBS, Sig, Iss_Buf (Iss.Ed_Pub.First .. Iss.Ed_Pub.Last));
+                         (Message   => Signed_B (TBS),
+                          Signature => Sig_B (Sig),
+                          Pub_Key   => Ed_B (Iss_Buf (Iss.Ed_Pub.First .. Iss.Ed_Pub.Last)));
 
          when X509.Sig_ECDSA_SHA256 =>
             return
               Iss.Key_Kind = X509.Key_EC_P256
               and then Cert_Verify.ECDSA_P256_SHA256
-                         (TBS,
-                          Sig,
-                          Iss_Buf (Iss.EC_X.First .. Iss.EC_X.Last),
-                          Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last));
+                         (Message => Signed_B (TBS),
+                          Sig_DER => Sig_B (Sig),
+                          Pub_X   => X_B (EC_X),
+                          Pub_Y   => Y_B (EC_Y));
 
          when X509.Sig_ECDSA_SHA384 =>
             --  Same signature OID, two issuer key sizes: a P-256 issuer signs
@@ -96,16 +120,16 @@ package body Chain_Verify with SPARK_Mode => On is
             --  384-bit digest.  Dispatch on the issuer's key curve.
             if Iss.Key_Kind = X509.Key_EC_P256 then
                return Cert_Verify.ECDSA_P256_SHA384
-                        (TBS,
-                         Sig,
-                         Iss_Buf (Iss.EC_X.First .. Iss.EC_X.Last),
-                         Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last));
+                        (Message => Signed_B (TBS),
+                         Sig_DER => Sig_B (Sig),
+                         Pub_X   => X_B (EC_X),
+                         Pub_Y   => Y_B (EC_Y));
             elsif Iss.Key_Kind = X509.Key_EC_P384 then
                return Cert_Verify.ECDSA_P384_SHA384
-                        (TBS,
-                         Sig,
-                         Iss_Buf (Iss.EC_X.First .. Iss.EC_X.Last),
-                         Iss_Buf (Iss.EC_Y.First .. Iss.EC_Y.Last));
+                        (Message => Signed_B (TBS),
+                         Sig_DER => Sig_B (Sig),
+                         Pub_X   => X_B (EC_X),
+                         Pub_Y   => Y_B (EC_Y));
             else
                return False;
             end if;

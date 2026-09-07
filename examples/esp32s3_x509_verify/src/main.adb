@@ -780,10 +780,10 @@ begin
       Check
         ("signature valid",
          Cert_Verify.RSA_PKCS1_SHA256
-           (TBS       => Bytes (C.TBS),
-            Signature => Bytes (C.Signature),
-            Modulus   => Bytes (C.RSA_Modulus),
-            Exponent  => Bytes (C.RSA_Exponent)));
+           (TBS       => Cert_Verify.Signed_Bytes (Bytes (C.TBS)),
+            Signature => Cert_Verify.Signature_Bytes (Bytes (C.Signature)),
+            Modulus   => Cert_Verify.Modulus_Bytes (Bytes (C.RSA_Modulus)),
+            Exponent  => Cert_Verify.Exponent_Bytes (Bytes (C.RSA_Exponent))));
 
       --  Negative: flip one byte of the signed region; verification must fail.
       declare
@@ -794,10 +794,10 @@ begin
          Check
            ("tampered rejected",
             not Cert_Verify.RSA_PKCS1_SHA256
-                  (TBS       => Bad,
-                   Signature => Bytes (C.Signature),
-                   Modulus   => Bytes (C.RSA_Modulus),
-                   Exponent  => Bytes (C.RSA_Exponent)));
+                  (TBS       => Cert_Verify.Signed_Bytes (Bad),
+                   Signature => Cert_Verify.Signature_Bytes (Bytes (C.Signature)),
+                   Modulus   => Cert_Verify.Modulus_Bytes (Bytes (C.RSA_Modulus)),
+                   Exponent  => Cert_Verify.Exponent_Bytes (Bytes (C.RSA_Exponent))));
       end;
    end if;
    Put_Line ("[verify] done");
