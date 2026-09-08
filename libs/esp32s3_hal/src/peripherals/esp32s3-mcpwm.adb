@@ -10,11 +10,12 @@ with ESP32S3_Registers.SYSTEM;
 package body ESP32S3.MCPWM with
   --  Split by what the state IS.  Timer_Settings is what Configure_Channel
   --  works out and later calls have to agree with -- the per-channel period
-  --  and the per-unit clock divider -- in plain arrays that start initialised;
+  --  and each channel's clock-divider need -- in plain arrays that start
+  --  initialised;
   --  the two protected objects are synchronised state and are likewise fully
   --  default-initialised, which is what lets a task started after elaboration
   --  rely on them.
-  Refined_State => (Timer_Settings  => (Periods, Clock_Dividers, Clock_Needs),
+  Refined_State => (Timer_Settings  => (Periods, Clock_Needs),
                     Register_Guard  => CTRL_Guard,
                     Claim_Pool      => Pool)
 is
@@ -52,26 +53,21 @@ is
    --  are atomic on this target, and the owner is exclusive, so no lock is needed.
    Periods : array (MCPWM_Unit, Channel_Index) of Natural := (others => (others => 1));
 
-   --  Per-unit PWM_clk divider, i.e. CLK_CFG.CLK_PRESCALE + 1.  Bring_Up_Unit
-   --  programs 1 (the undivided 160 MHz clock); Configure_Channel maintains it
-   --  from Clock_Needs below.
-   Clock_Dividers : array (MCPWM_Unit) of Positive := (others => 1);
-
    --  What each channel's configured frequency needs the unit clock divided
    --  by.  1 for every frequency at or above 9.54 Hz, which is every channel
    --  until one is configured slower than that.
    --
-   --  The unit divider is the MAXIMUM over a unit's channels, recomputed on
-   --  every Configure_Channel, so it comes back DOWN when the slow channel is
-   --  reconfigured or released.  It was "only ever raised" when this was
-   --  written on 2026-09-08, which was wrong: one sub-10 Hz channel left the
-   --  whole unit at a tenth of its clock for the rest of the run, and every
-   --  later frequency -- correct in Hz, because the math compensates -- got a
-   --  tenth of the duty resolution it should have had.  Measured on hardware:
-   --  after one 1 Hz request, 20 kHz came back with a timer period of 800
-   --  ticks instead of 8 000.
-   Clock_Needs : array (MCPWM_Unit, Channel_Index) of Positive :=
-     (others => (others => 1));
+   --  CLK_CFG is per unit, so the divider actually programmed is the MAXIMUM
+   --  over the unit's channels, recomputed on every Configure_Channel.  That
+   --  keeps a slow channel slow and lets the clock come back UP when that
+   --  channel is reconfigured faster.  It was "only ever raised" when first
+   --  written, which was wrong: one sub-10 Hz channel left the whole unit at
+   --  a tenth of its clock for the rest of the run, and every later frequency
+   --  -- correct in Hz, because Period_Total compensates -- got a tenth of
+   --  the duty resolution it should have had.  Measured: after one 1 Hz
+   --  request, 20 kHz came back with a period of 800 ticks instead of 8 000.
+   type Clock_Need_Map is array (MCPWM_Unit, Channel_Index) of Positive;
+   Clock_Needs : Clock_Need_Map := (others => (others => 1));
 
    type Ch_Use_Map is array (MCPWM_Unit, Channel_Index) of Boolean;
    type Cap_Use_Map is array (MCPWM_Unit, Cap_Index) of Boolean;
@@ -168,7 +164,6 @@ is
 
       Regs.CLK := (EN => True, others => <>);          --  force the reg-file clock on
       Regs.CLK_CFG := (CLK_PRESCALE => 0, others => <>);   --  PWM_clk = 160 MHz
-      Clock_Dividers (Unit) := 1;                          --  and record that
       for Ch in Channel_Index loop
          Clock_Needs (Unit, Ch) := 1;
       end loop;
@@ -283,6 +278,14 @@ is
       Release (C);
    end Finalize;
 
+   --  The prescale a channel's timer is CURRENTLY running on, read back from
+   --  the register, as a divider (field + 1).
+   function Live_Prescale (Regs : Periph_Ref; Ch : Channel_Index) return Natural
+   is (case Ch is
+         when Ch0 => Natural (Regs.TIMER0_CFG0.TIMER0_PRESCALE) + 1,
+         when Ch1 => Natural (Regs.TIMER1_CFG0.TIMER1_PRESCALE) + 1,
+         when Ch2 => Natural (Regs.TIMER2_CFG0.TIMER2_PRESCALE) + 1);
+
    -----------------------
    -- Configure_Channel --
    -----------------------
@@ -345,12 +348,43 @@ is
 
       Periods (Unit, Ch) := Ticks;
 
-      if Clock_Div /= Clock_Dividers (Unit) then
-         Regs.CLK_CFG :=
-           (CLK_PRESCALE => CLK_CFG_CLK_PRESCALE_Field (Clock_Div - 1),
-            others       => <>);
-         Clock_Dividers (Unit) := Clock_Div;
+      --  A timer's prescale divider is loaded out of PERIPHERAL RESET and at
+      --  no other time.  Writing TIMERn_PRESCALE on a unit that has already
+      --  run updates the register -- it reads back correctly -- without
+      --  changing the divider the hardware uses, so the frequency comes out
+      --  at PWM_clk / (whatever prescale was latched * new period).
+      --
+      --  Measured on hardware 2026-09-08.  Booted with the prescale latched
+      --  at 5, PWMFREQ 1/2/5/10/100 produced 49/98/245/490/500 Hz -- which is
+      --  why 10 and 100 Hz were indistinguishable to the operator.  Booted
+      --  with it latched at 245, 1/2/5/10 Hz were exact (they share that
+      --  prescale) and 20/100/500 Hz all produced about 10 Hz.  Stopping the
+      --  timer first does NOT help: TIMER_START = 0, TIMER_MOD = 0 freeze,
+      --  and a forced early TEZ were each tried and measured, and none
+      --  reloaded the divider.
+      --
+      --  So when the prescale must change, reset the unit.  That is why this
+      --  is guarded on the prescale ACTUALLY differing: the reset clears the
+      --  unit's other two channels, which must then be configured again.  A
+      --  single-channel unit -- the common case, and the one this driver is
+      --  used for -- never notices.
+      if Live_Prescale (Regs, Ch) /= Divider then
+         declare
+            Saved : constant Clock_Need_Map := Clock_Needs;
+         begin
+            Bring_Up_Unit (Unit);          --  clears Clock_Needs for the unit
+            Clock_Needs := Saved;
+         end;
       end if;
+
+      --  Unconditionally, including Clock_Div = 1.  Guarding this on "not the
+      --  default" left the divider at whatever a previous, slower channel had
+      --  set: after PWMFREQ 5 (divider 2), PWMFREQ 10 kept the divided clock
+      --  and ran at 5 Hz with registers that read back as 5 Hz -- correct
+      --  hardware, wrong configuration.
+      Regs.CLK_CFG :=
+        (CLK_PRESCALE => CLK_CFG_CLK_PRESCALE_Field (Clock_Div - 1),
+         others       => <>);
 
       --  Operator Ch is timed by timer Ch (RMW of the shared OPERATOR_TIMERSEL).
       CTRL_Guard.Select_Timer (Unit, Ch);
@@ -384,6 +418,7 @@ is
             end if;
 
          when Ch1 =>
+            --  Force a real stop first -- see the note on Ch0.
             Regs.TIMER1_CFG0 :=
               (TIMER1_PRESCALE => TIMER1_CFG0_TIMER1_PRESCALE_Field (Prescaler),
                TIMER1_PERIOD   => TIMER1_CFG0_TIMER1_PERIOD_Field (Period),
@@ -408,6 +443,7 @@ is
             end if;
 
          when Ch2 =>
+            --  Force a real stop first -- see the note on Ch0.
             Regs.TIMER2_CFG0 :=
               (TIMER2_PRESCALE => TIMER2_CFG0_TIMER2_PRESCALE_Field (Prescaler),
                TIMER2_PERIOD   => TIMER2_CFG0_TIMER2_PERIOD_Field (Period),
