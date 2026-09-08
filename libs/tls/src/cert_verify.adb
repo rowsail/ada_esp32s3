@@ -466,10 +466,17 @@ package body Cert_Verify is
       Ok       : Boolean := True;
       R32, S32 : P256.Bytes_32;   --  the signature's r and s components (32-byte big-endian)
    begin
+      --  ECDSA-Sig-Value ::= SEQUENCE { r INTEGER, s INTEGER }: a SEQUENCE...
       if Sig_DER'Length < 8
         or else Pub_X'Length /= 32
         or else Pub_Y'Length /= 32
         or else Sig_DER (Sig_DER'First) /= 16#30#
+        --  ...whose length byte says exactly how many bytes follow.  r and s
+        --  are 32 or 48 bytes, so the length is always short form, and reading
+        --  it is what stops one signature having many encodings: skipping it
+        --  (which is what "past SEQUENCE tag + length" used to mean) accepted
+        --  any value at all in that byte.
+        or else Natural (Sig_DER (Sig_DER'First + 1)) /= Sig_DER'Length - 2
       then
          return False;
       end if;
@@ -533,10 +540,17 @@ package body Cert_Verify is
       Ok       : Boolean := True;
       R48, S48 : P384.Bytes_48;
    begin
+      --  Same shape as the P-256 case above, at 48-byte components.
       if Sig_DER'Length < 8
         or else Pub_X'Length /= 48
         or else Pub_Y'Length /= 48
         or else Sig_DER (Sig_DER'First) /= 16#30#
+        --  ...whose length byte says exactly how many bytes follow.  r and s
+        --  are 32 or 48 bytes, so the length is always short form, and reading
+        --  it is what stops one signature having many encodings: skipping it
+        --  (which is what "past SEQUENCE tag + length" used to mean) accepted
+        --  any value at all in that byte.
+        or else Natural (Sig_DER (Sig_DER'First + 1)) /= Sig_DER'Length - 2
       then
          return False;
       end if;

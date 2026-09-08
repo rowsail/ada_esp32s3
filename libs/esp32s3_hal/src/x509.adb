@@ -124,6 +124,52 @@ package body X509 with SPARK_Mode => On is
       return True;
    end OID_Match;
 
+   --  A BIT STRING that holds whole octets -- a signature or a public key --
+   --  starts with an unused-bits count of zero (X.690 8.6.2.2), and has at
+   --  least one byte after it.  Accepting any other count would give the same
+   --  key or signature 256 encodings, and for the signature that byte sits
+   --  outside the region the issuer signed.
+   function Whole_Octet_Bits (Cert : Byte_Array; Content : Slice) return Boolean
+   is (Length (Content) >= 2
+       and then Content.First >= Cert'First
+       and then Content.First <= Cert'Last
+       and then Cert (Content.First) = 0);
+
+   --  The two copies of an AlgorithmIdentifier every certificate carries: the
+   --  one inside tbsCertificate, which the issuer signed, and the outer
+   --  signatureAlgorithm beside the signature, which anyone can rewrite.  A
+   --  record rather than two Slice parameters, so which is which is written at
+   --  the call rather than left to the order of two identical arguments.
+   type Alg_Copies is record
+      Signed : Slice;
+      Outer  : Slice;
+   end record;
+
+   --  The two copies, byte for byte.  It checks its own bounds rather than
+   --  taking them as a precondition: the slices come from elements parsed out
+   --  of attacker-supplied DER, and a guard here is cheaper to be sure of than
+   --  an argument that they must already be inside.
+   function Same_Content (Cert : Byte_Array; Alg : Alg_Copies) return Boolean is
+      A : constant Slice := Alg.Signed;
+      B : constant Slice := Alg.Outer;
+   begin
+      if Length (A) = 0
+        or else Length (A) /= Length (B)
+        or else A.First < Cert'First or else A.Last > Cert'Last
+        or else B.First < Cert'First or else B.Last > Cert'Last
+      then
+         return False;
+      end if;
+      for I in 0 .. Length (A) - 1 loop
+         pragma Loop_Invariant (A.First + I <= A.Last and then B.First + I <= B.Last);
+         pragma Loop_Variant (Increases => I);
+         if Cert (A.First + I) /= Cert (B.First + I) then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Same_Content;
+
    --  GeneralNames ::= SEQUENCE OF GeneralName; collect dNSName ([2], tag 0x82).
    procedure Parse_SAN (Cert : Byte_Array; First, Last : Natural; Result : in out Certificate) is
       Seq, Name : DER.TLV;
@@ -199,6 +245,9 @@ package body X509 with SPARK_Mode => On is
       if not Bit_String.Valid
         or else Bit_String.Tag /= 16#03#
         or else Length (Bit_String.Content) < 2
+        --  Unlike a signature or a key, KeyUsage really is a bit string, so a
+        --  non-zero unused-bits count is correct here -- but never above 7.
+        or else Cert (Bit_String.Content.First) > 7
       then
          return;
       end if;
@@ -465,6 +514,9 @@ package body X509 with SPARK_Mode => On is
       Classify_Key_Algorithm (Cert, AlgId, Result, Ok);
       Pos := AlgId.Elem_Last + 1;
       Expect (Cert, Pos, Last, 16#03#, Bits, Ok);         --  subjectPublicKey BIT STRING
+      if Ok and then not Whole_Octet_Bits (Cert, Bits.Content) then
+         Ok := False;
+      end if;
       Parse_Key_Bits (Cert, Bits, Result, Ok);
    end Parse_Public_Key;
 
@@ -485,9 +537,87 @@ package body X509 with SPARK_Mode => On is
        else Sig_Other)
    with Pre => In_Buffer (Cert, OID_Bytes);
 
+   --  Everything after tbsCertificate: signatureAlgorithm and signatureValue.
+   --  Split out of Parse because it is a separate concern from walking the
+   --  signed body -- and because these are the two fields NOT covered by the
+   --  signature, so what they are checked against is the point of the code.
+   --  Inner_Alg is the AlgorithmIdentifier from inside tbsCertificate.
+   --  A first/last index pair carried as one value, so a call cannot pass the
+   --  two the wrong way round.
+   type Span is record
+      From  : Natural;    --  first index to read
+      Limit : Natural;    --  last index that may be read
+   end record;
+
+   --  The optional extensions field, which is where subjectAltName, the usage
+   --  extensions and any unrecognised critical extension are found.  Absent is
+   --  not an error: a certificate without extensions is a certificate whose
+   --  policy fields simply do not restrict anything.
+   procedure Parse_Optional_Extensions
+     (Cert : Byte_Array; Where : Span; Result : in out Certificate)
+   is
+      Elem : DER.TLV;
+   begin
+      Read_TLV (Cert, Where.From, Where.Limit, Elem);
+      if Elem.Valid and then Elem.Tag = 16#A3# then
+         Parse_Extensions (Cert, Elem.Content.First, Elem.Content.Last, Result);
+      end if;
+   end Parse_Optional_Extensions;
+
+   procedure Parse_Signature_Tail
+     (Cert      : Byte_Array;
+      Where     : Span;
+      Inner_Alg : DER.TLV;
+      Result    : in out Certificate;
+      Ok        : in out Boolean)
+   is
+      SigAlg, OID, SigVal : DER.TLV;
+      Pos                 : Natural;
+   begin
+      --  signatureAlgorithm SEQUENCE { OID ... }
+      Pos := Where.From;
+      Expect (Cert, Pos, Where.Limit, 16#30#, SigAlg, Ok);
+      Expect (Cert, SigAlg.Content.First, SigAlg.Content.Last, 16#06#, OID, Ok);
+      Result.Sig_Alg_OID := OID.Content;
+      --  DER gives one encoding per value, so "the same identifier" is the
+      --  same bytes.
+      if Ok
+        and then not Same_Content
+                    (Cert, (Signed => Inner_Alg.Content, Outer => SigAlg.Content))
+      then
+         Ok := False;
+      end if;
+      if Ok then
+         Result.Sig_Kind := Signature_Kind (Cert, OID.Content);
+         --  An unknown signatureAlgorithm means we cannot verify this
+         --  certificate's signature, so it must not parse as Valid -- otherwise
+         --  a caller that forgets to reject Sig_Other treats an unverifiable
+         --  cert as trusted.  (Matches how an unknown key type is rejected.)
+         if Result.Sig_Kind = Sig_Other then
+            Ok := False;
+         end if;
+      end if;
+      Pos := SigAlg.Elem_Last + 1;
+
+      --  signatureValue BIT STRING (drop the leading unused-bits byte, which
+      --  must be zero: a signature is a whole number of octets, X.690 8.6.2.2.
+      --  It is outside the signed region, so accepting any value there gave the
+      --  same signature 256 encodings).  At least one byte has to follow it.
+      Expect (Cert, Pos, Where.Limit, 16#03#, SigVal, Ok);
+      if Ok
+        and then Length (SigVal.Content) >= 2
+        and then Cert (SigVal.Content.First) = 0
+      then
+         Result.Signature := (First => SigVal.Content.First + 1, Last => SigVal.Content.Last);
+      else
+         Ok := False;
+      end if;
+
+   end Parse_Signature_Tail;
+
    procedure Parse (Cert : Byte_Array; Result : out Certificate) is
       Ok                                                                  : Boolean := True;
-      Outer, Tbs, Elem, Validity, SPKI, SigAlg, OID, SigVal : DER.TLV;
+      Outer, Tbs, Elem, Validity, SPKI, Inner_Alg : DER.TLV;
       Pos, Limit                                                          : Natural;
    begin
       Result := (Valid => False, others => <>);
@@ -522,9 +652,14 @@ package body X509 with SPARK_Mode => On is
       Result.Serial := Elem.Content;
       Pos := Elem.Elem_Last + 1;
 
-      --  signature AlgorithmIdentifier  (skip)
-      Expect (Cert, Pos, Limit, 16#30#, Elem, Ok);
-      Pos := Elem.Elem_Last + 1;
+      --  signature AlgorithmIdentifier.  Kept, not skipped: this is the copy
+      --  the CA signed, and the outer signatureAlgorithm read further down is
+      --  the copy anyone can rewrite.  RFC 5280 4.1.1.2 requires the two to be
+      --  the same identifier, and the comparison below is what makes that true
+      --  here -- without it the verifier takes the algorithm to use from the
+      --  unsigned copy.
+      Expect (Cert, Pos, Limit, 16#30#, Inner_Alg, Ok);
+      Pos := Inner_Alg.Elem_Last + 1;
 
       --  issuer Name  (skip)
       Expect (Cert, Pos, Limit, 16#30#, Elem, Ok);
@@ -549,37 +684,14 @@ package body X509 with SPARK_Mode => On is
 
       --  extensions [3] EXPLICIT -- optional; we pull subjectAltName dNSNames.
       if Ok then
-         Pos := SPKI.Elem_Last + 1;
-         Read_TLV (Cert, Pos, Limit, Elem);
-         if Elem.Valid and then Elem.Tag = 16#A3# then
-            Parse_Extensions (Cert, Elem.Content.First, Elem.Content.Last, Result);
-         end if;
+         Parse_Optional_Extensions
+           (Cert, (From => SPKI.Elem_Last + 1, Limit => Limit), Result);
       end if;
 
-      --  signatureAlgorithm SEQUENCE { OID ... }
-      Pos := Tbs.Elem_Last + 1;
-      Expect (Cert, Pos, Outer.Content.Last, 16#30#, SigAlg, Ok);
-      Expect (Cert, SigAlg.Content.First, SigAlg.Content.Last, 16#06#, OID, Ok);
-      Result.Sig_Alg_OID := OID.Content;
-      if Ok then
-         Result.Sig_Kind := Signature_Kind (Cert, OID.Content);
-         --  An unknown signatureAlgorithm means we cannot verify this
-         --  certificate's signature, so it must not parse as Valid -- otherwise
-         --  a caller that forgets to reject Sig_Other treats an unverifiable
-         --  cert as trusted.  (Matches how an unknown key type is rejected.)
-         if Result.Sig_Kind = Sig_Other then
-            Ok := False;
-         end if;
-      end if;
-      Pos := SigAlg.Elem_Last + 1;
-
-      --  signatureValue BIT STRING (drop the leading unused-bits byte).
-      Expect (Cert, Pos, Outer.Content.Last, 16#03#, SigVal, Ok);
-      if Ok and then Length (SigVal.Content) >= 1 then
-         Result.Signature := (First => SigVal.Content.First + 1, Last => SigVal.Content.Last);
-      else
-         Ok := False;
-      end if;
+      Parse_Signature_Tail
+        (Cert,
+         (From => Tbs.Elem_Last + 1, Limit => Outer.Content.Last),
+         Inner_Alg, Result, Ok);
 
       --  RFC 5280 4.2: a cert with an unrecognized critical extension is invalid,
       --  even if it is otherwise structurally sound.
