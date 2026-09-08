@@ -511,6 +511,74 @@ is
       end if;
    end Stop;
 
+   ------------------
+   -- Sync_Restart --
+   ------------------
+
+   procedure Sync_Restart (C : Channel) is
+      Regs : constant Periph_Ref := Regs_Of (C.U);
+   begin
+      if not C.Held then
+         return;
+      end if;
+      --  SW is edge-triggered: "toggling this bit will trigger a software
+      --  sync", so the new value is the inverse of whatever is there now.
+      --  PHASE 0 means the counter reloads to zero, i.e. a fresh period.
+      case C.Idx is
+         when Ch0 =>
+            Regs.TIMER0_SYNC :=
+              (SW           => not Regs.TIMER0_SYNC.SW,
+               TIMER0_PHASE => 0,
+               others       => <>);
+         when Ch1 =>
+            Regs.TIMER1_SYNC :=
+              (SW           => not Regs.TIMER1_SYNC.SW,
+               TIMER1_PHASE => 0,
+               others       => <>);
+         when Ch2 =>
+            Regs.TIMER2_SYNC :=
+              (SW           => not Regs.TIMER2_SYNC.SW,
+               TIMER2_PHASE => 0,
+               others       => <>);
+      end case;
+   end Sync_Restart;
+
+   ------------------
+   -- Force_Output --
+   ------------------
+
+   procedure Force_Output (C : Channel; Mode : Output_Force) is
+      Regs : constant Periph_Ref := Regs_Of (C.U);
+      --  0 = disabled (follow the timer), 1 = low, 2 = high.
+      Setting : constant UInt2 :=
+        (case Mode is
+           when Follow_Timer => 0,
+           when Force_Low    => 1,
+           when Force_High   => 2);
+   begin
+      if not C.Held then
+         return;
+      end if;
+      --  UPMETHOD 0 is "immediately": the whole point of this call.
+      case C.Idx is
+         when Ch0 =>
+            Regs.GEN0_FORCE :=
+              (GEN0_CNTUFORCE_UPMETHOD => 0,
+               GEN0_A_CNTUFORCE_MODE   => Setting,
+               others                  => <>);
+         when Ch1 =>
+            Regs.GEN1_FORCE :=
+              (GEN1_CNTUFORCE_UPMETHOD => 0,
+               GEN1_A_CNTUFORCE_MODE   => Setting,
+               others                  => <>);
+         when Ch2 =>
+            Regs.GEN2_FORCE :=
+              (GEN2_CNTUFORCE_UPMETHOD => 0,
+               GEN2_A_CNTUFORCE_MODE   => Setting,
+               others                  => <>);
+      end case;
+   end Force_Output;
+
    --------------
    -- Set_Duty --
    --------------

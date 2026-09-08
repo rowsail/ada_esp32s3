@@ -92,6 +92,35 @@ is
    --  Set the channel's duty cycle (0 .. 100 %).  Single atomic register write;
    --  the new value is loaded glitch-free at the next period boundary.  Safe
    --  without a lock because you exclusively own C.
+   --  Drive the channel's output directly, bypassing the timer.
+   --
+   --  Follow_Timer is the normal PWM.  Force_High and Force_Low take effect
+   --  IMMEDIATELY (continuous software force, update method 0) and hold until
+   --  Follow_Timer is restored.
+   --
+   --  This exists because Set_Duty cannot be immediate.  The generator drives
+   --  its output high only on the timer-zero event, and the comparator itself
+   --  reloads at TEZ, so a duty change waits up to a whole period -- 2 ms at
+   --  500 Hz, but 200 ms at 5 Hz.  Anything that must happen NOW, such as
+   --  asserting a motor brake, has to force the pin rather than ask for
+   --  100 % duty and wait for the timer to come round.
+   type Output_Force is (Follow_Timer, Force_Low, Force_High);
+
+   procedure Force_Output (C : Channel; Mode : Output_Force)
+     with Pre => Is_Valid (C);
+
+   --  Restart the channel's PWM period NOW: a software sync reloads the timer
+   --  counter to zero, which raises the timer-zero event at once.
+   --
+   --  Call it after changing the duty when the change must take effect
+   --  immediately.  The generator only acts on events -- it drives its output
+   --  high at timer-zero and low at compare-match, and HOLDS its level in
+   --  between -- and the comparator itself reloads at timer-zero.  So a new
+   --  duty otherwise waits out the rest of the current period: 2 ms at
+   --  500 Hz, but 200 ms at 5 Hz, which is most of a 250 ms drive phase.
+   procedure Sync_Restart (C : Channel)
+     with Pre => Is_Valid (C);
+
    procedure Set_Duty (C : Channel; Percent : Duty_Percent)
    with Pre => Is_Valid (C);
 
