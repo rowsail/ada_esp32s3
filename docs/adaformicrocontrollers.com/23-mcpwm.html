@@ -35,7 +35,7 @@ up-counting timer reaches the duty comparator.</p>
 type Channel_Index is (Ch0, Ch1, Ch2);
 
 procedure Claim (C : in out Channel; Unit : MCPWM_Unit; Index : Channel_Index);
-procedure Configure_Channel (...; Freq : ...; Complement_Pin : ... );  --  ~10 Hz .. 10 MHz
+procedure Configure_Channel (...; Freq : ...; Complement_Pin : ... );  --  ~1 Hz .. 10 MHz
 procedure Start (C : Channel);
 procedure Stop  (C : Channel);
 procedure Set_Duty (C : Channel; Percent : Duty_Percent);</code></pre>

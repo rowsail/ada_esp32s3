@@ -27,10 +27,10 @@ with ESP32S3.GPIO;
 --  profile (excluded from the light-tasking build).
 
 package ESP32S3.MCPWM with
-  Abstract_State => (Channel_Periods,
+  Abstract_State => (Timer_Settings,
                      (Register_Guard with Synchronous, External),
                      (Claim_Pool     with Synchronous, External)),
-  Initializes    => (Channel_Periods, Register_Guard, Claim_Pool)
+  Initializes    => (Timer_Settings, Register_Guard, Claim_Pool)
 is
 
    type MCPWM_Unit is (MCPWM0, MCPWM1);

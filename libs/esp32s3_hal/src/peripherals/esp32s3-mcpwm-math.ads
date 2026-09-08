@@ -12,18 +12,40 @@ is
    Src_Hz   : constant := 160_000_000;   --  PWM_clk with CLK_PRESCALE = 0
    Max_Peak : constant := 65_536;        --  timer period field is 16-bit
 
-   --  Total timer ticks per PWM period at the full 160 MHz clock (>= 1).
-   function Period_Total (Freq : Positive) return Natural
-     with Post => Period_Total'Result in 1 .. Src_Hz;
+   --  CLK_CFG.CLK_PRESCALE and TIMERn_CFG0.TIMERn_PRESCALE are both 8-bit
+   --  fields holding "divider - 1", so each divides by 1 .. 256.
+   Max_Clock_Divider : constant := 256;
+   Max_Timer_Divider : constant := 256;
+
+   --  The longest period one timer can measure on its own: the timer prescale
+   --  at its slowest, counting a full 16-bit period.  A PWM period longer than
+   --  this is out of the timer's reach and needs the unit clock divided down.
+   Max_Timer_Ticks : constant := Max_Timer_Divider * Max_Peak;   --  16 777 216
+
+   --  Smallest unit clock divider (1 .. 256) that brings one period of Freq
+   --  within Max_Timer_Ticks, i.e. within the timer's own reach.
+   --
+   --  It is 1 -- the 160 MHz clock, untouched -- for every Freq at or above
+   --  Src_Hz / Max_Timer_Ticks, which is 9.54 Hz.  So nothing at 10 Hz or
+   --  above is affected by this at all; only a sub-10 Hz channel divides the
+   --  unit clock, and Period_Total below then works from the divided clock.
+   function Clock_Divider (Freq : Positive) return Natural
+     with Post => Clock_Divider'Result in 1 .. Max_Clock_Divider;
+
+   --  Total timer ticks per PWM period with the unit clock divided by
+   --  Clock_Div (>= 1).  Clock_Div = 1 is the full 160 MHz clock.
+   function Period_Total (Freq : Positive; Clock_Div : Positive := 1) return Natural
+     with Pre  => Clock_Div <= Max_Clock_Divider,
+          Post => Period_Total'Result in 1 .. Src_Hz;
 
    --  Smallest timer prescale (1 .. 256) so Total ticks fit the 16-bit period.
    function Prescale_Divider (Total : Natural) return Natural
      with Pre  => Total in 1 .. Src_Hz,
-          Post => Prescale_Divider'Result in 1 .. 256;
+          Post => Prescale_Divider'Result in 1 .. Max_Timer_Divider;
 
    --  Timer period in ticks (= TIMER_PERIOD + 1), clamped to 2 .. Max_Peak.
    function Period_Ticks (Total, Divider : Natural) return Natural
-     with Pre  => Total in 1 .. Src_Hz and then Divider in 1 .. 256,
+     with Pre  => Total in 1 .. Src_Hz and then Divider in 1 .. Max_Timer_Divider,
           Post => Period_Ticks'Result in 2 .. Max_Peak;
 
    --  Dead-time in PWM-clock (160 MHz) ticks = ns * 0.16, clamped to 16 bits.

@@ -2,13 +2,30 @@ package body ESP32S3.MCPWM.Math
   with SPARK_Mode => On
 is
 
+   -------------------
+   -- Clock_Divider --
+   -------------------
+
+   function Clock_Divider (Freq : Positive) return Natural is
+      --  One period at the undivided 160 MHz clock, which is at most Src_Hz
+      --  (Freq = 1), so the ceiling below cannot overflow Integer.
+      Total : constant Natural := Natural'Max (1, Src_Hz / Freq);
+   begin
+      return Natural'Max
+               (1,
+                Natural'Min (Max_Clock_Divider,
+                             (Total + Max_Timer_Ticks - 1) / Max_Timer_Ticks));
+   end Clock_Divider;
+
    ------------------
    -- Period_Total --
    ------------------
 
-   function Period_Total (Freq : Positive) return Natural is
+   function Period_Total (Freq : Positive; Clock_Div : Positive := 1) return Natural is
    begin
-      return Natural'Max (1, Src_Hz / Freq);
+      --  Divide the clock first and the period second, in that order, because
+      --  that is what the hardware does: CLK_PRESCALE feeds the timer.
+      return Natural'Max (1, (Src_Hz / Clock_Div) / Freq);
    end Period_Total;
 
    ----------------------

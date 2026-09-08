@@ -8,11 +8,13 @@ with ESP32S3_Registers.IO_MUX;
 with ESP32S3_Registers.SYSTEM;
 
 package body ESP32S3.MCPWM with
-  --  Split by what the state IS.  Channel_Periods is a plain array that starts
-  --  initialised; the two protected objects are synchronised state and are
-  --  likewise fully default-initialised, which is what lets a task started
-  --  after elaboration rely on them.
-  Refined_State => (Channel_Periods => Periods,
+  --  Split by what the state IS.  Timer_Settings is what Configure_Channel
+  --  works out and later calls have to agree with -- the per-channel period
+  --  and the per-unit clock divider -- in plain arrays that start initialised;
+  --  the two protected objects are synchronised state and are likewise fully
+  --  default-initialised, which is what lets a task started after elaboration
+  --  rely on them.
+  Refined_State => (Timer_Settings  => (Periods, Clock_Dividers, Clock_Needs),
                     Register_Guard  => CTRL_Guard,
                     Claim_Pool      => Pool)
 is
@@ -49,6 +51,27 @@ is
    --  Configure_Channel and read by Set_Duty.  Plain reads/writes of a Natural
    --  are atomic on this target, and the owner is exclusive, so no lock is needed.
    Periods : array (MCPWM_Unit, Channel_Index) of Natural := (others => (others => 1));
+
+   --  Per-unit PWM_clk divider, i.e. CLK_CFG.CLK_PRESCALE + 1.  Bring_Up_Unit
+   --  programs 1 (the undivided 160 MHz clock); Configure_Channel maintains it
+   --  from Clock_Needs below.
+   Clock_Dividers : array (MCPWM_Unit) of Positive := (others => 1);
+
+   --  What each channel's configured frequency needs the unit clock divided
+   --  by.  1 for every frequency at or above 9.54 Hz, which is every channel
+   --  until one is configured slower than that.
+   --
+   --  The unit divider is the MAXIMUM over a unit's channels, recomputed on
+   --  every Configure_Channel, so it comes back DOWN when the slow channel is
+   --  reconfigured or released.  It was "only ever raised" when this was
+   --  written on 2026-09-08, which was wrong: one sub-10 Hz channel left the
+   --  whole unit at a tenth of its clock for the rest of the run, and every
+   --  later frequency -- correct in Hz, because the math compensates -- got a
+   --  tenth of the duty resolution it should have had.  Measured on hardware:
+   --  after one 1 Hz request, 20 kHz came back with a timer period of 800
+   --  ticks instead of 8 000.
+   Clock_Needs : array (MCPWM_Unit, Channel_Index) of Positive :=
+     (others => (others => 1));
 
    type Ch_Use_Map is array (MCPWM_Unit, Channel_Index) of Boolean;
    type Cap_Use_Map is array (MCPWM_Unit, Cap_Index) of Boolean;
@@ -145,6 +168,10 @@ is
 
       Regs.CLK := (EN => True, others => <>);          --  force the reg-file clock on
       Regs.CLK_CFG := (CLK_PRESCALE => 0, others => <>);   --  PWM_clk = 160 MHz
+      Clock_Dividers (Unit) := 1;                          --  and record that
+      for Ch in Channel_Index loop
+         Clock_Needs (Unit, Ch) := 1;
+      end loop;
    end Bring_Up_Unit;
 
    --------------------------------------------------------------------------
@@ -273,18 +300,57 @@ is
       Regs       : constant Periph_Ref := Regs_Of (Unit);
       --  The (proved) period / prescaler / dead-time math lives in
       --  ESP32S3.MCPWM.Math; the register writes stay here.
-      Total      : constant Natural := Math.Period_Total (Freq);       --  ticks / period
-      Divider    : constant Natural := Math.Prescale_Divider (Total);  --  smallest fitting
-      Ticks      : constant Natural := Math.Period_Ticks (Total, Divider);  --  TIMER_PERIOD + 1
-      Prescaler  : constant Natural := Divider - 1;
-      Period     : constant Natural := Ticks - 1;
+      --
+      --  Clock_Div is the unit's PWM_clk divider this channel will run from.
+      --  One timer reaches down to 160 MHz / (256 * 65536) = 9.54 Hz on its
+      --  own, so for every Freq of 10 Hz or more Math.Clock_Divider returns 1
+      --  and every register value below is exactly what it has always been.
+      --  Below that the unit clock has to be divided as well.
+      --
+      --  CLK_CFG is per UNIT, not per channel, so a slow channel slows the
+      --  other two timers of the same unit with it.  The unit divider is
+      --  therefore the maximum of what all three channels need -- computed
+      --  below, after this channel's need is recorded -- which both keeps a
+      --  slow channel slow and lets the clock come back up when that channel
+      --  is reconfigured faster.  A channel already configured on this unit
+      --  when the divider moves will run proportionally wrong until it is
+      --  configured again; configure the slow channel first, or reconfigure
+      --  the others after it.
+      Needed : constant Positive := Math.Clock_Divider (Freq);
       Has_B      : constant Boolean := Complement_Pin /= ESP32S3.GPIO.No_Pin;
       Dead_Ticks : constant Natural := Math.Dead_Time_Ticks (Dead_Time_Ns);
+
+      Clock_Div  : Positive;
+      Total      : Natural;   --  ticks / period
+      Divider    : Natural;   --  smallest fitting timer prescale
+      Ticks      : Natural;   --  TIMER_PERIOD + 1
+      Prescaler  : Natural;
+      Period     : Natural;
    begin
       if not C.Held then
          return;
       end if;
+
+      Clock_Needs (Unit, Ch) := Needed;
+      Clock_Div := 1;
+      for Each in Channel_Index loop
+         Clock_Div := Positive'Max (Clock_Div, Clock_Needs (Unit, Each));
+      end loop;
+
+      Total     := Math.Period_Total (Freq, Clock_Div);
+      Divider   := Math.Prescale_Divider (Total);
+      Ticks     := Math.Period_Ticks (Total, Divider);
+      Prescaler := Divider - 1;
+      Period    := Ticks - 1;
+
       Periods (Unit, Ch) := Ticks;
+
+      if Clock_Div /= Clock_Dividers (Unit) then
+         Regs.CLK_CFG :=
+           (CLK_PRESCALE => CLK_CFG_CLK_PRESCALE_Field (Clock_Div - 1),
+            others       => <>);
+         Clock_Dividers (Unit) := Clock_Div;
+      end if;
 
       --  Operator Ch is timed by timer Ch (RMW of the shared OPERATOR_TIMERSEL).
       CTRL_Guard.Select_Timer (Unit, Ch);
