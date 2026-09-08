@@ -89,6 +89,12 @@ jobs:
       - name: Filesystem cross-check tools
         run: sudo apt-get update && sudo apt-get install -y e2fsprogs dosfstools
 
+      # chain_host's certificates are generated and signed for each run rather
+      # than committed, so the fixture is only ever as wrong as the case it is
+      # named for.
+      - name: Certificate fixtures
+        run: pip install cryptography
+
       # The whole gate.  Libraries on every profile they support (warnings are
       # failures), then all 96 examples, then the host suites.
       - name: ./x test

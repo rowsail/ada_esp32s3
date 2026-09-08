@@ -1,0 +1,17 @@
+--  Native build of the chain-validation test.  Chain_Verify's closure reaches
+--  the RSA accelerator's driver, which compiles for the host and simply is
+--  never called from here: the fixtures are ECDSA P-256 and Ed25519, both of
+--  which the client computes in Ada.  -gnata so the library's own contracts
+--  run while the test does.
+project Chain_Host is
+   SDK := external ("ADA_ESP32S3", "../../../..");
+   for Source_Dirs use
+     (".", SDK & "/libs/tls/src", SDK & "/libs/esp32s3_hal/src",
+      SDK & "/libs/esp32s3_hal/svd", SDK & "/crates/sparknacl/src");
+   for Object_Dir use "obj";
+   for Exec_Dir use ".";
+   for Main use ("chain_host.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-g", "-O1", "-gnat2022", "-gnata");
+   end Compiler;
+end Chain_Host;
