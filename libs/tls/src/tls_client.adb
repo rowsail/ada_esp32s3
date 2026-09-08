@@ -622,7 +622,19 @@ package body TLS_Client is
       Out_Len := 0;
       Inner_Type := 0;
       Ok := False;
-      if Len < 17 or else CLen > GC_C'Length then
+      --  Len is the length the RECORD HEADER claimed, and Recv_Record refuses a
+      --  record longer than Frag before filling it -- but that is the caller's
+      --  reasoning, two subprograms away, about a number the peer chose.  The
+      --  reads below (the ciphertext, then the 16-byte tag at its end) are
+      --  bounded here instead, along with the two scratch buffers and the key
+      --  material, so this holds on its own.
+      if Len < 17
+        or else Len > Frag'Length
+        or else CLen > GC_C'Length
+        or else CLen > GC_P'Length
+        or else RKey'Length < 16
+        or else RIV'Length < 12
+      then
          return;
       end if;
       for I in 0 .. 15 loop
