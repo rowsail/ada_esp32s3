@@ -597,6 +597,31 @@ package body TLS_Client is
    --  in TLS_Client.Scratch.
    HSB_Len : Natural := 0;
 
+   --  TLS 1.3 puts the record's real content type at the END of the plaintext,
+   --  behind however many zero bytes the peer chose to pad with (RFC 8446
+   --  5.2).  Body_Last is then the last index of the message itself.  A record
+   --  that is all padding names no type at all, which is a protocol error
+   --  rather than an empty message -- Found says which.
+   procedure Take_Inner_Type
+     (Plain_Len : Natural;
+      Body_Len  : out Natural;
+      Inner     : out U8;
+      Found     : out Boolean)
+   is
+      Pos : Integer := Plain_Len - 1;
+   begin
+      Body_Len := 0;
+      Inner := 0;
+      while Pos >= 0 and then GC_P (Pos) = 0 loop
+         Pos := Pos - 1;
+      end loop;
+      Found := Pos >= 0;
+      if Found then
+         Inner := GC_P (Pos);
+         Body_Len := Pos;             --  the message is GC_P (0 .. Pos - 1)
+      end if;
+   end Take_Inner_Type;
+
    --  Decrypt one TLS 1.3 record fragment Frag(.. Len-1) under the server key, with
    --  record sequence Seq.  On success, the inner handshake bytes are GC_P (0 ..
    --  Out_Len-1) and Inner_Type is the real content type (22 = handshake).
@@ -617,24 +642,26 @@ package body TLS_Client is
       AAD    : ESP32S3.AES.GCM.Byte_Array (0 .. 4);
       Tag    : Auth_Tag;
       Dec_OK : Boolean;
-      Pos    : Integer;
+
+      --  Is there a record here this can decrypt into the scratch buffers at
+      --  all?  Len is the length the RECORD HEADER claimed, and everything
+      --  below indexes on it: the ciphertext copy, and the 16-byte tag sitting
+      --  at its end.  Recv_Record refuses a record longer than the fragment
+      --  before filling it, but that is the caller's reasoning, two
+      --  subprograms away, about a number the peer chose.  Stated here so this
+      --  subprogram holds on its own.
+      function Decryptable return Boolean
+      is (Len >= 17
+          and then Len <= Frag'Length
+          and then CLen <= GC_C'Length
+          and then CLen <= GC_P'Length
+          and then RKey'Length >= 16
+          and then RIV'Length >= 12);
    begin
       Out_Len := 0;
       Inner_Type := 0;
       Ok := False;
-      --  Len is the length the RECORD HEADER claimed, and Recv_Record refuses a
-      --  record longer than Frag before filling it -- but that is the caller's
-      --  reasoning, two subprograms away, about a number the peer chose.  The
-      --  reads below (the ciphertext, then the 16-byte tag at its end) are
-      --  bounded here instead, along with the two scratch buffers and the key
-      --  material, so this holds on its own.
-      if Len < 17
-        or else Len > Frag'Length
-        or else CLen > GC_C'Length
-        or else CLen > GC_P'Length
-        or else RKey'Length < 16
-        or else RIV'Length < 12
-      then
+      if not Decryptable then
          return;
       end if;
       for I in 0 .. 15 loop
@@ -655,20 +682,9 @@ package body TLS_Client is
       end loop;
 
       Decrypt (Key, IV, AAD, GC_C (0 .. CLen - 1), Tag, GC_P (0 .. CLen - 1), Dec_OK);
-      if not Dec_OK then
-         return;
+      if Dec_OK then
+         Take_Inner_Type (CLen, Out_Len, Inner_Type, Ok);
       end if;
-      --  Strip trailing zero padding; the last non-zero byte is the content type.
-      Pos := CLen - 1;
-      while Pos >= 0 and then GC_P (Pos) = 0 loop
-         Pos := Pos - 1;
-      end loop;
-      if Pos < 0 then
-         return;
-      end if;
-      Inner_Type := GC_P (Pos);
-      Out_Len := Pos;               --  handshake bytes = GC_P (0 .. Pos-1)
-      Ok := True;
    end Decrypt_Record;
 
    --  Walk the reassembled handshake messages: note the Certificate (extract the
