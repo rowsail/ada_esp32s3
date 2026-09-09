@@ -20,13 +20,7 @@ package ESP32S3.Stack_Usage is
    --  early as possible in Main, so the high-water mark covers the whole run.  It
    --  paints everything below the caller's frame, so anything already on the stack
    --  (the call chain into Main) is left intact.
-   --  Global => null: this writes only stack memory BELOW the caller's frame
-   --  -- storage no live object occupies and no Ada object names.  Without
-   --  the contract a caller in SPARK inherits the generated worst case, which
-   --  includes the __HEAP pseudo-global, and cannot then prove its own
-   --  elaboration leaves memory initialised.  Same reasoning as Esp_Restart.
-   procedure Paint_Env_Stack
-     with Global => null;
+   procedure Paint_Env_Stack;
 
    --  Peak bytes of the env stack ever used since Paint_Env_Stack (the high-water
    --  mark), the bytes still pristine, and the total reserved size.
