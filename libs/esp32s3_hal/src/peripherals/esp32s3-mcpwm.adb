@@ -66,7 +66,7 @@ is
    --  -- correct in Hz, because Period_Total compensates -- got a tenth of
    --  the duty resolution it should have had.  Measured: after one 1 Hz
    --  request, 20 kHz came back with a period of 800 ticks instead of 8 000.
-   type Clock_Need_Map is array (MCPWM_Unit, Channel_Index) of Positive;
+   type Clock_Need_Map is array (MCPWM_Unit, Channel_Index) of Math.Clock_Divide;
    Clock_Needs : Clock_Need_Map := (others => (others => 1));
 
    type Ch_Use_Map is array (MCPWM_Unit, Channel_Index) of Boolean;
@@ -319,11 +319,11 @@ is
       --  when the divider moves will run proportionally wrong until it is
       --  configured again; configure the slow channel first, or reconfigure
       --  the others after it.
-      Needed : constant Positive := Math.Clock_Divider (Freq);
+      Needed : constant Math.Clock_Divide := Math.Clock_Divider (Freq);
       Has_B      : constant Boolean := Complement_Pin /= ESP32S3.GPIO.No_Pin;
       Dead_Ticks : constant Natural := Math.Dead_Time_Ticks (Dead_Time_Ns);
 
-      Clock_Div  : Positive;
+      Clock_Div  : Math.Clock_Divide;
       Total      : Natural;   --  ticks / period
       Divider    : Natural;   --  smallest fitting timer prescale
       Ticks      : Natural;   --  TIMER_PERIOD + 1
@@ -337,7 +337,7 @@ is
       Clock_Needs (Unit, Ch) := Needed;
       Clock_Div := 1;
       for Each in Channel_Index loop
-         Clock_Div := Positive'Max (Clock_Div, Clock_Needs (Unit, Each));
+         Clock_Div := Math.Clock_Divide'Max (Clock_Div, Clock_Needs (Unit, Each));
       end loop;
 
       Total     := Math.Period_Total (Freq, Clock_Div);

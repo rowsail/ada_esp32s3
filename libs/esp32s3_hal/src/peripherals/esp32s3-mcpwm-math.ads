@@ -22,21 +22,24 @@ is
    --  this is out of the timer's reach and needs the unit clock divided down.
    Max_Timer_Ticks : constant := Max_Timer_Divider * Max_Peak;   --  16 777 216
 
-   --  Smallest unit clock divider (1 .. 256) that brings one period of Freq
-   --  within Max_Timer_Ticks, i.e. within the timer's own reach.
+   --  A unit clock divider.  A subtype of its own, not just Positive: it sits
+   --  next to Freq in Period_Total below, and two adjacent parameters of the
+   --  same type can be swapped by a positional call without anyone noticing.
+   subtype Clock_Divide is Positive range 1 .. Max_Clock_Divider;
+
+   --  Smallest unit clock divider that brings one period of Freq within
+   --  Max_Timer_Ticks, i.e. within the timer's own reach.
    --
    --  It is 1 -- the 160 MHz clock, untouched -- for every Freq at or above
    --  Src_Hz / Max_Timer_Ticks, which is 9.54 Hz.  So nothing at 10 Hz or
    --  above is affected by this at all; only a sub-10 Hz channel divides the
    --  unit clock, and Period_Total below then works from the divided clock.
-   function Clock_Divider (Freq : Positive) return Natural
-     with Post => Clock_Divider'Result in 1 .. Max_Clock_Divider;
+   function Clock_Divider (Freq : Positive) return Clock_Divide;
 
    --  Total timer ticks per PWM period with the unit clock divided by
    --  Clock_Div (>= 1).  Clock_Div = 1 is the full 160 MHz clock.
-   function Period_Total (Freq : Positive; Clock_Div : Positive := 1) return Natural
-     with Pre  => Clock_Div <= Max_Clock_Divider,
-          Post => Period_Total'Result in 1 .. Src_Hz;
+   function Period_Total (Freq : Positive; Clock_Div : Clock_Divide := 1) return Natural
+     with Post => Period_Total'Result in 1 .. Src_Hz;
 
    --  Smallest timer prescale (1 .. 256) so Total ticks fit the 16-bit period.
    function Prescale_Divider (Total : Natural) return Natural

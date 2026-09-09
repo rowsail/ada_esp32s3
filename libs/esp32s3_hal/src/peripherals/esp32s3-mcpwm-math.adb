@@ -6,7 +6,7 @@ is
    -- Clock_Divider --
    -------------------
 
-   function Clock_Divider (Freq : Positive) return Natural is
+   function Clock_Divider (Freq : Positive) return Clock_Divide is
       --  One period at the undivided 160 MHz clock, which is at most Src_Hz
       --  (Freq = 1), so the ceiling below cannot overflow Integer.
       Total : constant Natural := Natural'Max (1, Src_Hz / Freq);
@@ -21,7 +21,7 @@ is
    -- Period_Total --
    ------------------
 
-   function Period_Total (Freq : Positive; Clock_Div : Positive := 1) return Natural is
+   function Period_Total (Freq : Positive; Clock_Div : Clock_Divide := 1) return Natural is
    begin
       --  Divide the clock first and the period second, in that order, because
       --  that is what the hardware does: CLK_PRESCALE feeds the timer.
