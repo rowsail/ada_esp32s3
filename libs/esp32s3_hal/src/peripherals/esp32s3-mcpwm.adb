@@ -279,12 +279,14 @@ is
    end Finalize;
 
    --  The prescale a channel's timer is CURRENTLY running on, read back from
-   --  the register, as a divider (field + 1).
-   function Live_Prescale (Regs : Periph_Ref; Ch : Channel_Index) return Natural
+   --  the register, as a divider (field + 1).  Takes the unit rather than a
+   --  Periph_Ref: a parameter named Regs here would sit in an enclosing scope
+   --  of every subprogram below that declares its own, and shadow all of them.
+   function Live_Prescale (Unit : MCPWM_Unit; Ch : Channel_Index) return Natural
    is (case Ch is
-         when Ch0 => Natural (Regs.TIMER0_CFG0.TIMER0_PRESCALE) + 1,
-         when Ch1 => Natural (Regs.TIMER1_CFG0.TIMER1_PRESCALE) + 1,
-         when Ch2 => Natural (Regs.TIMER2_CFG0.TIMER2_PRESCALE) + 1);
+         when Ch0 => Natural (Regs_Of (Unit).TIMER0_CFG0.TIMER0_PRESCALE) + 1,
+         when Ch1 => Natural (Regs_Of (Unit).TIMER1_CFG0.TIMER1_PRESCALE) + 1,
+         when Ch2 => Natural (Regs_Of (Unit).TIMER2_CFG0.TIMER2_PRESCALE) + 1);
 
    -----------------------
    -- Configure_Channel --
@@ -368,7 +370,7 @@ is
       --  unit's other two channels, which must then be configured again.  A
       --  single-channel unit -- the common case, and the one this driver is
       --  used for -- never notices.
-      if Live_Prescale (Regs, Ch) /= Divider then
+      if Live_Prescale (Unit, Ch) /= Divider then
          declare
             Saved : constant Clock_Need_Map := Clock_Needs;
          begin
