@@ -75,12 +75,37 @@ is
    --  Complement_Pin (optional): also drive a complementary B output on that pad
    --  -- the inverse of A, with Dead_Time_Ns of dead-time inserted on each edge
    --  so A and B are never high simultaneously (half-bridge motor drive).
+   --  WHERE IN EACH PERIOD THE DRIVEN PULSE SITS.
+   --
+   --  Period_Start is the conventional arrangement and the default: the
+   --  output goes high at timer-zero and low at compare-match, so every
+   --  period begins driving and coasts for the remainder.
+   --
+   --  Period_End puts the pulse at the far end instead -- low at timer-zero,
+   --  high at compare-match -- so a period begins coasting and ENDS driving.
+   --
+   --  It matters at the boundary between two phases of different duty.  With
+   --  Period_Start, a low-duty phase's last act is a long coast: a 10 % ramp
+   --  at 200 Hz drives for 0.5 ms and then does nothing for 4.5 ms, and
+   --  whatever follows arrives after that dead time.  Reported from a bench
+   --  as "a small timing gap" between a motor soft start and full power, and
+   --  it grows as the frequency falls -- 18 ms at 50 Hz.  With Period_End the
+   --  phase ends driving and the next one follows on.
+   --
+   --  The duty is unchanged either way.  Set_Duty places the comparator to
+   --  suit the mode, so Percent always means "fraction of the period driven"
+   --  and not "fraction before the comparator".  Getting that wrong inverts
+   --  the duty silently, which is why the two are set together and not by
+   --  the caller.
+   type Pulse_Position is (Period_Start, Period_End);
+
    procedure Configure_Channel
      (C              : Channel;
       Freq           : Positive;
       Pin            : ESP32S3.GPIO.Pin_Id;
       Complement_Pin : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Dead_Time_Ns   : Natural := 0)
+      Dead_Time_Ns   : Natural := 0;
+      Pulse          : Pulse_Position := Period_Start)
    with Pre => Is_Valid (C);
 
    --  Start / stop the channel's timer (the output halts in its current state).

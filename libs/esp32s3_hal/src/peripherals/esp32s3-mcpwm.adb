@@ -15,7 +15,7 @@ package body ESP32S3.MCPWM with
   --  the two protected objects are synchronised state and are likewise fully
   --  default-initialised, which is what lets a task started after elaboration
   --  rely on them.
-  Refined_State => (Timer_Settings  => (Periods, Clock_Needs),
+  Refined_State => (Timer_Settings  => (Periods, Clock_Needs, Pulse_Modes),
                     Register_Guard  => CTRL_Guard,
                     Claim_Pool      => Pool)
 is
@@ -68,6 +68,12 @@ is
    --  request, 20 kHz came back with a period of 800 ticks instead of 8 000.
    type Clock_Need_Map is array (MCPWM_Unit, Channel_Index) of Math.Clock_Divide;
    Clock_Needs : Clock_Need_Map := (others => (others => 1));
+
+   --  Where each channel puts its driven pulse.  Set by Configure_Channel and
+   --  read by Set_Duty, which has to place the comparator to match: the two
+   --  are halves of one decision, and splitting them inverts the duty.
+   Pulse_Modes : array (MCPWM_Unit, Channel_Index) of Pulse_Position :=
+     (others => (others => Period_Start));
 
    type Ch_Use_Map is array (MCPWM_Unit, Channel_Index) of Boolean;
    type Cap_Use_Map is array (MCPWM_Unit, Cap_Index) of Boolean;
@@ -297,7 +303,8 @@ is
       Freq           : Positive;
       Pin            : ESP32S3.GPIO.Pin_Id;
       Complement_Pin : ESP32S3.GPIO.Optional_Pin := ESP32S3.GPIO.No_Pin;
-      Dead_Time_Ns   : Natural := 0)
+      Dead_Time_Ns   : Natural := 0;
+      Pulse          : Pulse_Position := Period_Start)
    is
       use type ESP32S3.GPIO.Pad_Number;
       Unit       : constant MCPWM_Unit := C.U;
@@ -348,7 +355,8 @@ is
       Prescaler := Divider - 1;
       Period    := Ticks - 1;
 
-      Periods (Unit, Ch) := Ticks;
+      Periods (Unit, Ch)     := Ticks;
+      Pulse_Modes (Unit, Ch) := Pulse;
 
       --  A timer's prescale divider is loaded out of PERIPHERAL RESET and at
       --  no other time.  Writing TIMERn_PRESCALE on a unit that has already
@@ -404,7 +412,12 @@ is
             Regs.CMPR0_CFG := (CMPR0_A_UPMETHOD => 1, others => <>);  --  TEZ
             Regs.CMPR0_VALUE0 := (CMPR0_A => 0, others => <>);
             Regs.GEN0_CFG0 := (others => <>);
-            Regs.GEN0_A := (UTEZ => 2, UTEA => 1, others => <>);
+            --  Period_Start: high at timer-zero, low at compare.
+            --  Period_End:   the reverse, so the period ENDS driving.
+            Regs.GEN0_A :=
+              (UTEZ   => (if Pulse = Period_Start then 2 else 1),
+               UTEA   => (if Pulse = Period_Start then 1 else 2),
+               others => <>);
             if Has_B then
                Regs.DB0_CFG :=
                  (DB0_A_OUTBYPASS   => False,
@@ -429,7 +442,12 @@ is
             Regs.CMPR1_CFG := (CMPR1_A_UPMETHOD => 1, others => <>);
             Regs.CMPR1_VALUE0 := (CMPR1_A => 0, others => <>);
             Regs.GEN1_CFG0 := (others => <>);
-            Regs.GEN1_A := (UTEZ => 2, UTEA => 1, others => <>);
+            --  Period_Start: high at timer-zero, low at compare.
+            --  Period_End:   the reverse, so the period ENDS driving.
+            Regs.GEN1_A :=
+              (UTEZ   => (if Pulse = Period_Start then 2 else 1),
+               UTEA   => (if Pulse = Period_Start then 1 else 2),
+               others => <>);
             if Has_B then
                Regs.DB1_CFG :=
                  (DB1_A_OUTBYPASS   => False,
@@ -454,7 +472,12 @@ is
             Regs.CMPR2_CFG := (CMPR2_A_UPMETHOD => 1, others => <>);
             Regs.CMPR2_VALUE0 := (CMPR2_A => 0, others => <>);
             Regs.GEN2_CFG0 := (others => <>);
-            Regs.GEN2_A := (UTEZ => 2, UTEA => 1, others => <>);
+            --  Period_Start: high at timer-zero, low at compare.
+            --  Period_End:   the reverse, so the period ENDS driving.
+            Regs.GEN2_A :=
+              (UTEZ   => (if Pulse = Period_Start then 2 else 1),
+               UTEA   => (if Pulse = Period_Start then 1 else 2),
+               others => <>);
             if Has_B then
                Regs.DB2_CFG :=
                  (DB2_A_OUTBYPASS   => False,
@@ -593,7 +616,25 @@ is
       --  65536 and overflow the field -> Constraint_Error.  Duty_Compare (proved free
       --  of range error) caps at 65535 -- for every smaller period the comparator =
       --  Period is unchanged and still yields 100%.
-      Compare : constant Natural := Math.Duty_Compare (Period, Percent);
+      --  The comparator is placed to suit where the pulse sits, so that
+      --  Percent always means "fraction of the period DRIVEN".
+      --
+      --  Period_Start: high from 0 to Compare, so Compare = Percent of the
+      --  period.  Period_End: high from Compare to the end, so Compare is
+      --  the COMPLEMENT -- (100 - Percent).  Flipping the generator without
+      --  flipping this would invert the duty in silence: asking for 10 %
+      --  would deliver 90 %, and on a motor that is the difference between a
+      --  soft start and a full-power lurch.
+      --
+      --  Both extremes still behave.  At 100 % Period_Start gives Compare =
+      --  Period (never reached, so always high) and Period_End gives
+      --  Compare = 0 (high from the first tick, so always high).  At 0 % the
+      --  two swap, and neither drives.
+      Wanted  : constant Duty_Percent :=
+        (if Pulse_Modes (C.U, C.Idx) = Period_Start
+         then Percent
+         else 100.0 - Percent);
+      Compare : constant Natural := Math.Duty_Compare (Period, Wanted);
    begin
       if not C.Held then
          return;
