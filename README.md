@@ -462,6 +462,9 @@ repository, which pulls this one in as a submodule.
   empty folder, no runtime source copied.
 - **VS Code** — first-class target: build tasks plus on-chip GDB debugging over
   the built-in USB-Serial-JTAG (pinned OpenOCD + Xtensa GDB). Rests at Ada `Main`.
+- **`./x turbo`** — Turbo Ada, a Borland Turbo C++ style text-mode IDE in Ada
+  (F9 make, Ctrl-F9 run, Alt-F8 next error) over the same `./x`, `esp32-ada` and
+  `alr` commands; see [ide/turbo-ada](ide/turbo-ada/README.md).
 - **Flashing** uses our own Ada `esp_flash` host tool (no esptool needed;
   `ESP_USE_ESPTOOL=1` is an optional fallback).
 
@@ -491,7 +494,7 @@ book/               the long-form guide (LaTeX sources + main.pdf)
   prove/            the SPARK proof surface (prove.sh + what is proved, and to what level)
 docs/               the static getting-started site (adaformicrocontrollers.com)
 tools/              fetch-wifi-blobs.sh, the analyzer baselines, host helpers
-ide/                the VS Code and Vim integrations
+ide/                the VS Code and Vim integrations, and Turbo Ada (a Turbo C++ style IDE)
 x, export.sh        the ./x dispatcher and the esp32-ada launcher
 QUICKSTART.md, TOOLING.md
 ```

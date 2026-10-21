@@ -20,6 +20,7 @@
 #    esp32-ada kill-openocd          kill every OpenOCD (release captured ports)
 #    esp32-ada install-ide           install the VS Code extension (committed .vsix; no Node)
 #    esp32-ada install-vim           symlink the Vim/Neovim plugin (auto-updates on git pull)
+#    esp32-ada turbo [FILE...]       Turbo Ada, the Turbo C++ style IDE, on this project
 #
 #  PORT defaults to $ESPPORT or /dev/ttyACM0.  A project is any folder with
 #  build.sh + app.gpr (what `init` creates).  `-C DIR` runs as if from DIR.
@@ -292,7 +293,8 @@ case "$cmd" in
     install-ide)     cmd_install_ide "$@" ;;   # install the VS Code extension (no Node)
     build-ide)       cmd_build_ide "$@" ;;     # (maintainer) rebuild the .vsix
     install-vim)     cmd_install_vim "$@" ;;   # symlink the Vim/Neovim plugin
+    turbo|tada)      build_tada; exec "$TADA" "$@" ;;   # from x (sourced): the IDE, here
     ""|-h|--help|help)
-        sed -n '3,24p' "$0" | sed 's/^#  \{0,1\}//; s/^#//' ;;
+        sed -n '3,25p' "$0" | sed 's/^#  \{0,1\}//; s/^#//' ;;
     *) die "unknown command '$cmd' (try 'esp32-ada help')" ;;
 esac

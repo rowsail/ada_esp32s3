@@ -1,0 +1,35 @@
+--  Turbo Ada: a Borland Turbo C++ style text-mode IDE.
+--
+--  A native (host) program: build it with the native GNAT toolchain, either
+--  with `alr build` from this directory or plain `gprbuild -P turbo_ada.gpr`.
+--  The only C is src/term_c.c, the raw-terminal shim (termios on POSIX,
+--  console modes on Windows).
+
+project Turbo_Ada is
+
+   for Languages use ("Ada", "C");
+   for Source_Dirs use ("src");
+   for Object_Dir use "obj";
+   for Exec_Dir use "bin";
+   for Main use ("tada.adb");
+
+   type Build_Kind is ("debug", "release");
+   Build : Build_Kind := external ("TURBO_ADA_BUILD", "release");
+
+   package Compiler is
+      Ada_Common := ("-gnat2022", "-gnatwa", "-gnatwJ", "-gnatyM120");
+      case Build is
+         when "debug" =>
+            for Default_Switches ("Ada") use Ada_Common & ("-g", "-O0", "-gnata", "-gnatVa");
+            for Default_Switches ("C") use ("-g", "-O0", "-Wall");
+         when "release" =>
+            for Default_Switches ("Ada") use Ada_Common & ("-O2", "-gnatn");
+            for Default_Switches ("C") use ("-O2", "-Wall");
+      end case;
+   end Compiler;
+
+   package Binder is
+      for Default_Switches ("Ada") use ("-Es");
+   end Binder;
+
+end Turbo_Ada;

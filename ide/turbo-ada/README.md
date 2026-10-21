@@ -1,0 +1,130 @@
+# Turbo Ada — a Turbo C++ style IDE for Ada, Alire and the ESP32-S3
+
+The Borland Turbo C++ 3.0 IDE, redone in Ada for this SDK: the blue edit
+windows, the dotted desktop, the gray menu bar with red hot letters, the green
+buttons with their drop shadows, the cyan message window, the "Compiling" box
+that ends in *Success: Press any key* — and the keys your fingers remember
+(F9 make, Ctrl-F9 run, Alt-F8 next error, F10 menu, Alt-X exit).
+
+```
+  ≡  File  Edit  Search  Run  Compile  Project  Options  Window  Help
+╔═[■]═══════════ ../examples/esp32s3_gpio0_blink/src/main.adb ════════1══[↑]═╗
+║procedure Main is                                                           ▲
+║begin                                                                       ■
+║   loop                                                                     ░
+║      delay until Clock + Seconds (3600);                                   ░
+║   end loop;                                                                ░
+║end Main;     ╔═══════════════════════ Make ════════════════════════╗       ░
+║              ║                                                     ║       ░
+║              ║  Main file:  gpio0_blink                            ║       ░
+║              ║  Command:    ./x build gpio0_blink                  ║       ░
+║              ║  Compiling:  main.adb                               ║       ░
+║              ║                     Total                           ║       ░
+║              ║  Lines output:      31          Elapsed: 9.4 s      ║       ░
+║              ║      Warnings:      0                               ║       ░
+║              ║        Errors:      0                               ║       ░
+║              ║                                                     ║       ░
+║              ║            Success   :   Press any key              ║       ▼
+╚══ 1:1 ═══════╚═════════════════════════════════════════════════════╝══════►─┘
+ F1 Help  F2 Save  F3 Open  F9 Make  Ctrl-F9 Run  Alt-F9 Monitor  F10 Menu
+```
+
+It is a native program written in Ada (no curses; the only C is a small
+raw-terminal shim), and it adds **no build logic of its own**: like the VS Code
+and Vim integrations it drives the commands that already know how to build
+each kind of project.
+
+| Project (found from the directory you start in) | Build / run / flash with |
+|---|---|
+| an example inside this SDK repository | `./x build <example>`, `./x run`, `./x flash`, ... |
+| a standalone project (`esp32-ada init`: `build.sh` + `app.gpr`) | `esp32-ada build`, `run`, `flash`, ... |
+| any other Alire crate (`alire.toml`) | `alr build`, `alr run`, `alr test`, `alr clean` |
+
+## Running it
+
+From the SDK (built on first use with the native GNAT that `./x` already uses):
+
+```sh
+./x turbo                     # on the SDK: Project | Open project picks an example
+./x turbo gpio0_blink         # straight into an example
+esp32-ada turbo               # in a standalone esp32-ada project
+```
+
+As an ordinary Alire crate, anywhere:
+
+```sh
+cd ide/turbo-ada
+alr build                     # -> bin/tada
+alr install                   # optional: puts tada in ~/.alire/bin
+tada [-C DIR] [FILE...]       # in any Alire crate or esp32-ada project
+```
+
+It needs a terminal at least 80×25 that speaks xterm escape sequences: any
+Linux or macOS terminal, tmux/screen, or on Windows the Windows Terminal or
+the Windows 10 (1809+) console. Mouse and bracketed paste are used when the
+terminal offers them. Colours follow the terminal's palette; with
+`COLORTERM=truecolor` (or Options | Editor) they are the exact CGA ones, so
+brown is brown.
+
+## What's in it
+
+- **Editor** — any number of windows, Ada syntax colouring (plus GPR, shell,
+  TOML and C), auto-indent that steps in after `is`/`then`/`loop`/`begin`,
+  undo/redo, Shift-select and mouse select, the WordStar Ctrl-K/Ctrl-Q block
+  and cursor commands, Find/Replace with the Turbo options dialog, Go to line,
+  spec/body switching (Ctrl-F6), Grep the word under the cursor across the
+  project (Ctrl-F1). Copies also reach the system clipboard via OSC 52.
+- **Compile** — Make (F9) runs the project's build in the background behind the
+  Compiling box (Esc cancels); the output lands in the Message window, GNAT's
+  `file:line:col:` diagnostics are picked out, and Enter, a click, or Alt-F8 /
+  Alt-F7 jumps to the line. Also Build all, Clean, and the SDK's Memory
+  (`./x mem`), Stack (`./x stack`), Analyze and Test reports.
+- **Run** — Ctrl-F9 makes, then flashes and opens the serial monitor (the
+  terminal is handed over; Ctrl-] leaves miniterm). Flash, Monitor, Debug
+  (OpenOCD + GDB) and Kill OpenOCD separately; Alt-F5 shows the user screen.
+- **Project** — pick an SDK example, scaffold a new project (`./x new`,
+  `esp32-ada init` or `alr init --bin`), edit `alire.toml` and the `.gpr`, see
+  the board's flash/PSRAM sizes, and `alr update` / `alr show` / `alr with`
+  from the ≡ menu.
+- **Options** — serial port and runtime profile (passed as `-p` / `-P`), the
+  command templates themselves, editor settings. Options | Save options, and
+  every exit, writes `.turbo_ada` (git-ignored) in the project or SDK root
+  with the options and the open files, so the desktop comes back next time.
+- **Windows** — move and resize with the mouse or Ctrl-F5, F5 zoom, F6 next,
+  Alt-1..9, Alt-0 list, Tile, Cascade; F1 help, Help | Keyboard for every key.
+
+## Commands are templates
+
+Each action is a template (Options | Commands) run through `/bin/sh -c`
+(on Windows `bash -c` when bash is on `PATH`, e.g. MSYS2 or Git Bash, else
+`cmd /c`), in the SDK root or the project directory:
+
+```
+{example} {port_opt} {profile_opt} {port} {profile} {dir} {root} {file}
+```
+
+`{port_opt}` is ` -p PORT` only when a port is set, so the tool's own default
+(`$ESPPORT`, else `/dev/ttyACM0`) applies otherwise; `{profile_opt}` likewise.
+
+## Layout
+
+```
+src/term_c.c          raw terminal: termios on POSIX, VT console modes on Windows
+src/turbo-term*       its Ada face; alternate screen, mouse, bracketed paste
+src/turbo-events*     bytes -> keys, mouse, paste, resize
+src/turbo-screen*     the cell grid, flushed as a diff (16 colours or exact CGA)
+src/turbo-theme.ads   the Turbo C++ colour scheme
+src/turbo-buffers*    a file's text, with undo/redo and search
+src/turbo-syntax*     per-line highlighting
+src/turbo-windows*    framed windows: close/zoom boxes, scroll bars, resize grip
+src/turbo-editors*    the edit window
+src/turbo-messages*   the message window and the diagnostic parser
+src/turbo-viewers*    read-only text (help, clipboard, project information)
+src/turbo-desktop*    the window stack, the status line
+src/turbo-menus*      the menu bar and pull-downs
+src/turbo-dialogs*    dialog controls, message boxes, find, the file dialog
+src/turbo-projects*   project detection, command templates, .turbo_ada
+src/turbo-jobs*       background builds (output read from a log as it grows)
+src/turbo-app*        the event loop and every command
+test/host/            host tests (./x test host runs them)
+```

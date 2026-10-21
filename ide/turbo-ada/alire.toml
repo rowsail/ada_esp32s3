@@ -1,0 +1,16 @@
+name = "turbo_ada"
+description = "Borland Turbo C++ style text-mode IDE for Ada, Alire and ESP32-S3"
+version = "0.1.0-dev"
+
+authors = ["D. Howells"]
+maintainers = ["D. Howells <dhowells@motium.us>"]
+licenses = "Apache-2.0 WITH LLVM-exception"
+tags = ["ide", "editor", "tui", "turbo", "esp32s3"]
+
+executables = ["tada"]
+project-files = ["turbo_ada.gpr"]
+
+[configuration]
+generate_ada = false
+generate_c = false
+generate_gpr = false

@@ -47,6 +47,8 @@
 #    ./x install-ide                   install the VS Code extension (committed .vsix; no Node)
 #    ./x build-ide                     (maintainer) rebuild the committed .vsix (needs Node)
 #    ./x install-vim                   symlink the Vim/Neovim plugin (auto-updates on git pull)
+#    ./x turbo   [<example>] [FILE...] Turbo Ada: the Turbo C++ style text-mode IDE
+#                                     (ide/turbo-ada; built on first use)
 #    ./x docs                          build the HAL API reference PDF (libs/esp32s3_hal/docs/)
 #
 #  <example> accepts the short name (gpio0_blink) or the full dir
@@ -537,6 +539,26 @@ cmd_install_vim () {   # symlink the Vim plugin into Vim's + Neovim's native pac
     echo "x: restart Vim to load it.  'git pull' updates the plugin in place (no reinstall)."
 }
 
+# -- Turbo Ada ----------------------------------------------------------------
+#  The Turbo C++ style IDE in ide/turbo-ada.  A native host tool, built on demand
+#  like tools/stack_report (incremental, so a no-op once compiled); it drives
+#  this same ./x for build/flash/run, so it adds no build logic of its own.
+TADA="$ROOT/ide/turbo-ada/bin/tada"
+build_tada () {
+    ( . "$ROOT/tools/sdk-env.sh" && esp32s3_toolchain_on_path \
+      && gprbuild -q -p -j0 -P "$ROOT/ide/turbo-ada/turbo_ada.gpr" ) \
+      || die "could not build ide/turbo-ada (needs the native GNAT toolchain:
+   alr toolchain --select gnat_native gprbuild)"
+}
+cmd_turbo () {   # [<example>] [FILE...] -- open the IDE on an example, or on the SDK
+    local dir="$ROOT"
+    if [ -n "${1:-}" ] && [ "${1#-}" = "$1" ] && [ ! -e "$1" ]; then
+        dir="$EXROOT/$(resolve "$1")"; shift
+    fi
+    build_tada
+    exec "$TADA" -C "$dir" "$@"
+}
+
 # -- docs ---------------------------------------------------------------------
 cmd_docs () {   # build + run the HAL reference generator -> docs/HAL_Reference.pdf
     local hal="$ROOT/libs/esp32s3_hal"
@@ -907,11 +929,12 @@ cmd_test () {
         fi
     }
 
-    #  Host suites: every libs/*/test/*/run.sh, plus the bare-boot heap test.
+    #  Host suites: every libs/*/test/*/run.sh, Turbo Ada's, plus the bare-boot
+    #  heap test.
     if [ "$what" = all ] || [ "$what" = host ]; then
         echo "== host test suites =="
         local r
-        for r in $(find "$ROOT/libs" -path '*/test/*/run.sh' | sort) \
+        for r in $(find "$ROOT/libs" "$ROOT/ide/turbo-ada" -path '*/test/*/run.sh' | sort) \
                  "$ROOT/examples/common/bare/boot/test/run.sh"; do
             [ -f "$r" ] || continue
             run_one "$(echo "${r#$ROOT/}" | sed 's|/run.sh$||')" bash "$r"
@@ -1037,6 +1060,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     install-ide)        cmd_install_ide "$@" ;;
     build-ide)          cmd_build_ide "$@" ;;
     install-vim)        cmd_install_vim "$@" ;;
+    turbo|tada)         cmd_turbo "$@" ;;
     docs)               cmd_docs "$@" ;;
     ""|-h|--help|help)
         sed -n '3,36p' "$0" | sed 's/^#  \{0,1\}//; s/^#//' ;;

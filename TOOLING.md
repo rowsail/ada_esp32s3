@@ -192,6 +192,13 @@ populate menus without hardcoding:
   error format `file:line:col: error:` works with a matching `errorformat`.
 - **Eclipse** — GNATbench/ALS for language; add external-tool / launch configs
   that shell out to `./x`.
+- **Turbo Ada** — a Borland Turbo C++ 3.0 style text-mode IDE, written in Ada,
+  in [`ide/turbo-ada`](ide/turbo-ada/README.md): `./x turbo [<example>]` from the
+  SDK, `esp32-ada turbo` in a standalone project, or `alr build` it and run
+  `tada` in any Alire crate. F9 runs the project's build, the Message window
+  picks out GNAT's `file:line:col:` diagnostics, and Ctrl-F9 makes, flashes and
+  opens the monitor. It keeps no build logic of its own: each action is an
+  editable template over `./x`, `esp32-ada` or `alr`.
 
 In every case the integration is: **ALS for language + `./x` for actions** — the
 same two pieces this repo already ships.
