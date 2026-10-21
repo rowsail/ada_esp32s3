@@ -79,12 +79,31 @@ package body Turbo.Menus is
 
    Run_Items : aliased constant Item_List :=
      [I ("~R~un", Cmd_Run, "Ctrl-F9"),
+      I ("~P~rogram reset", Cmd_Program_Reset, "Ctrl-F2"),
+      I ("~G~o to cursor", Cmd_Go_To_Cursor, "F4"),
+      I ("~T~race into", Cmd_Trace_Into, "F7"),
+      I ("~S~tep over", Cmd_Step_Over, "F8"),
+      Sep,
       I ("~F~lash", Cmd_Flash, "Shift-F9"),
       I ("~M~onitor", Cmd_Monitor),
-      I ("~D~ebug (OpenOCD + GDB)", Cmd_Debug, "Ctrl-F8"),
+      I ("GDB ~c~onsole", Cmd_Debug),
       I ("~K~ill OpenOCD", Cmd_Kill_OpenOCD),
       Sep,
       I ("~U~ser screen", Cmd_User_Screen, "Alt-F5")];
+
+   Debug_Items : aliased constant Item_List :=
+     [I ("~I~nspect...", Cmd_Inspect, "Alt-F4"),
+      I ("~E~valuate/modify...", Cmd_Evaluate, "Ctrl-F4"),
+      I ("~C~all stack...", Cmd_Call_Stack, "Ctrl-F3"),
+      Sep,
+      I ("~A~dd watch...", Cmd_Add_Watch, "Ctrl-F7"),
+      I ("~D~elete watch", Cmd_Delete_Watch),
+      I ("Ed~i~t watch...", Cmd_Edit_Watch),
+      I ("~R~emove all watches", Cmd_Delete_All_Watches),
+      Sep,
+      I ("~T~oggle breakpoint", Cmd_Toggle_Breakpoint, "Ctrl-F8"),
+      I ("~B~reakpoints...", Cmd_Breakpoints),
+      I ("De~l~ete all breakpoints", Cmd_Delete_All_Breakpoints)];
 
    Compile_Items : aliased constant Item_List :=
      [I ("~C~ompile", Cmd_Check_File, "Alt-F9"),
@@ -102,23 +121,21 @@ package body Turbo.Menus is
       I ("~N~ew project...", Cmd_New_Project),
       Sep,
       I ("Edit ~m~anifest (alire.toml)", Cmd_Edit_Manifest),
-      I ("Edit ~G~PR file", Cmd_Edit_Gpr),
+      I ("Edit G~P~R file", Cmd_Edit_Gpr),
       I ("~B~oard (flash/PSRAM)", Cmd_Board_Config),
       Sep,
-      I ("~I~nformation...", Cmd_Project_Info)];
-
-   Alire_Items : aliased constant Item_List :=
-     [I ("~S~earch crates...", Cmd_Alr_Search),
+      --  Alire (on the bar until the Debug menu needed the room)
+      I ("~S~earch crates...", Cmd_Alr_Search),
       I ("~G~et crate...", Cmd_Alr_Get),
-      I ("~I~nstall tool...", Cmd_Alr_Install),
-      Sep,
+      I ("Install ~t~ool...", Cmd_Alr_Install),
       I ("~A~dd dependency...", Cmd_Alr_Add),
       I ("~D~ependencies", Cmd_Alr_Deps),
       I ("~U~pdate dependencies", Cmd_Alr_Update),
-      I ("S~h~ow crate", Cmd_Alr_Show),
-      Sep,
+      I ("Sho~w~ crate", Cmd_Alr_Show),
       I ("~F~etch Alire (alr)...", Cmd_Alr_Fetch),
-      I ("Set up ESP32-S3 ~t~oolchain", Cmd_Setup_Toolchain)];
+      I ("Set up ~E~SP32-S3 toolchain", Cmd_Setup_Toolchain),
+      Sep,
+      I ("~I~nformation...", Cmd_Project_Info)];
 
    Options_Items : aliased constant Item_List :=
      [I ("~T~arget (port, profile)...", Cmd_Opt_Target),
@@ -139,6 +156,8 @@ package body Turbo.Menus is
       I ("Close a~l~l", Cmd_Close_All),
       Sep,
       I ("~M~essage", Cmd_Message_Window),
+      I ("~O~utput", Cmd_Output_Window),
+      I ("~W~atch", Cmd_Watch_Window),
       I ("~L~ist...", Cmd_Window_List, "Alt-0")];
 
    Help_Items : aliased constant Item_List :=
@@ -156,8 +175,8 @@ package body Turbo.Menus is
       (+" ~S~earch ", Search_Items'Access),
       (+" ~R~un ", Run_Items'Access),
       (+" ~C~ompile ", Compile_Items'Access),
+      (+" ~D~ebug ", Debug_Items'Access),
       (+" ~P~roject ", Project_Items'Access),
-      (+" ~A~lire ", Alire_Items'Access),
       (+" ~O~ptions ", Options_Items'Access),
       (+" ~W~indow ", Window_Items'Access),
       (+" ~H~elp ", Help_Items'Access)];

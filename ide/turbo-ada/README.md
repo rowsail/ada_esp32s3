@@ -74,7 +74,7 @@ alr install                   # optional: puts tada in ~/.alire/bin
 tada [-C DIR] [FILE...]       # in any Alire crate or esp32-ada project
 ```
 
-For the language-server features, install the server once: Alire | Install
+For the language-server features, install the server once: Project | Install
 tool (`ada_language_server` is the default), or from a shell
 
 ```sh
@@ -120,12 +120,29 @@ brown is brown.
   completes, Ctrl-F1 shows the declaration, and Search | Rename symbol renames
   across files. Without it, everything else works as before.
 - **Run** — Ctrl-F9 makes, then flashes and opens the serial monitor (the
-  terminal is handed over; Ctrl-] leaves miniterm). Flash, Monitor, Debug
-  (OpenOCD + GDB) and Kill OpenOCD separately; Alt-F5 shows the user screen.
+  terminal is handed over; Ctrl-] leaves miniterm). Flash, Monitor, GDB
+  console (a plain GDB prompt) and Kill OpenOCD separately; Alt-F5 shows the
+  user screen.
+- **Debug** — Turbo C++'s integrated debugger, on the board, with its keys:
+  F7 trace into, F8 step over, F4 go to cursor, Ctrl-F9 run on, Ctrl-F2
+  program reset, Ctrl-F8 toggle breakpoint (red lines, kept in `.turbo_ada`),
+  Ctrl-F7 add watch (the Watch window, re-evaluated at every stop), Ctrl-F4
+  evaluate/modify (Ada assignment, so records too), Alt-F4 inspect (the value
+  laid out in full), Ctrl-F3 call stack. With no session, F7/F8/F4 (or Ctrl-F9
+  with breakpoints set) build and flash the program, start OpenOCD
+  (`./x debug-server`) and GDB in its machine interface on the ELF
+  (`./x debug-info`), reset the board and run it to the Ada main or the
+  cursor; the cyan bar shows where it stopped, and the board's console goes
+  to the Output window (Alt-F5). While it runs, F7/F8/F4 pause it. OpenOCD's
+  flash breakpoints are on, so breakpoints in flash code are not limited to
+  the chip's two hardware ones (they are patched into flash and taken out
+  again when the session ends; if the IDE dies mid-session, re-flash).
+  Needs OpenOCD and the ESP32-S3 GDB: the first session offers
+  `./x get-debug-tools`.
 - **Project** — pick an SDK example, scaffold a new project (`./x new`,
   `esp32-ada init` or `alr init --bin`), edit `alire.toml` and the `.gpr`, see
   the board's flash/PSRAM sizes.
-- **Alire** — Search crates (`alr search --crates`), Get crate (`alr get` into
+- **Project, Alire items** — Search crates (`alr search --crates`), Get crate (`alr get` into
   a directory you choose, then open it as the project), Install tool (`alr
   install`, e.g. `ada_language_server`), Add dependency (`alr with <crate>`,
   after which the compile environment and the language server are refreshed),
@@ -134,7 +151,7 @@ brown is brown.
 - **ESP32-S3 toolchain** — before the first build of an SDK example or
   `esp32-ada` project, Turbo Ada runs `./x setup-toolchain --check`
   (`esp32-ada setup-toolchain --check`). If a compiler, gprbuild or the
-  xtensa-dynconfig plugin is missing it says which and offers Alire | Set up
+  xtensa-dynconfig plugin is missing it says which and offers Project | Set up
   ESP32-S3 toolchain: the validated GNAT and gprbuild through `alr` (fetched
   first if there is none; your default `alr` toolchain is left alone), the
   plugin built from the vendored source, and a check that the cross compiler
@@ -145,7 +162,8 @@ brown is brown.
   runtime profile (`-P`), the
   command templates themselves, editor settings. Options | Save options, and
   every exit, writes `.turbo_ada` (git-ignored) in the project or SDK root
-  with the options and the open files, so the desktop comes back next time.
+  with the options, the open files, the breakpoints and the watches, so the
+  desktop comes back next time.
 - **Windows** — move and resize with the mouse or Ctrl-F5, F5 zoom, F6 next,
   Alt-1..9, Alt-0 list, Tile, Cascade; F1 help, Help | Keyboard for every key.
 

@@ -47,6 +47,9 @@
 #    ./x debug   <example> [-p PORT] [--smp] [--attach]   on-chip debug (OpenOCD+GDB)
 #                                     --smp    : both LX7 cores as gdb threads (info threads)
 #                                     --attach : post-mortem halt-in-place (no reset; a hang/crash)
+#    ./x debug-server [-p PORT] [--smp]   OpenOCD alone, pinned to the board, until killed
+#                                     (an IDE's own GDB connects to :3333)
+#    ./x debug-info <example>          GDB=, ELF=, MAIN= for an IDE's debugger
 #    ./x kill-openocd                  kill every OpenOCD (releases captured USB-JTAG ports)
 #    ./x setup-device [-h]             one-time: install udev rule + groups for USB access (sudo)
 #    ./x check-device [-p PORT]        report whether the board's port is accessible
@@ -475,7 +478,10 @@ cmd_debug () {
     #  for a dual-core hang: one core may have crashed while the other idles).
     ESPPORT="$port" ${smp:+ESP_RTOS=hwthread} bash "$ROOT/tools/openocd.sh" >"$ocd_log" 2>&1 &
     ocd_pid=$!
-    trap '[ -n "${ocd_pid:-}" ] && kill "$ocd_pid" 2>/dev/null; rm -f "$ocd_log"' EXIT
+    #  Expanded NOW: the trap runs at script exit, after this function's
+    #  locals are gone (set -u would fail on them, and OpenOCD -- holding the
+    #  board's USB -- would be left running).
+    trap "kill $ocd_pid 2>/dev/null; rm -f '$ocd_log'" EXIT
     # wait for the gdb server (or OpenOCD death)
     for _ in $(seq 1 50); do
         grep -q "Listening on port 3333" "$ocd_log" 2>/dev/null && break
@@ -497,6 +503,35 @@ cmd_debug () {
             -ex "monitor reset halt" \
             -ex "tbreak app_main" || true
     fi
+}
+
+#  For an IDE that drives GDB itself (Turbo Ada's F7/F8 debugger): the server
+#  on its own, and what to point GDB at.
+cmd_debug_server () {   # [-p PORT] [--smp] -- OpenOCD in the foreground until killed
+    local port="" smp=""
+    while [ $# -gt 0 ]; do case "$1" in
+        -p|--port) port="$2"; shift 2;;
+        --smp)     smp=1; shift;;
+        *) shift;;
+    esac; done
+    port="$(flash_port "$port")" || exit 1
+    #  Flash breakpoints on (OpenOCD patches a BREAK into flash): as many
+    #  breakpoints as wanted.  With flash support off each one takes one of the
+    #  S3's two hardware breakpoints, and a third is accepted yet never fires.
+    #  The flash probe that needs fails on a core idling in WAITI, so halt it at
+    #  reset first -- the IDE resets it again anyway.
+    ESPPORT="$port" ESP_FLASH_SIZE="${ESP_FLASH_SIZE:-auto}" ${smp:+ESP_RTOS=hwthread} \
+        exec bash "$ROOT/tools/openocd.sh" -c "init" -c "reset halt"
+}
+debug_info () {   # $1 = project dir -> GDB=, ELF=, MAIN= lines
+    local dir="$1" main=""
+    [ -f "$dir/app.elf" ] || die "no $dir/app.elf -- build first"
+    [ -f "$dir/.noidf/ada_main.used" ] && main="$(cat "$dir/.noidf/ada_main.used")"
+    printf 'GDB=%s\nELF=%s\nMAIN=%s\n' "$(find_gdb)" "$dir/app.elf" "${main:-_ada_main}"
+}
+cmd_debug_info () {   # <example>
+    local e; e="$(resolve "${1:-}")"
+    debug_info "$EXROOT/$e"
 }
 
 # -- scaffold a new project ---------------------------------------------------
@@ -1457,6 +1492,8 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     setup-device)       cmd_setup_device "$@" ;;
     check-device)       cmd_check_device "$@" ;;
     ports)              cmd_ports "$@" ;;
+    debug-server)       cmd_debug_server "$@" ;;
+    debug-info)         cmd_debug_info "$@" ;;
     install-ide)        cmd_install_ide "$@" ;;
     build-ide)          cmd_build_ide "$@" ;;
     install-vim)        cmd_install_vim "$@" ;;

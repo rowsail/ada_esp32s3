@@ -101,6 +101,14 @@ package Turbo.Projects is
    function Esp32_Ada return String;
    --  How to run esp32-ada: from PATH, else from $ESP32S3_ADA_SDK.
 
+   function Debug_Server_Command return String;
+   function Debug_Info_Command return String;
+   function Debug_Tools_Command return String;
+   --  For the IDE's own debugger: OpenOCD alone, pinned to the board
+   --  (./x debug-server), the GDB, ELF and Ada main to use (./x debug-info),
+   --  and fetching OpenOCD + GDB (./x get-debug-tools).  "" for a project
+   --  with no board.
+
    function Setup_Command (Check_Only : Boolean := False) return String;
    --  The SDK's one-time toolchain set-up (./x setup-toolchain, or
    --  esp32-ada's): the validated compilers and gprbuild, through alr, and

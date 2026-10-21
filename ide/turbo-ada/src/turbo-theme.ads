@@ -35,6 +35,8 @@ package Turbo.Theme is
    Edit_Match       : constant Attribute := Black / Cyan;
    Edit_Diag_Error  : constant Attribute := Light_Red / Blue;     --  live diagnostics
    Edit_Diag_Warn   : constant Attribute := Light_Magenta / Blue;
+   Edit_Breakpoint  : constant Attribute := White / Red;          --  the debugger
+   Edit_Exec_Line   : constant Attribute := White / Cyan;         --  the execution bar
 
    --  Message, output and help windows ("cyan window")
 

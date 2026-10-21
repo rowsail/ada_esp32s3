@@ -9,6 +9,7 @@ with Ada.Environment_Variables;
 with GNAT.OS_Lib;
 with Turbo.Alire;
 with Turbo.Buffers;
+with Turbo.GDB;
 with Turbo.JSON;
 with Turbo.LSP;
 with Turbo.Messages;
@@ -263,6 +264,7 @@ procedure Tada_Host is
       Check (Command_For (Act_Build) = "alr -n build", "alr build");
       Check (Command_For (Act_Flash) = "", "no flash for a plain crate");
       Check (Setup_Command = "", "no SDK toolchain set-up for a plain crate");
+      Check (Debug_Server_Command = "", "nothing to debug on a board for a plain crate");
       Check (Is_Interactive (Act_Run) and then not Is_Interactive (Act_Build),
              "run is interactive, build is captured");
 
@@ -291,6 +293,10 @@ procedure Tada_Host is
       Check (Console = "" and then Command_For (Act_Monitor) = "./x monitor -p /dev/ttyUSB1",
              "jtag is the default console");
       Check (Ports_Command = "./x ports --json", "the SDK lists the board ports");
+      Check (Debug_Server_Command = "./x debug-server -p /dev/ttyUSB1"
+             and then Debug_Info_Command = "./x debug-info gpio0_blink"
+             and then Debug_Tools_Command = "./x get-debug-tools",
+             "the debugger's server, info and tools commands");
       Check (Command_For (Act_Env) = "./x env gpio0_blink -P embedded", "x env");
       Check (Setup_Command = "./x --machine setup-toolchain"
              and then Setup_Command (Check_Only => True) = "./x setup-toolchain --check",
@@ -361,6 +367,37 @@ procedure Tada_Host is
              "a crate inside the SDK repository is that crate, native");
    end Project_Tests;
 
+   procedure GDB_MI_Tests is
+      use Turbo.GDB;
+      use Turbo.JSON;
+      Doc : Document;
+      Ok  : Boolean;
+   begin
+      Check (C_String ("""a\""b\\c\n\303\251""") = "a""b\c" & ASCII.LF & Character'Val (16#C3#)
+             & Character'Val (16#A9#), "MI c-string escapes, octal UTF-8 included");
+      --  A real *stopped record's results.
+      Doc.Parse (MI_To_JSON
+        ("reason=""breakpoint-hit"",disp=""del"",bkptno=""2"",frame={addr=""0x4200f8de"","
+         & "func=""main"",args=[],file=""main.adb"",fullname=""/p/src/main.adb"",line=""54"","
+         & "arch=""xtensa""},thread-id=""1"",stopped-threads=""all"""), Ok);
+      Check (Ok and then To_String (Doc, Get (Doc, Root (Doc), "reason")) = "breakpoint-hit"
+             and then To_String (Doc, Path (Doc, Root (Doc), "frame.fullname")) = "/p/src/main.adb"
+             and then To_String (Doc, Path (Doc, Root (Doc), "frame.line")) = "54",
+             "a stop record: reason, file, line");
+      --  A list of results (the call stack) becomes an array of the values.
+      Doc.Parse (MI_To_JSON
+        ("stack=[frame={level=""0"",func=""a""},frame={level=""1"",func=""b""}]"), Ok);
+      Check (Ok and then Length (Doc, Get (Doc, Root (Doc), "stack")) = 2
+             and then To_String (Doc, Get (Doc, Element (Doc, Get (Doc, Root (Doc), "stack"), 2),
+                                            "func")) = "b",
+             "a list of results is an array");
+      Doc.Parse (MI_To_JSON ("value=""(h_res => 800, v_res => 480)"""), Ok);
+      Check (Ok and then To_String (Doc, Get (Doc, Root (Doc), "value")) = "(h_res => 800, v_res => 480)",
+             "an Ada record value");
+      Doc.Parse (MI_To_JSON (""), Ok);
+      Check (Ok and then Kind_Of (Doc, Root (Doc)) = J_Object, "no results is an empty object");
+   end GDB_MI_Tests;
+
    procedure Alire_Tests is
       use Turbo.Alire;
       use Ada.Environment_Variables;
@@ -417,6 +454,7 @@ begin
    LSP_Helper_Tests;
    Machine_Line_Tests;
    Alire_Tests;
+   GDB_MI_Tests;
    Project_Tests (if Ada.Command_Line.Argument_Count > 0
                   then Ada.Command_Line.Argument (1) else "");
    Put_Line (Natural'Image (Checks) & " checks," & Natural'Image (Failures) & " failed");

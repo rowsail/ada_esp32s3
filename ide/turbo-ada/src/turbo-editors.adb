@@ -195,6 +195,18 @@ package body Turbo.Editors is
       E.Diags := List;
    end Set_Diagnostics;
 
+   procedure Set_Breakpoints (E : in out Editor; Lines : Line_Vectors.Vector) is
+   begin
+      E.Breaks := Lines;
+   end Set_Breakpoints;
+
+   procedure Set_Exec_Line (E : in out Editor; Line : Natural) is
+   begin
+      E.Exec := Line;
+   end Set_Exec_Line;
+
+   function Exec_Line (E : Editor) return Natural is (E.Exec);
+
    function Diagnostic_At_Cursor (E : Editor) return String is
    begin
       for D of E.Diags loop
@@ -276,14 +288,23 @@ package body Turbo.Editors is
                Width   : Natural;
                A       : Attribute;
                Y       : constant Integer := I.Y + Row;
+               --  Turbo C++'s debugger lines: the execution bar over a
+               --  breakpoint over a compile error, each the whole width.
+               Bar     : constant Boolean := N = E.Exec;
+               Break   : constant Boolean := E.Breaks.Contains (N);
+               Whole   : constant Boolean := Bar or else Break or else N = E.Error_Line;
+               Line_A  : constant Attribute :=
+                 (if Bar then Theme.Edit_Exec_Line
+                  elsif Break then Theme.Edit_Breakpoint
+                  else Theme.Edit_Error_Line);
             begin
                Syntax.Classify (E.Lang, L, Classes);
                for C in L'Range loop
                   Width := (if L (C) = HT
                             then (V / Settings.Tab_Size + 1) * Settings.Tab_Size - V
                             else 1);
-                  if N = E.Error_Line then
-                     A := Theme.Edit_Error_Line;
+                  if Whole then
+                     A := Line_A;
                   elsif In_Selection (E, (N, C)) then
                      A := Theme.Edit_Selected;
                   elsif Diag_Level (E, (N, C)) /= No_Diag then
@@ -307,8 +328,8 @@ package body Turbo.Editors is
                   V := V + Width;
                   exit when V >= E.Left + I.W;
                end loop;
-               if N = E.Error_Line then
-                  Paint (I.X, Y, I.W, 1, Theme.Edit_Error_Line);
+               if Whole then
+                  Paint (I.X, Y, I.W, 1, Line_A);
                elsif Has_Selection (E) and then N >= Sel_Start (E).Line
                  and then N < Sel_End (E).Line
                  and then V >= E.Left

@@ -25,12 +25,22 @@ _start:
 	   (the FULL profile's recoverable-stack-overflow guard arms DBREAK; a
 	   stale one fires as a debuggerless DebugException on the next boot's
 	   unrelated data).  DBREAKA/IBREAKA need no clearing -- the C bits in
-	   DBREAKC / IBREAKENABLE gate them. */
+	   DBREAKC / IBREAKENABLE gate them.
+	   NOT when a debugger is attached (DCR bit 0, OCD enabled -- read through
+	   ERI DSRSET, as IDF's dbgr_is_attached does): the break registers are
+	   then OpenOCD's, armed for GDB's hardware breakpoints -- a breakpoint on
+	   app_main or anywhere in flash -- and clearing them here silently lets
+	   the target run past every one.  A stale break with a debugger attached
+	   only halts into GDB, which is not the hazard this guards against. */
+	movi	a0, 0x10200C		/* ERI DSRSET: the debug control register */
+	rer	a0, a0
+	bbsi.l	a0, 0, 1f		/* OCD enabled: leave the breaks to the debugger */
 	movi	a0, 0
 	wsr.dbreakc0	a0
 	wsr.dbreakc1	a0
 	wsr.ibreakenable	a0
 	isync
+1:
 	/* PS must match what the GNARL runtime assumes for a task's window context
 	   (s-bbcppr__xtensa.adb Initial_PS = 0x0005_002F): WOE=1 (window overflow
 	   detection), CALLINC=1 (frame entered as if call4'd) and UM=1 (user vector
@@ -179,12 +189,17 @@ core1_start:
 	movi	a0, _vector_table
 	wsr.vecbase	a0
 	rsync
-	/* Clear stale break/watch state on this core too (see _start). */
+	/* Clear stale break/watch state on this core too -- unless a debugger
+	   owns it (see _start). */
+	movi	a0, 0x10200C
+	rer	a0, a0
+	bbsi.l	a0, 0, 1f
 	movi	a0, 0
 	wsr.dbreakc0	a0
 	wsr.dbreakc1	a0
 	wsr.ibreakenable	a0
 	isync
+1:
 	movi	a0, 0x00040000		/* PS = WOE, kernel ring, INTLEVEL=0 */
 	wsr.ps	a0
 	rsync

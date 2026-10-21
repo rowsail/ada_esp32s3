@@ -96,6 +96,16 @@ package Turbo.Editors is
    function Diagnostic_At_Cursor (E : Editor) return String;
    --  "Error: ..." when the cursor is on a diagnostic, else "".
 
+   --  For the debugger
+
+   package Line_Vectors is new Ada.Containers.Vectors (Positive, Positive);
+
+   procedure Set_Breakpoints (E : in out Editor; Lines : Line_Vectors.Vector);
+   procedure Set_Exec_Line (E : in out Editor; Line : Natural);
+   --  The line the program is stopped on (0: none): the execution bar.
+
+   function Exec_Line (E : Editor) return Natural;
+
    procedure Replace_Range (E : in out Editor; From, To : Position; Text : Wide_Wide_String);
    --  One undo step (or part of an open Begin_Edit_Group); the cursor ends
    --  after the new text.
@@ -135,6 +145,8 @@ private
       Bad_Load     : Boolean := False;
       Request      : Turbo.Commands.Command := Turbo.Commands.Cmd_None;
       Diags        : Diagnostic_Vectors.Vector;
+      Breaks       : Line_Vectors.Vector;
+      Exec         : Natural := 0;
    end record;
 
 end Turbo.Editors;

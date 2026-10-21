@@ -469,6 +469,26 @@ package body Turbo.Projects is
          when Standalone  => Esp32_Ada & " ports --json",
          when others      => "");
 
+   function Has_Board return Boolean is
+     (case The_Kind is
+         when SDK_Example => Target = Target_Esp32s3 and then Example /= "",
+         when Standalone  => True,
+         when others      => False);
+
+   function Debug_Server_Command return String is
+     (if not Has_Board then ""
+      else (if The_Kind = Standalone then Esp32_Ada else "./x") & " debug-server"
+           & (if Port = "" then "" else " -p " & Port));
+
+   function Debug_Info_Command return String is
+     (if not Has_Board then ""
+      elsif The_Kind = Standalone then Esp32_Ada & " debug-info"
+      else "./x debug-info " & Example);
+
+   function Debug_Tools_Command return String is
+     (if not Has_Board then ""
+      else (if The_Kind = Standalone then Esp32_Ada else "./x") & " get-debug-tools");
+
    function Setup_Command (Check_Only : Boolean := False) return String is
       Verb : constant String :=
         (if Check_Only then "setup-toolchain --check" else "--machine setup-toolchain");

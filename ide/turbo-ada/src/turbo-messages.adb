@@ -125,14 +125,15 @@ package body Turbo.Messages is
       return M;
    end Parse;
 
-   function Create return Message_Window_Access is
-     (new Message_Window);
+   function Create (Title : String := "Message") return Message_Window_Access is
+      W : constant Message_Window_Access := new Message_Window;
+   begin
+      W.Name := To_Unbounded_String (Title);
+      return W;
+   end Create;
 
    overriding function Title (W : Message_Window) return Wide_Wide_String is
-      pragma Unreferenced (W);
-   begin
-      return "Message";
-   end Title;
+     (Decode (To_String (W.Name)));
 
    function Img (N : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (N), Ada.Strings.Left));

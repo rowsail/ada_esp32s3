@@ -29,7 +29,9 @@ package Turbo.Messages is
    type Message_Window is new Turbo.Windows.Window with private;
    type Message_Window_Access is access all Message_Window'Class;
 
-   function Create return Message_Window_Access;
+   function Create (Title : String := "Message") return Message_Window_Access;
+   --  The build's Message window; the debugger's Output window (the
+   --  board's console) is another one.
 
    overriding function Title (W : Message_Window) return Wide_Wide_String;
    overriding procedure Draw (W : in out Message_Window; Active : Boolean);
@@ -78,6 +80,7 @@ private
       N_Errors : Natural := 0;
       N_Warn   : Natural := 0;
       Jump     : Jump_Handler;
+      Name     : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
 end Turbo.Messages;

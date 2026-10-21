@@ -18,6 +18,7 @@ with Turbo.Commands;
 with Turbo.Desktop;
 with Turbo.Editors;
 with Turbo.Events;
+with Turbo.GDB;
 with Turbo.Help;
 with Turbo.JSON;
 with Turbo.Jobs;
@@ -31,6 +32,7 @@ with Turbo.Syntax;
 with Turbo.Term;
 with Turbo.Theme;
 with Turbo.Viewers;
+with Turbo.Watches;
 with Turbo.Windows;
 
 package body Turbo.App is
@@ -40,6 +42,7 @@ package body Turbo.App is
    use Turbo.Events;
    use Turbo.Windows;
    use type Turbo.Projects.Project_Kind;
+   use type Turbo.GDB.Session_State;
    use type Turbo.Editors.Editor_Access;
    use type Turbo.Viewers.Viewer_Access;
    use type Turbo.Dialogs.Answer;
@@ -363,7 +366,7 @@ package body Turbo.App is
 
    --  The status line
 
-   type Status_Context is (Ctx_None, Ctx_Editor, Ctx_Message, Ctx_Other);
+   type Status_Context is (Ctx_None, Ctx_Editor, Ctx_Message, Ctx_Debug, Ctx_Other);
    Shown_Context : Status_Context := Ctx_Other;
    Shown_Right   : Unbounded_String := To_Unbounded_String ("?");
    Diag_Shown    : Boolean := False;   --  a diagnostic is on the status line
@@ -373,12 +376,15 @@ package body Turbo.App is
    procedure Update_Status is
       W   : constant Window_Access := Desktop.Active;
       Ctx : constant Status_Context :=
-        (if W = null then Ctx_None
+        (if GDB.Is_Active then Ctx_Debug
+         elsif W = null then Ctx_None
          elsif W.all in Editors.Editor'Class then Ctx_Editor
          elsif W = Window_Access (Msg_Win) then Ctx_Message
          else Ctx_Other);
       Right : constant String :=
-        (if Active_Editor /= null and then Active_Editor.Status_Hint /= ""
+        (if GDB.Is_Active
+         then (if GDB.State = GDB.Running then "RUNNING " else "STOPPED ")
+         else (if Active_Editor /= null and then Active_Editor.Status_Hint /= ""
          then Active_Editor.Status_Hint & "  "
          else "")
         & (if Prj.Kind = Prj.No_Project then ""
@@ -389,7 +395,7 @@ package body Turbo.App is
                 elsif Prj.Kind = Prj.Standalone then " (ESP32-S3)"
                 else " (native)")
              & " ")
-        & (if LSP.Status_Text = "" then "" else "| " & LSP.Status_Text & " ");
+        & (if LSP.Status_Text = "" then "" else "| " & LSP.Status_Text & " "));
       Diag  : constant String :=
         (if Active_Editor /= null then Active_Editor.Diagnostic_At_Cursor else "");
    begin
@@ -418,6 +424,11 @@ package body Turbo.App is
                    (+"~Space~ Track", Cmd_None),
                    (+"~Alt-F8~ Next msg", Cmd_Next_Msg),
                    (+"~F10~ Menu", Cmd_None)]);
+            when Ctx_Debug =>
+               Desktop.Set_Status
+                 ([(+"~F7~ Trace", Cmd_Trace_Into), (+"~F8~ Step", Cmd_Step_Over),
+                   (+"~F4~ Go to cursor", Cmd_Go_To_Cursor), (+"~Ctrl-F9~ Run", Cmd_Run),
+                   (+"~Ctrl-F2~ Reset", Cmd_Program_Reset)]);
             when others =>
                Desktop.Set_Status
                  ([(+"~F1~ Help", Cmd_Help_Contents), (+"~F3~ Open", Cmd_Open),
@@ -431,8 +442,15 @@ package body Turbo.App is
       end if;
    end Update_Status;
 
+   procedure Sync_Debug_Lines;
+   function Breakpoints_Empty return Boolean;
+   function Watch_Selected return Natural;
+   function Watch_Count return Natural;
+   --  With the debugger, below: breakpoints, the execution bar, watches.
+
    procedure Redraw is
    begin
+      Sync_Debug_Lines;
       Update_Status;
       Desktop.Draw;
       Screen.Flush;
@@ -470,7 +488,17 @@ package body Turbo.App is
             return E /= null and then E.Has_Selection;
          when Cmd_Paste => return E /= null and then not Clipboard.Is_Empty;
          when Cmd_Make | Cmd_Build_All => return Can_Run (Prj.Act_Build);
-         when Cmd_Run => return Can_Run (Prj.Act_Run);
+         when Cmd_Run => return Can_Run (Prj.Act_Run) or else GDB.Is_Active;
+         when Cmd_Trace_Into | Cmd_Step_Over => return Prj.Debug_Server_Command /= "" or else GDB.Is_Active;
+         when Cmd_Go_To_Cursor =>
+            return (Prj.Debug_Server_Command /= "" or else GDB.Is_Active)
+              and then E /= null and then E.Path /= "";
+         when Cmd_Program_Reset => return GDB.Is_Active;
+         when Cmd_Inspect | Cmd_Evaluate | Cmd_Call_Stack => return GDB.Is_Active;
+         when Cmd_Toggle_Breakpoint => return E /= null and then E.Path /= "";
+         when Cmd_Breakpoints | Cmd_Delete_All_Breakpoints => return not Breakpoints_Empty;
+         when Cmd_Edit_Watch | Cmd_Delete_Watch => return Watch_Selected > 0;
+         when Cmd_Delete_All_Watches => return Watch_Count > 0;
          when Cmd_Flash => return Can_Run (Prj.Act_Flash);
          when Cmd_Monitor => return Can_Run (Prj.Act_Monitor);
          when Cmd_Debug => return Can_Run (Prj.Act_Debug);
@@ -869,7 +897,7 @@ package body Turbo.App is
            ("Toolchain",
             "The ESP32-S3 toolchain is not set up:" & Character'Val (10)
             & To_String (Text)
-            & "Set it up now (Alire | Set up ESP32-S3 toolchain)?",
+            & "Set it up now (Project | Set up ESP32-S3 toolchain)?",
             Dlg.Yes_No) /= Dlg.Ans_Yes
       then
          return True;
@@ -1222,7 +1250,7 @@ package body Turbo.App is
       begin
          if Exe = "" then
             Server_Note := To_Unbounded_String
-              ("no ada_language_server found (Alire | Install tool)");
+              ("no ada_language_server found (Project | Install tool)");
             return;
          end if;
          if not Ensure_Environment then
@@ -2366,7 +2394,7 @@ package body Turbo.App is
          D.Add_Label (2, Row, Prj.Label (A), Ids (A));
          Row := Row + 1;
       end loop;
-      D.Add_Text (2, Row, "{example} {port[_opt]} {profile[_opt]} {gpr} {file} {dir} {root} {tmp}");
+      D.Add_Text (2, Row, "{example} {port|console|profile[_opt]} {gpr} {file} {dir} {root} {tmp}");
       D.Add_Button (W / 2 - 22, Row + 2, 12, "~O~K", 1, Default => True);
       D.Add_Button (W / 2 - 6, Row + 2, 12, "~D~efaults", 2);
       D.Add_Button (W / 2 + 10, Row + 2, 12, "Cancel", Dlg.Cancel_Code);
@@ -2597,6 +2625,7 @@ package body Turbo.App is
          Store_Editor_Options;
          Prj.Save_Options (Files);
       end if;
+      GDB.Stop;               --  the board is left running
       LSP.Stop;
       Quit := True;
    end Do_Quit;
@@ -2788,6 +2817,690 @@ package body Turbo.App is
       end if;
    end Alr_Add;
 
+   --  The debugger: Turbo C++'s Run and Debug menus, over GDB/MI (Turbo.GDB).
+   --
+   --  F7 / F8 / F4 with no session build and flash the program, start
+   --  OpenOCD and GDB, reset the board and run it to the Ada main (or the
+   --  cursor); in a session they step, and while the program runs they pause
+   --  it.  Ctrl-F9 continues (and, with breakpoints set, starts a session).
+   --  Ctrl-F2 ends the session and leaves the board running from reset.
+
+   type Breakpoint is record
+      File   : Unbounded_String;
+      Line   : Positive := 1;
+      Number : Natural := 0;           --  GDB's number while a session has it
+   end record;
+
+   package Breakpoint_Vectors is new Ada.Containers.Vectors (Positive, Breakpoint);
+
+   Breakpoints : Breakpoint_Vectors.Vector;
+   Bp_Key      : Unbounded_String;     --  the project the breakpoints belong to
+   Watch_Win   : Watches.Watch_Window_Access;
+   Output_Win  : Messages.Message_Window_Access;
+   Exec_File   : Unbounded_String;
+   Exec_Line   : Natural := 0;
+   Main_Symbol : Unbounded_String := To_Unbounded_String ("_ada_main");
+
+   function Breakpoints_Empty return Boolean is (Breakpoints.Is_Empty);
+   function Watch_Selected return Natural is (Watch_Win.Selected);
+   function Watch_Count return Natural is (Watch_Win.Count);
+
+   function Lines_In (Path : String) return Editors.Line_Vectors.Vector is
+      R : Editors.Line_Vectors.Vector;
+   begin
+      for B of Breakpoints loop
+         if To_String (B.File) = Path then
+            R.Append (B.Line);
+         end if;
+      end loop;
+      return R;
+   end Lines_In;
+
+   procedure Sync_Debug_Lines is
+   --  Every editor shows its file's breakpoints and the execution bar.
+   begin
+      for K in 1 .. Desktop.Count loop
+         if Desktop.Nth (K).all in Editors.Editor'Class then
+            declare
+               E : constant Editors.Editor_Access := Editors.Editor_Access (Desktop.Nth (K));
+            begin
+               E.Set_Breakpoints (Lines_In (E.Path));
+               E.Set_Exec_Line
+                 (if GDB.State = GDB.Stopped and then E.Path = To_String (Exec_File)
+                  then Exec_Line else 0);
+            end;
+         end if;
+      end loop;
+   end Sync_Debug_Lines;
+
+   procedure Save_Breakpoints is
+      S : Unbounded_String;
+   begin
+      for B of Breakpoints loop
+         Append (S, (if Length (S) > 0 then ";" else "") & To_String (B.File) & ":" & Img (B.Line));
+      end loop;
+      Prj.Set_Option ("breakpoints", To_String (S));
+      S := Null_Unbounded_String;
+      for K in 1 .. Watch_Win.Count loop
+         Append (S, (if K > 1 then ";" else "") & Watch_Win.Expression (K));
+      end loop;
+      Prj.Set_Option ("watches", To_String (S));
+   end Save_Breakpoints;
+
+   procedure Load_Breakpoints is
+   --  The project's breakpoints and watches (kept in .turbo_ada).
+      procedure Each (List : String; Take : not null access procedure (Item : String)) is
+         First : Positive := List'First;
+      begin
+         for I in List'First .. List'Last + 1 loop
+            if I > List'Last or else List (I) = ';' then
+               if I > First then
+                  Take (List (First .. I - 1));
+               end if;
+               First := I + 1;
+            end if;
+         end loop;
+      end Each;
+      procedure Add_Break (Item : String) is
+         Colon : constant Natural :=
+           Ada.Strings.Fixed.Index (Item, ":", Ada.Strings.Backward);
+      begin
+         if Colon > Item'First then
+            Breakpoints.Append
+              (Breakpoint'(File => To_Unbounded_String (Item (Item'First .. Colon - 1)),
+                Line => Positive'Value (Item (Colon + 1 .. Item'Last)), Number => 0));
+         end if;
+      exception
+         when Constraint_Error => null;
+      end Add_Break;
+      procedure Add_Watch (Item : String) is
+      begin
+         Watch_Win.Add (Item);
+      end Add_Watch;
+   begin
+      Breakpoints.Clear;
+      Watch_Win.Delete_All;
+      Each (Prj.Get_Option ("breakpoints"), Add_Break'Access);
+      Each (Prj.Get_Option ("watches"), Add_Watch'Access);
+      Bp_Key := To_Unbounded_String (Project_Key);
+   end Load_Breakpoints;
+
+   function Watch_Bounds return Rect is
+      A : constant Rect := Desktop.Area;
+      H : constant Integer := 6;
+   begin
+      return (A.X, A.Y + A.H - H, A.W, H);
+   end Watch_Bounds;
+
+   procedure Show_Window (W : Window_Access; Bounds : Rect; Activate : Boolean) is
+   begin
+      if not In_Desktop (W) then
+         declare
+            Was : constant Window_Access := Desktop.Active;
+         begin
+            W.Bounds := Bounds;
+            Desktop.Add (W);
+            if not Activate and then Was /= null then
+               --  Back to work, in a window that now ends above this one
+               --  (Turbo C++ kept the editor over its Watch window).
+               if Was.Bounds.Y + Was.Bounds.H > Bounds.Y
+                 and then Bounds.Y - Was.Bounds.Y >= Was.Min_Height
+               then
+                  Was.Zoomed := False;
+                  Move_To (Was.all, (Was.Bounds.X, Was.Bounds.Y, Was.Bounds.W,
+                                     Bounds.Y - Was.Bounds.Y));
+               end if;
+               Desktop.Activate (Was);
+            end if;
+         end;
+      elsif Activate then
+         Desktop.Activate (W);
+      end if;
+   end Show_Window;
+
+   procedure Update_Watches is
+   begin
+      for K in 1 .. Watch_Win.Count loop
+         if GDB.State /= GDB.Stopped then
+            Watch_Win.Set_Value (K, "<not available>");
+         else
+            declare
+               R : GDB.Result;
+            begin
+               GDB.Command ("-data-evaluate-expression " & GDB.Quote (Watch_Win.Expression (K)), R);
+               Watch_Win.Set_Value
+                 (K, (if R.Ok then R.Doc.To_String (R.Doc.Get (R.Value, "value"))
+                      else "<" & To_String (R.Error) & ">"));
+            end;
+         end if;
+      end loop;
+   end Update_Watches;
+
+   procedure Debug_Message (Text : String) is
+   begin
+      Dlg.Message_Box ("Debugger", Text);
+   end Debug_Message;
+
+   procedure Insert_Breakpoint (B : in out Breakpoint) is
+      R : GDB.Result;
+   begin
+      GDB.Command ("-break-insert " & GDB.Quote (To_String (B.File) & ":" & Img (B.Line)), R);
+      B.Number := (if R.Ok
+                   then Natural'Value ("0" & R.Doc.To_String
+                                         (R.Doc.Path (R.Value, "bkpt.number")))
+                   else 0);
+      if not R.Ok then
+         Desktop.Set_Status_Message
+           (" Breakpoint " & Simple (To_String (B.File)) & " " & Img (B.Line) & ": "
+            & To_String (R.Error));
+      end if;
+   exception
+      when Constraint_Error =>
+         B.Number := 0;
+   end Insert_Breakpoint;
+
+   procedure End_Session (Note : String := "") is
+   begin
+      if GDB.State /= GDB.Off then
+         Desktop.Set_Status_Message (" Ending the debug session...", Busy => True);
+         Redraw;
+         GDB.Stop;
+      end if;
+      for B of Breakpoints loop
+         B.Number := 0;
+      end loop;
+      Exec_Line := 0;
+      Update_Watches;
+      Desktop.Set_Status_Message (Note);
+      Shown_Context := Ctx_Other;
+   end End_Session;
+
+   procedure Resume (Command : String) is
+   --  Step, next, continue ... from a stop; the bar goes while it runs.
+      R : GDB.Result;
+   begin
+      GDB.Command (Command, R);
+      if not R.Ok then
+         Debug_Message
+           (To_String (R.Error)
+            & (if Ada.Strings.Fixed.Index (To_String (R.Error), "breakpoint") > 0
+               then Character'Val (10) & Character'Val (10)
+                    & "The ESP32-S3 has two hardware breakpoints in flash code, and"
+                    & Character'Val (10)
+                    & "Go to cursor, Step over and running to main each need one."
+               else ""));
+      else
+         Exec_Line := 0;
+      end if;
+   end Resume;
+
+   function Console_Device return String is
+   --  The board's console, as Run and Monitor would open it.
+      Flash, Console : Unbounded_String;
+      Ports : constant Board_Port_Vectors.Vector := Board_Ports (Flash, Console);
+   begin
+      if Prj.Console /= "" and then Prj.Console /= "uart" then
+         return Prj.Console;
+      elsif Prj.Console = "uart" then
+         for P of Ports loop
+            if To_String (P.Role) = "uart" then
+               return To_String (P.Path);
+            end if;
+         end loop;
+         return "";
+      end if;
+      return (if Prj.Port /= "" then Prj.Port else To_String (Flash));
+   end Console_Device;
+
+   type Start_Purpose is (To_Main, To_Location, Just_Run);
+
+   function Start_Session (Purpose : Start_Purpose; Location : String := "") return Boolean is
+      LF    : constant Character := Character'Val (10);
+      Lines : String_List;
+      Gdb_Path, Elf : Unbounded_String;
+      Ok    : Boolean;
+   begin
+      if Prj.Debug_Server_Command = "" then
+         Debug_Message ("Debugging needs an ESP32-S3 program: an SDK example"
+                        & LF & "(Project | Open project) or an esp32-ada project.");
+         return False;
+      end if;
+      --  The program on the board must be this build.
+      Run_Job (Prj.Act_Flash, "Flash", Ok, Wait_Key => False, Is_Build => True);
+      if not Ok then
+         return False;
+      end if;
+      if not Capture (Prj.Debug_Info_Command, Prj.Root, "Preparing the debugger", Lines) then
+         if Dlg.Message_Box
+              ("Debugger", "OpenOCD and the ESP32-S3 GDB are not installed." & LF
+               & "Download them now (" & Prj.Debug_Tools_Command & ")?", Dlg.Yes_No)
+           /= Dlg.Ans_Yes
+         then
+            return False;
+         end if;
+         Run_Command (Prj.Debug_Tools_Command, Prj.Root, "Debug tools", Ok,
+                      Wait_Key => False, Is_Build => False);
+         if not Ok
+           or else not Capture (Prj.Debug_Info_Command, Prj.Root, "Preparing the debugger", Lines)
+         then
+            return False;
+         end if;
+      end if;
+      for L of Lines loop
+         if L'Length > 4 and then L (L'First .. L'First + 3) = "GDB=" then
+            Gdb_Path := To_Unbounded_String (L (L'First + 4 .. L'Last));
+         elsif L'Length > 4 and then L (L'First .. L'First + 3) = "ELF=" then
+            Elf := To_Unbounded_String (L (L'First + 4 .. L'Last));
+         elsif L'Length > 5 and then L (L'First .. L'First + 4) = "MAIN=" then
+            Main_Symbol := To_Unbounded_String (L (L'First + 5 .. L'Last));
+         end if;
+      end loop;
+
+      Dlg.Show_Busy ("Debugger", "Starting OpenOCD ...");
+      Screen.Flush;
+      GDB.Start_Server (Prj.Debug_Server_Command, Prj.Root, Ok);
+      if not Ok then
+         Debug_Message ("OpenOCD did not start:" & LF & GDB.Last_Error);
+         GDB.Stop;
+         return False;
+      end if;
+      Dlg.Show_Busy ("Debugger", "Starting GDB ...");
+      Screen.Flush;
+      GDB.Start (To_String (Gdb_Path), To_String (Elf), Prj.Root, Ok);
+      if Ok then
+         GDB.Reset_Halt (Ok);
+      end if;
+      if not Ok then
+         Debug_Message ("GDB could not take the board:" & LF & GDB.Last_Error);
+         GDB.Stop;
+         return False;
+      end if;
+      declare
+         Dev : constant String := Console_Device;
+      begin
+         if Dev /= "" then
+            --  Read the console: a USB-Serial/JTAG console nobody reads
+            --  stalls the program at its next output.
+            GDB.Start_Console
+              ("stty -F " & Dev & " 115200 raw -echo 2>/dev/null; exec cat " & Dev, Prj.Root);
+         end if;
+      end;
+      Output_Win.Clear;
+      for B of Breakpoints loop
+         Insert_Breakpoint (B);
+      end loop;
+      case Purpose is
+         when To_Main =>
+            GDB.Command ("-break-insert -t " & GDB.Quote (To_String (Main_Symbol)), Ok);
+         when To_Location =>
+            GDB.Command ("-break-insert -t " & GDB.Quote (Location), Ok);
+         when Just_Run =>
+            null;
+      end case;
+      Resume ("-exec-continue");
+      Shown_Context := Ctx_Other;
+      return GDB.Is_Active;
+   end Start_Session;
+
+   procedure On_Stop (S : GDB.Stop_Info) is
+      File : constant String := To_String (S.File);
+   begin
+      Exec_File := S.File;
+      Exec_Line := S.Line;
+      if File /= "" and then S.Line > 0 and then Ada.Directories.Exists (File) then
+         declare
+            E : constant Editors.Editor_Access := Open_File (File, Activate => True);
+         begin
+            if E /= null then
+               E.Go_To (S.Line, 1);
+            end if;
+         end;
+         Desktop.Set_Status_Message ("");
+      else
+         Desktop.Set_Status_Message
+           (" Stopped in " & (if S.Func = Null_Unbounded_String then "?" else To_String (S.Func))
+            & " (" & To_String (S.Addr) & "), no source -- F8 steps out, Ctrl-F9 runs");
+      end if;
+      if To_String (S.Reason) = "signal-received" then
+         Debug_Message ("The program stopped: " & To_String (S.Detail)
+                        & Character'Val (10) & "in " & To_String (S.Func)
+                        & (if File /= "" then " (" & Simple (File) & " " & Img (S.Line) & ")" else ""));
+      end if;
+      Update_Watches;
+   end On_Stop;
+
+   procedure Poll_Debugger is
+      S : GDB.Stop_Info;
+   begin
+      if GDB.State = GDB.Off then
+         return;
+      end if;
+      GDB.Poll;
+      for L of GDB.Take_Console loop
+         Output_Win.Add (Messages.Info, L);
+         Output_Win.Follow_Tail;
+      end loop;
+      while GDB.Take_Stop (S) loop
+         On_Stop (S);
+      end loop;
+      if GDB.State = GDB.Failed then
+         declare
+            Why : constant String := GDB.Last_Error;
+         begin
+            End_Session;
+            Debug_Message ("The debug session ended:" & Character'Val (10) & Why);
+         end;
+      end if;
+   end Poll_Debugger;
+
+   function Cursor_Location return String is
+      E : constant Editors.Editor_Access := Active_Editor;
+   begin
+      if E = null or else E.Path = "" then
+         return "";
+      end if;
+      return E.Path & ":" & Img (E.Cursor.Line);
+   end Cursor_Location;
+
+   procedure Debug_Step (Command : String; Purpose : Start_Purpose) is
+   --  F7 / F8 / F4: step in a session, pause a running program, or start.
+   begin
+      case GDB.State is
+         when GDB.Stopped =>
+            if Purpose = To_Location then
+               declare
+                  Ok : Boolean;
+               begin
+                  GDB.Command ("-break-insert -t " & GDB.Quote (Cursor_Location), Ok);
+               end;
+            end if;
+            Resume (Command);
+         when GDB.Running =>
+            declare
+               Ok : Boolean;
+            begin
+               GDB.Command ("-exec-interrupt", Ok);
+            end;
+         when others =>
+            declare
+               Started : constant Boolean := Start_Session (Purpose, Cursor_Location);
+               pragma Unreferenced (Started);   --  it explained any failure
+            begin
+               null;
+            end;
+      end case;
+   end Debug_Step;
+
+   procedure Toggle_Breakpoint is
+      E : constant Editors.Editor_Access := Active_Editor;
+      Line : Positive;
+   begin
+      if E = null or else E.Path = "" then
+         return;
+      end if;
+      Line := E.Cursor.Line;
+      for K in Breakpoints.First_Index .. Breakpoints.Last_Index loop
+         if To_String (Breakpoints (K).File) = E.Path and then Breakpoints (K).Line = Line then
+            if Breakpoints (K).Number > 0 and then GDB.Is_Active then
+               declare
+                  Ok : Boolean;
+               begin
+                  GDB.Command ("-break-delete " & Img (Breakpoints (K).Number), Ok);
+               end;
+            end if;
+            Breakpoints.Delete (K);
+            Save_Breakpoints;
+            return;
+         end if;
+      end loop;
+      declare
+         B : Breakpoint := (File => To_Unbounded_String (E.Path), Line => Line, Number => 0);
+      begin
+         if GDB.Is_Active then
+            --  OpenOCD sets breakpoints on a halted target only.
+            declare
+               Was_Running : constant Boolean := GDB.State = GDB.Running;
+               Ok : Boolean;
+            begin
+               if Was_Running then
+                  GDB.Command ("-exec-interrupt", Ok);
+                  for I in 1 .. 100 loop
+                     GDB.Poll;
+                     exit when GDB.State = GDB.Stopped;
+                     delay 0.02;
+                  end loop;
+                  declare
+                     Ignore : GDB.Stop_Info;
+                  begin
+                     while GDB.Take_Stop (Ignore) loop
+                        null;
+                     end loop;
+                  end;
+               end if;
+               Insert_Breakpoint (B);
+               if Was_Running then
+                  Resume ("-exec-continue");
+               end if;
+            end;
+         end if;
+         Breakpoints.Append (B);
+         Save_Breakpoints;
+      end;
+   end Toggle_Breakpoint;
+
+   procedure Breakpoint_List is
+      Items : String_List;
+      Index : Positive := 1;
+   begin
+      if Breakpoints.Is_Empty then
+         Dlg.Message_Box ("Breakpoints", "No breakpoints are set (Ctrl-F8 sets one).");
+         return;
+      end if;
+      for B of Breakpoints loop
+         Items.Append (Simple (To_String (B.File)) & "  line " & Img (B.Line));
+      end loop;
+      if Dlg.Choose ("Breakpoints", "~B~reakpoints", Items, Index, 50, "~G~o to") then
+         declare
+            E : constant Editors.Editor_Access :=
+              Open_File (To_String (Breakpoints (Index).File), Activate => True);
+         begin
+            if E /= null then
+               E.Go_To (Breakpoints (Index).Line, 1);
+            end if;
+         end;
+      end if;
+   end Breakpoint_List;
+
+   procedure Delete_All_Breakpoints is
+      Ok : Boolean;
+   begin
+      for B of Breakpoints loop
+         if B.Number > 0 and then GDB.State = GDB.Stopped then
+            GDB.Command ("-break-delete " & Img (B.Number), Ok);
+         end if;
+      end loop;
+      Breakpoints.Clear;
+      Save_Breakpoints;
+   end Delete_All_Breakpoints;
+
+   function Expression_At_Cursor return String is
+      E : constant Editors.Editor_Access := Active_Editor;
+   begin
+      if E = null then
+         return "";
+      elsif E.Has_Selection then
+         return Encode (E.Selected_Text);
+      end if;
+      return Encode (E.Word_At_Cursor);
+   end Expression_At_Cursor;
+
+   procedure Add_Watch is
+      V : Unbounded_String := To_Unbounded_String (Expression_At_Cursor);
+   begin
+      if Dlg.Input_Box ("Add Watch", "~W~atch expression", V, 50)
+        and then Ada.Strings.Fixed.Trim (To_String (V), Ada.Strings.Both) /= ""
+      then
+         Watch_Win.Add (Ada.Strings.Fixed.Trim (To_String (V), Ada.Strings.Both));
+         Save_Breakpoints;
+         Update_Watches;
+         Show_Window (Window_Access (Watch_Win), Watch_Bounds, Activate => False);
+      end if;
+   end Add_Watch;
+
+   procedure Edit_Watch is
+      K : constant Natural := Watch_Win.Selected;
+   begin
+      if K = 0 then
+         Add_Watch;
+         return;
+      end if;
+      declare
+         V : Unbounded_String := To_Unbounded_String (Watch_Win.Expression (K));
+      begin
+         if Dlg.Input_Box ("Edit Watch", "~W~atch expression", V, 50) then
+            Watch_Win.Replace (K, To_String (V));
+            Save_Breakpoints;
+            Update_Watches;
+         end if;
+      end;
+   end Edit_Watch;
+
+   procedure Evaluate_Modify is
+   --  Turbo C++'s Evaluate and Modify: an expression, its value, and a new
+   --  value to give it (Ada assignment, so records and arrays too).
+      LF : constant Character := Character'Val (10);
+      D  : Dlg.Dialog;
+      Expr_Id, Result_Id, New_Id : Positive;
+      Code : Integer;
+
+      function Eval (Text : String) return String is
+         R : GDB.Result;
+      begin
+         if GDB.State /= GDB.Stopped then
+            return "Not available: the program is not stopped";
+         end if;
+         GDB.Command ("-data-evaluate-expression " & GDB.Quote (Text), R);
+         return (if R.Ok then R.Doc.To_String (R.Doc.Get (R.Value, "value"))
+                 else To_String (R.Error));
+      end Eval;
+   begin
+      D.Init ("Evaluate and Modify", 64, 14);
+      Expr_Id := D.Add_Input (3, 3, 58, Expression_At_Cursor);
+      D.Add_Label (2, 2, "~E~xpression", Expr_Id);
+      Result_Id := D.Add_Input (3, 6, 58, "");
+      D.Add_Label (2, 5, "~R~esult", Result_Id);
+      New_Id := D.Add_Input (3, 9, 58, "");
+      D.Add_Label (2, 8, "~N~ew value", New_Id);
+      D.Add_Button (4, 11, 14, "E~v~aluate", 1, Default => True);
+      D.Add_Button (24, 11, 14, "~M~odify", 2);
+      D.Add_Button (44, 11, 14, "Cancel", Dlg.Cancel_Code);
+      if D.Value (Expr_Id) /= "" then
+         D.Set_Value (Result_Id, Eval (D.Value (Expr_Id)));
+      end if;
+      loop
+         Code := D.Run;
+         exit when Code not in 1 | 2;
+         declare
+            Expr : constant String := Ada.Strings.Fixed.Trim (D.Value (Expr_Id), Ada.Strings.Both);
+            NV   : constant String := Ada.Strings.Fixed.Trim (D.Value (New_Id), Ada.Strings.Both);
+         begin
+            if Code = 2 and then Expr /= "" and then NV /= "" then
+               declare
+                  Changed : constant String := Eval (Expr & " := " & NV);
+                  pragma Unreferenced (Changed);
+               begin
+                  Update_Watches;
+               end;
+            end if;
+            if Expr /= "" then
+               D.Set_Value (Result_Id, Eval (Expr));
+            end if;
+         end;
+         D.Focus (Expr_Id);
+      end loop;
+      pragma Unreferenced (LF);
+   end Evaluate_Modify;
+
+   procedure Inspect is
+   --  The value laid out in full, in a window of its own.
+      Expr : Unbounded_String := To_Unbounded_String (Expression_At_Cursor);
+      Text : Unbounded_String;
+      Ok   : Boolean;
+   begin
+      if GDB.State /= GDB.Stopped then
+         Debug_Message ("Inspect works while the program is stopped (F7, F8, F4).");
+         return;
+      end if;
+      if Length (Expr) = 0
+        and then not Dlg.Input_Box ("Inspect", "~I~nspect", Expr, 50)
+      then
+         return;
+      end if;
+      GDB.Console_Command ("with print pretty on -- print " & To_String (Expr), Text, Ok);
+      declare
+         T  : constant String := To_String (Text);
+         Eq : constant Natural := Ada.Strings.Fixed.Index (T, " = ");
+      begin
+         Show_Help ("Inspecting " & To_String (Expr),
+                    (if Ok and then Eq > 0 and then T (T'First) = '$'
+                     then T (Eq + 3 .. T'Last) else T));
+      end;
+   end Inspect;
+
+   procedure Call_Stack is
+      R     : GDB.Result;
+      Items : String_List;
+      Index : Positive := 1;
+   begin
+      if GDB.State /= GDB.Stopped then
+         Debug_Message ("The call stack is shown while the program is stopped.");
+         return;
+      end if;
+      GDB.Command ("-stack-list-frames", R);
+      if not R.Ok then
+         Debug_Message (To_String (R.Error));
+         return;
+      end if;
+      declare
+         Stack : constant JSON.Value := R.Doc.Get (R.Value, "stack");
+      begin
+         for N in 1 .. R.Doc.Length (Stack) loop
+            declare
+               F : constant JSON.Value := R.Doc.Element (Stack, N);
+               File : constant String := R.Doc.To_String (R.Doc.Get (F, "file"));
+            begin
+               Items.Append (R.Doc.To_String (R.Doc.Get (F, "func"), "??")
+                             & (if File /= "" then "  " & Simple (File) & " "
+                                  & R.Doc.To_String (R.Doc.Get (F, "line"))
+                                else "  " & R.Doc.To_String (R.Doc.Get (F, "addr"))));
+            end;
+         end loop;
+         if Items.Is_Empty
+           or else not Dlg.Choose ("Call Stack", "~C~alls, innermost first", Items, Index, 50, "~V~iew")
+         then
+            return;
+         end if;
+         declare
+            F    : constant JSON.Value := R.Doc.Element (Stack, Index);
+            File : constant String := R.Doc.To_String (R.Doc.Get (F, "fullname"));
+            Ok   : Boolean;
+         begin
+            --  Evaluate and the watches now see that frame's variables.
+            GDB.Command ("-stack-select-frame " & Img (Index - 1), Ok);
+            Update_Watches;
+            if File /= "" and then Ada.Directories.Exists (File) then
+               declare
+                  E : constant Editors.Editor_Access := Open_File (File, Activate => True);
+               begin
+                  if E /= null then
+                     E.Go_To (Positive'Value (R.Doc.To_String (R.Doc.Get (F, "line"), "1")), 1);
+                  end if;
+               end;
+            end if;
+         end;
+      end;
+   end Call_Stack;
+
    --  The dispatcher
 
    procedure Execute (C : Command) is
@@ -2904,18 +3617,65 @@ package body Turbo.App is
             end;
 
          when Cmd_Run =>
-            --  Make first; the box only waits for a key if it failed.
-            Run_Job (Prj.Act_Build, "Make", Ok, Wait_Key => False);
-            if Ok then
-               Run_Interactive (Prj.Act_Run);
+            if GDB.State = GDB.Stopped then
+               Resume ("-exec-continue");           --  Turbo C++: run on
+            elsif GDB.Is_Active then
+               null;                                --  it is running
+            elsif not Breakpoints.Is_Empty and then Prj.Debug_Server_Command /= "" then
+               Ok := Start_Session (Just_Run);       --  to the first breakpoint
+            else
+               --  Make first; the box only waits for a key if it failed.
+               Run_Job (Prj.Act_Build, "Make", Ok, Wait_Key => False);
+               if Ok then
+                  Run_Interactive (Prj.Act_Run);
+               end if;
             end if;
-         when Cmd_Flash => Run_Job (Prj.Act_Flash, "Flash", Ok, True, True);
-         when Cmd_Monitor => Run_Interactive (Prj.Act_Monitor);
-         when Cmd_Debug => Run_Interactive (Prj.Act_Debug);
-         when Cmd_Kill_OpenOCD => Run_Job (Prj.Act_Kill_OpenOCD, "Kill OpenOCD", Ok, False, False);
+         when Cmd_Program_Reset =>
+            End_Session (" Program reset: the board runs it from the start, undebugged");
+         when Cmd_Trace_Into => Debug_Step ("-exec-step", To_Main);
+         when Cmd_Step_Over => Debug_Step ("-exec-next", To_Main);
+         when Cmd_Go_To_Cursor => Debug_Step ("-exec-continue", To_Location);
+         when Cmd_Flash =>
+            End_Session;
+            Run_Job (Prj.Act_Flash, "Flash", Ok, True, True);
+         when Cmd_Monitor =>
+            End_Session;
+            Run_Interactive (Prj.Act_Monitor);
+         when Cmd_Debug =>
+            End_Session;
+            Run_Interactive (Prj.Act_Debug);
+         when Cmd_Kill_OpenOCD =>
+            End_Session;
+            Run_Job (Prj.Act_Kill_OpenOCD, "Kill OpenOCD", Ok, False, False);
          when Cmd_User_Screen =>
-            Term.Show_User_Screen;
-            Screen.Invalidate;
+            if GDB.Is_Active then
+               --  The program's output is the board's console: the Output window.
+               Show_Window (Window_Access (Output_Win), Message_Bounds, Activate => True);
+            else
+               Term.Show_User_Screen;
+               Screen.Invalidate;
+            end if;
+
+         when Cmd_Inspect => Inspect;
+         when Cmd_Evaluate => Evaluate_Modify;
+         when Cmd_Call_Stack => Call_Stack;
+         when Cmd_Add_Watch => Add_Watch;
+         when Cmd_Edit_Watch => Edit_Watch;
+         when Cmd_Delete_Watch =>
+            if Watch_Win.Selected > 0 then
+               Watch_Win.Delete (Watch_Win.Selected);
+               Save_Breakpoints;
+            end if;
+         when Cmd_Delete_All_Watches =>
+            Watch_Win.Delete_All;
+            Save_Breakpoints;
+         when Cmd_Toggle_Breakpoint => Toggle_Breakpoint;
+         when Cmd_Breakpoints => Breakpoint_List;
+         when Cmd_Delete_All_Breakpoints => Delete_All_Breakpoints;
+         when Cmd_Watch_Window =>
+            Show_Window (Window_Access (Watch_Win), Watch_Bounds, Activate => True);
+         when Cmd_Output_Window =>
+            Show_Window (Window_Access (Output_Win), Message_Bounds, Activate => True);
 
          when Cmd_Make => Run_Job (Prj.Act_Build, "Make", Ok);
          when Cmd_Build_All =>
@@ -3007,10 +3767,17 @@ package body Turbo.App is
                when F1 =>
                   if Plain then return Cmd_Help_Contents;
                   elsif C then return Cmd_Hover; end if;
-               when F2 => if Plain then return Cmd_Save; end if;
+               when F2 =>
+                  if Plain then return Cmd_Save;
+                  elsif C then return Cmd_Program_Reset; end if;
                when F3 =>
                   if Plain then return Cmd_Open;
+                  elsif C then return Cmd_Call_Stack;
                   elsif A then return Cmd_Close; end if;
+               when F4 =>
+                  if Plain then return Cmd_Go_To_Cursor;
+                  elsif C then return Cmd_Evaluate;
+                  elsif A then return Cmd_Inspect; end if;
                when F5 =>
                   if Plain then return Cmd_Zoom;
                   elsif C then return Cmd_Size_Move;
@@ -3019,10 +3786,14 @@ package body Turbo.App is
                   if Plain then return Cmd_Next_Window;
                   elsif S then return Cmd_Prev_Window;
                   elsif C then return Cmd_Find_Spec_Body; end if;
-               when F7 => if A then return Cmd_Prev_Msg; end if;
+               when F7 =>
+                  if Plain then return Cmd_Trace_Into;
+                  elsif C then return Cmd_Add_Watch;
+                  elsif A then return Cmd_Prev_Msg; end if;
                when F8 =>
-                  if A then return Cmd_Next_Msg;
-                  elsif C then return Cmd_Debug; end if;
+                  if Plain then return Cmd_Step_Over;
+                  elsif C then return Cmd_Toggle_Breakpoint;
+                  elsif A then return Cmd_Next_Msg; end if;
                when F9 =>
                   if Plain then return Cmd_Make;
                   elsif C then return Cmd_Run;
@@ -3181,6 +3952,15 @@ package body Turbo.App is
                   return;
                end if;
             end;
+         elsif Desktop.Active = Window_Access (Watch_Win) then
+            declare
+               R : constant Command := Watch_Win.Take_Request;
+            begin
+               if R /= Cmd_None then
+                  Execute (R);
+                  return;
+               end if;
+            end;
          end if;
       end if;
 
@@ -3272,6 +4052,9 @@ package body Turbo.App is
 
       Msg_Win := Messages.Create;
       Msg_Win.Set_Jump_Handler (On_Jump'Access);
+      Output_Win := Messages.Create ("Output");
+      Watch_Win := Watches.Create;
+      Load_Breakpoints;
       Menus.Set_Hooks (Enabled'Access, Background'Access);
 
       Term.Start;
@@ -3293,13 +4076,20 @@ package body Turbo.App is
       end if;
 
       while not Quit loop
+         if To_String (Bp_Key) /= Project_Key then
+            --  Another project, its own breakpoints (and no session).
+            End_Session;
+            Load_Breakpoints;
+         end if;
+         Poll_Debugger;
          LSP.Poll;
          Sync_Documents (Force => False);
          Apply_Diagnostics;
          Redraw;
          --  Wake up now and then while the language server has things to
          --  say or a start is due; otherwise sleep until a key.
-         E := Get ((if LSP.Is_Running
+         E := Get ((if GDB.Is_Active then 100
+                    elsif LSP.Is_Running
                        or else (Server_Wanted and then To_String (Tried_For) /= Project_Key)
                     then 150 else -1));
          begin

@@ -142,6 +142,8 @@ if [ -f "$EX/.noidf/ada_main.sym" ]; then
         ADA_MAIN="$NEW_MAIN"
     fi
 fi
+#  The main this image enters, for a debugger's "run to main" (x debug-info).
+echo "$ADA_MAIN" > "$EX/.noidf/ada_main.used"
 
 echo "[bare] 2/4  compile bare-boot + example glue + assemble start/highint5/context"
 if [ -n "${IDF_PATH:-}" ]; then                # optional: use a live IDF tree's headers

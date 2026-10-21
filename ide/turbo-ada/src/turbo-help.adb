@@ -26,9 +26,21 @@ package body Turbo.Help is
       & "  {Alt-F8}        next error     {Alt-F7}  previous error" & LF
       & "  {Ctrl-F9}       Run: make, then flash and open the serial monitor" & LF
       & "  {Shift-F9}      Flash          (Run | Monitor for the monitor alone)" & LF
-      & "  {Ctrl-F8}       Debug: OpenOCD + GDB on the board" & LF
       & "  {Alt-F5}        User screen: what the last program printed" & LF
       & "  {Esc}           in the Compiling box: cancel the build" & LF
+      & LF
+      & "# Debugging (on the board, as in Turbo C++)" & LF
+      & "  {F7}            Trace into     {F8}  Step over" & LF
+      & "  {F4}            Go to cursor   {Ctrl-F9}  Run on to a breakpoint" & LF
+      & "  {Ctrl-F8}       Toggle breakpoint (a red line; kept with the project)" & LF
+      & "  {Ctrl-F2}       Program reset: end the session, the board runs on" & LF
+      & "  {Ctrl-F7}       Add watch (Window | Watch; Ins, Enter, Del in it)" & LF
+      & "  {Ctrl-F4}       Evaluate/modify     {Alt-F4}   Inspect" & LF
+      & "  {Ctrl-F3}       Call stack          {Alt-F5}   the program's output" & LF
+      & "  With no session, F7, F8 and F4 build, flash and start one: OpenOCD" & LF
+      & "  and GDB, the board reset and run to the Ada main (or the cursor)." & LF
+      & "  The cyan bar is where it stopped; while it runs, F7/F8/F4 pause" & LF
+      & "  it.  Run | GDB console is the plain GDB prompt." & LF
       & LF
       & "  The commands come from the project: ./x for an SDK example," & LF
       & "  esp32-ada for a standalone project, alr for any other Alire" & LF
@@ -36,7 +48,7 @@ package body Turbo.Help is
       & "  to change them." & LF
       & LF
       & "# The Ada Language Server" & LF
-      & "  When ada_language_server is installed (Alire | Install tool," & LF
+      & "  When ada_language_server is installed (Project | Install tool," & LF
       & "  or the VS Code Ada extension), errors show" & LF
       & "  as you type, in red, with the message on the status line, and:" & LF
       & "  {F12}           go to the definition   {Alt-F12}   go back" & LF
@@ -46,11 +58,11 @@ package body Turbo.Help is
       & "  Language server turns it off or names the program." & LF
       & LF
       & "# Alire" & LF
-      & "  The Alire menu searches the crate index, gets a crate into a" & LF
+      & "  The Project menu searches the crate index, gets a crate into a" & LF
       & "  directory and opens it, installs tools, and adds dependencies" & LF
       & "  to this project.  With no alr on PATH, Turbo Ada offers to" & LF
-      & "  download it from GitHub (Alire | Fetch Alire does it any time)," & LF
-      & "  and that alr fetches the toolchain and everything else." & LF
+      & "  download it from GitHub (Project | Fetch Alire does it any" & LF
+      & "  time), and that alr fetches the toolchain and everything else." & LF
       & "  Set up ESP32-S3 toolchain gets the validated cross GNAT, native" & LF
       & "  GNAT and gprbuild and builds the xtensa-dynconfig plugin; the" & LF
       & "  first build of an SDK project checks for them and offers it." & LF
@@ -164,9 +176,10 @@ package body Turbo.Help is
       & "own." & LF
       & LF
       & "# Interactive commands" & LF
-      & "Run, Monitor and Debug take over the terminal: Turbo Ada steps" & LF
-      & "aside and comes back when they exit (Ctrl-] leaves miniterm)." & LF
-      & "Alt-F5 shows their output again afterwards." & LF
+      & "Run, Monitor and Run | GDB console take over the terminal:" & LF
+      & "Turbo Ada steps aside and comes back when they exit (Ctrl-]" & LF
+      & "leaves miniterm).  Alt-F5 shows their output again afterwards." & LF
+      & "The debugger keys (F7, F8, ...) keep the IDE on screen." & LF
       & LF
       & "# Options file" & LF
       & "Options | Save options writes .turbo_ada in the SDK root or the" & LF

@@ -22,8 +22,13 @@ package Turbo.Commands is
       Cmd_Definition, Cmd_References, Cmd_Symbols, Cmd_Go_Back, Cmd_Rename,
       Cmd_Complete, Cmd_Hover, Cmd_Diagnostics,
       --  Run
-      Cmd_Run, Cmd_Flash, Cmd_Monitor, Cmd_Debug, Cmd_Kill_OpenOCD,
+      Cmd_Run, Cmd_Program_Reset, Cmd_Go_To_Cursor, Cmd_Trace_Into,
+      Cmd_Step_Over, Cmd_Flash, Cmd_Monitor, Cmd_Debug, Cmd_Kill_OpenOCD,
       Cmd_User_Screen,
+      --  Debug
+      Cmd_Inspect, Cmd_Evaluate, Cmd_Call_Stack, Cmd_Add_Watch,
+      Cmd_Edit_Watch, Cmd_Delete_Watch, Cmd_Delete_All_Watches,
+      Cmd_Toggle_Breakpoint, Cmd_Breakpoints, Cmd_Delete_All_Breakpoints,
       --  Compile
       Cmd_Check_File, Cmd_Make, Cmd_Build_All, Cmd_Clean, Cmd_Memory, Cmd_Stack,
       Cmd_Analyze, Cmd_Test,
@@ -40,6 +45,7 @@ package Turbo.Commands is
       --  Window
       Cmd_Zoom, Cmd_Tile, Cmd_Cascade, Cmd_Next_Window, Cmd_Prev_Window,
       Cmd_Close, Cmd_Close_All, Cmd_Size_Move, Cmd_Message_Window,
+      Cmd_Watch_Window, Cmd_Output_Window,
       Cmd_Window_List,
       --  Help
       Cmd_Help_Contents, Cmd_Help_Keys, Cmd_Help_Project,
