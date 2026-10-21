@@ -115,7 +115,13 @@ curl -LO https://github.com/rowsail/ada_esp32s3/releases/latest/download/Bare-Me
 ## Step 3 — Plug in the board and grant access
 
 1. Connect the board's **native USB** port.
-2. Find the port: `ls /dev/ttyACM*` → usually **`/dev/ttyACM0`**.
+2. Find the port: `./x ports` lists the board's ports by USB id — the chip's own
+   USB/JTAG unit (flash, debug, the default console) and, on boards that have
+   one, a USB-UART bridge on UART0 (the boot log). `./x flash`, `run`,
+   `monitor` and `debug` use them without being told; `-p` / `$ESPPORT` (and
+   `-c` / `$ESPCONSOLE` for the console: `uart` or a device) choose when several
+   boards are plugged in. The `./flash.sh` examples below name `/dev/ttyACM0`:
+   use the USB/JTAG port `./x ports` shows.
 3. One-time permission to use it without `sudo`:
    ```sh
    sudo usermod -aG dialout $USER          # then LOG OUT and back in
@@ -248,7 +254,7 @@ hard-coded path. The project owns its own `board.ads` (Step 6), edited with
 | `gprbuild` / cross-GNAT not found | A toolchain is missing — `./x setup-toolchain --check` says which; `./x setup-toolchain` fetches it. |
 | `XTENSA_GNU_CONFIG unset` / missing `bb-runtimes` | Not a submodule issue (there are none): the tree is incomplete, or `xtensa-dynconfig` hasn't been built — `./x setup-toolchain` (or the first build) does that and needs a host C compiler. |
 | `Permission denied` on `/dev/ttyACM0` | Add yourself to `dialout` (Step 3) and log out/in. |
-| No `/dev/ttyACM0` appears | Use the **native USB** port (not UART); try another cable; check `dmesg \| tail`. |
+| No `/dev/ttyACM0` appears | Use the **native USB** port (not UART); try another cable; check `dmesg \| tail`; `./x ports` shows what is found. |
 | Flash never connects | Hold **BOOT**, tap **RESET**, release **BOOT** to force download mode, then `./flash.sh`. |
 | Board resets/panics in a loop | Each example ships `CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=n` (W^X off, needed for Ada trampolines); rebuild clean. |
 | First build very slow | Expected — generating the Ada runtime + building the host tools. Later builds are fast. |

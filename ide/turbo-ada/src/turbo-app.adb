@@ -2191,7 +2191,8 @@ package body Turbo.App is
          Append (T, "  Profile:   " & (if Prj.Profile = "" then Prj.Example_Profile (Prj.Example)
                                        & " (the example's own)" else Prj.Profile) & LF);
       end if;
-      Append (T, "  Port:      " & (if Prj.Port = "" then "(the tool's default)" else Prj.Port) & LF);
+      Append (T, "  Port:      " & (if Prj.Port = "" then "(found by USB id)" else Prj.Port) & LF);
+      Append (T, "  Console:   " & (if Prj.Console = "" then "(the USB/JTAG port)" else Prj.Console) & LF);
       Append (T, "  Manifest:  " & (if Prj.Manifest = "" then "-" else Prj.Manifest) & LF);
       Append (T, "  GPR file:  " & (if Prj.Gpr_File = "" then "-" else Prj.Gpr_File) & LF);
       Append (T, "  Options:   " & Prj.Options_File & LF);
@@ -2208,12 +2209,81 @@ package body Turbo.App is
       Show_Help ("Project Information", To_String (T));
    end Project_Info;
 
+   type Board_Port is record
+      Role, Path, Serial, Product : Unbounded_String;
+   end record;
+   package Board_Port_Vectors is new Ada.Containers.Vectors (Positive, Board_Port);
+
+   function Board_Ports (Flash, Console : out Unbounded_String)
+                         return Board_Port_Vectors.Vector is
+   --  What the SDK finds (./x ports --json): every board port, and the
+   --  flash and console ports it would use now ("" when it cannot choose).
+      Cmd   : constant String := Prj.Ports_Command;
+      Lines : String_List;
+      Text  : Unbounded_String;
+      Doc   : JSON.Document;
+      Ok    : Boolean;
+      R     : Board_Port_Vectors.Vector;
+   begin
+      Flash := Null_Unbounded_String;
+      Console := Null_Unbounded_String;
+      if Cmd = "" or else not Capture (Cmd, Prj.Root, "Looking for boards", Lines) then
+         return R;
+      end if;
+      for L of Lines loop
+         Append (Text, L);
+      end loop;
+      Doc.Parse (To_String (Text), Ok);
+      if not Ok then
+         return R;
+      end if;
+      declare
+         Root : constant JSON.Value := Doc.Root;
+         List : constant JSON.Value := Doc.Get (Root, "ports");
+      begin
+         Flash := To_Unbounded_String (Doc.To_String (Doc.Get (Root, "flash")));
+         Console := To_Unbounded_String (Doc.To_String (Doc.Get (Root, "console")));
+         for N in 1 .. Doc.Length (List) loop
+            declare
+               E : constant JSON.Value := Doc.Element (List, N);
+            begin
+               R.Append (Board_Port'(Role    => To_Unbounded_String (Doc.To_String (Doc.Get (E, "role"))),
+                          Path    => To_Unbounded_String (Doc.To_String (Doc.Get (E, "path"))),
+                          Serial  => To_Unbounded_String (Doc.To_String (Doc.Get (E, "serial"))),
+                          Product => To_Unbounded_String (Doc.To_String (Doc.Get (E, "product")))));
+            end;
+         end loop;
+      end;
+      return R;
+   end Board_Ports;
+
    procedure Target_Options is
       D : Dlg.Dialog;
-      Port_Id, Prof_Id : Positive;
+      Port_Id, Con_Id, Prof_Id : Positive;
       Profiles : constant array (1 .. 4) of Desktop.Label_Access :=
         [+"", +"light-tasking", +"embedded", +"full"];
-      Cur : Positive := 1;
+      Cur   : Positive := 1;
+      Code  : Integer;
+      Flash, Console : Unbounded_String;
+      Ports : Board_Port_Vectors.Vector;
+
+      function Count (Role : String) return Natural is
+         N : Natural := 0;
+      begin
+         for P of Ports loop
+            if To_String (P.Role) = Role then
+               N := N + 1;
+            end if;
+         end loop;
+         return N;
+      end Count;
+
+      function Found return String is
+        (if Ports.Is_Empty then "No board found (USB/JTAG or USB-UART)."
+         else "Now: flash " & (if Flash = Null_Unbounded_String then "? (several)"
+                               else To_String (Flash))
+              & ", console " & (if Console = Null_Unbounded_String then "? (several)"
+                                else To_String (Console)));
    begin
       if Prj.Target = Prj.Target_Native then
          Dlg.Message_Box ("Target", Prj.Name & " builds natively, for this machine:"
@@ -2226,16 +2296,55 @@ package body Turbo.App is
             Cur := K;
          end if;
       end loop;
-      D.Init ("Target", 56, 14);
+      Ports := Board_Ports (Flash, Console);
+      D.Init ("Target", 64, 18);
       Port_Id := D.Add_Input (3, 3, 30, Prj.Port);
-      D.Add_Label (2, 2, "Serial ~p~ort (empty: $ESPPORT or /dev/ttyACM0)", Port_Id);
-      Prof_Id := D.Add_Radio (3, 6, 40,
+      D.Add_Label (2, 2, "USB/JTAG ~p~ort: flash, debug (empty: found by USB id)", Port_Id);
+      Con_Id := D.Add_Input (3, 6, 30, Prj.Console);
+      D.Add_Label (2, 5, "~C~onsole: empty = the USB/JTAG port, uart = the bridge", Con_Id);
+      D.Add_Text (3, 8, Found);
+      Prof_Id := D.Add_Radio (3, 11, 40,
         "~P~roject default|~L~ight-tasking (Jorvik)|~E~mbedded|~F~ull", Cur);
-      D.Add_Label (2, 5, "Runtime p~r~ofile", Prof_Id);
-      D.Add_Button (12, 11, 12, "~O~K", 1, Default => True);
-      D.Add_Button (30, 11, 12, "Cancel", Dlg.Cancel_Code);
-      if D.Run = 1 then
+      D.Add_Label (2, 10, "Runtime p~r~ofile", Prof_Id);
+      D.Add_Button (6, 15, 12, "~O~K", 1, Default => True);
+      D.Add_Button (24, 15, 14, "~D~etect...", 2);
+      D.Add_Button (44, 15, 12, "Cancel", Dlg.Cancel_Code);
+      loop
+         Code := D.Run;
+         exit when Code /= 2;
+         --  Detect: list the board ports; choosing one fills the field for
+         --  its role -- by name only when there is more than one to tell apart.
+         Ports := Board_Ports (Flash, Console);
+         if Ports.Is_Empty then
+            Dlg.Message_Box ("Detect", "No ESP32-S3 USB/JTAG port or USB-UART bridge"
+                             & Character'Val (10) & "is plugged in.");
+         else
+            declare
+               Items : String_List;
+               Index : Positive := 1;
+            begin
+               for P of Ports loop
+                  Items.Append ((if To_String (P.Role) = "jtag" then "USB/JTAG " else "UART     ")
+                                & To_String (P.Path) & "  " & To_String (P.Serial)
+                                & "  " & To_String (P.Product));
+               end loop;
+               if Dlg.Choose ("Detect", "~B~oard ports", Items, Index, 60, "~U~se") then
+                  declare
+                     P : constant Board_Port := Ports (Index);
+                  begin
+                     if To_String (P.Role) = "jtag" then
+                        D.Set_Value (Port_Id, (if Count ("jtag") = 1 then "" else To_String (P.Path)));
+                     else
+                        D.Set_Value (Con_Id, (if Count ("uart") = 1 then "uart" else To_String (P.Path)));
+                     end if;
+                  end;
+               end if;
+            end;
+         end if;
+      end loop;
+      if Code = 1 then
          Prj.Set_Port (D.Value (Port_Id));
+         Prj.Set_Console (D.Value (Con_Id));
          if Profiles (D.Radio_Value (Prof_Id)).all /= Prj.Profile then
             Prj.Set_Profile (Profiles (D.Radio_Value (Prof_Id)).all);
             Restart_Server;      --  a new profile is a new runtime to index

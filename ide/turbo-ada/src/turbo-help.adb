@@ -145,8 +145,9 @@ package body Turbo.Help is
       & LF
       & "  {{example}}      the chosen SDK example" & LF
       & "  {{port_opt}}     ' -p PORT' when a port is set, else nothing" & LF
+      & "  {{console_opt}}  ' -c CONSOLE' when a console is set" & LF
       & "  {{profile_opt}}  ' -P PROFILE' when a profile is set" & LF
-      & "  {{port}} {{profile}} {{dir}} {{root}} {{file}}" & LF
+      & "  {{port}} {{console}} {{profile}} {{dir}} {{root}} {{file}}" & LF
       & LF
       & "Commands run through /bin/sh -c (on Windows: bash -c when bash" & LF
       & "is on PATH, as it is under MSYS2 or Git Bash; cmd /c otherwise)" & LF

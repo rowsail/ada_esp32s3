@@ -13,9 +13,11 @@
 #    ./x new|init <name>               scaffold a new bare project (examples/<name>)
 #    ./x build   <example> [-P PROF]   build -> app.bin   (PROF: light-tasking|
 #                                      embedded|full; default = the example's own)
-#    ./x flash   <example> [-p PORT]   build (if needed) + flash over USB ROM
-#    ./x run     <example> [-p PORT] [-P PROF]  build + flash + monitor
-#    ./x monitor [-p PORT]             open the serial console (115200)
+#    ./x flash   <example> [-p PORT] [-P PROF]   build + flash over USB ROM
+#    ./x run     <example> [-p PORT] [-c CON] [-P PROF]  build + flash + monitor
+#    ./x monitor [-p PORT] [-c CON]    open the serial console (115200)
+#    ./x ports [--json]                the boards' serial ports, found by USB id,
+#                                     and which ones flash/monitor would use
 #    ./x clean   [<example>]           remove build artifacts (all if omitted)
 #    ./x test    [host [SUITE]|lib|examples]  everything checkable without a board:
 #                                     host suites, the libraries on all three
@@ -61,7 +63,14 @@
 #    ./x docs                          build the HAL API reference PDF (libs/esp32s3_hal/docs/)
 #
 #  <example> accepts the short name (gpio0_blink) or the full dir
-#  (esp32s3_gpio0_blink).  PORT defaults to $ESPPORT or /dev/ttyACM0.
+#  (esp32s3_gpio0_blink).
+#
+#  Ports.  PORT is the chip's USB-Serial/JTAG port (flash, debug, and the
+#  default console): -p, else $ESPPORT, else the one Espressif USB/JTAG unit
+#  plugged in.  CON is the console: -c, else $ESPCONSOLE, else "jtag" (= PORT);
+#  "uart" is the board's USB-UART bridge (UART0: the boot log, and apps that
+#  route the console there), or give a device.  With several boards attached
+#  the choice is listed instead of guessed.
 #
 set -euo pipefail
 #  BASH_SOURCE[0] (not $0) so ROOT is right when x is SOURCED as a library too
@@ -69,7 +78,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXROOT="$ROOT/examples"
 CFG="$EXROOT/common/bare/config"
-PORT_DEFAULT="${ESPPORT:-/dev/ttyACM0}"
 BAUD=115200
 
 die () { echo "x: $*" >&2; exit 1; }
@@ -222,6 +230,96 @@ cmd_build () {
     ( cd "$EXROOT/$e" && env $(prof_env "$prof") bash build.sh )
 }
 
+# -- serial ports -------------------------------------------------------------
+#  Found by USB vendor:product id (Linux sysfs), so nothing needs setting with
+#  one board attached.  Two roles:
+#    jtag  the ESP32-S3's own USB-Serial/JTAG unit (303a:1001): flashing,
+#          OpenOCD, and the console unless the app moves it
+#    uart  a USB-UART bridge wired to UART0 (WCH CH34x, Silicon Labs CP210x,
+#          FTDI, Prolific): the ROM/bootloader log, and apps whose Console
+#          package routes the console to a UART
+port_usb_dir () {   # $1 = tty node -> its USB device's sysfs dir, or nothing
+    local t d; t="$(basename "$(readlink -f "$1" 2>/dev/null)")"
+    d="$(readlink -f "/sys/class/tty/$t/device" 2>/dev/null)" || return 0
+    while [ -n "$d" ] && [ "$d" != / ] && [ ! -f "$d/idVendor" ]; do d="$(dirname "$d")"; done
+    [ -f "$d/idVendor" ] && printf '%s' "$d"
+    return 0
+}
+list_ports () {   # one line per board port: ROLE PATH VID:PID SERIAL PRODUCT...
+    local p d id role
+    for p in /dev/ttyACM* /dev/ttyUSB*; do
+        [ -e "$p" ] || continue
+        d="$(port_usb_dir "$p")"; [ -n "$d" ] || continue
+        id="$(cat "$d/idVendor"):$(cat "$d/idProduct")"
+        case "$id" in
+            303a:1001)                        role=jtag ;;
+            1a86:*|10c4:*|0403:*|067b:*)      role=uart ;;
+            *)                                continue ;;
+        esac
+        printf '%s %s %s %s %s\n' "$role" "$p" "$id" \
+            "$(cat "$d/serial" 2>/dev/null || echo -)" "$(cat "$d/product" 2>/dev/null || echo -)"
+    done
+}
+pick_port () {   # $1 = role -> the one port with that role; dies listing them if ambiguous
+    local role="$1" found n
+    found="$(list_ports | awk -v r="$role" '$1 == r')"
+    n="$(printf '%s' "$found" | grep -c . || true)"
+    if [ "$n" = 1 ]; then printf '%s' "$found" | awk '{print $2}'; return 0; fi
+    [ "$n" = 0 ] && return 1
+    {   echo "x: several $( [ "$role" = jtag ] && echo 'ESP32-S3 USB/JTAG ports' || echo 'USB-UART bridges' ) -- which board?"
+        printf '%s\n' "$found" | awk '{ printf "x:   %-14s %s  serial %s\n", $2, $3, $4 }'
+        if [ "$role" = jtag ]; then echo "x: choose with -p PORT or \$ESPPORT (Turbo Ada: Options | Target)."
+        else echo "x: choose with -c PORT or \$ESPCONSOLE (Turbo Ada: Options | Target)."; fi
+    } >&2
+    return 2
+}
+flash_port () {   # [$1 = -p value] -> the USB/JTAG (flash/debug) port
+    [ -n "${1:-}" ] && { printf '%s' "$1"; return 0; }
+    [ -n "${ESPPORT:-}" ] && { printf '%s' "$ESPPORT"; return 0; }
+    local p rc=0
+    p="$(pick_port jtag)" || rc=$?
+    [ "$rc" = 2 ] && return 1
+    [ -n "$p" ] && { printf '%s' "$p"; return 0; }
+    #  No USB/JTAG unit: a board reached only through its UART bridge (esp_flash
+    #  does the classic DTR/RTS auto-reset too), else the historical default.
+    rc=0; p="$(pick_port uart)" || rc=$?
+    [ "$rc" = 2 ] && return 1
+    printf '%s' "${p:-/dev/ttyACM0}"
+}
+console_port () {   # $1 = -c value (may be empty), $2 = the flash port -> the console port
+    local c="${1:-${ESPCONSOLE:-jtag}}" p rc=0
+    case "$c" in
+        jtag|usb|"") printf '%s' "$2" ;;
+        uart)
+            p="$(pick_port uart)" || rc=$?
+            [ "$rc" = 2 ] && return 1
+            [ -n "$p" ] || { echo "x: no USB-UART bridge found for the console (-c uart)" >&2; return 1; }
+            printf '%s' "$p" ;;
+        *) printf '%s' "$c" ;;
+    esac
+}
+cmd_ports () {   # [--json]
+    local lines fp cp
+    lines="$(list_ports)"
+    fp="$(flash_port 2>/dev/null)" || fp=""
+    cp="$( [ -n "$fp" ] && console_port "" "$fp" 2>/dev/null)" || cp=""
+    if [ "${1:-}" = "--json" ]; then
+        printf '{"ports":['
+        printf '%s\n' "$lines" | awk 'NF { if (n++) printf ","; p=""; for (i=5;i<=NF;i++) p=p (i>5?" ":"") $i;
+            printf "{\"role\":\"%s\",\"path\":\"%s\",\"id\":\"%s\",\"serial\":\"%s\",\"product\":\"%s\"}", $1,$2,$3,$4,p }'
+        printf '],"flash":"%s","console":"%s"}\n' "$fp" "$cp"
+        return 0
+    fi
+    if [ -z "$lines" ]; then
+        echo "no ESP32-S3 USB/JTAG port or USB-UART bridge found"
+    else
+        printf '%s\n' "$lines" | awk '{ p=""; for (i=5;i<=NF;i++) p=p " " $i;
+            printf "%-5s %-14s %s  serial %s %s\n", $1, $2, $3, $4, p }'
+    fi
+    echo "flash:   ${fp:-(ambiguous: pass -p or set ESPPORT)}"
+    echo "console: ${cp:-(ambiguous: pass -c or set ESPCONSOLE)}"
+}
+
 # -- device access ------------------------------------------------------------
 #  A board may be plugged in yet unusable because the user lacks permission on the
 #  port (raw USB / tty).  Distinguish "no device" from "no permission" and, for the
@@ -231,7 +329,7 @@ device_preflight () {  # $1 = port
     local port="$1"
     if [ ! -e "$port" ]; then
         echo "x: device not accessible: no such port $port" >&2
-        echo "x:   plug in the ESP32-S3, or pass -p <port> / set \$ESPPORT." >&2
+        echo "x:   plug in the ESP32-S3, or pass -p <port> / set \$ESPPORT ('./x ports' lists them)." >&2
         return 1
     fi
     if [ ! -r "$port" ] || [ ! -w "$port" ]; then
@@ -247,8 +345,9 @@ cmd_setup_device () {  # install the udev rule + group membership (self-sudos)
 }
 
 cmd_check_device () {  # report port + USB-JTAG accessibility (human + IDE)
-    local port="$PORT_DEFAULT"
+    local port=""
     while [ $# -gt 0 ]; do case "$1" in -p|--port) port="$2"; shift 2;; *) shift;; esac; done
+    port="$(flash_port "$port")" || exit 1
     if device_preflight "$port"; then
         echo "x: device OK: $port is accessible"
     else
@@ -256,10 +355,18 @@ cmd_check_device () {  # report port + USB-JTAG accessibility (human + IDE)
     fi
 }
 
-cmd_flash () {
-    local e port="$PORT_DEFAULT"; e="$(resolve "${1:-}")"; shift || true
-    while [ $# -gt 0 ]; do case "$1" in -p|--port) port="$2"; shift 2;; *) shift;; esac; done
+cmd_flash () {   # build (incremental) + flash: never an out-of-date app.bin
+    local e port="" prof="auto"; e="$(resolve "${1:-}")"; shift || true
+    while [ $# -gt 0 ]; do case "$1" in
+        -p|--port) port="$2"; shift 2;;
+        -P|--profile) prof="$2"; shift 2;;
+        *) shift;; esac
+    done
+    valid_profile "$prof"
+    port="$(flash_port "$port")" || exit 1
     device_preflight "$port" || exit $?
+    cmd_build "$e" --profile "$prof"
+    echo "x: flash $port" >&2
     ( cd "$EXROOT/$e" && bash flash.sh "$port" )
     #  Record the flashed board's USB-JTAG serial so `./x debug` / the openocd task
     #  pin to THIS board (not the first 303a device) -- see tools/openocd.sh.
@@ -268,22 +375,32 @@ cmd_flash () {
 }
 
 cmd_monitor () {
-    local port="$PORT_DEFAULT"
-    while [ $# -gt 0 ]; do case "$1" in -p|--port) port="$2"; shift 2;; *) shift;; esac; done
+    local port="" con=""
+    while [ $# -gt 0 ]; do case "$1" in
+        -p|--port) port="$2"; shift 2;;
+        -c|--console) con="$2"; shift 2;;
+        *) shift;; esac
+    done
+    con="${con:-${ESPCONSOLE:-jtag}}"
+    case "$con" in jtag|usb) port="$(flash_port "$port")" || exit 1 ;; esac
+    port="$(console_port "$con" "$port")" || exit 1
     device_preflight "$port" || exit $?
     echo "x: monitor $port @ $BAUD (Ctrl-C / Ctrl-A K to quit)" >&2
     monitor_tool "$port"
 }
 
 cmd_run () {   # build + flash + monitor
-    local e port="$PORT_DEFAULT" prof="auto"; e="$(resolve "${1:-}")"; shift || true
+    local e port="" con="" prof="auto"; e="$(resolve "${1:-}")"; shift || true
     while [ $# -gt 0 ]; do case "$1" in
         -p|--port) port="$2"; shift 2;;
+        -c|--console) con="$2"; shift 2;;
         -P|--profile) prof="$2"; shift 2;;
         *) shift;; esac
     done
     valid_profile "$prof"
-    cmd_build "$e" --profile "$prof"; cmd_flash "$e" -p "$port"; cmd_monitor -p "$port"
+    port="$(flash_port "$port")" || exit 1
+    local cport; cport="$(console_port "$con" "$port")" || exit 1
+    cmd_flash "$e" -p "$port" --profile "$prof"; cmd_monitor -p "$port" -c "$cport"
 }
 
 cmd_clean () {
@@ -338,7 +455,7 @@ cmd_get_gdb         () { bash "$ROOT/tools/get-gdb.sh" "$@"; }
 cmd_get_debug_tools () { cmd_get_openocd "$@"; cmd_get_gdb "$@"; }
 
 cmd_debug () {
-    local e elf gdb ocd_log ocd_pid port="$PORT_DEFAULT" smp="" attach=""
+    local e elf gdb ocd_log ocd_pid port="" smp="" attach=""
     e="$(resolve "${1:-}")"; shift || true
     while [ $# -gt 0 ]; do case "$1" in
         -p|--port) port="$2"; shift 2;;
@@ -346,6 +463,7 @@ cmd_debug () {
         --attach)  attach=1; shift;;     # POST-MORTEM: halt in place (no reset), for a hang/crash
         *) shift;;
     esac; done
+    port="$(flash_port "$port")" || exit 1
     elf="$EXROOT/$e/app.elf"
     [ -f "$elf" ] || die "no $elf -- run './x build $(short "$e")' first"
     gdb="$(find_gdb)"
@@ -702,7 +820,7 @@ build_stack_tool () {
 }
 
 cmd_stack () {
-    local e top=12 run="" port="$PORT_DEFAULT"
+    local e top=12 run="" port=""
     e="$(resolve "${1:-}")"; shift || true
     while [ $# -gt 0 ]; do case "$1" in
         --top) top="$2"; shift 2;;
@@ -718,7 +836,9 @@ cmd_stack () {
     "$ROOT/tools/stack_report/stack_report" "$EXROOT/$e/obj" --top "$top" \
         || die "stack_report failed"
     if [ -n "$run" ]; then
+        port="$(flash_port "$port")" || exit 1
         device_preflight "$port" || exit $?
+        local cport; cport="$(console_port "" "$port")" || exit 1
         echo
         echo "x: flashing + capturing runtime high-water mark (look for 'stack:' lines)..." >&2
         ( cd "$EXROOT/$e" && bash flash.sh "$port" ) >/dev/null 2>&1 || die "flash failed"
@@ -726,8 +846,8 @@ cmd_stack () {
         #  read the console raw for ~20 s, then surface any "stack:" report lines.
         local cap; cap="$(mktemp)"
         sleep 2
-        stty -F "$port" "$BAUD" raw -echo 2>/dev/null || true
-        timeout 20 cat "$port" > "$cap" 2>/dev/null || true
+        stty -F "$cport" "$BAUD" raw -echo 2>/dev/null || true
+        timeout 20 cat "$cport" > "$cap" 2>/dev/null || true
         if grep -qi "stack:" "$cap"; then
             grep -i "stack:" "$cap" | sed 's/^/   /'
         else
@@ -1336,6 +1456,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     kill-openocd)       cmd_kill_openocd "$@" ;;
     setup-device)       cmd_setup_device "$@" ;;
     check-device)       cmd_check_device "$@" ;;
+    ports)              cmd_ports "$@" ;;
     install-ide)        cmd_install_ide "$@" ;;
     build-ide)          cmd_build_ide "$@" ;;
     install-vim)        cmd_install_vim "$@" ;;

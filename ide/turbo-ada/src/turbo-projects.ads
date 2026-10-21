@@ -66,8 +66,18 @@ package Turbo.Projects is
 
    --  Target options
 
-   function Port return String;              --  "" = the tool's default
+   function Port return String;              --  "" = found by USB id
    procedure Set_Port (Port : String);
+   --  The chip's USB-Serial/JTAG port: flash, debug, the default console.
+
+   function Console return String;           --  "" = the USB/JTAG port
+   procedure Set_Console (Console : String);
+   --  Where Run and Monitor read the console: "", "jtag", "uart" (the
+   --  board's USB-UART bridge, found by USB id) or a device.
+
+   function Ports_Command return String;
+   --  The board ports as the SDK sees them (./x ports --json), or "" for a
+   --  project that has no board.
    function Profile return String;           --  "" = the project's own
    procedure Set_Profile (Profile : String);
 

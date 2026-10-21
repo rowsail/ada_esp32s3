@@ -10,9 +10,10 @@
 #    esp32-ada build  [-P PROFILE]   build -> app.bin (PROFILE: light-tasking|
 #                                    embedded|full; default = the project's build.sh,
 #                                    which a fresh `init` sets to embedded)
-#    esp32-ada flash  [-p PORT]      build (if needed) + flash over USB ROM
-#    esp32-ada run    [-p PORT] [-P PROFILE]   build + flash + monitor
-#    esp32-ada monitor [-p PORT]     open the serial console (115200)
+#    esp32-ada flash  [-p PORT] [-P PROFILE]   build + flash over USB ROM
+#    esp32-ada run    [-p PORT] [-c CON] [-P PROFILE]   build + flash + monitor
+#    esp32-ada monitor [-p PORT] [-c CON]   open the serial console (115200)
+#    esp32-ada ports [--json]        the boards' serial ports, found by USB id
 #    esp32-ada clean                 remove build artifacts
 #    esp32-ada config [...]          show/set flash + PSRAM size (this project's
 #                                    board.ads)
@@ -26,7 +27,9 @@
 #    esp32-ada env [-P PROFILE]      KEY=VALUE: the environment a compile of this project needs
 #    esp32-ada --machine <verb> ...  the verb's output with @x lines for IDEs (see ./x)
 #
-#  PORT defaults to $ESPPORT or /dev/ttyACM0.  A project is any folder with
+#  PORT (flash/debug: the chip's USB/JTAG unit) and CON (the console: jtag,
+#  uart or a device) are found by USB id -- see './x help'; -p/-c or
+#  $ESPPORT/$ESPCONSOLE choose when several boards are attached.  A project is any folder with
 #  build.sh + app.gpr (what `init` creates).  `-C DIR` runs as if from DIR.
 #
 set -euo pipefail
@@ -212,27 +215,45 @@ do_build () {
     local p; p="$(proj_dir)"
     ( cd "$p" && env $(prof_env "$prof") bash build.sh )
 }
-do_flash () {
-    local port="${ESPPORT:-/dev/ttyACM0}"
-    while [ $# -gt 0 ]; do case "$1" in -p|--port) port="$2"; shift 2;; *) shift;; esac; done
-    local p; p="$(proj_dir)"
-    ( cd "$p" && bash flash.sh "$port" )
-    local s; s="$(serial_from_port "$port")"
-    [ -n "$s" ] && printf '%s\n' "$s" > "$SDK/tools/.jtag_serial"   # pin debug to this board
-}
-do_run () {
-    local port="${ESPPORT:-/dev/ttyACM0}" prof="auto"
+do_flash () {   # build (incremental) + flash: never an out-of-date app.bin
+    local port="" prof="auto"
     while [ $# -gt 0 ]; do case "$1" in
         -p|--port) port="$2"; shift 2;;
         -P|--profile) prof="$2"; shift 2;;
         *) shift;; esac
     done
-    do_build --profile "$prof"; do_flash -p "$port"; do_monitor -p "$port"
+    local p; p="$(proj_dir)"
+    port="$(flash_port "$port")" || exit 1
+    device_preflight "$port" || exit $?
+    do_build --profile "$prof"
+    echo "esp32-ada: flash $port" >&2
+    ( cd "$p" && bash flash.sh "$port" )
+    local s; s="$(serial_from_port "$port")"
+    [ -n "$s" ] && printf '%s\n' "$s" > "$SDK/tools/.jtag_serial"   # pin debug to this board
+}
+do_run () {
+    local port="" con="" prof="auto"
+    while [ $# -gt 0 ]; do case "$1" in
+        -p|--port) port="$2"; shift 2;;
+        -c|--console) con="$2"; shift 2;;
+        -P|--profile) prof="$2"; shift 2;;
+        *) shift;; esac
+    done
+    port="$(flash_port "$port")" || exit 1
+    local cport; cport="$(console_port "$con" "$port")" || exit 1
+    do_flash -p "$port" --profile "$prof"; do_monitor -p "$port" -c "$cport"
 }
 do_monitor () {
-    local port="${ESPPORT:-/dev/ttyACM0}"
-    while [ $# -gt 0 ]; do case "$1" in -p|--port) port="$2"; shift 2;; *) shift;; esac; done
-    [ -e "$port" ] || die "no such port: $port (set -p or \$ESPPORT)"
+    local port="" con=""
+    while [ $# -gt 0 ]; do case "$1" in
+        -p|--port) port="$2"; shift 2;;
+        -c|--console) con="$2"; shift 2;;
+        *) shift;; esac
+    done
+    con="${con:-${ESPCONSOLE:-jtag}}"
+    case "$con" in jtag|usb) port="$(flash_port "$port")" || exit 1 ;; esac
+    port="$(console_port "$con" "$port")" || exit 1
+    [ -e "$port" ] || die "no such port: $port (set -p/-c, \$ESPPORT/\$ESPCONSOLE; 'esp32-ada ports' lists them)"
     echo "esp32-ada: monitor $port @ $BAUD (Ctrl-C / Ctrl-A K to quit)" >&2
     monitor_tool "$port"
 }
@@ -265,8 +286,9 @@ do_clean () {
     echo "esp32-ada: cleaned $p"
 }
 do_debug () {
-    local port="${ESPPORT:-/dev/ttyACM0}"
+    local port=""
     while [ $# -gt 0 ]; do case "$1" in -p|--port) port="$2"; shift 2;; *) shift;; esac; done
+    port="$(flash_port "$port")" || exit 1
     local p elf gdb ocd_log ocd_pid; p="$(proj_dir)"; elf="$p/app.elf"
     [ -f "$elf" ] || die "no $elf -- run 'esp32-ada build' first"
     gdb="$(find_gdb)"
@@ -313,6 +335,7 @@ case "$cmd" in
     get-debug-tools) cmd_get_debug_tools "$@" ;;
     setup-toolchain) cmd_setup_toolchain "$@" ;;   # from x (sourced): same toolchain, same plugin
     kill-openocd)    cmd_kill_openocd "$@" ;;  # from x (sourced)
+    ports)           cmd_ports "$@" ;;         # from x (sourced)
     install-ide)     cmd_install_ide "$@" ;;   # install the VS Code extension (no Node)
     build-ide)       cmd_build_ide "$@" ;;     # (maintainer) rebuild the .vsix
     install-vim)     cmd_install_vim "$@" ;;   # symlink the Vim/Neovim plugin

@@ -29,6 +29,7 @@ package body Turbo.Projects is
    The_Example : Unbounded_String;
    The_Suite   : Unbounded_String;
    The_Port    : Unbounded_String;
+   The_Console : Unbounded_String;
    The_Profile : Unbounded_String;
    Templates   : array (Target_Kind, Action) of Unbounded_String;  --  "" = default
    Options     : Option_Maps.Map;
@@ -69,6 +70,7 @@ package body Turbo.Projects is
          when Target_Esp32s3 => "ESP32-S3",
          when Target_Native  => "native");
    function Port return String is (To_String (The_Port));
+   function Console return String is (To_String (The_Console));
    function Profile return String is (To_String (The_Profile));
 
    function Kind_Image return String is
@@ -278,6 +280,14 @@ package body Turbo.Projects is
       The_Port := To_Unbounded_String (Ada.Strings.Fixed.Trim (Port, Ada.Strings.Both));
    end Set_Port;
 
+   procedure Set_Console (Console : String) is
+   begin
+      The_Console := To_Unbounded_String (Ada.Strings.Fixed.Trim (Console, Ada.Strings.Both));
+      if To_String (The_Console) = "jtag" then
+         The_Console := Null_Unbounded_String;     --  the default, spelt out
+      end if;
+   end Set_Console;
+
    procedure Set_Profile (Profile : String) is
    begin
       Forget_Environment;
@@ -295,6 +305,7 @@ package body Turbo.Projects is
       The_Example := Null_Unbounded_String;
       The_Suite := Null_Unbounded_String;
       The_Port := Null_Unbounded_String;
+      The_Console := Null_Unbounded_String;
       The_Profile := Null_Unbounded_String;
       Templates := [others => [others => Null_Unbounded_String]];
       Options.Clear;
@@ -452,6 +463,12 @@ package body Turbo.Projects is
       return "esp32-ada";
    end Esp32_Ada;
 
+   function Ports_Command return String is
+     (case The_Kind is
+         when SDK_Example => (if Target = Target_Native then "" else "./x ports --json"),
+         when Standalone  => Esp32_Ada & " ports --json",
+         when others      => "");
+
    function Setup_Command (Check_Only : Boolean := False) return String is
       Verb : constant String :=
         (if Check_Only then "setup-toolchain --check" else "--machine setup-toolchain");
@@ -511,9 +528,9 @@ package body Turbo.Projects is
                   when Act_Check        => Check_Template,
                   when Act_Env          => "./x env {example}{profile_opt}",
                   when Act_Clean        => "./x --machine clean {example}",
-                  when Act_Flash        => "./x --machine flash {example}{port_opt}",
-                  when Act_Run          => "./x run {example}{port_opt}{profile_opt}",
-                  when Act_Monitor      => "./x monitor{port_opt}",
+                  when Act_Flash        => "./x --machine flash {example}{port_opt}{profile_opt}",
+                  when Act_Run          => "./x run {example}{port_opt}{console_opt}{profile_opt}",
+                  when Act_Monitor      => "./x monitor{port_opt}{console_opt}",
                   when Act_Debug        => "./x debug {example}{port_opt}",
                   when Act_Kill_OpenOCD => "./x --machine kill-openocd",
                   when Act_Memory       => "./x --machine mem {example}",
@@ -534,9 +551,9 @@ package body Turbo.Projects is
                      when Act_Check        => Check_Template,
                      when Act_Env          => E & " env{profile_opt}",
                      when Act_Clean        => E & " --machine clean",
-                     when Act_Flash        => E & " --machine flash{port_opt}",
-                     when Act_Run          => E & " run{port_opt}{profile_opt}",
-                     when Act_Monitor      => E & " monitor{port_opt}",
+                     when Act_Flash        => E & " --machine flash{port_opt}{profile_opt}",
+                     when Act_Run          => E & " run{port_opt}{console_opt}{profile_opt}",
+                     when Act_Monitor      => E & " monitor{port_opt}{console_opt}",
                      when Act_Debug        => E & " debug{port_opt}",
                      when Act_Kill_OpenOCD => E & " --machine kill-openocd",
                      when Act_Board        => E & " --machine config",
@@ -618,10 +635,12 @@ package body Turbo.Projects is
       end if;
       R := To_Unbounded_String (T);
       Sub ("{port_opt}", (if Port = "" then "" else " -p " & Port));
+      Sub ("{console_opt}", (if Console = "" then "" else " -c " & Console));
       Sub ("{profile_opt}", (if Profile = "" then "" else " -P " & Profile));
       Sub ("{example}", Example);
       Sub ("{suite}", Suite);
       Sub ("{port}", Port);
+      Sub ("{console}", Console);
       Sub ("{profile}", Profile);
       Sub ("{gpr}", Main_Gpr);
       Sub ("{tmp}", Scratch_Dir);
@@ -954,6 +973,8 @@ package body Turbo.Projects is
                      Set_Suite (V);
                   elsif K = "port" then
                      Set_Port (V);
+                  elsif K = "console" then
+                     Set_Console (V);
                   elsif K = "profile" then
                      Set_Profile (V);
                   elsif K = "desktop" then
@@ -1004,6 +1025,9 @@ package body Turbo.Projects is
       end if;
       if Port /= "" then
          Put_Line (F, "port=" & Port);
+      end if;
+      if Console /= "" then
+         Put_Line (F, "console=" & Console);
       end if;
       if Profile /= "" then
          Put_Line (F, "profile=" & Profile);

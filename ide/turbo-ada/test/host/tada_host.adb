@@ -279,10 +279,18 @@ procedure Tada_Host is
       Check (Command_For (Act_Build) = "./x --machine build gpio0_blink", "x build (machine)");
       Set_Port ("/dev/ttyUSB1");
       Set_Profile ("embedded");
-      Check (Command_For (Act_Flash) = "./x --machine flash gpio0_blink -p /dev/ttyUSB1",
-             "x flash -p");
+      Check (Command_For (Act_Flash) = "./x --machine flash gpio0_blink -p /dev/ttyUSB1 -P embedded",
+             "x flash -p -P (flash builds, with the same profile)");
       Check (Command_For (Act_Run) = "./x run gpio0_blink -p /dev/ttyUSB1 -P embedded",
              "x run -p -P");
+      Set_Console ("uart");
+      Check (Command_For (Act_Run) = "./x run gpio0_blink -p /dev/ttyUSB1 -c uart -P embedded"
+             and then Command_For (Act_Monitor) = "./x monitor -p /dev/ttyUSB1 -c uart",
+             "the console port goes to run and monitor");
+      Set_Console ("jtag");
+      Check (Console = "" and then Command_For (Act_Monitor) = "./x monitor -p /dev/ttyUSB1",
+             "jtag is the default console");
+      Check (Ports_Command = "./x ports --json", "the SDK lists the board ports");
       Check (Command_For (Act_Env) = "./x env gpio0_blink -P embedded", "x env");
       Check (Setup_Command = "./x --machine setup-toolchain"
              and then Setup_Command (Check_Only => True) = "./x setup-toolchain --check",

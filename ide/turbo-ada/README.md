@@ -139,7 +139,10 @@ brown is brown.
   first if there is none; your default `alr` toolchain is left alone), the
   plugin built from the vendored source, and a check that the cross compiler
   now emits little-endian ESP32-S3 objects. Then the build carries on.
-- **Options** — serial port and runtime profile (passed as `-p` / `-P`), the
+- **Options** — Target: the USB/JTAG port and the console port (passed as
+  `-p` / `-c`; both found by USB id when left empty — Detect lists the board
+  ports, and naming one is only needed with several boards attached) and the
+  runtime profile (`-P`), the
   command templates themselves, editor settings. Options | Save options, and
   every exit, writes `.turbo_ada` (git-ignored) in the project or SDK root
   with the options and the open files, so the desktop comes back next time.
