@@ -43,6 +43,8 @@
 #                                     gprbuild (through alr, without changing its
 #                                     default toolchain) and the xtensa-dynconfig
 #                                     plugin; --check only reports (exit 1 if missing)
+#    ./x setup-clipboard [--check]     Turbo Ada's system clipboard: install xclip or
+#                                     wl-clipboard if the desktop needs one (sudo)
 #    ./x get-debug-tools               fetch pinned OpenOCD + GDB (for debugging)
 #    ./x debug   <example> [-p PORT] [--smp] [--attach]   on-chip debug (OpenOCD+GDB)
 #                                     --smp    : both LX7 cores as gdb threads (info threads)
@@ -744,6 +746,61 @@ dynconfig_le () {   # $1 = xtensa gcc: does it emit little-endian objects now?
         && [ "$(od -An -tx1 -j5 -N1 "$t/t.o" | tr -d ' ')" = "01" ]
     local rc=$?; rm -rf "$t"; return $rc
 }
+#  The system clipboard, for Turbo Ada's Cut/Copy/Paste: the helper program
+#  its desktop needs (ide/turbo-ada/src/turbo-clipboard.adb picks the same
+#  way).  macOS (pbcopy), Windows and WSL (PowerShell) have one built in; a
+#  terminal with no display (ssh) uses OSC 52 instead and needs none.
+clipboard_helper () {   # the helper in use, or nothing
+    if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wl-copy >/dev/null; then echo wl-copy
+    elif [ -n "${DISPLAY:-}" ] && command -v xclip >/dev/null; then echo xclip
+    elif [ -n "${DISPLAY:-}" ] && command -v xsel >/dev/null; then echo xsel
+    elif command -v pbcopy >/dev/null; then echo pbcopy
+    elif command -v powershell.exe >/dev/null || command -v powershell >/dev/null; then echo powershell
+    fi
+}
+clipboard_package () {   # the package that would give this desktop one, or nothing
+    [ -n "$(clipboard_helper)" ] && return 0
+    if [ -n "${WAYLAND_DISPLAY:-}" ]; then echo wl-clipboard
+    elif [ -n "${DISPLAY:-}" ]; then echo xclip
+    fi
+}
+package_install_command () {   # $1 = package: the command that installs it, or nothing
+    local su=""
+    [ "$(id -u)" = 0 ] || su="sudo "
+    if command -v apt-get >/dev/null; then echo "${su}apt-get install -y $1"
+    elif command -v dnf >/dev/null; then echo "${su}dnf install -y $1"
+    elif command -v yum >/dev/null; then echo "${su}yum install -y $1"
+    elif command -v pacman >/dev/null; then echo "${su}pacman -S --needed --noconfirm $1"
+    elif command -v zypper >/dev/null; then echo "${su}zypper --non-interactive install $1"
+    elif command -v apk >/dev/null; then echo "${su}apk add $1"
+    fi
+}
+cmd_setup_clipboard () {   # [--check | --ask]
+    #  --check: report only.  --ask: install if the user says so (on a
+    #  terminal; else report).  Neither: install (sudo may ask a password).
+    local mode="${1:-}" pkg how reply
+    if [ -n "$(clipboard_helper)" ]; then
+        echo "[setup]   clipboard helper  ok ($(clipboard_helper))"; return 0
+    fi
+    pkg="$(clipboard_package)"
+    if [ -z "$pkg" ]; then
+        echo "[setup]   clipboard helper  none needed (no display: the terminal's OSC 52)"; return 0
+    fi
+    how="$(package_install_command "$pkg")"
+    echo "[setup]   clipboard helper  not installed (optional): $pkg${how:+ -- $how}"
+    [ "$mode" = --check ] && return 0
+    [ -n "$how" ] || { echo "[setup]   (no package manager known here: install $pkg yourself)"; return 1; }
+    if [ "$mode" = --ask ]; then
+        [ -t 0 ] && [ -t 1 ] || return 0
+        printf '[setup]   install it now for Turbo Ada'\''s Cut/Copy/Paste? [y/N] '
+        read -r reply || reply=""
+        case "$reply" in y|Y|yes|Yes) ;; *) return 0;; esac
+    fi
+    echo "[setup] installing $pkg: $how"
+    $how || { echo "[setup] could not install $pkg"; return 1; }
+    echo "[setup]   clipboard helper  ok ($(clipboard_helper))"
+}
+
 cmd_setup_toolchain () {   # [--check]
     local check=0
     [ "${1:-}" = "--check" ] && check=1
@@ -768,6 +825,7 @@ cmd_setup_toolchain () {   # [--check]
         echo "[setup]   xtensa-dynconfig plugin  missing"
     fi
     if [ "$check" = 1 ]; then
+        cmd_setup_clipboard --check
         [ ${#missing[@]} -eq 0 ] && [ -f "$dyncfg" ] && { echo "[setup] ready"; return 0; }
         echo "[setup] not ready: run './x setup-toolchain'"; return 1
     fi
@@ -806,6 +864,9 @@ cmd_setup_toolchain () {   # [--check]
     [ -x "$gcc" ] || die "no xtensa-esp32-elf-gcc in $ESP32S3_GNAT_XTENSA_BIN"
     dynconfig_le "$gcc" || die "$gcc does not produce little-endian ESP32-S3 objects with $XTENSA_GNU_CONFIG"
     echo "[setup] xtensa GNAT + dynconfig: little-endian ESP32-S3 objects"
+    #  Optional, so never a reason to fail the set-up; installed only on a yes
+    #  (here on a terminal, or Turbo Ada's offer after it).
+    cmd_setup_clipboard --ask || true
     echo "[setup] ready"
 }
 
@@ -1484,6 +1545,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     mem|memory)      cmd_mem "$@" ;;
     config|cfg)         cmd_config "$@" ;;
     setup-toolchain)    cmd_setup_toolchain "$@" ;;
+    setup-clipboard)    cmd_setup_clipboard "$@" ;;
     get-debug-tools)    cmd_get_debug_tools "$@" ;;
     get-openocd)        cmd_get_openocd "$@" ;;
     get-gdb)            cmd_get_gdb "$@" ;;

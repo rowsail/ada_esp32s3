@@ -344,11 +344,14 @@ int tada_pty_open (char *name, int max, int *slave)
         return -1;
     }
     strcpy (name, n);
-    *slave = open (n, O_RDWR | O_NOCTTY);
+    *slave = open (n, O_RDWR | O_NOCTTY | O_CLOEXEC);
     if (*slave < 0) {
         close (m);
         return -1;
     }
+    /* Not inherited: a clipboard helper that stays behind (xclip,
+       wl-copy) must not hold the program's terminal open.  */
+    fcntl (m, F_SETFD, FD_CLOEXEC);
     return m;
 }
 

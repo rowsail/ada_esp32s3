@@ -51,6 +51,18 @@ echo "project info: ok"
 grep -q "^breakpoints=.*demo.adb:15" "$W/.turbo_ada"
 echo "ui: ok"
 
+# The system clipboard, as a file: the options name the helper commands.
+printf 'Hello from outside\r\nline two\r\n' > "$W/clip"
+cp demo.adb "$W/src/demo.adb"
+cat > "$W/.turbo_ada" <<OPT
+lsp.enabled=0
+clipboard.copy=cat > "$W/clip"
+clipboard.paste=cat "$W/clip"
+OPT
+"$CLI" -C "$W" ui src/demo.adb --script "$HERE/clipboard.txt"
+[ "$(cat "$W/clip")" = "procedure Demo is" ]
+echo "clipboard: ok"
+
 if ! command -v gdb >/dev/null; then
     echo "debug: skipped (no gdb)"
     exit 0

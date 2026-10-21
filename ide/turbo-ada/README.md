@@ -103,7 +103,20 @@ brown is brown.
   undo/redo, Shift-select and mouse select, the WordStar Ctrl-K/Ctrl-Q block
   and cursor commands, Find/Replace with the Turbo options dialog, Go to line,
   spec/body switching (Ctrl-F6), Grep the word under the cursor across the
-  project (Search | Grep). Copies also reach the system clipboard via OSC 52.
+  project (Search | Grep).
+- **Clipboard** — Cut, Copy and Paste (Ctrl-X/C/V, Shift-Del, Ctrl-Ins,
+  Shift-Ins), in the editor and in dialog fields, use the system clipboard
+  through the desktop's helper: `wl-copy`/`wl-paste` on Wayland, `xclip` or
+  `xsel` on X11, `pbcopy`/`pbpaste` on macOS, PowerShell on Windows and WSL.
+  Copies also go to the terminal as OSC 52, which reaches your own desktop's
+  clipboard over ssh where the terminal allows it; there the terminal's own
+  paste key (Ctrl-Shift-V, Cmd-V) pastes into the IDE. With no helper the IDE
+  keeps its own clipboard: Project | Set up ESP32-S3 toolchain offers to
+  install one (`xclip`, or `wl-clipboard` on Wayland), as does
+  `./x setup-clipboard`. Other helpers go in `.turbo_ada`, as shell commands
+  that read the text on stdin and write it on stdout:
+  `clipboard.copy=tmux load-buffer -w -` and `clipboard.paste=tmux save-buffer -`,
+  say (`none` turns either off).
 - **Compile** — Alt-F9 checks the current file with the real compiler
   (`gprbuild -gnatc` into a scratch tree, so the build's `obj/` is never
   touched): about a second, even for the xtensa target. Make (F9) runs the
@@ -253,6 +266,7 @@ src/turbo-buffers*    a file's text, with undo/redo and search
 src/turbo-syntax*     per-line highlighting
 src/turbo-windows*    framed windows: close/zoom boxes, scroll bars, resize grip
 src/turbo-editors*    the edit window
+src/turbo-clipboard*  the system clipboard (wl-copy, xclip, xsel, pbcopy, PowerShell), OSC 52
 src/turbo-messages*   the message window and the diagnostic parser
 src/turbo-viewers*    read-only text (help, clipboard, project information)
 src/turbo-desktop*    the window stack, the status line

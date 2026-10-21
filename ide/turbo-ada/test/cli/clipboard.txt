@@ -1,0 +1,27 @@
+# Cut, copy and paste with "the system clipboard": run.sh points the
+# clipboard.copy and clipboard.paste options at a file, with two lines
+# (CR LF) from "another program" in it.
+key Ctrl-Home
+key Ctrl-V
+expect Hello from outside
+expect line two
+expect 3:1
+# A dialog's field takes the first line.
+key Ctrl-Q F
+key Ctrl-V
+expect find    Hello from outside
+key Esc
+# Cut "Total : Integer := 0;" (line 6), paste it back at line 7.
+key Ctrl-G
+type 6
+key Enter
+key Home Shift-End Ctrl-X
+expect-not Total : Integer
+key Down Home Ctrl-V
+expect Total : Integer := 0;
+# Copy "procedure Demo is" (line 5): run.sh looks for it in the file.
+key Ctrl-G
+type 5
+key Enter
+key Shift-End Ctrl-C
+quit

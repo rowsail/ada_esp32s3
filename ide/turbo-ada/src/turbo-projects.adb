@@ -503,6 +503,16 @@ package body Turbo.Projects is
             when others      => "");
    end Setup_Command;
 
+   function Clipboard_Setup_Command (Check_Only : Boolean := False) return String is
+      Verb : constant String := (if Check_Only then "setup-clipboard --check" else "setup-clipboard");
+   begin
+      return
+        (case The_Kind is
+            when SDK_Example => "./x " & Verb,
+            when Standalone  => Esp32_Ada & " " & Verb,
+            when others      => "");
+   end Clipboard_Setup_Command;
+
    function Label (A : Action) return String is
      (case A is
          when Act_Build        => "Build",

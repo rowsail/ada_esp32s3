@@ -122,6 +122,10 @@ package Turbo.Projects is
    --  the xtensa-dynconfig plugin.  Check_Only: report, exit 1 when it is
    --  not ready.  "" for a project that is not built by the SDK.
 
+   function Clipboard_Setup_Command (Check_Only : Boolean := False) return String;
+   --  Installs the helper the system clipboard needs here (./x
+   --  setup-clipboard, or esp32-ada's), with sudo.  "" outside the SDK.
+
    --  The project's compile environment (from Act_Env)
 
    procedure Set_Environment (Lines : String_List);

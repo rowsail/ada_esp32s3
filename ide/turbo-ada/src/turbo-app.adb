@@ -842,6 +842,11 @@ package body Turbo.App is
    procedure Restart_Server;
    --  Below, with the rest of the language-server plumbing.
 
+   procedure Apply_Editor_Options;
+   --  Below, with the Options dialogs.
+
+   procedure Offer_Clipboard_Helper;
+
    procedure Setup_Toolchain (Success : out Boolean) is
       Check : constant String := Prj.Setup_Command (Check_Only => True);
       Lines : String_List;
@@ -868,8 +873,48 @@ package body Turbo.App is
          Toolchain_Ok_For := To_Unbounded_String (Prj.Root);
          Prj.Forget_Environment;
          Restart_Server;
+         Apply_Editor_Options;           --  a clipboard helper it installed
+         Offer_Clipboard_Helper;
       end if;
    end Setup_Toolchain;
+
+   procedure Offer_Clipboard_Helper is
+   --  The set-up installs the system clipboard's helper only when sudo needs
+   --  no password; else offer it here, on the terminal, where sudo can ask.
+      Check : constant String := Prj.Clipboard_Setup_Command (Check_Only => True);
+      Lines : String_List;
+      Ok    : Boolean;
+   begin
+      if Check = "" or else Clipboard.Helper /= ""
+        or else not Capture (Check, Prj.Root, "Checking the clipboard", Lines)
+      then
+         return;
+      end if;
+      for L of Lines loop
+         declare
+            At_Pkg : constant Natural := Ada.Strings.Fixed.Index (L, "(optional): ");
+         begin
+            if At_Pkg > 0 then
+               if Dlg.Message_Box
+                    ("Clipboard",
+                     "Cut, Copy and Paste can use the system clipboard with"
+                     & Character'Val (10)
+                     & L (At_Pkg + 12 .. L'Last) & Character'Val (10)
+                     & "Install it now (sudo may ask for your password)?",
+                     Dlg.Yes_No) = Dlg.Ans_Yes
+               then
+                  Jobs.Run_Foreground (Prj.Clipboard_Setup_Command, Prj.Root, Ok);
+                  Apply_Editor_Options;
+                  Desktop.Set_Status_Message
+                    (if Clipboard.Helper /= ""
+                     then " The system clipboard is in use (" & Clipboard.Helper & ")"
+                     else " No clipboard helper: Cut, Copy and Paste stay inside the IDE");
+               end if;
+               return;
+            end if;
+         end;
+      end loop;
+   end Offer_Clipboard_Helper;
 
    function Toolchain_Ready return Boolean is
    --  Before a build: True to go ahead (ready, set up now, or the user
@@ -2436,6 +2481,7 @@ package body Turbo.App is
       Settings.Trim_Trailing := Flag ("editor.trim_trailing", Settings.Trim_Trailing);
       Settings.Show_Shadows := Flag ("screen.shadows", Settings.Show_Shadows);
       Screen.Set_True_Color (Flag ("screen.true_color", Screen.True_Color));
+      Clipboard.Configure (Prj.Get_Option ("clipboard.copy"), Prj.Get_Option ("clipboard.paste"));
    end Apply_Editor_Options;
 
    procedure Store_Editor_Options is
@@ -3695,7 +3741,9 @@ package body Turbo.App is
          when Cmd_Clear => E.Clear;
          when Cmd_Select_All => E.Select_All;
          when Cmd_Show_Clipboard =>
-            Show_Help ("Clipboard", Encode (Clipboard.Get));
+            Show_Help ((if Clipboard.Helper = "" then "Clipboard"
+                        else "Clipboard (" & Clipboard.Helper & ")"),
+                       Encode (Clipboard.Get));
 
          when Cmd_Find =>
             if E.Has_Selection or else E.Word_At_Cursor /= "" then

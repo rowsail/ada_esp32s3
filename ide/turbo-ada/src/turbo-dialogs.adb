@@ -5,6 +5,7 @@ with Ada.Directories;
 with Ada.Strings.Fixed;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Calendar.Formatting;
+with Turbo.Clipboard;
 with Turbo.Desktop;
 with Turbo.Events;
 with Turbo.Screen;
@@ -495,26 +496,55 @@ package body Turbo.Dialogs is
 
    procedure Input_Key (C : in out Control; E : Event) is
       V : Unbounded_Wide_Wide_String renames C.Value;
+
+      procedure Paste_Line (P : Wide_Wide_String) is
+      --  The first line of P, over the field if it is all selected.
+         Cut : Natural := P'Last;
+      begin
+         for I in P'Range loop
+            if P (I) = Wide_Wide_Character'Val (10) then
+               Cut := I - 1;
+               exit;
+            end if;
+         end loop;
+         if C.Select_All then
+            V := Null_Unbounded_Wide_Wide_String;
+            C.Cur := 1;
+            C.Select_All := False;
+         end if;
+         Insert (V, C.Cur, P (P'First .. Cut));
+         C.Cur := C.Cur + (Cut - P'First + 1);
+      end Paste_Line;
+
+      procedure Clear_Field is
+      begin
+         V := Null_Unbounded_Wide_Wide_String;
+         C.Cur := 1;
+         C.Select_All := False;
+      end Clear_Field;
+
+      --  A field has no partial selection: copy and cut take all of it.
+      Copy_Key  : constant Boolean :=
+        (E.Code = Char_Key and then E.Ctrl and then not E.Alt and then E.Ch = 'c')
+        or else (E.Code = Insert and then E.Ctrl);
+      Cut_Key   : constant Boolean :=
+        (E.Code = Char_Key and then E.Ctrl and then not E.Alt and then E.Ch = 'x')
+        or else (E.Code = Delete and then E.Shift);
+      Paste_Key : constant Boolean :=
+        (E.Code = Char_Key and then E.Ctrl and then not E.Alt and then E.Ch = 'v')
+        or else (E.Code = Insert and then E.Shift);
    begin
       if E.Kind = Paste then
-         declare
-            P   : constant Wide_Wide_String := To_Wide_Wide_String (E.Text);
-            Cut : Natural := P'Last;
-         begin
-            for I in P'Range loop
-               if P (I) = Wide_Wide_Character'Val (10) then
-                  Cut := I - 1;
-                  exit;
-               end if;
-            end loop;
-            if C.Select_All then
-               V := Null_Unbounded_Wide_Wide_String;
-               C.Cur := 1;
-               C.Select_All := False;
-            end if;
-            Insert (V, C.Cur, P (P'First .. Cut));
-            C.Cur := C.Cur + (Cut - P'First + 1);
-         end;
+         Paste_Line (To_Wide_Wide_String (E.Text));
+      elsif Copy_Key or else Cut_Key then
+         if Length (V) > 0 then
+            Clipboard.Set (To_Wide_Wide_String (V));
+         end if;
+         if Cut_Key then
+            Clear_Field;
+         end if;
+      elsif Paste_Key then
+         Paste_Line (Clipboard.Get);
       else
          case E.Code is
             when Left =>

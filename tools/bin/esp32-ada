@@ -22,6 +22,8 @@
 #    esp32-ada debug  [-p PORT]      on-chip debug (OpenOCD + GDB)
 #    esp32-ada setup-toolchain [--check]  one-time: validated GNAT + gprbuild (via
 #                                    alr) and the xtensa-dynconfig plugin
+#    esp32-ada setup-clipboard [--check]  Turbo Ada's system clipboard: xclip or
+#                                    wl-clipboard if the desktop needs one (sudo)
 #    esp32-ada kill-openocd          kill every OpenOCD (release captured ports)
 #    esp32-ada install-ide           install the VS Code extension (committed .vsix; no Node)
 #    esp32-ada install-vim           symlink the Vim/Neovim plugin (auto-updates on git pull)
@@ -339,6 +341,7 @@ case "$cmd" in
     debug)           do_debug "$@" ;;
     get-debug-tools) cmd_get_debug_tools "$@" ;;
     setup-toolchain) cmd_setup_toolchain "$@" ;;   # from x (sourced): same toolchain, same plugin
+    setup-clipboard) cmd_setup_clipboard "$@" ;;   # from x (sourced)
     kill-openocd)    cmd_kill_openocd "$@" ;;  # from x (sourced)
     ports)           cmd_ports "$@" ;;         # from x (sourced)
     debug-server)    cmd_debug_server "$@" ;;  # from x (sourced)

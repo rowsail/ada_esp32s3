@@ -109,8 +109,12 @@ package body Turbo.Help is
       & "  {Ctrl-K C} / {Ctrl-K V}    copy / move the block to the cursor" & LF
       & "  {Ctrl-K Y} / {Ctrl-K H}    delete / hide the block" & LF
       & "  {Ctrl-K I} / {Ctrl-K U}    indent / outdent the block" & LF
-      & "  Copies also go to the terminal's clipboard (OSC 52) where the" & LF
-      & "  terminal allows it." & LF
+      & "  Cut, copy and paste use the system clipboard (wl-copy, xclip or" & LF
+      & "  xsel, pbcopy, PowerShell), in the editor and in dialog fields." & LF
+      & "  Copies also go to the terminal (OSC 52), which reaches your own" & LF
+      & "  desktop over ssh where the terminal allows it.  Project | Set up" & LF
+      & "  ESP32-S3 toolchain offers to install a helper if there is none;" & LF
+      & "  others go in .turbo_ada as clipboard.copy= and clipboard.paste=." & LF
       & LF
       & "# Search" & LF
       & "  {Ctrl-Q F} {Ctrl-F}        find" & LF
