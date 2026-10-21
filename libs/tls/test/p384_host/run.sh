@@ -2,9 +2,10 @@
 # Build and run the P384.Verify known-answer test.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"; cd "$HERE"
-AL="$HOME/.local/share/alire/toolchains"
-NATIVE="$(ls -d "$AL"/gnat_native_* 2>/dev/null | sort | tail -1)"
-GPR="$(ls -d "$AL"/gprbuild_* 2>/dev/null | sort | tail -1)"
-[ -n "$NATIVE" ] && PATH="$NATIVE/bin:$PATH"; [ -n "$GPR" ] && PATH="$GPR/bin:$PATH"; export PATH
+# The validated native GNAT + gprbuild (tools/sdk-env.sh), native first.
+. "$HERE/../../../../tools/sdk-env.sh"
+esp32s3_toolchain_on_path >/dev/null
+PATH="$ESP32S3_GNAT_NATIVE_BIN:$ESP32S3_GPRBUILD_BIN:$PATH"
+export PATH
 gprbuild -P p384_host.gpr -q
 ./p384_host

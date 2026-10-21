@@ -18,12 +18,16 @@
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../../../.." && pwd)"
-GNAT="$(ls -d "${ESP32S3_ADA_TOOLCHAINS:-$HOME/.local/share/alire/toolchains}"/gnat_xtensa_esp32_elf_*/bin 2>/dev/null | sort -V | tail -1)"
-GPR="$(ls -d "${ESP32S3_ADA_TOOLCHAINS:-$HOME/.local/share/alire/toolchains}"/gprbuild_*/bin 2>/dev/null | sort -V | tail -1)"
-export PATH="$GPR:$GNAT:$PATH"
+# The same validated toolchain as the app (tools/sdk-env.sh: the KNOWN_GOOD
+# versions when installed), so the loader and the app it loads come from one
+# compiler.
+. "$REPO/tools/sdk-env.sh"
+esp32s3_toolchain_on_path
 # Little-endian ESP32-S3 xtensa config -- REQUIRED for the Ada/C compiles AND the
 # final link; without it the toolchain emits/links big-endian (esptool rejects it).
-export XTENSA_GNU_CONFIG="$(realpath "$REPO/crates/xtensa-dynconfig/xtensa-dynconfig/xtensa_esp32s3.so")"
+# Built here if missing, as bare_build.sh does.
+esp32s3_export_dynconfig "$REPO" \
+    || { echo "[boot] could not build the xtensa-dynconfig plugin (needs gcc + make)" >&2; exit 1; }
 export GPR_PROJECT_PATH="$REPO/crates/esp32s3_rts"
 
 GCC=xtensa-esp32-elf-gcc
@@ -82,8 +86,8 @@ if [ -n "${ESP_USE_ESPTOOL:-}" ]; then
 else
     E2I="$REPO/examples/common/bare/elf2image/esp_elf2image"
     if [ ! -x "$E2I" ]; then
-        NATGNAT="$(ls -d "${ESP32S3_ADA_TOOLCHAINS:-$HOME/.local/share/alire/toolchains}"/gnat_native_*/bin 2>/dev/null | sort -V | tail -1)"
-        ( cd "$REPO/examples/common/bare/elf2image" && PATH="$NATGNAT:$GPR:$PATH" gprbuild -q -P esp_elf2image.gpr )
+        ( cd "$REPO/examples/common/bare/elf2image" \
+            && PATH="$ESP32S3_GNAT_NATIVE_BIN:$ESP32S3_GPRBUILD_BIN:$PATH" gprbuild -q -P esp_elf2image.gpr )
     fi
     "$E2I" "$O/boot.elf" "$OUT"
 fi

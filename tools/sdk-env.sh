@@ -36,13 +36,15 @@ ESP32S3_GPRBUILD_KNOWN_GOOD="26.0.1"
 export ESP32S3_GNAT_KNOWN_GOOD ESP32S3_GPRBUILD_KNOWN_GOOD
 
 # Newest bin/ under the search root matching glob $1 (or empty if none).
-esp32s3_tc_bin () { ls -d "$ESP32S3_ADA_TOOLCHAINS"/$1/bin 2>/dev/null | sort -V | tail -1; }
+#  (`|| true`: callers run under `set -eo pipefail`, where a failed ls would
+#  otherwise end them silently instead of reaching the "not found" message.)
+esp32s3_tc_bin () { ls -d "$ESP32S3_ADA_TOOLCHAINS"/$1/bin 2>/dev/null | sort -V | tail -1 || true; }
 
 # bin/ for crate $1: the known-good version $2 if that one is installed, else
 # the newest $1 there is.
 esp32s3_tc_bin_pref () {
     local exact
-    exact="$(ls -d "$ESP32S3_ADA_TOOLCHAINS"/"$1"_"$2"_*/bin 2>/dev/null | head -1)"
+    exact="$(ls -d "$ESP32S3_ADA_TOOLCHAINS"/"$1"_"$2"_*/bin 2>/dev/null | head -1 || true)"
     if [ -n "$exact" ]; then
         printf '%s' "$exact"
     else
@@ -67,6 +69,17 @@ esp32s3_toolchain_on_path () {
     esp32s3_check_toolchain
 }
 
+# Name what is missing, and the one command that fetches it (not fatal here:
+# some callers only need the native side).
+esp32s3_report_missing () {
+    local missing=""
+    [ -n "$ESP32S3_GNAT_XTENSA_BIN" ] || missing="$missing gnat_xtensa_esp32_elf"
+    [ -n "$ESP32S3_GNAT_NATIVE_BIN" ] || missing="$missing gnat_native"
+    [ -n "$ESP32S3_GPRBUILD_BIN" ]    || missing="$missing gprbuild"
+    [ -z "$missing" ] && return 0
+    echo "[sdk] no$missing under $ESP32S3_ADA_TOOLCHAINS -- run './x setup-toolchain'" >&2
+}
+
 # Version embedded in an Alire toolchain directory name: gnat_native_15.2.1_<hash>
 esp32s3_tc_version () {
     local d="${1:-}"
@@ -75,6 +88,7 @@ esp32s3_tc_version () {
 }
 
 esp32s3_check_toolchain () {
+    esp32s3_report_missing
     [ -n "${ESP32S3_ADA_SKIP_TOOLCHAIN_CHECK:-}" ] && return 0
     local v
     v="$(esp32s3_tc_version "$ESP32S3_GNAT_XTENSA_BIN")"

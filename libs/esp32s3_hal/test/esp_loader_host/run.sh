@@ -19,11 +19,10 @@ here=$(cd "$(dirname "$0")" && pwd)
 cd "$here"
 
 #  Locate a native Ada toolchain (Alire layout), as the other harnesses do.
-alire="$HOME/.local/share/alire/toolchains"
-native=$(ls -d "$alire"/gnat_native_* 2>/dev/null | sort -V | tail -1)
-gprbuild_dir=$(ls -d "$alire"/gprbuild_* 2>/dev/null | sort -V | tail -1)
-[ -n "$native" ] && PATH="$native/bin:$PATH"
-[ -n "$gprbuild_dir" ] && PATH="$gprbuild_dir/bin:$PATH"
+# The validated native GNAT + gprbuild (tools/sdk-env.sh), native first.
+. "$here/../../../../tools/sdk-env.sh"
+esp32s3_toolchain_on_path >/dev/null
+PATH="$ESP32S3_GNAT_NATIVE_BIN:$ESP32S3_GPRBUILD_BIN:$PATH"
 export PATH
 command -v gprbuild >/dev/null || { echo "no native gprbuild found" >&2; exit 2; }
 command -v python3  >/dev/null || { echo "no python3" >&2; exit 2; }

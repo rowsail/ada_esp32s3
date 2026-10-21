@@ -75,8 +75,14 @@ if [ ! -d "$RTS" ]; then
         # Import the portable full-tasking GNARL units from the version-matched
         # host GNAT (gnat_native -- same GCC as the cross-compiler).  These are
         # not committed (same policy as the rest of the generated runtime).
-        # Toolchain search root: set by tools/sdk-env.sh (default = Alire's dir).
-        NATIVE_ADAINC=$(ls -d "${ESP32S3_ADA_TOOLCHAINS:-$HOME/.local/share/alire/toolchains}"/gnat_native_*/lib/gcc/*/[0-9]*/adainclude 2>/dev/null | sort -V | tail -1)
+        # The native GNAT tools/sdk-env.sh chose (the validated one, matching
+        # the cross compiler) when a caller set it up; otherwise -- an Alire
+        # pre-build, say -- the newest under the toolchain search root.
+        NATIVE_ADAINC=""
+        if [ -n "${ESP32S3_GNAT_NATIVE_BIN:-}" ]; then
+            NATIVE_ADAINC=$(ls -d "$ESP32S3_GNAT_NATIVE_BIN"/../lib/gcc/*/[0-9]*/adainclude 2>/dev/null | sort -V | tail -1 || true)
+        fi
+        [ -n "$NATIVE_ADAINC" ] || NATIVE_ADAINC=$(ls -d "${ESP32S3_ADA_TOOLCHAINS:-$HOME/.local/share/alire/toolchains}"/gnat_native_*/lib/gcc/*/[0-9]*/adainclude 2>/dev/null | sort -V | tail -1)
         if [ ! -d "$NATIVE_ADAINC" ]; then
             echo "[esp32s3_rts] ERROR: full profile needs native GNAT (gnat_native) for the full GNARL sources." >&2
             exit 1

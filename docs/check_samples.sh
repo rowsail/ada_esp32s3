@@ -29,7 +29,10 @@ fail () { printf '\n\033[31mFAIL\033[0m  %s\n' "$*" >&2; exit 1; }
 # ---- locate the cross compiler + the dynconfig plugin the Xtensa back end needs
 GCC="$(command -v xtensa-esp32-elf-gcc || true)"
 if [ -z "$GCC" ]; then
-    GCC="$(ls -d "$HOME"/.local/share/alire/toolchains/gnat_xtensa_esp32_elf_*/bin/xtensa-esp32-elf-gcc 2>/dev/null | head -1)"
+    # The validated cross GNAT (tools/sdk-env.sh).
+    . "$REPO/tools/sdk-env.sh"
+    esp32s3_toolchain_on_path >/dev/null
+    GCC="${ESP32S3_GNAT_XTENSA_BIN:+$ESP32S3_GNAT_XTENSA_BIN/xtensa-esp32-elf-gcc}"
 fi
 [ -x "${GCC:-}" ] || fail "xtensa-esp32-elf-gcc not found (run any example's ./build.sh once, or source export.sh)"
 
