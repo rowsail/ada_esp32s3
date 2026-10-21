@@ -628,7 +628,7 @@ package body Turbo.App is
          Update_Status;
          Desktop.Draw;
          Dlg.Show_Busy (What, Cmd & "   (Esc cancels)");
-         E := Get (100);
+         E := Turbo.Events.Poll (100);
          if Is_Key (E, Escape) then
             Jobs.Cancel;
          elsif E.Kind = Resize then
@@ -736,7 +736,7 @@ package body Turbo.App is
                         else "Working...   Esc cancels"));
          Screen.Flush;
          exit when Finished;
-         E := Get (100);
+         E := Turbo.Events.Poll (100);
          if E.Kind = Resize then
             Screen.Init;
          elsif Is_Key (E, Escape) or else Is_Ctrl (E, 'c') or else Is_Ctrl (E, 'b')
@@ -1148,9 +1148,15 @@ package body Turbo.App is
       and then Ada.Characters.Handling.To_Lower (Ada.Directories.Extension (Path)) /= "gpr");
 
    function Escape_Pressed return Boolean is
-      E : constant Event := Get (0);
+   --  Any other key is kept for afterwards (typed ahead, not lost).
+      E : constant Event := Turbo.Events.Poll (0);
    begin
-      return Is_Key (E, Escape);
+      if Is_Key (E, Escape) then
+         return True;
+      elsif E.Kind /= None then
+         Turbo.Events.Push_Back (E);
+      end if;
+      return False;
    end Escape_Pressed;
 
    procedure Sync_Documents (Force : Boolean) is
@@ -4241,6 +4247,8 @@ package body Turbo.App is
             end if;
             Dispatch (E);
          exception
+            when Term.Script_Ended =>
+               raise;
             when X : others =>
                --  Never let a bug in a command take the open files with it.
                Dlg.Message_Box
@@ -4255,6 +4263,7 @@ package body Turbo.App is
       Term.Stop;
    exception
       when others =>
+         GDB.Stop;
          LSP.Stop;
          Term.Stop;
          raise;

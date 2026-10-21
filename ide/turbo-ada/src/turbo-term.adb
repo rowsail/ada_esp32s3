@@ -9,6 +9,30 @@ package body Turbo.Term is
 
    Active : Boolean := False;
 
+   Virtual      : Boolean := False;
+   Virtual_Rows : Positive := 25;
+   Virtual_Cols : Positive := 80;
+   Virtual_In   : Input_Source;
+
+   procedure Start_Virtual (Rows, Cols : Positive; Source : not null Input_Source) is
+   begin
+      Virtual := True;
+      Virtual_Rows := Rows;
+      Virtual_Cols := Cols;
+      Virtual_In := Source;
+   end Start_Virtual;
+
+   function Is_Virtual return Boolean is (Virtual);
+
+   Is_Polling : Boolean := False;
+
+   procedure Set_Polling (On : Boolean) is
+   begin
+      Is_Polling := On;
+   end Set_Polling;
+
+   function Polling return Boolean is (Is_Polling);
+
    function C_Init return int
      with Import, Convention => C, External_Name => "tada_term_init";
    procedure C_Restore
@@ -47,6 +71,9 @@ package body Turbo.Term is
    begin
       if Active then
          return;
+      elsif Virtual then
+         Active := True;
+         return;
       end if;
       if C_Init /= 0 then
          raise Not_A_Terminal;
@@ -59,6 +86,9 @@ package body Turbo.Term is
    begin
       if not Active then
          return;
+      elsif Virtual then
+         Active := False;
+         return;
       end if;
       Write (Leave_Sequence);
       C_Restore;
@@ -69,7 +99,7 @@ package body Turbo.Term is
       Buf : Byte_Array (1 .. 64);
       N   : int;
    begin
-      if Active or else C_Init /= 0 then
+      if Virtual or else Active or else C_Init /= 0 then
          return;
       end if;
       N := C_Read (Buf, Buf'Length, -1);
@@ -84,7 +114,7 @@ package body Turbo.Term is
       Buf : Byte_Array (1 .. 64);
       N   : int;
    begin
-      if not Active then
+      if not Active or else Virtual then
          return;
       end if;
       Write (CSI & "0m" & CSI & "?25l" & CSI & "?1049l");
@@ -98,6 +128,9 @@ package body Turbo.Term is
    function Read (Buf : out Byte_Array; Timeout_Ms : Integer) return Natural is
       N : int;
    begin
+      if Virtual then
+         return Virtual_In (Buf, Timeout_Ms);
+      end if;
       N := C_Read (Buf, int (Buf'Length), int (Timeout_Ms));
       return (if N < 0 then 0 else Natural (N));
    end Read;
@@ -105,7 +138,7 @@ package body Turbo.Term is
    procedure Write (S : String) is
       Ignore : int;
    begin
-      if S'Length > 0 then
+      if S'Length > 0 and then not Virtual then
          Ignore := C_Write (S, int (S'Length));
       end if;
    end Write;
@@ -113,12 +146,17 @@ package body Turbo.Term is
    procedure Size (Rows, Cols : out Positive) is
       R, C : int;
    begin
+      if Virtual then
+         Rows := Virtual_Rows;
+         Cols := Virtual_Cols;
+         return;
+      end if;
       C_Size (R, C);
       Rows := Positive (int'Max (R, 10));
       Cols := Positive (int'Max (C, 40));
    end Size;
 
-   function Take_Resized return Boolean is (C_Take_Resized /= 0);
+   function Take_Resized return Boolean is (not Virtual and then C_Take_Resized /= 0);
 
    function Is_Windows return Boolean is (C_Is_Windows /= 0);
 

@@ -1,0 +1,36 @@
+# A debug session in the IDE: F8, a watch, F7 into Add, Ctrl-F9 to a
+# breakpoint, Ctrl-F2.  wait-stopped after each key that runs the program.
+key Down Down Down Down Down Down Down Down Down Down Down Down Down Down
+key Ctrl-F8
+key F8
+wait-stopped 120
+expect STOPPED
+expect 3:1
+key Ctrl-F7
+type Total
+key Enter
+expect Total:
+key F8
+wait-stopped
+key F8
+wait-stopped
+key F8
+wait-stopped
+key F8
+wait-stopped
+expect 14:1
+key F7
+wait-stopped
+expect 8:1
+key F8
+wait-stopped
+key F8
+wait-stopped
+expect Total: 1
+key Ctrl-F9
+wait-stopped
+expect 15:1
+expect Total: 5
+key Ctrl-F2
+expect Program reset
+key Alt-X

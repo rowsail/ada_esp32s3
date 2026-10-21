@@ -1,0 +1,18 @@
+# The IDE, headless: the editor, the menus, a dialog, a breakpoint.
+expect procedure Demo is
+expect F9 Make
+key Alt-H
+expect About
+key Esc
+expect-not About
+key Down Down Down Down Down Down Down Down Down Down Down Down Down Down
+expect 15:1
+key Ctrl-F8
+key Alt-D
+expect Toggle breakpoint
+key Esc
+key Alt-F
+expect Save as
+key Esc
+# Alt-X: quit, saving the breakpoint with the options
+key Alt-X

@@ -18,6 +18,8 @@
 --    Turbo.Projects     what "the project" is and which commands drive it
 --    Turbo.Jobs         background build processes
 --    Turbo.App          the main loop and the command dispatcher
+--    Turbo.Script       keys in, screen out: the IDE on a virtual terminal,
+--                       for tada-cli
 
 package Turbo is
 

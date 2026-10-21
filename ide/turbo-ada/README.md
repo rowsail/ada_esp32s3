@@ -175,6 +175,59 @@ brown is brown.
 - **Windows** — move and resize with the mouse or Ctrl-F5, F5 zoom, F6 next,
   Alt-1..9, Alt-0 list, Tile, Cascade; F1 help, Help | Keyboard for every key.
 
+## tada-cli: Turbo Ada without a terminal
+
+`bin/tada-cli` is the IDE without a screen, in the manner of `kicad-cli`: for
+tests, for scripts, and for working on the IDE itself. Relative paths are
+taken from `-C DIR`, as with `git -C`.
+
+```sh
+tada-cli -C DIR project info [--json]   # the project as the IDE sees it
+tada-cli -C DIR ui [--size 100x30] [--script FILE] [-e STEP]... [FILE...]
+tada-cli -C DIR debug [--break FILE:LINE]... [--watch EXPR]... [--no-build] \
+                      [--script FILE] [-e STEP]...
+tada-cli keys                           # the key names a script takes
+```
+
+`ui` runs the real IDE on a virtual terminal (`Turbo.Script`): the same
+code, the same windows, nothing faked; its input is a script and its screen
+can be printed or checked. One step per line:
+
+```
+key Down Down Ctrl-F8        # keys by name: F8, Ctrl-F9, Alt-X, Shift-Tab, Esc ...
+type Total                   # text, as typed
+key F8
+wait-stopped                 # until the debugger has stopped and the IDE shows where
+expect Total: 1              # on the screen, else the run fails (exit 1)
+wait-for Success. 60         # until it appears (seconds), else fail and stop
+screen                       # print the screen (screen json: with colours)
+key Alt-X                    # quit as a user would (options saved)
+```
+
+Steps run when the IDE asks for input, so a long command (a build, F8
+starting a session) is over before the next step. While the IDE is busy and
+only watching for Esc, keys and checks wait; `wait`, `wait-for` and `screen`
+still run, so a build can be watched. `--trace` logs every step and key.
+
+`debug` runs a session through the IDE's GDB/MI client (natively, or on the
+board with OpenOCD) and prints each stop, the watches, and the program's
+output (`| ...`); steps are `start next step finish continue until break
+watch print stack wait expect-line expect-value`, `print X := 3` sets X:
+
+```
+$ tada-cli -C demo debug --break demo.adb:15 --watch Total -e next -e continue
+stopped  breakpoint-hit  demo.adb:3  demo
+> next
+stopped  end-stepping-range  demo.adb:4  demo
+  Total = 0
+> continue
+| Sum of squares
+stopped  breakpoint-hit  demo.adb:15  demo
+  Total = 1
+```
+
+`test/cli/run.sh` uses both on a scratch crate (`./x test host` runs it).
+
 ## Commands are templates
 
 Each action is a template (Options | Commands) run through `/bin/sh -c`
@@ -210,5 +263,9 @@ src/turbo-jobs*       background builds (output read from a log as it grows)
 src/turbo-json*       just enough JSON for LSP
 src/turbo-lsp*        the language server client (reader task, requests)
 src/turbo-app*        the event loop and every command
+src/turbo-script*     scripts for the IDE on a virtual terminal (tada-cli ui)
+src/tada.adb          tada, the IDE
+src/tada_cli.adb      tada-cli: project info, ui, debug
 test/host/            host tests (./x test host runs them)
+test/cli/             tada-cli: the IDE and the debugger, scripted
 ```

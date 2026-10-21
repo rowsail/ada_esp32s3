@@ -41,4 +41,25 @@ package Turbo.Term is
 
    function Is_Active return Boolean;
 
+   --  A virtual terminal, for tada-cli: no console is touched.  Output is
+   --  dropped (the screen is read from Turbo.Screen instead), the size is
+   --  fixed, and input comes from Source, which a script drives.
+
+   type Input_Source is access function
+     (Buf : out Byte_Array; Timeout_Ms : Integer) return Natural;
+
+   procedure Start_Virtual (Rows, Cols : Positive; Source : not null Input_Source);
+   --  Then Start, Stop and the rest work on the virtual terminal.
+
+   function Is_Virtual return Boolean;
+
+   procedure Set_Polling (On : Boolean);
+   function Polling return Boolean;
+   --  Around a read that only looks for Esc (a build, a busy box): a script
+   --  holds back its other keys meanwhile (Turbo.Events.Poll).
+
+   Script_Ended : exception;
+   --  Raised by a Source when its script is done: the application leaves
+   --  its main loop (from inside a dialog too) and lets it through.
+
 end Turbo.Term;

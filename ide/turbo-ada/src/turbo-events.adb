@@ -328,6 +328,19 @@ package body Turbo.Events is
       return E;
    end From_Byte;
 
+   function Poll (Timeout_Ms : Integer) return Event is
+      E : Event;
+   begin
+      Term.Set_Polling (True);
+      E := Get (Timeout_Ms);
+      Term.Set_Polling (False);
+      return E;
+   exception
+      when others =>
+         Term.Set_Polling (False);
+         raise;
+   end Poll;
+
    function Get (Timeout_Ms : Integer) return Event is
       B : Integer;
       E : Event;

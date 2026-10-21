@@ -1,0 +1,12 @@
+# The same session through tada-cli debug (GDB/MI, no screen).
+next
+next
+next
+next
+step
+expect-line 8
+continue
+expect-line 15
+expect-value Total 1
+print I := 3
+continue

@@ -11,7 +11,11 @@ project Turbo_Ada is
    for Source_Dirs use ("src");
    for Object_Dir use "obj";
    for Exec_Dir use "bin";
-   for Main use ("tada.adb");
+   for Main use ("tada.adb", "tada_cli.adb");
+
+   package Builder is
+      for Executable ("tada_cli.adb") use "tada-cli";
+   end Builder;
 
    type Build_Kind is ("debug", "release");
    Build : Build_Kind := external ("TURBO_ADA_BUILD", "release");

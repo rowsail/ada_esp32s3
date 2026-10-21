@@ -38,6 +38,10 @@ package Turbo.Events is
    function Get (Timeout_Ms : Integer) return Event;
    --  The next event, or one of Kind None after Timeout_Ms.
 
+   function Poll (Timeout_Ms : Integer) return Event;
+   --  Get, from a loop that only watches for Esc (or Ctrl-C) while it is
+   --  busy: a script's other keys wait for the next Get.
+
    procedure Push_Back (E : Event);
    --  The next Get returns E (one deep: for a menu handing on the key that
    --  closed it).

@@ -7,7 +7,7 @@ maintainers = ["D. Howells <dhowells@motium.us>"]
 licenses = "Apache-2.0 WITH LLVM-exception"
 tags = ["ide", "editor", "tui", "turbo", "esp32s3"]
 
-executables = ["tada"]
+executables = ["tada", "tada-cli"]
 project-files = ["turbo_ada.gpr"]
 
 [configuration]
