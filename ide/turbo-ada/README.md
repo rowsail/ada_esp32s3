@@ -104,6 +104,13 @@ brown is brown.
   and cursor commands, Find/Replace with the Turbo options dialog, Go to line,
   spec/body switching (Ctrl-F6), Grep the word under the cursor across the
   project (Search | Grep).
+- **Format** — Edit | Format lays out the selection (widened to the
+  statements or declarations it touches) or the whole file with AdaCore's
+  gnatformat rules: through the language server when it runs, which reads
+  the project's `Format` package and formats the unsaved text, else by
+  running `gnatformat` itself (on `PATH` or in `~/.alire/bin`, without the
+  project). `./x setup-toolchain` installs it (`alr install gnatformat_bin`;
+  `./x setup-formatter` alone). One undo step takes it back.
 - **Clipboard** — Cut, Copy and Paste (Ctrl-X/C/V, Shift-Del, Ctrl-Ins,
   Shift-Ins), in the editor and in dialog fields, use the system clipboard
   through the desktop's helper: `wl-copy`/`wl-paste` on Wayland, `xclip` or
@@ -274,6 +281,7 @@ src/turbo-syntax*     per-line highlighting
 src/turbo-windows*    framed windows: close/zoom boxes, scroll bars, resize grip
 src/turbo-editors*    the edit window
 src/turbo-clipboard*  the system clipboard (wl-copy, xclip, xsel, pbcopy, PowerShell), OSC 52
+src/turbo-formatter*  Edit | Format without the language server: gnatformat on the text
 src/turbo-messages*   the message window and the diagnostic parser
 src/turbo-viewers*    read-only text (help, clipboard, project information)
 src/turbo-desktop*    the window stack, the status line

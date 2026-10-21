@@ -1,0 +1,17 @@
+# Edit | Format with gnatformat (run.sh turns the language server off):
+# first lines 6-7 alone, then the whole file; run.sh checks it is laid out
+# as gnatformat lays it out.
+key Ctrl-G
+type 6
+key Enter
+key Home Shift-Down Shift-Down
+key Alt-E
+key F
+wait-for Formatted 20
+expect       Put_Line ("pos");
+expect X : Integer:=1;
+key Alt-E
+key F
+wait-for X : Integer := 1; 20
+key F2
+quit

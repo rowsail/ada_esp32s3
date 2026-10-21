@@ -20,6 +20,7 @@ with Turbo.Console;
 with Turbo.Desktop;
 with Turbo.Editors;
 with Turbo.Events;
+with Turbo.Formatter;
 with Turbo.GDB;
 with Turbo.Help;
 with Turbo.JSON;
@@ -498,6 +499,9 @@ package body Turbo.App is
             return E /= null and then Have_Search;
          when Cmd_Undo => return E /= null and then E.Can_Undo;
          when Cmd_Redo => return E /= null and then E.Can_Redo;
+         when Cmd_Format =>
+            return E /= null and then E.Language = Syntax.Ada_Lang
+              and then Ada.Characters.Handling.To_Lower (Ada.Directories.Extension (E.Path)) /= "gpr";
          when Cmd_Cut | Cmd_Copy | Cmd_Clear =>
             return E /= null and then E.Has_Selection;
          when Cmd_Paste => return E /= null and then not Clipboard.Is_Empty;
@@ -1770,6 +1774,164 @@ package body Turbo.App is
                        & (if Files > 1 then Character'Val (10) & "Save them with File | Save all."
                           else ""));
    end Rename;
+
+   --  Edit | Format: the language server's formatting when it runs (it reads
+   --  the project's Format package and has the unsaved text), else
+   --  gnatformat's (Turbo.Formatter).  A selection is widened to the
+   --  constructs it touches, by either.
+
+   function Replace_Changed (E : Editors.Editor_Access; From, To : Buffers.Position;
+                             New_Text : Wide_Wide_String) return Boolean is
+   --  Replace From .. To with New_Text, touching only the part that differs
+   --  (a small undo step, the rest of the screen left alone).  False when
+   --  nothing differs.
+      Old : constant Wide_Wide_String := E.Text (From, To);
+      P   : Natural := 0;      --  the common start
+      S   : Natural := 0;      --  the common end
+      LF  : constant Wide_Wide_Character := Wide_Wide_Character'Val (10);
+
+      function After (Start : Buffers.Position; Text : Wide_Wide_String) return Buffers.Position is
+         R : Buffers.Position := Start;
+      begin
+         for C of Text loop
+            R := (if C = LF then (R.Line + 1, 1) else (R.Line, R.Col + 1));
+         end loop;
+         return R;
+      end After;
+   begin
+      while P < Old'Length and then P < New_Text'Length
+        and then Old (Old'First + P) = New_Text (New_Text'First + P)
+      loop
+         P := P + 1;
+      end loop;
+      if P = Old'Length and then P = New_Text'Length then
+         return False;
+      end if;
+      while S < Old'Length - P and then S < New_Text'Length - P
+        and then Old (Old'Last - S) = New_Text (New_Text'Last - S)
+      loop
+         S := S + 1;
+      end loop;
+      E.Replace_Range (After (From, Old (Old'First .. Old'First + P - 1)),
+                       After (From, Old (Old'First .. Old'Last - S)),
+                       New_Text (New_Text'First + P .. New_Text'Last - S));
+      return True;
+   end Replace_Changed;
+
+   procedure Format_Code is
+      use Turbo.JSON;
+      E        : constant Editors.Editor_Access := Usable_Editor;
+      LF       : constant Character := Character'Val (10);
+      Whole    : Boolean;
+      From, To : Buffers.Position;
+      Saved    : Buffers.Position;
+      Changed  : Boolean := False;
+      Tool     : Unbounded_String;
+
+      function Pos_JSON (P : Buffers.Position) return String is
+        ("{""line"":" & Img (P.Line - 1) & ",""character"":"
+         & Img (LSP.To_Char (E.Line_Text (P.Line), P.Col)) & "}");
+
+      function With_Server return Boolean is
+      --  True when the server answered (and its edits are made).
+         R : LSP.Response;
+      begin
+         Sync_Documents (Force => True);
+         Ask ((if Whole then "textDocument/formatting" else "textDocument/rangeFormatting"),
+              "{""textDocument"":" & LSP.Text_Document (E.Path)
+              & (if Whole then ""
+                 else ",""range"":{""start"":" & Pos_JSON (From) & ",""end"":" & Pos_JSON (To) & "}")
+              & ",""options"":{""tabSize"":3,""insertSpaces"":true}}", R);
+         if not R.Ok then
+            if Formatter.Program = "" then
+               Dlg.Message_Box ("Language Server", To_String (R.Error));
+               Tool := To_Unbounded_String ("-");      --  said why
+            end if;
+            return False;
+         end if;
+         declare
+            type Edit is record
+               From, To : Buffers.Position;
+               Text     : Unbounded_String;
+            end record;
+            function "<" (A, B : Edit) return Boolean is (Buffers."<" (B.From, A.From));
+            package Edit_Vectors is new Ada.Containers.Vectors (Positive, Edit);
+            package Sorting is new Edit_Vectors.Generic_Sorting;
+            Edits : Edit_Vectors.Vector;
+            C     : Value := First_Member (R.Doc, R.Result);
+         begin
+            while Is_Present (C) loop
+               declare
+                  Rng : constant Value := Get (R.Doc, C, "range");
+               begin
+                  Edits.Append
+                    (Edit'(From => To_Position (E.Path, To_Integer (R.Doc, Path (R.Doc, Rng, "start.line")),
+                                                To_Integer (R.Doc, Path (R.Doc, Rng, "start.character"))),
+                           To   => To_Position (E.Path, To_Integer (R.Doc, Path (R.Doc, Rng, "end.line")),
+                                                To_Integer (R.Doc, Path (R.Doc, Rng, "end.character"))),
+                           Text => To_Unbounded_String (To_String (R.Doc, Get (R.Doc, C, "newText")))));
+               end;
+               C := Next_Member (R.Doc, C);
+            end loop;
+            Sorting.Sort (Edits);                --  last first: earlier positions hold
+            E.Begin_Edit_Group;
+            for X of Edits loop
+               if Replace_Changed (E, X.From, X.To, Decode (To_String (X.Text))) then
+                  Changed := True;
+               end if;
+            end loop;
+            E.End_Edit_Group;
+         end;
+         Tool := To_Unbounded_String ("the language server");
+         return True;
+      end With_Server;
+
+   begin
+      if E = null then
+         return;
+      end if;
+      Whole := not E.Has_Selection;
+      From := (if Whole then (1, 1) else E.Selection_Start);
+      To := (if Whole then E.Last_Position else E.Selection_End);
+      if not Whole and then To.Col = 1 and then To.Line > From.Line then
+         --  Whole lines selected: up to the end of the last one.
+         To := (To.Line - 1, E.Line_Text (To.Line - 1)'Length + 1);
+      end if;
+      Saved := E.Cursor;
+      if not (LSP.Is_Running and then With_Server) then
+         if Tool = "-" then
+            return;
+         elsif Formatter.Program = "" then
+            Dlg.Message_Box
+              ("Format",
+               "Formatting needs gnatformat (Project | Set up ESP32-S3" & LF
+               & "toolchain installs it; or: alr install gnatformat_bin)" & LF
+               & "or the Ada Language Server.");
+            return;
+         end if;
+         Desktop.Set_Status_Message (" Formatting with gnatformat...", Busy => True);
+         Redraw;
+         declare
+            R : Formatter.Result;
+         begin
+            Formatter.Format (Ada.Directories.Simple_Name (E.Path), E.Text, Whole, From, To, R);
+            Desktop.Set_Status_Message ("");
+            if not R.Ok then
+               Dlg.Message_Box ("Format", "gnatformat could not format it:" & LF & To_String (R.Error));
+               return;
+            end if;
+            E.Begin_Edit_Group;
+            Changed := Replace_Changed
+              (E, R.From, (if Whole then E.Last_Position else R.To), Ada.Strings.Wide_Wide_Unbounded.To_Wide_Wide_String (R.Text));
+            E.End_Edit_Group;
+            Tool := To_Unbounded_String ("gnatformat");
+         end;
+      end if;
+      E.Go_To (Positive'Min (Saved.Line, E.Line_Count), Saved.Col);
+      Desktop.Set_Status_Message
+        (if Changed then " Formatted by " & To_String (Tool)
+         else " Already formatted (" & To_String (Tool) & ")");
+   end Format_Code;
 
    procedure Diagnostics_List is
    begin
@@ -3848,6 +4010,7 @@ package body Turbo.App is
          when Cmd_Paste => E.Paste;
          when Cmd_Clear => E.Clear;
          when Cmd_Select_All => E.Select_All;
+         when Cmd_Format => Format_Code;
          when Cmd_Show_Clipboard =>
             Show_Help ((if Clipboard.Helper = "" then "Clipboard"
                         else "Clipboard (" & Clipboard.Helper & ")"),

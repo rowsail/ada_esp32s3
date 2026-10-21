@@ -11,6 +11,7 @@
 --    Turbo.Syntax       per-line highlighting (Ada, GPR, shell/TOML, C)
 --    Turbo.Windows      the window base type + frame drawing
 --    Turbo.Clipboard    the system clipboard, through its helper program
+--    Turbo.Formatter    gnatformat on an editor's text (Edit | Format)
 --    Turbo.Editors      the edit window
 --    Turbo.Messages     the message window (build output, jump to error)
 --    Turbo.Desktop      the window stack, menu bar, status line

@@ -55,6 +55,9 @@ package Turbo.Editors is
    function Can_Redo (E : Editor) return Boolean;
    function Has_Selection (E : Editor) return Boolean;
    function Selected_Text (E : Editor) return Wide_Wide_String;
+   function Selection_Start (E : Editor) return Position;
+   function Selection_End (E : Editor) return Position;
+   --  The selection's ends, in order (with Has_Selection).
    function Word_At_Cursor (E : Editor) return Wide_Wide_String;
 
    --  Search
@@ -80,6 +83,8 @@ package Turbo.Editors is
    function Text (E : Editor) return Wide_Wide_String;
    function Line_Count (E : Editor) return Positive;
    function Line_Text (E : Editor; N : Positive) return Wide_Wide_String;
+   function Text (E : Editor; From, To : Position) return Wide_Wide_String;
+   function Last_Position (E : Editor) return Position;
    function Language (E : Editor) return Turbo.Syntax.Language;
 
    type Severity is (Sev_Error, Sev_Warning, Sev_Info);

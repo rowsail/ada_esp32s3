@@ -45,6 +45,8 @@
 #                                     plugin; --check only reports (exit 1 if missing)
 #    ./x setup-clipboard [--check]     Turbo Ada's system clipboard: install xclip or
 #                                     wl-clipboard if the desktop needs one (sudo)
+#    ./x setup-formatter [--check]     gnatformat for Turbo Ada's Edit | Format
+#                                     (alr install gnatformat_bin; setup-toolchain does it)
 #    ./x get-debug-tools               fetch pinned OpenOCD + GDB (for debugging)
 #    ./x debug   <example> [-p PORT] [--smp] [--attach]   on-chip debug (OpenOCD+GDB)
 #                                     --smp    : both LX7 cores as gdb threads (info threads)
@@ -800,6 +802,28 @@ cmd_setup_clipboard () {   # [--check | --ask]
     $how || { echo "[setup] could not install $pkg"; return 1; }
     echo "[setup]   clipboard helper  ok ($(clipboard_helper))"
 }
+#  gnatformat, for Turbo Ada's Edit | Format (the language server formats
+#  with its own copy when it runs; this is the one the IDE uses without it).
+#  Alire's binary release, into ~/.alire/bin like the other alr tools.
+formatter_path () {   # the gnatformat in use, or nothing
+    if command -v gnatformat >/dev/null; then command -v gnatformat
+    elif [ -x "$HOME/.alire/bin/gnatformat" ]; then echo "$HOME/.alire/bin/gnatformat"
+    fi
+}
+cmd_setup_formatter () {   # [--check]
+    local f; f="$(formatter_path)"
+    if [ -n "$f" ]; then echo "[setup]   gnatformat  ok ($f)"; return 0; fi
+    echo "[setup]   gnatformat  not installed (optional): alr install gnatformat_bin"
+    [ "${1:-}" = --check ] && return 0
+    command -v alr >/dev/null || { echo "[setup]   (Alire's alr installs it: see QUICKSTART.md step 1)"; return 1; }
+    case "$(uname -s)" in
+        Linux|Darwin) ;;
+        *) echo "[setup]   (no binary release for this system: 'alr install gnatformat' builds it)"; return 1 ;;
+    esac
+    echo "[setup] installing gnatformat: alr -n install gnatformat_bin"
+    alr -n install gnatformat_bin || { echo "[setup] could not install gnatformat"; return 1; }
+    echo "[setup]   gnatformat  ok ($(formatter_path))"
+}
 
 cmd_setup_toolchain () {   # [--check]
     local check=0
@@ -825,6 +849,7 @@ cmd_setup_toolchain () {   # [--check]
         echo "[setup]   xtensa-dynconfig plugin  missing"
     fi
     if [ "$check" = 1 ]; then
+        cmd_setup_formatter --check
         cmd_setup_clipboard --check
         [ ${#missing[@]} -eq 0 ] && [ -f "$dyncfg" ] && { echo "[setup] ready"; return 0; }
         echo "[setup] not ready: run './x setup-toolchain'"; return 1
@@ -864,8 +889,11 @@ cmd_setup_toolchain () {   # [--check]
     [ -x "$gcc" ] || die "no xtensa-esp32-elf-gcc in $ESP32S3_GNAT_XTENSA_BIN"
     dynconfig_le "$gcc" || die "$gcc does not produce little-endian ESP32-S3 objects with $XTENSA_GNU_CONFIG"
     echo "[setup] xtensa GNAT + dynconfig: little-endian ESP32-S3 objects"
-    #  Optional, so never a reason to fail the set-up; installed only on a yes
-    #  (here on a terminal, or Turbo Ada's offer after it).
+    #  Optional, so never a reason to fail the set-up.  gnatformat comes from
+    #  Alire, into the user's own ~/.alire/bin; the clipboard helper is a
+    #  system package, so only on a yes (here on a terminal, or Turbo Ada's
+    #  offer after it).
+    cmd_setup_formatter || true
     cmd_setup_clipboard --ask || true
     echo "[setup] ready"
 }
@@ -1546,6 +1574,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     config|cfg)         cmd_config "$@" ;;
     setup-toolchain)    cmd_setup_toolchain "$@" ;;
     setup-clipboard)    cmd_setup_clipboard "$@" ;;
+    setup-formatter)    cmd_setup_formatter "$@" ;;
     get-debug-tools)    cmd_get_debug_tools "$@" ;;
     get-openocd)        cmd_get_openocd "$@" ;;
     get-gdb)            cmd_get_gdb "$@" ;;

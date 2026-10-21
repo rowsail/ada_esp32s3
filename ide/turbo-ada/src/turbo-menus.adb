@@ -54,6 +54,7 @@ package body Turbo.Menus is
       I ("~P~aste", Cmd_Paste, "Shift-Ins"),
       I ("C~l~ear", Cmd_Clear, "Ctrl-Del"),
       I ("~S~elect all", Cmd_Select_All, "Ctrl-A"),
+      I ("~F~ormat", Cmd_Format),
       Sep,
       I ("Complete ~w~ord", Cmd_Complete, "Ctrl-Space"),
       I ("S~h~ow clipboard", Cmd_Show_Clipboard)];

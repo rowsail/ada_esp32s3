@@ -14,7 +14,7 @@ package Turbo.Commands is
       Cmd_Shell, Cmd_Quit,
       --  Edit
       Cmd_Undo, Cmd_Redo, Cmd_Cut, Cmd_Copy, Cmd_Paste, Cmd_Clear,
-      Cmd_Select_All, Cmd_Show_Clipboard,
+      Cmd_Select_All, Cmd_Format, Cmd_Show_Clipboard,
       --  Search
       Cmd_Find, Cmd_Replace, Cmd_Search_Again, Cmd_Goto_Line,
       Cmd_Prev_Msg, Cmd_Next_Msg, Cmd_Find_Spec_Body,

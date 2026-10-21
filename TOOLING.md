@@ -32,6 +32,7 @@ parts (language intelligence, the IDF-free build) already live in ALS + `./x`.
 ./x config  <example> psram-size <SIZE>  # (rebuild the bootloader for it to take effect)
 ./x get-debug-tools               # fetch the pinned OpenOCD + s3 GDB (debug only)
 ./x setup-clipboard               # Turbo Ada's system clipboard: xclip / wl-clipboard (sudo)
+./x setup-formatter               # gnatformat for Turbo Ada's Edit | Format (alr; setup-toolchain does it)
 ./x debug   <example>             # on-chip debug: OpenOCD + GDB on app.elf
 ./x install-ide | install-vim     # drop the editor integration into place
 ./x docs                          # regenerate libs/esp32s3_hal/docs/HAL_Reference.*

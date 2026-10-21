@@ -63,6 +63,18 @@ OPT
 [ "$(cat "$W/clip")" = "procedure Demo is" ]
 echo "clipboard: ok"
 
+# Edit | Format, with gnatformat itself (no language server).
+FMT="$(command -v gnatformat || { [ -x "$HOME/.alire/bin/gnatformat" ] && echo "$HOME/.alire/bin/gnatformat"; } || true)"
+if [ -n "$FMT" ]; then
+    cp messy.adb "$W/src/messy.adb"
+    echo "lsp.enabled=0" > "$W/.turbo_ada"
+    "$CLI" -C "$W" ui src/messy.adb --script "$HERE/format.txt"
+    (cd "$W/src" && "$FMT" --check --no-project messy.adb)
+    echo "format: ok"
+else
+    echo "format: skipped (no gnatformat)"
+fi
+
 if ! command -v gdb >/dev/null; then
     echo "debug: skipped (no gdb)"
     exit 0

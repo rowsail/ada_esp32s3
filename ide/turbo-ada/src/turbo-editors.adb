@@ -155,6 +155,9 @@ package body Turbo.Editors is
    function Has_Selection (E : Editor) return Boolean is
      (E.Has_Sel and then E.Sel_A /= E.Sel_B);
 
+   function Selection_Start (E : Editor) return Position is (Sel_Start (E));
+   function Selection_End (E : Editor) return Position is (Sel_End (E));
+
    function Selected_Text (E : Editor) return Wide_Wide_String is
      (if Has_Selection (E) then E.Buf.Text (Sel_Start (E), Sel_End (E)) else "");
 
@@ -231,6 +234,9 @@ package body Turbo.Editors is
    function Line_Text (E : Editor; N : Positive) return Wide_Wide_String is
      (E.Buf.Line (Positive'Min (N, E.Buf.Line_Count)));
    function Language (E : Editor) return Turbo.Syntax.Language is (E.Lang);
+   function Text (E : Editor; From, To : Position) return Wide_Wide_String is
+     (E.Buf.Text (From, To));
+   function Last_Position (E : Editor) return Position is (E.Buf.Last_Position);
 
    --  View
 

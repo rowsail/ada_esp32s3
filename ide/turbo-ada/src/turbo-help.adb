@@ -112,6 +112,11 @@ package body Turbo.Help is
       & "  {Ctrl-K C} / {Ctrl-K V}    copy / move the block to the cursor" & LF
       & "  {Ctrl-K Y} / {Ctrl-K H}    delete / hide the block" & LF
       & "  {Ctrl-K I} / {Ctrl-K U}    indent / outdent the block" & LF
+      & "  Edit | Format lays out the selection, or the whole file, the" & LF
+      & "  way gnatformat does: the language server's (with the project's" & LF
+      & "  Format settings) when it runs, else gnatformat itself (Project |" & LF
+      & "  Set up ESP32-S3 toolchain installs it).  A selection grows to" & LF
+      & "  the statements or declarations it touches.  Alt-BkSp undoes it." & LF
       & "  Cut, copy and paste use the system clipboard (wl-copy, xclip or" & LF
       & "  xsel, pbcopy, PowerShell), in the editor and in dialog fields." & LF
       & "  Copies also go to the terminal (OSC 52), which reaches your own" & LF
