@@ -4,6 +4,8 @@
 --  project and runs the tool that already knows how to build each:
 --
 --    SDK example  inside the ada_esp32s3 repository: ./x <verb> <example>
+--                 (ESP32-S3), or one of its libraries' host test suites,
+--                 libs/<lib>/test/<suite> (native: built for this machine)
 --    Standalone   an esp32-ada project (build.sh + app.gpr): esp32-ada <verb>
 --    Alire crate  any other alire.toml: alr build / alr run / ...
 --
@@ -28,6 +30,15 @@ package Turbo.Projects is
 
    subtype String_List is Turbo.Dialogs.String_List;
 
+   type Target_Kind is (Target_Esp32s3, Target_Native);
+
+   function Target return Target_Kind;
+   --  What the project builds for: an SDK example or esp32-ada project for
+   --  the ESP32-S3; a host test suite or an ordinary Alire crate for this
+   --  machine.  It follows from the project; there is nothing to set.
+
+   function Target_Image return String;   --  "ESP32-S3" / "native"
+
    procedure Detect (Start_Dir : String);
    --  Work out the project from a directory (normally the current one).
 
@@ -46,6 +57,12 @@ package Turbo.Projects is
    function Example_Profile (Example : String) return String;
    function Example return String;
    procedure Set_Example (Example : String);
+
+   --  SDK host test suites (native)
+
+   function Host_Suites return String_List;  --  suite names, sorted
+   function Suite return String;              --  "" when an example is open
+   procedure Set_Suite (Suite : String);
 
    --  Target options
 

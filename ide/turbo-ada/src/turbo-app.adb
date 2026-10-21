@@ -43,6 +43,7 @@ package body Turbo.App is
    use type Turbo.Viewers.Viewer_Access;
    use type Turbo.Dialogs.Answer;
    use type Turbo.Syntax.Language;
+   use type Turbo.Projects.Target_Kind;
    use type Ada.Directories.File_Kind;
 
    package Dlg renames Turbo.Dialogs;
@@ -383,8 +384,9 @@ package body Turbo.App is
            else Prj.Name
              & (if Prj.Kind = Prj.SDK_Example and then Prj.Example /= ""
                 then " (" & (if Prj.Profile /= "" then Prj.Profile
-                             else Prj.Example_Profile (Prj.Example)) & ")"
-                else "")
+                             else Prj.Example_Profile (Prj.Example)) & ", ESP32-S3)"
+                elsif Prj.Kind = Prj.Standalone then " (ESP32-S3)"
+                else " (native)")
              & " ")
         & (if LSP.Status_Text = "" then "" else "| " & LSP.Status_Text & " ");
       Diag  : constant String :=
@@ -692,6 +694,7 @@ package body Turbo.App is
                Current := To_Unbounded_String (Doing (L));
             elsif Current = Null_Unbounded_String
               and then Ada.Strings.Fixed.Trim (L, Ada.Strings.Both) /= ""
+              and then (L'Length < 3 or else L (L'First .. L'First + 2) /= "@x ")
             then
                Current := To_Unbounded_String (Ada.Strings.Fixed.Trim (L, Ada.Strings.Both));
             end if;
@@ -1043,7 +1046,8 @@ package body Turbo.App is
       if not Server_Wanted or else LSP.Is_Running
         or else To_String (Tried_For) = Project_Key
         or else Prj.Kind = Prj.No_Project
-        or else (Prj.Kind = Prj.SDK_Example and then Prj.Example = "")
+        or else (Prj.Kind = Prj.SDK_Example and then Prj.Example = ""
+                 and then Prj.Suite = "")
       then
          return;
       end if;
@@ -1892,24 +1896,39 @@ package body Turbo.App is
    begin
       if Prj.Kind = Prj.SDK_Example then
          declare
-            Names : constant String_List := Prj.Examples;
-            Shown : String_List;
-            Index : Positive := 1;
+            --  The examples (built for the ESP32-S3), then the libraries'
+            --  host test suites (built natively).
+            Names  : constant String_List := Prj.Examples;
+            Suites : constant String_List := Prj.Host_Suites;
+            Shown  : String_List;
+            Index  : Positive := 1;
+            function Pad (N : String) return String is
+              (N & (1 .. Integer'Max (1, 26 - N'Length) => ' '));
          begin
             for K in 1 .. Natural (Names.Length) loop
                declare
                   N : constant String := Names (K);
                begin
-                  Shown.Append (N & (1 .. Integer'Max (1, 30 - N'Length) => ' ')
-                                & Prj.Example_Profile (N));
+                  Shown.Append (Pad (N) & "ESP32-S3, " & Prj.Example_Profile (N));
                   if N = Prj.Example then
                      Index := K;
                   end if;
                end;
             end loop;
-            if Dlg.Choose ("Open Project", "~E~xamples", Shown, Index, 46, "~O~pen")
+            for K in 1 .. Natural (Suites.Length) loop
+               Shown.Append (Pad (Suites (K)) & "native (host test)");
+               if Suites (K) = Prj.Suite then
+                  Index := Natural (Names.Length) + K;
+               end if;
+            end loop;
+            if Dlg.Choose ("Open Project", "~E~xamples and host tests", Shown, Index, 50,
+                           "~O~pen")
             then
-               Prj.Set_Example (Names (Index));
+               if Index <= Natural (Names.Length) then
+                  Prj.Set_Example (Names (Index));
+               else
+                  Prj.Set_Suite (Suites (Index - Natural (Names.Length)));
+               end if;
                if Prj.Main_Source /= "" then
                   Open_File (Prj.Main_Source);
                end if;
@@ -1997,6 +2016,7 @@ package body Turbo.App is
    begin
       Append (T, "# Project" & LF);
       Append (T, "  Kind:      {" & Prj.Kind_Image & "}" & LF);
+      Append (T, "  Target:    " & Prj.Target_Image & LF);
       Append (T, "  Name:      " & Prj.Name & LF);
       Append (T, "  Directory: " & Prj.Dir & LF);
       if Prj.Root /= Prj.Dir then
@@ -2030,6 +2050,12 @@ package body Turbo.App is
         [+"", +"light-tasking", +"embedded", +"full"];
       Cur : Positive := 1;
    begin
+      if Prj.Target = Prj.Target_Native then
+         Dlg.Message_Box ("Target", Prj.Name & " builds natively, for this machine:"
+                          & Character'Val (10)
+                          & "there is no serial port or runtime profile to set.");
+         return;
+      end if;
       for K in Profiles'Range loop
          if Profiles (K).all = Prj.Profile then
             Cur := K;

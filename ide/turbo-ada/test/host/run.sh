@@ -36,3 +36,8 @@ if [ "$OUT" != "$EXPECT" ]; then
     exit 1
 fi
 echo "machine_filter: ok"
+
+# ./x env names the target, and a suite's environment is the native one.
+(cd "$SDK" && ./x env dns_host 2>/dev/null | grep -qx 'TARGET=native') \
+    || { echo "FAIL  ./x env dns_host is not native"; exit 1; }
+echo "x env (native suite): ok"

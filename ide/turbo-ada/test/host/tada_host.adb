@@ -322,10 +322,28 @@ procedure Tada_Host is
       Check (Locate_Source ("main.adb") /= "", "a source found in the project");
       Check (not Examples.Is_Empty, "the SDK lists its examples");
 
+      --  A library's host test suite: the same SDK, built natively.
+      Detect (SDK & "/libs/esp32s3_hal/test/dns_host");
+      Check (Kind = SDK_Example and then Suite = "dns_host" and then Example = ""
+             and then Target = Target_Native, "inside a host suite: that suite, native");
+      Check (Command_For (Act_Build) = "./x --machine test host dns_host", "suite build");
+      Check (Command_For (Act_Env) = "./x env dns_host", "suite environment");
+      Check (Command_For (Act_Flash) = "" and then Command_For (Act_Monitor) = "",
+             "nothing to flash natively");
+      Check (Main_Source = SDK & "/libs/esp32s3_hal/test/dns_host/dns_host.adb",
+             "the suite's main from its .gpr");
+      Check (Host_Suites.Contains ("chain_host"), "suites from every library");
+      Set_Example ("gpio0_blink");
+      Check (Suite = "" and then Target = Target_Esp32s3
+             and then Command_For (Act_Build) = "./x --machine build gpio0_blink",
+             "choosing an example leaves the suite");
+      Set_Suite ("p384_host");
+      Check (Target = Target_Native and then Name = "p384_host", "and back");
+
       --  This IDE's own crate inside the SDK is a crate, not the SDK.
       Detect (SDK & "/ide/turbo-ada");
-      Check (Kind = Alire_Crate and then Name = "turbo-ada",
-             "a crate inside the SDK repository is that crate");
+      Check (Kind = Alire_Crate and then Name = "turbo-ada" and then Target = Target_Native,
+             "a crate inside the SDK repository is that crate, native");
    end Project_Tests;
 
 begin

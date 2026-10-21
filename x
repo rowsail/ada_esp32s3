@@ -17,7 +17,7 @@
 #    ./x run     <example> [-p PORT] [-P PROF]  build + flash + monitor
 #    ./x monitor [-p PORT]             open the serial console (115200)
 #    ./x clean   [<example>]           remove build artifacts (all if omitted)
-#    ./x test    [host|lib|examples]  everything checkable without a board:
+#    ./x test    [host [SUITE]|lib|examples]  everything checkable without a board:
 #                                     host suites, the libraries on all three
 #                                     runtime profiles (warnings are failures),
 #                                     and a build of every example
@@ -49,8 +49,9 @@
 #    ./x install-vim                   symlink the Vim/Neovim plugin (auto-updates on git pull)
 #    ./x turbo   [<example>] [FILE...] Turbo Ada: the Turbo C++ style text-mode IDE
 #                                     (ide/turbo-ada; built on first use)
-#    ./x env     <example> [-P PROF]   KEY=VALUE lines: the environment a compile of
-#                                     the example needs (PATH, GPR_PROJECT_PATH, ...)
+#    ./x env     <example|SUITE> [-P PROF]   KEY=VALUE lines: the environment a
+#                                     compile of the example (ESP32-S3) or of a host
+#                                     test suite (native) needs (PATH, GPR_FILE, ...)
 #    ./x --machine <verb> ...          the verb's output with @x lines for IDEs
 #                                     (stages, diagnostics, artifacts, result)
 #    ./x docs                          build the HAL API reference PDF (libs/esp32s3_hal/docs/)
@@ -112,7 +113,25 @@ resolve () {     # accept short or full name -> full dir name (or die)
     else die "no such example: $n (try './x list')"; fi
 }
 
-short () { echo "${1#esp32s3_}"; }   # full dir -> short label (esp32s3_jorvik_profile_test -> jorvik_profile_test)
+short () { echo "${1#esp32s3_}"; }
+
+# -- host test suites (the native side) ---------------------------------------
+#  libs/<lib>/test/<suite>/ with a run.sh: the library code built for the PC
+#  with the native GNAT.  Named by <suite> (the directory names are unique).
+host_suites () {   # every suite dir, sorted
+    find "$ROOT/libs" -path '*/test/*/run.sh' 2>/dev/null | sort | while read -r r; do
+        dirname "$r"
+    done
+}
+resolve_suite () {   # $1 = suite name (or libs/.../test/<suite>) -> its dir, or nothing
+    local n="${1%/}" d
+    n="${n##*/}"
+    [ -n "$n" ] || return 0
+    for d in $(host_suites); do
+        [ "$(basename "$d")" = "$n" ] && { echo "$d"; return 0; }
+    done
+    return 0
+}   # full dir -> short label (esp32s3_jorvik_profile_test -> jorvik_profile_test)
 
 # -- serial monitor -----------------------------------------------------------
 monitor_tool () {  # pick the first available serial console for $1=port
@@ -934,13 +953,18 @@ cmd_test () {
     }
 
     #  Host suites: every libs/*/test/*/run.sh, Turbo Ada's, plus the bare-boot
-    #  heap test.
+    #  heap test.  `./x test host SUITE` runs just that one.
+    local only=""
+    [ "$what" = host ] && only="${2:-}"
     if [ "$what" = all ] || [ "$what" = host ]; then
         echo "== host test suites =="
         local r
         for r in $(find "$ROOT/libs" "$ROOT/ide/turbo-ada" -path '*/test/*/run.sh' | sort) \
                  "$ROOT/examples/common/bare/boot/test/run.sh"; do
             [ -f "$r" ] || continue
+            if [ -n "$only" ] && [ "$(basename "$(dirname "$r")")" != "${only##*/}" ]; then
+                continue
+            fi
             run_one "$(echo "${r#$ROOT/}" | sed 's|/run.sh$||')" bash "$r"
         done
     fi
@@ -1144,11 +1168,30 @@ app_env () {   # $1 = project dir, $2 = profile (auto = the project's build.sh)
         printf 'GPR_PROJECT_PATH=%s\n' "$GPR_PROJECT_PATH"
         printf 'XTENSA_GNU_CONFIG=%s\n' "$XTENSA_GNU_CONFIG"
         printf 'ESP32S3_RTS_PROFILE=%s\n' "$prof"
+        printf 'TARGET=esp32s3\n'
         printf 'GPR_FILE=%s\n' "$gpr"
         printf 'PROJECT_DIR=%s\n' "$dir"
     )
 }
-cmd_env () {   # <example> [-P PROF]
+suite_env () {   # $1 = suite dir: the native toolchain first, the suite's project
+    local dir="$1" gpr g
+    gpr=""
+    for g in "$dir"/*.gpr; do [ -f "$g" ] && { gpr="$g"; break; }; done
+    [ -n "$gpr" ] || die "no .gpr in $dir"
+    (
+        . "$ROOT/tools/sdk-env.sh"
+        esp32s3_toolchain_on_path >&2
+        printf 'PATH=%s\n' "$ESP32S3_GNAT_NATIVE_BIN:$ESP32S3_GPRBUILD_BIN:$PATH"
+        printf 'TARGET=native\n'
+        printf 'GPR_FILE=%s\n' "$gpr"
+        printf 'PROJECT_DIR=%s\n' "$dir"
+    )
+}
+cmd_env () {   # <example|SUITE> [-P PROF]
+    local s; s="$(resolve_suite "${1:-}")"
+    if [ -n "$s" ] && [ ! -d "$EXROOT/${1:-}" ] && [ ! -d "$EXROOT/esp32s3_${1:-}" ]; then
+        suite_env "$s"; return
+    fi
     local e prof="auto"; e="$(resolve "${1:-}")"; shift || true
     while [ $# -gt 0 ]; do case "$1" in -P|--profile) prof="$2"; shift 2;; *) shift;; esac; done
     valid_profile "$prof"

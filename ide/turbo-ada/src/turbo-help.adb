@@ -122,6 +122,14 @@ package body Turbo.Help is
       & "  {Alire crate}   any other alire.toml: alr build / alr run /" & LF
       & "                  alr test / alr clean." & LF
       & LF
+      & "# Native and ESP32-S3" & LF
+      & "The target follows the project.  SDK examples and esp32-ada" & LF
+      & "projects build for the ESP32-S3.  The libraries' host test suites" & LF
+      & "(libs/<lib>/test/<suite>, listed after the examples in Project |" & LF
+      & "Open project) and Alire crates build natively, for this machine:" & LF
+      & "F9 runs ./x test host <suite>, Ctrl-F9 its run.sh, and Alt-F9 and" & LF
+      & "the language server use the native compiler." & LF
+      & LF
       & "# Templates" & LF
       & "Each command is a template (Options | Commands).  In them:" & LF
       & LF

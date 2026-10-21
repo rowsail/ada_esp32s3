@@ -34,11 +34,21 @@ raw-terminal shim), and it adds **no build logic of its own**: like the VS Code
 and Vim integrations it drives the commands that already know how to build
 each kind of project.
 
-| Project (found from the directory you start in) | Build / run / flash with |
-|---|---|
-| an example inside this SDK repository | `./x build <example>`, `./x run`, `./x flash`, ... |
-| a standalone project (`esp32-ada init`: `build.sh` + `app.gpr`) | `esp32-ada build`, `run`, `flash`, ... |
-| any other Alire crate (`alire.toml`) | `alr build`, `alr run`, `alr test`, `alr clean` |
+| Project (found from the directory you start in) | Target | Build / run / flash with |
+|---|---|---|
+| an example inside this SDK repository | ESP32-S3 | `./x build <example>`, `./x run`, `./x flash`, ... |
+| a library's host test suite (`libs/<lib>/test/<suite>`) | native | `./x test host <suite>`; Run is its `run.sh` |
+| a standalone project (`esp32-ada init`: `build.sh` + `app.gpr`) | ESP32-S3 | `esp32-ada build`, `run`, `flash`, ... |
+| any other Alire crate (`alire.toml`) | native | `alr build`, `alr run`, `alr test`, `alr clean` |
+
+The target follows the project, so there is nothing to switch: Project | Open
+project in the SDK lists the examples (ESP32-S3) and the host test suites
+(native) together, and the status line shows which is open. Native means code
+written to run on this machine: a firmware example cannot be built natively,
+since it uses the bare-metal runtime (`System.BB`), but the libraries' logic
+is built and run natively exactly as their host tests already do, with
+Alt-F9, the language server and go-to-definition into the HAL all working
+against the native toolchain.
 
 Compile (Alt-F9) and the language server also need the project's compile
 environment — the toolchain on `PATH`, `GPR_PROJECT_PATH`, the xtensa core

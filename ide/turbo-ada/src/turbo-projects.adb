@@ -27,9 +27,10 @@ package body Turbo.Projects is
    The_Root    : Unbounded_String;
    The_Dir     : Unbounded_String;
    The_Example : Unbounded_String;
+   The_Suite   : Unbounded_String;
    The_Port    : Unbounded_String;
    The_Profile : Unbounded_String;
-   Templates   : array (Action) of Unbounded_String;  --  "" = default
+   Templates   : array (Target_Kind, Action) of Unbounded_String;  --  "" = default
    Options     : Option_Maps.Map;
    Desktop     : String_List;
    Sources     : Path_Maps.Map;
@@ -56,13 +57,26 @@ package body Turbo.Projects is
    function Root return String is (To_String (The_Root));
    function Dir return String is (To_String (The_Dir));
    function Example return String is (To_String (The_Example));
+   function Suite return String is (To_String (The_Suite));
+
+   function Target return Target_Kind is
+     (if (The_Kind = SDK_Example and then The_Suite /= Null_Unbounded_String)
+        or else The_Kind = Alire_Crate or else The_Kind = No_Project
+      then Target_Native else Target_Esp32s3);
+
+   function Target_Image return String is
+     (case Target is
+         when Target_Esp32s3 => "ESP32-S3",
+         when Target_Native  => "native");
    function Port return String is (To_String (The_Port));
    function Profile return String is (To_String (The_Profile));
 
    function Kind_Image return String is
      (case The_Kind is
          when No_Project  => "no project",
-         when SDK_Example => "ESP32-S3 SDK example",
+         when SDK_Example =>
+           (if The_Suite /= Null_Unbounded_String then "ESP32-S3 SDK host test (native)"
+            else "ESP32-S3 SDK example"),
          when Standalone  => "esp32-ada project",
          when Alire_Crate => "Alire crate");
 
@@ -71,7 +85,8 @@ package body Turbo.Projects is
       case The_Kind is
          when No_Project  => return "";
          when SDK_Example =>
-            return (if Example = "" then "(no example chosen)" else Example);
+            return (if Suite /= "" then Suite
+                    elsif Example = "" then "(no example chosen)" else Example);
          when others =>
             return Simple_Name (Dir);
       end case;
@@ -184,14 +199,79 @@ package body Turbo.Projects is
 
    procedure Set_Example (Example : String) is
    begin
-      if Example /= To_String (The_Example) then
+      if Example /= To_String (The_Example) or else The_Suite /= Null_Unbounded_String then
          Forget_Environment;
       end if;
       The_Example := To_Unbounded_String (Example);
+      if Example /= "" then
+         The_Suite := Null_Unbounded_String;
+      end if;
       if The_Kind = SDK_Example and then Example /= "" then
          The_Dir := To_Unbounded_String (Full_Example_Dir (Example));
       end if;
    end Set_Example;
+
+   function Suite_Dirs return String_List is
+   --  libs/<lib>/test/<suite> for every suite with a run.sh, sorted.
+      Result : String_List;
+      Sorted : Option_Maps.Map;
+      L, T   : Search_Type;
+      E, F   : Directory_Entry_Type;
+   begin
+      if The_Kind /= SDK_Example or else not Exists_Dir (Compose (Root, "libs")) then
+         return Result;
+      end if;
+      Start_Search (L, Compose (Root, "libs"), "", [Directory => True, others => False]);
+      while More_Entries (L) loop
+         Get_Next_Entry (L, E);
+         declare
+            Test : constant String := Compose (Full_Name (E), "test");
+         begin
+            if Simple_Name (E) /= "." and then Simple_Name (E) /= ".." and then Exists_Dir (Test)
+            then
+               Start_Search (T, Test, "", [Directory => True, others => False]);
+               while More_Entries (T) loop
+                  Get_Next_Entry (T, F);
+                  if Exists_File (Compose (Full_Name (F), "run.sh")) then
+                     Sorted.Include (Simple_Name (F), Full_Name (F));
+                  end if;
+               end loop;
+               End_Search (T);
+            end if;
+         end;
+      end loop;
+      End_Search (L);
+      for C in Sorted.Iterate loop
+         Result.Append (Option_Maps.Element (C));
+      end loop;
+      return Result;
+   exception
+      when others => return Result;
+   end Suite_Dirs;
+
+   function Host_Suites return String_List is
+      Result : String_List;
+   begin
+      for D of Suite_Dirs loop
+         Result.Append (Simple_Name (D));
+      end loop;
+      return Result;
+   end Host_Suites;
+
+   procedure Set_Suite (Suite : String) is
+   begin
+      for D of Suite_Dirs loop
+         if Simple_Name (D) = Suite then
+            if Suite /= To_String (The_Suite) then
+               Forget_Environment;
+            end if;
+            The_Suite := To_Unbounded_String (Suite);
+            The_Example := Null_Unbounded_String;
+            The_Dir := To_Unbounded_String (D);
+            return;
+         end if;
+      end loop;
+   end Set_Suite;
 
    procedure Set_Port (Port : String) is
    begin
@@ -213,15 +293,48 @@ package body Turbo.Projects is
       The_Root := Null_Unbounded_String;
       The_Dir := Null_Unbounded_String;
       The_Example := Null_Unbounded_String;
+      The_Suite := Null_Unbounded_String;
       The_Port := Null_Unbounded_String;
       The_Profile := Null_Unbounded_String;
-      Templates := [others => Null_Unbounded_String];
+      Templates := [others => [others => Null_Unbounded_String]];
       Options.Clear;
       Desktop.Clear;
       Sources.Clear;
       Scanned := False;
       Forget_Environment;
    end Reset;
+
+   function Suite_Of (Start, SDK : String) return String is
+   --  The suite name when Start is in SDK/libs/<lib>/test/<suite>[/...].
+      Libs : constant String := SDK & "/libs/";
+   begin
+      if Start'Length <= Libs'Length
+        or else Start (Start'First .. Start'First + Libs'Length - 1) /= Libs
+      then
+         return "";
+      end if;
+      declare
+         Rest  : constant String := Start (Start'First + Libs'Length .. Start'Last) & "/";
+         S1    : constant Natural := Ada.Strings.Fixed.Index (Rest, "/");
+         After : constant String := Rest (S1 + 1 .. Rest'Last);
+      begin
+         if After'Length > 5 and then After (After'First .. After'First + 4) = "test/" then
+            declare
+               Name_Part : constant String := After (After'First + 5 .. After'Last);
+               S2        : constant Natural := Ada.Strings.Fixed.Index (Name_Part, "/");
+               Name      : constant String := Name_Part (Name_Part'First .. S2 - 1);
+            begin
+               if Name /= ""
+                 and then Exists_File (Libs & Rest (Rest'First .. S1 - 1) & "/test/" & Name
+                                       & "/run.sh")
+               then
+                  return Name;
+               end if;
+            end;
+         end if;
+      end;
+      return "";
+   end Suite_Of;
 
    procedure Detect (Start_Dir : String) is
       Start      : constant String := Full_Name (Start_Dir);
@@ -262,7 +375,13 @@ package body Turbo.Projects is
             --  Inside examples/<name>: that example.  Inside some other
             --  crate in the repository (this IDE, a tool): that crate.
             --  Anywhere else in the repository: the SDK, example to choose.
-            if Start'Length > Ex_Root'Length
+            if Suite_Of (Start, To_String (SDK)) /= "" then
+               --  Inside libs/<lib>/test/<suite>: that host test suite.
+               The_Kind := SDK_Example;
+               The_Root := SDK;
+               The_Dir := SDK;
+               Set_Suite (Suite_Of (Start, To_String (SDK)));
+            elsif Start'Length > Ex_Root'Length
               and then Start (Start'First .. Start'First + Ex_Root'Length - 1) = Ex_Root
             then
                declare
@@ -303,10 +422,14 @@ package body Turbo.Projects is
 
       declare
          Keep_Example : constant String := Example;
+         Keep_Suite   : constant String := Suite;
       begin
          Load_Options;
+         --  Where we started wins over what was open last time.
          if Keep_Example /= "" then
-            Set_Example (Keep_Example);     --  where we started wins
+            Set_Example (Keep_Example);
+         elsif Keep_Suite /= "" then
+            Set_Suite (Keep_Suite);
          end if;
       end;
    end Detect;
@@ -356,6 +479,19 @@ package body Turbo.Projects is
 
    function Default_Template (A : Action) return String is
    begin
+      if The_Kind = SDK_Example and then The_Suite /= Null_Unbounded_String then
+         --  A host test suite: the native toolchain, through the suite's own
+         --  run.sh (which builds, then runs it).
+         return
+           (case A is
+               when Act_Build   => "./x --machine test host {suite}",
+               when Act_Check   => Check_Template,
+               when Act_Env     => "./x env {suite}",
+               when Act_Run     => "bash {dir}/run.sh",
+               when Act_Test    => "./x --machine test host",
+               when Act_Analyze => "./x --machine analyze",
+               when others      => "");
+      end if;
       case The_Kind is
          when SDK_Example =>
             return
@@ -417,15 +553,15 @@ package body Turbo.Projects is
    end Default_Template;
 
    function Template (A : Action) return String is
-     (if Templates (A) = Null_Unbounded_String then Default_Template (A)
-      else To_String (Templates (A)));
+     (if Templates (Target, A) = Null_Unbounded_String then Default_Template (A)
+      else To_String (Templates (Target, A)));
 
    procedure Set_Template (A : Action; T : String) is
    begin
       if T = Default_Template (A) then
-         Templates (A) := Null_Unbounded_String;
+         Templates (Target, A) := Null_Unbounded_String;
       else
-         Templates (A) := To_Unbounded_String (T);
+         Templates (Target, A) := To_Unbounded_String (T);
       end if;
    end Set_Template;
 
@@ -473,6 +609,7 @@ package body Turbo.Projects is
       Sub ("{port_opt}", (if Port = "" then "" else " -p " & Port));
       Sub ("{profile_opt}", (if Profile = "" then "" else " -P " & Profile));
       Sub ("{example}", Example);
+      Sub ("{suite}", Suite);
       Sub ("{port}", Port);
       Sub ("{profile}", Profile);
       Sub ("{gpr}", Main_Gpr);
@@ -713,6 +850,39 @@ package body Turbo.Projects is
    function Main_Source return String is
       Src : constant String := Compose (Dir, "src");
    begin
+      if Suite /= "" then
+         --  The first name in the suite's "for Main use (...)".
+         declare
+            use Ada.Text_IO;
+            F    : File_Type;
+            Gpr  : constant String := Gpr_File;
+         begin
+            if Gpr /= "" then
+               Open (F, In_File, Gpr);
+               while not End_Of_File (F) loop
+                  declare
+                     L : constant String := Get_Line (F);
+                     M : constant Natural := Ada.Strings.Fixed.Index (L, "for Main use");
+                     Q : constant Natural :=
+                       (if M = 0 then 0 else Ada.Strings.Fixed.Index (L (M .. L'Last), """"));
+                     Q2 : constant Natural :=
+                       (if Q = 0 then 0 else Ada.Strings.Fixed.Index (L (Q + 1 .. L'Last), """"));
+                  begin
+                     if Q2 > Q + 1 and then Exists_File (Compose (Dir, L (Q + 1 .. Q2 - 1))) then
+                        Close (F);
+                        return Compose (Dir, L (Q + 1 .. Q2 - 1));
+                     end if;
+                  end;
+               end loop;
+               Close (F);
+            end if;
+         exception
+            when others =>
+               if Is_Open (F) then
+                  Close (F);
+               end if;
+         end;
+      end if;
       if Exists_File (Compose (Src, "main.adb")) then
          return Compose (Src, "main.adb");
       elsif Exists_File (Compose (Src, Simple_Name (Dir) & ".adb")) then
@@ -769,6 +939,8 @@ package body Turbo.Projects is
                begin
                   if K = "example" then
                      Set_Example (V);
+                  elsif K = "suite" then
+                     Set_Suite (V);
                   elsif K = "port" then
                      Set_Port (V);
                   elsif K = "profile" then
@@ -776,13 +948,19 @@ package body Turbo.Projects is
                   elsif K = "desktop" then
                      Desktop.Append (V);
                   elsif K'Length > 4 and then K (K'First .. K'First + 3) = "cmd." then
-                     for A in Action loop
-                        if Ada.Characters.Handling.To_Lower (Action'Image (A))
-                          = "act_" & K (K'First + 4 .. K'Last)
-                        then
-                           Templates (A) := To_Unbounded_String (V);
-                        end if;
-                     end loop;
+                     declare
+                        Native : constant Boolean :=
+                          K'Length > 11 and then K (K'First .. K'First + 10) = "cmd.native.";
+                        Name   : constant String :=
+                          (if Native then K (K'First + 11 .. K'Last) else K (K'First + 4 .. K'Last));
+                     begin
+                        for A in Action loop
+                           if Ada.Characters.Handling.To_Lower (Action'Image (A)) = "act_" & Name then
+                              Templates ((if Native then Target_Native else Target_Esp32s3), A) :=
+                                To_Unbounded_String (V);
+                           end if;
+                        end loop;
+                     end;
                   else
                      Options.Include (K, V);
                   end if;
@@ -810,22 +988,28 @@ package body Turbo.Projects is
       if Example /= "" then
          Put_Line (F, "example=" & Example);
       end if;
+      if Suite /= "" then
+         Put_Line (F, "suite=" & Suite);
+      end if;
       if Port /= "" then
          Put_Line (F, "port=" & Port);
       end if;
       if Profile /= "" then
          Put_Line (F, "profile=" & Profile);
       end if;
-      for A in Action loop
-         if Templates (A) /= Null_Unbounded_String then
-            declare
-               Img : constant String :=
-                 Ada.Characters.Handling.To_Lower (Action'Image (A));
-            begin
-               Put_Line (F, "cmd." & Img (Img'First + 4 .. Img'Last) & "="
-                         & To_String (Templates (A)));
-            end;
-         end if;
+      for T in Target_Kind loop
+         for A in Action loop
+            if Templates (T, A) /= Null_Unbounded_String then
+               declare
+                  Img : constant String :=
+                    Ada.Characters.Handling.To_Lower (Action'Image (A));
+               begin
+                  Put_Line (F, "cmd." & (if T = Target_Native then "native." else "")
+                            & Img (Img'First + 4 .. Img'Last) & "="
+                            & To_String (Templates (T, A)));
+               end;
+            end if;
+         end loop;
       end loop;
       for C in Options.Iterate loop
          Put_Line (F, Option_Maps.Key (C) & "=" & Option_Maps.Element (C));

@@ -171,11 +171,15 @@ verb's normal output with these lines added or rewritten, each starting `@x `:
 
 `./x env <example> [-P PROFILE]` (`esp32-ada env` in a standalone project)
 prints `KEY=VALUE` lines — `PATH`, `GPR_PROJECT_PATH`, `XTENSA_GNU_CONFIG`,
-`ESP32S3_RTS_PROFILE`, `GPR_FILE`, `PROJECT_DIR` — the environment in which
+`ESP32S3_RTS_PROFILE`, `TARGET=esp32s3`, `GPR_FILE`, `PROJECT_DIR` — the environment in which
 `gprbuild`, `gnatls` or the Ada Language Server can process the app's project
 directly, without `build.sh`: it runs the same set-up steps the build does
 (toolchain, dynconfig plugin, runtime generation) and nothing else. Turbo Ada
 uses it for its one-file check and its language server.
+
+Given a host test suite instead (`./x env dns_host`), it prints the native
+side: the native GNAT first on `PATH`, `TARGET=native`, and the suite's own
+project as `GPR_FILE`. `./x test host <suite>` runs that one suite.
 
 ### Machine-readable discovery (for plugin authors)
 
