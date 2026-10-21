@@ -12,7 +12,15 @@
  *             conhost and Windows Terminal), so keys and mouse arrive as the
  *             same escape sequences an xterm sends.  The code page is set to
  *             UTF-8 both ways.
+ *
+ *  And one more for the debugger: a pseudo-terminal for a native program
+ *  run under GDB, so its output is line-buffered and kept apart from GDB's
+ *  (POSIX only; Windows has none).
  */
+
+#if !defined (_WIN32) && !defined (_GNU_SOURCE)
+#define _GNU_SOURCE          /* posix_openpt, ptsname on glibc */
+#endif
 
 #ifdef _WIN32
 
@@ -193,11 +201,20 @@ int tada_term_take_resized (void)
 
 int tada_is_windows (void) { return 1; }
 
+int tada_pty_open (char *name, int max, int *slave)
+{
+    (void) name; (void) max;
+    *slave = -1;
+    return -1;
+}
+
 #else  /* POSIX */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
@@ -311,5 +328,28 @@ int tada_term_take_resized (void)
 }
 
 int tada_is_windows (void) { return 0; }
+
+/* A pseudo-terminal: the master's fd is returned, the slave's name put in
+   NAME, and the slave held open in *SLAVE so the master reads (blocking)
+   until the caller closes it and the program on it has gone.  */
+int tada_pty_open (char *name, int max, int *slave)
+{
+    int m = posix_openpt (O_RDWR | O_NOCTTY);
+    const char *n;
+    if (m < 0)
+        return -1;
+    if (grantpt (m) != 0 || unlockpt (m) != 0 || (n = ptsname (m)) == NULL
+        || (int) strlen (n) >= max) {
+        close (m);
+        return -1;
+    }
+    strcpy (name, n);
+    *slave = open (n, O_RDWR | O_NOCTTY);
+    if (*slave < 0) {
+        close (m);
+        return -1;
+    }
+    return m;
+}
 
 #endif

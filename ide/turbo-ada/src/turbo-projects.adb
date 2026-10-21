@@ -489,6 +489,9 @@ package body Turbo.Projects is
      (if not Has_Board then ""
       else (if The_Kind = Standalone then Esp32_Ada else "./x") & " get-debug-tools");
 
+   function Can_Debug return Boolean is
+     (Has_Board or else (Target = Target_Native and then The_Kind /= No_Project));
+
    function Setup_Command (Check_Only : Boolean := False) return String is
       Verb : constant String :=
         (if Check_Only then "setup-toolchain --check" else "--machine setup-toolchain");
@@ -942,6 +945,64 @@ package body Turbo.Projects is
    exception
       when others => return "";
    end Main_Source;
+
+   function Native_Executable return String is
+      Names : String_List;
+
+      procedure Add_Unit (Unit : String) is
+         Base : constant String :=
+           (if Ada.Strings.Fixed.Index (Unit, ".") > 0
+            then Unit (Unit'First .. Ada.Strings.Fixed.Index (Unit, ".", Ada.Strings.Backward) - 1)
+            else Unit);
+      begin
+         if Base /= "" and then not Names.Contains (Base) then
+            Names.Append (Base);
+         end if;
+      end Add_Unit;
+   begin
+      declare
+         use Ada.Text_IO;
+         F   : File_Type;
+         Gpr : constant String := Gpr_File;
+      begin
+         if Gpr /= "" then
+            Open (F, In_File, Gpr);
+            while not End_Of_File (F) loop
+               declare
+                  L  : constant String := Get_Line (F);
+                  M  : constant Natural := Ada.Strings.Fixed.Index (L, "for Main use");
+                  Q  : constant Natural :=
+                    (if M = 0 then 0 else Ada.Strings.Fixed.Index (L (M .. L'Last), """"));
+                  Q2 : constant Natural :=
+                    (if Q = 0 then 0 else Ada.Strings.Fixed.Index (L (Q + 1 .. L'Last), """"));
+               begin
+                  if Q2 > Q + 1 then
+                     Add_Unit (L (Q + 1 .. Q2 - 1));
+                  end if;
+               end;
+            end loop;
+            Close (F);
+         end if;
+      exception
+         when others =>
+            if Is_Open (F) then
+               Close (F);
+            end if;
+      end;
+      if Main_Source /= "" then
+         Add_Unit (Simple_Name (Main_Source));
+      end if;
+      for N of Names loop
+         for D of String_List'([Compose (Dir, "bin"), Dir, Compose (Dir, "obj")]) loop
+            if Exists_File (Compose (D, N)) then
+               return Compose (D, N);
+            end if;
+         end loop;
+      end loop;
+      return "";
+   exception
+      when others => return "";
+   end Native_Executable;
 
    function Gpr_File return String is
       S : Search_Type;

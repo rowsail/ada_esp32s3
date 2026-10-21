@@ -1,6 +1,7 @@
 with Ada.Calendar;
 with Ada.Containers.Vectors;
 with Ada.Strings.Fixed;
+with Interfaces.C;
 with GNAT.Expect;
 with GNAT.OS_Lib;
 
@@ -98,6 +99,10 @@ package body Turbo.GDB is
    Gdb_Up, Srv_Up, Con_Up : Boolean := False;
    Gdb_In : GNAT.OS_Lib.File_Descriptor := GNAT.OS_Lib.Invalid_FD;
 
+   --  A native program's terminal (Start_Native): read by Con_R.
+   Pty_Master, Pty_Slave : GNAT.OS_Lib.File_Descriptor := GNAT.OS_Lib.Invalid_FD;
+   Native : Boolean := False;
+
    The_State : Session_State := Off;
    Error_Msg : Unbounded_String;
    Srv_Log   : String_Vectors.Vector;     --  the server's last lines
@@ -114,6 +119,7 @@ package body Turbo.GDB is
    Captured    : Unbounded_String;
 
    function State return Session_State is (The_State);
+   function Is_Native return Boolean is (Native);
    function Last_Error return String is (To_String (Error_Msg));
 
    --  MI text
@@ -323,7 +329,7 @@ package body Turbo.GDB is
          end;
       end if;
       Stops.Append (S);
-      The_State := Stopped;
+      The_State := Stopped;      --  after an exit too: GDB is still there
    end Handle_Stop;
 
    procedure Handle_Line (L : String) is
@@ -443,7 +449,7 @@ package body Turbo.GDB is
          if Gdb_Q.Closed then
             The_State := Failed;
             Error_Msg := To_Unbounded_String ("GDB stopped");
-         elsif Srv_Q.Closed then
+         elsif not Native and then Srv_Q.Closed then
             The_State := Failed;
             Error_Msg := To_Unbounded_String ("OpenOCD stopped: " & Server_Tail);
          end if;
@@ -669,6 +675,12 @@ package body Turbo.GDB is
       end loop;
    end Start_Server;
 
+   Common_Settings : constant String_Vectors.Vector :=
+     ["-gdb-set mi-async on",
+      "-gdb-set pagination off",
+      "-gdb-set confirm off",
+      "-gdb-set print frame-arguments scalars"];
+
    procedure Start (Gdb, Elf, Dir : String; Ok : out Boolean) is
       Args : GNAT.OS_Lib.Argument_List :=
         [new String'("--interpreter=mi3"), new String'("-q"), new String'("-nx"),
@@ -685,16 +697,14 @@ package body Turbo.GDB is
          return;
       end if;
       Gdb_In := GNAT.Expect.Get_Input_Fd (Gdb_P);
+      Native := False;
       for C of String_Vectors.Vector'
-        (["-gdb-set mi-async on",
-          "-gdb-set pagination off",
-          "-gdb-set confirm off",
-          "-gdb-set print frame-arguments scalars",
-          --  The ESP32-S3 has two instruction and two data breakpoints;
+        (String_Vectors."&" (Common_Settings, String_Vectors.Vector'
+         [--  The ESP32-S3 has two instruction and two data breakpoints;
           --  saying so makes GDB refuse a third up front instead of failing
           --  when it resumes.
           "-gdb-set remote hardware-breakpoint-limit 2",
-          "-gdb-set remote hardware-watchpoint-limit 2"])
+          "-gdb-set remote hardware-watchpoint-limit 2"]))
       loop
          Command (C, Ok, Timeout => 15.0);
          if not Ok then
@@ -709,6 +719,74 @@ package body Turbo.GDB is
       Stops.Clear;                  --  that halt is not a stop of the program
    end Start;
 
+   function Pty_Open (Name : out Interfaces.C.char_array; Max : Interfaces.C.int;
+                      Slave : out Interfaces.C.int) return Interfaces.C.int
+     with Import, Convention => C, External_Name => "tada_pty_open";
+
+   procedure Start_Native (Gdb, Exe, Dir : String; Ok : out Boolean) is
+      Args : GNAT.OS_Lib.Argument_List :=
+        [new String'("--interpreter=mi3"), new String'("-q"), new String'("-nx"),
+         new String'("-cd=" & Dir), new String'(Exe)];
+   begin
+      Ok := False;
+      Stops.Clear;
+      Error_Msg := Null_Unbounded_String;
+      Spawn (Gdb_P, Gdb_Q, Gdb_R, Gdb, Args, Gdb_Up);
+      for A of Args loop
+         GNAT.OS_Lib.Free (A);
+      end loop;
+      if not Gdb_Up then
+         Error_Msg := To_Unbounded_String ("cannot start " & Gdb);
+         return;
+      end if;
+      Gdb_In := GNAT.Expect.Get_Input_Fd (Gdb_P);
+      Native := True;
+      for C of Common_Settings loop
+         Command (C, Ok, Timeout => 15.0);
+         if not Ok then
+            return;
+         end if;
+      end loop;
+      declare
+         use type Interfaces.C.int;
+         Name  : Interfaces.C.char_array (1 .. 256);
+         Slave : Interfaces.C.int;
+         M     : constant Interfaces.C.int := Pty_Open (Name, Name'Length, Slave);
+      begin
+         if M >= 0 then
+            Pty_Master := GNAT.OS_Lib.File_Descriptor (M);
+            Pty_Slave := GNAT.OS_Lib.File_Descriptor (Slave);
+            Command ("-inferior-tty-set " & Quote (Interfaces.C.To_Ada (Name)), Ok);
+            Con_Q.Clear;
+            Con_Q.Set_Closed (False);
+            Con_R.Start (Pty_Master);
+         end if;
+         --  Without one the program writes into GDB's own output, where
+         --  anything that is not an MI record is passed over.
+      end;
+      Ok := True;
+      The_State := Stopped;      --  loaded, not yet run
+   end Start_Native;
+
+   procedure Close_Pty is
+      use type GNAT.OS_Lib.File_Descriptor;
+      Deadline : constant Ada.Calendar.Time := Ada.Calendar.Clock + 2.0;
+   begin
+      if Pty_Master = GNAT.OS_Lib.Invalid_FD then
+         return;
+      end if;
+      --  With the program gone and our hold on the slave let go, the
+      --  master reads end-of-file and the reader is free again.
+      GNAT.OS_Lib.Close (Pty_Slave);
+      while not Con_Q.Closed and then Ada.Calendar.Clock < Deadline loop
+         delay 0.02;
+      end loop;
+      GNAT.OS_Lib.Close (Pty_Master);
+      Pty_Master := GNAT.OS_Lib.Invalid_FD;
+      Pty_Slave := GNAT.OS_Lib.Invalid_FD;
+      Con_Q.Clear;
+   end Close_Pty;
+
    procedure Reset_Halt (Ok : out Boolean) is
       Ignore : Unbounded_String;
    begin
@@ -718,7 +796,17 @@ package body Turbo.GDB is
       if Ok then
          Console_Command ("maintenance flush register-cache", Ignore, Ok);
       end if;
-      Drain_Gdb;
+      --  The halt is reported (*stopped) after the command's reply, and
+      --  not as a stop of the program: wait for it a moment, then drop it.
+      declare
+         Deadline : constant Ada.Calendar.Time := Ada.Calendar.Clock + 1.0;
+      begin
+         loop
+            Drain_Gdb;
+            exit when not Stops.Is_Empty or else Ada.Calendar.Clock > Deadline;
+            delay 0.02;
+         end loop;
+      end;
       Stops.Clear;
       if Ok then
          The_State := Stopped;
@@ -753,14 +841,20 @@ package body Turbo.GDB is
             end;
          end if;
          Command ("-break-delete", Ok, Timeout => 3.0);
-         Console_Command ("monitor reset run", Ignore, Ok, Timeout => 5.0);
-         Command ("-target-detach", Ok, Timeout => 3.0);
+         if Native then
+            Console_Command ("kill", Ignore, Ok, Timeout => 3.0);   --  fails when it has exited
+         else
+            Console_Command ("monitor reset run", Ignore, Ok, Timeout => 5.0);
+            Command ("-target-detach", Ok, Timeout => 3.0);
+         end if;
          Write_Gdb ("-gdb-exit");
       end if;
       Kill (Gdb_P, Gdb_Q, Gdb_Up, 2.0);
       Kill (Srv_P, Srv_Q, Srv_Up, 0.0);
       Kill (Con_P, Con_Q, Con_Up, 0.0);
+      Close_Pty;
       Stops.Clear;
+      Native := False;
       The_State := Off;
    end Stop;
 

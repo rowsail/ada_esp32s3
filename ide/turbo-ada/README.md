@@ -123,7 +123,8 @@ brown is brown.
   terminal is handed over; Ctrl-] leaves miniterm). Flash, Monitor, GDB
   console (a plain GDB prompt) and Kill OpenOCD separately; Alt-F5 shows the
   user screen.
-- **Debug** — Turbo C++'s integrated debugger, on the board, with its keys:
+- **Debug** — Turbo C++'s integrated debugger, on the board or natively, with
+  its keys:
   F7 trace into, F8 step over, F4 go to cursor, Ctrl-F9 run on, Ctrl-F2
   program reset, Ctrl-F8 toggle breakpoint (red lines, kept in `.turbo_ada`),
   Ctrl-F7 add watch (the Watch window, re-evaluated at every stop), Ctrl-F4
@@ -138,7 +139,14 @@ brown is brown.
   the chip's two hardware ones (they are patched into flash and taken out
   again when the session ends; if the IDE dies mid-session, re-flash).
   Needs OpenOCD and the ESP32-S3 GDB: the first session offers
-  `./x get-debug-tools`.
+  `./x get-debug-tools`. A native program (an Alire crate, a host test suite)
+  is debugged with the system's `gdb`: Make, then the program the project
+  file names as its main (from `bin/`, the project directory or `obj/`) run
+  on a pseudo-terminal whose output goes to the Output window; Ctrl-F2 ends
+  it. Paused inside the runtime or libc, the bar shows the nearest caller
+  with source, and F7/F8 first return to it. The program runs with no
+  arguments, so a suite whose `run.sh` passes some (or starts a server) runs
+  differently under the debugger.
 - **Project** — pick an SDK example, scaffold a new project (`./x new`,
   `esp32-ada init` or `alr init --bin`), edit `alire.toml` and the `.gpr`, see
   the board's flash/PSRAM sizes.

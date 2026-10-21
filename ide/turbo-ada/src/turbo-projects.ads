@@ -104,10 +104,17 @@ package Turbo.Projects is
    function Debug_Server_Command return String;
    function Debug_Info_Command return String;
    function Debug_Tools_Command return String;
+   function Can_Debug return Boolean;
    --  For the IDE's own debugger: OpenOCD alone, pinned to the board
    --  (./x debug-server), the GDB, ELF and Ada main to use (./x debug-info),
    --  and fetching OpenOCD + GDB (./x get-debug-tools).  "" for a project
-   --  with no board.
+   --  with no board.  Can_Debug: a board project, or a native one (the
+   --  system's gdb on Native_Executable).
+
+   function Native_Executable return String;
+   --  A native project's program, as its build left it: the first "for Main
+   --  use" unit of the project file (else the main source), looked for in
+   --  bin/, the project directory and obj/.  "" when there is none yet.
 
    function Setup_Command (Check_Only : Boolean := False) return String;
    --  The SDK's one-time toolchain set-up (./x setup-toolchain, or

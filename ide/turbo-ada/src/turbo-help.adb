@@ -29,7 +29,7 @@ package body Turbo.Help is
       & "  {Alt-F5}        User screen: what the last program printed" & LF
       & "  {Esc}           in the Compiling box: cancel the build" & LF
       & LF
-      & "# Debugging (on the board, as in Turbo C++)" & LF
+      & "# Debugging (as in Turbo C++)" & LF
       & "  {F7}            Trace into     {F8}  Step over" & LF
       & "  {F4}            Go to cursor   {Ctrl-F9}  Run on to a breakpoint" & LF
       & "  {Ctrl-F8}       Toggle breakpoint (a red line; kept with the project)" & LF
@@ -39,6 +39,8 @@ package body Turbo.Help is
       & "  {Ctrl-F3}       Call stack          {Alt-F5}   the program's output" & LF
       & "  With no session, F7, F8 and F4 build, flash and start one: OpenOCD" & LF
       & "  and GDB, the board reset and run to the Ada main (or the cursor)." & LF
+      & "  A native program (an Alire crate, a host test suite) is made and" & LF
+      & "  run under the system's gdb instead; Ctrl-F2 ends it." & LF
       & "  The cyan bar is where it stopped; while it runs, F7/F8/F4 pause" & LF
       & "  it.  Run | GDB console is the plain GDB prompt." & LF
       & LF

@@ -11,6 +11,7 @@ with Ada.Strings.Wide_Wide_Fixed;
 with Ada.Strings.Wide_Wide_Unbounded;
 with Ada.Unchecked_Deallocation;
 with Ada.Wide_Wide_Characters.Handling;
+with GNAT.OS_Lib;
 with Turbo.Alire;
 with Turbo.Buffers;
 with Turbo.Clipboard;
@@ -489,9 +490,9 @@ package body Turbo.App is
          when Cmd_Paste => return E /= null and then not Clipboard.Is_Empty;
          when Cmd_Make | Cmd_Build_All => return Can_Run (Prj.Act_Build);
          when Cmd_Run => return Can_Run (Prj.Act_Run) or else GDB.Is_Active;
-         when Cmd_Trace_Into | Cmd_Step_Over => return Prj.Debug_Server_Command /= "" or else GDB.Is_Active;
+         when Cmd_Trace_Into | Cmd_Step_Over => return Prj.Can_Debug or else GDB.Is_Active;
          when Cmd_Go_To_Cursor =>
-            return (Prj.Debug_Server_Command /= "" or else GDB.Is_Active)
+            return (Prj.Can_Debug or else GDB.Is_Active)
               and then E /= null and then E.Path /= "";
          when Cmd_Program_Reset => return GDB.Is_Active;
          when Cmd_Inspect | Cmd_Evaluate | Cmd_Call_Stack => return GDB.Is_Active;
@@ -3023,7 +3024,8 @@ package body Turbo.App is
       if not R.Ok then
          Debug_Message
            (To_String (R.Error)
-            & (if Ada.Strings.Fixed.Index (To_String (R.Error), "breakpoint") > 0
+            & (if not GDB.Is_Native
+                 and then Ada.Strings.Fixed.Index (To_String (R.Error), "breakpoint") > 0
                then Character'Val (10) & Character'Val (10)
                     & "The ESP32-S3 has two hardware breakpoints in flash code, and"
                     & Character'Val (10)
@@ -3054,13 +3056,79 @@ package body Turbo.App is
 
    type Start_Purpose is (To_Main, To_Location, Just_Run);
 
+   procedure Run_To (Purpose : Start_Purpose; Location : String; Run : String) is
+   --  A new session's breakpoints, then off it goes (Run: continue or run).
+      Ok : Boolean;
+   begin
+      Output_Win.Clear;
+      for B of Breakpoints loop
+         Insert_Breakpoint (B);
+      end loop;
+      case Purpose is
+         when To_Main =>
+            GDB.Command ("-break-insert -t " & GDB.Quote (To_String (Main_Symbol)), Ok);
+         when To_Location =>
+            GDB.Command ("-break-insert -t " & GDB.Quote (Location), Ok);
+         when Just_Run =>
+            null;
+      end case;
+      Resume (Run);
+      Shown_Context := Ctx_Other;
+   end Run_To;
+
+   function Start_Native_Session (Purpose : Start_Purpose; Location : String) return Boolean is
+   --  A native program: the system's gdb, no server, the program run anew.
+      use type GNAT.OS_Lib.String_Access;
+      LF  : constant Character := Character'Val (10);
+      Ok  : Boolean;
+      Gdb_Exe : GNAT.OS_Lib.String_Access := GNAT.OS_Lib.Locate_Exec_On_Path ("gdb");
+   begin
+      if Gdb_Exe = null then
+         Debug_Message ("Debugging a native program needs gdb on PATH" & LF
+                        & "(on Debian and Ubuntu: apt install gdb).");
+         return False;
+      end if;
+      Run_Job (Prj.Act_Build, "Make", Ok, Wait_Key => False, Is_Build => True);
+      if not Ok then
+         GNAT.OS_Lib.Free (Gdb_Exe);
+         return False;
+      end if;
+      declare
+         Exe : constant String := Prj.Native_Executable;
+      begin
+         if Exe = "" then
+            GNAT.OS_Lib.Free (Gdb_Exe);
+            Debug_Message ("The build left no program to debug: looked for the"
+                           & LF & "project file's main in bin/, " & Prj.Name & "/ and obj/.");
+            return False;
+         end if;
+         Dlg.Show_Busy ("Debugger", "Starting GDB ...");
+         Screen.Flush;
+         GDB.Start_Native (Gdb_Exe.all, Exe, Prj.Dir, Ok);
+         GNAT.OS_Lib.Free (Gdb_Exe);
+         if not Ok then
+            Debug_Message ("GDB did not start:" & LF & GDB.Last_Error);
+            GDB.Stop;
+            return False;
+         end if;
+         --  GDB knows an Ada program's main (it is not "main"): -exec-run
+         --  --start stops there.
+         Main_Symbol := To_Unbounded_String ("main");
+         Run_To ((if Purpose = To_Main then Just_Run else Purpose), Location,
+                 (if Purpose = To_Main then "-exec-run --start" else "-exec-run"));
+      end;
+      return GDB.Is_Active;
+   end Start_Native_Session;
+
    function Start_Session (Purpose : Start_Purpose; Location : String := "") return Boolean is
       LF    : constant Character := Character'Val (10);
       Lines : String_List;
       Gdb_Path, Elf : Unbounded_String;
       Ok    : Boolean;
    begin
-      if Prj.Debug_Server_Command = "" then
+      if Prj.Target = Prj.Target_Native and then Prj.Can_Debug then
+         return Start_Native_Session (Purpose, Location);
+      elsif Prj.Debug_Server_Command = "" then
          Debug_Message ("Debugging needs an ESP32-S3 program: an SDK example"
                         & LF & "(Project | Open project) or an esp32-ada project.");
          return False;
@@ -3125,43 +3193,104 @@ package body Turbo.App is
               ("stty -F " & Dev & " 115200 raw -echo 2>/dev/null; exec cat " & Dev, Prj.Root);
          end if;
       end;
-      Output_Win.Clear;
-      for B of Breakpoints loop
-         Insert_Breakpoint (B);
-      end loop;
-      case Purpose is
-         when To_Main =>
-            GDB.Command ("-break-insert -t " & GDB.Quote (To_String (Main_Symbol)), Ok);
-         when To_Location =>
-            GDB.Command ("-break-insert -t " & GDB.Quote (Location), Ok);
-         when Just_Run =>
-            null;
-      end case;
-      Resume ("-exec-continue");
-      Shown_Context := Ctx_Other;
+      Run_To (Purpose, Location, "-exec-continue");
       return GDB.Is_Active;
    end Start_Session;
 
-   procedure On_Stop (S : GDB.Stop_Info) is
-      File : constant String := To_String (S.File);
+   Shown_Frame : Natural := 0;
+   --  The frame the bar is in: 0, or the caller with source when the
+   --  program stopped in code with none (the runtime, libc).
+
+   procedure Show_Location (File : String; Line : Positive) is
+      E : constant Editors.Editor_Access := Open_File (File, Activate => True);
    begin
+      if E /= null then
+         E.Go_To (Line, 1);
+      end if;
+   end Show_Location;
+
+   function Nearest_Source_Frame (File : out Unbounded_String; Line : out Natural;
+                                  Level : out Natural) return Boolean is
+   --  The innermost frame with a source file here, selected (so Evaluate
+   --  and the watches see its variables).
+      R : GDB.Result;
+   begin
+      File := Null_Unbounded_String;
+      Line := 0;
+      Level := 0;
+      GDB.Command ("-stack-list-frames 0 40", R);
+      if not R.Ok then
+         return False;
+      end if;
+      declare
+         Stack : constant JSON.Value := R.Doc.Get (R.Value, "stack");
+      begin
+         for N in 1 .. R.Doc.Length (Stack) loop
+            declare
+               F    : constant JSON.Value := R.Doc.Element (Stack, N);
+               Full : constant String := R.Doc.To_String (R.Doc.Get (F, "fullname"));
+               Ok   : Boolean;
+            begin
+               if Full /= "" and then Ada.Directories.Exists (Full) then
+                  Line := Natural'Value ("0" & R.Doc.To_String (R.Doc.Get (F, "line")));
+                  if Line > 0 then
+                     File := To_Unbounded_String (Full);
+                     Level := N - 1;
+                     GDB.Command ("-stack-select-frame " & Img (N - 1), Ok);
+                     return True;
+                  end if;
+               end if;
+            end;
+         end loop;
+      end;
+      return False;
+   exception
+      when Constraint_Error =>
+         return False;
+   end Nearest_Source_Frame;
+
+   procedure On_Stop (S : GDB.Stop_Info) is
+      File   : constant String := To_String (S.File);
+      Reason : constant String := To_String (S.Reason);
+   begin
+      if Reason'Length >= 6 and then Reason (Reason'First .. Reason'First + 5) = "exited" then
+         --  A native program ended; its last output is in the Output window.
+         End_Session
+           (" The program "
+            & (if Reason = "exited-normally" then "exited normally"
+               elsif Reason = "exited-signalled" then "was killed: " & To_String (S.Detail)
+               else "exited with code " & To_String (S.Detail))
+            & " -- Alt-F5 shows its output");
+         return;
+      end if;
       Exec_File := S.File;
       Exec_Line := S.Line;
+      Shown_Frame := 0;
       if File /= "" and then S.Line > 0 and then Ada.Directories.Exists (File) then
-         declare
-            E : constant Editors.Editor_Access := Open_File (File, Activate => True);
-         begin
-            if E /= null then
-               E.Go_To (S.Line, 1);
-            end if;
-         end;
+         Show_Location (File, S.Line);
          Desktop.Set_Status_Message ("");
       else
-         Desktop.Set_Status_Message
-           (" Stopped in " & (if S.Func = Null_Unbounded_String then "?" else To_String (S.Func))
-            & " (" & To_String (S.Addr) & "), no source -- F8 steps out, Ctrl-F9 runs");
+         declare
+            Where : constant String :=
+              (if S.Func = Null_Unbounded_String then To_String (S.Addr) else To_String (S.Func));
+            F     : Unbounded_String;
+            L     : Natural;
+         begin
+            if Nearest_Source_Frame (F, L, Shown_Frame) then
+               --  Paused in the runtime or libc: show the code that called it.
+               Exec_File := F;
+               Exec_Line := L;
+               Show_Location (To_String (F), L);
+               Desktop.Set_Status_Message
+                 (" Stopped in " & Where & ", called from here -- F8 steps out, Ctrl-F9 runs");
+            else
+               Desktop.Set_Status_Message
+                 (" Stopped in " & Where & ", no source -- F8 steps out, Ctrl-F9 runs");
+            end if;
+         end;
       end if;
-      if To_String (S.Reason) = "signal-received" then
+      if Reason = "signal-received" and then To_String (S.Detail) /= "Interrupt" then
+         --  (Interrupt: F7/F8/F4 paused it.)
          Debug_Message ("The program stopped: " & To_String (S.Detail)
                         & Character'Val (10) & "in " & To_String (S.Func)
                         & (if File /= "" then " (" & Simple (File) & " " & Img (S.Line) & ")" else ""));
@@ -3213,8 +3342,19 @@ package body Turbo.App is
                begin
                   GDB.Command ("-break-insert -t " & GDB.Quote (Cursor_Location), Ok);
                end;
+               Resume (Command);
+            elsif Shown_Frame > 0 then
+               --  The bar is in a caller: a step first returns to it (there
+               --  may be no line information to step by where it stopped).
+               declare
+                  Ok : Boolean;
+               begin
+                  GDB.Command ("-stack-select-frame " & Img (Shown_Frame - 1), Ok);
+               end;
+               Resume ("-exec-finish");
+            else
+               Resume (Command);
             end if;
-            Resume (Command);
          when GDB.Running =>
             declare
                Ok : Boolean;
@@ -3621,7 +3761,7 @@ package body Turbo.App is
                Resume ("-exec-continue");           --  Turbo C++: run on
             elsif GDB.Is_Active then
                null;                                --  it is running
-            elsif not Breakpoints.Is_Empty and then Prj.Debug_Server_Command /= "" then
+            elsif not Breakpoints.Is_Empty and then Prj.Can_Debug then
                Ok := Start_Session (Just_Run);       --  to the first breakpoint
             else
                --  Make first; the box only waits for a key if it failed.
@@ -3631,7 +3771,8 @@ package body Turbo.App is
                end if;
             end if;
          when Cmd_Program_Reset =>
-            End_Session (" Program reset: the board runs it from the start, undebugged");
+            End_Session (if GDB.Is_Native then " Program reset: the program is ended"
+                         else " Program reset: the board runs it from the start, undebugged");
          when Cmd_Trace_Into => Debug_Step ("-exec-step", To_Main);
          when Cmd_Step_Over => Debug_Step ("-exec-next", To_Main);
          when Cmd_Go_To_Cursor => Debug_Step ("-exec-continue", To_Location);

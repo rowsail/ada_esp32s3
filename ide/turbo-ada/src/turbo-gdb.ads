@@ -1,7 +1,8 @@
 --  The debugger: OpenOCD and GDB as child processes, GDB driven through its
 --  machine interface (GDB/MI), so the IDE stays on screen while it steps.
 --
---  Three processes, each with a reader task queueing its output lines:
+--  On the board, three processes, each with a reader task queueing its
+--  output lines:
 --
 --    the server   OpenOCD, from the SDK (./x debug-server, esp32-ada's): it
 --                 owns the board's USB/JTAG and listens for GDB on :3333
@@ -9,6 +10,9 @@
 --                 a token, and the reply that carries the token answers them
 --    the console  the board's serial output (it must be read: an app that
 --                 prints over USB-Serial/JTAG stalls when nobody does)
+--
+--  A native program needs only GDB (the system's gdb): it runs the program
+--  on a pseudo-terminal whose output is read as the console's would be.
 --
 --  MI records are turned into JSON text (MI_To_JSON) and read with
 --  Turbo.JSON, the reader the language server already uses.
@@ -38,6 +42,13 @@ package Turbo.GDB is
    --  Spawn GDB on Elf and connect it to the server (extended-remote :3333).
    --  The target is left as it was (running); the caller resets it.
 
+   procedure Start_Native (Gdb, Exe, Dir : String; Ok : out Boolean);
+   --  Spawn GDB on a native program, its output (on a pseudo-terminal, where
+   --  there is one) for Take_Console.  The program is not started: the
+   --  caller runs it (-exec-run).
+
+   function Is_Native return Boolean;
+
    procedure Reset_Halt (Ok : out Boolean);
    --  Reset the board and hold it at the reset vector, for a fresh run.
 
@@ -46,8 +57,9 @@ package Turbo.GDB is
    --  the port) for Take_Console.
 
    procedure Stop;
-   --  Leave the board running (reset, detach), quit GDB, stop the server
-   --  and the console reader.  Safe to call at any time.
+   --  Leave the board running (reset, detach), or end a native program;
+   --  quit GDB, stop the server and the console reader.  Safe to call at
+   --  any time.
 
    --  Commands
 
@@ -73,7 +85,8 @@ package Turbo.GDB is
    --  Events
 
    type Stop_Info is record
-      Reason   : Ada.Strings.Unbounded.Unbounded_String;  --  breakpoint-hit, end-stepping-range, ...
+      Reason   : Ada.Strings.Unbounded.Unbounded_String;  --  breakpoint-hit, end-stepping-range,
+                                                          --  exited-normally, exited, ...
       File     : Ada.Strings.Unbounded.Unbounded_String;  --  full path; "" when no source
       Line     : Natural := 0;
       Func     : Ada.Strings.Unbounded.Unbounded_String;
