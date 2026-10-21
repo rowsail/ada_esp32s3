@@ -30,8 +30,8 @@ package Turbo.Messages is
    type Message_Window_Access is access all Message_Window'Class;
 
    function Create (Title : String := "Message") return Message_Window_Access;
-   --  The build's Message window; the debugger's Output window (the
-   --  board's console) is another one.
+   --  The build's Message window; the Output window (the board's console,
+   --  for Run, Monitor and the debugger) is another one.
 
    overriding function Title (W : Message_Window) return Wide_Wide_String;
    overriding procedure Draw (W : in out Message_Window; Active : Boolean);
@@ -67,6 +67,11 @@ package Turbo.Messages is
 
    procedure Follow_Tail (W : in out Message_Window);
    --  Scroll so the last line is in view (while a build is running).
+
+   procedure Set_Title (W : in out Message_Window; Title : String);
+
+   procedure Keep_Last (W : in out Message_Window; Count : Positive);
+   --  Drop the oldest lines past Count (a console that runs for hours).
 
 private
 

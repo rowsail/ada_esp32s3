@@ -16,6 +16,7 @@ with Turbo.Alire;
 with Turbo.Buffers;
 with Turbo.Clipboard;
 with Turbo.Commands;
+with Turbo.Console;
 with Turbo.Desktop;
 with Turbo.Editors;
 with Turbo.Events;
@@ -26,6 +27,7 @@ with Turbo.Jobs;
 with Turbo.LSP;
 with Turbo.Menus;
 with Turbo.Messages;
+with Turbo.Pipes;
 with Turbo.Projects;
 with Turbo.Screen;
 with Turbo.Settings;
@@ -367,7 +369,8 @@ package body Turbo.App is
 
    --  The status line
 
-   type Status_Context is (Ctx_None, Ctx_Editor, Ctx_Message, Ctx_Debug, Ctx_Other);
+   type Status_Context is
+     (Ctx_None, Ctx_Editor, Ctx_Message, Ctx_Debug, Ctx_Console, Ctx_Paused, Ctx_Other);
    Shown_Context : Status_Context := Ctx_Other;
    Shown_Right   : Unbounded_String := To_Unbounded_String ("?");
    Diag_Shown    : Boolean := False;   --  a diagnostic is on the status line
@@ -378,6 +381,7 @@ package body Turbo.App is
       W   : constant Window_Access := Desktop.Active;
       Ctx : constant Status_Context :=
         (if GDB.Is_Active then Ctx_Debug
+         elsif Console.Running then (if Console.Paused then Ctx_Paused else Ctx_Console)
          elsif W = null then Ctx_None
          elsif W.all in Editors.Editor'Class then Ctx_Editor
          elsif W = Window_Access (Msg_Win) then Ctx_Message
@@ -385,6 +389,8 @@ package body Turbo.App is
       Right : constant String :=
         (if GDB.Is_Active
          then (if GDB.State = GDB.Running then "RUNNING " else "STOPPED ")
+         elsif Console.Running
+         then (if Console.Paused then "PAUSED " else "RUNNING ")
          else (if Active_Editor /= null and then Active_Editor.Status_Hint /= ""
          then Active_Editor.Status_Hint & "  "
          else "")
@@ -430,6 +436,13 @@ package body Turbo.App is
                  ([(+"~F7~ Trace", Cmd_Trace_Into), (+"~F8~ Step", Cmd_Step_Over),
                    (+"~F4~ Go to cursor", Cmd_Go_To_Cursor), (+"~Ctrl-F9~ Run", Cmd_Run),
                    (+"~Ctrl-F2~ Reset", Cmd_Program_Reset)]);
+            when Ctx_Console | Ctx_Paused =>
+               Desktop.Set_Status
+                 ([(+"~F1~ Help", Cmd_Help_Contents),
+                   (+"~Esc~ Stop", Cmd_Program_Reset),
+                   ((if Ctx = Ctx_Paused then +"~Shift-F2~ Resume" else +"~Shift-F2~ Pause"),
+                    Cmd_Pause_Output),
+                   (+"~F10~ Menu", Cmd_None)]);
             when others =>
                Desktop.Set_Status
                  ([(+"~F1~ Help", Cmd_Help_Contents), (+"~F3~ Open", Cmd_Open),
@@ -494,7 +507,8 @@ package body Turbo.App is
          when Cmd_Go_To_Cursor =>
             return (Prj.Can_Debug or else GDB.Is_Active)
               and then E /= null and then E.Path /= "";
-         when Cmd_Program_Reset => return GDB.Is_Active;
+         when Cmd_Program_Reset => return GDB.Is_Active or else Console.Running;
+         when Cmd_Pause_Output => return Console.Running;
          when Cmd_Inspect | Cmd_Evaluate | Cmd_Call_Stack => return GDB.Is_Active;
          when Cmd_Toggle_Breakpoint => return E /= null and then E.Path /= "";
          when Cmd_Breakpoints | Cmd_Delete_All_Breakpoints => return not Breakpoints_Empty;
@@ -3059,6 +3073,10 @@ package body Turbo.App is
          Redraw;
          GDB.Stop;
       end if;
+      if Console.Running then
+         Console.Stop;
+         Output_Win.Set_Title ("Output");
+      end if;
       for B of Breakpoints loop
          B.Number := 0;
       end loop;
@@ -3105,6 +3123,95 @@ package body Turbo.App is
       end if;
       return (if Prj.Port /= "" then Prj.Port else To_String (Flash));
    end Console_Device;
+
+   --  Run and Monitor without the debugger: the board's console in the
+   --  Output window (Turbo.Console), stopped by Ctrl-F2, paused by Shift-F2.
+
+   Console_Port  : Unbounded_String;
+   Console_Lines : constant := 10_000;   --  the Output window keeps the last ones
+
+   function Board_Program return Boolean is
+   --  Run means flash and read the console (not: run it here).
+     (Prj.Target = Prj.Target_Esp32s3 and then Can_Run (Prj.Act_Flash)
+      and then not Term.Is_Windows);       --  the console is read with stty and cat
+
+   procedure Show_Console_Title is
+   begin
+      Output_Win.Set_Title
+        (if not Console.Running then "Output"
+         elsif Console.Paused
+         then "Output: paused (" & Img (Console.Held) & " lines held)"
+         else "Output: " & To_String (Console_Port));
+   end Show_Console_Title;
+
+   procedure Stop_Console (Note : String := "") is
+   begin
+      if Console.Running then
+         Console.Stop;
+         Output_Win.Add (Messages.Header, "-- closed; the board runs on");
+         Output_Win.Follow_Tail;
+         Show_Console_Title;
+         Desktop.Set_Status_Message (Note);
+         Shown_Context := Ctx_Other;
+      end if;
+   end Stop_Console;
+
+   procedure Open_Console is
+      LF  : constant Character := Character'Val (10);
+      Dev : constant String := Console_Device;
+      Q   : constant String := Pipes.Shell_Quote (Dev);
+      Ok  : Boolean;
+   begin
+      if Dev = "" then
+         Dlg.Message_Box ("Information", "There is no console port to read:" & LF
+                          & "is the board plugged in?  (Options | Target chooses one.)");
+         return;
+      end if;
+      Console.Start ("stty -F " & Q & " 115200 raw -echo 2>/dev/null; exec cat " & Q,
+                     Prj.Root, Ok);
+      if not Ok then
+         Dlg.Message_Box ("Information", "The console could not be read:" & LF & Dev);
+         return;
+      end if;
+      Console_Port := To_Unbounded_String (Dev);
+      Output_Win.Clear;
+      Output_Win.Add (Messages.Header, "-- " & Dev & ": Space or Shift-F2 pauses, Esc stops");
+      Show_Console_Title;
+      Show_Window (Window_Access (Output_Win), Message_Bounds, Activate => True);
+      Shown_Context := Ctx_Other;
+   end Open_Console;
+
+   procedure Toggle_Pause is
+   begin
+      Console.Set_Paused (not Console.Paused);
+      Show_Console_Title;
+      Shown_Context := Ctx_Other;
+   end Toggle_Pause;
+
+   procedure Poll_Console is
+   begin
+      if not Console.Running then
+         return;
+      end if;
+      declare
+         Lines : constant Pipes.Line_Vectors.Vector := Console.Take;
+      begin
+         for L of Lines loop
+            Output_Win.Add (Messages.Info, L);
+         end loop;
+         if not Lines.Is_Empty then
+            Output_Win.Keep_Last (Console_Lines);
+            Output_Win.Follow_Tail;
+         end if;
+      end;
+      if Console.Ended then
+         Console.Stop;
+         Output_Win.Add (Messages.Header, "-- the console ended");
+         Output_Win.Follow_Tail;
+         Shown_Context := Ctx_Other;
+      end if;
+      Show_Console_Title;
+   end Poll_Console;
 
    type Start_Purpose is (To_Main, To_Location, Just_Run);
 
@@ -3178,6 +3285,7 @@ package body Turbo.App is
       Gdb_Path, Elf : Unbounded_String;
       Ok    : Boolean;
    begin
+      Stop_Console;
       if Prj.Target = Prj.Target_Native and then Prj.Can_Debug then
          return Start_Native_Session (Purpose, Location);
       elsif Prj.Debug_Server_Command = "" then
@@ -3817,6 +3925,14 @@ package body Turbo.App is
                null;                                --  it is running
             elsif not Breakpoints.Is_Empty and then Prj.Can_Debug then
                Ok := Start_Session (Just_Run);       --  to the first breakpoint
+            elsif Board_Program then
+               --  Flash (it builds first), then the console in the Output
+               --  window; the box only waits for a key if it failed.
+               Stop_Console;
+               Run_Job (Prj.Act_Flash, "Flash", Ok, Wait_Key => False);
+               if Ok then
+                  Open_Console;
+               end if;
             else
                --  Make first; the box only waits for a key if it failed.
                Run_Job (Prj.Act_Build, "Make", Ok, Wait_Key => False);
@@ -3825,8 +3941,14 @@ package body Turbo.App is
                end if;
             end if;
          when Cmd_Program_Reset =>
-            End_Session (if GDB.Is_Native then " Program reset: the program is ended"
-                         else " Program reset: the board runs it from the start, undebugged");
+            if Console.Running and then not GDB.Is_Active then
+               Stop_Console (" Program reset: the console is closed; the board runs on");
+            else
+               End_Session (if GDB.Is_Native then " Program reset: the program is ended"
+                            else " Program reset: the board runs it from the start, undebugged");
+            end if;
+         when Cmd_Pause_Output =>
+            Toggle_Pause;
          when Cmd_Trace_Into => Debug_Step ("-exec-step", To_Main);
          when Cmd_Step_Over => Debug_Step ("-exec-next", To_Main);
          when Cmd_Go_To_Cursor => Debug_Step ("-exec-continue", To_Location);
@@ -3835,7 +3957,11 @@ package body Turbo.App is
             Run_Job (Prj.Act_Flash, "Flash", Ok, True, True);
          when Cmd_Monitor =>
             End_Session;
-            Run_Interactive (Prj.Act_Monitor);
+            if Board_Program then
+               Open_Console;
+            else
+               Run_Interactive (Prj.Act_Monitor);
+            end if;
          when Cmd_Debug =>
             End_Session;
             Run_Interactive (Prj.Act_Debug);
@@ -3843,7 +3969,7 @@ package body Turbo.App is
             End_Session;
             Run_Job (Prj.Act_Kill_OpenOCD, "Kill OpenOCD", Ok, False, False);
          when Cmd_User_Screen =>
-            if GDB.Is_Active then
+            if GDB.Is_Active or else Console.Running then
                --  The program's output is the board's console: the Output window.
                Show_Window (Window_Access (Output_Win), Message_Bounds, Activate => True);
             else
@@ -3964,7 +4090,8 @@ package body Turbo.App is
                   elsif C then return Cmd_Hover; end if;
                when F2 =>
                   if Plain then return Cmd_Save;
-                  elsif C then return Cmd_Program_Reset; end if;
+                  elsif C then return Cmd_Program_Reset;
+                  elsif S then return Cmd_Pause_Output; end if;
                when F3 =>
                   if Plain then return Cmd_Open;
                   elsif C then return Cmd_Call_Stack;
@@ -4136,6 +4263,21 @@ package body Turbo.App is
          end;
       end if;
 
+      --  The Output window with the console in it: keys no window manager
+      --  takes (KDE keeps Ctrl-F1..F4 and Ctrl-F9 for itself).  Esc stops
+      --  it from the other windows too (below).
+      if Desktop.Active = Window_Access (Output_Win) and then Console.Running then
+         if E.Code = Char_Key and then E.Ch = ' ' and then not E.Ctrl and then not E.Alt then
+            Toggle_Pause;
+            return;
+         elsif Is_Key (E, Escape)
+           or else Is_Ctrl (E, 'c')
+         then
+            Stop_Console (" Stopped: the console is closed; the board runs on");
+            return;
+         end if;
+      end if;
+
       if Desktop.Active /= null then
          Desktop.Active.Handle_Event (E, Handled);
          if Active_Editor /= null then
@@ -4167,6 +4309,8 @@ package body Turbo.App is
            and then Desktop.Active.all in Viewers.Viewer'Class
          then
             Desktop.Remove (Desktop.Active);       --  Esc closes help
+         elsif Is_Key (E, Escape) and then Console.Running then
+            Stop_Console (" Stopped: the console is closed; the board runs on");
          end if;
       end if;
    end Handle_Key;
@@ -4277,13 +4421,14 @@ package body Turbo.App is
             Load_Breakpoints;
          end if;
          Poll_Debugger;
+         Poll_Console;
          LSP.Poll;
          Sync_Documents (Force => False);
          Apply_Diagnostics;
          Redraw;
          --  Wake up now and then while the language server has things to
          --  say or a start is due; otherwise sleep until a key.
-         E := Get ((if GDB.Is_Active then 100
+         E := Get ((if GDB.Is_Active or else Console.Running then 100
                     elsif LSP.Is_Running
                        or else (Server_Wanted and then To_String (Tried_For) /= Project_Key)
                     then 150 else -1));
@@ -4307,10 +4452,12 @@ package body Turbo.App is
          end;
       end loop;
 
+      Console.Stop;
       LSP.Stop;
       Term.Stop;
    exception
       when others =>
+         Console.Stop;
          GDB.Stop;
          LSP.Stop;
          Term.Stop;

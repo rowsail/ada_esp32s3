@@ -28,6 +28,10 @@ package Turbo.Jobs is
 
    function Elapsed return Duration;
 
+   function Clean (S : String) return String;
+   --  S without ANSI escape sequences, carriage returns applied (a progress
+   --  bar redrawing itself leaves only its last state), tabs expanded.
+
    procedure Run_Foreground
      (Command, Dir : String; Success : out Boolean);
    --  Run Command with the terminal (the serial monitor, GDB, a shell): the

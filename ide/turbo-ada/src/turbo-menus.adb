@@ -80,6 +80,7 @@ package body Turbo.Menus is
    Run_Items : aliased constant Item_List :=
      [I ("~R~un", Cmd_Run, "Ctrl-F9"),
       I ("~P~rogram reset", Cmd_Program_Reset, "Ctrl-F2"),
+      I ("P~a~use output", Cmd_Pause_Output, "Shift-F2"),
       I ("~G~o to cursor", Cmd_Go_To_Cursor, "F4"),
       I ("~T~race into", Cmd_Trace_Into, "F7"),
       I ("~S~tep over", Cmd_Step_Over, "F8"),

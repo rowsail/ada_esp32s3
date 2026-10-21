@@ -24,8 +24,11 @@ package body Turbo.Help is
       & "  {F9}            Make: build the project, errors to the Message" & LF
       & "                  window.  Enter on a message jumps to the line." & LF
       & "  {Alt-F8}        next error     {Alt-F7}  previous error" & LF
-      & "  {Ctrl-F9}       Run: make, then flash and open the serial monitor" & LF
-      & "  {Shift-F9}      Flash          (Run | Monitor for the monitor alone)" & LF
+      & "  {Ctrl-F9}       Run: make and flash, then the board's console in" & LF
+      & "                  the Output window (Run | Monitor: the console alone)" & LF
+      & "  {Shift-F2}      pause the Output window (or Space in it); again resumes" & LF
+      & "  {Esc}           stop reading the console (or Ctrl-F2; the board runs on)" & LF
+      & "  {Shift-F9}      Flash" & LF
       & "  {Alt-F5}        User screen: what the last program printed" & LF
       & "  {Esc}           in the Compiling box: cancel the build" & LF
       & LF
@@ -182,9 +185,20 @@ package body Turbo.Help is
       & "own." & LF
       & LF
       & "# Interactive commands" & LF
-      & "Run, Monitor and Run | GDB console take over the terminal:" & LF
-      & "Turbo Ada steps aside and comes back when they exit (Ctrl-]" & LF
-      & "leaves miniterm).  Alt-F5 shows their output again afterwards." & LF
+      & "On the board, Run and Monitor read its console into the Output" & LF
+      & "window, keeping the last 10000 lines.  Paused, the window stands" & LF
+      & "still (to scroll back) while the console is still read, so" & LF
+      & "nothing is lost and the board never waits; resuming adds what" & LF
+      & "came meanwhile.  Run for a native program, and Run | GDB console," & LF
+      & "take over the terminal: Turbo Ada steps aside and comes back when" & LF
+      & "they exit.  Alt-F5 shows their output again afterwards." & LF
+      & LF
+      & "# Desktop shortcuts" & LF
+      & "A desktop may keep some keys for itself: KDE switches desktops" & LF
+      & "with Ctrl-F1..F4 and shows its windows on Ctrl-F9, so the IDE" & LF
+      & "never sees them.  Use the menu (Alt-R R runs, Alt-R P resets)," & LF
+      & "Esc to stop the console, or free the keys in System Settings |" & LF
+      & "Shortcuts (KWin: Switch to Desktop N, Toggle Present Windows)." & LF
       & "The debugger keys (F7, F8, ...) keep the IDE on screen." & LF
       & LF
       & "# Options file" & LF

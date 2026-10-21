@@ -281,22 +281,36 @@ package body Turbo.Events is
 
    function Parse_SS3 return Event is
    --  After ESC O: the application-keypad forms of F1-F4 and the arrows.
-      B : constant Integer := Next (Seq_Timeout);
+   --  Konsole puts the modifier between ("ESC O 2 Q" is Shift-F2), some
+   --  terminals as "ESC O 1;2 Q".
+      B : Integer := Next (Seq_Timeout);
+      M : Natural := 0;
+      E : Event;
    begin
+      while B in Character'Pos ('0') .. Character'Pos ('9') | Character'Pos (';') loop
+         if B = Character'Pos (';') then
+            M := 0;
+         else
+            M := M * 10 + (B - Character'Pos ('0'));
+         end if;
+         B := Next (Seq_Timeout);
+      end loop;
       case B is
-         when Character'Pos ('P') => return Key_Event (F1);
-         when Character'Pos ('Q') => return Key_Event (F2);
-         when Character'Pos ('R') => return Key_Event (F3);
-         when Character'Pos ('S') => return Key_Event (F4);
-         when Character'Pos ('A') => return Key_Event (Up);
-         when Character'Pos ('B') => return Key_Event (Down);
-         when Character'Pos ('C') => return Key_Event (Right);
-         when Character'Pos ('D') => return Key_Event (Left);
-         when Character'Pos ('H') => return Key_Event (Home);
-         when Character'Pos ('F') => return Key_Event (End_Key);
-         when Character'Pos ('M') => return Key_Event (Enter);
+         when Character'Pos ('P') => E := Key_Event (F1);
+         when Character'Pos ('Q') => E := Key_Event (F2);
+         when Character'Pos ('R') => E := Key_Event (F3);
+         when Character'Pos ('S') => E := Key_Event (F4);
+         when Character'Pos ('A') => E := Key_Event (Up);
+         when Character'Pos ('B') => E := Key_Event (Down);
+         when Character'Pos ('C') => E := Key_Event (Right);
+         when Character'Pos ('D') => E := Key_Event (Left);
+         when Character'Pos ('H') => E := Key_Event (Home);
+         when Character'Pos ('F') => E := Key_Event (End_Key);
+         when Character'Pos ('M') => E := Key_Event (Enter);
          when others => return (others => <>);
       end case;
+      Apply_Modifier (E, M);
+      return E;
    end Parse_SS3;
 
    function From_Byte (B : Natural) return Event is

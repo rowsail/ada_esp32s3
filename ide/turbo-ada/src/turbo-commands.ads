@@ -22,7 +22,7 @@ package Turbo.Commands is
       Cmd_Definition, Cmd_References, Cmd_Symbols, Cmd_Go_Back, Cmd_Rename,
       Cmd_Complete, Cmd_Hover, Cmd_Diagnostics,
       --  Run
-      Cmd_Run, Cmd_Program_Reset, Cmd_Go_To_Cursor, Cmd_Trace_Into,
+      Cmd_Run, Cmd_Program_Reset, Cmd_Pause_Output, Cmd_Go_To_Cursor, Cmd_Trace_Into,
       Cmd_Step_Over, Cmd_Flash, Cmd_Monitor, Cmd_Debug, Cmd_Kill_OpenOCD,
       Cmd_User_Screen,
       --  Debug

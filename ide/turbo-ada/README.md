@@ -132,10 +132,17 @@ brown is brown.
   back, Shift-F12 lists uses, Ctrl-F12 lists the file's symbols, Ctrl-Space
   completes, Ctrl-F1 shows the declaration, and Search | Rename symbol renames
   across files. Without it, everything else works as before.
-- **Run** — Ctrl-F9 makes, then flashes and opens the serial monitor (the
-  terminal is handed over; Ctrl-] leaves miniterm). Flash, Monitor, GDB
-  console (a plain GDB prompt) and Kill OpenOCD separately; Alt-F5 shows the
-  user screen.
+- **Run** — Ctrl-F9 makes and flashes, then reads the board's console into
+  the Output window while the IDE stays on screen (Run | Monitor reads it
+  without flashing). Shift-F2, or Space in the Output window, pauses the
+  window so you can scroll back; the console is still read meanwhile, so
+  nothing is lost and the board never stalls on output, and resuming adds
+  what came. Esc (or Ctrl-C in the Output window, or Ctrl-F2) stops reading
+  (the board runs on). KDE keeps Ctrl-F1..F4 and Ctrl-F9 for itself: use
+  Alt-R R to run, or free them in System Settings | Shortcuts. The window keeps
+  the last 10000 lines. A native program's Run, and Run | GDB console (a
+  plain GDB prompt), hand the terminal over; Alt-F5 shows the user screen.
+  Flash and Kill OpenOCD are there separately.
 - **Debug** — Turbo C++'s integrated debugger, on the board or natively, with
   its keys:
   F7 trace into, F8 step over, F4 go to cursor, Ctrl-F9 run on, Ctrl-F2
@@ -274,6 +281,8 @@ src/turbo-menus*      the menu bar and pull-downs
 src/turbo-dialogs*    dialog controls, message boxes, find, the file dialog
 src/turbo-projects*   project detection, command templates, .turbo_ada
 src/turbo-jobs*       background builds (output read from a log as it grows)
+src/turbo-pipes*      child processes read line by line by a reader task
+src/turbo-console*    the board's console for Run and Monitor (pause, stop)
 src/turbo-json*       just enough JSON for LSP
 src/turbo-lsp*        the language server client (reader task, requests)
 src/turbo-app*        the event loop and every command

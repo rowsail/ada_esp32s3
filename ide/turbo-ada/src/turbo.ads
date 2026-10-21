@@ -18,6 +18,8 @@
 --    Turbo.Dialogs      modal dialogs (find, open file, options, ...)
 --    Turbo.Projects     what "the project" is and which commands drive it
 --    Turbo.Jobs         background build processes
+--    Turbo.Pipes        child processes read line by line (GDB, consoles)
+--    Turbo.Console      the board's console for Run and Monitor
 --    Turbo.App          the main loop and the command dispatcher
 --    Turbo.Script       keys in, screen out: the IDE on a virtual terminal,
 --                       for tada-cli

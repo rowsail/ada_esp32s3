@@ -1,3 +1,4 @@
+with Ada.Containers;
 with Ada.Characters.Handling;
 with Ada.Directories;
 with Ada.Strings.Fixed;
@@ -454,5 +455,21 @@ package body Turbo.Messages is
          W.Top := N - I.H + 1;
       end if;
    end Follow_Tail;
+
+   procedure Set_Title (W : in out Message_Window; Title : String) is
+   begin
+      W.Name := To_Unbounded_String (Title);
+   end Set_Title;
+
+   procedure Keep_Last (W : in out Message_Window; Count : Positive) is
+      N    : constant Natural := Natural (W.Items.Length);
+      Drop : constant Natural := (if N > Count then N - Count else 0);
+   begin
+      if Drop > 0 then
+         W.Items.Delete_First (Ada.Containers.Count_Type (Drop));
+         W.Top := Integer'Max (1, W.Top - Drop);
+         W.Sel := (if W.Sel > Drop then W.Sel - Drop elsif W.Sel > 0 then 1 else 0);
+      end if;
+   end Keep_Last;
 
 end Turbo.Messages;
