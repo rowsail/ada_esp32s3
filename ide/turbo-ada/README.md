@@ -26,7 +26,7 @@ that ends in *Success: Press any key* — and the keys your fingers remember
 ║              ║                                                     ║       ░
 ║              ║            Success   :   Press any key              ║       ▼
 ╚══ 1:1 ═══════╚═════════════════════════════════════════════════════╝══════►─┘
- F1 Help  F2 Save  F3 Open  F9 Make  Ctrl-F9 Run  Alt-F9 Monitor  F10 Menu
+ F1 Help  F2 Save  F3 Open  F9 Make  Ctrl-F9 Run  Alt-F9 Compile  F10 Menu
 ```
 
 It is a native program written in Ada (no curses; the only C is a small
@@ -39,6 +39,11 @@ each kind of project.
 | an example inside this SDK repository | `./x build <example>`, `./x run`, `./x flash`, ... |
 | a standalone project (`esp32-ada init`: `build.sh` + `app.gpr`) | `esp32-ada build`, `run`, `flash`, ... |
 | any other Alire crate (`alire.toml`) | `alr build`, `alr run`, `alr test`, `alr clean` |
+
+Compile (Alt-F9) and the language server also need the project's compile
+environment — the toolchain on `PATH`, `GPR_PROJECT_PATH`, the xtensa core
+plugin — which they get from `./x env <example>`, `esp32-ada env` or
+`alr printenv` respectively, without running a build.
 
 ## Running it
 
@@ -59,6 +64,12 @@ alr install                   # optional: puts tada in ~/.alire/bin
 tada [-C DIR] [FILE...]       # in any Alire crate or esp32-ada project
 ```
 
+For the language-server features, install the server once:
+
+```sh
+alr install ada_language_server      # or have the VS Code "Ada & SPARK" extension
+```
+
 It needs a terminal at least 80×25 that speaks xterm escape sequences: any
 Linux or macOS terminal, tmux/screen, or on Windows the Windows Terminal or
 the Windows 10 (1809+) console. Mouse and bracketed paste are used when the
@@ -73,12 +84,22 @@ brown is brown.
   undo/redo, Shift-select and mouse select, the WordStar Ctrl-K/Ctrl-Q block
   and cursor commands, Find/Replace with the Turbo options dialog, Go to line,
   spec/body switching (Ctrl-F6), Grep the word under the cursor across the
-  project (Ctrl-F1). Copies also reach the system clipboard via OSC 52.
-- **Compile** — Make (F9) runs the project's build in the background behind the
-  Compiling box (Esc cancels); the output lands in the Message window, GNAT's
-  `file:line:col:` diagnostics are picked out, and Enter, a click, or Alt-F8 /
-  Alt-F7 jumps to the line. Also Build all, Clean, and the SDK's Memory
-  (`./x mem`), Stack (`./x stack`), Analyze and Test reports.
+  project (Search | Grep). Copies also reach the system clipboard via OSC 52.
+- **Compile** — Alt-F9 checks the current file with the real compiler
+  (`gprbuild -gnatc` into a scratch tree, so the build's `obj/` is never
+  touched): about a second, even for the xtensa target. Make (F9) runs the
+  project's build in the background behind the Compiling box (Esc cancels),
+  through `./x --machine` so the box shows the real stages and the Message window
+  gets every diagnostic with its full path; Enter, a click, or Alt-F8 / Alt-F7
+  jumps to the line. Also Build all, Clean, and the SDK's Memory (`./x mem`),
+  Stack (`./x stack`), Analyze and Test reports.
+- **Ada Language Server** — when `ada_language_server` is installed (found on
+  `PATH`, in `~/.alire/bin`, or inside an installed VS Code Ada extension),
+  errors appear as you type, in red, with the message on the status line; F12
+  goes to a definition (into the generated xtensa runtime too), Alt-F12 comes
+  back, Shift-F12 lists uses, Ctrl-F12 lists the file's symbols, Ctrl-Space
+  completes, Ctrl-F1 shows the declaration, and Search | Rename symbol renames
+  across files. Without it, everything else works as before.
 - **Run** — Ctrl-F9 makes, then flashes and opens the serial monitor (the
   terminal is handed over; Ctrl-] leaves miniterm). Flash, Monitor, Debug
   (OpenOCD + GDB) and Kill OpenOCD separately; Alt-F5 shows the user screen.
@@ -100,7 +121,7 @@ Each action is a template (Options | Commands) run through `/bin/sh -c`
 `cmd /c`), in the SDK root or the project directory:
 
 ```
-{example} {port_opt} {profile_opt} {port} {profile} {dir} {root} {file}
+{example} {port_opt} {profile_opt} {port} {profile} {dir} {root} {file} {gpr} {tmp}
 ```
 
 `{port_opt}` is ` -p PORT` only when a port is set, so the tool's own default
@@ -125,6 +146,8 @@ src/turbo-menus*      the menu bar and pull-downs
 src/turbo-dialogs*    dialog controls, message boxes, find, the file dialog
 src/turbo-projects*   project detection, command templates, .turbo_ada
 src/turbo-jobs*       background builds (output read from a log as it grows)
+src/turbo-json*       just enough JSON for LSP
+src/turbo-lsp*        the language server client (reader task, requests)
 src/turbo-app*        the event loop and every command
 test/host/            host tests (./x test host runs them)
 ```

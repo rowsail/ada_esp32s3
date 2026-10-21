@@ -59,6 +59,7 @@ package body Turbo.Menus is
       I ("C~l~ear", Cmd_Clear, "Ctrl-Del"),
       I ("~S~elect all", Cmd_Select_All, "Ctrl-A"),
       Sep,
+      I ("Complete ~w~ord", Cmd_Complete, "Ctrl-Space"),
       I ("S~h~ow clipboard", Cmd_Show_Clipboard)];
 
    Search_Items : aliased constant Item_List :=
@@ -70,22 +71,30 @@ package body Turbo.Menus is
       I ("~P~revious error", Cmd_Prev_Msg, "Alt-F7"),
       I ("~N~ext error", Cmd_Next_Msg, "Alt-F8"),
       Sep,
-      I ("Spec/~b~ody", Cmd_Find_Spec_Body, "Ctrl-F6"),
-      I ("Gr~e~p word in project", Cmd_Grep, "Ctrl-F1")];
+      I ("Go to ~d~efinition", Cmd_Definition, "F12"),
+      I ("Find ~u~ses", Cmd_References, "Shift-F12"),
+      I ("S~y~mbol list...", Cmd_Symbols, "Ctrl-F12"),
+      I ("Go ~b~ack", Cmd_Go_Back, "Alt-F12"),
+      I ("Rena~m~e symbol...", Cmd_Rename),
+      I ("D~i~agnostics", Cmd_Diagnostics),
+      Sep,
+      I ("Spec/b~o~dy", Cmd_Find_Spec_Body, "Ctrl-F6"),
+      I ("Gr~e~p word in project", Cmd_Grep)];
 
    Run_Items : aliased constant Item_List :=
      [I ("~R~un", Cmd_Run, "Ctrl-F9"),
       I ("~F~lash", Cmd_Flash, "Shift-F9"),
-      I ("~M~onitor", Cmd_Monitor, "Alt-F9"),
+      I ("~M~onitor", Cmd_Monitor),
       I ("~D~ebug (OpenOCD + GDB)", Cmd_Debug, "Ctrl-F8"),
       I ("~K~ill OpenOCD", Cmd_Kill_OpenOCD),
       Sep,
       I ("~U~ser screen", Cmd_User_Screen, "Alt-F5")];
 
    Compile_Items : aliased constant Item_List :=
-     [I ("~M~ake", Cmd_Make, "F9"),
+     [I ("~C~ompile", Cmd_Check_File, "Alt-F9"),
+      I ("~M~ake", Cmd_Make, "F9"),
       I ("~B~uild all", Cmd_Build_All),
-      I ("~C~lean", Cmd_Clean),
+      I ("C~l~ean", Cmd_Clean),
       Sep,
       I ("M~e~mory usage", Cmd_Memory),
       I ("~S~tack usage", Cmd_Stack),
@@ -106,6 +115,7 @@ package body Turbo.Menus is
      [I ("~T~arget (port, profile)...", Cmd_Opt_Target),
       I ("~C~ommands...", Cmd_Opt_Commands),
       I ("~E~ditor...", Cmd_Opt_Editor),
+      I ("~L~anguage server...", Cmd_Opt_Server),
       Sep,
       I ("~S~ave options", Cmd_Opt_Save)];
 
@@ -126,6 +136,7 @@ package body Turbo.Menus is
      [I ("~C~ontents", Cmd_Help_Contents, "F1"),
       I ("~K~eyboard", Cmd_Help_Keys),
       I ("~P~roject commands", Cmd_Help_Project),
+      I ("~T~opic search", Cmd_Hover, "Ctrl-F1"),
       Sep,
       I ("~A~bout...", Cmd_About)];
 

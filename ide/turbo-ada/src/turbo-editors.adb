@@ -168,6 +168,58 @@ package body Turbo.Editors is
      (Has_Selection (E) and then not (P < Sel_Start (E))
       and then P < Sel_End (E));
 
+   --  Diagnostics
+
+   type Diag_Mark is (No_Diag, Diag_Error, Diag_Other);
+
+   function Covers (D : Diagnostic; P : Position) return Boolean is
+     (if D.From = D.To then P = D.From
+      else not (P < D.From) and then P < D.To);
+
+   function Diag_Level (E : Editor; P : Position) return Diag_Mark is
+      Found : Diag_Mark := No_Diag;
+   begin
+      for D of E.Diags loop
+         if P.Line >= D.From.Line and then P.Line <= D.To.Line and then Covers (D, P) then
+            if D.Level = Sev_Error then
+               return Diag_Error;
+            end if;
+            Found := Diag_Other;
+         end if;
+      end loop;
+      return Found;
+   end Diag_Level;
+
+   procedure Set_Diagnostics (E : in out Editor; List : Diagnostic_Vectors.Vector) is
+   begin
+      E.Diags := List;
+   end Set_Diagnostics;
+
+   function Diagnostic_At_Cursor (E : Editor) return String is
+   begin
+      for D of E.Diags loop
+         --  On it, or just past its end (where the cursor is after typing).
+         if Covers (D, E.Cur)
+           or else (E.Cur.Line = D.To.Line and then E.Cur.Col = D.To.Col
+                    and then D.From /= D.To)
+         then
+            return (case D.Level is
+                       when Sev_Error   => "Error: ",
+                       when Sev_Warning => "Warning: ",
+                       when Sev_Info    => "Note: ")
+              & To_String (D.Message);
+         end if;
+      end loop;
+      return "";
+   end Diagnostic_At_Cursor;
+
+   function Version (E : Editor) return Natural is (E.Buf.Edit_Count);
+   function Text (E : Editor) return Wide_Wide_String is (E.Buf.All_Text);
+   function Line_Count (E : Editor) return Positive is (E.Buf.Line_Count);
+   function Line_Text (E : Editor; N : Positive) return Wide_Wide_String is
+     (E.Buf.Line (Positive'Min (N, E.Buf.Line_Count)));
+   function Language (E : Editor) return Turbo.Syntax.Language is (E.Lang);
+
    --  View
 
    function Page (E : Editor) return Positive is
@@ -234,6 +286,9 @@ package body Turbo.Editors is
                      A := Theme.Edit_Error_Line;
                   elsif In_Selection (E, (N, C)) then
                      A := Theme.Edit_Selected;
+                  elsif Diag_Level (E, (N, C)) /= No_Diag then
+                     A := (if Diag_Level (E, (N, C)) = Diag_Error
+                           then Theme.Edit_Diag_Error else Theme.Edit_Diag_Warn);
                   else
                      A := (case Classes (C) is
                               when Syntax.Normal     => Theme.Edit_Text,
@@ -316,6 +371,39 @@ package body Turbo.Editors is
    begin
       E.Buf.End_Group;
    end End_Edit_Group;
+
+   procedure Replace_Range (E : in out Editor; From, To : Position; Text : Wide_Wide_String) is
+      F     : constant Position := E.Buf.Clamp (From);
+      T     : constant Position := E.Buf.Clamp (To);
+      After : Position;
+   begin
+      Drop_Selection (E);
+      E.Buf.Begin_Group (E.Cur);
+      if F < T then
+         E.Buf.Delete (F, T);
+      end if;
+      E.Buf.Insert (F, Text, After);
+      E.Buf.End_Group;
+      E.Cur := After;
+      Moved (E);
+   end Replace_Range;
+
+   function Word_Start (E : Editor) return Position is
+      L : constant Wide_Wide_String := E.Buf.Line (E.Cur.Line);
+      C : Positive := Positive'Min (E.Cur.Col, L'Length + 1);
+   begin
+      while C > 1 and then Is_Word_Char (L (C - 1)) loop
+         C := C - 1;
+      end loop;
+      return (E.Cur.Line, C);
+   end Word_Start;
+
+   procedure Cursor_Screen (E : Editor; X, Y : out Integer) is
+      I : constant Rect := Interior (E);
+   begin
+      X := I.X + VCol (E.Buf.Line (E.Cur.Line), E.Cur.Col) - E.Left;
+      Y := I.Y + E.Cur.Line - E.Top;
+   end Cursor_Screen;
 
    procedure Replace_Selection (E : in out Editor; Text : Wide_Wide_String) is
    begin

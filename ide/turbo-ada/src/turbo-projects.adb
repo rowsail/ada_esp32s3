@@ -184,6 +184,9 @@ package body Turbo.Projects is
 
    procedure Set_Example (Example : String) is
    begin
+      if Example /= To_String (The_Example) then
+         Forget_Environment;
+      end if;
       The_Example := To_Unbounded_String (Example);
       if The_Kind = SDK_Example and then Example /= "" then
          The_Dir := To_Unbounded_String (Full_Example_Dir (Example));
@@ -197,6 +200,7 @@ package body Turbo.Projects is
 
    procedure Set_Profile (Profile : String) is
    begin
+      Forget_Environment;
       The_Profile := To_Unbounded_String
         (if Profile = "auto" or else Profile = "default" then "" else Profile);
    end Set_Profile;
@@ -216,6 +220,7 @@ package body Turbo.Projects is
       Desktop.Clear;
       Sources.Clear;
       Scanned := False;
+      Forget_Environment;
    end Reset;
 
    procedure Detect (Start_Dir : String) is
@@ -327,6 +332,8 @@ package body Turbo.Projects is
    function Label (A : Action) return String is
      (case A is
          when Act_Build        => "Build",
+         when Act_Check        => "Check file",
+         when Act_Env          => "Environment",
          when Act_Clean        => "Clean",
          when Act_Flash        => "Flash",
          when Act_Run          => "Run",
@@ -342,24 +349,31 @@ package body Turbo.Projects is
          when Act_Alr_Show     => "alr show",
          when Act_Alr_Deps     => "alr with");
 
+   Check_Template : constant String :=
+     "gprbuild -c -u -f -q -P {gpr} {file} --relocate-build-tree={tmp} --root-dir={fsroot} -cargs -gnatc -gnatef";
+   --  Errors only (-gnatc), full paths in them (-gnatef), and the objects in
+   --  a scratch tree, so the real build's obj/ never sees a -gnatc unit.
+
    function Default_Template (A : Action) return String is
    begin
       case The_Kind is
          when SDK_Example =>
             return
               (case A is
-                  when Act_Build        => "./x build {example}{profile_opt}",
-                  when Act_Clean        => "./x clean {example}",
-                  when Act_Flash        => "./x flash {example}{port_opt}",
+                  when Act_Build        => "./x --machine build {example}{profile_opt}",
+                  when Act_Check        => Check_Template,
+                  when Act_Env          => "./x env {example}{profile_opt}",
+                  when Act_Clean        => "./x --machine clean {example}",
+                  when Act_Flash        => "./x --machine flash {example}{port_opt}",
                   when Act_Run          => "./x run {example}{port_opt}{profile_opt}",
                   when Act_Monitor      => "./x monitor{port_opt}",
                   when Act_Debug        => "./x debug {example}{port_opt}",
-                  when Act_Kill_OpenOCD => "./x kill-openocd",
-                  when Act_Memory       => "./x mem {example}",
-                  when Act_Stack        => "./x stack {example} --top 20",
-                  when Act_Analyze      => "./x analyze",
-                  when Act_Test         => "./x test host",
-                  when Act_Board        => "./x config {example}",
+                  when Act_Kill_OpenOCD => "./x --machine kill-openocd",
+                  when Act_Memory       => "./x --machine mem {example}",
+                  when Act_Stack        => "./x --machine stack {example} --top 20",
+                  when Act_Analyze      => "./x --machine analyze",
+                  when Act_Test         => "./x --machine test host",
+                  when Act_Board        => "./x --machine config {example}",
                   when Act_Alr_Update   => "alr -n update",
                   when Act_Alr_Show     => "alr -n show",
                   when Act_Alr_Deps     => "alr -n with");
@@ -369,14 +383,16 @@ package body Turbo.Projects is
             begin
                return
                  (case A is
-                     when Act_Build        => E & " build{profile_opt}",
-                     when Act_Clean        => E & " clean",
-                     when Act_Flash        => E & " flash{port_opt}",
+                     when Act_Build        => E & " --machine build{profile_opt}",
+                     when Act_Check        => Check_Template,
+                     when Act_Env          => E & " env{profile_opt}",
+                     when Act_Clean        => E & " --machine clean",
+                     when Act_Flash        => E & " --machine flash{port_opt}",
                      when Act_Run          => E & " run{port_opt}{profile_opt}",
                      when Act_Monitor      => E & " monitor{port_opt}",
                      when Act_Debug        => E & " debug{port_opt}",
-                     when Act_Kill_OpenOCD => E & " kill-openocd",
-                     when Act_Board        => E & " config",
+                     when Act_Kill_OpenOCD => E & " --machine kill-openocd",
+                     when Act_Board        => E & " --machine config",
                      when Act_Alr_Update   => "alr -n update",
                      when Act_Alr_Show     => "alr -n show",
                      when Act_Alr_Deps     => "alr -n with",
@@ -386,6 +402,8 @@ package body Turbo.Projects is
             return
               (case A is
                   when Act_Build      => "alr -n build",
+                  when Act_Check      => Check_Template,
+                  when Act_Env        => "alr -n printenv --unix",
                   when Act_Clean      => "alr -n clean",
                   when Act_Run        => "alr -n run",
                   when Act_Test       => "alr -n test",
@@ -423,6 +441,22 @@ package body Turbo.Projects is
 
    function Command_For (A : Action; File : String := "") return String is
       T : constant String := Template (A);
+      R : Unbounded_String;
+
+      procedure Sub (Key, By : String) is
+      begin
+         R := To_Unbounded_String (Replace_All (To_String (R), Key, By));
+      end Sub;
+
+      function FS_Root return String is
+      --  The file-system root above the project: "/" or "C:".
+         D : constant String := Dir;
+      begin
+         if D'Length >= 2 and then D (D'First + 1) = ':' then
+            return D (D'First .. D'First + 1) & "";
+         end if;
+         return "/";
+      end FS_Root;
    begin
       if T = "" then
          return "";
@@ -432,33 +466,133 @@ package body Turbo.Projects is
       then
          return "";
       end if;
-      return
-        Replace_All
-          (Replace_All
-             (Replace_All
-                (Replace_All
-                   (Replace_All
-                      (Replace_All
-                         (Replace_All
-                            (Replace_All (T, "{port_opt}",
-                                          (if Port = "" then "" else " -p " & Port)),
-                             "{profile_opt}",
-                             (if Profile = "" then "" else " -P " & Profile)),
-                          "{example}", Example),
-                       "{port}", Port),
-                    "{profile}", Profile),
-                 "{dir}", Dir),
-              "{root}", Root),
-           "{file}", File);
+      if Ada.Strings.Fixed.Index (T, "{file}") > 0 and then File = "" then
+         return "";
+      end if;
+      R := To_Unbounded_String (T);
+      Sub ("{port_opt}", (if Port = "" then "" else " -p " & Port));
+      Sub ("{profile_opt}", (if Profile = "" then "" else " -P " & Profile));
+      Sub ("{example}", Example);
+      Sub ("{port}", Port);
+      Sub ("{profile}", Profile);
+      Sub ("{gpr}", Main_Gpr);
+      Sub ("{tmp}", Scratch_Dir);
+      Sub ("{fsroot}", FS_Root);
+      Sub ("{dir}", Dir);
+      Sub ("{root}", Root);
+      Sub ("{file}", File);
+      return To_String (R);
    end Command_For;
 
    function Working_Dir (A : Action) return String is
    begin
-      if A in Act_Alr_Update | Act_Alr_Show | Act_Alr_Deps then
-         return Dir;                 --  the example's own alire.toml
+      if A in Act_Alr_Update | Act_Alr_Show | Act_Alr_Deps | Act_Check then
+         return Dir;                 --  the example's own alire.toml / .gpr
       end if;
       return Root;
    end Working_Dir;
+
+   --  The compile environment
+
+   package Env_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, String);
+
+   Env        : Env_Maps.Map;
+   Env_Loaded : Boolean := False;
+
+   type Saved_Var is record
+      Existed : Boolean;
+      Value   : Unbounded_String;
+   end record;
+   package Saved_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, Saved_Var);
+   Saved : Saved_Maps.Map;
+
+   procedure Set_Environment (Lines : String_List) is
+   begin
+      Env.Clear;
+      for L of Lines loop
+         declare
+            T  : constant String := Ada.Strings.Fixed.Trim (L, Ada.Strings.Both);
+            S  : constant String :=
+              (if T'Length > 7 and then T (T'First .. T'First + 6) = "export "
+               then T (T'First + 7 .. T'Last) else T);
+            Eq : constant Natural := Ada.Strings.Fixed.Index (S, "=");
+         begin
+            if Eq > S'First
+              and then (for all C of S (S'First .. Eq - 1) =>
+                          C in 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_')
+            then
+               declare
+                  V : constant String := S (Eq + 1 .. S'Last);
+               begin
+                  Env.Include
+                    (S (S'First .. Eq - 1),
+                     (if V'Length >= 2 and then V (V'First) = '"' and then V (V'Last) = '"'
+                      then V (V'First + 1 .. V'Last - 1) else V));
+               end;
+            end if;
+         end;
+      end loop;
+      Env_Loaded := True;
+   end Set_Environment;
+
+   function Environment_Loaded return Boolean is (Env_Loaded);
+
+   procedure Forget_Environment is
+   begin
+      Env.Clear;
+      Env_Loaded := False;
+   end Forget_Environment;
+
+   function Env_Value (Key : String) return String is
+     (if Env.Contains (Key) then Env.Element (Key) else "");
+
+   procedure Push_Environment is
+      use Ada.Environment_Variables;
+   begin
+      Saved.Clear;
+      for C in Env.Iterate loop
+         declare
+            K : constant String := Env_Maps.Key (C);
+         begin
+            --  GPR_FILE and PROJECT_DIR describe the project; they are not
+            --  variables any tool reads.
+            if K /= "GPR_FILE" and then K /= "PROJECT_DIR" then
+               Saved.Include
+                 (K, (Ada.Environment_Variables.Exists (K),
+                      To_Unbounded_String
+                        (if Ada.Environment_Variables.Exists (K) then Value (K) else "")));
+               Set (K, Env_Maps.Element (C));
+            end if;
+         end;
+      end loop;
+   end Push_Environment;
+
+   procedure Pop_Environment is
+      use Ada.Environment_Variables;
+   begin
+      for C in Saved.Iterate loop
+         if Saved_Maps.Element (C).Existed then
+            Set (Saved_Maps.Key (C), To_String (Saved_Maps.Element (C).Value));
+         else
+            Clear (Saved_Maps.Key (C));
+         end if;
+      end loop;
+      Saved.Clear;
+   end Pop_Environment;
+
+   function Main_Gpr return String is
+     (if Env_Value ("GPR_FILE") /= "" then Env_Value ("GPR_FILE") else Gpr_File);
+
+   function Scratch_Dir return String is
+      Base : constant String :=
+        (if Ada.Environment_Variables.Exists ("TMPDIR")
+         then Ada.Environment_Variables.Value ("TMPDIR")
+         elsif Ada.Environment_Variables.Exists ("TEMP")
+         then Ada.Environment_Variables.Value ("TEMP")
+         else "/tmp");
+   begin
+      return Compose (Base, "turbo_ada_check");
+   end Scratch_Dir;
 
    function Is_Interactive (A : Action) return Boolean is
      (A in Act_Run | Act_Monitor | Act_Debug);

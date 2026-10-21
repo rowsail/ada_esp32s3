@@ -38,11 +38,16 @@ package Turbo.Messages is
 
    procedure Clear (W : in out Message_Window);
    procedure Add_Line (W : in out Message_Window; Raw : String);
+   --  Lines from ./x --machine ("@x stage ...", "@x diag ...") are read for
+   --  what they say; the protocol and result lines are not shown.
+
+   function Stage_Of (Raw : String) return String;
+   --  "2/4 compile ..." for an "@x stage" line, else "".
    procedure Add (W : in out Message_Window; Kind : Msg_Kind; Text : String);
 
    procedure Add_Location
      (W : in out Message_Window; File : String; Line, Col : Positive;
-      Text : Wide_Wide_String);
+      Text : Wide_Wide_String; Kind : Msg_Kind := Info);
    --  A found-text line (Grep): a location that is not a diagnostic.
 
    function Errors (W : Message_Window) return Natural;

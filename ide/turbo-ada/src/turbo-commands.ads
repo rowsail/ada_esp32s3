@@ -18,17 +18,21 @@ package Turbo.Commands is
       --  Search
       Cmd_Find, Cmd_Replace, Cmd_Search_Again, Cmd_Goto_Line,
       Cmd_Prev_Msg, Cmd_Next_Msg, Cmd_Find_Spec_Body,
+      --  Language server
+      Cmd_Definition, Cmd_References, Cmd_Symbols, Cmd_Go_Back, Cmd_Rename,
+      Cmd_Complete, Cmd_Hover, Cmd_Diagnostics,
       --  Run
       Cmd_Run, Cmd_Flash, Cmd_Monitor, Cmd_Debug, Cmd_Kill_OpenOCD,
       Cmd_User_Screen,
       --  Compile
-      Cmd_Make, Cmd_Build_All, Cmd_Clean, Cmd_Memory, Cmd_Stack,
+      Cmd_Check_File, Cmd_Make, Cmd_Build_All, Cmd_Clean, Cmd_Memory, Cmd_Stack,
       Cmd_Analyze, Cmd_Test,
       --  Project
       Cmd_Open_Project, Cmd_New_Project, Cmd_Project_Info, Cmd_Edit_Manifest,
       Cmd_Edit_Gpr, Cmd_Board_Config,
       --  Options
-      Cmd_Opt_Target, Cmd_Opt_Commands, Cmd_Opt_Editor, Cmd_Opt_Save,
+      Cmd_Opt_Target, Cmd_Opt_Commands, Cmd_Opt_Editor, Cmd_Opt_Server,
+      Cmd_Opt_Save,
       --  Window
       Cmd_Zoom, Cmd_Tile, Cmd_Cascade, Cmd_Next_Window, Cmd_Prev_Window,
       Cmd_Close, Cmd_Close_All, Cmd_Size_Move, Cmd_Message_Window,

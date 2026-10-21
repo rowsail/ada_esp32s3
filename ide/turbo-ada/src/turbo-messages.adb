@@ -311,9 +311,65 @@ package body Turbo.Messages is
       W.N_Warn := 0;
    end Clear;
 
-   procedure Add_Line (W : in out Message_Window; Raw : String) is
-      M : constant Message := Parse (Raw);
+   function Machine_Line (Raw : String; M : out Message) return Boolean is
+   --  "@x ..." lines from ./x --machine / esp32-ada --machine.  True when M
+   --  is to be shown; protocol and result lines are not.
+      use Ada.Strings.Fixed;
+      Rest : constant String := Raw (Raw'First + 3 .. Raw'Last);
+      Sp   : constant Natural := Index (Rest, " ");
+      Verb : constant String := (if Sp = 0 then Rest else Rest (Rest'First .. Sp - 1));
+      Args : constant String := (if Sp = 0 then "" else Rest (Sp + 1 .. Rest'Last));
    begin
+      M := (others => <>);
+      if Verb = "stage" then
+         declare
+            Sp2 : constant Natural := Index (Args, " ");
+         begin
+            M.Kind := Header;
+            M.Text := To_Unbounded_Wide_Wide_String
+              (Decode ((if Sp2 = 0 then Args
+                        else "[" & Args (Args'First .. Sp2 - 1) & "] "
+                             & Args (Sp2 + 1 .. Args'Last))));
+         end;
+         return True;
+      elsif Verb = "diag" then
+         declare
+            Sp2 : constant Natural := Index (Args, " ");
+            Sev : constant String := (if Sp2 = 0 then "error" else Args (Args'First .. Sp2 - 1));
+         begin
+            M := Parse ((if Sp2 = 0 then Args else Args (Sp2 + 1 .. Args'Last)));
+            if M.Line > 0 then
+               M.Kind := (if Sev = "warning" or else Sev = "style" then Warning
+                          elsif Sev = "info" then Note else Error);
+            end if;
+         end;
+         return True;
+      elsif Verb = "artifact" then
+         M.Kind := Info;
+         M.Text := To_Unbounded_Wide_Wide_String (Decode ("Made " & Args));
+         return True;
+      end if;
+      return False;
+   end Machine_Line;
+
+   function Stage_Of (Raw : String) return String is
+   begin
+      if Raw'Length > 9 and then Raw (Raw'First .. Raw'First + 8) = "@x stage " then
+         return Raw (Raw'First + 9 .. Raw'Last);
+      end if;
+      return "";
+   end Stage_Of;
+
+   procedure Add_Line (W : in out Message_Window; Raw : String) is
+      M : Message;
+   begin
+      if Raw'Length > 3 and then Raw (Raw'First .. Raw'First + 2) = "@x " then
+         if not Machine_Line (Raw, M) then
+            return;
+         end if;
+      else
+         M := Parse (Raw);
+      end if;
       case M.Kind is
          when Error => W.N_Errors := W.N_Errors + 1;
          when Warning => W.N_Warn := W.N_Warn + 1;
@@ -332,11 +388,16 @@ package body Turbo.Messages is
 
    procedure Add_Location
      (W : in out Message_Window; File : String; Line, Col : Positive;
-      Text : Wide_Wide_String)
+      Text : Wide_Wide_String; Kind : Msg_Kind := Info)
    is
       M : Message;
    begin
-      M.Kind := Info;
+      M.Kind := Kind;
+      case Kind is
+         when Error => W.N_Errors := W.N_Errors + 1;
+         when Warning => W.N_Warn := W.N_Warn + 1;
+         when others => null;
+      end case;
       M.File := To_Unbounded_String (File);
       M.Line := Line;
       M.Col := Col;

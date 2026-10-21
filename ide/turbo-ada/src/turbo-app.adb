@@ -1,13 +1,16 @@
+with Ada.Calendar;
 with Ada.Characters.Handling;
+with Ada.Containers.Vectors;
 with Ada.Directories;
-with Ada.Exceptions;
 with Ada.Environment_Variables;
+with Ada.Exceptions;
 with Ada.Strings.Fixed;
-with Ada.Strings.Unbounded;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
+with Ada.Strings.Unbounded;
 with Ada.Strings.Wide_Wide_Fixed;
 with Ada.Strings.Wide_Wide_Unbounded;
 with Ada.Unchecked_Deallocation;
+with Ada.Wide_Wide_Characters.Handling;
 with Turbo.Buffers;
 with Turbo.Clipboard;
 with Turbo.Commands;
@@ -15,7 +18,9 @@ with Turbo.Desktop;
 with Turbo.Editors;
 with Turbo.Events;
 with Turbo.Help;
+with Turbo.JSON;
 with Turbo.Jobs;
+with Turbo.LSP;
 with Turbo.Menus;
 with Turbo.Messages;
 with Turbo.Projects;
@@ -51,6 +56,21 @@ package body Turbo.App is
    Find_Opt     : Dlg.Find_Options;
    Have_Search  : Boolean := False;
    Quit         : Boolean := False;
+
+   --  Language server state (see "The language server" below)
+
+   Server_Wanted : Boolean := True;
+   Server_Path   : Unbounded_String;          --  "" = find it
+   Tried_For     : Unbounded_String;          --  the project last tried
+   Server_Note   : Unbounded_String;          --  why it is not running
+   Last_Input    : Ada.Calendar.Time := Ada.Calendar.Clock;
+
+   type Place is record
+      Path : Unbounded_String;
+      Pos  : Buffers.Position;
+   end record;
+   package Place_Vectors is new Ada.Containers.Vectors (Positive, Place);
+   History : Place_Vectors.Vector;
 
    --  Strings
 
@@ -231,6 +251,9 @@ package body Turbo.App is
                return False;
             end if;
          end if;
+         if not E.Is_Untitled and then E.Path /= Target then
+            LSP.Close_Document (E.Path);    --  it will be opened under the new name
+         end if;
          E.Save_As (Target, Ok);
          if not Ok then
             Dlg.Message_Box ("Error", "Cannot write " & Target);
@@ -248,6 +271,8 @@ package body Turbo.App is
       E.Save (Ok);
       if not Ok then
          Dlg.Message_Box ("Error", "Cannot write " & E.Path);
+      else
+         LSP.Save_Document (E.Path);
       end if;
       return Ok;
    end Save;
@@ -294,6 +319,9 @@ package body Turbo.App is
                end case;
             end if;
             Desktop.Remove (W);
+            if not E.Is_Untitled then
+               LSP.Close_Document (E.Path);
+            end if;
             Free (E);
          end;
       else
@@ -336,6 +364,7 @@ package body Turbo.App is
    type Status_Context is (Ctx_None, Ctx_Editor, Ctx_Message, Ctx_Other);
    Shown_Context : Status_Context := Ctx_Other;
    Shown_Right   : Unbounded_String := To_Unbounded_String ("?");
+   Diag_Shown    : Boolean := False;   --  a diagnostic is on the status line
 
    function "+" (S : String) return Desktop.Label_Access is (new String'(S));
 
@@ -356,8 +385,20 @@ package body Turbo.App is
                 then " (" & (if Prj.Profile /= "" then Prj.Profile
                              else Prj.Example_Profile (Prj.Example)) & ")"
                 else "")
-             & " ");
+             & " ")
+        & (if LSP.Status_Text = "" then "" else "| " & LSP.Status_Text & " ");
+      Diag  : constant String :=
+        (if Active_Editor /= null then Active_Editor.Diagnostic_At_Cursor else "");
    begin
+      --  On a diagnostic, its text takes the status line (Turbo C++ showed
+      --  the message for the error under the cursor the same way).
+      if Diag /= "" then
+         Desktop.Set_Status_Message (" " & Diag);
+         Diag_Shown := True;
+      elsif Diag_Shown then
+         Desktop.Set_Status_Message ("");
+         Diag_Shown := False;
+      end if;
       if Ctx /= Shown_Context then
          Shown_Context := Ctx;
          case Ctx is
@@ -365,7 +406,7 @@ package body Turbo.App is
                Desktop.Set_Status
                  ([(+"~F1~ Help", Cmd_Help_Contents), (+"~F2~ Save", Cmd_Save),
                    (+"~F3~ Open", Cmd_Open), (+"~F9~ Make", Cmd_Make),
-                   (+"~Ctrl-F9~ Run", Cmd_Run), (+"~Alt-F9~ Monitor", Cmd_Monitor),
+                   (+"~Ctrl-F9~ Run", Cmd_Run), (+"~Alt-F9~ Compile", Cmd_Check_File),
                    (+"~F10~ Menu", Cmd_None)]);
             when Ctx_Message =>
                Desktop.Set_Status
@@ -412,6 +453,12 @@ package body Turbo.App is
             | Cmd_Select_All | Cmd_Find_Spec_Body | Cmd_Grep
          =>
             return E /= null;
+         when Cmd_Definition | Cmd_References | Cmd_Symbols | Cmd_Rename | Cmd_Complete
+            | Cmd_Hover
+         =>
+            return E /= null and then Server_Wanted;
+         when Cmd_Check_File => return E /= null and then Prj.Template (Prj.Act_Check) /= "" and then Prj.Kind /= Prj.No_Project;
+         when Cmd_Go_Back => return not History.Is_Empty;
          when Cmd_Search_Again =>
             return E /= null and then Have_Search;
          when Cmd_Undo => return E /= null and then E.Can_Undo;
@@ -451,15 +498,29 @@ package body Turbo.App is
    --  Jobs: the "Compiling" box
 
    function Doing (Line : String) return String is
-   --  What gprbuild says it is working on: "[Ada]  main.adb" -> "main.adb".
+   --  What the build says it is working on: "@x stage 2/4 link" (from
+   --  --machine) -> "2/4 link"; gprbuild's "[Ada]  main.adb" -> "main.adb".
       use Ada.Strings.Fixed;
       L : constant String := Trim (Line, Ada.Strings.Both);
    begin
+      if Messages.Stage_Of (Line) /= "" then
+         return Messages.Stage_Of (Line);
+      elsif L'Length > 3 and then L (L'First .. L'First + 2) = "@x " then
+         return "";
+      end if;
       if L'Length > 2 and then L (L'First) = '[' then
          declare
             Close : constant Natural := Index (L, "]");
+            Tag   : constant String :=
+              (if Close > 0 then L (L'First + 1 .. Close - 1) else "");
          begin
-            if Close > 0 and then Close < L'Last then
+            --  gprbuild's own tags only, not the scripts' "[bare]", "[sdk]".
+            if Close > 0 and then Close < L'Last
+              and then (Tag = "Ada" or else Tag = "C" or else Tag = "Asm"
+                        or else Tag = "Asm_Cpp" or else Tag = "link"
+                        or else Tag = "archive" or else Tag = "gprbind"
+                        or else Tag = "bind" or else Tag = "index")
+            then
                return Trim (L (Close + 1 .. L'Last), Ada.Strings.Both);
             end if;
          end;
@@ -511,12 +572,72 @@ package body Turbo.App is
       Hide_Cursor;
    end Draw_Job_Box;
 
+   function Capture (Cmd, Dir, What : String; Lines : out String_List) return Boolean is
+   --  Run Cmd in the background, collecting its output, behind a small
+   --  "please wait" box (Esc cancels).  True when it exited with status 0.
+      Got      : String_List;
+      Finished : Boolean := False;
+      Ok       : Boolean;
+      E        : Event;
+   begin
+      Lines.Clear;
+      Jobs.Start (Cmd, Dir, Ok);
+      if not Ok then
+         return False;
+      end if;
+      loop
+         Jobs.Poll (Got, Finished);
+         for L of Got loop
+            Lines.Append (L);
+         end loop;
+         exit when Finished;
+         Update_Status;
+         Desktop.Draw;
+         Dlg.Show_Busy (What, Cmd & "   (Esc cancels)");
+         E := Get (100);
+         if Is_Key (E, Escape) then
+            Jobs.Cancel;
+         elsif E.Kind = Resize then
+            Screen.Init;
+         end if;
+      end loop;
+      return Jobs.Succeeded;
+   end Capture;
+
+   function Ensure_Environment return Boolean is
+   --  The project's compile environment (Act_Env), fetched once per project
+   --  and profile.
+      Cmd   : constant String := Prj.Command_For (Prj.Act_Env);
+      Lines : String_List;
+   begin
+      if Prj.Environment_Loaded then
+         return True;
+      end if;
+      if Cmd = "" then
+         Prj.Set_Environment (Lines);    --  nothing to add
+         return True;
+      end if;
+      if Capture (Cmd, Prj.Working_Dir (Prj.Act_Env), "Preparing the environment", Lines)
+      then
+         Prj.Set_Environment (Lines);
+         return True;
+      end if;
+      Msg_Win.Clear;
+      Msg_Win.Add (Messages.Header, "Environment: " & Cmd & "  (failed)");
+      for L of Lines loop
+         Msg_Win.Add_Line (L);
+      end loop;
+      Show_Message_Window (Activate => True);
+      return False;
+   end Ensure_Environment;
+
    procedure Run_Job
      (A         : Prj.Action;
       Title     : String;
       Success   : out Boolean;
       Wait_Key  : Boolean := True;
-      Is_Build  : Boolean := True)
+      Is_Build  : Boolean := True;
+      With_Env  : Boolean := False)
    is
       Cmd       : constant String :=
         Prj.Command_For (A, (if Active_Editor /= null then Active_Editor.Path else ""));
@@ -547,7 +668,16 @@ package body Turbo.App is
       Msg_Win.Add (Messages.Header, Title & ": " & Cmd);
       Show_Message_Window (Activate => False);
 
+      if With_Env then
+         if not Ensure_Environment then
+            return;
+         end if;
+         Prj.Push_Environment;
+      end if;
       Jobs.Start (Cmd, Prj.Working_Dir (A), Ok);
+      if With_Env then
+         Prj.Pop_Environment;
+      end if;
       if not Ok then
          Dlg.Message_Box ("Error", "Cannot start: " & Cmd);
          return;
@@ -804,6 +934,876 @@ package body Turbo.App is
       Show_Message_Window (Activate => True);
    end Grep;
 
+   --  The language server
+   --
+   --  Started at an idle moment once there is a project with a .gpr (for
+   --  the SDK: once an example is chosen), with the environment Act_Env
+   --  printed; restarted when the project, example or profile changes.
+   --  Ada editors are kept in step with it (didOpen, then didChange a
+   --  moment after typing stops), and its diagnostics are drawn in them.
+
+
+   function Project_Key return String is
+     (Prj.Dir & "|" & Prj.Example & "|" & Prj.Profile);
+
+   function Is_Ada_Source (Path : String) return Boolean is
+     (Path /= "" and then Syntax.Language_Of (Path) = Syntax.Ada_Lang
+      and then Ada.Characters.Handling.To_Lower (Ada.Directories.Extension (Path)) /= "gpr");
+
+   function Escape_Pressed return Boolean is
+      E : constant Event := Get (0);
+   begin
+      return Is_Key (E, Escape);
+   end Escape_Pressed;
+
+   procedure Sync_Documents (Force : Boolean) is
+   --  Open new Ada editors in the server; send changed text once typing
+   --  has paused (or now, when Force).
+      use type Ada.Calendar.Time;
+      Idle : constant Boolean := Ada.Calendar.Clock - Last_Input >= 0.35;
+   begin
+      if not LSP.Is_Running then
+         return;
+      end if;
+      for K in 1 .. Desktop.Count loop
+         if Desktop.Nth (K).all in Editors.Editor'Class then
+            declare
+               E : constant Editors.Editor_Access := Editors.Editor_Access (Desktop.Nth (K));
+            begin
+               if not E.Is_Untitled and then Is_Ada_Source (E.Path) then
+                  if not LSP.Is_Open (E.Path) then
+                     LSP.Open_Document (E.Path, E.Version, Encode (E.Text));
+                  elsif LSP.Sent_Version (E.Path) /= E.Version and then (Force or else Idle)
+                  then
+                     LSP.Change_Document (E.Path, E.Version, Encode (E.Text));
+                  end if;
+               end if;
+            end;
+         end if;
+      end loop;
+   end Sync_Documents;
+
+   procedure Apply_Diagnostics is
+   begin
+      if not LSP.Diagnostics_Changed then
+         return;
+      end if;
+      for K in 1 .. Desktop.Count loop
+         if Desktop.Nth (K).all in Editors.Editor'Class then
+            declare
+               E    : constant Editors.Editor_Access := Editors.Editor_Access (Desktop.Nth (K));
+               List : Editors.Diagnostic_Vectors.Vector;
+            begin
+               if not E.Is_Untitled then
+                  for D of LSP.Diagnostics_For (E.Path) loop
+                     declare
+                        L1 : constant Positive := Positive'Min (D.Line + 1, E.Line_Count);
+                        L2 : constant Positive := Positive'Min (D.End_Line + 1, E.Line_Count);
+                     begin
+                        List.Append
+                          (Editors.Diagnostic'(From    => (L1, LSP.To_Col (E.Line_Text (L1), D.Char)),
+                            To      => (L2, LSP.To_Col (E.Line_Text (L2), D.End_Char)),
+                            Level   => (case D.Severity is
+                                           when 1 => Editors.Sev_Error,
+                                           when 2 => Editors.Sev_Warning,
+                                           when others => Editors.Sev_Info),
+                            Message => D.Message));
+                     end;
+                  end loop;
+                  E.Set_Diagnostics (List);
+               end if;
+            end;
+         end if;
+      end loop;
+   end Apply_Diagnostics;
+
+   procedure Restart_Server is
+   begin
+      LSP.Stop;
+      Tried_For := Null_Unbounded_String;
+      for K in 1 .. Desktop.Count loop
+         if Desktop.Nth (K).all in Editors.Editor'Class then
+            Editors.Editor_Access (Desktop.Nth (K)).Set_Diagnostics
+              (Editors.Diagnostic_Vectors.Empty_Vector);
+         end if;
+      end loop;
+   end Restart_Server;
+
+   procedure Start_Server is
+   --  At an idle moment: start the server for this project if it should
+   --  run and has not been tried for it yet.
+      Ok : Boolean;
+   begin
+      Server_Wanted := Prj.Get_Option ("lsp.enabled", "1") = "1";
+      Server_Path := To_Unbounded_String (Prj.Get_Option ("lsp.path"));
+      if LSP.Is_Running and then To_String (Tried_For) /= Project_Key then
+         --  The project, example or profile changed under it.
+         Restart_Server;
+      end if;
+      if not Server_Wanted or else LSP.Is_Running
+        or else To_String (Tried_For) = Project_Key
+        or else Prj.Kind = Prj.No_Project
+        or else (Prj.Kind = Prj.SDK_Example and then Prj.Example = "")
+      then
+         return;
+      end if;
+      Tried_For := To_Unbounded_String (Project_Key);
+      declare
+         Exe : constant String := LSP.Find_Server (To_String (Server_Path));
+      begin
+         if Exe = "" then
+            Server_Note := To_Unbounded_String
+              ("no ada_language_server found (alr install ada_language_server)");
+            return;
+         end if;
+         if not Ensure_Environment then
+            Server_Note := To_Unbounded_String ("the project environment failed");
+            return;
+         end if;
+         if Prj.Main_Gpr = "" then
+            Server_Note := To_Unbounded_String ("no .gpr project file");
+            return;
+         end if;
+         Desktop.Set_Status_Message ("Starting the Ada Language Server...");
+         Redraw;
+         Prj.Push_Environment;
+         LSP.Start (Exe, Prj.Main_Gpr, Prj.Dir, Ok);
+         Prj.Pop_Environment;
+         Desktop.Set_Status_Message ("");
+         Server_Note := To_Unbounded_String (if Ok then "" else LSP.Last_Error);
+         if Ok then
+            Sync_Documents (Force => True);
+         end if;
+      end;
+   end Start_Server;
+
+   function Server_Ready return Boolean is
+   --  For a command that needs the server: say why not, if not.
+   begin
+      if not LSP.Is_Running then
+         Start_Server;
+      end if;
+      if LSP.Is_Running then
+         Sync_Documents (Force => True);
+         return True;
+      end if;
+      Dlg.Message_Box
+        ("Language Server",
+         "The Ada Language Server is not running"
+         & (if Length (Server_Note) > 0 then ":" & Character'Val (10) & To_String (Server_Note)
+            elsif not Server_Wanted then " (Options | Language server)."
+            else "."));
+      return False;
+   end Server_Ready;
+
+   procedure Ask (Method, Params : String; R : in out LSP.Response) is
+   begin
+      Desktop.Set_Status_Message ("Asking the language server...   (Esc cancels)");
+      Redraw;
+      LSP.Request (Method, Params, R, Escape_Pressed'Access);
+      Desktop.Set_Status_Message ("");
+   end Ask;
+
+   --  Locations from the server, as editor positions.
+
+   type Buffer_Access is access Buffers.Buffer;
+   Cached_Path : Unbounded_String;
+   Cached_Buf  : constant Buffer_Access := new Buffers.Buffer;
+
+   function Line_Of (Path : String; Line0 : Natural) return Wide_Wide_String is
+   --  Line Line0 (0-based) of Path, from its editor or else from disk.
+      E : constant Editors.Editor_Access := Find_Editor (Path);
+      Ok : Boolean;
+   begin
+      if E /= null then
+         return E.Line_Text (Line0 + 1);
+      end if;
+      if To_String (Cached_Path) /= Path then
+         Cached_Buf.Load (Path, Ok);
+         Cached_Path := To_Unbounded_String (Path);
+      end if;
+      return Cached_Buf.Line (Positive'Min (Line0 + 1, Cached_Buf.Line_Count));
+   end Line_Of;
+
+   function To_Position (Path : String; Line0, Char : Natural) return Buffers.Position is
+     ((Line0 + 1, LSP.To_Col (Line_Of (Path, Line0), Char)));
+
+   type Location is record
+      Path        : Unbounded_String;
+      Line, Char  : Natural := 0;
+   end record;
+   package Location_Vectors is new Ada.Containers.Vectors (Positive, Location);
+
+   function Locations (R : LSP.Response) return Location_Vectors.Vector is
+   --  Location | Location[] | LocationLink[] -> a list.
+      use Turbo.JSON;
+      Result : Location_Vectors.Vector;
+      procedure Add (V : Value) is
+         Uri : constant Value :=
+           (if Is_Present (Get (R.Doc, V, "targetUri")) then Get (R.Doc, V, "targetUri")
+            else Get (R.Doc, V, "uri"));
+         Rng : constant Value :=
+           (if Is_Present (Get (R.Doc, V, "targetSelectionRange"))
+            then Get (R.Doc, V, "targetSelectionRange") else Get (R.Doc, V, "range"));
+      begin
+         if Is_Present (Uri) then
+            Result.Append
+              (Location'(To_Unbounded_String (LSP.Path_Of (To_String (R.Doc, Uri))),
+                To_Integer (R.Doc, Path (R.Doc, Rng, "start.line")),
+                To_Integer (R.Doc, Path (R.Doc, Rng, "start.character"))));
+         end if;
+      end Add;
+      V : Value;
+   begin
+      if Kind_Of (R.Doc, R.Result) = J_Array then
+         V := First_Member (R.Doc, R.Result);
+         while Is_Present (V) loop
+            Add (V);
+            V := Next_Member (R.Doc, V);
+         end loop;
+      elsif Kind_Of (R.Doc, R.Result) = J_Object then
+         Add (R.Result);
+      end if;
+      return Result;
+   end Locations;
+
+   procedure Remember_Place is
+      E : constant Editors.Editor_Access := Active_Editor;
+   begin
+      if E /= null and then not E.Is_Untitled then
+         History.Append (Place'(To_Unbounded_String (E.Path), E.Cursor));
+         if Natural (History.Length) > 50 then
+            History.Delete_First;
+         end if;
+      end if;
+   end Remember_Place;
+
+   procedure Go_To_Location (L : Location) is
+      Path : constant String := To_String (L.Path);
+      P    : Buffers.Position;
+   begin
+      if not Ada.Directories.Exists (Path) then
+         Dlg.Message_Box ("Information", "Cannot open " & Path);
+         return;
+      end if;
+      P := To_Position (Path, L.Line, L.Char);
+      Remember_Place;
+      Open_File (Path).Go_To (P.Line, P.Col);
+   end Go_To_Location;
+
+   function Describe (L : Location) return String is
+     (Simple (To_String (L.Path)) & ":" & Img (L.Line + 1) & "  "
+      & Encode (Ada.Strings.Wide_Wide_Fixed.Trim
+                  (Line_Of (To_String (L.Path), L.Line), Ada.Strings.Both)));
+
+   function Here (E : Editors.Editor_Access) return String is
+     (LSP.Position_Params (E.Path, E.Cursor.Line - 1,
+                           LSP.To_Char (E.Line_Text (E.Cursor.Line), E.Cursor.Col)));
+
+   function Usable_Editor return Editors.Editor_Access is
+      E : constant Editors.Editor_Access := Active_Editor;
+   begin
+      if E = null or else E.Is_Untitled or else not Is_Ada_Source (E.Path) then
+         Dlg.Message_Box ("Information", "This works on a saved Ada source file.");
+         return null;
+      end if;
+      return E;
+   end Usable_Editor;
+
+   procedure Go_To_Definition is
+      E : constant Editors.Editor_Access := Usable_Editor;
+      R : LSP.Response;
+   begin
+      if E = null or else not Server_Ready then
+         return;
+      end if;
+      Ask ("textDocument/definition", Here (E), R);
+      if not R.Ok then
+         Dlg.Message_Box ("Language Server", To_String (R.Error));
+         return;
+      end if;
+      declare
+         L : constant Location_Vectors.Vector := Locations (R);
+      begin
+         if L.Is_Empty then
+            Dlg.Message_Box ("Information", "No definition found for '"
+                             & Encode (E.Word_At_Cursor) & "'.");
+         elsif Natural (L.Length) = 1 then
+            Go_To_Location (L.First_Element);
+         else
+            declare
+               Items : String_List;
+               Index : Positive := 1;
+            begin
+               for X of L loop
+                  Items.Append (Describe (X));
+               end loop;
+               if Dlg.Choose ("Go to Definition", "~D~efinitions", Items, Index, 60, "~G~o to")
+               then
+                  Go_To_Location (L (Index));
+               end if;
+            end;
+         end if;
+      end;
+   end Go_To_Definition;
+
+   procedure Go_Back is
+   begin
+      if History.Is_Empty then
+         return;
+      end if;
+      declare
+         P : constant Place := History.Last_Element;
+      begin
+         History.Delete_Last;
+         if Ada.Directories.Exists (To_String (P.Path)) then
+            Open_File (To_String (P.Path)).Go_To (P.Pos.Line, P.Pos.Col);
+         end if;
+      end;
+   end Go_Back;
+
+   procedure Find_References is
+      E : constant Editors.Editor_Access := Usable_Editor;
+      R : LSP.Response;
+   begin
+      if E = null or else not Server_Ready then
+         return;
+      end if;
+      declare
+         Word : constant String := Encode (E.Word_At_Cursor);
+         P    : constant String := Here (E);
+      begin
+         Ask ("textDocument/references",
+              P (P'First .. P'Last - 1) & ",""context"":{""includeDeclaration"":true}}", R);
+         if not R.Ok then
+            Dlg.Message_Box ("Language Server", To_String (R.Error));
+            return;
+         end if;
+         Msg_Win.Clear;
+         Msg_Win.Add (Messages.Header, "Uses of " & Word);
+         for L of Locations (R) loop
+            declare
+               Pos : constant Buffers.Position :=
+                 To_Position (To_String (L.Path), L.Line, L.Char);
+            begin
+               Msg_Win.Add_Location
+                 (To_String (L.Path), Pos.Line, Pos.Col,
+                  Ada.Strings.Wide_Wide_Fixed.Trim
+                    (Line_Of (To_String (L.Path), L.Line), Ada.Strings.Both));
+            end;
+         end loop;
+         Msg_Win.Add (Messages.Header, Img (Msg_Win.Line_Count - 1) & " use(s).");
+         Show_Message_Window (Activate => True);
+      end;
+   end Find_References;
+
+   procedure Symbol_List is
+      use Turbo.JSON;
+      E      : constant Editors.Editor_Access := Usable_Editor;
+      R      : LSP.Response;
+      Items  : String_List;
+      Places : Location_Vectors.Vector;
+      Index  : Positive := 1;
+
+      function Kind_Name (K : Integer) return String is
+        (case K is
+            when 2 | 6 | 12 => "function",   --  method, constructor, function
+            when 3 => "namespace",
+            when 4 => "package",
+            when 5 => "type",
+            when 9 => "constructor",
+            when 10 => "enum",
+            when 11 => "interface",
+            when 13 => "variable",
+            when 14 => "constant",
+            when 22 => "literal",
+            when 23 => "record",
+            when 26 => "type param",
+            when others => "");
+
+      procedure Walk (V : Value; Depth : Natural) is
+         C : Value := First_Member (R.Doc, V);
+      begin
+         while Is_Present (C) loop
+            declare
+               Name : constant String := To_String (R.Doc, Get (R.Doc, C, "name"));
+               Sel  : constant Value :=
+                 (if Is_Present (Get (R.Doc, C, "selectionRange"))
+                  then Get (R.Doc, C, "selectionRange")
+                  else Path (R.Doc, C, "location.range"));
+               K    : constant String := Kind_Name (To_Integer (R.Doc, Get (R.Doc, C, "kind")));
+               Line : constant Natural := To_Integer (R.Doc, Path (R.Doc, Sel, "start.line"));
+            begin
+               Items.Append ((1 .. 2 * Depth => ' ') & Name
+                             & (if K = "" then "" else "  (" & K & ")")
+                             & "  :" & Img (Line + 1));
+               Places.Append (Location'(To_Unbounded_String (E.Path), Line,
+                               To_Integer (R.Doc, Path (R.Doc, Sel, "start.character"))));
+               if Is_Present (Get (R.Doc, C, "children")) then
+                  Walk (Get (R.Doc, C, "children"), Depth + 1);
+               end if;
+            end;
+            C := Next_Member (R.Doc, C);
+         end loop;
+      end Walk;
+   begin
+      if E = null or else not Server_Ready then
+         return;
+      end if;
+      Ask ("textDocument/documentSymbol", "{""textDocument"":" & LSP.Text_Document (E.Path) & "}", R);
+      if not R.Ok then
+         Dlg.Message_Box ("Language Server", To_String (R.Error));
+         return;
+      end if;
+      Walk (R.Result, 0);
+      if Items.Is_Empty then
+         Dlg.Message_Box ("Information", "No symbols in this file.");
+      elsif Dlg.Choose ("Symbol List", "~S~ymbols in " & Simple (E.Path), Items, Index, 60,
+                        "~G~o to")
+      then
+         Go_To_Location (Places (Index));
+      end if;
+   end Symbol_List;
+
+   procedure Hover is
+      use Turbo.JSON;
+      E    : constant Editors.Editor_Access := Usable_Editor;
+      R    : LSP.Response;
+      Text : Unbounded_String;
+      LF   : constant Character := Character'Val (10);
+
+      procedure Add (V : Value) is
+      begin
+         case Kind_Of (R.Doc, V) is
+            when J_String =>
+               Append (Text, To_String (R.Doc, V) & LF);
+            when J_Object =>
+               Append (Text, To_String (R.Doc, Get (R.Doc, V, "value")) & LF);
+            when J_Array =>
+               declare
+                  C : Value := First_Member (R.Doc, V);
+               begin
+                  while Is_Present (C) loop
+                     Add (C);
+                     C := Next_Member (R.Doc, C);
+                  end loop;
+               end;
+            when others => null;
+         end case;
+      end Add;
+   begin
+      if E = null or else not Server_Ready then
+         return;
+      end if;
+      Ask ("textDocument/hover", Here (E), R);
+      if not R.Ok then
+         Dlg.Message_Box ("Language Server", To_String (R.Error));
+         return;
+      end if;
+      Add (Get (R.Doc, R.Result, "contents"));
+      if Length (Text) = 0 then
+         Dlg.Message_Box ("Information", "No help on '" & Encode (E.Word_At_Cursor) & "'.");
+      else
+         Show_Help ("Help on " & Encode (E.Word_At_Cursor),
+                    "# " & Encode (E.Word_At_Cursor) & LF & LF & To_String (Text));
+      end if;
+   end Hover;
+
+   procedure Rename is
+      use Turbo.JSON;
+      E     : constant Editors.Editor_Access := Usable_Editor;
+      R     : LSP.Response;
+      Name  : Unbounded_String;
+      Edits : Natural := 0;
+      Files : Natural := 0;
+
+      procedure Apply (File : String; List : Value) is
+      --  The edits for one file, last first so earlier positions hold.
+         type Edit is record
+            From, To : Buffers.Position;
+            Text     : Unbounded_String;
+         end record;
+         function "<" (A, B : Edit) return Boolean is (Buffers."<" (B.From, A.From));
+         package Edit_Vectors is new Ada.Containers.Vectors (Positive, Edit);
+         package Sorting is new Edit_Vectors.Generic_Sorting;
+         All_Edits : Edit_Vectors.Vector;
+         Target    : Editors.Editor_Access;
+         C         : Value := First_Member (R.Doc, List);
+      begin
+         if not Ada.Directories.Exists (File) then
+            return;
+         end if;
+         Target := Open_File (File, Activate => False);
+         while Is_Present (C) loop
+            declare
+               Rng : constant Value := Get (R.Doc, C, "range");
+            begin
+               All_Edits.Append
+                 (Edit'(From => To_Position (File, To_Integer (R.Doc, Path (R.Doc, Rng, "start.line")),
+                                        To_Integer (R.Doc, Path (R.Doc, Rng, "start.character"))),
+                   To   => To_Position (File, To_Integer (R.Doc, Path (R.Doc, Rng, "end.line")),
+                                        To_Integer (R.Doc, Path (R.Doc, Rng, "end.character"))),
+                   Text => To_Unbounded_String (To_String (R.Doc, Get (R.Doc, C, "newText")))));
+            end;
+            C := Next_Member (R.Doc, C);
+         end loop;
+         Sorting.Sort (All_Edits);
+         Target.Begin_Edit_Group;
+         for X of All_Edits loop
+            Target.Replace_Range (X.From, X.To, Decode (To_String (X.Text)));
+            Edits := Edits + 1;
+         end loop;
+         Target.End_Edit_Group;
+         Files := Files + 1;
+      end Apply;
+   begin
+      if E = null or else not Server_Ready then
+         return;
+      end if;
+      Name := To_Unbounded_String (Encode (E.Word_At_Cursor));
+      if Length (Name) = 0 then
+         return;
+      end if;
+      declare
+         Old : constant String := To_String (Name);
+         P   : constant String := Here (E);
+      begin
+         if not Dlg.Input_Box ("Rename Symbol", "~N~ew name for " & Old, Name, 40)
+           or else To_String (Name) = Old or else Length (Name) = 0
+         then
+            return;
+         end if;
+         Ask ("textDocument/rename",
+              P (P'First .. P'Last - 1) & ",""newName"":" & Quote (To_String (Name)) & "}", R);
+      end;
+      if not R.Ok then
+         Dlg.Message_Box ("Language Server", To_String (R.Error));
+         return;
+      end if;
+      declare
+         Changes : constant Value := Get (R.Doc, R.Result, "changes");
+         Doc_Ch  : constant Value := Get (R.Doc, R.Result, "documentChanges");
+         C       : Value;
+      begin
+         if Is_Present (Changes) then
+            C := First_Member (R.Doc, Changes);
+            while Is_Present (C) loop
+               Apply (LSP.Path_Of (Key (R.Doc, C)), C);
+               C := Next_Member (R.Doc, C);
+            end loop;
+         elsif Is_Present (Doc_Ch) then
+            C := First_Member (R.Doc, Doc_Ch);
+            while Is_Present (C) loop
+               Apply (LSP.Path_Of (To_String (R.Doc, Path (R.Doc, C, "textDocument.uri"))),
+                      Get (R.Doc, C, "edits"));
+               C := Next_Member (R.Doc, C);
+            end loop;
+         end if;
+      end;
+      Desktop.Activate (Window_Access (E));
+      Sync_Documents (Force => True);
+      Dlg.Message_Box ("Rename Symbol",
+                       Img (Edits) & " change(s) in" & Natural'Image (Files) & " file(s)."
+                       & (if Files > 1 then Character'Val (10) & "Save them with File | Save all."
+                          else ""));
+   end Rename;
+
+   procedure Diagnostics_List is
+   begin
+      Msg_Win.Clear;
+      Msg_Win.Add (Messages.Header, "Diagnostics from the language server");
+      for C in LSP.All_Diagnostics.Iterate loop
+         declare
+            File : constant String := LSP.Path_Maps.Key (C);
+         begin
+            if Is_Ada_Source (File) then
+               for D of LSP.Path_Maps.Element (C) loop
+                  declare
+                     P : constant Buffers.Position := To_Position (File, D.Line, D.Char);
+                  begin
+                     Msg_Win.Add_Location
+                       (File, P.Line, P.Col, Decode (To_String (D.Message)),
+                        (case D.Severity is
+                            when 1 => Messages.Error,
+                            when 2 => Messages.Warning,
+                            when others => Messages.Note));
+                  end;
+               end loop;
+            end if;
+         end;
+      end loop;
+      if Msg_Win.Line_Count = 1 then
+         Msg_Win.Add (Messages.Info,
+                      (if LSP.Is_Running then "None." else "The language server is not running."));
+      end if;
+      Show_Message_Window (Activate => True);
+   end Diagnostics_List;
+
+   procedure Complete is
+   --  Ctrl-Space: a Turbo-style pick list under the cursor.  Typing goes on
+   --  into the editor and narrows the list; Enter or Tab takes the choice.
+      use Turbo.JSON;
+      E : constant Editors.Editor_Access := Usable_Editor;
+
+      type Item is record
+         Label : Unbounded_String;
+         Text  : Unbounded_String;     --  what to insert
+         Kind  : Integer := 0;
+         Sort  : Unbounded_String;
+      end record;
+      package Item_Vectors is new Ada.Containers.Vectors (Positive, Item);
+      All_Items : Item_Vectors.Vector;
+      Shown     : Item_Vectors.Vector;
+      Sel       : Positive := 1;
+      Top       : Positive := 1;
+      R         : LSP.Response;
+
+      function Prefix return String is
+         S : constant Buffers.Position := E.Word_Start;
+      begin
+         return Ada.Characters.Handling.To_Lower
+           (Encode (E.Line_Text (S.Line) (S.Col .. E.Cursor.Col - 1)));
+      end Prefix;
+
+      procedure Narrow is
+      --  The items starting with what has been typed, without repeats.
+      --  The server also offers names that are not visible here, marked
+      --  "(invisible)"; they are shown only when nothing visible matches.
+         P : constant String := Prefix;
+      begin
+         for Pass in 1 .. 2 loop
+            Shown.Clear;
+            for It of All_Items loop
+               declare
+                  L : constant String := Ada.Characters.Handling.To_Lower (To_String (It.Label));
+                  Hidden : constant Boolean := Ada.Strings.Fixed.Index (L, "(invisible)") > 0;
+                  Seen   : Boolean := False;
+               begin
+                  if L'Length >= P'Length and then L (L'First .. L'First + P'Length - 1) = P
+                    and then (Pass = 2 or else not Hidden)
+                  then
+                     for Other of Shown loop
+                        if Other.Label = It.Label and then Other.Kind = It.Kind then
+                           Seen := True;
+                        end if;
+                     end loop;
+                     if not Seen then
+                        Shown.Append (It);
+                     end if;
+                  end if;
+               end;
+            end loop;
+            exit when not Shown.Is_Empty;
+         end loop;
+         Sel := 1;
+         Top := 1;
+      end Narrow;
+
+      function Tag (K : Integer) return String is
+        (case K is
+            when 2 | 3 | 4 => "func",
+            when 5 | 10 => "field",
+            when 6 => "var",
+            when 7 | 22 => "type",
+            when 9 => "pkg",
+            when 13 | 20 => "enum",
+            when 14 => "kw",
+            when 21 => "const",
+            when others => "");
+
+      procedure Draw_List is
+         use Turbo.Screen;
+         X, Y   : Integer;
+         Rows   : constant Integer := Integer'Min (10, Natural (Shown.Length));
+         Box_W : Integer := 16;
+      begin
+         E.Cursor_Screen (X, Y);
+         for It of Shown loop
+            Box_W := Integer'Max (Box_W, Length (It.Label) + 9);
+         end loop;
+         Box_W := Integer'Min (Box_W, 50);
+         X := Integer'Max (1, Integer'Min (X - 1, Screen.Width - Box_W - 1));
+         if Y + Rows + 2 > Screen.Height - 1 then
+            Y := Y - Rows - 2;          --  no room below: above the line
+         else
+            Y := Y + 1;
+         end if;
+         Fill (X, Y, Box_W, Rows + 2, ' ', Theme.List_Normal);
+         Frame (X, Y, Box_W, Rows + 2, Theme.List_Normal, Double => False);
+         Shadow (X + Box_W, Y + 1, 2, Rows + 2);
+         Shadow (X + 2, Y + Rows + 2, Box_W, 1);
+         if Sel < Top then
+            Top := Sel;
+         elsif Sel >= Top + Rows then
+            Top := Sel - Rows + 1;
+         end if;
+         for K in 0 .. Rows - 1 loop
+            declare
+               N  : constant Positive := Top + K;
+               It : constant Item := Shown (N);
+               A  : constant Attribute :=
+                 (if N = Sel then Theme.List_Focused else Theme.List_Normal);
+               L  : constant String := To_String (It.Label);
+               T  : constant String := Tag (It.Kind);
+            begin
+               Fill (X + 1, Y + 1 + K, Box_W - 2, 1, ' ', A);
+               Put_Wide (X + 2, Y + 1 + K,
+                         Decode (if L'Length > Box_W - 9 then L (L'First .. L'First + Box_W - 10)
+                                 else L), A);
+               Put (X + Box_W - 2 - T'Length, Y + 1 + K, T,
+                    (if N = Sel then A else Theme.List_Divider));
+            end;
+         end loop;
+      end Draw_List;
+
+      procedure Accept_Item is
+         T   : constant String := To_String (Shown (Sel).Text);
+         Cut : constant Natural := Ada.Strings.Fixed.Index (T, " (invisible)");
+      begin
+         E.Replace_Range (E.Word_Start, E.Cursor,
+                          Decode (if Cut > 0 then T (T'First .. Cut - 1) else T));
+      end Accept_Item;
+
+      Ev      : Event;
+      Handled : Boolean;
+   begin
+      if E = null or else not Server_Ready then
+         return;
+      end if;
+      Ask ("textDocument/completion", Here (E), R);
+      if not R.Ok then
+         Dlg.Message_Box ("Language Server", To_String (R.Error));
+         return;
+      end if;
+      declare
+         List : constant Value :=
+           (if Kind_Of (R.Doc, R.Result) = J_Array then R.Result
+            else Get (R.Doc, R.Result, "items"));
+         C    : Value := First_Member (R.Doc, List);
+      begin
+         while Is_Present (C) loop
+            declare
+               Label : constant String := To_String (R.Doc, Get (R.Doc, C, "label"));
+               Ins   : constant String :=
+                 To_String (R.Doc, Path (R.Doc, C, "textEdit.newText"),
+                            To_String (R.Doc, Get (R.Doc, C, "insertText"), Label));
+               It    : Item;
+               Pos   : Natural := Item_Vectors.No_Index;
+            begin
+               It := (To_Unbounded_String (Label), To_Unbounded_String (Ins),
+                      To_Integer (R.Doc, Get (R.Doc, C, "kind")),
+                      To_Unbounded_String (To_String (R.Doc, Get (R.Doc, C, "sortText"), Label)));
+               --  Keep the server's order (its sortText).
+               for K in 1 .. Natural (All_Items.Length) loop
+                  if It.Sort < All_Items (K).Sort then
+                     Pos := K;
+                     exit;
+                  end if;
+               end loop;
+               if Pos = Item_Vectors.No_Index then
+                  All_Items.Append (It);
+               else
+                  All_Items.Insert (Pos, It);
+               end if;
+            end;
+            C := Next_Member (R.Doc, C);
+         end loop;
+      end;
+      Narrow;
+      if Shown.Is_Empty then
+         Desktop.Set_Status_Message ("No completions here.");
+         Redraw;
+         delay 0.6;
+         Desktop.Set_Status_Message ("");
+         return;
+      elsif Natural (Shown.Length) = 1 then
+         Accept_Item;
+         return;
+      end if;
+      loop
+         Update_Status;
+         Desktop.Draw;
+         Draw_List;
+         Screen.Flush;
+         Ev := Get (-1);
+         if Ev.Kind = Key then
+            case Ev.Code is
+               when Escape => exit;
+               when Up => Sel := (if Sel = 1 then Natural (Shown.Length) else Sel - 1);
+               when Down => Sel := (if Sel = Natural (Shown.Length) then 1 else Sel + 1);
+               when Page_Up => Sel := Positive'Max (1, Sel - 10);
+               when Page_Down => Sel := Positive'Min (Natural (Shown.Length), Sel + 10);
+               when Enter | Tab =>
+                  Accept_Item;
+                  exit;
+               when Backspace | Char_Key =>
+                  if Ev.Code = Char_Key
+                    and then not (Is_Plain_Char (Ev)
+                                  and then (Ada.Wide_Wide_Characters.Handling.Is_Alphanumeric (Ev.Ch)
+                                            or else Ev.Ch = '_'))
+                  then
+                     --  Anything else ends completion and still happens.
+                     Push_Back (Ev);
+                     exit;
+                  end if;
+                  E.Handle_Event (Ev, Handled);
+                  exit when E.Cursor.Col <= E.Word_Start.Col and then Ev.Code = Backspace;
+                  Narrow;
+                  exit when Shown.Is_Empty;
+               when others =>
+                  Push_Back (Ev);
+                  exit;
+            end case;
+         elsif Ev.Kind = Mouse and then Ev.Action = Press then
+            exit;
+         elsif Ev.Kind = Resize then
+            Screen.Init;
+         end if;
+      end loop;
+   end Complete;
+
+   procedure Server_Options is
+      D : Dlg.Dialog;
+      Use_Id, Path_Id : Positive;
+      Found : constant String := LSP.Find_Server (To_String (Server_Path));
+      Code  : Integer;
+   begin
+      D.Init ("Language Server", 64, 14);
+      Use_Id := D.Add_Check (3, 2, 56, "~U~se the Ada Language Server", Server_Wanted);
+      Path_Id := D.Add_Input (3, 5, 58, To_String (Server_Path));
+      D.Add_Label (2, 4, "~P~rogram (empty: find ada_language_server)", Path_Id);
+      D.Add_Text (3, 7, (if Found = "" then "Not found.  alr install ada_language_server"
+                         else "Using " & Found));
+      D.Add_Text (3, 8, "State: " & (case LSP.State is
+                                        when LSP.Off => "not running"
+                                                        & (if Length (Server_Note) > 0
+                                                           then " -- " & To_String (Server_Note) else ""),
+                                        when LSP.Running => "running",
+                                        when LSP.Failed => "failed -- " & LSP.Last_Error));
+      D.Add_Button (6, 10, 12, "~O~K", 1, Default => True);
+      D.Add_Button (24, 10, 14, "~R~estart", 2);
+      D.Add_Button (44, 10, 12, "Cancel", Dlg.Cancel_Code);
+      Code := D.Run;
+      if Code = 1 or else Code = 2 then
+         declare
+            New_Path : constant String := Ada.Strings.Fixed.Trim (D.Value (Path_Id), Ada.Strings.Both);
+            Changed  : constant Boolean :=
+              D.Checked (Use_Id) /= Server_Wanted or else New_Path /= To_String (Server_Path);
+         begin
+            Server_Wanted := D.Checked (Use_Id);
+            Server_Path := To_Unbounded_String (New_Path);
+            Prj.Set_Option ("lsp.enabled", (if Server_Wanted then "1" else "0"));
+            Prj.Set_Option ("lsp.path", New_Path);
+            if Changed or else Code = 2 then
+               Restart_Server;
+               if Server_Wanted then
+                  Start_Server;
+               end if;
+            end if;
+         end;
+      end if;
+   end Server_Options;
+
    --  Dialog-driven commands
 
    procedure Open_Dialog is
@@ -1040,12 +2040,15 @@ package body Turbo.App is
       D.Add_Label (2, 2, "Serial ~p~ort (empty: $ESPPORT or /dev/ttyACM0)", Port_Id);
       Prof_Id := D.Add_Radio (3, 6, 40,
         "~P~roject default|~L~ight-tasking (Jorvik)|~E~mbedded|~F~ull", Cur);
-      D.Add_Label (2, 5, "Runtime ~r~rofile", Prof_Id);
+      D.Add_Label (2, 5, "Runtime p~r~ofile", Prof_Id);
       D.Add_Button (12, 11, 12, "~O~K", 1, Default => True);
       D.Add_Button (30, 11, 12, "Cancel", Dlg.Cancel_Code);
       if D.Run = 1 then
          Prj.Set_Port (D.Value (Port_Id));
-         Prj.Set_Profile (Profiles (D.Radio_Value (Prof_Id)).all);
+         if Profiles (D.Radio_Value (Prof_Id)).all /= Prj.Profile then
+            Prj.Set_Profile (Profiles (D.Radio_Value (Prof_Id)).all);
+            Restart_Server;      --  a new profile is a new runtime to index
+         end if;
          Shown_Right := To_Unbounded_String ("?");
       end if;
    end Target_Options;
@@ -1063,10 +2066,10 @@ package body Turbo.App is
          D.Add_Label (2, Row, Prj.Label (A), Ids (A));
          Row := Row + 1;
       end loop;
-      D.Add_Text (2, Row + 1, "{example} {port_opt} {profile_opt} {port} {profile} {dir} {root} {file}");
-      D.Add_Button (W / 2 - 22, Row + 3, 12, "~O~K", 1, Default => True);
-      D.Add_Button (W / 2 - 6, Row + 3, 12, "~D~efaults", 2);
-      D.Add_Button (W / 2 + 10, Row + 3, 12, "Cancel", Dlg.Cancel_Code);
+      D.Add_Text (2, Row, "{example} {port[_opt]} {profile[_opt]} {gpr} {file} {dir} {root} {tmp}");
+      D.Add_Button (W / 2 - 22, Row + 2, 12, "~O~K", 1, Default => True);
+      D.Add_Button (W / 2 - 6, Row + 2, 12, "~D~efaults", 2);
+      D.Add_Button (W / 2 + 10, Row + 2, 12, "Cancel", Dlg.Cancel_Code);
       loop
          Code := D.Run;
          exit when Code /= 2;
@@ -1294,6 +2297,7 @@ package body Turbo.App is
          Store_Editor_Options;
          Prj.Save_Options (Files);
       end if;
+      LSP.Stop;
       Quit := True;
    end Do_Quit;
 
@@ -1386,6 +2390,22 @@ package body Turbo.App is
                Desktop.Set_Status_Message ("");
             end if;
          when Cmd_Find_Spec_Body => Spec_Body;
+         when Cmd_Definition => Go_To_Definition;
+         when Cmd_References => Find_References;
+         when Cmd_Symbols => Symbol_List;
+         when Cmd_Go_Back => Go_Back;
+         when Cmd_Rename => Rename;
+         when Cmd_Complete => Complete;
+         when Cmd_Hover => Hover;
+         when Cmd_Diagnostics => Diagnostics_List;
+         when Cmd_Opt_Server => Server_Options;
+         when Cmd_Check_File =>
+            if E.Is_Untitled or else not Is_Ada_Source (E.Path) then
+               Dlg.Message_Box ("Information", "Compile works on a saved Ada source file.");
+            elsif Save (E) then
+               Run_Job (Prj.Act_Check, "Compiling", Ok, Wait_Key => True, Is_Build => False,
+                        With_Env => True);
+            end if;
          when Cmd_Grep =>
             declare
                Word : constant Wide_Wide_String := E.Word_At_Cursor;
@@ -1488,7 +2508,7 @@ package body Turbo.App is
             case E.Code is
                when F1 =>
                   if Plain then return Cmd_Help_Contents;
-                  elsif C then return Cmd_Grep; end if;
+                  elsif C then return Cmd_Hover; end if;
                when F2 => if Plain then return Cmd_Save; end if;
                when F3 =>
                   if Plain then return Cmd_Open;
@@ -1509,7 +2529,12 @@ package body Turbo.App is
                   if Plain then return Cmd_Make;
                   elsif C then return Cmd_Run;
                   elsif S then return Cmd_Flash;
-                  elsif A then return Cmd_Monitor; end if;
+                  elsif A then return Cmd_Check_File; end if;
+               when F12 =>
+                  if Plain then return Cmd_Definition;
+                  elsif S then return Cmd_References;
+                  elsif C then return Cmd_Symbols;
+                  elsif A then return Cmd_Go_Back; end if;
                when others => null;
             end case;
          end;
@@ -1534,6 +2559,7 @@ package body Turbo.App is
       elsif Is_Ctrl (E, 'o') then return Cmd_Open;
       elsif Is_Ctrl (E, 'n') then return Cmd_New;
       elsif Is_Ctrl (E, 'w') then return Cmd_Close;
+      elsif Is_Ctrl (E, ' ') then return Cmd_Complete;
       end if;
       return Cmd_None;
    end Late_Command;
@@ -1768,9 +2794,21 @@ package body Turbo.App is
       end if;
 
       while not Quit loop
+         LSP.Poll;
+         Sync_Documents (Force => False);
+         Apply_Diagnostics;
          Redraw;
-         E := Get (-1);
+         --  Wake up now and then while the language server has things to
+         --  say or a start is due; otherwise sleep until a key.
+         E := Get ((if LSP.Is_Running
+                       or else (Server_Wanted and then To_String (Tried_For) /= Project_Key)
+                    then 150 else -1));
          begin
+            if E.Kind = None then
+               Start_Server;
+            else
+               Last_Input := Ada.Calendar.Clock;
+            end if;
             Dispatch (E);
          exception
             when X : others =>
@@ -1783,9 +2821,11 @@ package body Turbo.App is
          end;
       end loop;
 
+      LSP.Stop;
       Term.Stop;
    exception
       when others =>
+         LSP.Stop;
          Term.Stop;
          raise;
    end Run;

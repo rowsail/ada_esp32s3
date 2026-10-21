@@ -21,6 +21,8 @@
 #    esp32-ada install-ide           install the VS Code extension (committed .vsix; no Node)
 #    esp32-ada install-vim           symlink the Vim/Neovim plugin (auto-updates on git pull)
 #    esp32-ada turbo [FILE...]       Turbo Ada, the Turbo C++ style IDE, on this project
+#    esp32-ada env [-P PROFILE]      KEY=VALUE: the environment a compile of this project needs
+#    esp32-ada --machine <verb> ...  the verb's output with @x lines for IDEs (see ./x)
 #
 #  PORT defaults to $ESPPORT or /dev/ttyACM0.  A project is any folder with
 #  build.sh + app.gpr (what `init` creates).  `-C DIR` runs as if from DIR.
@@ -248,6 +250,12 @@ do_config () {   # show/set THIS project's board.ads (reuses x's set/read helper
         *) die "config: unknown '$1' (show|--json|flash-size|psram-size)" ;;
     esac
 }
+do_env () {   # [-P PROFILE] -> KEY=VALUE lines (app_env comes from x)
+    local prof="auto"
+    while [ $# -gt 0 ]; do case "$1" in -P|--profile) prof="$2"; shift 2;; *) shift;; esac; done
+    valid_profile "$prof"
+    app_env "$(proj_dir)" "$prof"
+}
 do_clean () {
     local p; p="$(proj_dir)"
     rm -rf "$p/obj" "$p/.noidf" "$p/build"
@@ -278,6 +286,18 @@ do_debug () {
 # -C DIR: act as if launched from DIR (before the subcommand).
 if [ "${1:-}" = "-C" ]; then cd "${2:?usage: esp32-ada -C DIR ...}"; shift 2; fi
 
+# --machine: @x lines for IDEs (machine_run/machine_filter come from x).
+if [ "${1:-}" = "--machine" ]; then
+    shift
+    cmd="${1:-}"; shift || true
+    MACHINE_DIRS="$PWD $SDK/libs $SDK/examples/common $SDK/tools"
+    case "$cmd" in
+        build|flash) machine_run "$PWD" "$0" "$cmd" "$@"; exit $? ;;
+        clean|config|cfg|kill-openocd) machine_run "" "$0" "$cmd" "$@"; exit $? ;;
+    esac
+    set -- "$cmd" "$@"
+fi
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
     init|new)        do_init "$@" ;;   # new is an alias of init (matches ./x)
@@ -294,7 +314,8 @@ case "$cmd" in
     build-ide)       cmd_build_ide "$@" ;;     # (maintainer) rebuild the .vsix
     install-vim)     cmd_install_vim "$@" ;;   # symlink the Vim/Neovim plugin
     turbo|tada)      build_tada; exec "$TADA" "$@" ;;   # from x (sourced): the IDE, here
+    env)             do_env "$@" ;;
     ""|-h|--help|help)
-        sed -n '3,25p' "$0" | sed 's/^#  \{0,1\}//; s/^#//' ;;
+        sed -n '3,27p' "$0" | sed 's/^#  \{0,1\}//; s/^#//' ;;
     *) die "unknown command '$cmd' (try 'esp32-ada help')" ;;
 esac

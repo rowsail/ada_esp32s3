@@ -23,6 +23,7 @@ package body Turbo.Buffers is
       B.Open_Group := 0;
       B.Group_Depth := 0;
       B.Is_CRLF := False;
+      B.Edits := B.Edits + 1;
    end Clear;
 
    type String_Access is access String;
@@ -228,6 +229,7 @@ package body Turbo.Buffers is
       Row  : Positive := P.Line;
       First_Piece : Boolean := True;
    begin
+      B.Edits := B.Edits + 1;
       for I in S'Range loop
          if S (I) = LF then
             if First_Piece then
@@ -258,6 +260,7 @@ package body Turbo.Buffers is
       Tail : constant Wide_Wide_String :=
         Slice (B.Lines (To.Line), To.Col, B.Line_Length (To.Line));
    begin
+      B.Edits := B.Edits + 1;
       B.Lines.Replace_Element
         (From.Line, To_Unbounded_Wide_Wide_String (Head & Tail));
       if To.Line > From.Line then
@@ -318,6 +321,8 @@ package body Turbo.Buffers is
    end Delete;
 
    function Modified (B : Buffer) return Boolean is (B.Changes /= 0);
+
+   function Edit_Count (B : Buffer) return Natural is (B.Edits);
 
    procedure Set_Unmodified (B : in out Buffer) is
    begin

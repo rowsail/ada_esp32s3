@@ -40,23 +40,30 @@ package body Turbo.Jobs is
       function Ok return Boolean is (Is_Ok);
    end State;
 
-   --  Wait_Process reaps whichever child ends; there is only ever one.
+   --  Wait_Process reaps whichever child ends first, and the IDE has other
+   --  children (the language server): wait until it is this job that ended.
    task Waiter is
-      entry Watch;
+      entry Watch (Job : Process_Id);
    end Waiter;
 
    task body Waiter is
+      Target  : Process_Id;
       Pid     : Process_Id;
       Success : Boolean;
    begin
       loop
          select
-            accept Watch;
+            accept Watch (Job : Process_Id) do
+               Target := Job;
+            end Watch;
          or
             terminate;
          end select;
-         Wait_Process (Pid, Success);
-         State.Set_Done (Success);
+         loop
+            Wait_Process (Pid, Success);
+            exit when Pid = Target or else Pid = Invalid_Pid;
+         end loop;
+         State.Set_Done (Success and then Pid = Target);
       end loop;
    end Waiter;
 
@@ -130,7 +137,7 @@ package body Turbo.Jobs is
       Have_Job := True;
       Reported := False;
       Started_At := Ada.Calendar.Clock;
-      Waiter.Watch;
+      Waiter.Watch (Job_Pid);
       Ok := True;
    exception
       when others =>

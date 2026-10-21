@@ -18,9 +18,13 @@ package Turbo.Projects is
    type Project_Kind is (No_Project, SDK_Example, Standalone, Alire_Crate);
 
    type Action is
-     (Act_Build, Act_Clean, Act_Flash, Act_Run, Act_Monitor, Act_Debug,
-      Act_Kill_OpenOCD, Act_Memory, Act_Stack, Act_Analyze, Act_Test,
-      Act_Board, Act_Alr_Update, Act_Alr_Show, Act_Alr_Deps);
+     (Act_Build, Act_Check, Act_Clean, Act_Flash, Act_Run, Act_Monitor,
+      Act_Debug, Act_Kill_OpenOCD, Act_Memory, Act_Stack, Act_Analyze,
+      Act_Test, Act_Board, Act_Alr_Update, Act_Alr_Show, Act_Alr_Deps,
+      Act_Env);
+   --  Act_Check compiles one file for errors only (gprbuild -gnatc into a
+   --  scratch tree); Act_Env prints the environment such a compile, and the
+   --  language server, need (./x env, esp32-ada env, alr printenv).
 
    subtype String_List is Turbo.Dialogs.String_List;
 
@@ -69,6 +73,28 @@ package Turbo.Projects is
 
    function Esp32_Ada return String;
    --  How to run esp32-ada: from PATH, else from $ESP32S3_ADA_SDK.
+
+   --  The project's compile environment (from Act_Env)
+
+   procedure Set_Environment (Lines : String_List);
+   --  "KEY=VALUE" or "export KEY="VALUE"" lines.
+
+   function Environment_Loaded return Boolean;
+   procedure Forget_Environment;
+   function Env_Value (Key : String) return String;
+
+   procedure Push_Environment;
+   procedure Pop_Environment;
+   --  Around a spawn that needs the environment (the language server, a
+   --  file check): set it in this process, then put everything back.  The
+   --  build commands do not get it: they set up their own.
+
+   function Main_Gpr return String;
+   --  The project file to check and index: GPR_FILE from the environment,
+   --  else Gpr_File.
+
+   function Scratch_Dir return String;
+   --  Where Act_Check's object tree goes (never the real obj/).
 
    --  Shell
 

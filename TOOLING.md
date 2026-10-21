@@ -150,6 +150,33 @@ Copy the example's `board.ads` too if it sets a non-default flash/PSRAM size, an
 currently does, the boot glue itself being Ada. Add `with "<name>.gpr";` to `app.gpr`
 for any extra SDK library it uses.
 
+### Machine-readable builds and environment (for plugin authors)
+
+`./x --machine <verb> ...` (and `esp32-ada --machine <verb> ...`) prints the
+verb's normal output with these lines added or rewritten, each starting `@x `:
+
+```
+@x protocol 1                         first line
+@x stage 2/4 compile bare-boot ...    a build stage began   (was "[bare] 2/4 ...")
+@x diag error /abs/src/main.adb:18:19: error: expected type "Standard.Integer"
+                                      a diagnostic: error|warning|style|info,
+                                      always an absolute path (gprbuild prints
+                                      bare file names)
+@x artifact bin /abs/examples/x/app.bin
+@x result ok 0                        last line: ok|fail and the exit status
+```
+
+`build`, `flash`, `clean`, `mem`, `stack`, `analyze`, `test`, `config` and
+`kill-openocd` take it; `run`, `monitor` and `debug` own the terminal and ignore it.
+
+`./x env <example> [-P PROFILE]` (`esp32-ada env` in a standalone project)
+prints `KEY=VALUE` lines — `PATH`, `GPR_PROJECT_PATH`, `XTENSA_GNU_CONFIG`,
+`ESP32S3_RTS_PROFILE`, `GPR_FILE`, `PROJECT_DIR` — the environment in which
+`gprbuild`, `gnatls` or the Ada Language Server can process the app's project
+directly, without `build.sh`: it runs the same set-up steps the build does
+(toolchain, dynconfig plugin, runtime generation) and nothing else. Turbo Ada
+uses it for its one-file check and its language server.
+
 ### Machine-readable discovery (for plugin authors)
 
 `./x list --json` and `./x config <example> --json` emit structured output so a plugin can
@@ -197,8 +224,11 @@ populate menus without hardcoding:
   SDK, `esp32-ada turbo` in a standalone project, or `alr build` it and run
   `tada` in any Alire crate. F9 runs the project's build, the Message window
   picks out GNAT's `file:line:col:` diagnostics, and Ctrl-F9 makes, flashes and
-  opens the monitor. It keeps no build logic of its own: each action is an
-  editable template over `./x`, `esp32-ada` or `alr`.
+  opens the monitor; Alt-F9 checks one file with the compiler in about a
+  second, and with `ada_language_server` installed it shows errors as you type
+  and has go-to-definition, find uses, completion and rename. It keeps no build
+  logic of its own: each action is an editable template over `./x`,
+  `esp32-ada` or `alr`, read back through `--machine` and `env` (below).
 
 In every case the integration is: **ALS for language + `./x` for actions** — the
 same two pieces this repo already ships.

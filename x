@@ -49,6 +49,10 @@
 #    ./x install-vim                   symlink the Vim/Neovim plugin (auto-updates on git pull)
 #    ./x turbo   [<example>] [FILE...] Turbo Ada: the Turbo C++ style text-mode IDE
 #                                     (ide/turbo-ada; built on first use)
+#    ./x env     <example> [-P PROF]   KEY=VALUE lines: the environment a compile of
+#                                     the example needs (PATH, GPR_PROJECT_PATH, ...)
+#    ./x --machine <verb> ...          the verb's output with @x lines for IDEs
+#                                     (stages, diagnostics, artifacts, result)
 #    ./x docs                          build the HAL API reference PDF (libs/esp32s3_hal/docs/)
 #
 #  <example> accepts the short name (gpio0_blink) or the full dir
@@ -1031,12 +1035,149 @@ build_lib_clean () {
     [ -z "$warned" ] || { printf '%s\n' "$warned"; return 1; }
 }
 
+# -- machine-readable output (--machine) --------------------------------------
+#  `./x --machine <verb> ...` (and `esp32-ada --machine <verb> ...`) prints the
+#  verb's usual output with these lines added or rewritten, so an IDE can read
+#  a build instead of guessing from free text.  Each starts with "@x " so it
+#  cannot be mistaken for tool output; everything else passes through as is.
+#
+#    @x protocol 1                the first line (the format's version)
+#    @x stage N/M TEXT            a build stage began        (was "[bare] N/M TEXT")
+#    @x diag SEV FILE:L:C: TEXT   a compiler diagnostic      (was "file:l:c: TEXT")
+#                                 SEV is error|warning|style|info; FILE is absolute
+#    @x artifact KIND PATH        something the verb made    (elf, bin)
+#    @x result ok|fail STATUS     the last line; STATUS is the verb's exit status
+#
+#  Interactive verbs (run, monitor, debug) ignore --machine.
+MACHINE=""
+MACHINE_DIRS=""   # where a diagnostic's file name is looked for, in order
+
+machine_resolve () {   # $1 = a file name as a tool printed it -> absolute path
+    local f="$1" d hit
+    case "$f" in /*) [ -e "$f" ] && { printf '%s' "$f"; return; } ;; esac
+    for d in $MACHINE_DIRS; do
+        if [ -e "$d/$f" ]; then
+            printf '%s/%s' "$(cd "$(dirname "$d/$f")" && pwd)" "$(basename "$f")"; return
+        fi
+    done
+    #  gprbuild prints a source by its simple name; find it under the dirs.
+    for d in $MACHINE_DIRS; do
+        hit="$(find "$d" -name "$(basename "$f")" -not -path '*/obj*' \
+                    -not -path '*/.noidf/*' -print -quit 2>/dev/null)"
+        [ -n "$hit" ] && { printf '%s' "$hit"; return; }
+    done
+    printf '%s' "$f"
+}
+
+machine_filter () {
+    local line sev text
+    local diag='^([^ :]+\.(adb|ads|ada|gpr|c|h|S|s|ld)):([0-9]+):(([0-9]+):)? ?(.*)$'
+    local stage='^\[bare\] ([0-9]+/[0-9]+) +(.*)$'
+    while IFS= read -r line; do
+        if [[ "$line" =~ $stage ]]; then
+            printf '@x stage %s %s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+        elif [[ "$line" =~ $diag ]]; then
+            text="${BASH_REMATCH[6]}"
+            case "$text" in
+                error:*|"fatal error:"*) sev=error ;;
+                warning:*)               sev=warning ;;
+                "(style)"*)              sev=style ;;
+                info:*|note:*)           sev=info ;;
+                *)                       sev=error ;;   # GNAT < 13: no "error:"
+            esac
+            printf '@x diag %s %s:%s:%s: %s\n' "$sev" \
+                "$(machine_resolve "${BASH_REMATCH[1]}")" "${BASH_REMATCH[3]}" \
+                "${BASH_REMATCH[5]:-1}" "$text"
+        else
+            printf '%s\n' "$line"
+        fi
+    done
+}
+
+machine_run () {   # $1 = dir holding the artifacts ("" = none); rest = the command
+    local art="$1" rc
+    shift
+    echo "@x protocol 1"
+    set +e
+    ( set -e; "$@" ) 2>&1 | machine_filter
+    rc=${PIPESTATUS[0]}
+    set -e
+    if [ "$rc" = 0 ] && [ -n "$art" ]; then
+        [ -f "$art/app.elf" ] && echo "@x artifact elf $art/app.elf"
+        [ -f "$art/app.bin" ] && echo "@x artifact bin $art/app.bin"
+    fi
+    echo "@x result $([ "$rc" = 0 ] && echo ok || echo fail) $rc"
+    return "$rc"
+}
+
+# -- the environment of one application's compile (env) -----------------------
+#  What gprbuild, gnatls or the Ada Language Server need to process an app's
+#  project WITHOUT going through build.sh: the toolchain on PATH, the xtensa
+#  core-config plugin, the runtime for the profile generated, and the runtime
+#  crate and every libs/*/ on GPR_PROJECT_PATH -- the same steps bare_build.sh
+#  and build_ada.sh take before their gprbuild.  Printed as KEY=VALUE lines;
+#  progress goes to stderr.
+app_env () {   # $1 = project dir, $2 = profile (auto = the project's build.sh)
+    local dir="$1" prof="$2" gpr g l
+    if [ "$prof" = auto ] || [ -z "$prof" ]; then
+        prof="$(grep -hoE 'ESP32S3_RTS_PROFILE=[a-z-]+' "$dir/build.sh" 2>/dev/null \
+                | head -1 | cut -d= -f2 || true)"
+        prof="${prof:-light-tasking}"
+    fi
+    gpr=""
+    for g in "$dir"/*.gpr; do
+        [ -f "$g" ] || continue
+        if [ -z "$gpr" ] || [ "$(basename "$g")" = app.gpr ]; then gpr="$g"; fi
+    done
+    [ -n "$gpr" ] || die "no .gpr in $dir"
+    (
+        export ESP32S3_RTS_PROFILE="$prof"
+        . "$ROOT/tools/sdk-env.sh"
+        esp32s3_toolchain_on_path >&2
+        esp32s3_export_dynconfig "$ROOT" >&2 || die "could not build the xtensa-dynconfig plugin"
+        for l in "$ROOT"/libs/*/; do
+            [ -d "$l" ] && GPR_PROJECT_PATH="${l%/}${GPR_PROJECT_PATH:+:$GPR_PROJECT_PATH}"
+        done
+        GPR_PROJECT_PATH="$ROOT/crates/esp32s3_rts:$GPR_PROJECT_PATH"
+        bash "$ROOT/crates/esp32s3_rts/gen_runtime.sh" >&2
+        printf 'PATH=%s\n' "$PATH"
+        printf 'GPR_PROJECT_PATH=%s\n' "$GPR_PROJECT_PATH"
+        printf 'XTENSA_GNU_CONFIG=%s\n' "$XTENSA_GNU_CONFIG"
+        printf 'ESP32S3_RTS_PROFILE=%s\n' "$prof"
+        printf 'GPR_FILE=%s\n' "$gpr"
+        printf 'PROJECT_DIR=%s\n' "$dir"
+    )
+}
+cmd_env () {   # <example> [-P PROF]
+    local e prof="auto"; e="$(resolve "${1:-}")"; shift || true
+    while [ $# -gt 0 ]; do case "$1" in -P|--profile) prof="$2"; shift 2;; *) shift;; esac; done
+    valid_profile "$prof"
+    app_env "$EXROOT/$e" "$prof"
+}
+
 # -- dispatch -----------------------------------------------------------------
 # Skipped when this file is SOURCED (not executed) -- the standalone-project
 # launcher `tools/bin/esp32-ada` sources x to reuse its helpers (monitor_tool,
 # serial_from_port, find_gdb, cmd_config, ...) without re-running the dispatch.
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  if [ "${1:-}" = "--machine" ]; then MACHINE=1; shift; fi
   cmd="${1:-}"; shift || true
+  if [ -n "$MACHINE" ]; then
+      #  The example (when the verb takes one) is where diagnostics and
+      #  artifacts are looked for; then the libraries and the shared boot.
+      ex_dir=""
+      case "$cmd" in
+          build|flash|clean|stack|mem|memory|config|cfg)
+              [ -n "${1:-}" ] && ex_dir="$( (resolve "$1") 2>/dev/null || true)"
+              [ -n "$ex_dir" ] && ex_dir="$EXROOT/$ex_dir" ;;
+      esac
+      MACHINE_DIRS="$ex_dir $ROOT/libs $EXROOT/common $ROOT/tools"
+      case "$cmd" in
+          build|flash)  machine_run "$ex_dir" "$0" "$cmd" "$@"; exit $? ;;
+          clean|test|analyze|stack|mem|memory|config|cfg|kill-openocd)
+                        machine_run "" "$0" "$cmd" "$@"; exit $? ;;
+      esac
+  fi
   case "$cmd" in
     list)            cmd_list "$@" ;;
     new|init)        cmd_new "$@" ;;   # init is an alias of new (matches esp32-ada)
@@ -1061,6 +1202,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     build-ide)          cmd_build_ide "$@" ;;
     install-vim)        cmd_install_vim "$@" ;;
     turbo|tada)         cmd_turbo "$@" ;;
+    env)                cmd_env "$@" ;;
     docs)               cmd_docs "$@" ;;
     ""|-h|--help|help)
         sed -n '3,36p' "$0" | sed 's/^#  \{0,1\}//; s/^#//' ;;

@@ -233,6 +233,10 @@ int tada_term_init (void)
     if (tcsetattr (STDIN_FILENO, TCSAFLUSH, &raw) != 0)
         return -2;
 
+    /* A child that dies (the language server) must not take the IDE with
+       it: a write to its closed pipe returns EPIPE instead of killing us. */
+    signal (SIGPIPE, SIG_IGN);
+
     /* No SA_RESTART: a resize should cut the poll() short. */
     memset (&sa, 0, sizeof sa);
     sa.sa_handler = on_winch;

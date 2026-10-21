@@ -53,6 +53,10 @@ package Turbo.Buffers is
 
    procedure Delete (B : in out Buffer; From, To : Position);
 
+   function Edit_Count (B : Buffer) return Natural;
+   --  Counts every change to the text, undo and redo included: a version
+   --  number for the language server.
+
    function Modified (B : Buffer) return Boolean;
    procedure Set_Unmodified (B : in out Buffer);
 
@@ -115,6 +119,7 @@ private
       Changes     : Integer := 0;     --  edits since the last save (undo -1)
       Is_CRLF     : Boolean := False;
       Replaying   : Boolean := False;
+      Edits       : Natural := 0;
    end record;
 
    overriding procedure Initialize (B : in out Buffer);

@@ -33,6 +33,8 @@ package Turbo.Theme is
    Edit_Selected    : constant Attribute := Blue / Light_Gray;
    Edit_Error_Line  : constant Attribute := White / Red;
    Edit_Match       : constant Attribute := Black / Cyan;
+   Edit_Diag_Error  : constant Attribute := Light_Red / Blue;     --  live diagnostics
+   Edit_Diag_Warn   : constant Attribute := Light_Magenta / Blue;
 
    --  Message, output and help windows ("cyan window")
 

@@ -1,6 +1,7 @@
 --  The edit window: one file, Turbo C++ keys (and the common modern ones),
 --  syntax colouring, mouse selection.
 
+with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Ada.Calendar;
 with Turbo.Buffers;
@@ -73,6 +74,38 @@ package Turbo.Editors is
    procedure End_Edit_Group (E : in out Editor);
    --  Make a replace-all one undo step.
 
+   --  For the language server
+
+   function Version (E : Editor) return Natural;
+   function Text (E : Editor) return Wide_Wide_String;
+   function Line_Count (E : Editor) return Positive;
+   function Line_Text (E : Editor; N : Positive) return Wide_Wide_String;
+   function Language (E : Editor) return Turbo.Syntax.Language;
+
+   type Severity is (Sev_Error, Sev_Warning, Sev_Info);
+
+   type Diagnostic is record
+      From, To : Position;
+      Level    : Severity := Sev_Error;
+      Message  : Ada.Strings.Unbounded.Unbounded_String;   --  UTF-8
+   end record;
+
+   package Diagnostic_Vectors is new Ada.Containers.Vectors (Positive, Diagnostic);
+
+   procedure Set_Diagnostics (E : in out Editor; List : Diagnostic_Vectors.Vector);
+   function Diagnostic_At_Cursor (E : Editor) return String;
+   --  "Error: ..." when the cursor is on a diagnostic, else "".
+
+   procedure Replace_Range (E : in out Editor; From, To : Position; Text : Wide_Wide_String);
+   --  One undo step (or part of an open Begin_Edit_Group); the cursor ends
+   --  after the new text.
+
+   function Word_Start (E : Editor) return Position;
+   --  Where the identifier the cursor is in or just after begins.
+
+   procedure Cursor_Screen (E : Editor; X, Y : out Integer);
+   --  Where the cursor is on the screen.
+
    function Take_Request (E : in out Editor) return Turbo.Commands.Command;
    --  A command asked for by an editor key sequence (Ctrl-Q F is Find,
    --  Ctrl-K S is Save, ...), handed to the application once.
@@ -101,6 +134,7 @@ private
       Last_Click_Pos : Position;
       Bad_Load     : Boolean := False;
       Request      : Turbo.Commands.Command := Turbo.Commands.Cmd_None;
+      Diags        : Diagnostic_Vectors.Vector;
    end record;
 
 end Turbo.Editors;

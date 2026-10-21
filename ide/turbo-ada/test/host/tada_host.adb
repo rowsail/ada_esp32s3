@@ -4,7 +4,10 @@ with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with Ada.Environment_Variables;
 with Turbo.Buffers;
+with Turbo.JSON;
+with Turbo.LSP;
 with Turbo.Messages;
 with Turbo.Projects;
 with Turbo.Syntax;
@@ -143,6 +146,71 @@ procedure Tada_Host is
       Check (M.Line = 0, "a gprbuild progress line is not a location");
    end Message_Tests;
 
+   procedure JSON_Tests is
+      use Turbo.JSON;
+      D  : Document;
+      Ok : Boolean;
+   begin
+      D.Parse ("{""id"": 7, ""result"": [{""uri"": ""file:///a%20b.adb"", ""range"": "
+               & "{""start"": {""line"": 3, ""character"": 9}}}, null, true, -2.5e1],"
+               & """s"": ""tab\tq\""\u00e9\ud83d\ude00"", ""e"": {}, ""a"": []}", Ok);
+      Check (Ok, "JSON parses");
+      declare
+         R : constant Value := Root (D);
+         A : constant Value := Get (D, R, "result");
+      begin
+         Check (To_Integer (D, Get (D, R, "id")) = 7, "JSON integer");
+         Check (Length (D, A) = 4 and then Kind_Of (D, Element (D, A, 2)) = J_Null
+                and then To_Boolean (D, Element (D, A, 3)), "JSON array, null, bool");
+         Check (To_Integer (D, Path (D, Element (D, A, 1), "range.start.character")) = 9,
+                "JSON Path");
+         Check (To_String (D, Get (D, R, "s")) =
+                  "tab" & ASCII.HT & "q""" & Character'Val (16#C3#) & Character'Val (16#A9#)
+                  & Character'Val (16#F0#) & Character'Val (16#9F#) & Character'Val (16#98#)
+                  & Character'Val (16#80#), "JSON escapes and surrogate pairs to UTF-8");
+         Check (Kind_Of (D, Get (D, R, "e")) = J_Object and then Length (D, Get (D, R, "a")) = 0,
+                "JSON empty object and array");
+         Check (not Is_Present (Get (D, Get (D, R, "missing"), "deeper")),
+                "JSON missing members chain safely");
+      end;
+      D.Parse ("{""a"": [1, 2", Ok);
+      Check (not Ok, "truncated JSON is rejected");
+      D.Parse (Quote ("a""b\c" & ASCII.LF & Character'Val (1)), Ok);
+      Check (Ok and then To_String (D, Root (D)) = "a""b\c" & ASCII.LF & Character'Val (1),
+             "Quote round-trips");
+   end JSON_Tests;
+
+   procedure LSP_Helper_Tests is
+      use Turbo.LSP;
+      Smile : constant Wide_Wide_String :=
+        "a" & Wide_Wide_Character'Val (16#1F600#) & "b";
+   begin
+      Check (URI ("/tmp/a b/x.adb") = "file:///tmp/a%20b/x.adb", "URI escapes a space");
+      Check (Path_Of ("file:///tmp/a%20b/x.adb") = "/tmp/a b/x.adb", "Path_Of decodes it");
+      Check (To_Char (Smile, 3) = 3 and then To_Char (Smile, 4) = 4,
+             "UTF-16 offset counts a non-BMP character twice");
+      Check (To_Col (Smile, 3) = 3 and then To_Col (Smile, 4) = 4 and then To_Col (Smile, 0) = 1,
+             "and back");
+   end LSP_Helper_Tests;
+
+   procedure Machine_Line_Tests is
+      use Turbo.Messages;
+      W : constant Message_Window_Access := Create;
+   begin
+      W.Add_Line ("@x protocol 1");
+      Check (W.Line_Count = 0, "@x protocol is not shown");
+      W.Add_Line ("@x stage 1/4 Ada -> app_main.o");
+      Check (W.Line_Count = 1, "@x stage is shown");
+      Check (Stage_Of ("@x stage 2/4 link") = "2/4 link" and then Stage_Of ("[bare] 2/4") = "",
+             "Stage_Of");
+      W.Add_Line ("@x diag error /sdk/examples/x/src/main.adb:18:19: error: bad");
+      W.Add_Line ("@x diag style /sdk/libs/h/src/h.ads:2:1: (style) blank line");
+      W.Add_Line ("@x artifact bin /sdk/examples/x/app.bin");
+      W.Add_Line ("@x result fail 4");
+      Check (W.Errors = 1 and then W.Warnings = 1, "@x diag counted by severity");
+      Check (W.Line_Count = 4, "@x result is not shown, artifact is");
+   end Machine_Line_Tests;
+
    procedure Syntax_Tests is
       use Turbo.Syntax;
       procedure Classes_Of (S : String; Want : String; What : String) is
@@ -204,12 +272,48 @@ procedure Tada_Host is
       Check (Example = "gpio0_blink", "the example is the one we are in");
       Set_Port ("");
       Set_Profile ("");
-      Check (Command_For (Act_Build) = "./x build gpio0_blink", "x build");
+      Check (Command_For (Act_Build) = "./x --machine build gpio0_blink", "x build (machine)");
       Set_Port ("/dev/ttyUSB1");
       Set_Profile ("embedded");
-      Check (Command_For (Act_Flash) = "./x flash gpio0_blink -p /dev/ttyUSB1", "x flash -p");
+      Check (Command_For (Act_Flash) = "./x --machine flash gpio0_blink -p /dev/ttyUSB1",
+             "x flash -p");
       Check (Command_For (Act_Run) = "./x run gpio0_blink -p /dev/ttyUSB1 -P embedded",
              "x run -p -P");
+      Check (Command_For (Act_Env) = "./x env gpio0_blink -P embedded", "x env");
+
+      --  The environment: KEY=VALUE (./x env) and export KEY="VALUE" (alr).
+      declare
+         L : String_List;
+      begin
+         L.Append ("PATH=/opt/tc/bin:/usr/bin");
+         L.Append ("export GPR_PROJECT_PATH=""/a:/b""");
+         L.Append ("GPR_FILE=/sdk/examples/x/x.gpr");
+         L.Append ("[esp32s3_rts] runtime ready: not=a variable");
+         Set_Environment (L);
+         Check (Environment_Loaded and then Env_Value ("GPR_PROJECT_PATH") = "/a:/b"
+                and then Env_Value ("PATH") = "/opt/tc/bin:/usr/bin",
+                "environment lines parsed");
+         Check (Main_Gpr = "/sdk/examples/x/x.gpr", "GPR_FILE names the project");
+         declare
+            Cmd : constant String := Command_For (Act_Check, "/sdk/examples/x/src/main.adb");
+         begin
+            Check (Cmd = "gprbuild -c -u -f -q -P /sdk/examples/x/x.gpr "
+                   & "/sdk/examples/x/src/main.adb --relocate-build-tree=" & Scratch_Dir
+                   & " --root-dir=/ -cargs -gnatc -gnatef", "check command: " & Cmd);
+         end;
+         Check (Command_For (Act_Check) = "", "no check without a file");
+         Ada.Environment_Variables.Set ("GPR_PROJECT_PATH", "before");
+         Push_Environment;
+         Check (Ada.Environment_Variables.Value ("GPR_PROJECT_PATH") = "/a:/b"
+                and then not Ada.Environment_Variables.Exists ("GPR_FILE"),
+                "Push sets the variables (not GPR_FILE)");
+         Pop_Environment;
+         Check (Ada.Environment_Variables.Value ("GPR_PROJECT_PATH") = "before",
+                "Pop restores them");
+         Set_Profile ("full");
+         Check (not Environment_Loaded, "a profile change forgets the environment");
+         Set_Profile ("embedded");
+      end;
       Set_Template (Act_Build, "./x build {example} --verbose{profile_opt}");
       Check (Command_For (Act_Build) = "./x build gpio0_blink --verbose -P embedded",
              "a changed template");
@@ -228,6 +332,9 @@ begin
    Buffer_Tests;
    Message_Tests;
    Syntax_Tests;
+   JSON_Tests;
+   LSP_Helper_Tests;
+   Machine_Line_Tests;
    Project_Tests (if Ada.Command_Line.Argument_Count > 0
                   then Ada.Command_Line.Argument (1) else "");
    Put_Line (Natural'Image (Checks) & " checks," & Natural'Image (Failures) & " failed");

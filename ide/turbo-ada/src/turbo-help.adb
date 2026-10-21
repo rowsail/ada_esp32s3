@@ -19,11 +19,13 @@ package body Turbo.Help is
       & "  the resize corner, scroll bars, and click-drag to select." & LF
       & LF
       & "# Building" & LF
+      & "  {Alt-F9}        Compile: check this file with the compiler (about a" & LF
+      & "                  second; nothing is built or linked)" & LF
       & "  {F9}            Make: build the project, errors to the Message" & LF
       & "                  window.  Enter on a message jumps to the line." & LF
       & "  {Alt-F8}        next error     {Alt-F7}  previous error" & LF
       & "  {Ctrl-F9}       Run: make, then flash and open the serial monitor" & LF
-      & "  {Shift-F9}      Flash          {Alt-F9}  Monitor" & LF
+      & "  {Shift-F9}      Flash          (Run | Monitor for the monitor alone)" & LF
       & "  {Ctrl-F8}       Debug: OpenOCD + GDB on the board" & LF
       & "  {Alt-F5}        User screen: what the last program printed" & LF
       & "  {Esc}           in the Compiling box: cancel the build" & LF
@@ -32,6 +34,16 @@ package body Turbo.Help is
       & "  esp32-ada for a standalone project, alr for any other Alire" & LF
       & "  crate.  See Help | Project commands, and Options | Commands" & LF
       & "  to change them." & LF
+      & LF
+      & "# The Ada Language Server" & LF
+      & "  When ada_language_server is installed (alr install" & LF
+      & "  ada_language_server, or the VS Code Ada extension), errors show" & LF
+      & "  as you type, in red, with the message on the status line, and:" & LF
+      & "  {F12}           go to the definition   {Alt-F12}   go back" & LF
+      & "  {Shift-F12}     find uses              {Ctrl-F12}  symbol list" & LF
+      & "  {Ctrl-Space}    complete the word      {Ctrl-F1}   help on it" & LF
+      & "  Search | Rename symbol, Search | Diagnostics.  Options |" & LF
+      & "  Language server turns it off or names the program." & LF
       & LF
       & "# More" & LF
       & "  Help | Keyboard lists every editor key.");
@@ -81,7 +93,15 @@ package body Turbo.Help is
       & "  {Ctrl-Q A} {Ctrl-R}        replace" & LF
       & "  {Ctrl-L} {F3 in a find}    search again" & LF
       & "  {Ctrl-F6}                  switch between spec and body" & LF
-      & "  {Ctrl-F1}                  grep the word at the cursor in the project" & LF
+      & "  Search | Grep              the word at the cursor, in the project" & LF
+      & LF
+      & "# With the language server" & LF
+      & "  {F12} / {Alt-F12}          go to definition / go back" & LF
+      & "  {Shift-F12}                find uses (into the Message window)" & LF
+      & "  {Ctrl-F12}                 symbols in this file" & LF
+      & "  {Ctrl-Space}               complete: keep typing to narrow," & LF
+      & "                             Enter or Tab to take it, Esc to leave" & LF
+      & "  {Ctrl-F1}                  help on the word at the cursor" & LF
       & LF
       & "# Dialogs" & LF
       & "  {Tab} / {Shift-Tab}        next / previous control" & LF
@@ -113,6 +133,16 @@ package body Turbo.Help is
       & "Commands run through /bin/sh -c (on Windows: bash -c when bash" & LF
       & "is on PATH, as it is under MSYS2 or Git Bash; cmd /c otherwise)" & LF
       & "in the SDK root or the project directory." & LF
+      & LF
+      & "# What the IDE reads back" & LF
+      & "Builds run as ./x --machine (esp32-ada --machine), which marks" & LF
+      & "stages, diagnostics with full paths, and the files made, so the" & LF
+      & "Compiling box and the Message window need no guessing." & LF
+      & "{{tmp}} {{gpr}}: the scratch tree and project file Compile uses." & LF
+      & "The Environment command (./x env, esp32-ada env, alr printenv)" & LF
+      & "gives Compile and the language server the toolchain and project" & LF
+      & "paths; it never leaks into the build commands, which set up their" & LF
+      & "own." & LF
       & LF
       & "# Interactive commands" & LF
       & "Run, Monitor and Debug take over the terminal: Turbo Ada steps" & LF
