@@ -37,6 +37,10 @@
 #    ./x config <example> [show|--json]   show flash/PSRAM size (its board.ads)
 #    ./x config <example> flash-size <SIZE>  set flash size (e.g. 4MB, 0x800000)
 #    ./x config <example> psram-size <SIZE>  set PSRAM size (rebuilds its bootloader)
+#    ./x setup-toolchain [--check]     one-time: the validated xtensa + native GNAT and
+#                                     gprbuild (through alr, without changing its
+#                                     default toolchain) and the xtensa-dynconfig
+#                                     plugin; --check only reports (exit 1 if missing)
 #    ./x get-debug-tools               fetch pinned OpenOCD + GDB (for debugging)
 #    ./x debug   <example> [-p PORT] [--smp] [--attach]   on-chip debug (OpenOCD+GDB)
 #                                     --smp    : both LX7 cores as gdb threads (info threads)
@@ -560,6 +564,96 @@ cmd_install_vim () {   # symlink the Vim plugin into Vim's + Neovim's native pac
     [ "$n" = 1 ] || die "neither 'vim' nor 'nvim' on PATH"
     #  It's a SYMLINK into the repo, so unlike the .vsix it self-updates:
     echo "x: restart Vim to load it.  'git pull' updates the plugin in place (no reinstall)."
+}
+
+# -- toolchain setup ----------------------------------------------------------
+#  Everything a build needs that is not in this repository: the validated
+#  compilers and gprbuild (sdk-env.sh's KNOWN_GOOD versions), fetched through
+#  Alire into its toolchain folder -- where sdk-env.sh looks -- and the
+#  xtensa-dynconfig plugin (the core description the xtensa GNAT reads from
+#  XTENSA_GNU_CONFIG; without it objects silently come out big-endian), built
+#  from the vendored source in crates/xtensa-dynconfig.  Idempotent.
+#
+#  The downloads are selected with `alr toolchain --select --local` inside a
+#  scratch workspace, so the user's own default toolchain is left alone.
+setup_ws () {   # a throwaway Alire workspace for --local toolchain selection
+    local base="${XDG_CACHE_HOME:-$HOME/.cache}/esp32s3-ada"
+    if [ ! -f "$base/toolchain_ws/alire.toml" ]; then
+        rm -rf "$base/toolchain_ws"; mkdir -p "$base"
+        ( cd "$base" && alr -n init --bin toolchain_ws >/dev/null 2>&1 ) || return 1
+    fi
+    printf '%s' "$base/toolchain_ws"
+}
+dynconfig_le () {   # $1 = xtensa gcc: does it emit little-endian objects now?
+    local t; t="$(mktemp -d)"
+    printf 'int x;\n' > "$t/t.c"
+    "$1" -c "$t/t.c" -o "$t/t.o" 2>/dev/null \
+        && [ "$(od -An -tx1 -j5 -N1 "$t/t.o" | tr -d ' ')" = "01" ]
+    local rc=$?; rm -rf "$t"; return $rc
+}
+cmd_setup_toolchain () {   # [--check]
+    local check=0
+    [ "${1:-}" = "--check" ] && check=1
+    . "$ROOT/tools/sdk-env.sh"
+    local missing=() spec name ver dir n_bad=0
+    echo "[setup] toolchains in $ESP32S3_ADA_TOOLCHAINS"
+    for spec in "gnat_xtensa_esp32_elf=$ESP32S3_GNAT_KNOWN_GOOD" \
+                "gnat_native=$ESP32S3_GNAT_KNOWN_GOOD" \
+                "gprbuild=$ESP32S3_GPRBUILD_KNOWN_GOOD"; do
+        name="${spec%%=*}"; ver="${spec#*=}"
+        dir="$(ls -d "$ESP32S3_ADA_TOOLCHAINS/${name}_${ver}_"*/bin 2>/dev/null | head -1 || true)"
+        if [ -n "$dir" ]; then
+            echo "[setup]   $name $ver  ok"
+        else
+            echo "[setup]   $name $ver  missing"; missing+=("$spec")
+        fi
+    done
+    local dyncfg="$ROOT/crates/xtensa-dynconfig/xtensa-dynconfig/xtensa_esp32s3.so"
+    if [ -f "$dyncfg" ]; then
+        echo "[setup]   xtensa-dynconfig plugin  ok"
+    else
+        echo "[setup]   xtensa-dynconfig plugin  missing"
+    fi
+    if [ "$check" = 1 ]; then
+        [ ${#missing[@]} -eq 0 ] && [ -f "$dyncfg" ] && { echo "[setup] ready"; return 0; }
+        echo "[setup] not ready: run './x setup-toolchain'"; return 1
+    fi
+
+    if [ ${#missing[@]} -gt 0 ]; then
+        if [ -n "${ESP32S3_ADA_SDK:-}" ] && [ -d "$ESP32S3_ADA_SDK/toolchains" ]; then
+            die "the bundled toolchains/ lacks ${missing[*]} -- it is a bundle, not something to download into"
+        fi
+        command -v alr >/dev/null \
+            || die "Alire (alr) is needed to download ${missing[*]}: see QUICKSTART.md step 1, or let Turbo Ada fetch it"
+        local alr_tc
+        alr_tc="$(alr version 2>/dev/null | sed -n 's/^toolchain folder: *//p')"
+        if [ -n "$alr_tc" ] && [ "$(cd "$alr_tc" 2>/dev/null && pwd -P)" != "$(cd "$ESP32S3_ADA_TOOLCHAINS" 2>/dev/null && pwd -P)" ]; then
+            echo "[setup] note: alr keeps toolchains in $alr_tc; this SDK looks in $ESP32S3_ADA_TOOLCHAINS" >&2
+            echo "[setup]       (set ESP32S3_ADA_TOOLCHAINS=$alr_tc)" >&2
+        fi
+        local ws; ws="$(setup_ws)" || die "could not make an Alire workspace for the download"
+        for spec in "${missing[@]}"; do
+            echo "[setup] downloading $spec (alr; your default toolchain is not changed)"
+            ( cd "$ws" && alr -n toolchain --select --local "$spec" ) || die "alr could not fetch $spec"
+        done
+        for spec in "${missing[@]}"; do
+            name="${spec%%=*}"; ver="${spec#*=}"
+            ls -d "$ESP32S3_ADA_TOOLCHAINS/${name}_${ver}_"*/bin >/dev/null 2>&1 \
+                || die "alr fetched $spec into ${alr_tc:-its toolchain folder}, not $ESP32S3_ADA_TOOLCHAINS (set ESP32S3_ADA_TOOLCHAINS)"
+        done
+    fi
+
+    esp32s3_toolchain_on_path >/dev/null
+    esp32s3_export_dynconfig "$ROOT" || die "could not build the xtensa-dynconfig plugin (needs gcc + make)"
+    echo "[setup]   xtensa-dynconfig plugin  $XTENSA_GNU_CONFIG"
+
+    #  The proof that matters: the cross compiler, with the plugin, emits
+    #  little-endian objects.
+    local gcc="$ESP32S3_GNAT_XTENSA_BIN/xtensa-esp32-elf-gcc"
+    [ -x "$gcc" ] || die "no xtensa-esp32-elf-gcc in $ESP32S3_GNAT_XTENSA_BIN"
+    dynconfig_le "$gcc" || die "$gcc does not produce little-endian ESP32-S3 objects with $XTENSA_GNU_CONFIG"
+    echo "[setup] xtensa GNAT + dynconfig: little-endian ESP32-S3 objects"
+    echo "[setup] ready"
 }
 
 # -- Turbo Ada ----------------------------------------------------------------
@@ -1217,7 +1311,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
       MACHINE_DIRS="$ex_dir $ROOT/libs $EXROOT/common $ROOT/tools"
       case "$cmd" in
           build|flash)  machine_run "$ex_dir" "$0" "$cmd" "$@"; exit $? ;;
-          clean|test|analyze|stack|mem|memory|config|cfg|kill-openocd)
+          clean|test|analyze|stack|mem|memory|config|cfg|kill-openocd|setup-toolchain)
                         machine_run "" "$0" "$cmd" "$@"; exit $? ;;
       esac
   fi
@@ -1234,6 +1328,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     stack)           cmd_stack "$@" ;;
     mem|memory)      cmd_mem "$@" ;;
     config|cfg)         cmd_config "$@" ;;
+    setup-toolchain)    cmd_setup_toolchain "$@" ;;
     get-debug-tools)    cmd_get_debug_tools "$@" ;;
     get-openocd)        cmd_get_openocd "$@" ;;
     get-gdb)            cmd_get_gdb "$@" ;;
@@ -1248,7 +1343,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     env)                cmd_env "$@" ;;
     docs)               cmd_docs "$@" ;;
     ""|-h|--help|help)
-        sed -n '3,36p' "$0" | sed 's/^#  \{0,1\}//; s/^#//' ;;
+        sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^#  \{0,1\}//; s/^#//' ;;
     *) die "unknown command '$cmd' (try './x help')" ;;
   esac
 fi

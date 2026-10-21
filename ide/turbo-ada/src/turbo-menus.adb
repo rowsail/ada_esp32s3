@@ -31,11 +31,7 @@ package body Turbo.Menus is
 
    System_Items : aliased constant Item_List :=
      [I ("~A~bout...", Cmd_About),
-      I ("~R~epaint desktop", Cmd_Repaint),
-      Sep,
-      I ("alr ~u~pdate", Cmd_Alr_Update),
-      I ("alr ~s~how", Cmd_Alr_Show),
-      I ("alr ~w~ith (dependencies)", Cmd_Alr_Deps)];
+      I ("~R~epaint desktop", Cmd_Repaint)];
 
    File_Items : aliased constant Item_List :=
      [I ("~N~ew", Cmd_New),
@@ -111,6 +107,19 @@ package body Turbo.Menus is
       Sep,
       I ("~I~nformation...", Cmd_Project_Info)];
 
+   Alire_Items : aliased constant Item_List :=
+     [I ("~S~earch crates...", Cmd_Alr_Search),
+      I ("~G~et crate...", Cmd_Alr_Get),
+      I ("~I~nstall tool...", Cmd_Alr_Install),
+      Sep,
+      I ("~A~dd dependency...", Cmd_Alr_Add),
+      I ("~D~ependencies", Cmd_Alr_Deps),
+      I ("~U~pdate dependencies", Cmd_Alr_Update),
+      I ("S~h~ow crate", Cmd_Alr_Show),
+      Sep,
+      I ("~F~etch Alire (alr)...", Cmd_Alr_Fetch),
+      I ("Set up ESP32-S3 ~t~oolchain", Cmd_Setup_Toolchain)];
+
    Options_Items : aliased constant Item_List :=
      [I ("~T~arget (port, profile)...", Cmd_Opt_Target),
       I ("~C~ommands...", Cmd_Opt_Commands),
@@ -148,6 +157,7 @@ package body Turbo.Menus is
       (+" ~R~un ", Run_Items'Access),
       (+" ~C~ompile ", Compile_Items'Access),
       (+" ~P~roject ", Project_Items'Access),
+      (+" ~A~lire ", Alire_Items'Access),
       (+" ~O~ptions ", Options_Items'Access),
       (+" ~W~indow ", Window_Items'Access),
       (+" ~H~elp ", Help_Items'Access)];

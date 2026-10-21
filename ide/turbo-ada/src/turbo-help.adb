@@ -36,14 +36,24 @@ package body Turbo.Help is
       & "  to change them." & LF
       & LF
       & "# The Ada Language Server" & LF
-      & "  When ada_language_server is installed (alr install" & LF
-      & "  ada_language_server, or the VS Code Ada extension), errors show" & LF
+      & "  When ada_language_server is installed (Alire | Install tool," & LF
+      & "  or the VS Code Ada extension), errors show" & LF
       & "  as you type, in red, with the message on the status line, and:" & LF
       & "  {F12}           go to the definition   {Alt-F12}   go back" & LF
       & "  {Shift-F12}     find uses              {Ctrl-F12}  symbol list" & LF
       & "  {Ctrl-Space}    complete the word      {Ctrl-F1}   help on it" & LF
       & "  Search | Rename symbol, Search | Diagnostics.  Options |" & LF
       & "  Language server turns it off or names the program." & LF
+      & LF
+      & "# Alire" & LF
+      & "  The Alire menu searches the crate index, gets a crate into a" & LF
+      & "  directory and opens it, installs tools, and adds dependencies" & LF
+      & "  to this project.  With no alr on PATH, Turbo Ada offers to" & LF
+      & "  download it from GitHub (Alire | Fetch Alire does it any time)," & LF
+      & "  and that alr fetches the toolchain and everything else." & LF
+      & "  Set up ESP32-S3 toolchain gets the validated cross GNAT, native" & LF
+      & "  GNAT and gprbuild and builds the xtensa-dynconfig plugin; the" & LF
+      & "  first build of an SDK project checks for them and offers it." & LF
       & LF
       & "# More" & LF
       & "  Help | Keyboard lists every editor key.");

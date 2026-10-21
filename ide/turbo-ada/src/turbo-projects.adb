@@ -452,6 +452,17 @@ package body Turbo.Projects is
       return "esp32-ada";
    end Esp32_Ada;
 
+   function Setup_Command (Check_Only : Boolean := False) return String is
+      Verb : constant String :=
+        (if Check_Only then "setup-toolchain --check" else "--machine setup-toolchain");
+   begin
+      return
+        (case The_Kind is
+            when SDK_Example => "./x " & Verb,
+            when Standalone  => Esp32_Ada & " " & Verb,
+            when others      => "");
+   end Setup_Command;
+
    function Label (A : Action) return String is
      (case A is
          when Act_Build        => "Build",

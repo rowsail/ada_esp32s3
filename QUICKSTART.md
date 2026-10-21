@@ -58,6 +58,14 @@ alr toolchain --select gnat_xtensa_esp32_elf
 alr toolchain                              # confirm all three are present
 ```
 
+> **Or let the SDK do it.** Once you have the repo (Step 2), `./x setup-toolchain`
+> fetches exactly the validated versions (GNAT 15.2.1, gprbuild 26.0.1) through
+> `alr` *without* changing `alr`'s default toolchain, builds the
+> `xtensa-dynconfig` plugin, and checks the cross compiler really emits
+> little-endian ESP32-S3 objects. `./x setup-toolchain --check` only reports.
+> Turbo Ada runs the check before the first build and offers to do the set-up
+> (Alire | Set up ESP32-S3 toolchain), downloading `alr` itself if need be.
+
 That's the only install. **No ESP-IDF, no esptool, no Python.**
 
 ---
@@ -237,8 +245,8 @@ hard-coded path. The project owns its own `board.ads` (Step 6), edited with
 
 | Symptom | Cause / fix |
 |---|---|
-| `gprbuild` / cross-GNAT not found | A toolchain is missing — redo Step 1, check `alr toolchain`. |
-| `XTENSA_GNU_CONFIG unset` / missing `bb-runtimes` | Not a submodule issue (there are none): the tree is incomplete, or `xtensa-dynconfig` hasn't been built — the first build does that and needs a host C compiler. |
+| `gprbuild` / cross-GNAT not found | A toolchain is missing — `./x setup-toolchain --check` says which; `./x setup-toolchain` fetches it. |
+| `XTENSA_GNU_CONFIG unset` / missing `bb-runtimes` | Not a submodule issue (there are none): the tree is incomplete, or `xtensa-dynconfig` hasn't been built — `./x setup-toolchain` (or the first build) does that and needs a host C compiler. |
 | `Permission denied` on `/dev/ttyACM0` | Add yourself to `dialout` (Step 3) and log out/in. |
 | No `/dev/ttyACM0` appears | Use the **native USB** port (not UART); try another cable; check `dmesg \| tail`. |
 | Flash never connects | Hold **BOOT**, tap **RESET**, release **BOOT** to force download mode, then `./flash.sh`. |

@@ -11,6 +11,7 @@ with Ada.Strings.Wide_Wide_Fixed;
 with Ada.Strings.Wide_Wide_Unbounded;
 with Ada.Unchecked_Deallocation;
 with Ada.Wide_Wide_Characters.Handling;
+with Turbo.Alire;
 with Turbo.Buffers;
 with Turbo.Clipboard;
 with Turbo.Commands;
@@ -483,6 +484,8 @@ package body Turbo.App is
          when Cmd_Alr_Update => return Can_Run (Prj.Act_Alr_Update) and then Prj.Manifest /= "";
          when Cmd_Alr_Show => return Can_Run (Prj.Act_Alr_Show) and then Prj.Manifest /= "";
          when Cmd_Alr_Deps => return Can_Run (Prj.Act_Alr_Deps) and then Prj.Manifest /= "";
+         when Cmd_Alr_Add => return Prj.Manifest /= "";
+         when Cmd_Setup_Toolchain => return Prj.Setup_Command /= "";
          when Cmd_Edit_Manifest => return Prj.Manifest /= "";
          when Cmd_Edit_Gpr => return Prj.Gpr_File /= "";
          when Cmd_Zoom | Cmd_Close | Cmd_Size_Move | Cmd_Close_All =>
@@ -619,6 +622,9 @@ package body Turbo.App is
          Prj.Set_Environment (Lines);    --  nothing to add
          return True;
       end if;
+      if Alire.Needs_Alr (Cmd) and then not Alire.Use_Found then
+         return False;                   --  Make offers to fetch it
+      end if;
       if Capture (Cmd, Prj.Working_Dir (Prj.Act_Env), "Preparing the environment", Lines)
       then
          Prj.Set_Environment (Lines);
@@ -633,16 +639,19 @@ package body Turbo.App is
       return False;
    end Ensure_Environment;
 
-   procedure Run_Job
-     (A         : Prj.Action;
+   procedure Run_Command
+     (Cmd       : String;
+      Dir       : String;
       Title     : String;
       Success   : out Boolean;
       Wait_Key  : Boolean := True;
       Is_Build  : Boolean := True;
-      With_Env  : Boolean := False)
+      With_Env  : Boolean := False;
+      Shown     : String := "")
+   --  Run Cmd in Dir with the "Compiling" box over it and its output in the
+   --  message window; Shown stands for Cmd there when it is a script.
    is
-      Cmd       : constant String :=
-        Prj.Command_For (A, (if Active_Editor /= null then Active_Editor.Path else ""));
+      Display   : constant String := (if Shown = "" then Cmd else Shown);
       Lines     : String_List;
       Finished  : Boolean := False;
       Cancelled : Boolean := False;
@@ -652,22 +661,12 @@ package body Turbo.App is
       E         : Event;
    begin
       Success := False;
-      if Cmd = "" then
-         Dlg.Message_Box
-           ("Information",
-            "There is no " & Prj.Label (A) & " command for this project"
-            & Character'Val (10)
-            & (if Prj.Kind = Prj.SDK_Example and then Prj.Example = ""
-               then "(choose an example: Project | Open project)."
-               else "(see Options | Commands)."));
-         return;
-      end if;
       if Is_Build then
          Save_All;
       end if;
 
       Msg_Win.Clear;
-      Msg_Win.Add (Messages.Header, Title & ": " & Cmd);
+      Msg_Win.Add (Messages.Header, Title & ": " & Display);
       Show_Message_Window (Activate => False);
 
       if With_Env then
@@ -676,12 +675,12 @@ package body Turbo.App is
          end if;
          Prj.Push_Environment;
       end if;
-      Jobs.Start (Cmd, Prj.Working_Dir (A), Ok);
+      Jobs.Start (Cmd, Dir, Ok);
       if With_Env then
          Prj.Pop_Environment;
       end if;
       if not Ok then
-         Dlg.Message_Box ("Error", "Cannot start: " & Cmd);
+         Dlg.Message_Box ("Error", "Cannot start: " & Display);
          return;
       end if;
 
@@ -702,7 +701,7 @@ package body Turbo.App is
          Msg_Win.Follow_Tail;
          Update_Status;
          Desktop.Draw;
-         Draw_Job_Box (Title, Cmd, To_String (Current), Count,
+         Draw_Job_Box (Title, Display, To_String (Current), Count,
                        Msg_Win.Warnings, Msg_Win.Errors,
                        (if Cancelled then "Cancelling..."
                         else "Working...   Esc cancels"));
@@ -730,7 +729,7 @@ package body Turbo.App is
       if Wait_Key or else not Success then
          Update_Status;
          Desktop.Draw;
-         Draw_Job_Box (Title, Cmd, To_String (Current), Count,
+         Draw_Job_Box (Title, Display, To_String (Current), Count,
                        Msg_Win.Warnings, Msg_Win.Errors,
                        (if Cancelled then "Cancelled   :   Press any key"
                         elsif Success and then Msg_Win.Warnings = 0
@@ -750,6 +749,166 @@ package body Turbo.App is
       elsif not Success or else not Is_Build then
          Show_Message_Window (Activate => True);
       end if;
+   end Run_Command;
+
+   --  Alire: alr itself, fetched when it is missing
+
+   function Tilde (Path : String) return String is
+   --  Path with the home directory shown as ~, for a dialog.
+      Home : constant String :=
+        (if Ada.Environment_Variables.Exists ("HOME")
+         then Ada.Environment_Variables.Value ("HOME") else "");
+   begin
+      if Home /= "" and then Path'Length > Home'Length
+        and then Path (Path'First .. Path'First + Home'Length - 1) = Home
+        and then Path (Path'First + Home'Length) = '/'
+      then
+         return "~" & Path (Path'First + Home'Length .. Path'Last);
+      end if;
+      return Path;
+   end Tilde;
+
+   function Fetch_Alire return Boolean is
+      Cmd : constant String := Alire.Fetch_Command;
+      Ok  : Boolean;
+   begin
+      if Cmd = "" then
+         Dlg.Message_Box
+           ("Alire",
+            "Download alr from https://alire.ada.dev" & Character'Val (10)
+            & "and put it on PATH, then try again.");
+         return False;
+      end if;
+      Run_Command (Cmd, Ada.Directories.Current_Directory, "Fetching Alire", Ok,
+                   Wait_Key => True, Is_Build => False,
+                   Shown => "download alr into " & Tilde (Alire.Home_Dir));
+      return Ok and then Alire.Use_Found;
+   end Fetch_Alire;
+
+   function Ensure_Alr return Boolean is
+   --  True when there is an alr to run, after offering to fetch one.
+   begin
+      if Alire.Use_Found then
+         return True;
+      end if;
+      if Dlg.Message_Box
+           ("Alire",
+            "This needs Alire (alr), and there is none" & Character'Val (10)
+            & "on PATH.  Download the latest release" & Character'Val (10)
+            & "from GitHub into" & Character'Val (10)
+            & Tilde (Alire.Home_Dir) & "?",
+            Dlg.Yes_No) /= Dlg.Ans_Yes
+      then
+         return False;
+      end if;
+      return Fetch_Alire;
+   end Ensure_Alr;
+
+   --  The SDK's toolchain: the compilers, gprbuild and the xtensa-dynconfig
+   --  plugin, set up once (./x setup-toolchain) and checked before the first
+   --  build of each SDK.
+
+   Toolchain_Ok_For : Unbounded_String;    --  the root it was found ready for
+
+   procedure Restart_Server;
+   --  Below, with the rest of the language-server plumbing.
+
+   procedure Setup_Toolchain (Success : out Boolean) is
+      Check : constant String := Prj.Setup_Command (Check_Only => True);
+      Lines : String_List;
+   begin
+      Success := False;
+      if Check = "" then
+         Dlg.Message_Box ("Information",
+                          "This project is not built with the ESP32-S3 SDK.");
+         return;
+      end if;
+      --  alr is only needed to download a compiler or gprbuild; the
+      --  dynconfig plugin is built from source in the SDK.
+      if not Capture (Check, Prj.Root, "Checking the toolchain", Lines)
+        and then (for some L of Lines =>
+                    Ada.Strings.Fixed.Index (L, "missing") > 0
+                    and then Ada.Strings.Fixed.Index (L, "dynconfig") = 0)
+        and then not Alire.Use_Found and then not Ensure_Alr
+      then
+         return;
+      end if;
+      Run_Command (Prj.Setup_Command, Prj.Root, "Toolchain set-up", Success,
+                   Wait_Key => True, Is_Build => False);
+      if Success then
+         Toolchain_Ok_For := To_Unbounded_String (Prj.Root);
+         Prj.Forget_Environment;
+         Restart_Server;
+      end if;
+   end Setup_Toolchain;
+
+   function Toolchain_Ready return Boolean is
+   --  Before a build: True to go ahead (ready, set up now, or the user
+   --  would rather see the build fail).
+      Check : constant String := Prj.Setup_Command (Check_Only => True);
+      Lines : String_List;
+      Text  : Unbounded_String;
+      Ok    : Boolean;
+   begin
+      if Check = "" or else To_String (Toolchain_Ok_For) = Prj.Root then
+         return True;
+      end if;
+      if Capture (Check, Prj.Root, "Checking the toolchain", Lines) then
+         Toolchain_Ok_For := To_Unbounded_String (Prj.Root);
+         return True;
+      end if;
+      for L of Lines loop
+         if Ada.Strings.Fixed.Index (L, "missing") > 0 then
+            Append (Text, Ada.Strings.Fixed.Trim
+                      (L (L'First + (if L'Length > 8 and then L (L'First .. L'First + 7) = "[setup] "
+                                     then 8 else 0) .. L'Last), Ada.Strings.Both)
+                    & Character'Val (10));
+         end if;
+      end loop;
+      if Dlg.Message_Box
+           ("Toolchain",
+            "The ESP32-S3 toolchain is not set up:" & Character'Val (10)
+            & To_String (Text)
+            & "Set it up now (Alire | Set up ESP32-S3 toolchain)?",
+            Dlg.Yes_No) /= Dlg.Ans_Yes
+      then
+         return True;
+      end if;
+      Setup_Toolchain (Ok);
+      return Ok;
+   end Toolchain_Ready;
+
+   procedure Run_Job
+     (A         : Prj.Action;
+      Title     : String;
+      Success   : out Boolean;
+      Wait_Key  : Boolean := True;
+      Is_Build  : Boolean := True;
+      With_Env  : Boolean := False)
+   is
+      Cmd : constant String :=
+        Prj.Command_For (A, (if Active_Editor /= null then Active_Editor.Path else ""));
+   begin
+      Success := False;
+      if Cmd = "" then
+         Dlg.Message_Box
+           ("Information",
+            "There is no " & Prj.Label (A) & " command for this project"
+            & Character'Val (10)
+            & (if Prj.Kind = Prj.SDK_Example and then Prj.Example = ""
+               then "(choose an example: Project | Open project)."
+               else "(see Options | Commands)."));
+         return;
+      end if;
+      if Alire.Needs_Alr (Cmd) and then not Ensure_Alr then
+         return;
+      end if;
+      if A in Prj.Act_Build | Prj.Act_Flash | Prj.Act_Check | Prj.Act_Test
+        and then not Toolchain_Ready
+      then
+         return;
+      end if;
+      Run_Command (Cmd, Prj.Working_Dir (A), Title, Success, Wait_Key, Is_Build, With_Env);
    end Run_Job;
 
    procedure Run_Interactive (A : Prj.Action) is
@@ -759,6 +918,12 @@ package body Turbo.App is
       if Cmd = "" then
          Dlg.Message_Box ("Information",
                           "There is no " & Prj.Label (A) & " command for this project.");
+         return;
+      end if;
+      if Alire.Needs_Alr (Cmd) and then not Ensure_Alr then
+         return;
+      end if;
+      if A in Prj.Act_Run | Prj.Act_Debug and then not Toolchain_Ready then
          return;
       end if;
       Jobs.Run_Foreground (Cmd, Prj.Working_Dir (A), Ok);
@@ -1057,7 +1222,7 @@ package body Turbo.App is
       begin
          if Exe = "" then
             Server_Note := To_Unbounded_String
-              ("no ada_language_server found (alr install ada_language_server)");
+              ("no ada_language_server found (Alire | Install tool)");
             return;
          end if;
          if not Ensure_Environment then
@@ -1990,7 +2155,7 @@ package body Turbo.App is
            (if In_SDK and then D.Radio_Value (Kind_Id) = 1 then Prj.Root else Parent);
          Ok     : Boolean;
       begin
-         if Given = "" then
+         if Given = "" or else (Alire.Needs_Alr (Cmd) and then not Ensure_Alr) then
             return;
          end if;
          Jobs.Run_Foreground (Cmd, Where, Ok);
@@ -2327,6 +2492,193 @@ package body Turbo.App is
       Quit := True;
    end Do_Quit;
 
+   --  The Alire menu
+
+   procedure Dependencies_Changed is
+   --  New crates mean new source directories: fetch the environment again
+   --  and let the language server re-index.
+   begin
+      Prj.Forget_Environment;
+      Restart_Server;
+   end Dependencies_Changed;
+
+   function Ask_Crate (Title, Label, Default : String; Spec : out Unbounded_String)
+                       return Boolean is
+   begin
+      Spec := To_Unbounded_String (Default);
+      loop
+         if not Dlg.Input_Box (Title, Label, Spec, 40) then
+            return False;
+         end if;
+         Spec := To_Unbounded_String
+           (Ada.Strings.Fixed.Trim (To_String (Spec), Ada.Strings.Both));
+         exit when Alire.Valid_Crate (To_String (Spec));
+         Dlg.Message_Box
+           ("Alire",
+            "Give a crate name, optionally with a version:" & Character'Val (10)
+            & "aunit, aunit=24.0.0, aunit^24, aunit>=23");
+      end loop;
+      return True;
+   end Ask_Crate;
+
+   function Subdirectories (Dir : String) return String_List is
+      use Ada.Directories;
+      S : Search_Type;
+      D : Directory_Entry_Type;
+      R : String_List;
+   begin
+      Start_Search (S, Dir, "", [Directory => True, others => False]);
+      while More_Entries (S) loop
+         Get_Next_Entry (S, D);
+         R.Append (Simple_Name (D));
+      end loop;
+      End_Search (S);
+      return R;
+   exception
+      when others =>
+         return R;
+   end Subdirectories;
+
+   procedure Enter_Project (Dir : String) is
+   begin
+      Prj.Detect (Dir);
+      Ada.Directories.Set_Directory (Prj.Dir);
+      Shown_Context := Ctx_Other;
+      if Prj.Main_Source /= "" then
+         Open_File (Prj.Main_Source);
+      end if;
+   end Enter_Project;
+
+   procedure Alr_Fetch is
+      Have : constant String := Alire.Find;
+   begin
+      if Have /= ""
+        and then Dlg.Message_Box
+          ("Alire",
+           "alr is " & Tilde (Have) & Character'Val (10)
+           & "Download the latest release from GitHub" & Character'Val (10)
+           & "into " & Tilde (Alire.Home_Dir) & " and use that?",
+           Dlg.Yes_No) /= Dlg.Ans_Yes
+      then
+         return;
+      end if;
+      if Fetch_Alire then
+         Dependencies_Changed;
+      end if;
+   end Alr_Fetch;
+
+   procedure Alr_Search is
+      V  : Unbounded_String;
+      Ok : Boolean;
+   begin
+      if not Dlg.Input_Box ("Search Crates", "~T~ext (empty: list every crate)", V, 40)
+        or else not Ensure_Alr
+      then
+         return;
+      end if;
+      declare
+         T : constant String := Ada.Strings.Fixed.Trim (To_String (V), Ada.Strings.Both);
+      begin
+         Run_Command ((if T = "" then "alr -n search --crates --list"
+                       else "alr -n search --crates " & Alire.Quote (T)),
+                      Ada.Directories.Current_Directory, "Search crates", Ok,
+                      Wait_Key => False, Is_Build => False);
+      end;
+   end Alr_Search;
+
+   procedure Alr_Get is
+      use Ada.Directories;
+      D : Dlg.Dialog;
+      Crate_Id, Dir_Id : Positive;
+      Home : constant String :=
+        (if Ada.Environment_Variables.Exists ("HOME")
+         then Ada.Environment_Variables.Value ("HOME") else Current_Directory);
+   begin
+      D.Init ("Get Crate", 64, 11);
+      Crate_Id := D.Add_Input (3, 3, 58, "");
+      D.Add_Label (2, 2, "~C~rate (name, or name=version)", Crate_Id);
+      Dir_Id := D.Add_Input
+        (3, 6, 58,
+         (if Prj.Kind in Prj.Alire_Crate | Prj.Standalone
+          then Containing_Directory (Prj.Dir) else Home));
+      D.Add_Label (2, 5, "~I~nto directory", Dir_Id);
+      D.Add_Button (16, 8, 12, "~O~K", 1, Default => True);
+      D.Add_Button (34, 8, 12, "Cancel", Dlg.Cancel_Code);
+      if D.Run /= 1 then
+         return;
+      end if;
+      declare
+         Spec  : constant String := Ada.Strings.Fixed.Trim (D.Value (Crate_Id), Ada.Strings.Both);
+         Where : constant String := Ada.Strings.Fixed.Trim (D.Value (Dir_Id), Ada.Strings.Both);
+         Ok    : Boolean;
+      begin
+         if not Alire.Valid_Crate (Spec) then
+            Dlg.Message_Box ("Alire", "Not a crate name: " & Spec);
+            return;
+         elsif not Exists (Where) or else Kind (Where) /= Directory then
+            Dlg.Message_Box ("Error", "No such directory: " & Where);
+            return;
+         elsif not Ensure_Alr then
+            return;
+         end if;
+         declare
+            Before : constant String_List := Subdirectories (Where);
+         begin
+            Run_Command ("alr -n get " & Alire.Quote (Spec), Full_Name (Where),
+                         "Get crate", Ok, Wait_Key => True, Is_Build => False);
+            if not Ok then
+               return;
+            end if;
+            for New_Dir of Subdirectories (Where) loop
+               if not Before.Contains (New_Dir) then
+                  if Dlg.Message_Box
+                       ("Alire", "Open " & New_Dir & " as the project?", Dlg.Yes_No)
+                     = Dlg.Ans_Yes
+                  then
+                     Enter_Project (Compose (Full_Name (Where), New_Dir));
+                  end if;
+                  return;
+               end if;
+            end loop;
+         end;
+      end;
+   end Alr_Get;
+
+   procedure Alr_Install is
+      Spec : Unbounded_String;
+      Ok   : Boolean;
+   begin
+      if not Ask_Crate ("Install Tool", "~C~rate (goes in $HOME/.alire/bin)",
+                        "ada_language_server", Spec)
+        or else not Ensure_Alr
+      then
+         return;
+      end if;
+      Run_Command ("alr -n install " & Alire.Quote (To_String (Spec)),
+                   Ada.Directories.Current_Directory, "Install tool", Ok,
+                   Wait_Key => True, Is_Build => False);
+      if Ok then
+         Restart_Server;           --  it may be the language server
+      end if;
+   end Alr_Install;
+
+   procedure Alr_Add is
+      Spec : Unbounded_String;
+      Ok   : Boolean;
+   begin
+      if not Ask_Crate ("Add Dependency", "~C~rate (name, or name^version)", "", Spec)
+        or else not Ensure_Alr
+      then
+         return;
+      end if;
+      Run_Command ("alr -n with " & Alire.Quote (To_String (Spec)),
+                   Ada.Directories.Containing_Directory (Prj.Manifest),
+                   "Add dependency", Ok, Wait_Key => True, Is_Build => False);
+      if Ok then
+         Dependencies_Changed;
+      end if;
+   end Alr_Add;
+
    --  The dispatcher
 
    procedure Execute (C : Command) is
@@ -2344,9 +2696,6 @@ package body Turbo.App is
          when Cmd_Repaint =>
             Screen.Init;
             Screen.Invalidate;
-         when Cmd_Alr_Update => Run_Job (Prj.Act_Alr_Update, "alr update", Ok, False, False);
-         when Cmd_Alr_Show => Run_Job (Prj.Act_Alr_Show, "alr show", Ok, False, False);
-         when Cmd_Alr_Deps => Run_Job (Prj.Act_Alr_Deps, "alr with", Ok, False, False);
 
          when Cmd_New => Open_File ("");
          when Cmd_Open => Open_Dialog;
@@ -2475,6 +2824,20 @@ package body Turbo.App is
          when Cmd_Edit_Manifest => Open_File (Prj.Manifest);
          when Cmd_Edit_Gpr => Open_File (Prj.Gpr_File);
          when Cmd_Board_Config => Run_Job (Prj.Act_Board, "Board", Ok, False, False);
+
+         when Cmd_Alr_Search => Alr_Search;
+         when Cmd_Alr_Get => Alr_Get;
+         when Cmd_Alr_Install => Alr_Install;
+         when Cmd_Alr_Add => Alr_Add;
+         when Cmd_Alr_Deps => Run_Job (Prj.Act_Alr_Deps, "alr with", Ok, False, False);
+         when Cmd_Alr_Update =>
+            Run_Job (Prj.Act_Alr_Update, "alr update", Ok, False, False);
+            if Ok then
+               Dependencies_Changed;
+            end if;
+         when Cmd_Alr_Show => Run_Job (Prj.Act_Alr_Show, "alr show", Ok, False, False);
+         when Cmd_Alr_Fetch => Alr_Fetch;
+         when Cmd_Setup_Toolchain => Setup_Toolchain (Ok);
 
          when Cmd_Opt_Target => Target_Options;
          when Cmd_Opt_Commands => Command_Options;
@@ -2794,6 +3157,7 @@ package body Turbo.App is
       E : Event;
    begin
       Prj.Detect (Start_Dir);
+      Alire.Use_Found;          --  none: offered when something needs it
       Screen.Set_True_Color (Wants_True_Color);
       Apply_Editor_Options;
 

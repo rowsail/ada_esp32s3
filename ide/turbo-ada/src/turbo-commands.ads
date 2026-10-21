@@ -8,7 +8,7 @@ package Turbo.Commands is
    type Command is
      (Cmd_None,
       --  System menu
-      Cmd_About, Cmd_Repaint, Cmd_Alr_Update, Cmd_Alr_Show, Cmd_Alr_Deps,
+      Cmd_About, Cmd_Repaint,
       --  File
       Cmd_New, Cmd_Open, Cmd_Save, Cmd_Save_As, Cmd_Save_All, Cmd_Change_Dir,
       Cmd_Shell, Cmd_Quit,
@@ -30,6 +30,10 @@ package Turbo.Commands is
       --  Project
       Cmd_Open_Project, Cmd_New_Project, Cmd_Project_Info, Cmd_Edit_Manifest,
       Cmd_Edit_Gpr, Cmd_Board_Config,
+      --  Alire
+      Cmd_Alr_Search, Cmd_Alr_Get, Cmd_Alr_Install, Cmd_Alr_Add,
+      Cmd_Alr_Deps, Cmd_Alr_Update, Cmd_Alr_Show, Cmd_Alr_Fetch,
+      Cmd_Setup_Toolchain,
       --  Options
       Cmd_Opt_Target, Cmd_Opt_Commands, Cmd_Opt_Editor, Cmd_Opt_Server,
       Cmd_Opt_Save,

@@ -2,9 +2,12 @@
 
 with Ada.Command_Line;
 with Ada.Directories;
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Ada.Environment_Variables;
+with GNAT.OS_Lib;
+with Turbo.Alire;
 with Turbo.Buffers;
 with Turbo.JSON;
 with Turbo.LSP;
@@ -259,6 +262,7 @@ procedure Tada_Host is
       Check (Kind = Alire_Crate, "an alire.toml is an Alire crate");
       Check (Command_For (Act_Build) = "alr -n build", "alr build");
       Check (Command_For (Act_Flash) = "", "no flash for a plain crate");
+      Check (Setup_Command = "", "no SDK toolchain set-up for a plain crate");
       Check (Is_Interactive (Act_Run) and then not Is_Interactive (Act_Build),
              "run is interactive, build is captured");
 
@@ -280,6 +284,9 @@ procedure Tada_Host is
       Check (Command_For (Act_Run) = "./x run gpio0_blink -p /dev/ttyUSB1 -P embedded",
              "x run -p -P");
       Check (Command_For (Act_Env) = "./x env gpio0_blink -P embedded", "x env");
+      Check (Setup_Command = "./x --machine setup-toolchain"
+             and then Setup_Command (Check_Only => True) = "./x setup-toolchain --check",
+             "the SDK's toolchain set-up and its check");
 
       --  The environment: KEY=VALUE (./x env) and export KEY="VALUE" (alr).
       declare
@@ -346,6 +353,54 @@ procedure Tada_Host is
              "a crate inside the SDK repository is that crate, native");
    end Project_Tests;
 
+   procedure Alire_Tests is
+      use Turbo.Alire;
+      use Ada.Environment_Variables;
+      Home : constant String := Ada.Directories.Full_Name ("obj/alire");
+      Alr  : constant String := Home & "/bin/alr";
+      Path : constant String := (if Exists ("PATH") then Value ("PATH") else "");
+   begin
+      Check (Quote ("aunit^24") = "aunit^24", "a plain word is not quoted");
+      Check (Quote ("aunit>=23 & <25") = "'aunit>=23 & <25'", "shell characters are");
+      Check (Quote ("it's") = "'it'\''s'", "a quote inside quotes");
+      Check (Valid_Crate ("aunit") and then Valid_Crate ("aunit=24.0.0")
+             and then Valid_Crate ("aunit^24") and then Valid_Crate ("aunit>=23 & <25"),
+             "crate names, with and without versions");
+      Check (not Valid_Crate ("") and then not Valid_Crate ("1x")
+             and then not Valid_Crate ("aunit; rm -rf ~") and then not Valid_Crate ("../x"),
+             "not crate names");
+      Check (Needs_Alr ("alr -n build") and then Needs_Alr ("  alr -n with")
+             and then not Needs_Alr ("./x build") and then not Needs_Alr ("alrx"),
+             "commands that run alr");
+
+      --  A fetched alr goes first on PATH, once.
+      Set ("TURBO_ADA_ALIRE", Home);
+      Check (Home_Dir = Home, "TURBO_ADA_ALIRE names the home");
+      Ada.Directories.Create_Path (Home & "/bin");
+      declare
+         F : File_Type;
+      begin
+         Create (F, Out_File, Alr);
+         Put_Line (F, "#!/bin/sh");
+         Close (F);
+      end;
+      GNAT.OS_Lib.Set_Executable (Alr);
+      Check (Find = Alr, "a fetched alr is the one used");
+      Check (Use_Found and then Use_Found
+             and then Value ("PATH") = Home & "/bin:" & Path,
+             "its directory goes first on PATH, once");
+      declare
+         Cmd : constant String := Fetch_Command;
+      begin
+         Check (Ada.Strings.Fixed.Index (Cmd, "d=" & Home) > 0
+                and then Ada.Strings.Fixed.Index (Cmd, "v" & Fallback_Version & "/") > 0,
+                "the fetch command unpacks into the home");
+      end;
+      Set ("PATH", Path);
+      Clear ("TURBO_ADA_ALIRE");
+      Ada.Directories.Delete_File (Alr);
+   end Alire_Tests;
+
 begin
    Buffer_Tests;
    Message_Tests;
@@ -353,6 +408,7 @@ begin
    JSON_Tests;
    LSP_Helper_Tests;
    Machine_Line_Tests;
+   Alire_Tests;
    Project_Tests (if Ada.Command_Line.Argument_Count > 0
                   then Ada.Command_Line.Argument (1) else "");
    Put_Line (Natural'Image (Checks) & " checks," & Natural'Image (Failures) & " failed");

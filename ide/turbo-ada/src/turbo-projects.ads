@@ -91,6 +91,12 @@ package Turbo.Projects is
    function Esp32_Ada return String;
    --  How to run esp32-ada: from PATH, else from $ESP32S3_ADA_SDK.
 
+   function Setup_Command (Check_Only : Boolean := False) return String;
+   --  The SDK's one-time toolchain set-up (./x setup-toolchain, or
+   --  esp32-ada's): the validated compilers and gprbuild, through alr, and
+   --  the xtensa-dynconfig plugin.  Check_Only: report, exit 1 when it is
+   --  not ready.  "" for a project that is not built by the SDK.
+
    --  The project's compile environment (from Act_Env)
 
    procedure Set_Environment (Lines : String_List);

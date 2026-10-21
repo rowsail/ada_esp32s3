@@ -74,11 +74,20 @@ alr install                   # optional: puts tada in ~/.alire/bin
 tada [-C DIR] [FILE...]       # in any Alire crate or esp32-ada project
 ```
 
-For the language-server features, install the server once:
+For the language-server features, install the server once: Alire | Install
+tool (`ada_language_server` is the default), or from a shell
 
 ```sh
 alr install ada_language_server      # or have the VS Code "Ada & SPARK" extension
 ```
+
+Alire itself is not a prerequisite. When something needs `alr` and there is
+none, Turbo Ada offers to download the latest release for this machine from
+GitHub (curl or wget, then unzip or python3) into
+`~/.local/share/turbo-ada/alire/bin` (`$TURBO_ADA_ALIRE` moves it) and puts
+that directory first on `PATH` for itself and everything it runs. From then on
+that `alr` fetches everything else: crates, dependencies, the GNAT toolchain,
+the language server.
 
 It needs a terminal at least 80×25 that speaks xterm escape sequences: any
 Linux or macOS terminal, tmux/screen, or on Windows the Windows Terminal or
@@ -115,8 +124,21 @@ brown is brown.
   (OpenOCD + GDB) and Kill OpenOCD separately; Alt-F5 shows the user screen.
 - **Project** — pick an SDK example, scaffold a new project (`./x new`,
   `esp32-ada init` or `alr init --bin`), edit `alire.toml` and the `.gpr`, see
-  the board's flash/PSRAM sizes, and `alr update` / `alr show` / `alr with`
-  from the ≡ menu.
+  the board's flash/PSRAM sizes.
+- **Alire** — Search crates (`alr search --crates`), Get crate (`alr get` into
+  a directory you choose, then open it as the project), Install tool (`alr
+  install`, e.g. `ada_language_server`), Add dependency (`alr with <crate>`,
+  after which the compile environment and the language server are refreshed),
+  Dependencies, Update dependencies, Show crate, and Fetch Alire to download or
+  replace `alr` itself.
+- **ESP32-S3 toolchain** — before the first build of an SDK example or
+  `esp32-ada` project, Turbo Ada runs `./x setup-toolchain --check`
+  (`esp32-ada setup-toolchain --check`). If a compiler, gprbuild or the
+  xtensa-dynconfig plugin is missing it says which and offers Alire | Set up
+  ESP32-S3 toolchain: the validated GNAT and gprbuild through `alr` (fetched
+  first if there is none; your default `alr` toolchain is left alone), the
+  plugin built from the vendored source, and a check that the cross compiler
+  now emits little-endian ESP32-S3 objects. Then the build carries on.
 - **Options** — serial port and runtime profile (passed as `-p` / `-P`), the
   command templates themselves, editor settings. Options | Save options, and
   every exit, writes `.turbo_ada` (git-ignored) in the project or SDK root
