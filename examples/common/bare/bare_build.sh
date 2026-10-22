@@ -96,11 +96,28 @@ fi
 # heap-less light-tasking image and the link fails on undefined malloc/abort.
 mkdir -p "$EX/.noidf"
 PROF_STAMP="$EX/.noidf/.profile"; PROF_NOW="${ESP32S3_RTS_PROFILE:-light-tasking}"
-if [ "$(cat "$PROF_STAMP" 2>/dev/null)" != "$PROF_NOW" ]; then
-    [ -s "$PROF_STAMP" ] && echo "[bare]      runtime profile changed -> $PROF_NOW; rebuilding app"
+PROF_WAS="$(cat "$PROF_STAMP" 2>/dev/null || true)"
+#  Stale only if built for ANOTHER profile -- or, with no stamp, if there is
+#  an Ada closure from before the stamp existed.  A clean build has neither,
+#  and must not lose what the project's build.sh put in obj/ just before
+#  calling here (a C helper object, its own stamps).
+if { [ -n "$PROF_WAS" ] && [ "$PROF_WAS" != "$PROF_NOW" ]; } \
+   || { [ -z "$PROF_WAS" ] && ls "$EX"/obj/*.ali > /dev/null 2>&1; }; then
+    [ -n "$PROF_WAS" ] && echo "[bare]      runtime profile changed -> $PROF_NOW; rebuilding app"
     #  $EX/obj is gprbuild's Ada closure (.ali/.o, incremental); a stale tree built
-    #  against the previous runtime mislinks under the new one, so clear it.
+    #  against the previous runtime mislinks under the new one, so clear it --
+    #  all but the caller's EXTRA_OBJS and the project's own stamp files
+    #  (obj/.something), which its build.sh made for this build.
+    KEEP="$(mktemp -d)"
+    for o in ${EXTRA_OBJS:-} "$EX"/obj/.[!.]*; do
+        case "$o" in "$EX/obj/"*) [ -f "$o" ] && mv "$o" "$KEEP/" ;; esac
+    done
     rm -rf "$EX/obj"
+    if [ -n "$(ls -A "$KEEP")" ]; then
+        mkdir -p "$EX/obj"
+        mv "$KEEP"/* "$KEEP"/.[!.]* "$EX/obj/" 2>/dev/null || true
+    fi
+    rm -rf "$KEEP"
     rm -f "$EX/.noidf/bare_heap.o" \
           "$EX/.noidf/bare_mem.o" "$EX/.noidf/bare_crt.o" "$EX/.noidf/tlsf_core.o" \
           "$EX/app.bin" "$EX/app.elf"

@@ -226,7 +226,11 @@ do_build () {
     while [ $# -gt 0 ]; do case "$1" in -P|--profile) prof="$2"; shift 2;; *) shift;; esac; done
     valid_profile "$prof"
     local p; p="$(proj_dir)"
-    ( cd "$p" && env $(prof_env "$prof") bash build.sh )
+    #  The SDK's environment, as a shell that sourced export.sh has it: a
+    #  project's own build.sh may run the toolchain itself (a C helper
+    #  compiled with xtensa-esp32-elf-gcc), not only bare_build.sh.
+    ( . "$SDK/export.sh" > /dev/null
+      cd "$p" && env $(prof_env "$prof") bash build.sh )
 }
 do_flash () {   # build (incremental) + flash: never an out-of-date app.bin
     local port="" prof="auto"
