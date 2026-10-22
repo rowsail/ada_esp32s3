@@ -172,14 +172,10 @@ package body ESP32S3.Ext4.Journal is
       Inode.Read (V, Journal_Inode, Jin);
       RJ (0, Meta.all);
       if Get_U32_BE (Meta.all, 0) /= Magic then
-         Free (Meta);
-         Free (Data);
          raise Corrupt with "bad journal superblock magic";
       end if;
       JIncompat := Get_U32_BE (Meta.all, 16#28#);
       if (JIncompat and (JF_CSUMv2 or JF_CSUMv3)) /= 0 then
-         Free (Meta);
-         Free (Data);
          raise Unsupported_Feature with "checksummed journal (CSUM_V2/V3)";
       end if;
       Use_64 := (JIncompat and JF_64Bit) /= 0;
@@ -266,6 +262,13 @@ package body ESP32S3.Ext4.Journal is
 
       Free (Meta);
       Free (Data);
+   exception
+      when others =>
+         --  Whatever raised (a bad journal, or a block read or write
+         --  failing), the buffers go with it.  Free of null is a no-op.
+         Free (Meta);
+         Free (Data);
+         raise;
    end Replay;
 
    ------------
@@ -290,14 +293,10 @@ package body ESP32S3.Ext4.Journal is
       Inode.Read (V, Journal_Inode, Jin);
       Block_Cache.Read (V.Cache, Jphys (0), Meta.all);
       if Get_U32_BE (Meta.all, 0) /= Magic then
-         Free (Meta);
-         Free (Blk);
          raise Corrupt with "bad journal superblock magic";
       end if;
       JIncompat := Get_U32_BE (Meta.all, 16#28#);
       if (JIncompat and (JF_CSUMv2 or JF_CSUMv3)) /= 0 then
-         Free (Meta);
-         Free (Blk);
          raise Unsupported_Feature with "checksummed journal (CSUM_V2/V3)";
       end if;
       Use_64 := (JIncompat and JF_64Bit) /= 0;
@@ -378,6 +377,11 @@ package body ESP32S3.Ext4.Journal is
 
       Free (Meta);
       Free (Blk);
+   exception
+      when others =>
+         Free (Meta);                  --  as in Replay
+         Free (Blk);
+         raise;
    end Commit;
 
    -----------------------
@@ -505,16 +509,10 @@ package body ESP32S3.Ext4.Journal is
       Inode.Read (V, Journal_Inode, Jin);
       Dread (Jphys (0), Jsb.all);
       if Get_U32_BE (Jsb.all, 0) /= Magic then
-         Free (Jsb);
-         Free (Blk);
-         Free (SBblk);
          raise Corrupt with "bad journal superblock magic";
       end if;
       JIncompat := Get_U32_BE (Jsb.all, 16#28#);
       if (JIncompat and (JF_CSUMv2 or JF_CSUMv3)) /= 0 then
-         Free (Jsb);
-         Free (Blk);
-         Free (SBblk);
          raise Unsupported_Feature with "checksummed journal (CSUM_V2/V3)";
       end if;
       Use_64 := (JIncompat and JF_64Bit) /= 0;
@@ -541,9 +539,6 @@ package body ESP32S3.Ext4.Journal is
            or else (Maxlen > First and then U64 (N) + 2 > Maxlen - First)
            or else Maxlen <= First
          then
-            Free (Jsb);
-            Free (Blk);
-            Free (SBblk);
             raise Transaction_Too_Large
               with "ext4 journal: write-set exceeds journal capacity";
          end if;
@@ -646,6 +641,12 @@ package body ESP32S3.Ext4.Journal is
       Free (Jsb);
       Free (Blk);
       Free (SBblk);
+   exception
+      when others =>
+         Free (Jsb);                   --  as in Replay
+         Free (Blk);
+         Free (SBblk);
+         raise;
    end Transaction_Commit;
 
 end ESP32S3.Ext4.Journal;

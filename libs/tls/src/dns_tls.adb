@@ -216,9 +216,9 @@ package body DNS_TLS is
          Have  : Natural := 0;
          Chunk : TLS_Client.Byte_Array (0 .. 2047);
          Last  : Natural;
-         Alive : Boolean := True;
+         Alive : Boolean;
       begin
-         while Alive loop
+         loop                                        --  until the peer closes or Buf fills
             TLS_Client.Recv (Session, Sock, Chunk, Last, Alive);
             exit when not Alive;
             for I in Chunk'First .. Last loop

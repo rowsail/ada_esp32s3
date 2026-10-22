@@ -104,10 +104,16 @@ package body Cert_Verify is
       end loop;
    end BE_To_Words;
 
-   --  Little-endian words -> big-endian bytes (EM'Length must be 4 * W'Length).
-   procedure Words_To_BE (W : ESP32S3.RSA.Word_Array; EM : out Byte_Array) is
+   --  Little-endian words -> big-endian bytes, every byte of EM written.
+   --  The callers size EM to 4 * W'Length (the Pre says so where assertions
+   --  are on); EM is zeroed first all the same, so a caller that got it wrong
+   --  with assertions off could never compare stale bytes in a verification.
+   procedure Words_To_BE (W : ESP32S3.RSA.Word_Array; EM : out Byte_Array)
+     with Pre => EM'Length = 4 * W'Length
+   is
       use ESP32S3.RSA;
    begin
+      EM := (others => 0);
       for J in 0 .. W'Length - 1 loop
          declare
             Word_Val : constant Word := W (W'First + J);

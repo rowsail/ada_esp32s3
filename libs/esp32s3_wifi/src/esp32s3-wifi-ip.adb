@@ -599,7 +599,7 @@ package body ESP32S3.WiFi.IP is
 
    --  Build and transmit one TCP segment.  The advertised window is the room
    --  left in the receive buffer, so the peer never overruns us.
-   procedure Emit (C : in out TCP_Conn; Flags : Octet; Seq, Ack : Unsigned_32;
+   procedure Emit (C : TCP_Conn; Flags : Octet; Seq, Ack : Unsigned_32;
                    Data : Byte_Array; With_MSS : Boolean) is
       Opt_Len : constant Natural := (if With_MSS then 4 else 0);
       Hdr_Len : constant Natural := 20 + Opt_Len;
