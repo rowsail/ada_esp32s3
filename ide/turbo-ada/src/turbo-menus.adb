@@ -115,15 +115,18 @@ package body Turbo.Menus is
       Sep,
       I ("M~e~mory usage", Cmd_Memory),
       I ("~S~tack usage", Cmd_Stack),
-      I ("~A~nalyze", Cmd_Analyze),
+      I ("~A~nalyze file", Cmd_Analyze_File),
+      I ("Analyze ~p~roject", Cmd_Analyze),
       I ("~T~est", Cmd_Test)];
 
    Project_Items : aliased constant Item_List :=
      [I ("~O~pen project...", Cmd_Open_Project),
       I ("~N~ew project...", Cmd_New_Project),
+      I ("~V~iewer", Cmd_Project_Window),
       Sep,
       I ("Edit ~m~anifest (alire.toml)", Cmd_Edit_Manifest),
       I ("Edit G~P~R file", Cmd_Edit_Gpr),
+      I ("Pro~j~ect file...", Cmd_Choose_Gpr),
       I ("~B~oard (flash/PSRAM)", Cmd_Board_Config),
       Sep,
       --  Alire (on the bar until the Debug menu needed the room)
@@ -160,6 +163,7 @@ package body Turbo.Menus is
       I ("~M~essage", Cmd_Message_Window),
       I ("~O~utput", Cmd_Output_Window),
       I ("~W~atch", Cmd_Watch_Window),
+      I ("P~r~oject", Cmd_Project_Window),
       I ("~L~ist...", Cmd_Window_List, "Alt-0")];
 
    Help_Items : aliased constant Item_List :=

@@ -131,7 +131,15 @@ brown is brown.
   through `./x --machine` so the box shows the real stages and the Message window
   gets every diagnostic with its full path; Enter, a click, or Alt-F8 / Alt-F7
   jumps to the line. Also Build all, Clean, and the SDK's Memory (`./x mem`),
-  Stack (`./x stack`), Analyze and Test reports.
+  Stack (`./x stack`) and Test reports.
+- **Static analysis** — Compile | Analyze file and Analyze project run
+  [AdaLang_Analyzer](https://github.com/mmartign/AdaLang_Analyzer) on the file
+  being edited or on the project's own code (`./x analyze`, `esp32-ada analyze`,
+  or for an Alire crate `adalang_analyzer -P` in alr's environment). Its findings
+  go to the Message window as warnings, with the rule, the advice and the source
+  line under each; Enter or Alt-F8 goes to them. The file is saved first. If the
+  analyzer is not installed, the IDE offers to build it with Alire (it builds
+  Libadalang, so it takes a while, once); `./x setup-toolchain` offers it too.
 - **Ada Language Server** — when `ada_language_server` is installed (found on
   `PATH`, in `~/.alire/bin`, or inside an installed VS Code Ada extension),
   errors appear as you type, in red, with the message on the status line; F12
@@ -177,6 +185,22 @@ brown is brown.
 - **Project** — pick an SDK example, scaffold a new project (`./x new`,
   `esp32-ada init` or `alr init --bin`), edit `alire.toml` and the `.gpr`, see
   the board's flash/PSRAM sizes.
+- **Project file** — the `.gpr` is found by one rule, the same as `./x`'s and
+  `esp32-ada`'s: `alire.toml`'s first `project-files` entry (else
+  `<crate>.gpr`), else `app.gpr`, else the first `*.gpr` by name that is not a
+  `*_prove.gpr`. Project | Project file picks another of the directory's
+  `.gpr` files; it is kept in `.turbo_ada` and used by Compile, the language
+  server, the project viewer and Analyze (passed to `./x` and `esp32-ada` as
+  `--gpr FILE`). `alr build` still builds what `alire.toml` names.
+- **Project viewer** — Project | Viewer (or Window | Project) opens a tree
+  down the left. Tab switches its two views. *Folders* is the project
+  directory (folders first; Enter or Right opens one, Left closes it). *Sources*
+  is what the project builds from, grouped by project: its own and each one it
+  withs (the SDK libraries, Alire dependencies), from `gprinspect` in the
+  project's environment. Once the program is built it lists the closure from
+  `gprls --closure` (exactly the files it needs: 12 for the heartbeat example,
+  of the hundreds in the libraries); before that, every source in the
+  projects' source directories. Enter on a file opens it; Ctrl-R re-reads.
 - **Project, Alire items** — Search crates (`alr search --crates`), Get crate (`alr get` into
   a directory you choose, then open it as the project), Install tool (`alr
   install`, e.g. `ada_language_server`), Add dependency (`alr with <crate>`,
@@ -262,11 +286,12 @@ Each action is a template (Options | Commands) run through `/bin/sh -c`
 `cmd /c`), in the SDK root or the project directory:
 
 ```
-{example} {port_opt} {profile_opt} {port} {profile} {dir} {root} {file} {gpr} {tmp}
+{example} {port_opt} {profile_opt} {gpr_opt} {port} {profile} {dir} {root} {file} {gpr} {tmp}
 ```
 
 `{port_opt}` is ` -p PORT` only when a port is set, so the tool's own default
-(`$ESPPORT`, else `/dev/ttyACM0`) applies otherwise; `{profile_opt}` likewise.
+(`$ESPPORT`, else `/dev/ttyACM0`) applies otherwise; `{profile_opt}` likewise,
+and `{gpr_opt}` is ` --gpr FILE` only when Project | Project file chose one.
 
 ## Layout
 
@@ -283,6 +308,7 @@ src/turbo-editors*    the edit window
 src/turbo-clipboard*  the system clipboard (wl-copy, xclip, xsel, pbcopy, PowerShell), OSC 52
 src/turbo-formatter*  Edit | Format without the language server: gnatformat on the text
 src/turbo-messages*   the message window and the diagnostic parser
+src/turbo-project_view*  the Project window: folders, and the sources by project
 src/turbo-viewers*    read-only text (help, clipboard, project information)
 src/turbo-desktop*    the window stack, the status line
 src/turbo-menus*      the menu bar and pull-downs

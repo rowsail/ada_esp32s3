@@ -1,0 +1,9 @@
+# Compile | Analyze file on a crate's source (run.sh: when adalang_analyzer
+# and alr are there).  Findings are warnings, not a failure.
+key Alt-C
+key A
+wait-for Press any key 240
+expect Analyze messy.adb
+expect Success.
+key Esc
+quit

@@ -32,6 +32,13 @@
 #                                     --do178c[=A|B|C|D] instead WRITES
 #                                     per-objective DO-178C evidence reports to
 #                                     build/do178c/ (a report, not a gate)
+#    ./x analyze <example> [--style]   an example's own code: every finding
+#    ./x analyze FILE.adb... [--style] those files, with their project for
+#                                     context (an example's, a library's, ...)
+#                                     (--gpr FILE: a project file other than
+#                                     the one found -- see gpr_of_dir)
+#    ./x setup-analyzer [--check]      install adalang_analyzer (alr; builds
+#                                     Libadalang, so it takes a while)
 #    ./x stack   <example> [--top N] [--run]   static stack analysis (per-frame +
 #                                      worst-case call chains); --run adds the
 #                                      runtime high-water mark over serial
@@ -62,9 +69,11 @@
 #    ./x install-vim                   symlink the Vim/Neovim plugin (auto-updates on git pull)
 #    ./x turbo   [<example>] [FILE...] Turbo Ada: the Turbo C++ style text-mode IDE
 #                                     (ide/turbo-ada; built on first use)
-#    ./x env     <example|SUITE> [-P PROF]   KEY=VALUE lines: the environment a
-#                                     compile of the example (ESP32-S3) or of a host
-#                                     test suite (native) needs (PATH, GPR_FILE, ...)
+#    ./x env     <example|SUITE> [-P PROF] [--gpr FILE]   KEY=VALUE lines: the
+#                                     environment a compile of the example (ESP32-S3)
+#                                     or of a host test suite (native) needs (PATH,
+#                                     GPR_FILE, ...); --gpr: a project file other
+#                                     than the one found
 #    ./x --machine <verb> ...          the verb's output with @x lines for IDEs
 #                                     (stages, diagnostics, artifacts, result)
 #    ./x docs                          build the HAL API reference PDF (libs/esp32s3_hal/docs/)
@@ -824,6 +833,30 @@ cmd_setup_formatter () {   # [--check]
     alr -n install gnatformat_bin || { echo "[setup] could not install gnatformat"; return 1; }
     echo "[setup]   gnatformat  ok ($(formatter_path))"
 }
+#  adalang_analyzer, for ./x analyze and Turbo Ada's Analyze file / project.
+#  An Alire crate built from source (with Libadalang: many minutes), so the
+#  set-up only installs it on a yes.
+analyzer_path () {
+    if command -v adalang_analyzer >/dev/null; then command -v adalang_analyzer
+    elif [ -x "$HOME/.alire/bin/adalang_analyzer" ]; then echo "$HOME/.alire/bin/adalang_analyzer"
+    fi
+}
+cmd_setup_analyzer () {   # [--check | --ask]
+    local a reply; a="$(analyzer_path)"
+    if [ -n "$a" ]; then echo "[setup]   adalang_analyzer  ok ($a)"; return 0; fi
+    echo "[setup]   adalang_analyzer  not installed (optional): alr install adalang_analyzer"
+    [ "${1:-}" = --check ] && return 0
+    command -v alr >/dev/null || { echo "[setup]   (Alire's alr installs it: see QUICKSTART.md step 1)"; return 1; }
+    if [ "${1:-}" = --ask ]; then
+        [ -t 0 ] && [ -t 1 ] || return 0
+        printf '[setup]   build and install it now (it builds Libadalang: many minutes)? [y/N] '
+        read -r reply || reply=""
+        case "$reply" in y|Y|yes|Yes) ;; *) return 0;; esac
+    fi
+    echo "[setup] installing adalang_analyzer: alr -n install adalang_analyzer"
+    alr -n install adalang_analyzer || { echo "[setup] could not install adalang_analyzer"; return 1; }
+    echo "[setup]   adalang_analyzer  ok ($(analyzer_path))"
+}
 
 cmd_setup_toolchain () {   # [--check]
     local check=0
@@ -850,6 +883,7 @@ cmd_setup_toolchain () {   # [--check]
     fi
     if [ "$check" = 1 ]; then
         cmd_setup_formatter --check
+        cmd_setup_analyzer --check
         cmd_setup_clipboard --check
         [ ${#missing[@]} -eq 0 ] && [ -f "$dyncfg" ] && { echo "[setup] ready"; return 0; }
         echo "[setup] not ready: run './x setup-toolchain'"; return 1
@@ -894,6 +928,7 @@ cmd_setup_toolchain () {   # [--check]
     #  system package, so only on a yes (here on a terminal, or Turbo Ada's
     #  offer after it).
     cmd_setup_formatter || true
+    cmd_setup_analyzer --ask || true
     cmd_setup_clipboard --ask || true
     echo "[setup] ready"
 }
@@ -1103,19 +1138,172 @@ Unreachable_Code,Unused_Variable,Missing_Overriding_Indicator,\
 Reraise_Discards_Occurrence,Inefficient_String_Concatenation,Empty_If_Body,\
 Empty_Else_Body,No_Goto,No_Label"
 
+#  Analysis of an application's own code -- an example, a standalone project,
+#  or some files of either (or of a library) -- for the command line and
+#  Turbo Ada's Analyze file / Analyze project.  The gate's checks (--style:
+#  its style set), the project for name resolution, and no baseline: every
+#  finding is shown, compiler-style (file:line:col: warning: ... [Check])
+#  with the analyzer's rule, advice and source lines under it.
+need_analyzer () {
+    command -v adalang_analyzer > /dev/null 2>&1 && return 0
+    #  alr install's home, when it is not on PATH (an IDE started from a menu).
+    [ -x "$HOME/.alire/bin/adalang_analyzer" ] && { PATH="$HOME/.alire/bin:$PATH"; return 0; }
+    cat >&2 <<'MSG'
+analyze: adalang_analyzer is not installed.
+
+  It is an Alire crate (https://github.com/mmartign/AdaLang_Analyzer), not
+  part of the pinned toolchain.  './x setup-analyzer' installs it (it builds
+  Libadalang, so it takes a while), or by hand:
+
+      alr install adalang_analyzer          # installs into ~/.alire/bin
+      export PATH="$HOME/.alire/bin:$PATH"
+MSG
+    return 127
+}
+gpr_of_dir () {   # $1 = dir: its project file, or nothing
+    #  The one rule (Turbo Ada's too): alire.toml's first project-files entry,
+    #  else <crate name>.gpr; else app.gpr; else the first *.gpr in name
+    #  order that is not a *_prove.gpr.
+    local g best="" m
+    if [ -f "$1/alire.toml" ]; then
+        m="$(sed -n 's/^[[:space:]]*project-files[[:space:]]*=[[:space:]]*\[[[:space:]]*"\([^"]*\)".*/\1/p' \
+             "$1/alire.toml" | head -1)"
+        [ -n "$m" ] || m="$(sed -n 's/^[[:space:]]*name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' \
+             "$1/alire.toml" | head -1).gpr"
+        [ -f "$1/$m" ] && { echo "$1/$m"; return 0; }
+    fi
+    for g in "$1"/*.gpr; do
+        [ -f "$g" ] || continue
+        case "$g" in *_prove.gpr) continue ;; esac
+        if [ -z "$best" ] || [ "$(basename "$g")" = app.gpr ]; then best="$g"; fi
+    done
+    [ -n "$best" ] && echo "$best"
+}
+gpr_given () {   # $1 = --gpr FILE (relative to $2, a dir, when not absolute): it, checked
+    local g="$1"
+    case "$g" in /*) ;; *) g="$2/$g" ;; esac
+    [ -f "$g" ] || die "no such project file: $1"
+    echo "$(cd "$(dirname "$g")" && pwd -P)/$(basename "$g")"
+}
+gpr_above () {   # $1 = a source file: the nearest project file in its dir or above
+    local d; d="$(cd "$(dirname "$1")" && pwd -P)" || return 1
+    while :; do
+        gpr_of_dir "$d" && return 0
+        [ "$d" = / ] && return 1
+        d="$(dirname "$d")"
+    done
+}
+gpr_profile () {   # $1 = project file: the runtime profile to resolve it under
+    local dir; dir="$(dirname "$1")"
+    case "$(cd "$dir" && pwd -P)/" in
+        "$(cd "$ROOT/libs" && pwd -P)"/*)
+            #  A library: its widest profile, as the gate uses.
+            profiles_of_lib "$1" | tr ' ' '\n' | grep -vx light-tasking | head -1 ;;
+        *)  #  An application: the profile its build.sh builds with.
+            local p; p="$(grep -hoE 'ESP32S3_RTS_PROFILE=[a-z-]+' "$dir/build.sh" 2>/dev/null \
+                          | head -1 | cut -d= -f2 || true)"
+            echo "${p:-light-tasking}" ;;
+    esac
+}
+analyze_app () {   # $1 = project file, $2 = 1 for --style, rest = files (none: all its sources)
+    local gpr="$1" style="$2" prof checks f rc
+    shift 2
+    need_analyzer || return
+    prof="$(gpr_profile "$gpr")"
+    if [ "$style" = 1 ]; then checks="-checks=$ANALYZE_STYLE_CHECKS"
+    else checks="--recommended -checks=$ANALYZE_EXTRA_CHECKS"; fi
+    if [ $# -gt 0 ]; then
+        echo "== static analysis ($([ "$style" = 1 ] && echo style || echo defects)) of $(for f in "$@"; do printf '%s ' "$(basename "$f")"; done)[$(basename "$gpr"), $prof] =="
+    else
+        echo "== static analysis ($([ "$style" = 1 ] && echo style || echo defects)) of $(basename "$(dirname "$gpr")") [$(basename "$gpr"), $prof] =="
+    fi
+    #  GPR_PROJECT_PATH, for the SDK libraries a project withs.
+    . "$ROOT/export.sh" > /dev/null 2>&1
+    if [ $# -eq 0 ]; then
+        ( cd "$(dirname "$gpr")" && adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
+              $checks ) && rc=0 || rc=$?
+        #  1: findings (the report says which); anything else: it failed.
+        [ "$rc" -le 1 ] || echo "analyze: adalang_analyzer failed (status $rc)" >&2
+        #  An IDE (--machine) reads the findings as warnings: they are what
+        #  it asked for, not a failure.
+        [ "$rc" = 1 ] && [ "${X_MACHINE:-}" = 1 ] && rc=0
+        return "$rc"
+    fi
+    #  Files: the analyzer may report on the whole project whatever files it
+    #  is given, so keep only theirs -- each finding line ("/abs/f.adb:L:C:
+    #  warning: ...") with the indented lines under it -- and count them.
+    local out; out="$(mktemp)"
+    ( cd "$(dirname "$gpr")" && adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
+          $checks "$@" ) > "$out" 2>&1 && rc=0 || rc=$?
+    if [ "$rc" -gt 1 ]; then
+        cat "$out"; rm -f "$out"
+        echo "analyze: adalang_analyzer failed (status $rc)" >&2
+        return "$rc"
+    fi
+    local kept n
+    kept="$(printf '%s\n' "$@" | awk '
+        NR == FNR { want[$0] = 1; next }
+        /^\// { f = $0; sub(/:[0-9]+:[0-9]+:.*/, "", f); keep = (f in want) }
+        /^\// || /^  / { if (keep) print; next }
+        { keep = 0 }' - "$out")"
+    rm -f "$out"
+    n="$(printf '%s\n' "$kept" | grep -c '^/' || true)"
+    [ -n "$kept" ] && printf '%s\n\n' "$kept"
+    echo "$n finding$([ "$n" = 1 ] || echo s)"
+    [ "$n" = 0 ] || [ "${X_MACHINE:-}" = 1 ]
+}
+analyze_files () {   # $1 = 1 for --style, $2 = the project file ("": found), rest = source files
+    local style="$1" given="$2" f gpr="" g abs=()
+    shift 2
+    for f in "$@"; do
+        [ -f "$f" ] || die "analyze: no such file: $f"
+        abs+=("$(cd "$(dirname "$f")" && pwd -P)/$(basename "$f")")
+        [ -z "$given" ] || continue
+        g="$(gpr_above "$f")" || die "analyze: no project file (.gpr) above $f"
+        [ -z "$gpr" ] || [ "$gpr" = "$g" ] || die "analyze: $f is in another project ($g)"
+        gpr="$g"
+    done
+    [ -z "$given" ] || gpr="$given"
+    analyze_app "$gpr" "$style" "${abs[@]}"
+}
+
 cmd_analyze () {
-    local update=0 only="" style=0 do178="" a
-    for a in "$@"; do
+    local update=0 only="" style=0 do178="" a files=() given=""
+    while [ $# -gt 0 ]; do
+        a="$1"; shift
         case "$a" in
+            --gpr)                      given="$(gpr_given "${1:-}" "$PWD")"; shift ;;
+            --gpr=*)                    given="$(gpr_given "${a#--gpr=}" "$PWD")" ;;
             --update-baseline|--update) update=1 ;;
             --style)                    style=1 ;;
             --do178c)                   do178=A ;;
             --do178c=[ABCD])            do178="${a#--do178c=}" ;;
             --do178c=*) echo "x analyze: --do178c level must be A, B, C or D" >&2; return 2 ;;
             -*) echo "x analyze: unknown option: $a" >&2; return 2 ;;
+            *.adb|*.ads|*.ada) files+=("$a") ;;
             *)  only="$a" ;;
         esac
     done
+
+    #  Source files, or an example: its own code, every finding (no baseline).
+    local lib_gpr=""
+    [ -n "$only" ] && lib_gpr="$(ls "$ROOT"/libs/*/"$only".gpr 2>/dev/null | head -1 || true)"
+    if [ ${#files[@]} -gt 0 ] || { [ -n "$only" ] && [ -z "$lib_gpr" ] \
+            && { [ -d "$EXROOT/$only" ] || [ -d "$EXROOT/esp32s3_$only" ]; }; }; then
+        if [ "$update" = 1 ] || [ -n "$do178" ]; then
+            echo "x analyze: --update-baseline and --do178c are for the libraries" >&2; return 2
+        fi
+        if [ ${#files[@]} -gt 0 ]; then
+            [ -z "$only" ] || { echo "x analyze: files or an example, not both" >&2; return 2; }
+            analyze_files "$style" "$given" "${files[@]}"
+        else
+            local e g; e="$(resolve "$only")"
+            g="$given"
+            [ -n "$g" ] || g="$(gpr_of_dir "$EXROOT/$e")" || die "no .gpr in $EXROOT/$e"
+            analyze_app "$g" "$style"
+        fi
+        return
+    fi
 
     #  Which rule set, and which baseline it is measured against.  The two modes
     #  keep SEPARATE baselines: they enable different checks, so one set of
@@ -1461,7 +1649,7 @@ machine_run () {   # $1 = dir holding the artifacts ("" = none); rest = the comm
     shift
     echo "@x protocol 1"
     set +e
-    ( set -e; "$@" ) 2>&1 | machine_filter
+    ( set -e; export X_MACHINE=1; "$@" ) 2>&1 | machine_filter
     rc=${PIPESTATUS[0]}
     set -e
     if [ "$rc" = 0 ] && [ -n "$art" ]; then
@@ -1479,19 +1667,14 @@ machine_run () {   # $1 = dir holding the artifacts ("" = none); rest = the comm
 #  crate and every libs/*/ on GPR_PROJECT_PATH -- the same steps bare_build.sh
 #  and build_ada.sh take before their gprbuild.  Printed as KEY=VALUE lines;
 #  progress goes to stderr.
-app_env () {   # $1 = project dir, $2 = profile (auto = the project's build.sh)
-    local dir="$1" prof="$2" gpr g l
+app_env () {   # $1 = project dir, $2 = profile (auto = the project's build.sh), $3 = its .gpr ("": found)
+    local dir="$1" prof="$2" gpr="${3:-}" l
     if [ "$prof" = auto ] || [ -z "$prof" ]; then
         prof="$(grep -hoE 'ESP32S3_RTS_PROFILE=[a-z-]+' "$dir/build.sh" 2>/dev/null \
                 | head -1 | cut -d= -f2 || true)"
         prof="${prof:-light-tasking}"
     fi
-    gpr=""
-    for g in "$dir"/*.gpr; do
-        [ -f "$g" ] || continue
-        if [ -z "$gpr" ] || [ "$(basename "$g")" = app.gpr ]; then gpr="$g"; fi
-    done
-    [ -n "$gpr" ] || die "no .gpr in $dir"
+    [ -n "$gpr" ] || gpr="$(gpr_of_dir "$dir")" || die "no .gpr in $dir"
     (
         export ESP32S3_RTS_PROFILE="$prof"
         . "$ROOT/tools/sdk-env.sh"
@@ -1511,11 +1694,9 @@ app_env () {   # $1 = project dir, $2 = profile (auto = the project's build.sh)
         printf 'PROJECT_DIR=%s\n' "$dir"
     )
 }
-suite_env () {   # $1 = suite dir: the native toolchain first, the suite's project
-    local dir="$1" gpr g
-    gpr=""
-    for g in "$dir"/*.gpr; do [ -f "$g" ] && { gpr="$g"; break; }; done
-    [ -n "$gpr" ] || die "no .gpr in $dir"
+suite_env () {   # $1 = suite dir, $2 = its .gpr ("": found): the native toolchain first, the project
+    local dir="$1" gpr="${2:-}"
+    [ -n "$gpr" ] || gpr="$(gpr_of_dir "$dir")" || die "no .gpr in $dir"
     (
         . "$ROOT/tools/sdk-env.sh"
         esp32s3_toolchain_on_path >&2
@@ -1525,15 +1706,25 @@ suite_env () {   # $1 = suite dir: the native toolchain first, the suite's proje
         printf 'PROJECT_DIR=%s\n' "$dir"
     )
 }
-cmd_env () {   # <example|SUITE> [-P PROF]
-    local s; s="$(resolve_suite "${1:-}")"
-    if [ -n "$s" ] && [ ! -d "$EXROOT/${1:-}" ] && [ ! -d "$EXROOT/esp32s3_${1:-}" ]; then
-        suite_env "$s"; return
+cmd_env () {   # <example|SUITE> [-P PROF] [--gpr FILE]
+    local name="${1:-}" s e prof="auto" gpr="" dir; shift || true
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -P|--profile) prof="$2"; shift 2 ;;
+            --gpr)        gpr="$2"; shift 2 ;;
+            --gpr=*)      gpr="${1#--gpr=}"; shift ;;
+            *) shift ;;
+        esac
+    done
+    s="$(resolve_suite "$name")"
+    if [ -n "$s" ] && [ ! -d "$EXROOT/$name" ] && [ ! -d "$EXROOT/esp32s3_$name" ]; then
+        [ -z "$gpr" ] || gpr="$(gpr_given "$gpr" "$s")"
+        suite_env "$s" "$gpr"; return
     fi
-    local e prof="auto"; e="$(resolve "${1:-}")"; shift || true
-    while [ $# -gt 0 ]; do case "$1" in -P|--profile) prof="$2"; shift 2;; *) shift;; esac; done
+    e="$(resolve "$name")"; dir="$EXROOT/$e"
+    [ -z "$gpr" ] || gpr="$(gpr_given "$gpr" "$dir")"
     valid_profile "$prof"
-    app_env "$EXROOT/$e" "$prof"
+    app_env "$dir" "$prof" "$gpr"
 }
 
 # -- dispatch -----------------------------------------------------------------
@@ -1575,6 +1766,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     setup-toolchain)    cmd_setup_toolchain "$@" ;;
     setup-clipboard)    cmd_setup_clipboard "$@" ;;
     setup-formatter)    cmd_setup_formatter "$@" ;;
+    setup-analyzer)     cmd_setup_analyzer "$@" ;;
     get-debug-tools)    cmd_get_debug_tools "$@" ;;
     get-openocd)        cmd_get_openocd "$@" ;;
     get-gdb)            cmd_get_gdb "$@" ;;

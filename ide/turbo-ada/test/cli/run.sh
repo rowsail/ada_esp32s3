@@ -75,6 +75,27 @@ else
     echo "format: skipped (no gnatformat)"
 fi
 
+# Project | Viewer: folders and sources (gprinspect, in alr's environment).
+if command -v alr >/dev/null; then
+    cp demo.adb "$W/src/demo.adb"
+    echo "lsp.enabled=0" > "$W/.turbo_ada"
+    "$CLI" -C "$W" ui src/demo.adb --script "$HERE/project.txt"
+    echo "project viewer: ok"
+else
+    echo "project viewer: skipped (no alr)"
+fi
+
+# Compile | Analyze file, through alr's environment (an Alire crate).
+if command -v alr >/dev/null && { command -v adalang_analyzer >/dev/null \
+        || [ -x "$HOME/.alire/bin/adalang_analyzer" ]; }; then
+    cp messy.adb "$W/src/messy.adb"
+    echo "lsp.enabled=0" > "$W/.turbo_ada"
+    PATH="$PATH:$HOME/.alire/bin" "$CLI" -C "$W" ui src/messy.adb --script "$HERE/analyze.txt"
+    echo "analyze: ok"
+else
+    echo "analyze: skipped (no adalang_analyzer or alr)"
+fi
+
 if ! command -v gdb >/dev/null; then
     echo "debug: skipped (no gdb)"
     exit 0

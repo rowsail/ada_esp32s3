@@ -25,6 +25,8 @@ parts (language intelligence, the IDF-free build) already live in ALS + `./x`.
 ./x clean   [<example>]           # remove build artifacts (all if omitted)
 ./x test    [host|lib|examples]  # everything checkable without a board (what CI runs)
 ./x analyze [<lib>] [--style]     # static analysis, new findings only (see below)
+./x analyze <example>|FILE.adb... # an example's own code, or some files: every finding
+./x setup-analyzer                # install adalang_analyzer (alr; builds Libadalang)
 ./x stack   <example> [--top N] [--run]   # worst-case stack per call chain
 ./x mem     <example>             # section sizes against the linker's bounds
 ./x config  <example> [show|--json]   # show flash/PSRAM size (the example's board.ads)
@@ -81,9 +83,23 @@ is what makes the gate meaningful. `--do178c` is the exception: it writes a
 report rather than gating, and it is explicit that it is verification *input*,
 not a compliance determination.
 
-The analyser is an Alire crate (`alr install adalang_analyzer`) and is not part
-of the pinned toolchain, so `./x test` cannot assume it. That is why it has its
-own verb. `tools/analyzer-baselines/README.md` explains which checks are enabled
+The same analysis runs on your own code, with every finding shown (no
+baseline): `./x analyze heartbeat` for an example's sources, `./x analyze
+src/foo.adb src/bar.ads` for files (of an example, a library or a standalone
+project: the nearest `.gpr` above them gives the name resolution and the
+runtime profile), `esp32-ada analyze [FILE...]` in a standalone project.
+`--style` picks the readability set here too. Findings come out like compiler
+warnings (`file:line:col: warning: ... [Check]`, then the rule, the advice and
+the source line), and the status is 1 when there are any. In Turbo Ada,
+Compile | Analyze file and Analyze project do the same (an Alire crate's run
+`adalang_analyzer -P` on its project file), with the findings in the Message
+window.
+
+The analyser is [AdaLang_Analyzer](https://github.com/mmartign/AdaLang_Analyzer),
+an Alire crate (`alr install adalang_analyzer`, or `./x setup-analyzer`; it
+builds Libadalang, so the first install takes a while) and is not part of the
+pinned toolchain, so `./x test` cannot assume it. That is why it has its own
+verb; `./x setup-toolchain` offers to install it. `tools/analyzer-baselines/README.md` explains which checks are enabled
 and why each folded-in finding is not a bug.
 
 ### Starting your own project

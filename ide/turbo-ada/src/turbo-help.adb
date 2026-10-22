@@ -15,6 +15,15 @@ package body Turbo.Help is
       & "  {F6}            next window      {F5}      zoom it" & LF
       & "  {Alt-1..9}      window by number {Alt-0}   window list" & LF
       & "  {Ctrl-F5}       move/size the window with the arrow keys" & LF
+      & "  Project | Viewer (Window | Project): the project as a tree." & LF
+      & "                  {Tab} switches Folders (the project directory)" & LF
+      & "                  and Sources (by project: its own and each one it" & LF
+      & "                  withs; once built, only the files it needs)." & LF
+      & "                  {Enter} opens a file or a folder, {Left}/{Right}" & LF
+      & "                  close/open, {Ctrl-R} reads it all again." & LF
+      & "  Project | Project file: which .gpr the IDE uses, when the" & LF
+      & "                  directory has several (default: alire.toml's," & LF
+      & "                  else app.gpr, else the first that is not _prove)." & LF
       & "  The mouse works too: menus, close and zoom boxes, title bars," & LF
       & "  the resize corner, scroll bars, and click-drag to select." & LF
       & LF
@@ -24,6 +33,9 @@ package body Turbo.Help is
       & "  {F9}            Make: build the project, errors to the Message" & LF
       & "                  window.  Enter on a message jumps to the line." & LF
       & "  {Alt-F8}        next error     {Alt-F7}  previous error" & LF
+      & "  Compile | Analyze file / Analyze project: the static analyzer" & LF
+      & "                  (adalang_analyzer); its findings are warnings in the" & LF
+      & "                  Message window, Alt-F8 goes from one to the next" & LF
       & "  {Ctrl-F9}       Run: make and flash, then the board's console in" & LF
       & "                  the Output window (Run | Monitor: the console alone)" & LF
       & "  {Shift-F2}      pause the Output window (or Space in it); again resumes" & LF
@@ -173,6 +185,7 @@ package body Turbo.Help is
       & "  {{port_opt}}     ' -p PORT' when a port is set, else nothing" & LF
       & "  {{console_opt}}  ' -c CONSOLE' when a console is set" & LF
       & "  {{profile_opt}}  ' -P PROFILE' when a profile is set" & LF
+      & "  {{gpr_opt}}      ' --gpr FILE' when Project | Project file chose one" & LF
       & "  {{port}} {{console}} {{profile}} {{dir}} {{root}} {{file}}" & LF
       & LF
       & "Commands run through /bin/sh -c (on Windows: bash -c when bash" & LF

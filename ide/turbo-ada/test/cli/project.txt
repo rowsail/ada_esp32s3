@@ -1,0 +1,17 @@
+# Project | Viewer: the folders, then (Tab) the sources from the GPR tools
+# (run.sh: with alr, for the crate's environment).  Enter opens a file.
+key Alt-P
+key V
+expect Tab Folders/Sources
+expect src/
+expect demo.gpr
+key Tab
+wait-for sources 60
+expect Demo (
+expect src/demo.adb
+expect Not built
+key Down
+key Enter
+expect procedure Demo is
+expect-not Tab Folders/Sources
+quit

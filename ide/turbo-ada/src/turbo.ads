@@ -14,6 +14,7 @@
 --    Turbo.Formatter    gnatformat on an editor's text (Edit | Format)
 --    Turbo.Editors      the edit window
 --    Turbo.Messages     the message window (build output, jump to error)
+--    Turbo.Project_View the Project window (folders; sources by project)
 --    Turbo.Desktop      the window stack, menu bar, status line
 --    Turbo.Menus        the pull-down menus
 --    Turbo.Dialogs      modal dialogs (find, open file, options, ...)

@@ -26,11 +26,18 @@
 #                                    wl-clipboard if the desktop needs one (sudo)
 #    esp32-ada setup-formatter [--check]  gnatformat for Turbo Ada's Edit | Format
 #                                    (alr install gnatformat_bin)
+#    esp32-ada analyze [FILE...] [--style] [--gpr FILE]  static analysis
+#                                    (adalang_analyzer) of this project, or of
+#                                    those files in it
+#    esp32-ada setup-analyzer [--check]  install adalang_analyzer (alr; slow)
 #    esp32-ada kill-openocd          kill every OpenOCD (release captured ports)
 #    esp32-ada install-ide           install the VS Code extension (committed .vsix; no Node)
 #    esp32-ada install-vim           symlink the Vim/Neovim plugin (auto-updates on git pull)
 #    esp32-ada turbo [FILE...]       Turbo Ada, the Turbo C++ style IDE, on this project
-#    esp32-ada env [-P PROFILE]      KEY=VALUE: the environment a compile of this project needs
+#    esp32-ada env [-P PROFILE] [--gpr FILE]  KEY=VALUE: the environment a compile
+#                                    of this project needs
+#  --gpr FILE: a project file other than the one found (alire.toml's
+#  project-files, else app.gpr, else the first *.gpr that is not *_prove.gpr).
 #    esp32-ada --machine <verb> ...  the verb's output with @x lines for IDEs (see ./x)
 #
 #  PORT (flash/debug: the chip's USB/JTAG unit) and CON (the console: jtag,
@@ -279,11 +286,37 @@ do_config () {   # show/set THIS project's board.ads (reuses x's set/read helper
         *) die "config: unknown '$1' (show|--json|flash-size|psram-size)" ;;
     esac
 }
-do_env () {   # [-P PROFILE] -> KEY=VALUE lines (app_env comes from x)
-    local prof="auto"
-    while [ $# -gt 0 ]; do case "$1" in -P|--profile) prof="$2"; shift 2;; *) shift;; esac; done
+do_env () {   # [-P PROFILE] [--gpr FILE] -> KEY=VALUE lines (app_env comes from x)
+    local prof="auto" gpr=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -P|--profile) prof="$2"; shift 2 ;;
+            --gpr)        gpr="$(gpr_given "$2" "$(proj_dir)")"; shift 2 ;;
+            --gpr=*)      gpr="$(gpr_given "${1#--gpr=}" "$(proj_dir)")"; shift ;;
+            *) shift ;;
+        esac
+    done
     valid_profile "$prof"
-    app_env "$(proj_dir)" "$prof"
+    app_env "$(proj_dir)" "$prof" "$gpr"
+}
+do_analyze () {   # [FILE...] [--style] [--gpr FILE] (analyze_app / analyze_files come from x)
+    local style=0 a files=() g=""
+    while [ $# -gt 0 ]; do
+        a="$1"; shift
+        case "$a" in
+            --style) style=1 ;;
+            --gpr)   g="$(gpr_given "${1:-}" "$(proj_dir)")"; shift ;;
+            --gpr=*) g="$(gpr_given "${a#--gpr=}" "$(proj_dir)")" ;;
+            -*) die "analyze: unknown option: $a" ;;
+            *)  files+=("$a") ;;
+        esac
+    done
+    if [ ${#files[@]} -gt 0 ]; then
+        analyze_files "$style" "$g" "${files[@]}"
+    else
+        [ -n "$g" ] || g="$(gpr_of_dir "$(proj_dir)")" || die "no .gpr in $(proj_dir)"
+        analyze_app "$g" "$style"
+    fi
 }
 do_clean () {
     local p; p="$(proj_dir)"
@@ -326,7 +359,7 @@ if [ "${1:-}" = "--machine" ]; then
     MACHINE_DIRS="$PWD $SDK/libs $SDK/examples/common $SDK/tools"
     case "$cmd" in
         build|flash) machine_run "$PWD" "$0" "$cmd" "$@"; exit $? ;;
-        clean|config|cfg|kill-openocd|setup-toolchain) machine_run "" "$0" "$cmd" "$@"; exit $? ;;
+        clean|config|cfg|kill-openocd|setup-toolchain|analyze) machine_run "" "$0" "$cmd" "$@"; exit $? ;;
     esac
     set -- "$cmd" "$@"
 fi
@@ -345,6 +378,8 @@ case "$cmd" in
     setup-toolchain) cmd_setup_toolchain "$@" ;;   # from x (sourced): same toolchain, same plugin
     setup-clipboard) cmd_setup_clipboard "$@" ;;   # from x (sourced)
     setup-formatter) cmd_setup_formatter "$@" ;;   # from x (sourced)
+    setup-analyzer)  cmd_setup_analyzer "$@" ;;    # from x (sourced)
+    analyze)         do_analyze "$@" ;;
     kill-openocd)    cmd_kill_openocd "$@" ;;  # from x (sourced)
     ports)           cmd_ports "$@" ;;         # from x (sourced)
     debug-server)    cmd_debug_server "$@" ;;  # from x (sourced)

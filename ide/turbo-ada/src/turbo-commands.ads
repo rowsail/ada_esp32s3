@@ -31,10 +31,10 @@ package Turbo.Commands is
       Cmd_Toggle_Breakpoint, Cmd_Breakpoints, Cmd_Delete_All_Breakpoints,
       --  Compile
       Cmd_Check_File, Cmd_Make, Cmd_Build_All, Cmd_Clean, Cmd_Memory, Cmd_Stack,
-      Cmd_Analyze, Cmd_Test,
+      Cmd_Analyze, Cmd_Analyze_File, Cmd_Test,
       --  Project
       Cmd_Open_Project, Cmd_New_Project, Cmd_Project_Info, Cmd_Edit_Manifest,
-      Cmd_Edit_Gpr, Cmd_Board_Config,
+      Cmd_Edit_Gpr, Cmd_Choose_Gpr, Cmd_Board_Config,
       --  Alire
       Cmd_Alr_Search, Cmd_Alr_Get, Cmd_Alr_Install, Cmd_Alr_Add,
       Cmd_Alr_Deps, Cmd_Alr_Update, Cmd_Alr_Show, Cmd_Alr_Fetch,
@@ -45,7 +45,7 @@ package Turbo.Commands is
       --  Window
       Cmd_Zoom, Cmd_Tile, Cmd_Cascade, Cmd_Next_Window, Cmd_Prev_Window,
       Cmd_Close, Cmd_Close_All, Cmd_Size_Move, Cmd_Message_Window,
-      Cmd_Watch_Window, Cmd_Output_Window,
+      Cmd_Watch_Window, Cmd_Output_Window, Cmd_Project_Window,
       Cmd_Window_List,
       --  Help
       Cmd_Help_Contents, Cmd_Help_Keys, Cmd_Help_Project,

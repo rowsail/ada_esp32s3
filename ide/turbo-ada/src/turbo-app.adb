@@ -30,6 +30,7 @@ with Turbo.Menus;
 with Turbo.Messages;
 with Turbo.Pipes;
 with Turbo.Projects;
+with Turbo.Project_View;
 with Turbo.Screen;
 with Turbo.Settings;
 with Turbo.Syntax;
@@ -60,6 +61,7 @@ package body Turbo.App is
    subtype String_List is Dlg.String_List;
 
    Msg_Win      : Messages.Message_Window_Access;
+   Proj_Win     : Project_View.Project_Window_Access;
    Help_Win     : Viewers.Viewer_Access;
    Untitled_N   : Natural := 0;
    Find_Opt     : Dlg.Find_Options;
@@ -371,7 +373,8 @@ package body Turbo.App is
    --  The status line
 
    type Status_Context is
-     (Ctx_None, Ctx_Editor, Ctx_Message, Ctx_Debug, Ctx_Console, Ctx_Paused, Ctx_Other);
+     (Ctx_None, Ctx_Editor, Ctx_Message, Ctx_Debug, Ctx_Console, Ctx_Paused, Ctx_Project,
+      Ctx_Other);
    Shown_Context : Status_Context := Ctx_Other;
    Shown_Right   : Unbounded_String := To_Unbounded_String ("?");
    Diag_Shown    : Boolean := False;   --  a diagnostic is on the status line
@@ -386,6 +389,7 @@ package body Turbo.App is
          elsif W = null then Ctx_None
          elsif W.all in Editors.Editor'Class then Ctx_Editor
          elsif W = Window_Access (Msg_Win) then Ctx_Message
+         elsif W = Window_Access (Proj_Win) then Ctx_Project
          else Ctx_Other);
       Right : constant String :=
         (if GDB.Is_Active
@@ -437,6 +441,13 @@ package body Turbo.App is
                  ([(+"~F7~ Trace", Cmd_Trace_Into), (+"~F8~ Step", Cmd_Step_Over),
                    (+"~F4~ Go to cursor", Cmd_Go_To_Cursor), (+"~Ctrl-F9~ Run", Cmd_Run),
                    (+"~Ctrl-F2~ Reset", Cmd_Program_Reset)]);
+            when Ctx_Project =>
+               Desktop.Set_Status
+                 ([(+"~F1~ Help", Cmd_Help_Contents),
+                   (+"~Enter~ Open", Cmd_None),
+                   (+"~Tab~ Folders/Sources", Cmd_None),
+                   (+"~Ctrl-R~ Refresh", Cmd_None),
+                   (+"~F10~ Menu", Cmd_None)]);
             when Ctx_Console | Ctx_Paused =>
                Desktop.Set_Status
                  ([(+"~F1~ Help", Cmd_Help_Contents),
@@ -526,6 +537,10 @@ package body Turbo.App is
          when Cmd_Memory => return Can_Run (Prj.Act_Memory);
          when Cmd_Stack => return Can_Run (Prj.Act_Stack);
          when Cmd_Analyze => return Can_Run (Prj.Act_Analyze);
+         when Cmd_Analyze_File =>
+            return E /= null and then Prj.Template (Prj.Act_Analyze_File) /= ""
+              and then E.Language = Syntax.Ada_Lang
+              and then Ada.Characters.Handling.To_Lower (Ada.Directories.Extension (E.Path)) /= "gpr";
          when Cmd_Test => return Can_Run (Prj.Act_Test);
          when Cmd_Board_Config => return Can_Run (Prj.Act_Board);
          when Cmd_Alr_Update => return Can_Run (Prj.Act_Alr_Update) and then Prj.Manifest /= "";
@@ -535,6 +550,7 @@ package body Turbo.App is
          when Cmd_Setup_Toolchain => return Prj.Setup_Command /= "";
          when Cmd_Edit_Manifest => return Prj.Manifest /= "";
          when Cmd_Edit_Gpr => return Prj.Gpr_File /= "";
+         when Cmd_Choose_Gpr => return not Prj.Gpr_Files.Is_Empty;
          when Cmd_Zoom | Cmd_Close | Cmd_Size_Move | Cmd_Close_All =>
             return Desktop.Active /= null;
          when Cmd_Next_Window | Cmd_Prev_Window | Cmd_Tile | Cmd_Cascade =>
@@ -1204,7 +1220,7 @@ package body Turbo.App is
 
 
    function Project_Key return String is
-     (Prj.Dir & "|" & Prj.Example & "|" & Prj.Profile);
+     (Prj.Dir & "|" & Prj.Example & "|" & Prj.Profile & "|" & Prj.Gpr_File);
 
    function Is_Ada_Source (Path : String) return Boolean is
      (Path /= "" and then Syntax.Language_Of (Path) = Syntax.Ada_Lang
@@ -2450,7 +2466,8 @@ package body Turbo.App is
       Append (T, "  Port:      " & (if Prj.Port = "" then "(found by USB id)" else Prj.Port) & LF);
       Append (T, "  Console:   " & (if Prj.Console = "" then "(the USB/JTAG port)" else Prj.Console) & LF);
       Append (T, "  Manifest:  " & (if Prj.Manifest = "" then "-" else Prj.Manifest) & LF);
-      Append (T, "  GPR file:  " & (if Prj.Gpr_File = "" then "-" else Prj.Gpr_File) & LF);
+      Append (T, "  GPR file:  " & (if Prj.Gpr_File = "" then "-" else Prj.Gpr_File)
+              & (if Prj.Chosen_Gpr = "" then "" else "  (chosen)") & LF);
       Append (T, "  Options:   " & Prj.Options_File & LF);
       Append (T, LF & "# Commands" & LF);
       for A in Prj.Action loop
@@ -2622,7 +2639,7 @@ package body Turbo.App is
          D.Add_Label (2, Row, Prj.Label (A), Ids (A));
          Row := Row + 1;
       end loop;
-      D.Add_Text (2, Row, "{example} {port|console|profile[_opt]} {gpr} {file} {dir} {root} {tmp}");
+      D.Add_Text (2, Row, "{example} {port|console|profile|gpr[_opt]} {file} {dir} {root} {tmp}");
       D.Add_Button (W / 2 - 22, Row + 2, 12, "~O~K", 1, Default => True);
       D.Add_Button (W / 2 - 6, Row + 2, 12, "~D~efaults", 2);
       D.Add_Button (W / 2 + 10, Row + 2, 12, "Cancel", Dlg.Cancel_Code);
@@ -3010,6 +3027,329 @@ package body Turbo.App is
          end;
       end;
    end Alr_Get;
+
+   --  Compile | Analyze file / Analyze project: the static analyzer
+   --  (adalang_analyzer), its findings in the Message window like a
+   --  compiler's warnings (Enter or Alt-F8 goes to each).
+
+   function Analyzer_Found return Boolean is
+      use type GNAT.OS_Lib.String_Access;
+      P    : GNAT.OS_Lib.String_Access := GNAT.OS_Lib.Locate_Exec_On_Path ("adalang_analyzer");
+      Home : constant String :=
+        (if Ada.Environment_Variables.Exists ("HOME")
+         then Ada.Environment_Variables.Value ("HOME") else "");
+   begin
+      if P /= null then
+         GNAT.OS_Lib.Free (P);
+         return True;
+      end if;
+      return Home /= "" and then GNAT.OS_Lib.Is_Executable_File (Home & "/.alire/bin/adalang_analyzer");
+   end Analyzer_Found;
+
+   procedure Analyze (Whole_Project : Boolean) is
+      LF : constant Character := Character'Val (10);
+      E  : constant Editors.Editor_Access := Active_Editor;
+      Ok : Boolean;
+   begin
+      if not Whole_Project
+        and then (E = null or else E.Is_Untitled or else not Is_Ada_Source (E.Path))
+      then
+         Dlg.Message_Box ("Information", "Analyze file works on an Ada source file.");
+         return;
+      end if;
+      if not Analyzer_Found then
+         if Dlg.Message_Box
+              ("Analyze",
+               "The static analyzer (adalang_analyzer) is not installed." & LF
+               & "Build and install it now with Alire?  It builds Libadalang" & LF
+               & "too, so it takes many minutes (once).",
+               Dlg.Yes_No) /= Dlg.Ans_Yes
+           or else not Ensure_Alr
+         then
+            return;
+         end if;
+         Run_Command ("alr -n install adalang_analyzer", Ada.Directories.Current_Directory,
+                      "Install adalang_analyzer", Ok, Wait_Key => True, Is_Build => False);
+         if not Ok or else not Analyzer_Found then
+            return;
+         end if;
+      end if;
+      --  It reads the files from disk.
+      if Whole_Project then
+         Save_All;
+      elsif E.Modified and then not Save (E) then
+         return;
+      end if;
+      Run_Job ((if Whole_Project then Prj.Act_Analyze else Prj.Act_Analyze_File),
+               (if Whole_Project then "Analyze project" else "Analyze " & Simple (E.Path)),
+               Ok, Wait_Key => True, Is_Build => False);
+   end Analyze;
+
+   --  Project | Viewer (Window | Project): the project's folders, and the
+   --  sources it builds from (Turbo.Project_View).  The sources come from
+   --  the GPR tools in the project's environment: gprinspect for the project
+   --  tree and each project's source directories, and -- once the program
+   --  is built -- gprls --closure for the files it really needs.
+
+   function Project_Root_Dir return String is
+     (if Prj.Kind /= Prj.No_Project and then Prj.Dir /= "" then Prj.Dir
+      else Ada.Directories.Current_Directory);
+
+   procedure Open_From_Project (Path : String) is
+   begin
+      Open_File (Path);
+   end Open_From_Project;
+
+   function Source_File (Name : String) return Boolean is
+      Ext : constant String := Ada.Characters.Handling.To_Lower (Ada.Directories.Extension (Name));
+   begin
+      return Ext = "adb" or else Ext = "ads" or else Ext = "ada" or else Ext = "c"
+        or else Ext = "h" or else Ext = "s";
+   end Source_File;
+
+   procedure Files_In (Dir : String; Recursive : Boolean; Into : in out Project_View.Path_Vectors.Vector) is
+   --  Dir's source files (and its subdirectories', for a "dir/**" entry).
+      use Ada.Directories;
+      S : Search_Type;
+      E : Directory_Entry_Type;
+      Found : Project_View.Path_Vectors.Vector;
+      Subs  : Project_View.Path_Vectors.Vector;
+      package Sorting is new Project_View.Path_Vectors.Generic_Sorting;
+   begin
+      if not Exists (Dir) or else Kind (Dir) /= Directory then
+         return;
+      end if;
+      Start_Search (S, Dir, "");
+      while More_Entries (S) loop
+         Get_Next_Entry (S, E);
+         declare
+            N : constant String := Simple_Name (E);
+         begin
+            if N (N'First) /= '.' then
+               if Kind (E) = Ordinary_File and then Source_File (N) then
+                  Found.Append (Full_Name (E));
+               elsif Kind (E) = Directory and then Recursive then
+                  Subs.Append (Full_Name (E));
+               end if;
+            end if;
+         end;
+      end loop;
+      End_Search (S);
+      Sorting.Sort (Found);
+      Into.Append_Vector (Found);
+      Sorting.Sort (Subs);
+      for D of Subs loop
+         Files_In (D, True, Into);
+      end loop;
+   exception
+      when others => null;
+   end Files_In;
+
+   procedure Load_Project_Sources is
+      use Turbo.JSON;
+      LF      : constant Character := Character'Val (10);
+      Gpr     : constant String := Prj.Main_Gpr;
+      Dir     : constant String := Project_Root_Dir;
+      Lines   : String_List;
+      Groups  : Project_View.Group_Vectors.Vector;
+      Closure : Project_View.Path_Vectors.Vector;
+      Built   : Boolean := False;
+      Doc     : Document;
+      Ok      : Boolean;
+      Text    : Unbounded_String;
+
+      function No_Slash (D : String) return String is
+        (if D'Length > 1 and then D (D'Last) in '/' | '\' then D (D'First .. D'Last - 1) else D);
+
+      function Under (Path, D : String) return Boolean is
+        (Path'Length > D'Length and then Path (Path'First .. Path'First + D'Length - 1) = D
+         and then Path (Path'First + D'Length) in '/' | '\');
+   begin
+      if Prj.Kind = Prj.No_Project or else Gpr = "" then
+         Proj_Win.Set_Sources (Groups, "No project file here: Tab shows the folders.");
+         return;
+      end if;
+      if not Ensure_Environment then
+         Proj_Win.Set_Sources (Groups, "The project's environment could not be prepared.");
+         return;
+      end if;
+      Prj.Push_Environment;
+      Ok := Capture ("gprinspect -P " & Alire.Quote (Gpr) & " -r --display=json-compact --attributes",
+                     Dir, "Reading the project", Lines);
+      if Ok then
+         for L of Lines loop
+            Append (Text, L & LF);
+         end loop;
+         Parse (Doc, To_String (Text), Ok);
+      end if;
+      if not Ok then
+         Prj.Pop_Environment;
+         Msg_Win.Clear;
+         Msg_Win.Add (Messages.Header, "gprinspect -P " & Gpr & "  (failed)");
+         for L of Lines loop
+            Msg_Win.Add_Line (L);
+         end loop;
+         Show_Message_Window (Activate => False);
+         Proj_Win.Set_Sources (Groups, "gprinspect could not read " & Simple (Gpr) & " (see Messages).");
+         return;
+      end if;
+
+      --  The closure, from the build's ALI files: only when there was a
+      --  build (gprls would make the object directory otherwise).
+      declare
+         Projects : constant Value := Get (Doc, Root (Doc), "projects");
+         Obj      : Unbounded_String;
+      begin
+         for K in 1 .. Length (Doc, Projects) loop
+            declare
+               P : constant Value := Get (Doc, Element (Doc, Projects, K), "project");
+            begin
+               if Ada.Directories.Full_Name (To_String (Doc, Get (Doc, P, "file-name")))
+                 = Ada.Directories.Full_Name (Gpr)
+               then
+                  Obj := To_Unbounded_String (No_Slash (To_String (Doc, Get (Doc, P, "object-directory"))));
+               end if;
+            end;
+         end loop;
+         if Length (Obj) > 0 and then Ada.Directories.Exists (To_String (Obj)) then
+            if Capture ("gprls -P " & Alire.Quote (Gpr) & " --closure", Dir,
+                        "Finding the closure", Lines)
+            then
+               Built := True;
+               for L of Lines loop
+                  declare
+                     T : constant String := Ada.Strings.Fixed.Trim (L, Ada.Strings.Both);
+                  begin
+                     if Ada.Strings.Fixed.Index (T, "Incomplete closure") > 0
+                       or else Ada.Strings.Fixed.Index (T, "Can't find ALI") > 0
+                     then
+                        Built := False;
+                     elsif T'Length > 0 and then Ada.Directories.Exists (T)
+                       and then Source_File (T)
+                     then
+                        Closure.Append (T);
+                     end if;
+                  end;
+               end loop;
+               Built := Built and then not Closure.Is_Empty;
+            end if;
+         end if;
+      end;
+      Prj.Pop_Environment;
+
+      --  One group per project with sources, the root project first.
+      declare
+         Projects : constant Value := Get (Doc, Root (Doc), "projects");
+         Root_First : Project_View.Group_Vectors.Vector;
+      begin
+         for K in 1 .. Length (Doc, Projects) loop
+            declare
+               P    : constant Value := Get (Doc, Element (Doc, Projects, K), "project");
+               Dirs : constant Value := Get (Doc, P, "source-directories");
+               G    : Project_View.Source_Group;
+               Is_Root : constant Boolean :=
+                 Ada.Directories.Full_Name (To_String (Doc, Get (Doc, P, "file-name")))
+                 = Ada.Directories.Full_Name (Gpr);
+            begin
+               G.Name := To_Unbounded_String (To_String (Doc, Get (Doc, P, "name")));
+               G.Dir := To_Unbounded_String (No_Slash (To_String (Doc, Get (Doc, P, "directory"))));
+               for D in 1 .. Length (Doc, Dirs) loop
+                  declare
+                     S : constant String := No_Slash (To_String (Doc, Element (Doc, Dirs, D)));
+                     Recursive : constant Boolean := S'Length > 2 and then S (S'Last - 1 .. S'Last) = "**";
+                     Base : constant String :=
+                       (if Recursive then No_Slash (S (S'First .. S'Last - 2)) else S);
+                  begin
+                     if Built then
+                        for F of Closure loop
+                           if (if Recursive then Under (F, Base)
+                               else Ada.Directories.Containing_Directory (F) = Base)
+                             and then not G.Files.Contains (F)
+                           then
+                              G.Files.Append (F);
+                           end if;
+                        end loop;
+                     else
+                        Files_In (Base, Recursive, G.Files);
+                     end if;
+                  end;
+               end loop;
+               if not G.Files.Is_Empty then
+                  if Is_Root then
+                     Root_First.Prepend (G);
+                  else
+                     Root_First.Append (G);
+                  end if;
+               end if;
+            end;
+         end loop;
+         Groups := Root_First;
+      end;
+      declare
+         N : Natural := 0;
+      begin
+         for G of Groups loop
+            N := N + Natural (G.Files.Length);
+         end loop;
+         Proj_Win.Set_Sources
+           (Groups,
+            (if Built then "Closure: the" & Natural'Image (N) & " files it needs"
+             else "Not built: all" & Natural'Image (N) & " sources (Make, Ctrl-R: the closure)"));
+      end;
+   end Load_Project_Sources;
+
+   function Project_Bounds return Rect is
+      A : constant Rect := Desktop.Area;
+   begin
+      return (A.X, A.Y, Integer'Max (28, Integer'Min (44, A.W / 3)), A.H);
+   end Project_Bounds;
+
+   procedure Show_Project_Window is
+   begin
+      Proj_Win.Set_Root (Project_Root_Dir);
+      if not In_Desktop (Window_Access (Proj_Win)) then
+         Proj_Win.Bounds := Project_Bounds;
+         Desktop.Add (Window_Access (Proj_Win));
+      end if;
+      Desktop.Activate (Window_Access (Proj_Win));
+      if Proj_Win.Take_Sources_Request then
+         Load_Project_Sources;
+      end if;
+   end Show_Project_Window;
+
+   procedure Choose_Gpr is
+   --  Project | Project file: which of the directory's .gpr files the IDE
+   --  checks, indexes, lists and analyzes.
+      Files   : constant String_List := Prj.Gpr_Files;
+      Found   : constant String := Prj.Found_Gpr;
+      Current : constant String := Prj.Gpr_File;
+      Items   : String_List;
+      Index   : Positive := 1;
+   begin
+      if Files.Is_Empty then
+         Dlg.Message_Box ("Project File", "There is no .gpr file in " & Prj.Dir & ".");
+         return;
+      end if;
+      for K in 1 .. Natural (Files.Length) loop
+         Items.Append (Simple (Files (K)) & (if Files (K) = Found then "  (default)" else ""));
+         if Files (K) = Current then
+            Index := K;
+         end if;
+      end loop;
+      if not Dlg.Choose ("Project File", "~P~roject files in " & Simple (Prj.Dir),
+                         Items, Index, 50, "~U~se")
+        or else Files (Index) = Current
+      then
+         return;
+      end if;
+      Prj.Set_Gpr (Files (Index));
+      Save_Desktop;
+      if In_Desktop (Window_Access (Proj_Win)) then
+         Proj_Win.Refresh;
+      end if;
+      --  The language server follows at the next idle moment (Project_Key).
+      Desktop.Set_Status_Message ("Project file: " & Simple (Files (Index)));
+   end Choose_Gpr;
 
    procedure Alr_Install is
       Spec : Unbounded_String;
@@ -4158,6 +4498,7 @@ package body Turbo.App is
          when Cmd_Delete_All_Breakpoints => Delete_All_Breakpoints;
          when Cmd_Watch_Window =>
             Show_Window (Window_Access (Watch_Win), Watch_Bounds, Activate => True);
+         when Cmd_Project_Window => Show_Project_Window;
          when Cmd_Output_Window =>
             Show_Window (Window_Access (Output_Win), Message_Bounds, Activate => True);
 
@@ -4168,7 +4509,8 @@ package body Turbo.App is
          when Cmd_Clean => Run_Job (Prj.Act_Clean, "Clean", Ok, False, False);
          when Cmd_Memory => Run_Job (Prj.Act_Memory, "Memory usage", Ok, False, False);
          when Cmd_Stack => Run_Job (Prj.Act_Stack, "Stack usage", Ok, False, False);
-         when Cmd_Analyze => Run_Job (Prj.Act_Analyze, "Analyze", Ok, True, False);
+         when Cmd_Analyze => Analyze (Whole_Project => True);
+         when Cmd_Analyze_File => Analyze (Whole_Project => False);
          when Cmd_Test => Run_Job (Prj.Act_Test, "Test", Ok, True, False);
 
          when Cmd_Open_Project => Open_Project;
@@ -4176,6 +4518,7 @@ package body Turbo.App is
          when Cmd_Project_Info => Project_Info;
          when Cmd_Edit_Manifest => Open_File (Prj.Manifest);
          when Cmd_Edit_Gpr => Open_File (Prj.Gpr_File);
+         when Cmd_Choose_Gpr => Choose_Gpr;
          when Cmd_Board_Config => Run_Job (Prj.Act_Board, "Board", Ok, False, False);
 
          when Cmd_Alr_Search => Alr_Search;
@@ -4461,6 +4804,10 @@ package body Turbo.App is
                   return;
                end if;
             end;
+         elsif Desktop.Active = Window_Access (Proj_Win) then
+            if Proj_Win.Take_Sources_Request then
+               Load_Project_Sources;
+            end if;
          end if;
       end if;
 
@@ -4555,6 +4902,8 @@ package body Turbo.App is
       Msg_Win := Messages.Create;
       Msg_Win.Set_Jump_Handler (On_Jump'Access);
       Output_Win := Messages.Create ("Output");
+      Proj_Win := Project_View.Create;
+      Proj_Win.Set_Open_Handler (Open_From_Project'Access);
       Watch_Win := Watches.Create;
       Load_Breakpoints;
       Menus.Set_Hooks (Enabled'Access, Background'Access);

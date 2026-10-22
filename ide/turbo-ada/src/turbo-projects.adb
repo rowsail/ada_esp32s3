@@ -31,6 +31,7 @@ package body Turbo.Projects is
    The_Port    : Unbounded_String;
    The_Console : Unbounded_String;
    The_Profile : Unbounded_String;
+   The_Gpr     : Unbounded_String;      --  chosen; "" = found
    Templates   : array (Target_Kind, Action) of Unbounded_String;  --  "" = default
    Options     : Option_Maps.Map;
    Desktop     : String_List;
@@ -203,6 +204,7 @@ package body Turbo.Projects is
    begin
       if Example /= To_String (The_Example) or else The_Suite /= Null_Unbounded_String then
          Forget_Environment;
+         The_Gpr := Null_Unbounded_String;
       end if;
       The_Example := To_Unbounded_String (Example);
       if Example /= "" then
@@ -307,6 +309,7 @@ package body Turbo.Projects is
       The_Port := Null_Unbounded_String;
       The_Console := Null_Unbounded_String;
       The_Profile := Null_Unbounded_String;
+      The_Gpr := Null_Unbounded_String;
       Templates := [others => [others => Null_Unbounded_String]];
       Options.Clear;
       Desktop.Clear;
@@ -526,7 +529,8 @@ package body Turbo.Projects is
          when Act_Kill_OpenOCD => "Kill OpenOCD",
          when Act_Memory       => "Memory",
          when Act_Stack        => "Stack",
-         when Act_Analyze      => "Analyze",
+         when Act_Analyze      => "Analyze project",
+         when Act_Analyze_File => "Analyze file",
          when Act_Test         => "Test",
          when Act_Board        => "Board",
          when Act_Alr_Update   => "alr update",
@@ -547,10 +551,11 @@ package body Turbo.Projects is
            (case A is
                when Act_Build   => "./x --machine test host {suite}",
                when Act_Check   => Check_Template,
-               when Act_Env     => "./x env {suite}",
+               when Act_Env     => "./x env {suite}{gpr_opt}",
                when Act_Run     => "bash {dir}/run.sh",
                when Act_Test    => "./x --machine test host",
                when Act_Analyze => "./x --machine analyze",
+               when Act_Analyze_File => "./x --machine analyze {file}{gpr_opt}",
                when others      => "");
       end if;
       case The_Kind is
@@ -559,7 +564,7 @@ package body Turbo.Projects is
               (case A is
                   when Act_Build        => "./x --machine build {example}{profile_opt}",
                   when Act_Check        => Check_Template,
-                  when Act_Env          => "./x env {example}{profile_opt}",
+                  when Act_Env          => "./x env {example}{profile_opt}{gpr_opt}",
                   when Act_Clean        => "./x --machine clean {example}",
                   when Act_Flash        => "./x --machine flash {example}{port_opt}{profile_opt}",
                   when Act_Run          => "./x run {example}{port_opt}{console_opt}{profile_opt}",
@@ -568,7 +573,8 @@ package body Turbo.Projects is
                   when Act_Kill_OpenOCD => "./x --machine kill-openocd",
                   when Act_Memory       => "./x --machine mem {example}",
                   when Act_Stack        => "./x --machine stack {example} --top 20",
-                  when Act_Analyze      => "./x --machine analyze",
+                  when Act_Analyze      => "./x --machine analyze {example}{gpr_opt}",
+                  when Act_Analyze_File => "./x --machine analyze {file}{gpr_opt}",
                   when Act_Test         => "./x --machine test host",
                   when Act_Board        => "./x --machine config {example}",
                   when Act_Alr_Update   => "alr -n update",
@@ -582,7 +588,7 @@ package body Turbo.Projects is
                  (case A is
                      when Act_Build        => E & " --machine build{profile_opt}",
                      when Act_Check        => Check_Template,
-                     when Act_Env          => E & " env{profile_opt}",
+                     when Act_Env          => E & " env{profile_opt}{gpr_opt}",
                      when Act_Clean        => E & " --machine clean",
                      when Act_Flash        => E & " --machine flash{port_opt}{profile_opt}",
                      when Act_Run          => E & " run{port_opt}{console_opt}{profile_opt}",
@@ -590,6 +596,8 @@ package body Turbo.Projects is
                      when Act_Debug        => E & " debug{port_opt}",
                      when Act_Kill_OpenOCD => E & " --machine kill-openocd",
                      when Act_Board        => E & " --machine config",
+                     when Act_Analyze      => E & " --machine analyze{gpr_opt}",
+                     when Act_Analyze_File => E & " --machine analyze {file}{gpr_opt}",
                      when Act_Alr_Update   => "alr -n update",
                      when Act_Alr_Show     => "alr -n show",
                      when Act_Alr_Deps     => "alr -n with",
@@ -604,6 +612,15 @@ package body Turbo.Projects is
                   when Act_Clean      => "alr -n clean",
                   when Act_Run        => "alr -n run",
                   when Act_Test       => "alr -n test",
+                  --  In alr's environment, for the dependencies' project
+                  --  paths; status 1 is "findings", which are warnings here,
+                  --  not a failure.
+                  when Act_Analyze    =>
+                     "E=""$(alr -n printenv --unix)"" || exit 2; eval ""$E""; "
+                     & "adalang_analyzer -P{gpr} --recommended || [ $? -eq 1 ]",
+                  when Act_Analyze_File =>
+                     "E=""$(alr -n printenv --unix)"" || exit 2; eval ""$E""; "
+                     & "adalang_analyzer -P{gpr} --recommended {file} || [ $? -eq 1 ]",
                   when Act_Alr_Update => "alr -n update",
                   when Act_Alr_Show   => "alr -n show",
                   when Act_Alr_Deps   => "alr -n with",
@@ -670,6 +687,7 @@ package body Turbo.Projects is
       Sub ("{port_opt}", (if Port = "" then "" else " -p " & Port));
       Sub ("{console_opt}", (if Console = "" then "" else " -c " & Console));
       Sub ("{profile_opt}", (if Profile = "" then "" else " -P " & Profile));
+      Sub ("{gpr_opt}", (if Chosen_Gpr = "" then "" else " --gpr " & Chosen_Gpr));
       Sub ("{example}", Example);
       Sub ("{suite}", Suite);
       Sub ("{port}", Port);
@@ -781,7 +799,9 @@ package body Turbo.Projects is
    end Pop_Environment;
 
    function Main_Gpr return String is
-     (if Env_Value ("GPR_FILE") /= "" then Env_Value ("GPR_FILE") else Gpr_File);
+     (if Chosen_Gpr /= "" then Chosen_Gpr
+      elsif Env_Value ("GPR_FILE") /= "" then Env_Value ("GPR_FILE")
+      else Gpr_File);
 
    function Scratch_Dir return String is
       Base : constant String :=
@@ -1014,24 +1034,112 @@ package body Turbo.Projects is
       when others => return "";
    end Native_Executable;
 
-   function Gpr_File return String is
-      S : Search_Type;
-      E : Directory_Entry_Type;
+   function Gpr_Files return String_List is
+      S      : Search_Type;
+      E      : Directory_Entry_Type;
+      Sorted : Option_Maps.Map;
+      R      : String_List;
    begin
+      if Dir = "" or else not Exists_Dir (Dir) then
+         return R;
+      end if;
+      Start_Search (S, Dir, "*.gpr", [Ordinary_File => True, others => False]);
+      while More_Entries (S) loop
+         Get_Next_Entry (S, E);
+         Sorted.Include (Simple_Name (E), Full_Name (E));
+      end loop;
+      End_Search (S);
+      for C in Sorted.Iterate loop
+         R.Append (Option_Maps.Element (C));
+      end loop;
+      return R;
+   exception
+      when others => return R;
+   end Gpr_Files;
+
+   function Manifest_Gpr return String is
+   --  alire.toml's first project-files entry, else <name>.gpr; "" without
+   --  a manifest.  Only the simple "key = ..." lines are read.
+      use Ada.Text_IO;
+      use Ada.Strings.Fixed;
+      F     : File_Type;
+      Files : Unbounded_String;
+      Crate : Unbounded_String;
+
+      function Quoted (L : String; From : Positive) return String is
+         Q1 : constant Natural := Index (L (From .. L'Last), """");
+         Q2 : constant Natural := (if Q1 = 0 then 0 else Index (L (Q1 + 1 .. L'Last), """"));
+      begin
+         return (if Q2 = 0 then "" else L (Q1 + 1 .. Q2 - 1));
+      end Quoted;
+   begin
+      if Manifest = "" then
+         return "";
+      end if;
+      Open (F, In_File, Manifest);
+      while not End_Of_File (F) loop
+         declare
+            L  : constant String := Trim (Get_Line (F), Ada.Strings.Both);
+            Eq : constant Natural := Index (L, "=");
+            K  : constant String := (if Eq = 0 then "" else Trim (L (L'First .. Eq - 1), Ada.Strings.Both));
+         begin
+            exit when L'Length > 0 and then L (L'First) = '[';   --  the top-level keys end
+            if K = "project-files" and then Files = Null_Unbounded_String then
+               Files := To_Unbounded_String (Quoted (L, Eq + 1));
+            elsif K = "name" and then Crate = Null_Unbounded_String then
+               Crate := To_Unbounded_String (Quoted (L, Eq + 1));
+            end if;
+         end;
+      end loop;
+      Close (F);
+      if Files /= Null_Unbounded_String then
+         return Compose (Dir, To_String (Files));
+      elsif Crate /= Null_Unbounded_String then
+         return Compose (Dir, To_String (Crate) & ".gpr");
+      end if;
+      return "";
+   exception
+      when others =>
+         if Is_Open (F) then
+            Close (F);
+         end if;
+         return "";
+   end Manifest_Gpr;
+
+   function Found_Gpr return String is
+      From_Manifest : constant String := Manifest_Gpr;
+   begin
+      if From_Manifest /= "" and then Exists_File (From_Manifest) then
+         return From_Manifest;
+      end if;
       if Exists_File (Compose (Dir, "app.gpr")) then
          return Compose (Dir, "app.gpr");
       end if;
-      Start_Search (S, Dir, "*.gpr", [Ordinary_File => True, others => False]);
-      if More_Entries (S) then
-         Get_Next_Entry (S, E);
-         End_Search (S);
-         return Full_Name (E);
-      end if;
-      End_Search (S);
+      for G of Gpr_Files loop
+         if G'Length < 10 or else G (G'Last - 9 .. G'Last) /= "_prove.gpr" then
+            return G;
+         end if;
+      end loop;
       return "";
    exception
       when others => return "";
-   end Gpr_File;
+   end Found_Gpr;
+
+   function Chosen_Gpr return String is
+     (if The_Gpr /= Null_Unbounded_String and then Exists_File (To_String (The_Gpr))
+      then To_String (The_Gpr) else "");
+
+   procedure Set_Gpr (Path : String) is
+   begin
+      if Path /= Chosen_Gpr then
+         Forget_Environment;
+      end if;
+      The_Gpr := (if Path = "" or else Path = Found_Gpr then Null_Unbounded_String
+                  else To_Unbounded_String (Path));
+   end Set_Gpr;
+
+   function Gpr_File return String is
+     (if Chosen_Gpr /= "" then Chosen_Gpr else Found_Gpr);
 
    --  Options file
 
@@ -1068,6 +1176,8 @@ package body Turbo.Projects is
                      Set_Console (V);
                   elsif K = "profile" then
                      Set_Profile (V);
+                  elsif K = "gpr" then
+                     The_Gpr := To_Unbounded_String (V);
                   elsif K = "desktop" then
                      Desktop.Append (V);
                   elsif K'Length > 4 and then K (K'First .. K'First + 3) = "cmd." then
@@ -1122,6 +1232,9 @@ package body Turbo.Projects is
       end if;
       if Profile /= "" then
          Put_Line (F, "profile=" & Profile);
+      end if;
+      if Chosen_Gpr /= "" then
+         Put_Line (F, "gpr=" & Chosen_Gpr);
       end if;
       for T in Target_Kind loop
          for A in Action loop

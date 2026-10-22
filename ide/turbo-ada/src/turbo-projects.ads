@@ -22,8 +22,10 @@ package Turbo.Projects is
    type Action is
      (Act_Build, Act_Check, Act_Clean, Act_Flash, Act_Run, Act_Monitor,
       Act_Debug, Act_Kill_OpenOCD, Act_Memory, Act_Stack, Act_Analyze,
-      Act_Test, Act_Board, Act_Alr_Update, Act_Alr_Show, Act_Alr_Deps,
+      Act_Analyze_File, Act_Test, Act_Board, Act_Alr_Update, Act_Alr_Show, Act_Alr_Deps,
       Act_Env);
+   --  Act_Analyze runs the static analyzer (adalang_analyzer) on the
+   --  project's own code, Act_Analyze_File on one file of it.
    --  Act_Check compiles one file for errors only (gprbuild -gnatc into a
    --  scratch tree); Act_Env prints the environment such a compile, and the
    --  language server, need (./x env, esp32-ada env, alr printenv).
@@ -142,8 +144,8 @@ package Turbo.Projects is
    --  build commands do not get it: they set up their own.
 
    function Main_Gpr return String;
-   --  The project file to check and index: GPR_FILE from the environment,
-   --  else Gpr_File.
+   --  The project file to check and index: the one chosen, else GPR_FILE
+   --  from the environment, else Gpr_File.
 
    function Scratch_Dir return String;
    --  Where Act_Check's object tree goes (never the real obj/).
@@ -162,7 +164,23 @@ package Turbo.Projects is
    function Main_Source return String;
    --  The file to open in a fresh session: src/main.adb, or the crate's
    --  src/<name>.adb, or "".
-   function Gpr_File return String;          --  the main .gpr, or ""
+   function Gpr_File return String;
+   --  The project file: the one chosen (Set_Gpr), else Found_Gpr.
+
+   function Found_Gpr return String;
+   --  The project directory's project file by the SDK's rule (x's
+   --  gpr_of_dir): alire.toml's first project-files entry, else <crate
+   --  name>.gpr; else app.gpr; else the first *.gpr in name order that is
+   --  not a *_prove.gpr.  "" when there is none.
+
+   function Gpr_Files return String_List;
+   --  Every .gpr in the project directory, in name order.
+
+   function Chosen_Gpr return String;        --  "" = Found_Gpr
+   procedure Set_Gpr (Path : String);
+   --  Project | Project file.  Kept in the options; forgotten when the
+   --  example or suite changes.  It reaches the SDK's env and analyze
+   --  commands as {gpr_opt} (" --gpr FILE"); alr build uses alire.toml's.
 
    --  Options file
 
