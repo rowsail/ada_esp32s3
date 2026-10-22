@@ -350,6 +350,40 @@ procedure Tada_Cli is
       Check (R.Ok, "break " & Loc & ": " & To_String (R.Error));
    end Break;
 
+   function Console_Device return String is
+   --  The board's console, as the IDE opens it for a debug session: the
+   --  project's choice, else the port the SDK would flash (./x ports).
+      Ok   : Boolean;
+      Text : constant String :=
+        (if Prj.Console /= "" and then Prj.Console /= "uart" then ""
+         elsif Prj.Console = "" and then Prj.Port /= "" then ""
+         elsif Prj.Ports_Command = "" then ""
+         else Capture (Prj.Ports_Command, Prj.Root, Ok));
+      Doc  : Turbo.JSON.Document;
+   begin
+      if Prj.Console /= "" and then Prj.Console /= "uart" then
+         return Prj.Console;
+      elsif Prj.Console = "" and then Prj.Port /= "" then
+         return Prj.Port;
+      end if;
+      Doc.Parse (Text, Ok);
+      if not Ok then
+         return "";
+      elsif Prj.Console = "" then
+         return Doc.To_String (Doc.Get (Doc.Root, "flash"));
+      end if;
+      declare
+         List : constant Turbo.JSON.Value := Doc.Get (Doc.Root, "ports");
+      begin
+         for N in 1 .. Doc.Length (List) loop
+            if Doc.To_String (Doc.Get (Doc.Element (List, N), "role")) = "uart" then
+               return Doc.To_String (Doc.Get (Doc.Element (List, N), "path"));
+            end if;
+         end loop;
+      end;
+      return "";
+   end Console_Device;
+
    procedure Start_Session (Build : Boolean) is
       Ok : Boolean;
    begin
@@ -430,6 +464,18 @@ procedure Tada_Cli is
                   GDB.Reset_Halt (Ok);
                end if;
                Check (Ok, "GDB could not take the board: " & GDB.Last_Error);
+            end if;
+            if Ok then
+               declare
+                  Dev : constant String := Console_Device;
+               begin
+                  --  As the IDE does: a USB-Serial/JTAG console nobody reads
+                  --  stalls the program at its next output.
+                  if Dev /= "" then
+                     GDB.Start_Console
+                       ("stty -F " & Dev & " 115200 raw -echo 2>/dev/null; exec cat " & Dev, Prj.Root);
+                  end if;
+               end;
             end if;
             if Ok then
                Put_Line ("debugging " & To_String (Elf) & " on the board");

@@ -100,8 +100,8 @@ package Turbo.GDB is
 
    function Take_Stop (S : out Stop_Info) return Boolean;
    --  True once for each stop of the target (with where).  On the board
-   --  (both cores as GDB threads) a stop that GDB put on core 1 is moved to
-   --  core 0: the steps are core 0's, and core 1 is mostly idle.
+   --  (both cores as GDB threads) the end of a step that GDB put on core 1
+   --  is moved to core 0: the steps are core 0's, and core 1 is mostly idle.
 
    package String_Vectors is new Ada.Containers.Indefinite_Vectors (Positive, String);
 

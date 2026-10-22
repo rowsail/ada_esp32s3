@@ -387,10 +387,13 @@ package body Turbo.GDB is
       end if;
       S := Stops.First_Element;
       Stops.Delete_First;
-      --  OpenOCD halts both cores together, and the stop may be reported on
-      --  either; core 1 is then usually idling in the runtime's WAITI.  GDB
-      --  thread 1 is core 0: select it, and say where it is.
-      if not Native and then Length (S.Thread) > 0 and then To_String (S.Thread) /= "1" then
+      --  OpenOCD halts both cores together, and the end of a step may be
+      --  reported on either; core 1 is then usually idling in the runtime's
+      --  WAITI.  GDB thread 1 is core 0: select it, and say where it is.  A
+      --  breakpoint or a fault on core 1 is left where it is.
+      if not Native and then Length (S.Thread) > 0 and then To_String (S.Thread) /= "1"
+        and then To_String (S.Reason) in "end-stepping-range" | "function-finished" | "location-reached"
+      then
          declare
             R : Result;
          begin

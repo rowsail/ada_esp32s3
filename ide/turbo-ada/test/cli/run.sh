@@ -149,6 +149,15 @@ else
     echo "analyze: skipped (no adalang_analyzer or alr)"
 fi
 
+# Run | Run: the program in the Output window (the IDE's Make: alr).  No gdb.
+if command -v alr >/dev/null; then
+    echo "lsp.enabled=0" > "$W/.turbo_ada"
+    "$CLI" -C "$W" ui src/demo.adb --script "$HERE/run.txt"
+    echo "run in the output window: ok"
+else
+    echo "run in the output window: skipped (no alr)"
+fi
+
 if ! command -v gdb >/dev/null; then
     echo "debug: skipped (no gdb)"
     exit 0
@@ -164,9 +173,6 @@ if command -v alr >/dev/null; then
     echo "lsp.enabled=0" > "$W/.turbo_ada"     # without the first test's breakpoint
     "$CLI" -C "$W" ui src/demo.adb --script "$HERE/ui-debug.txt"
     echo "ui debug: ok"
-    echo "lsp.enabled=0" > "$W/.turbo_ada"
-    "$CLI" -C "$W" ui src/demo.adb --script "$HERE/run.txt"
-    echo "run in the output window: ok"
 else
     echo "ui debug: skipped (no alr for the IDE's Make)"
 fi

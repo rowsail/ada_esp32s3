@@ -325,6 +325,10 @@ stopped  breakpoint-hit  demo.adb:15  demo
 ```
 
 `test/cli/run.sh` uses both on a scratch crate (`./x test host` runs it).
+`test/board/run.sh` needs an ESP32-S3 on USB: it steps `examples/esp32s3_smp`
+on core 0 while core 1 runs. On the board, `tada-cli debug` reads the
+console as the IDE does (a USB-Serial/JTAG console nobody reads stalls the
+program).
 
 ## Commands are templates
 
@@ -372,4 +376,5 @@ src/tada.adb          tada, the IDE
 src/tada_cli.adb      tada-cli: project info, ui, debug
 test/host/            host tests (./x test host runs them)
 test/cli/             tada-cli: the IDE and the debugger, scripted
+test/board/           tada-cli debug on a board (dual-core stepping)
 ```
