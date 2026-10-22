@@ -1120,7 +1120,7 @@ package body Turbo.Dialogs is
       and then (S (S'First) = '/' or else S (S'First) = '\'
                 or else (S'Length > 1 and then S (S'First + 1) = ':')));
 
-   function Listing (Dir, Pattern : String) return String_List is
+   function Listing (Dir, Pattern : String; Files_Too : Boolean := True) return String_List is
       use Ada.Directories;
       Files : Name_Array (1 .. 4096);
       Dirs  : Name_Array (1 .. 4096);
@@ -1130,13 +1130,15 @@ package body Turbo.Dialogs is
       Result : String_List;
    begin
       begin
-         Start_Search (S, Dir, Pattern, [Ordinary_File => True, others => False]);
-         while More_Entries (S) and then NF < Files'Last loop
-            Get_Next_Entry (S, Ent);
-            NF := NF + 1;
-            Files (NF) := To_Unbounded_String (Simple_Name (Ent));
-         end loop;
-         End_Search (S);
+         if Files_Too then
+            Start_Search (S, Dir, Pattern, [Ordinary_File => True, others => False]);
+            while More_Entries (S) and then NF < Files'Last loop
+               Get_Next_Entry (S, Ent);
+               NF := NF + 1;
+               Files (NF) := To_Unbounded_String (Simple_Name (Ent));
+            end loop;
+            End_Search (S);
+         end if;
       exception
          when others => null;
       end;
@@ -1307,6 +1309,90 @@ package body Turbo.Dialogs is
          end;
       end loop;
    end Open_File_Dialog;
+
+   function Folder_Dialog
+     (Title  : String;
+      Start  : String;
+      Result : out Unbounded_String) return Boolean
+   is
+      use Ada.Directories;
+      D       : Dialog;
+      Path_Id, List_Id : Positive;
+      Dir     : Unbounded_String;
+      W       : constant Positive := Positive'Min (Width - 4, 66);
+      H       : constant Positive := Positive'Min (Height - 2, 19);
+      List_H  : constant Positive := Positive'Max (H - 9, 3);
+
+      procedure Go (To : String) is
+         Items : String_List;
+      begin
+         Dir := To_Unbounded_String (Full_Name (To));
+         --  "../" first; hidden folders left out (type one to go there).
+         Items.Append ("../");
+         for I of Listing (To_String (Dir), "", Files_Too => False) loop
+            if I (I'First) /= '.' then
+               Items.Append (I);
+            end if;
+         end loop;
+         Set_Items (D, List_Id, Items);
+         Set_Value (D, Path_Id, To_String (Dir));
+      exception
+         when others => null;
+      end Go;
+
+      function Is_Dir (P : String) return Boolean is
+        (P /= "" and then Exists (P) and then Kind (P) = Directory);
+   begin
+      Result := Null_Unbounded_String;
+      Init (D, Title, W, H);
+      Path_Id := Add_Input (D, 3, 3, W - 20, "");
+      Add_Label (D, 2, 2, "~F~older", Path_Id);
+      List_Id := Add_List (D, 3, 6, W - 20, List_H);
+      Add_Label (D, 2, 5, "~S~ubfolders (Enter opens one)", List_Id);
+      Add_Button (D, W - 14, 3, 11, "~U~se", 1, Default => True);
+      Add_Button (D, W - 14, 6, 11, "Cancel", Cancel_Code);
+      Add_Text (D, 2, H - 2, "Use takes the folder on the Folder line.");
+      Go (if Is_Dir (Start) then Start else Current_Directory);
+      Focus (D, List_Id);
+      loop
+         declare
+            Code : constant Integer := Run (D);
+         begin
+            if Code = Cancel_Code then
+               return False;
+            elsif Code = List_Activated then
+               declare
+                  Item : constant String := List_Item (D, List_Id);
+                  Sub  : constant String :=
+                    (if Item'Length > 0 and then Item (Item'Last) = '/'
+                     then Item (Item'First .. Item'Last - 1) else Item);
+               begin
+                  if Sub = ".." then
+                     Go (Containing_Directory (To_String (Dir)));
+                  elsif Sub /= "" then
+                     Go (Compose (To_String (Dir), Sub));
+                  end if;
+               exception
+                  when others => null;
+               end;
+            else
+               declare
+                  Typed : constant String :=
+                    Ada.Strings.Fixed.Trim (Value (D, Path_Id), Ada.Strings.Both);
+               begin
+                  --  Typed relative to the folder shown; it need not exist.
+                  Result := To_Unbounded_String
+                    (Full_Name (if Typed = "" then To_String (Dir)
+                                elsif Is_Absolute (Typed) then Typed
+                                else Compose (To_String (Dir), Typed)));
+                  return True;
+               exception
+                  when others => null;
+               end;
+            end if;
+         end;
+      end loop;
+   end Folder_Dialog;
 
    function Choose
      (Title, Label : String;

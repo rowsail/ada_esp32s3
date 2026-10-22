@@ -116,6 +116,14 @@ package Turbo.Dialogs is
    --  wildcard), the matching files with the directories after them, and an
    --  information line for the highlighted entry.
 
+   function Folder_Dialog
+     (Title  : String;
+      Start  : String;
+      Result : out Ada.Strings.Unbounded.Unbounded_String) return Boolean;
+   --  Pick a folder: the Folder line (typed: a path, relative to the folder
+   --  shown, which need not exist yet) and the folder's subfolders, where
+   --  Enter goes in ("../": up).  Use returns the Folder line's, in full.
+
    function Choose
      (Title, Label : String;
       Items        : String_List;

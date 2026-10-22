@@ -2329,12 +2329,38 @@ package body Turbo.App is
       end if;
    end Change_Dir;
 
+   procedure Follow_Project;
+   --  After the project changes: the Project window shows the new one.
+
+   procedure Save_Desktop;
+   --  The project's options and open files, before it is left.
+
+   procedure Open_Folder is
+   --  Any directory: the project it is in (or none), from the folder picker.
+      Picked : Unbounded_String;
+   begin
+      if not Dlg.Folder_Dialog ("Open Project", Prj.Dir, Picked) then
+         return;
+      end if;
+      if not Ada.Directories.Exists (To_String (Picked)) then
+         Dlg.Message_Box ("Error", "No such directory: " & To_String (Picked));
+         return;
+      end if;
+      Save_Desktop;            --  the project being left
+      Prj.Open_Directory (To_String (Picked));
+      Ada.Directories.Set_Directory (Prj.Dir);
+      Follow_Project;
+      if Prj.Main_Source /= "" then
+         Open_File (Prj.Main_Source);
+      end if;
+   end Open_Folder;
+
    procedure Open_Project is
    begin
       if Prj.Kind = Prj.SDK_Example then
          declare
             --  The examples (built for the ESP32-S3), then the libraries'
-            --  host test suites (built natively).
+            --  host test suites (built natively), then any other folder.
             Names  : constant String_List := Prj.Examples;
             Suites : constant String_List := Prj.Host_Suites;
             Shown  : String_List;
@@ -2358,93 +2384,199 @@ package body Turbo.App is
                   Index := Natural (Names.Length) + K;
                end if;
             end loop;
+            Shown.Append ("Another folder...");
             if Dlg.Choose ("Open Project", "~E~xamples and host tests", Shown, Index, 50,
                            "~O~pen")
             then
                if Index <= Natural (Names.Length) then
                   Prj.Set_Example (Names (Index));
-               else
+               elsif Index <= Natural (Names.Length) + Natural (Suites.Length) then
                   Prj.Set_Suite (Suites (Index - Natural (Names.Length)));
+               else
+                  Open_Folder;
+                  Shown_Context := Ctx_Other;
+                  return;
                end if;
+               Follow_Project;
                if Prj.Main_Source /= "" then
                   Open_File (Prj.Main_Source);
                end if;
             end if;
          end;
       else
-         declare
-            V : Unbounded_String := To_Unbounded_String (Prj.Dir);
-         begin
-            if Dlg.Input_Box ("Open Project", "Project ~d~irectory", V, 56) then
-               if Ada.Directories.Exists (To_String (V)) then
-                  Prj.Open_Directory (To_String (V));
-                  Ada.Directories.Set_Directory (Prj.Dir);
-               else
-                  Dlg.Message_Box ("Error", "No such directory: " & To_String (V));
-               end if;
-            end if;
-         end;
+         Open_Folder;
       end if;
       Shown_Context := Ctx_Other;
    end Open_Project;
 
    procedure New_Project is
-      D      : Dlg.Dialog;
-      Name_Id, Kind_Id : Positive;
+   --  Project | New project: a name, the folder it goes in (Browse picks
+   --  one; remembered for next time) and the kind.  An SDK example always
+   --  goes in the SDK's examples/.
+      type Kind_Choice is (ESP32_App, SDK_App, Crate_Bin, Crate_Lib);
       In_SDK : constant Boolean := Prj.Kind = Prj.SDK_Example;
-   begin
-      D.Init ("New Project", 64, 13);
-      Name_Id := D.Add_Input (3, 3, 58,
-                              (if In_SDK then "my_app"
-                               else Ada.Directories.Compose
-                                      (Ada.Directories.Current_Directory, "my_app")));
-      D.Add_Label (2, 2, (if In_SDK then "~N~ame (under examples/)" else "~D~irectory"),
-                   Name_Id);
-      Kind_Id := D.Add_Radio
-        (3, 5, 58,
-         (if In_SDK then "SDK example (./x new)|Alire binary crate (alr init --bin)"
-          else "ESP32-S3 bare-metal (esp32-ada init)|Alire binary crate (alr init --bin)"),
-         1);
-      D.Add_Button (16, 9, 12, "~O~K", 1, Default => True);
-      D.Add_Button (34, 9, 12, "Cancel", Dlg.Cancel_Code);
-      if D.Run /= 1 then
-         return;
-      end if;
-      declare
-         Given  : constant String := Ada.Strings.Fixed.Trim (D.Value (Name_Id), Ada.Strings.Both);
-         Target : constant String :=
-           (if In_SDK and then D.Radio_Value (Kind_Id) = 1
-            then Ada.Directories.Compose (Ada.Directories.Compose (Prj.Root, "examples"), Given)
-            elsif In_SDK then Ada.Directories.Compose (Ada.Directories.Compose (Prj.Root, "examples"), Given)
-            else Ada.Directories.Full_Name (Given));
-         Parent : constant String := Ada.Directories.Containing_Directory (Target);
-         Leaf   : constant String := Ada.Directories.Simple_Name (Target);
-         Cmd    : constant String :=
-           (if D.Radio_Value (Kind_Id) = 2 then "alr -n init --bin " & Leaf
-            elsif In_SDK then "./x new " & Given
-            else Prj.Esp32_Ada & " init " & Leaf);
-         Where  : constant String :=
-           (if In_SDK and then D.Radio_Value (Kind_Id) = 1 then Prj.Root else Parent);
-         Ok     : Boolean;
+      W      : constant Positive := 66;
+      D      : Dlg.Dialog;
+      Name_Id, Loc_Id, Kind_Id : Positive;
+      Picked : Unbounded_String;
+
+      function Kind_Of (Radio : Positive) return Kind_Choice is
+        (if In_SDK then
+           (case Radio is when 1 => SDK_App, when 2 => ESP32_App,
+                          when 3 => Crate_Bin, when others => Crate_Lib)
+         else
+           (case Radio is when 1 => ESP32_App, when 2 => Crate_Bin,
+                          when others => Crate_Lib));
+
+      function Env (N : String) return String is
+        (if Ada.Environment_Variables.Exists (N) then Ada.Environment_Variables.Value (N) else "");
+
+      function Is_Dir (P : String) return Boolean is
+        (P /= "" and then Ada.Directories.Exists (P)
+         and then Ada.Directories.Kind (P) = Ada.Directories.Directory);
+
+      function Default_Location return String is
+         Saved : constant String := Prj.User_Option ("new.location");
       begin
-         if Given = "" or else (Alire.Needs_Alr (Cmd) and then not Ensure_Alr) then
-            return;
+         if Is_Dir (Saved) then
+            return Saved;
+         elsif Prj.Kind in Prj.Standalone | Prj.Alire_Crate then
+            return Ada.Directories.Containing_Directory (Prj.Dir);
+         elsif In_SDK then
+            return Ada.Directories.Containing_Directory (Prj.Root);   --  beside the SDK
          end if;
-         Jobs.Run_Foreground (Cmd, Where, Ok);
-         Screen.Init;
-         Screen.Invalidate;
-         if Ok then
-            Prj.Detect (Target);
-            Ada.Directories.Set_Directory (Prj.Dir);
-            Shown_Context := Ctx_Other;
-            if Prj.Main_Source /= "" then
-               Open_File (Prj.Main_Source);
+         return Ada.Directories.Current_Directory;                    --  where the IDE was started
+      end Default_Location;
+
+      function Shortened (P : String) return String is
+      --  For a message box: ~ for the home directory, and the tail of a
+      --  path too long for the line.
+         Home : constant String := Env ("HOME");
+         S    : constant String :=
+           (if Home'Length > 1 and then P'Length >= Home'Length
+              and then P (P'First .. P'First + Home'Length - 1) = Home
+            then "~" & P (P'First + Home'Length .. P'Last) else P);
+      begin
+         return (if S'Length <= 40 then S else "..." & S (S'Last - 36 .. S'Last));
+      end Shortened;
+
+      function Name_Error (N : String) return String is
+      --  The rule x new and alr both keep, and an Ada name's.
+      begin
+         if N = "" then
+            return "Give the project a name.";
+         elsif N (N'First) not in 'a' .. 'z'
+           or else (for some C of N => C not in 'a' .. 'z' | '0' .. '9' | '_')
+           or else N (N'Last) = '_'
+           or else Ada.Strings.Fixed.Index (N, "__") > 0
+         then
+            return "A name is lower case: a letter, then letters, digits and single underscores.";
+         end if;
+         return "";
+      end Name_Error;
+   begin
+      D.Init ("New Project", W, 17);
+      Name_Id := D.Add_Input (3, 3, W - 6, "my_app");
+      D.Add_Label (2, 2, "~N~ame (a-z, 0-9, _)", Name_Id);
+      Loc_Id := D.Add_Input (3, 6, W - 21, Default_Location);
+      D.Add_Label (2, 5, "~L~ocation: the folder it goes in", Loc_Id);
+      D.Add_Button (W - 16, 6, 13, "~B~rowse...", 2);
+      Kind_Id := D.Add_Radio
+        (3, 9, W - 6,
+         (if In_SDK then "SDK example, in examples/ (./x new)|" else "")
+         & "ESP32-S3 application (esp32-ada init)"
+         & "|Alire crate: a program (alr init --bin)"
+         & "|Alire crate: a library (alr init --lib)",
+         1);
+      D.Add_Label (2, 8, "~K~ind", Kind_Id);
+      D.Add_Button (W / 2 - 15, 14, 12, "~O~K", 1, Default => True);
+      D.Add_Button (W / 2 + 3, 14, 12, "Cancel", Dlg.Cancel_Code);
+      D.Focus (Name_Id);
+      loop
+         declare
+            Code : constant Integer := D.Run;
+         begin
+            if Code = Dlg.Cancel_Code then
+               return;
+            elsif Code = 2 then
+               if Dlg.Folder_Dialog ("Location", D.Value (Loc_Id), Picked) then
+                  D.Set_Value (Loc_Id, To_String (Picked));
+               end if;
+               D.Focus (Loc_Id);
+            elsif Code = 1 then
+               declare
+                  Given : constant String := Ada.Strings.Fixed.Trim (D.Value (Name_Id), Ada.Strings.Both);
+                  Loc   : constant String := Ada.Strings.Fixed.Trim (D.Value (Loc_Id), Ada.Strings.Both);
+                  K     : constant Kind_Choice := Kind_Of (D.Radio_Value (Kind_Id));
+                  Where : constant String :=
+                    (if K = SDK_App then Ada.Directories.Compose (Prj.Root, "examples")
+                     elsif Loc = "" then "" else Ada.Directories.Full_Name (Loc));
+                  Target : constant String :=
+                    (if Where = "" or else Given = "" then ""
+                     else Ada.Directories.Compose (Where, Given));
+               begin
+                  if Name_Error (Given) /= "" then
+                     Dlg.Message_Box ("New Project", Name_Error (Given));
+                     D.Focus (Name_Id);
+                  elsif Where = "" then
+                     Dlg.Message_Box ("New Project", "Say where it goes: the Location.");
+                     D.Focus (Loc_Id);
+                  elsif Ada.Directories.Exists (Target) then
+                     Dlg.Message_Box ("New Project", Shortened (Target) & " is already there.");
+                     D.Focus (Name_Id);
+                  elsif not Is_Dir (Where)
+                    and then Dlg.Message_Box
+                      ("New Project", Shortened (Where) & " is not there yet. Make it?", Dlg.Yes_No)
+                      /= Dlg.Ans_Yes
+                  then
+                     D.Focus (Loc_Id);
+                  else
+                     declare
+                        Cmd : constant String :=
+                          (case K is
+                              when SDK_App   => "./x new " & Given,
+                              when ESP32_App => Prj.Esp32_Ada & " init " & Given,
+                              when Crate_Bin => "alr -n init --bin " & Given,
+                              when Crate_Lib => "alr -n init --lib " & Given);
+                        Ok : Boolean;
+                     begin
+                        if Alire.Needs_Alr (Cmd) and then not Ensure_Alr then
+                           return;
+                        end if;
+                        if not Is_Dir (Where) then
+                           Ada.Directories.Create_Path (Where);
+                        end if;
+                        Jobs.Run_Foreground (Cmd, (if K = SDK_App then Prj.Root else Where), Ok);
+                        Screen.Init;
+                        Screen.Invalidate;
+                        if not Ok or else not Is_Dir (Target) then
+                           return;
+                        end if;
+                        if K /= SDK_App then
+                           Prj.Set_User_Option ("new.location", Where);
+                        end if;
+                        Save_Desktop;          --  the project being left
+                        Prj.Detect (Target);
+                        Ada.Directories.Set_Directory (Prj.Dir);
+                        Shown_Context := Ctx_Other;
+                        Follow_Project;
+                        if Prj.Main_Source /= "" then
+                           Open_File (Prj.Main_Source);
+                        elsif Ada.Directories.Exists (Target & "/src/" & Given & ".ads") then
+                           Open_File (Target & "/src/" & Given & ".ads");
+                        end if;
+                        return;
+                     end;
+                  end if;
+               end;
             end if;
-         end if;
-      end;
+         end;
+      end loop;
    exception
-      when others =>
-         Dlg.Message_Box ("Error", "Cannot create that project.");
+      when E : others =>
+         Dlg.Message_Box ("Error", "Cannot create that project: "
+                          & Ada.Exceptions.Exception_Name (E) & " "
+                          & Ada.Exceptions.Exception_Message (E));
    end New_Project;
 
    procedure Project_Info is
@@ -3303,6 +3435,13 @@ package body Turbo.App is
    begin
       return (A.X, A.Y, Integer'Max (28, Integer'Min (44, A.W / 3)), A.H);
    end Project_Bounds;
+
+   procedure Follow_Project is
+   begin
+      if In_Desktop (Window_Access (Proj_Win)) then
+         Proj_Win.Set_Root (Project_Root_Dir);
+      end if;
+   end Follow_Project;
 
    procedure Show_Project_Window is
    begin

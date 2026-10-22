@@ -1,4 +1,5 @@
 with Ada.Characters.Handling;
+with Ada.Command_Line;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Directories;
@@ -455,6 +456,25 @@ package body Turbo.Projects is
 
    --  Commands
 
+   function Own_SDK return String is
+   --  The SDK this IDE was built in (SDK/ide/turbo-ada/bin/tada), or "".
+      P : GNAT.OS_Lib.String_Access :=
+        GNAT.OS_Lib.Locate_Exec_On_Path (Ada.Command_Line.Command_Name);
+   begin
+      if P = null then
+         return "";
+      end if;
+      declare
+         Exe : constant String := Full_Name (P.all);
+         SDK : constant String := Parent (Parent (Parent (Parent (Exe))));
+      begin
+         GNAT.OS_Lib.Free (P);
+         return (if Is_SDK_Root (SDK) then SDK else "");
+      end;
+   exception
+      when others => return "";
+   end Own_SDK;
+
    function Esp32_Ada return String is
    begin
       if GNAT.OS_Lib.Locate_Exec_On_Path ("esp32-ada") /= null then
@@ -462,6 +482,10 @@ package body Turbo.Projects is
       elsif Ada.Environment_Variables.Exists ("ESP32S3_ADA_SDK") then
          return Ada.Environment_Variables.Value ("ESP32S3_ADA_SDK")
            & "/tools/bin/esp32-ada";
+      elsif The_Kind = SDK_Example then
+         return Root & "/tools/bin/esp32-ada";
+      elsif Own_SDK /= "" then
+         return Own_SDK & "/tools/bin/esp32-ada";
       end if;
       return "esp32-ada";
    end Esp32_Ada;
@@ -1274,5 +1298,81 @@ package body Turbo.Projects is
    begin
       Options.Include (Key, Value);
    end Set_Option;
+
+   --  The user's options
+
+   function User_Options_File return String is
+      function Env (N : String) return String is
+        (if Ada.Environment_Variables.Exists (N) then Ada.Environment_Variables.Value (N) else "");
+   begin
+      if Env ("XDG_CONFIG_HOME") /= "" then
+         return Env ("XDG_CONFIG_HOME") & "/turbo-ada/options";
+      elsif Env ("APPDATA") /= "" then
+         return Env ("APPDATA") & "\turbo-ada\options";
+      elsif Env ("HOME") /= "" then
+         return Env ("HOME") & "/.config/turbo-ada/options";
+      end if;
+      return "";
+   end User_Options_File;
+
+   function Read_User_Options return Option_Maps.Map is
+      use Ada.Text_IO;
+      F    : File_Type;
+      Name : constant String := User_Options_File;
+      R    : Option_Maps.Map;
+   begin
+      if Name = "" or else not Exists_File (Name) then
+         return R;
+      end if;
+      Open (F, In_File, Name);
+      while not End_Of_File (F) loop
+         declare
+            L  : constant String := Get_Line (F);
+            Eq : constant Natural := Ada.Strings.Fixed.Index (L, "=");
+         begin
+            if Eq > L'First and then L (L'First) /= '#' then
+               R.Include (L (L'First .. Eq - 1), L (Eq + 1 .. L'Last));
+            end if;
+         end;
+      end loop;
+      Close (F);
+      return R;
+   exception
+      when others =>
+         if Is_Open (F) then
+            Close (F);
+         end if;
+         return R;
+   end Read_User_Options;
+
+   function User_Option (Key : String; Default : String := "") return String is
+      M : constant Option_Maps.Map := Read_User_Options;
+   begin
+      return (if M.Contains (Key) then M.Element (Key) else Default);
+   end User_Option;
+
+   procedure Set_User_Option (Key, Value : String) is
+      use Ada.Text_IO;
+      Name : constant String := User_Options_File;
+      M    : Option_Maps.Map := Read_User_Options;
+      F    : File_Type;
+   begin
+      if Name = "" then
+         return;
+      end if;
+      M.Include (Key, Value);
+      Create_Path (Containing_Directory (Name));
+      Create (F, Out_File, Name);
+      Put_Line (F, "# Turbo Ada: the user's options (safe to delete)");
+      for C in M.Iterate loop
+         Put_Line (F, Option_Maps.Key (C) & "=" & Option_Maps.Element (C));
+      end loop;
+      Close (F);
+   exception
+      when others =>
+         if Is_Open (F) then
+            Close (F);
+         end if;
+   end Set_User_Option;
 
 end Turbo.Projects;

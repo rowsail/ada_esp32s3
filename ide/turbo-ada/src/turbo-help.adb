@@ -170,6 +170,14 @@ package body Turbo.Help is
       & "  {Alire crate}   any other alire.toml: alr build / alr run /" & LF
       & "                  alr test / alr clean." & LF
       & LF
+      & "Project | Open project opens another (in the SDK: an example, a" & LF
+      & "host test, or Another folder...).  Project | New project makes" & LF
+      & "one: a name, a Location (the folder its folder goes in; Browse..." & LF
+      & "picks it, and one not there yet is made) and a kind: ESP32-S3" & LF
+      & "application (esp32-ada init), SDK example (./x new, in examples/)," & LF
+      & "or Alire crate, a program or a library (alr init --bin / --lib)." & LF
+      & "The Location is remembered for next time." & LF
+      & LF
       & "# Native and ESP32-S3" & LF
       & "The target follows the project.  SDK examples and esp32-ada" & LF
       & "projects build for the ESP32-S3.  The libraries' host test suites" & LF

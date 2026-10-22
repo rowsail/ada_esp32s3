@@ -101,7 +101,8 @@ package Turbo.Projects is
    --  the message window.
 
    function Esp32_Ada return String;
-   --  How to run esp32-ada: from PATH, else from $ESP32S3_ADA_SDK.
+   --  How to run esp32-ada: from PATH, else from $ESP32S3_ADA_SDK, else
+   --  from the SDK that is open or the one this IDE was built in.
 
    function Debug_Server_Command return String;
    function Debug_Info_Command return String;
@@ -194,5 +195,11 @@ package Turbo.Projects is
    function Get_Option (Key : String; Default : String := "") return String;
    procedure Set_Option (Key, Value : String);
    --  Free-form keys (editor settings and the like) kept in the same file.
+
+   function User_Option (Key : String; Default : String := "") return String;
+   procedure Set_User_Option (Key, Value : String);
+   --  The user's, not a project's (where New project last put one):
+   --  $XDG_CONFIG_HOME/turbo-ada/options, else ~/.config/turbo-ada/options
+   --  (%APPDATA%\turbo-ada\options on Windows).
 
 end Turbo.Projects;

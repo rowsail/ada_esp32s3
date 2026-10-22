@@ -85,6 +85,16 @@ else
     echo "project viewer: skipped (no alr)"
 fi
 
+# Project | New project: an esp32-ada project in a folder made for it (the
+# remembered location goes in a scratch config, not the user's).  Outside
+# the crate above, or the IDE would start in that.
+N="$(mktemp -d)"
+trap 'rm -rf "$W" "$N"' EXIT
+XDG_CONFIG_HOME="$W/config" "$CLI" -C "$N" ui --script "$HERE/newproject.txt"
+[ -f "$N/boards/blinky/app.gpr" ] && [ -f "$N/boards/blinky/src/main.adb" ]
+grep -qx "new.location=$N/boards" "$W/config/turbo-ada/options"
+echo "new project: ok"
+
 # Compile | Analyze file, through alr's environment (an Alire crate).
 if command -v alr >/dev/null && { command -v adalang_analyzer >/dev/null \
         || [ -x "$HOME/.alire/bin/adalang_analyzer" ]; }; then

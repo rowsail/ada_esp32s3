@@ -1,0 +1,23 @@
+# Project | New project: Browse to a folder that is not there yet (made on
+# Yes), a name, the ESP32-S3 kind (esp32-ada init, found in the SDK the IDE
+# was built in); the new project is opened at its main.adb.
+key Alt-P
+key N
+expect Location: the folder it goes in
+key Alt-B
+expect Subfolders
+key Alt-F
+key Ctrl-Y
+type boards
+key Enter
+expect /boards
+key Alt-N
+key Ctrl-Y
+type blinky
+key Enter
+wait-for Make it? 5
+key Enter
+key Enter
+wait-for main.adb 60
+expect Bring up core 1
+quit

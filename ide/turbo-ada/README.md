@@ -182,9 +182,16 @@ brown is brown.
   with source, and F7/F8 first return to it. The program runs with no
   arguments, so a suite whose `run.sh` passes some (or starts a server) runs
   differently under the debugger.
-- **Project** — pick an SDK example, scaffold a new project (`./x new`,
-  `esp32-ada init` or `alr init --bin`), edit `alire.toml` and the `.gpr`, see
-  the board's flash/PSRAM sizes.
+- **Project** — open an SDK example or any folder, edit `alire.toml` and the
+  `.gpr`, see the board's flash/PSRAM sizes.
+- **New project** — Project | New project asks for a name, a *Location* (the
+  folder the project's own folder is made in; Browse... picks one, and one
+  that is not there yet is made) and a kind: an ESP32-S3 application
+  (`esp32-ada init`), an SDK example (`./x new`, always in `examples/`, offered
+  inside the SDK), or an Alire crate, a program or a library (`alr init --bin`
+  / `--lib`). The location starts as the one used last (kept in
+  `~/.config/turbo-ada/options`), else beside the open project (or the SDK),
+  else the folder the IDE was started in. The new project is opened.
 - **Project file** — the `.gpr` is found by one rule, the same as `./x`'s and
   `esp32-ada`'s: `alire.toml`'s first `project-files` entry (else
   `<crate>.gpr`), else `app.gpr`, else the first `*.gpr` by name that is not a
