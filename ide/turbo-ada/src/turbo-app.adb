@@ -4,14 +4,17 @@ with Ada.Containers.Vectors;
 with Ada.Directories;
 with Ada.Environment_Variables;
 with Ada.Exceptions;
+with Ada.Streams.Stream_IO;
 with Ada.Strings.Fixed;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Unbounded;
 with Ada.Strings.Wide_Wide_Fixed;
 with Ada.Strings.Wide_Wide_Unbounded;
+with Ada.Text_IO;
 with Ada.Unchecked_Deallocation;
 with Ada.Wide_Wide_Characters.Handling;
 with GNAT.OS_Lib;
+with GNAT.Regexp;
 with Turbo.Alire;
 with Turbo.Buffers;
 with Turbo.Clipboard;
@@ -65,6 +68,15 @@ package body Turbo.App is
    Help_Win     : Viewers.Viewer_Access;
    Untitled_N   : Natural := 0;
    Find_Opt     : Dlg.Find_Options;
+
+   type Files_Options is record
+      Text, New_Text : Unbounded_String;    --  UTF-8
+      Files          : Unbounded_String := To_Unbounded_String ("*.adb *.ads *.ada *.gpr");
+      Match_Case     : Boolean := False;
+      Whole_Word     : Boolean := False;
+      Libraries      : Boolean := True;     --  the SDK's libs/ too
+   end record;
+   Files_Opt : Files_Options;               --  Search | Find / Replace in files
    Have_Search  : Boolean := False;
    Quit         : Boolean := False;
 
@@ -186,6 +198,36 @@ package body Turbo.App is
       return null;
    end Find_Editor;
 
+   function Program_On_Path (Name : String) return Boolean is
+      use type GNAT.OS_Lib.String_Access;
+      P : GNAT.OS_Lib.String_Access := GNAT.OS_Lib.Locate_Exec_On_Path (Name);
+   begin
+      return Found : constant Boolean := P /= null do
+         GNAT.OS_Lib.Free (P);
+      end return;
+   end Program_On_Path;
+
+   function Looks_Binary (Path : String) return Boolean is
+   --  A NUL in the first 8 KB: an object, an image, a .bin (not to be
+   --  opened as text, where it would be garbled).
+      use Ada.Streams.Stream_IO;
+      F : File_Type;
+      B : Ada.Streams.Stream_Element_Array (1 .. 8192);
+      N : Ada.Streams.Stream_Element_Offset;
+      use type Ada.Streams.Stream_Element;
+   begin
+      Open (F, In_File, Path);
+      Read (F, B, N);
+      Close (F);
+      return (for some K in 1 .. N => B (K) = 0);
+   exception
+      when others =>
+         if Is_Open (F) then
+            Close (F);
+         end if;
+         return False;
+   end Looks_Binary;
+
    function Open_File (Path : String; Activate : Boolean := True)
                        return Editors.Editor_Access
    is
@@ -201,6 +243,8 @@ package body Turbo.App is
             E := Editors.Create (Full, 0);
             if E.Load_Failed then
                Dlg.Message_Box ("Error", "Cannot read " & Full);
+            else
+               Prj.Add_Recent (Prj.Recent_Files, Full);
             end if;
          end if;
          declare
@@ -379,6 +423,12 @@ package body Turbo.App is
    Shown_Right   : Unbounded_String := To_Unbounded_String ("?");
    Diag_Shown    : Boolean := False;   --  a diagnostic is on the status line
 
+   --  Parameter info: the signature of the call being typed, on the status
+   --  line while the cursor stays on its line (Sig_Line, 0 = none).
+   Sig_Text : Unbounded_String;
+   Sig_Path : Unbounded_String;
+   Sig_Line : Natural := 0;
+
    function "+" (S : String) return Desktop.Label_Access is (new String'(S));
 
    procedure Update_Status is
@@ -411,9 +461,21 @@ package body Turbo.App is
       Diag  : constant String :=
         (if Active_Editor /= null then Active_Editor.Diagnostic_At_Cursor else "");
    begin
-      --  On a diagnostic, its text takes the status line (Turbo C++ showed
-      --  the message for the error under the cursor the same way).
-      if Diag /= "" then
+      --  The signature of the call being typed, while the cursor stays on
+      --  its line; then on a diagnostic, its text takes the status line
+      --  (Turbo C++ showed the message for the error under the cursor the
+      --  same way).
+      if Sig_Line /= 0
+        and then not (Active_Editor /= null and then Active_Editor.Path = To_String (Sig_Path)
+                      and then Active_Editor.Cursor.Line = Sig_Line)
+      then
+         Sig_Line := 0;
+         Desktop.Set_Status_Message ("");
+      end if;
+      if Sig_Line /= 0 then
+         Desktop.Set_Status_Message (" " & To_String (Sig_Text));
+         Diag_Shown := True;
+      elsif Diag /= "" then
          Desktop.Set_Status_Message (" " & Diag);
          Diag_Shown := True;
       elsif Diag_Shown then
@@ -492,6 +554,9 @@ package body Turbo.App is
    function Can_Run (A : Prj.Action) return Boolean is
      (Prj.Command_For (A) /= "");
 
+   function Board_Program return Boolean;
+   --  Run means flash and read the console (below).
+
    function Enabled (C : Command) return Boolean is
       E : constant Editors.Editor_Access := Active_Editor;
    begin
@@ -501,7 +566,7 @@ package body Turbo.App is
          =>
             return E /= null;
          when Cmd_Definition | Cmd_References | Cmd_Symbols | Cmd_Rename | Cmd_Complete
-            | Cmd_Hover
+            | Cmd_Hover | Cmd_Signature
          =>
             return E /= null and then Server_Wanted;
          when Cmd_Check_File => return E /= null and then Prj.Template (Prj.Act_Check) /= "" and then Prj.Kind /= Prj.No_Project;
@@ -518,6 +583,8 @@ package body Turbo.App is
          when Cmd_Paste => return E /= null and then not Clipboard.Is_Empty;
          when Cmd_Make | Cmd_Build_All => return Can_Run (Prj.Act_Build);
          when Cmd_Run => return Can_Run (Prj.Act_Run) or else GDB.Is_Active;
+         when Cmd_Run_User_Screen =>
+            return Can_Run (Prj.Act_Run) and then not Board_Program and then not GDB.Is_Active;
          when Cmd_Trace_Into | Cmd_Step_Over => return Prj.Can_Debug or else GDB.Is_Active;
          when Cmd_Go_To_Cursor =>
             return (Prj.Can_Debug or else GDB.Is_Active)
@@ -542,6 +609,10 @@ package body Turbo.App is
               and then E.Language = Syntax.Ada_Lang
               and then Ada.Characters.Handling.To_Lower (Ada.Directories.Extension (E.Path)) /= "gpr";
          when Cmd_Test => return Can_Run (Prj.Act_Test);
+         when Cmd_Prove => return Can_Run (Prj.Act_Prove);
+         when Cmd_Prove_File =>
+            return E /= null and then Prj.Template (Prj.Act_Prove_File) /= ""
+              and then E.Language = Syntax.Ada_Lang;
          when Cmd_Board_Config => return Can_Run (Prj.Act_Board);
          when Cmd_Alr_Update => return Can_Run (Prj.Act_Alr_Update) and then Prj.Manifest /= "";
          when Cmd_Alr_Show => return Can_Run (Prj.Act_Alr_Show) and then Prj.Manifest /= "";
@@ -1140,30 +1211,88 @@ package body Turbo.App is
       end if;
    end Do_Replace;
 
-   procedure Grep (Word : Wide_Wide_String) is
-   --  Every whole-word occurrence of Word in the project's Ada sources,
-   --  into the message window (Turbo C++ had GREP on its system menu).
+   function Search_Files
+     (Word       : Wide_Wide_String;
+      Match_Case : Boolean;
+      Whole_Word : Boolean;
+      Globs      : String;
+      Libraries  : Boolean;
+      Title      : String) return String_List
+   --  Every occurrence of Word in the project's files that match Globs
+   --  (wildcards, separated by blanks; "" = Ada sources), and with
+   --  Libraries the SDK's libs/ too, into the message window (Turbo C++ had
+   --  GREP on its system menu).  Returns the files it was found in.
+   is
       use Ada.Directories;
       Limit : constant := 2000;
       Found : Natural := 0;
+      Files : String_List;
+
+      package Regexp_Vectors is new Ada.Containers.Vectors (Positive, GNAT.Regexp.Regexp, GNAT.Regexp."=");
+      Patterns : Regexp_Vectors.Vector;
+
+      procedure Compile_Globs is
+         First : Natural := Globs'First;
+      begin
+         for K in Globs'Range loop
+            if Globs (K) = ' ' or else K = Globs'Last then
+               declare
+                  G : constant String :=
+                    Ada.Strings.Fixed.Trim
+                      (Globs (First .. (if Globs (K) = ' ' then K - 1 else K)), Ada.Strings.Both);
+               begin
+                  if G /= "" then
+                     Patterns.Append (GNAT.Regexp.Compile (G, Glob => True));
+                  end if;
+               end;
+               First := K + 1;
+            end if;
+         end loop;
+      end Compile_Globs;
+
+      function Wanted (Name : String) return Boolean is
+      begin
+         if Patterns.Is_Empty then
+            return Syntax.Language_Of (Name) = Syntax.Ada_Lang;
+         end if;
+         return (for some R of Patterns => GNAT.Regexp.Match (Name, R));
+      end Wanted;
 
       procedure Scan_File (Path : String) is
-         B    : Buffers.Buffer;
-         Ok   : Boolean;
-         P    : Buffers.Position;
-         From : Buffers.Position := (1, 1);
+         B     : Buffers.Buffer;
+         Ok    : Boolean;
+         P     : Buffers.Position;
+         From  : Buffers.Position := (1, 1);
+         Count : Natural := 0;
       begin
          B.Load (Path, Ok);
          while Ok and then Found < Limit
-           and then B.Find (Word, From, True, False, True, P)
+           and then B.Find (Word, From, True, Match_Case, Whole_Word, P)
          loop
-            Found := Found + 1;
+            --  A line once in the list; each occurrence in it counted.
             Msg_Win.Add_Location
               (Path, P.Line, P.Col,
                Ada.Strings.Wide_Wide_Fixed.Trim (B.Line (P.Line), Ada.Strings.Left));
+            declare
+               L    : constant Positive := P.Line;
+               Last : constant Natural := B.Line (L)'Length;
+               Q    : Buffers.Position := P;
+            begin
+               loop
+                  Found := Found + 1;
+                  Count := Count + 1;
+                  exit when Q.Col + Word'Length > Last
+                    or else not B.Find (Word, (L, Q.Col + Word'Length), True, Match_Case,
+                                        Whole_Word, Q)
+                    or else Q.Line /= L;
+               end loop;
+            end;
             exit when P.Line = B.Line_Count;
             From := (P.Line + 1, 1);
          end loop;
+         if Count > 0 then
+            Files.Append (Path);
+         end if;
       end Scan_File;
 
       procedure Scan (Dir : String; Depth : Natural) is
@@ -1182,12 +1311,14 @@ package body Turbo.App is
                if N (N'First) = '.' then
                   null;
                elsif Kind (Ent) = Directory then
-                  if N /= "obj" and then N /= "alire" and then N /= "build"
-                    and then N /= "bb-runtimes"
+                  --  Not the build trees (obj, obj-embedded, ...), nor
+                  --  Alire's copies of dependencies.
+                  if not (N'Length >= 3 and then N (N'First .. N'First + 2) = "obj")
+                    and then N /= "alire" and then N /= "build" and then N /= "bb-runtimes"
                   then
                      Scan (Full_Name (Ent), Depth + 1);
                   end if;
-               elsif Syntax.Language_Of (N) = Syntax.Ada_Lang then
+               elsif Wanted (N) then
                   Scan_File (Full_Name (Ent));
                end if;
             end;
@@ -1198,17 +1329,151 @@ package body Turbo.App is
       end Scan;
 
    begin
+      Compile_Globs;
       Msg_Win.Clear;
-      Msg_Win.Add (Messages.Header, "Grep " & Encode (Word) & " in " & Prj.Dir);
+      Msg_Win.Add (Messages.Header, Title & " " & Encode (Word) & " in " & Prj.Dir
+                   & (if Libraries and then Prj.Root /= Prj.Dir then " and the libraries" else ""));
       Scan (Prj.Dir, 0);
-      if Prj.Root /= Prj.Dir then
+      if Libraries and then Prj.Root /= Prj.Dir then
          Scan (Compose (Prj.Root, "libs"), 0);
       end if;
       Msg_Win.Add (Messages.Header,
-                   Img (Found) & " match(es)" & (if Found >= Limit then " (stopped)" else "")
-                   & ".");
+                   Img (Found) & " match(es) in" & Natural'Image (Natural (Files.Length)) & " file(s)"
+                   & (if Found >= Limit then " (stopped)" else "") & ".");
       Show_Message_Window (Activate => True);
+      return Files;
+   exception
+      when GNAT.Regexp.Error_In_Regexp =>
+         Dlg.Message_Box ("Find in Files", "Those file patterns are not understood.");
+         return Files;
+   end Search_Files;
+
+   procedure Grep (Word : Wide_Wide_String) is
+      Ignore : constant String_List :=
+        Search_Files (Word, True, True, "", Libraries => True, Title => "Grep");
+   begin
+      null;
    end Grep;
+
+   function Files_Dialog (Replace : Boolean) return Boolean is
+   --  Search | Find in files / Replace in files: what, in which files.
+      D : Dlg.Dialog;
+      W : constant Positive := 62;
+      Text_Id, New_Id, Files_Id, Case_Id, Word_Id, Libs_Id : Positive;
+      Y : constant Natural := (if Replace then 2 else 0);
+      In_SDK : constant Boolean := Prj.Root /= Prj.Dir;
+   begin
+      D.Init ((if Replace then "Replace in Files" else "Find in Files"), W, 13 + Y);
+      Text_Id := D.Add_Input (16, 2, W - 19, To_String (Files_Opt.Text));
+      D.Add_Label (2, 2, "~T~ext to find", Text_Id);
+      New_Id := Text_Id;
+      if Replace then
+         New_Id := D.Add_Input (16, 4, W - 19, To_String (Files_Opt.New_Text));
+         D.Add_Label (2, 4, "~N~ew text", New_Id);
+      end if;
+      Files_Id := D.Add_Input (16, 4 + Y, W - 19, To_String (Files_Opt.Files));
+      D.Add_Label (2, 4 + Y, "~F~iles", Files_Id);
+      Case_Id := D.Add_Check (3, 6 + Y, 24, "~C~ase sensitive", Files_Opt.Match_Case);
+      Word_Id := D.Add_Check (30, 6 + Y, 26, "~W~hole words only", Files_Opt.Whole_Word);
+      Libs_Id := Word_Id;
+      if In_SDK then
+         Libs_Id := D.Add_Check (3, 7 + Y, 40, "Also the SDK's ~l~ibraries", Files_Opt.Libraries);
+      end if;
+      D.Add_Text (2, 8 + Y, "In: " & Tilde (Prj.Dir));
+      D.Add_Button (W / 2 - 15, 10 + Y, 12, "~O~K", 1, Default => True);
+      D.Add_Button (W / 2 + 3, 10 + Y, 12, "Cancel", Dlg.Cancel_Code);
+      D.Focus (Text_Id);
+      if D.Run = Dlg.Cancel_Code then
+         return False;
+      end if;
+      Files_Opt.Text := To_Unbounded_String (D.Value (Text_Id));
+      if Replace then
+         Files_Opt.New_Text := To_Unbounded_String (D.Value (New_Id));
+      end if;
+      Files_Opt.Files := To_Unbounded_String (Ada.Strings.Fixed.Trim (D.Value (Files_Id), Ada.Strings.Both));
+      Files_Opt.Match_Case := D.Checked (Case_Id);
+      Files_Opt.Whole_Word := D.Checked (Word_Id);
+      if In_SDK then
+         Files_Opt.Libraries := D.Checked (Libs_Id);
+      end if;
+      return Length (Files_Opt.Text) > 0;
+   end Files_Dialog;
+
+   procedure Find_In_Files is
+   begin
+      if Active_Editor /= null and then Length (Files_Opt.Text) = 0 then
+         Files_Opt.Text := To_Unbounded_String (Encode (Active_Editor.Word_At_Cursor));
+      end if;
+      if Files_Dialog (Replace => False) then
+         Dlg.Show_Busy ("Find in Files", "Searching " & Prj.Dir & "...");
+         declare
+            Ignore : constant String_List :=
+              Search_Files (Decode (To_String (Files_Opt.Text)), Files_Opt.Match_Case,
+                            Files_Opt.Whole_Word, To_String (Files_Opt.Files),
+                            Files_Opt.Libraries, "Find");
+         begin
+            null;
+         end;
+      end if;
+   end Find_In_Files;
+
+   procedure Replace_In_Files is
+   --  The matches are listed first (the message window); then, if wanted,
+   --  replaced in editors: each file is opened (not saved), its changes one
+   --  undo step, so they can be looked over before File | Save all.
+      LF : constant Character := Character'Val (10);
+   begin
+      if Active_Editor /= null and then Length (Files_Opt.Text) = 0 then
+         Files_Opt.Text := To_Unbounded_String (Encode (Active_Editor.Word_At_Cursor));
+      end if;
+      if not Files_Dialog (Replace => True) then
+         return;
+      end if;
+      Dlg.Show_Busy ("Replace in Files", "Searching " & Prj.Dir & "...");
+      declare
+         Pat   : constant Wide_Wide_String := Decode (To_String (Files_Opt.Text));
+         By    : constant Wide_Wide_String := Decode (To_String (Files_Opt.New_Text));
+         Files : constant String_List :=
+           Search_Files (Pat, Files_Opt.Match_Case, Files_Opt.Whole_Word,
+                         To_String (Files_Opt.Files), Files_Opt.Libraries, "Replace");
+         Done  : Natural := 0;
+      begin
+         if Files.Is_Empty then
+            Dlg.Message_Box ("Replace in Files", "Search string not found.");
+            return;
+         end if;
+         Redraw;
+         if Dlg.Message_Box
+           ("Replace in Files",
+            "Replace them (listed in the Message window) in" & Natural'Image (Natural (Files.Length))
+            & " file(s)?" & LF & "Each file is opened and changed, not saved: look them over," & LF
+            & "then File | Save all (or Undo in a file).",
+            Dlg.Yes_No) /= Dlg.Ans_Yes
+         then
+            return;
+         end if;
+         for F of Files loop
+            declare
+               E     : constant Editors.Editor_Access := Open_File (F, Activate => False);
+               First : Boolean := True;
+            begin
+               E.Begin_Edit_Group;
+               E.Go_To (1, 1);
+               while E.Find_Next (Pat, Files_Opt.Match_Case, Files_Opt.Whole_Word,
+                                  Backward => False, From_Top => First)
+               loop
+                  First := False;
+                  E.Replace_Selection (By);
+                  Done := Done + 1;
+                  exit when Done > 100_000;
+               end loop;
+               E.End_Edit_Group;
+            end;
+         end loop;
+         Msg_Win.Add (Messages.Header, Img (Done) & " replaced; the files are open, not saved.");
+         Show_Message_Window (Activate => True);
+      end;
+   end Replace_In_Files;
 
    --  The language server
    --
@@ -1691,6 +1956,109 @@ package body Turbo.App is
                     "# " & Encode (E.Word_At_Cursor) & LF & LF & To_String (Text));
       end if;
    end Hover;
+
+   procedure Signature_Help (Explicit : Boolean) is
+   --  Parameter info (Shift-F1, and by itself after "(" or ","): the
+   --  server's signature for the call at the cursor, its active parameter
+   --  between guillemets, onto the status line.
+      use Turbo.JSON;
+      E  : constant Editors.Editor_Access :=
+        (if Explicit then Usable_Editor else Active_Editor);
+      R  : LSP.Response;
+      --  The status line takes Latin-1, where these two are.
+      LQ : constant String := (1 => Character'Val (16#AB#));   --  «
+      RQ : constant String := (1 => Character'Val (16#BB#));   --  »
+   begin
+      Sig_Line := 0;
+      if E = null or else E.Is_Untitled or else not Is_Ada_Source (E.Path) then
+         return;
+      end if;
+      if Explicit then
+         if not Server_Ready then
+            return;
+         end if;
+      elsif LSP.Is_Running then
+         Sync_Documents (Force => True);
+      else
+         return;
+      end if;
+      LSP.Request ("textDocument/signatureHelp", Here (E), R, Escape_Pressed'Access,
+                   Timeout => (if Explicit then 15.0 else 2.0));
+      declare
+         Sigs   : constant Value := (if R.Ok then Get (R.Doc, R.Result, "signatures") else No_Value);
+         Active : constant Natural :=
+           (if R.Ok then Natural'Max (0, To_Integer (R.Doc, Get (R.Doc, R.Result, "activeSignature"))) else 0);
+         N      : constant Natural := (if Is_Present (Sigs) then Length (R.Doc, Sigs) else 0);
+      begin
+         if N = 0 then
+            if Explicit then
+               Dlg.Message_Box ("Parameter Info",
+                                (if R.Ok then "No call here that the server knows."
+                                 else To_String (R.Error)));
+            end if;
+            return;
+         end if;
+         declare
+            Sig    : constant Value := Element (R.Doc, Sigs, Natural'Min (Active, N - 1) + 1);
+            Label  : constant String := To_String (R.Doc, Get (R.Doc, Sig, "label"));
+            Params : constant Value := Get (R.Doc, Sig, "parameters");
+            P_Act  : constant Value :=
+              (if Is_Present (Get (R.Doc, Sig, "activeParameter"))
+               then Get (R.Doc, Sig, "activeParameter")
+               else Get (R.Doc, R.Result, "activeParameter"));
+            AP     : constant Natural := Natural'Max (0, To_Integer (R.Doc, P_Act));
+            Text   : Unbounded_String := To_Unbounded_String (Label);
+         begin
+            if Is_Present (Params) and then AP < Length (R.Doc, Params) then
+               declare
+                  PL : constant Value := Get (R.Doc, Element (R.Doc, Params, AP + 1), "label");
+                  From, To : Natural := 0;    --  0-based, To excluded (UTF-16, as ASCII here)
+               begin
+                  if Kind_Of (R.Doc, PL) = J_Array and then Length (R.Doc, PL) = 2 then
+                     From := To_Integer (R.Doc, Element (R.Doc, PL, 1));
+                     To := To_Integer (R.Doc, Element (R.Doc, PL, 2));
+                  elsif Kind_Of (R.Doc, PL) = J_String then
+                     declare
+                        K : constant Natural := Ada.Strings.Fixed.Index (Label, To_String (R.Doc, PL));
+                     begin
+                        if K > 0 then
+                           From := K - Label'First;
+                           To := From + To_String (R.Doc, PL)'Length;
+                        end if;
+                     end;
+                  end if;
+                  if To > From and then To <= Label'Length then
+                     Text := To_Unbounded_String
+                       (Label (Label'First .. Label'First + From - 1) & LQ
+                        & Label (Label'First + From .. Label'First + To - 1) & RQ
+                        & Label (Label'First + To .. Label'Last));
+                  end if;
+               end;
+            end if;
+            --  One line: the server lays a long profile out over several.
+            declare
+               T   : constant String := To_String (Text);
+               R2  : Unbounded_String;
+               Gap : Boolean := False;
+            begin
+               for C of T loop
+                  if C = ' ' or else C = ASCII.LF or else C = ASCII.CR or else C = ASCII.HT then
+                     Gap := True;
+                  else
+                     if Gap and then Length (R2) > 0 and then C /= ')' then
+                        Append (R2, ' ');
+                     end if;
+                     Gap := False;
+                     Append (R2, C);
+                  end if;
+               end loop;
+               Sig_Text := R2 & (if N > 1 then "   (1 of" & N'Image & ")" else "");
+            end;
+            Sig_Path := To_Unbounded_String (E.Path);
+            Sig_Line := E.Cursor.Line;
+         end;
+      end;
+   end Signature_Help;
 
    procedure Rename is
       use Turbo.JSON;
@@ -2254,10 +2622,34 @@ package body Turbo.App is
          then Ada.Directories.Containing_Directory (Active_Editor.Path)
          else Ada.Directories.Current_Directory);
    begin
-      if Dlg.Open_File_Dialog ("Open a File", Start, Result) then
+      if Dlg.Open_File_Dialog ("Open a File", Start, Result)
+        and then (not Looks_Binary (To_String (Result))
+                  or else Dlg.Message_Box
+                    ("Open", Simple (To_String (Result)) & " is not a text file. Open it anyway?",
+                     Dlg.Yes_No) = Dlg.Ans_Yes)
+      then
          Open_File (To_String (Result));
       end if;
    end Open_Dialog;
+
+   procedure Reopen is
+   --  File | Reopen: the files opened last (in any project), newest first.
+      Paths : String_List;
+      Items : String_List;
+      Index : Positive := 1;
+   begin
+      for P of Prj.Recent (Prj.Recent_Files) loop
+         if Ada.Directories.Exists (P) then
+            Paths.Append (P);
+            Items.Append (Tilde (P));
+         end if;
+      end loop;
+      if Paths.Is_Empty then
+         Dlg.Message_Box ("Reopen", "No files have been opened yet.");
+      elsif Dlg.Choose ("Reopen", "~R~ecent files", Items, Index, 60, "~O~pen") then
+         Open_File (Paths (Index));
+      end if;
+   end Reopen;
 
    procedure Goto_Line is
       E : constant Editors.Editor_Access := Active_Editor;
@@ -2409,11 +2801,228 @@ package body Turbo.App is
       Shown_Context := Ctx_Other;
    end Open_Project;
 
+   procedure Recent_Projects is
+   --  Project | Recent projects: the ones opened last, newest first (an
+   --  SDK example or host test by its own directory).
+      Paths : String_List;
+      Items : String_List;
+      Index : Positive := 1;
+   begin
+      for P of Prj.Recent (Prj.Recent_Projects) loop
+         if Ada.Directories.Exists (P) and then P /= Prj.Dir then
+            Paths.Append (P);
+            Items.Append (Tilde (P));
+         end if;
+      end loop;
+      if Paths.Is_Empty then
+         Dlg.Message_Box ("Recent Projects", "No other project has been opened yet.");
+         return;
+      end if;
+      if Dlg.Choose ("Recent Projects", "~P~rojects", Items, Index, 60, "~O~pen") then
+         Save_Desktop;            --  the project being left
+         Prj.Open_Directory (Paths (Index));
+         Ada.Directories.Set_Directory (Prj.Dir);
+         Follow_Project;
+         if Prj.Main_Source /= "" then
+            Open_File (Prj.Main_Source);
+         end if;
+         Shown_Context := Ctx_Other;
+      end if;
+   end Recent_Projects;
+
+   function Fetch_SDK_Command (Dest : String) return String is
+   --  A clone of the SDK's main branch from GitHub into Dest (not there yet).
+     ("git clone --branch main https://github.com/" & Prj.SDK_Repository & ".git "
+      & Alire.Quote (Dest));
+
+   function File_Has (Path, Text : String) return Boolean is
+   --  Whether the file holds Text (on one line).
+      use Ada.Text_IO;
+      F : File_Type;
+   begin
+      Open (F, In_File, Path);
+      while not End_Of_File (F) loop
+         if Ada.Strings.Fixed.Index (Get_Line (F), Text) > 0 then
+            Close (F);
+            return True;
+         end if;
+      end loop;
+      Close (F);
+      return False;
+   exception
+      when others =>
+         if Is_Open (F) then
+            Close (F);
+         end if;
+         return False;
+   end File_Has;
+
+   procedure Get_SDK is
+   --  Project | Get ESP32-S3 SDK: a git clone of the SDK's main branch, as
+   --  <Location>/ada_esp32s3 (Location: the home folder unless changed),
+   --  remembered as the user's SDK; then, if wanted, the toolchain set up
+   --  and export.sh in ~/.bashrc.
+      LF     : constant Character := Character'Val (10);
+      W      : constant Positive := 66;
+      Home   : constant String :=
+        (if Ada.Environment_Variables.Exists ("HOME")
+         then Ada.Environment_Variables.Value ("HOME") else Ada.Directories.Current_Directory);
+      D      : Dlg.Dialog;
+      Loc_Id : Positive;
+      Picked : Unbounded_String;
+      Ok     : Boolean;
+
+      function Is_Dir (P : String) return Boolean is
+        (P /= "" and then Ada.Directories.Exists (P)
+         and then Ada.Directories.Kind (P) = Ada.Directories.Directory);
+
+      function Program_Found (Name : String) return Boolean is
+         use type GNAT.OS_Lib.String_Access;
+         P : GNAT.OS_Lib.String_Access := GNAT.OS_Lib.Locate_Exec_On_Path (Name);
+      begin
+         return Found : constant Boolean := P /= null do
+            GNAT.OS_Lib.Free (P);
+         end return;
+      end Program_Found;
+
+      procedure Finish (SDK : String) is
+      --  Remember it, then offer the rest.
+         Line : constant String := ". " & Alire.Quote (SDK & "/export.sh") & " >/dev/null";
+         --  Written in full; quiet (export.sh says what it set each time),
+         --  though its warnings, on stderr, still show.
+         Rc   : constant String := Home & "/.bashrc";
+      begin
+         Prj.Set_User_Option ("sdk.path", SDK);
+         if not File_Has (SDK & "/x", "setup-toolchain") then
+            Dlg.Message_Box
+              ("ESP32-S3 SDK",
+               "This SDK is older than this IDE: it has no setup-toolchain" & LF
+               & "or IDE build commands.  Its examples open, but building them" & LF
+               & "from here needs a newer SDK (git pull in it, once it has them).");
+         elsif Dlg.Message_Box
+           ("ESP32-S3 SDK",
+            "The SDK is in " & Tilde (SDK) & "." & LF & LF
+            & "Set up its toolchain now?  That downloads the validated" & LF
+            & "compilers through alr (the first time: some minutes).",
+            Dlg.Yes_No) = Dlg.Ans_Yes
+           and then (not Alire.Needs_Alr ("alr") or else Ensure_Alr)
+         then
+            Jobs.Run_Foreground ("./x setup-toolchain", SDK, Ok);
+            Screen.Init;
+            Screen.Invalidate;
+         end if;
+         if not File_Has (Rc, SDK & "/export.sh")
+           and then Dlg.Message_Box
+             ("ESP32-S3 SDK",
+              "Add this line to ~/.bashrc, so new shells have esp32-ada" & LF
+              & "and the toolchain on PATH?" & LF & LF
+              & "  . " & Alire.Quote (Tilde (SDK) & "/export.sh") & " >/dev/null",
+              Dlg.Yes_No) = Dlg.Ans_Yes
+         then
+            declare
+               use Ada.Text_IO;
+               F : File_Type;
+            begin
+               if Ada.Directories.Exists (Rc) then
+                  Open (F, Append_File, Rc);
+               else
+                  Create (F, Out_File, Rc);
+               end if;
+               New_Line (F);
+               Put_Line (F, "# The ESP32-S3 Ada SDK (added by Turbo Ada)");
+               Put_Line (F, Line);
+               Close (F);
+            exception
+               when others =>
+                  if Is_Open (F) then
+                     Close (F);
+                  end if;
+                  Dlg.Message_Box ("ESP32-S3 SDK", "Could not add it to " & Rc & ".");
+            end;
+         end if;
+      end Finish;
+   begin
+      D.Init ("Get ESP32-S3 SDK", W, 12);
+      D.Add_Text (2, 2, "The SDK's main branch, cloned from GitHub (about 75 MB)" & LF
+                  & "into ada_esp32s3 in the Location (git pull updates it).");
+      Loc_Id := D.Add_Input (3, 6, W - 21, Home);
+      D.Add_Label (2, 5, "~L~ocation: the folder it goes in", Loc_Id);
+      D.Add_Button (W - 16, 6, 13, "~B~rowse...", 2);
+      D.Add_Button (W / 2 - 15, 9, 13, "~C~lone", 1, Default => True);
+      D.Add_Button (W / 2 + 3, 9, 12, "Cancel", Dlg.Cancel_Code);
+      loop
+         declare
+            Code : constant Integer := D.Run;
+         begin
+            if Code = Dlg.Cancel_Code then
+               return;
+            elsif Code = 2 then
+               if Dlg.Folder_Dialog ("Location", D.Value (Loc_Id), Picked) then
+                  D.Set_Value (Loc_Id, To_String (Picked));
+               end if;
+               D.Focus (Loc_Id);
+            else
+               declare
+                  Loc    : constant String := Ada.Strings.Fixed.Trim (D.Value (Loc_Id), Ada.Strings.Both);
+                  Where  : constant String := (if Loc = "" then "" else Ada.Directories.Full_Name (Loc));
+                  Target : constant String :=
+                    (if Where = "" then "" else Ada.Directories.Compose (Where, "ada_esp32s3"));
+               begin
+                  if Where = "" then
+                     Dlg.Message_Box ("Get ESP32-S3 SDK", "Say where it goes: the Location.");
+                  elsif Prj.Is_SDK (Target) then
+                     if Dlg.Message_Box
+                       ("Get ESP32-S3 SDK",
+                        "There is an SDK in " & Tilde (Target) & " already." & LF
+                        & "Use that one?",
+                        Dlg.Yes_No) = Dlg.Ans_Yes
+                     then
+                        Finish (Target);
+                        return;
+                     end if;
+                  elsif Ada.Directories.Exists (Target) then
+                     Dlg.Message_Box
+                       ("Get ESP32-S3 SDK",
+                        Tilde (Target) & LF & "is already there, and is not an SDK.");
+                  elsif not Program_Found ("git") then
+                     Dlg.Message_Box
+                       ("Get ESP32-S3 SDK",
+                        "Cloning it needs git: install that first (sudo apt install git).");
+                     return;
+                  elsif Is_Dir (Where)
+                    or else Dlg.Message_Box
+                      ("Get ESP32-S3 SDK", Tilde (Where) & " is not there yet." & LF & "Make it?",
+                       Dlg.Yes_No) = Dlg.Ans_Yes
+                  then
+                     if not Is_Dir (Where) then
+                        Ada.Directories.Create_Path (Where);
+                     end if;
+                     Jobs.Run_Foreground (Fetch_SDK_Command (Target), Where, Ok);
+                     Screen.Init;
+                     Screen.Invalidate;
+                     if Ok and then Prj.Is_SDK (Target) then
+                        Finish (Target);
+                     else
+                        Dlg.Message_Box ("Get ESP32-S3 SDK", "The clone did not work (see git's output).");
+                     end if;
+                     return;
+                  end if;
+               end;
+            end if;
+         end;
+      end loop;
+   exception
+      when Term.Script_Ended =>
+         raise;
+      when E : others =>
+         Dlg.Message_Box ("Error", "Cannot get the SDK: " & Ada.Exceptions.Exception_Message (E));
+   end Get_SDK;
+
    procedure New_Project is
    --  Project | New project: a name, the folder it goes in (Browse picks
    --  one; remembered for next time) and the kind.  An SDK example always
    --  goes in the SDK's examples/.
-      type Kind_Choice is (ESP32_App, SDK_App, Crate_Bin, Crate_Lib);
+      type Kind_Choice is (ESP32_App, SDK_App, Crate_Bin, Crate_Lib, Gpr_Prog);
       In_SDK : constant Boolean := Prj.Kind = Prj.SDK_Example;
       W      : constant Positive := 66;
       D      : Dlg.Dialog;
@@ -2423,10 +3032,10 @@ package body Turbo.App is
       function Kind_Of (Radio : Positive) return Kind_Choice is
         (if In_SDK then
            (case Radio is when 1 => SDK_App, when 2 => ESP32_App,
-                          when 3 => Crate_Bin, when others => Crate_Lib)
+                          when 3 => Crate_Bin, when 4 => Crate_Lib, when others => Gpr_Prog)
          else
            (case Radio is when 1 => ESP32_App, when 2 => Crate_Bin,
-                          when others => Crate_Lib));
+                          when 3 => Crate_Lib, when others => Gpr_Prog));
 
       function Env (N : String) return String is
         (if Ada.Environment_Variables.Exists (N) then Ada.Environment_Variables.Value (N) else "");
@@ -2447,6 +3056,40 @@ package body Turbo.App is
          end if;
          return Ada.Directories.Current_Directory;                    --  where the IDE was started
       end Default_Location;
+
+      procedure Write_Gpr_Program (Dir, Name : String) is
+      --  A project of its own: Name.gpr and src/Name.adb, a hello world.
+         use Ada.Text_IO;
+         Unit : String := Name;           --  my_app -> My_App
+         F    : File_Type;
+      begin
+         for K in Unit'Range loop
+            if K = Unit'First or else Unit (K - 1) = '_' then
+               Unit (K) := Ada.Characters.Handling.To_Upper (Unit (K));
+            end if;
+         end loop;
+         Ada.Directories.Create_Path (Dir & "/src");
+         Create (F, Out_File, Dir & "/" & Name & ".gpr");
+         Put_Line (F, "project " & Unit & " is");
+         Put_Line (F, "   for Source_Dirs use (""src"");");
+         Put_Line (F, "   for Object_Dir use ""obj"";");
+         Put_Line (F, "   for Exec_Dir use ""bin"";");
+         Put_Line (F, "   for Main use (""" & Name & ".adb"");");
+         Put_Line (F, "");
+         Put_Line (F, "   package Compiler is");
+         Put_Line (F, "      for Default_Switches (""Ada"") use (""-g"", ""-gnat2022"", ""-gnatwa"");");
+         Put_Line (F, "   end Compiler;");
+         Put_Line (F, "end " & Unit & ";");
+         Close (F);
+         Create (F, Out_File, Dir & "/src/" & Name & ".adb");
+         Put_Line (F, "with Ada.Text_IO;");
+         Put_Line (F, "");
+         Put_Line (F, "procedure " & Unit & " is");
+         Put_Line (F, "begin");
+         Put_Line (F, "   Ada.Text_IO.Put_Line (""Hello from " & Unit & """);");
+         Put_Line (F, "end " & Unit & ";");
+         Close (F);
+      end Write_Gpr_Program;
 
       function Shortened (P : String) return String is
       --  For a message box: ~ for the home directory, and the tail of a
@@ -2475,7 +3118,7 @@ package body Turbo.App is
          return "";
       end Name_Error;
    begin
-      D.Init ("New Project", W, 17);
+      D.Init ("New Project", W, 18);
       Name_Id := D.Add_Input (3, 3, W - 6, "my_app");
       D.Add_Label (2, 2, "~N~ame (a-z, 0-9, _)", Name_Id);
       Loc_Id := D.Add_Input (3, 6, W - 21, Default_Location);
@@ -2486,11 +3129,12 @@ package body Turbo.App is
          (if In_SDK then "SDK example, in examples/ (./x new)|" else "")
          & "ESP32-S3 application (esp32-ada init)"
          & "|Alire crate: a program (alr init --bin)"
-         & "|Alire crate: a library (alr init --lib)",
+         & "|Alire crate: a library (alr init --lib)"
+         & "|Ada program, without Alire (a .gpr for gprbuild)",
          1);
       D.Add_Label (2, 8, "~K~ind", Kind_Id);
-      D.Add_Button (W / 2 - 15, 14, 12, "~O~K", 1, Default => True);
-      D.Add_Button (W / 2 + 3, 14, 12, "Cancel", Dlg.Cancel_Code);
+      D.Add_Button (W / 2 - 15, 15, 12, "~O~K", 1, Default => True);
+      D.Add_Button (W / 2 + 3, 15, 12, "Cancel", Dlg.Cancel_Code);
       D.Focus (Name_Id);
       loop
          declare
@@ -2524,6 +3168,15 @@ package body Turbo.App is
                   elsif Ada.Directories.Exists (Target) then
                      Dlg.Message_Box ("New Project", Shortened (Target) & " is already there.");
                      D.Focus (Name_Id);
+                  elsif K = ESP32_App and then not Prj.Esp32_Ada_On_Path and then Prj.SDK_Path = "" then
+                     --  esp32-ada comes with the SDK.
+                     if Dlg.Message_Box
+                       ("New Project", "An ESP32-S3 application needs the ESP32-S3 SDK,"
+                        & Character'Val (10) & "which is not here.  Get it now?", Dlg.Yes_No)
+                       = Dlg.Ans_Yes
+                     then
+                        Get_SDK;
+                     end if;
                   elsif not Is_Dir (Where)
                     and then Dlg.Message_Box
                       ("New Project", Shortened (Where) & " is not there yet. Make it?", Dlg.Yes_No)
@@ -2537,8 +3190,9 @@ package body Turbo.App is
                               when SDK_App   => "./x new " & Given,
                               when ESP32_App => Prj.Esp32_Ada & " init " & Given,
                               when Crate_Bin => "alr -n init --bin " & Given,
-                              when Crate_Lib => "alr -n init --lib " & Given);
-                        Ok : Boolean;
+                              when Crate_Lib => "alr -n init --lib " & Given,
+                              when Gpr_Prog  => "");      --  written here
+                        Ok : Boolean := True;
                      begin
                         if Alire.Needs_Alr (Cmd) and then not Ensure_Alr then
                            return;
@@ -2546,9 +3200,13 @@ package body Turbo.App is
                         if not Is_Dir (Where) then
                            Ada.Directories.Create_Path (Where);
                         end if;
-                        Jobs.Run_Foreground (Cmd, (if K = SDK_App then Prj.Root else Where), Ok);
-                        Screen.Init;
-                        Screen.Invalidate;
+                        if K = Gpr_Prog then
+                           Write_Gpr_Program (Target, Given);
+                        else
+                           Jobs.Run_Foreground (Cmd, (if K = SDK_App then Prj.Root else Where), Ok);
+                           Screen.Init;
+                           Screen.Invalidate;
+                        end if;
                         if not Ok or else not Is_Dir (Target) then
                            return;
                         end if;
@@ -2573,6 +3231,8 @@ package body Turbo.App is
          end;
       end loop;
    exception
+      when Term.Script_Ended =>
+         raise;
       when E : others =>
          Dlg.Message_Box ("Error", "Cannot create that project: "
                           & Ada.Exceptions.Exception_Name (E) & " "
@@ -3178,6 +3838,63 @@ package body Turbo.App is
       return Home /= "" and then GNAT.OS_Lib.Is_Executable_File (Home & "/.alire/bin/adalang_analyzer");
    end Analyzer_Found;
 
+   function Prover_Found return Boolean is
+      use type GNAT.OS_Lib.String_Access;
+      P    : GNAT.OS_Lib.String_Access := GNAT.OS_Lib.Locate_Exec_On_Path ("gnatprove");
+      Home : constant String :=
+        (if Ada.Environment_Variables.Exists ("HOME")
+         then Ada.Environment_Variables.Value ("HOME") else "");
+   begin
+      if P /= null then
+         GNAT.OS_Lib.Free (P);
+         return True;
+      end if;
+      return Home /= "" and then GNAT.OS_Lib.Is_Executable_File (Home & "/.alire/bin/gnatprove");
+   end Prover_Found;
+
+   procedure Prove (Whole_Project : Boolean) is
+   --  Compile | Prove file / Prove project: GNATprove's unproved checks in
+   --  the message window (medium/high as warnings, low as notes).
+      LF : constant Character := Character'Val (10);
+      E  : constant Editors.Editor_Access := Active_Editor;
+      A  : constant Prj.Action := (if Whole_Project then Prj.Act_Prove else Prj.Act_Prove_File);
+      Ok : Boolean;
+   begin
+      if not Whole_Project
+        and then (E = null or else E.Is_Untitled or else not Is_Ada_Source (E.Path))
+      then
+         Dlg.Message_Box ("Information", "Prove file works on an Ada source file.");
+         return;
+      end if;
+      if Prj.Command_For (A, (if Whole_Project then "" else E.Path)) = "" then
+         Dlg.Message_Box ("Information", "There is no " & Prj.Label (A) & " command for this project.");
+         return;
+      end if;
+      if not Prover_Found then
+         if Dlg.Message_Box
+              ("Prove",
+               "GNATprove (SPARK) is not installed." & LF
+               & "Install it now with Alire (alr install gnatprove)?",
+               Dlg.Yes_No) /= Dlg.Ans_Yes
+           or else not Ensure_Alr
+         then
+            return;
+         end if;
+         Run_Command ("alr -n install gnatprove", Ada.Directories.Current_Directory,
+                      "Install gnatprove", Ok, Wait_Key => True, Is_Build => False);
+         if not Ok or else not Prover_Found then
+            return;
+         end if;
+      end if;
+      if Whole_Project then
+         Save_All;
+      elsif E.Modified and then not Save (E) then
+         return;
+      end if;
+      Run_Job (A, (if Whole_Project then "Prove project" else "Prove " & Simple (E.Path)),
+               Ok, Wait_Key => True, Is_Build => False);
+   end Prove;
+
    procedure Analyze (Whole_Project : Boolean) is
       LF : constant Character := Character'Val (10);
       E  : constant Editors.Editor_Access := Active_Editor;
@@ -3229,7 +3946,11 @@ package body Turbo.App is
 
    procedure Open_From_Project (Path : String) is
    begin
-      Open_File (Path);
+      if Looks_Binary (Path) then
+         Dlg.Message_Box ("Open", Simple (Path) & " is not a text file, so it is not opened.");
+      else
+         Open_File (Path);
+      end if;
    end Open_From_Project;
 
    function Source_File (Name : String) return Boolean is
@@ -3438,6 +4159,9 @@ package body Turbo.App is
 
    procedure Follow_Project is
    begin
+      if Prj.Kind /= Prj.No_Project then
+         Prj.Add_Recent (Prj.Recent_Projects, Prj.Dir);
+      end if;
       if In_Desktop (Window_Access (Proj_Win)) then
          Proj_Win.Set_Root (Project_Root_Dir);
       end if;
@@ -3487,7 +4211,14 @@ package body Turbo.App is
          Proj_Win.Refresh;
       end if;
       --  The language server follows at the next idle moment (Project_Key).
-      Desktop.Set_Status_Message ("Project file: " & Simple (Files (Index)));
+      if Prj.Kind = Prj.Alire_Crate and then Files (Index) /= Found then
+         Dlg.Message_Box
+           ("Project File",
+            "Compile, the language server, the viewer and Analyze now use" & Character'Val (10)
+            & Simple (Files (Index)) & "; alr build still builds what alire.toml names.");
+      else
+         Desktop.Set_Status_Message ("Project file: " & Simple (Files (Index)));
+      end if;
    end Choose_Gpr;
 
    procedure Alr_Install is
@@ -3769,6 +4500,7 @@ package body Turbo.App is
    --  Output window (Turbo.Console), stopped by Ctrl-F2, paused by Shift-F2.
 
    Console_Port  : Unbounded_String;
+   Native_Run    : Boolean := False;   --  the console is a program run here, not the board's
    Console_Lines : constant := 10_000;   --  the Output window keeps the last ones
 
    function Board_Program return Boolean is
@@ -3782,6 +4514,7 @@ package body Turbo.App is
         (if not Console.Running then "Output"
          elsif Console.Paused
          then "Output: paused (" & Img (Console.Held) & " lines held)"
+         elsif Native_Run then "Output: running " & To_String (Console_Port)
          else "Output: " & To_String (Console_Port));
    end Show_Console_Title;
 
@@ -3789,10 +4522,12 @@ package body Turbo.App is
    begin
       if Console.Running then
          Console.Stop;
-         Output_Win.Add (Messages.Header, "-- closed; the board runs on");
+         Output_Win.Add (Messages.Header,
+                         (if Native_Run then "-- stopped" else "-- closed; the board runs on"));
          Output_Win.Follow_Tail;
          Show_Console_Title;
-         Desktop.Set_Status_Message (Note);
+         Desktop.Set_Status_Message
+           (if Native_Run and then Note /= "" then " Stopped: the program is ended" else Note);
          Shown_Context := Ctx_Other;
       end if;
    end Stop_Console;
@@ -3815,12 +4550,271 @@ package body Turbo.App is
          return;
       end if;
       Console_Port := To_Unbounded_String (Dev);
+      Native_Run := False;
       Output_Win.Clear;
       Output_Win.Add (Messages.Header, "-- " & Dev & ": Space or Shift-F2 pauses, Esc stops");
       Show_Console_Title;
       Show_Window (Window_Access (Output_Win), Message_Bounds, Activate => True);
       Shown_Context := Ctx_Other;
    end Open_Console;
+
+   procedure Run_In_Output is
+   --  Run (native): the program's output in the Output window, as the
+   --  board's console is, so the IDE stays on screen.  It gets no input:
+   --  Run on user screen is for a program that reads the keyboard.
+      LF  : constant Character := Character'Val (10);
+      Cmd : constant String := Prj.Command_For (Prj.Act_Run);
+      Ok  : Boolean;
+   begin
+      if Cmd = "" then
+         Dlg.Message_Box ("Information", "There is no Run command for this project.");
+         return;
+      end if;
+      if (Alire.Needs_Alr (Cmd) and then not Ensure_Alr) or else not Toolchain_Ready then
+         return;
+      end if;
+      --  Its input is empty, so a program that reads ends instead of waiting.
+      Console.Start (Cmd & " < /dev/null", Prj.Working_Dir (Prj.Act_Run), Ok, Whole_Group => True);
+      if not Ok then
+         Dlg.Message_Box ("Information", "The program could not be started:" & LF & Cmd);
+         return;
+      end if;
+      Console_Port := To_Unbounded_String (Prj.Name);
+      Native_Run := True;
+      Output_Win.Clear;
+      Output_Win.Add (Messages.Header, "-- " & Cmd & ": Space or Shift-F2 pauses, Esc stops");
+      Show_Console_Title;
+      Show_Window (Window_Access (Output_Win), Message_Bounds, Activate => True);
+      Shown_Context := Ctx_Other;
+   end Run_In_Output;
+
+   --  Git (Project | Git..., Alt-G): a list of the usual commands, run in
+   --  the project's directory (git finds the repository above it).  It
+   --  never asks for a password on the terminal the IDE is drawing.
+
+   Git_Env : constant String := "GIT_TERMINAL_PROMPT=0 ";
+
+   procedure Show_In_Output (Title : String; Lines : String_List) is
+   --  Text to read (a diff, the log) in the Output window, unless the
+   --  console is using it.
+   begin
+      if Console.Running then
+         Dlg.Message_Box ("Git", "The Output window is showing the console: stop it first (Esc).");
+         return;
+      end if;
+      Output_Win.Clear;
+      Output_Win.Set_Title ("Output: " & Title);
+      if Lines.Is_Empty then
+         Output_Win.Add (Messages.Header, "-- nothing");
+      end if;
+      for L of Lines loop
+         Output_Win.Add (Messages.Info, Jobs.Clean (L));
+      end loop;
+      Show_Window (Window_Access (Output_Win), Message_Bounds, Activate => True);
+      Shown_Context := Ctx_Other;
+   end Show_In_Output;
+
+   procedure Show_In_Messages (Title : String; Lines : String_List; Ok : Boolean) is
+   begin
+      Msg_Win.Clear;
+      Msg_Win.Add (Messages.Header, Title & (if Ok then "" else "  (failed)"));
+      for L of Lines loop
+         Msg_Win.Add ((if Ok then Messages.Info else Messages.Error), Jobs.Clean (L));
+      end loop;
+      Show_Message_Window (Activate => True);
+   end Show_In_Messages;
+
+   procedure Git_Menu is
+      LF    : constant Character := Character'Val (10);
+      Dir   : constant String := Prj.Dir;
+      Lines : String_List;
+      Top   : Unbounded_String;      --  the repository's top directory
+      E     : constant Editors.Editor_Access := Active_Editor;
+      File  : constant String :=
+        (if E /= null and then not E.Is_Untitled then E.Path else "");
+
+      type Git_Action is
+        (G_Status, G_Diff_File, G_Diff_All, G_Log, G_Stage_File, G_Commit, G_Pull, G_Push,
+         G_Update_SDK);
+      function Label (A : Git_Action) return String is
+        (case A is
+            when G_Status     => "Status              what has changed (Enter opens a file)",
+            when G_Diff_File  => "Diff this file      its changes, in the Output window",
+            when G_Diff_All   => "Diff all            every change, in the Output window",
+            when G_Log        => "Log                 the last commits",
+            when G_Stage_File => "Stage this file     git add",
+            when G_Commit     => "Commit...           with a message",
+            when G_Pull       => "Pull                git pull --ff-only",
+            when G_Push       => "Push                git push (asks first)",
+            when G_Update_SDK => "Update the SDK      git pull in the ESP32-S3 SDK");
+      Items : String_List;
+      Index : Positive := 1;
+
+      function Run (Cmd, In_Dir, What : String) return Boolean is
+      begin
+         Lines.Clear;
+         return Capture (Git_Env & Cmd, In_Dir, What, Lines);
+      end Run;
+
+      function Is_Repo (D : String) return Boolean is
+      begin
+         if Run ("git rev-parse --show-toplevel", D, "Git") and then not Lines.Is_Empty then
+            Top := To_Unbounded_String (Lines.First_Element);
+            return True;
+         end if;
+         return False;
+      end Is_Repo;
+   begin
+      if not Program_On_Path ("git") then
+         Dlg.Message_Box ("Git", "git is not installed (sudo apt install git).");
+         return;
+      end if;
+      if Dir = "" or else not Is_Repo (Dir) then
+         if Dir /= "" and then Dlg.Message_Box
+           ("Git", Tilde (Dir) & " is not in a git repository." & LF & "Make it one (git init)?",
+            Dlg.Yes_No) = Dlg.Ans_Yes
+         then
+            Show_In_Messages ("git init: a new repository in " & Dir, Lines,
+                              Run ("git init -q", Dir, "git init"));
+         end if;
+         return;
+      end if;
+      for A in Git_Action loop
+         Items.Append (Label (A));
+      end loop;
+      if not Dlg.Choose ("Git", "~G~it in " & Tilde (To_String (Top)), Items, Index, 62, "~D~o it")
+      then
+         return;
+      end if;
+      declare
+         A : constant Git_Action := Git_Action'Val (Index - 1);
+         Q : constant String := Pipes.Shell_Quote (File);
+      begin
+         if A in G_Diff_File | G_Stage_File and then File = "" then
+            Dlg.Message_Box ("Git", "That works on the file in the active editor.");
+            return;
+         end if;
+         case A is
+            when G_Status =>
+               declare
+                  Ok : constant Boolean :=
+                    Run ("git status --short --branch --untracked-files=all", Dir, "git status");
+               begin
+                  Msg_Win.Clear;
+                  Msg_Win.Add (Messages.Header, "git status in " & To_String (Top));
+                  for L of Lines loop
+                     if not Ok or else L'Length < 4 or else L (L'First .. L'First + 1) = "##" then
+                        Msg_Win.Add (Messages.Header, L);
+                     else
+                        --  "XY path" or "XY old -> new": the file opens on Enter.
+                        declare
+                           Arrow : constant Natural := Ada.Strings.Fixed.Index (L, " -> ");
+                           Rel   : constant String :=
+                             (if Arrow > 0 then L (Arrow + 4 .. L'Last) else L (L'First + 3 .. L'Last));
+                        begin
+                           Msg_Win.Add_Location (To_String (Top) & "/" & Rel, 1, 1, Decode (L));
+                        end;
+                     end if;
+                  end loop;
+                  if Lines.Is_Empty or else (Natural (Lines.Length) = 1 and then Ok) then
+                     Msg_Win.Add (Messages.Header, "Nothing to commit.");
+                  end if;
+                  Show_Message_Window (Activate => True);
+               end;
+            when G_Diff_File =>
+               if Run ("git diff HEAD -- " & Q, Dir, "git diff") then
+                  Show_In_Output ("git diff " & Simple (File), Lines);
+               else
+                  Show_In_Messages ("git diff", Lines, False);
+               end if;
+            when G_Diff_All =>
+               if Run ("git diff HEAD", Dir, "git diff") then
+                  Show_In_Output ("git diff", Lines);
+               else
+                  Show_In_Messages ("git diff", Lines, False);
+               end if;
+            when G_Log =>
+               if Run ("git log --oneline --decorate -50", Dir, "git log") then
+                  Show_In_Output ("git log", Lines);
+               else
+                  Show_In_Messages ("git log", Lines, False);
+               end if;
+            when G_Stage_File =>
+               if E.Modified and then not Save (E) then
+                  return;
+               end if;
+               if Run ("git add -- " & Q, Dir, "git add") then
+                  Desktop.Set_Status_Message (" Staged " & Simple (File));
+               else
+                  Show_In_Messages ("git add " & Simple (File), Lines, False);
+               end if;
+            when G_Commit =>
+               declare
+                  D      : Dlg.Dialog;
+                  Msg_Id, All_Id : Positive;
+                  Unsaved : Boolean := False;
+               begin
+                  for K in 1 .. Desktop.Count loop
+                     if Desktop.Nth (K).all in Editors.Editor'Class
+                       and then Editors.Editor_Access (Desktop.Nth (K)).Modified
+                     then
+                        Unsaved := True;
+                     end if;
+                  end loop;
+                  if Unsaved then
+                     case Dlg.Message_Box ("Git", "Some files are not saved. Save them first?",
+                                           Dlg.Yes_No_Cancel) is
+                        when Dlg.Ans_Yes => Save_All;
+                        when Dlg.Ans_No => null;
+                        when others => return;
+                     end case;
+                  end if;
+                  D.Init ("Commit", 66, 10);
+                  Msg_Id := D.Add_Input (3, 3, 60, "");
+                  D.Add_Label (2, 2, "~M~essage", Msg_Id);
+                  All_Id := D.Add_Check (3, 5, 60, "Stage every change first, new files ~t~oo (git add -A)",
+                                         True);
+                  D.Add_Button (17, 7, 12, "~C~ommit", 1, Default => True);
+                  D.Add_Button (35, 7, 12, "Cancel", Dlg.Cancel_Code);
+                  D.Focus (Msg_Id);
+                  if D.Run /= 1 then
+                     return;
+                  end if;
+                  if Ada.Strings.Fixed.Trim (D.Value (Msg_Id), Ada.Strings.Both) = "" then
+                     Dlg.Message_Box ("Commit", "A commit needs a message.");
+                     return;
+                  end if;
+                  Show_In_Messages
+                    ("git commit",  Lines,
+                     Run ((if D.Checked (All_Id) then "git add -A && " & Git_Env else "")
+                          & "git commit -m " & Pipes.Shell_Quote (D.Value (Msg_Id)), Dir, "git commit"));
+               end;
+            when G_Pull =>
+               Show_In_Messages ("git pull --ff-only", Lines,
+                                 Run ("git pull --ff-only", Dir, "git pull"));
+            when G_Push =>
+               if Dlg.Message_Box
+                 ("Push", "Send this branch's commits to its remote (git push)?", Dlg.Yes_No)
+                 = Dlg.Ans_Yes
+               then
+                  Show_In_Messages ("git push", Lines, Run ("git push", Dir, "git push"));
+               end if;
+            when G_Update_SDK =>
+               declare
+                  SDK : constant String := Prj.SDK_Path;
+               begin
+                  if SDK = "" then
+                     Dlg.Message_Box ("Git", "There is no ESP32-S3 SDK here (Project | Get ESP32-S3 SDK).");
+                  elsif not Ada.Directories.Exists (SDK & "/.git") then
+                     Dlg.Message_Box ("Git", Tilde (SDK) & " is not a git clone, so it cannot be pulled.");
+                  else
+                     Show_In_Messages ("git pull --ff-only in " & SDK, Lines,
+                                       Run ("git pull --ff-only", SDK, "Updating the SDK"));
+                  end if;
+               end;
+         end case;
+      end;
+   end Git_Menu;
 
    procedure Toggle_Pause is
    begin
@@ -3847,7 +4841,8 @@ package body Turbo.App is
       end;
       if Console.Ended then
          Console.Stop;
-         Output_Win.Add (Messages.Header, "-- the console ended");
+         Output_Win.Add (Messages.Header,
+                         (if Native_Run then "-- the program ended" else "-- the console ended"));
          Output_Win.Follow_Tail;
          Shown_Context := Ctx_Other;
       end if;
@@ -4538,6 +5533,7 @@ package body Turbo.App is
          when Cmd_Rename => Rename;
          when Cmd_Complete => Complete;
          when Cmd_Hover => Hover;
+         when Cmd_Signature => Signature_Help (Explicit => True);
          when Cmd_Diagnostics => Diagnostics_List;
          when Cmd_Opt_Server => Server_Options;
          when Cmd_Check_File =>
@@ -4577,10 +5573,18 @@ package body Turbo.App is
                end if;
             else
                --  Make first; the box only waits for a key if it failed.
+               Stop_Console;
                Run_Job (Prj.Act_Build, "Make", Ok, Wait_Key => False);
                if Ok then
-                  Run_Interactive (Prj.Act_Run);
+                  Run_In_Output;
                end if;
+            end if;
+         when Cmd_Run_User_Screen =>
+            --  For a program that reads the keyboard: the whole terminal.
+            Stop_Console;
+            Run_Job (Prj.Act_Build, "Make", Ok, Wait_Key => False);
+            if Ok then
+               Run_Interactive (Prj.Act_Run);
             end if;
          when Cmd_Program_Reset =>
             if Console.Running and then not GDB.Is_Active then
@@ -4658,6 +5662,14 @@ package body Turbo.App is
          when Cmd_Edit_Manifest => Open_File (Prj.Manifest);
          when Cmd_Edit_Gpr => Open_File (Prj.Gpr_File);
          when Cmd_Choose_Gpr => Choose_Gpr;
+         when Cmd_Get_SDK => Get_SDK;
+         when Cmd_Prove => Prove (Whole_Project => True);
+         when Cmd_Prove_File => Prove (Whole_Project => False);
+         when Cmd_Git => Git_Menu;
+         when Cmd_Find_In_Files => Find_In_Files;
+         when Cmd_Replace_In_Files => Replace_In_Files;
+         when Cmd_Reopen => Reopen;
+         when Cmd_Recent_Projects => Recent_Projects;
          when Cmd_Board_Config => Run_Job (Prj.Act_Board, "Board", Ok, False, False);
 
          when Cmd_Alr_Search => Alr_Search;
@@ -4732,7 +5744,8 @@ package body Turbo.App is
             case E.Code is
                when F1 =>
                   if Plain then return Cmd_Help_Contents;
-                  elsif C then return Cmd_Hover; end if;
+                  elsif C then return Cmd_Hover;
+                  elsif S then return Cmd_Signature; end if;
                when F2 =>
                   if Plain then return Cmd_Save;
                   elsif C then return Cmd_Program_Reset;
@@ -4766,6 +5779,10 @@ package body Turbo.App is
                   elsif C then return Cmd_Run;
                   elsif S then return Cmd_Flash;
                   elsif A then return Cmd_Check_File; end if;
+               when F11 =>
+                  --  Run again where the desktop takes Ctrl-F9 (KDE).
+                  if Plain then return Cmd_Run;
+                  elsif S then return Cmd_Format; end if;
                when F12 =>
                   if Plain then return Cmd_Definition;
                   elsif S then return Cmd_References;
@@ -4779,6 +5796,8 @@ package body Turbo.App is
       if E.Code = Char_Key and then E.Alt and then not E.Ctrl then
          if E.Ch = 'x' then
             return Cmd_Quit;
+         elsif E.Ch = 'g' then
+            return Cmd_Git;            --  no menu takes G
          end if;
       end if;
       return Cmd_None;
@@ -4934,6 +5953,14 @@ package body Turbo.App is
                   return;
                end if;
             end;
+            --  Typing a call: its parameters on the status line.
+            if Handled and then E.Code = Char_Key and then not E.Ctrl and then not E.Alt then
+               if E.Ch = '(' or else E.Ch = ',' then
+                  Signature_Help (Explicit => False);
+               elsif E.Ch = ')' or else E.Ch = ';' then
+                  Sig_Line := 0;
+               end if;
+            end if;
          elsif Desktop.Active = Window_Access (Watch_Win) then
             declare
                R : constant Command := Watch_Win.Take_Request;
@@ -5034,6 +6061,9 @@ package body Turbo.App is
       E : Event;
    begin
       Prj.Detect (Start_Dir);
+      if Prj.Kind /= Prj.No_Project then
+         Prj.Add_Recent (Prj.Recent_Projects, Prj.Dir);
+      end if;
       Alire.Use_Found;          --  none: offered when something needs it
       Screen.Set_True_Color (Wants_True_Color);
       Apply_Editor_Options;

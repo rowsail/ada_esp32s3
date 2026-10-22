@@ -1,0 +1,32 @@
+# File | Reopen lists the file just opened; Search | Find in files counts
+# every occurrence (two on a line too); Replace in files changes them in
+# the editor, unsaved.
+key Alt-F
+key R
+wait-for Recent files 5
+expect src/demo.adb
+key Esc
+key Alt-S
+key L
+wait-for Find in Files 5
+key Ctrl-Y
+type Total
+key Alt-W
+key Space
+key Enter
+wait-for 5 match(es) in 1 file(s) 10
+key Alt-S
+key C
+wait-for Replace in Files 5
+key Ctrl-Y
+type Done
+key Alt-N
+key Ctrl-Y
+type Finished
+key Enter
+wait-for Replace them 10
+key Enter
+wait-for 1 replaced 10
+key Alt-1
+expect Put_Line ("Finished");
+quit

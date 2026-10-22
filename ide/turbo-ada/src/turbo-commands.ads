@@ -34,7 +34,8 @@ package Turbo.Commands is
       Cmd_Analyze, Cmd_Analyze_File, Cmd_Test,
       --  Project
       Cmd_Open_Project, Cmd_New_Project, Cmd_Project_Info, Cmd_Edit_Manifest,
-      Cmd_Edit_Gpr, Cmd_Choose_Gpr, Cmd_Board_Config,
+      Cmd_Edit_Gpr, Cmd_Choose_Gpr, Cmd_Board_Config, Cmd_Get_SDK, Cmd_Reopen, Cmd_Recent_Projects,
+      Cmd_Find_In_Files, Cmd_Replace_In_Files, Cmd_Signature, Cmd_Run_User_Screen, Cmd_Git, Cmd_Prove, Cmd_Prove_File,
       --  Alire
       Cmd_Alr_Search, Cmd_Alr_Get, Cmd_Alr_Install, Cmd_Alr_Add,
       Cmd_Alr_Deps, Cmd_Alr_Update, Cmd_Alr_Show, Cmd_Alr_Fetch,

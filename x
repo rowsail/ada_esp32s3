@@ -37,6 +37,9 @@
 #                                     context (an example's, a library's, ...)
 #                                     (--gpr FILE: a project file other than
 #                                     the one found -- see gpr_of_dir)
+#    ./x prove [FILE...]               SPARK proof: the SDK's whole pass
+#                                     (book/prove/prove.sh), or those files with
+#                                     the proof project that lists each
 #    ./x setup-analyzer [--check]      install adalang_analyzer (alr; builds
 #                                     Libadalang, so it takes a while)
 #    ./x stack   <example> [--top N] [--run]   static stack analysis (per-frame +
@@ -1219,37 +1222,53 @@ analyze_app () {   # $1 = project file, $2 = 1 for --style, rest = files (none: 
     fi
     #  GPR_PROJECT_PATH, for the SDK libraries a project withs.
     . "$ROOT/export.sh" > /dev/null 2>&1
-    if [ $# -eq 0 ]; then
-        ( cd "$(dirname "$gpr")" && adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
-              $checks ) && rc=0 || rc=$?
-        #  1: findings (the report says which); anything else: it failed.
-        [ "$rc" -le 1 ] || echo "analyze: adalang_analyzer failed (status $rc)" >&2
-        #  An IDE (--machine) reads the findings as warnings: they are what
-        #  it asked for, not a failure.
-        [ "$rc" = 1 ] && [ "${X_MACHINE:-}" = 1 ] && rc=0
-        return "$rc"
-    fi
-    #  Files: the analyzer may report on the whole project whatever files it
-    #  is given, so keep only theirs -- each finding line ("/abs/f.adb:L:C:
-    #  warning: ...") with the indented lines under it -- and count them.
-    local out; out="$(mktemp)"
+    local out kept n dropped; out="$(mktemp)"
     ( cd "$(dirname "$gpr")" && adalang_analyzer -P"$gpr" -XESP32S3_RTS_PROFILE="$prof" \
           $checks "$@" ) > "$out" 2>&1 && rc=0 || rc=$?
+    #  1: findings (the report says which); anything else: it failed.
     if [ "$rc" -gt 1 ]; then
         cat "$out"; rm -f "$out"
         echo "analyze: adalang_analyzer failed (status $rc)" >&2
         return "$rc"
     fi
-    local kept n
-    kept="$(printf '%s\n' "$@" | awk '
-        NR == FNR { want[$0] = 1; next }
-        /^\// { f = $0; sub(/:[0-9]+:[0-9]+:.*/, "", f); keep = (f in want) }
+    #  Each finding is a line "/abs/f.adb:L:C: warning: ..." with indented
+    #  lines under it.  Files given: the analyzer may report on the whole
+    #  project whatever files it is given, so keep only theirs.  Always: a
+    #  "with X;" that the file marks "pragma Unreferenced (X);" is there for
+    #  X's elaboration (a library-level task, say), which the analyzer's
+    #  Unused_With_Clause does not know -- drop that finding, and say so.
+    kept="$( { [ $# -gt 0 ] && printf '%s\n' "$@" || true; } | awk -v all=$(( $# == 0 )) '
+        function kept_for_elaboration(file, line,   l, k, unit, src, i) {
+            k = 0
+            while ((getline l < file) > 0) src[++k] = l
+            close(file)
+            unit = src[line]
+            if (!sub(/^[ \t]*with[ \t]+/, "", unit)) return 0
+            sub(/[ \t;,].*/, "", unit)
+            for (i = 1; i <= k; i++)
+                if (tolower(src[i]) ~ ("pragma[ \t]+unreferenced[ \t]*\\([ \t]*" tolower(unit) "[ \t]*\\)"))
+                    return 1
+            return 0
+        }
+        FILENAME == "-" { want[$0] = 1; next }
+        /^\// {
+            f = $0; sub(/:[0-9]+:[0-9]+:.*/, "", f)
+            keep = all || (f in want)
+            if (keep && $0 ~ /\[Unused_With_Clause\]/) {
+                l = $0; sub(/^[^:]*:/, "", l); sub(/:.*/, "", l)
+                if (kept_for_elaboration(f, l + 0)) { keep = 0; dropped++ }
+            }
+        }
         /^\// || /^  / { if (keep) print; next }
-        { keep = 0 }' - "$out")"
+        { keep = 0; if (all) print }
+        END { if (dropped) print "(" dropped " Unused_With_Clause finding(s) left out: a with kept for elaboration, marked pragma Unreferenced)" }
+        ' - "$out")"
     rm -f "$out"
     n="$(printf '%s\n' "$kept" | grep -c '^/' || true)"
     [ -n "$kept" ] && printf '%s\n\n' "$kept"
     echo "$n finding$([ "$n" = 1 ] || echo s)"
+    #  An IDE (--machine) reads the findings as warnings: they are what it
+    #  asked for, not a failure.
     [ "$n" = 0 ] || [ "${X_MACHINE:-}" = 1 ]
 }
 analyze_files () {   # $1 = 1 for --style, $2 = the project file ("": found), rest = source files
@@ -1265,6 +1284,38 @@ analyze_files () {   # $1 = 1 for --style, $2 = the project file ("": found), re
     done
     [ -z "$given" ] || gpr="$given"
     analyze_app "$gpr" "$style" "${abs[@]}"
+}
+
+#  SPARK proof.  The SDK proves its SPARK units against NATIVE projects (the
+#  host suites' and the *_prove.gpr ones), which list the sources they cover;
+#  book/prove/prove.sh runs the whole pass.
+proof_project_of () {   # $1 = a source file: the native project that lists it, or nothing
+    local b g; b="$(basename "$1")"
+    for g in "$ROOT"/libs/*/*_prove.gpr "$ROOT"/libs/*/test/*/*.gpr; do
+        [ -f "$g" ] || continue
+        grep -q "\"$b\"" "$g" && { echo "$g"; return 0; }
+    done
+    return 1
+}
+cmd_prove () {   # [FILE...]: the SDK's whole proof pass, or those files with their proof projects
+    command -v gnatprove >/dev/null 2>&1 || [ -x "$HOME/.alire/bin/gnatprove" ] || {
+        echo "x prove: gnatprove is not installed (alr install gnatprove)" >&2; return 127; }
+    export PATH="$HOME/.alire/bin:$PATH"
+    if [ $# -eq 0 ]; then
+        bash "$ROOT/book/prove/prove.sh"; return
+    fi
+    local f g rc=0
+    for f in "$@"; do
+        [ -f "$f" ] || die "prove: no such file: $f"
+        g="$(proof_project_of "$f")" || {
+            echo "prove: no proof project lists $(basename "$f") -- it is not in the SDK's proof pass" >&2
+            rc=1; continue; }
+        echo "== prove $(basename "$f") [$(basename "$g")] =="
+        #  Full paths in its messages, so they lead back to the file.
+        ( cd "$(dirname "$g")" && gnatprove -P "$g" --level=1 --prover=z3 --timeout=10 -j0 \
+              --output=oneline --report=fail -u "$(basename "$f")" -cargs -gnatef ) || rc=$?
+    done
+    return "$rc"
 }
 
 cmd_analyze () {
@@ -1746,7 +1797,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
       MACHINE_DIRS="$ex_dir $ROOT/libs $EXROOT/common $ROOT/tools"
       case "$cmd" in
           build|flash)  machine_run "$ex_dir" "$0" "$cmd" "$@"; exit $? ;;
-          clean|test|analyze|stack|mem|memory|config|cfg|kill-openocd|setup-toolchain)
+          clean|test|analyze|prove|stack|mem|memory|config|cfg|kill-openocd|setup-toolchain)
                         machine_run "" "$0" "$cmd" "$@"; exit $? ;;
       esac
   fi
@@ -1760,6 +1811,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     clean)           cmd_clean "$@" ;;
     test)            cmd_test "$@" ;;
     analyze)         cmd_analyze "$@" ;;
+    prove)           cmd_prove "$@" ;;
     stack)           cmd_stack "$@" ;;
     mem|memory)      cmd_mem "$@" ;;
     config|cfg)         cmd_config "$@" ;;

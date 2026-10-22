@@ -40,8 +40,8 @@ package body Turbo.Project_View is
 
    overriding function Title (W : Project_Window) return Wide_Wide_String is
      (case W.Current is
-         when Folders => "Project: folders",
-         when Sources => "Project: sources");
+         when Folders => "Folders",
+         when Sources => "Sources");
 
    procedure Set_Open_Handler (W : in out Project_Window; H : Open_Handler) is
    begin
@@ -318,14 +318,22 @@ package body Turbo.Project_View is
             exit when K > N;
             declare
                Nd : constant Node := V.Nodes (K);
+               --  Not literals: the sources are read as Latin-1.
+               Open_Mark   : constant Wide_Wide_Character := Wide_Wide_Character'Val (16#25BE#);  --  ▾
+               Closed_Mark : constant Wide_Wide_Character := Wide_Wide_Character'Val (16#25B8#);  --  ▸
+               Ellipsis    : constant Wide_Wide_Character := Wide_Wide_Character'Val (16#2026#);  --  …
                Mark : constant Wide_Wide_String :=
                  (case Nd.Kind is
-                     when Folder | Group => (if Nd.Expanded then "▾ " else "▸ "),
+                     when Folder | Group => (if Nd.Expanded then Open_Mark else Closed_Mark) & " ",
                      when File           => "  ",
                      when Note           => "");
-               T : constant Wide_Wide_String :=
+               Full : constant Wide_Wide_String :=
                  [1 .. 2 * Nd.Depth => ' '] & Mark & Decode (To_String (Nd.Text))
                  & (if Nd.Kind = Folder then "/" else "");
+               --  A line wider than the window ends in an ellipsis.
+               T : constant Wide_Wide_String :=
+                 (if Full'Length <= I.W then Full
+                  else Full (Full'First .. Full'First + I.W - 2) & Ellipsis);
                A : constant Attribute :=
                  (if K = V.Sel and then Active then Theme.Msg_Selected
                   elsif Nd.Kind in Note | Group then Theme.Help_Heading

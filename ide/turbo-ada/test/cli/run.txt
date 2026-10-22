@@ -1,0 +1,7 @@
+# Run (F11, as Ctrl-F9): a native program is made, then run with its
+# output in the Output window.
+key F11
+wait-for the program ended 180
+expect I = 3  Total = 14
+expect Output
+quit

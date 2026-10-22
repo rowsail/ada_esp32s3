@@ -1,0 +1,14 @@
+# Project | Project file: the directory's .gpr files, the default marked;
+# another chosen is kept in .turbo_ada (run.sh checks); for a crate, a box
+# says alr build still builds what alire.toml names.
+key Alt-P
+key J
+expect Project files in
+expect demo.gpr  (default)
+expect demo_tests.gpr
+key Down
+key Enter
+wait-for alr build still builds 5
+expect demo_tests.gpr; alr build
+key Enter
+quit

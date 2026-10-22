@@ -103,6 +103,10 @@ git clone https://github.com/rowsail/ada_esp32s3.git
 cd ada_esp32s3
 ```
 
+Turbo Ada does the same from Project | Get ESP32-S3 SDK (into
+`~/ada_esp32s3` unless you choose another folder), then offers the toolchain
+set-up and the `export.sh` line for `~/.bashrc`.
+
 The book (*Bare-Metal Ada on the ESP32-S3*, PDF) is attached to the same
 release. Release assets have a stable redirect, so it needs no version either:
 

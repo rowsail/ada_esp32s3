@@ -8,6 +8,8 @@
 --                 libs/<lib>/test/<suite> (native: built for this machine)
 --    Standalone   an esp32-ada project (build.sh + app.gpr): esp32-ada <verb>
 --    Alire crate  any other alire.toml: alr build / alr run / ...
+--    GPR project  a .gpr and nothing else, outside the SDK: gprbuild,
+--                 gprclean and the program itself, with the GNAT on PATH
 --
 --  Every command is a template the Options | Commands dialog can change,
 --  stored with the rest of the options in .turbo_ada in the project (or SDK)
@@ -17,15 +19,17 @@ with Turbo.Dialogs;
 
 package Turbo.Projects is
 
-   type Project_Kind is (No_Project, SDK_Example, Standalone, Alire_Crate);
+   type Project_Kind is (No_Project, SDK_Example, Standalone, Alire_Crate, GPR_Project);
 
    type Action is
      (Act_Build, Act_Check, Act_Clean, Act_Flash, Act_Run, Act_Monitor,
       Act_Debug, Act_Kill_OpenOCD, Act_Memory, Act_Stack, Act_Analyze,
-      Act_Analyze_File, Act_Test, Act_Board, Act_Alr_Update, Act_Alr_Show, Act_Alr_Deps,
-      Act_Env);
+      Act_Analyze_File, Act_Prove, Act_Prove_File, Act_Test, Act_Board, Act_Alr_Update,
+      Act_Alr_Show, Act_Alr_Deps, Act_Env);
    --  Act_Analyze runs the static analyzer (adalang_analyzer) on the
-   --  project's own code, Act_Analyze_File on one file of it.
+   --  project's own code, Act_Analyze_File on one file of it.  Act_Prove
+   --  and Act_Prove_File run GNATprove (SPARK): in the SDK, its whole proof
+   --  pass or the proof project that lists the file (./x prove).
    --  Act_Check compiles one file for errors only (gprbuild -gnatc into a
    --  scratch tree); Act_Env prints the environment such a compile, and the
    --  language server, need (./x env, esp32-ada env, alr printenv).
@@ -101,8 +105,22 @@ package Turbo.Projects is
    --  the message window.
 
    function Esp32_Ada return String;
-   --  How to run esp32-ada: from PATH, else from $ESP32S3_ADA_SDK, else
-   --  from the SDK that is open or the one this IDE was built in.
+   --  How to run esp32-ada: from PATH, else from SDK_Path.
+
+   function Esp32_Ada_On_Path return Boolean;
+
+   --  The ESP32-S3 SDK
+
+   SDK_Repository : constant String := "rowsail/ada_esp32s3";
+   --  On GitHub: Project | Get ESP32-S3 SDK clones its main branch.
+
+   function SDK_Path return String;
+   --  The SDK to use: the open one, else $ESP32S3_ADA_SDK, else the one Get
+   --  ESP32-S3 SDK put somewhere (the user option sdk.path), else the one
+   --  this IDE was built in; "" when there is none.
+
+   function Is_SDK (Dir : String) return Boolean;
+   --  Dir is an SDK's root (x, examples/, crates/).
 
    function Debug_Server_Command return String;
    function Debug_Info_Command return String;
@@ -196,10 +214,18 @@ package Turbo.Projects is
    procedure Set_Option (Key, Value : String);
    --  Free-form keys (editor settings and the like) kept in the same file.
 
+   type Recent_Kind is (Recent_Files, Recent_Projects);
+
+   function Recent (Kind : Recent_Kind) return String_List;
+   procedure Add_Recent (Kind : Recent_Kind; Path : String);
+   --  File | Reopen and Project | Recent projects: full paths, newest
+   --  first, at most 12, kept in the user's options.
+
    function User_Option (Key : String; Default : String := "") return String;
    procedure Set_User_Option (Key, Value : String);
    --  The user's, not a project's (where New project last put one):
-   --  $XDG_CONFIG_HOME/turbo-ada/options, else ~/.config/turbo-ada/options
-   --  (%APPDATA%\turbo-ada\options on Windows).
+   --  $TURBO_ADA_CONFIG/options (for tests: XDG_CONFIG_HOME would move
+   --  alr's settings too), else $XDG_CONFIG_HOME/turbo-ada/options, else
+   --  ~/.config/turbo-ada/options (%APPDATA%\turbo-ada\options on Windows).
 
 end Turbo.Projects;

@@ -110,7 +110,7 @@ brown is brown.
   the project's `Format` package and formats the unsaved text, else by
   running `gnatformat` itself (on `PATH` or in `~/.alire/bin`, without the
   project). `./x setup-toolchain` installs it (`alr install gnatformat_bin`;
-  `./x setup-formatter` alone). One undo step takes it back.
+  `./x setup-formatter` alone). One undo step takes it back. Shift-F11.
 - **Clipboard** — Cut, Copy and Paste (Ctrl-X/C/V, Shift-Del, Ctrl-Ins,
   Shift-Ins), in the editor and in dialog fields, use the system clipboard
   through the desktop's helper: `wl-copy`/`wl-paste` on Wayland, `xclip` or
@@ -145,18 +145,40 @@ brown is brown.
   errors appear as you type, in red, with the message on the status line; F12
   goes to a definition (into the generated xtensa runtime too), Alt-F12 comes
   back, Shift-F12 lists uses, Ctrl-F12 lists the file's symbols, Ctrl-Space
-  completes, Ctrl-F1 shows the declaration, and Search | Rename symbol renames
-  across files. Without it, everything else works as before.
+  completes, Ctrl-F1 shows the declaration, Shift-F1 (and by itself, typing
+  `(` or `,`) puts the call's profile on the status line with the current
+  parameter marked, and Search | Rename symbol renames across files. Without
+  it, everything else works as before.
+- **SPARK** — Compile | Prove file and Prove project run GNATprove: what it
+  cannot prove comes back as warnings (medium/high) or notes (low) in the
+  Message window. In the SDK, `./x prove FILE` proves the file with the native
+  proof project that lists it (`libs/*/*_prove.gpr`, the host suites), and
+  `./x prove` runs the whole pass (`book/prove/prove.sh`). Elsewhere it is
+  `gnatprove -P` on the project (`-u` the file). Not installed: the IDE offers
+  `alr install gnatprove`.
+- **Search in files** — Search | Find in files: any text (case, whole word),
+  in files matching patterns (`*.adb *.ads ...`), in the project and, in the
+  SDK, its libraries; the matches go to the Message window. Replace in files
+  lists them, then changes them in editors and leaves them unsaved, one undo
+  step per file, to be looked over before File | Save all.
+- **Git** — Alt-G (Project | Git): status (Enter opens the file), diff of the
+  file or of everything (in the Output window), log, stage, commit (with
+  `git add -A` first unless unticked), pull `--ff-only`, push (asked first),
+  and `git pull` in the ESP32-S3 SDK. Outside a repository it offers
+  `git init`. Git never prompts for a password on the IDE's terminal.
 - **Run** — Ctrl-F9 makes and flashes, then reads the board's console into
   the Output window while the IDE stays on screen (Run | Monitor reads it
   without flashing). Shift-F2, or Space in the Output window, pauses the
   window so you can scroll back; the console is still read meanwhile, so
   nothing is lost and the board never stalls on output, and resuming adds
   what came. Esc (or Ctrl-C in the Output window, or Ctrl-F2) stops reading
-  (the board runs on). KDE keeps Ctrl-F1..F4 and Ctrl-F9 for itself: use
-  Alt-R R to run, or free them in System Settings | Shortcuts. The window keeps
-  the last 10000 lines. A native program's Run, and Run | GDB console (a
-  plain GDB prompt), hand the terminal over; Alt-F5 shows the user screen.
+  (the board runs on). KDE keeps Ctrl-F1..F4 and Ctrl-F9 for itself: F11
+  runs too, or free them in System Settings | Shortcuts. The window keeps
+  the last 10000 lines. A native program runs the same way: made, then its
+  output in the Output window (its input is empty; Esc ends it and anything
+  it started). Run | Run on user screen, for a program that reads the
+  keyboard, and Run | GDB console (a plain GDB prompt), hand the terminal
+  over; Alt-F5 shows the user screen.
   Flash and Kill OpenOCD are there separately.
 - **Debug** — Turbo C++'s integrated debugger, on the board or natively, with
   its keys:
@@ -183,15 +205,29 @@ brown is brown.
   arguments, so a suite whose `run.sh` passes some (or starts a server) runs
   differently under the debugger.
 - **Project** — open an SDK example or any folder, edit `alire.toml` and the
-  `.gpr`, see the board's flash/PSRAM sizes.
+  `.gpr`, see the board's flash/PSRAM sizes. File | Reopen and Project |
+  Recent projects list the files and projects opened last.
+- **GPR project** — outside the SDK, a folder with a `.gpr` and no
+  `alire.toml` is built with `gprbuild` (Clean: `gprclean`), and Run runs the
+  program it built. The GNAT and gprbuild on `PATH` are used, else Alire's
+  newest native ones. New project makes one ("Ada program, without
+  Alire").
 - **New project** — Project | New project asks for a name, a *Location* (the
   folder the project's own folder is made in; Browse... picks one, and one
   that is not there yet is made) and a kind: an ESP32-S3 application
   (`esp32-ada init`), an SDK example (`./x new`, always in `examples/`, offered
-  inside the SDK), or an Alire crate, a program or a library (`alr init --bin`
-  / `--lib`). The location starts as the one used last (kept in
+  inside the SDK), an Alire crate, a program or a library (`alr init --bin`
+  / `--lib`), or an Ada program without Alire (a `.gpr` and `src/`). The location starts as the one used last (kept in
   `~/.config/turbo-ada/options`), else beside the open project (or the SDK),
   else the folder the IDE was started in. The new project is opened.
+- **Get the SDK** — Project | Get ESP32-S3 SDK clones the SDK's `main` branch
+  from GitHub (`git clone`, so `git pull` there updates it) into
+  `ada_esp32s3` in a Location of your choice (default: your home folder), or
+  uses an SDK already there. The IDE remembers it (`sdk.path` in
+  `~/.config/turbo-ada/options`), so New project and `esp32-ada` find it from
+  anywhere; it then offers to run `setup-toolchain` and to add
+  `. ~/ada_esp32s3/export.sh >/dev/null` to `~/.bashrc`. New project offers it
+  when an ESP32-S3 application is wanted and no SDK can be found.
 - **Project file** — the `.gpr` is found by one rule, the same as `./x`'s and
   `esp32-ada`'s: `alire.toml`'s first `project-files` entry (else
   `<crate>.gpr`), else `app.gpr`, else the first `*.gpr` by name that is not a
@@ -207,7 +243,9 @@ brown is brown.
   project's environment. Once the program is built it lists the closure from
   `gprls --closure` (exactly the files it needs: 12 for the heartbeat example,
   of the hundreds in the libraries); before that, every source in the
-  projects' source directories. Enter on a file opens it; Ctrl-R re-reads.
+  projects' source directories. Enter on a file opens it (not a binary one,
+  such as `app.bin`); Ctrl-R re-reads. Lines too long for the window end in
+  an ellipsis.
 - **Project, Alire items** — Search crates (`alr search --crates`), Get crate (`alr get` into
   a directory you choose, then open it as the project), Install tool (`alr
   install`, e.g. `ada_language_server`), Add dependency (`alr with <crate>`,

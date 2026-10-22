@@ -10,9 +10,11 @@ with Turbo.Pipes;
 
 package Turbo.Console is
 
-   procedure Start (Command, Dir : String; Ok : out Boolean);
+   procedure Start (Command, Dir : String; Ok : out Boolean; Whole_Group : Boolean := False);
    --  Run Command through the shell in Dir; what it prints is the console.
-   --  Any console already running is stopped first.
+   --  Any console already running is stopped first.  Whole_Group: Stop
+   --  ends what the command started too (a program run here, not a cat
+   --  of the board's port).
 
    function Running return Boolean;
    --  Started and not stopped (the reader may have ended by itself: Ended).

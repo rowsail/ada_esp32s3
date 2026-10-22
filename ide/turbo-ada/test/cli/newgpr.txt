@@ -1,0 +1,21 @@
+# Project | New project, "Ada program, without Alire": a .gpr and src/,
+# then F9 builds it with gprbuild and F11 runs it in the Output window.
+key Alt-P
+key N
+wait-for Location: the folder it goes in 5
+key Alt-N
+key Ctrl-Y
+type hello_gpr
+key Alt-K
+key Down
+key Down
+key Down
+key Enter
+wait-for procedure Hello_Gpr is 10
+key F9
+wait-for Success 120
+key Enter
+key F11
+wait-for Hello from Hello_Gpr 60
+wait-for the program ended 10
+quit

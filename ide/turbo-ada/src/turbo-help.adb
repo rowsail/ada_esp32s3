@@ -15,6 +15,8 @@ package body Turbo.Help is
       & "  {F6}            next window      {F5}      zoom it" & LF
       & "  {Alt-1..9}      window by number {Alt-0}   window list" & LF
       & "  {Ctrl-F5}       move/size the window with the arrow keys" & LF
+      & "  File | Reopen, Project | Recent projects: the files and projects" & LF
+      & "                  opened last (in ~/.config/turbo-ada/options)." & LF
       & "  Project | Viewer (Window | Project): the project as a tree." & LF
       & "                  {Tab} switches Folders (the project directory)" & LF
       & "                  and Sources (by project: its own and each one it" & LF
@@ -36,10 +38,16 @@ package body Turbo.Help is
       & "  Compile | Analyze file / Analyze project: the static analyzer" & LF
       & "                  (adalang_analyzer); its findings are warnings in the" & LF
       & "                  Message window, Alt-F8 goes from one to the next" & LF
-      & "  {Ctrl-F9}       Run: make and flash, then the board's console in" & LF
-      & "                  the Output window (Run | Monitor: the console alone)" & LF
+      & "  {Ctrl-F9} {F11} Run: make and flash, then the board's console in" & LF
+      & "                  the Output window (Run | Monitor: the console alone);" & LF
+      & "                  a native program is made and run with its output" & LF
+      & "                  there too (Run | Run on user screen, for one that" & LF
+      & "                  reads the keyboard).  F11: where KDE takes Ctrl-F9." & LF
+      & "  Compile | Prove file / Prove project: GNATprove (SPARK); what it" & LF
+      & "                  cannot prove is a warning in the Message window" & LF
       & "  {Shift-F2}      pause the Output window (or Space in it); again resumes" & LF
-      & "  {Esc}           stop reading the console (or Ctrl-F2; the board runs on)" & LF
+      & "  {Esc}           stop the console (or Ctrl-F2; the board runs on), or" & LF
+      & "                  the native program running in the Output window" & LF
       & "  {Shift-F9}      Flash" & LF
       & "  {Alt-F5}        User screen: what the last program printed" & LF
       & "  {Esc}           in the Compiling box: cancel the build" & LF
@@ -71,6 +79,8 @@ package body Turbo.Help is
       & "  {F12}           go to the definition   {Alt-F12}   go back" & LF
       & "  {Shift-F12}     find uses              {Ctrl-F12}  symbol list" & LF
       & "  {Ctrl-Space}    complete the word      {Ctrl-F1}   help on it" & LF
+      & "  {Shift-F1}      parameter info: the call's profile on the status" & LF
+      & "                  line (it shows by itself after ( and ,)" & LF
       & "  Search | Rename symbol, Search | Diagnostics.  Options |" & LF
       & "  Language server turns it off or names the program." & LF
       & LF
@@ -83,6 +93,12 @@ package body Turbo.Help is
       & "  Set up ESP32-S3 toolchain gets the validated cross GNAT, native" & LF
       & "  GNAT and gprbuild and builds the xtensa-dynconfig plugin; the" & LF
       & "  first build of an SDK project checks for them and offers it." & LF
+      & LF
+      & "# Git" & LF
+      & "  {Alt-G} (Project | Git): status (Enter opens a file), diff of" & LF
+      & "  this file or all, log, stage, commit, pull, push (asked first)," & LF
+      & "  and git pull in the ESP32-S3 SDK.  Outside a repository it" & LF
+      & "  offers git init." & LF
       & LF
       & "# More" & LF
       & "  Help | Keyboard lists every editor key.");
@@ -142,6 +158,9 @@ package body Turbo.Help is
       & "  {Ctrl-L} {F3 in a find}    search again" & LF
       & "  {Ctrl-F6}                  switch between spec and body" & LF
       & "  Search | Grep              the word at the cursor, in the project" & LF
+      & "  Search | Find in files     any text, in the files you name (*.adb ...)" & LF
+      & "  Search | Replace in files  the same, changed in editors, not saved:" & LF
+      & "                             look them over, then File | Save all" & LF
       & LF
       & "# With the language server" & LF
       & "  {F12} / {Alt-F12}          go to definition / go back" & LF
@@ -150,6 +169,12 @@ package body Turbo.Help is
       & "  {Ctrl-Space}               complete: keep typing to narrow," & LF
       & "                             Enter or Tab to take it, Esc to leave" & LF
       & "  {Ctrl-F1}                  help on the word at the cursor" & LF
+      & "  {Shift-F1}                 parameter info (also after ( and ,)" & LF
+      & LF
+      & "# Other keys" & LF
+      & "  {F11}                      Run (as Ctrl-F9)" & LF
+      & "  {Shift-F11}                Edit | Format" & LF
+      & "  {Alt-G}                    Git" & LF
       & LF
       & "# Dialogs" & LF
       & "  {Tab} / {Shift-Tab}        next / previous control" & LF
@@ -169,14 +194,25 @@ package body Turbo.Help is
       & "                  esp32-ada init): esp32-ada <verb>." & LF
       & "  {Alire crate}   any other alire.toml: alr build / alr run /" & LF
       & "                  alr test / alr clean." & LF
+      & "  {GPR project}   outside the SDK, a .gpr and nothing else:" & LF
+      & "                  gprbuild, gprclean, and the program it built." & LF
+      & "                  The GNAT and gprbuild on PATH, else Alire's" & LF
+      & "                  newest native ones." & LF
       & LF
       & "Project | Open project opens another (in the SDK: an example, a" & LF
       & "host test, or Another folder...).  Project | New project makes" & LF
       & "one: a name, a Location (the folder its folder goes in; Browse..." & LF
       & "picks it, and one not there yet is made) and a kind: ESP32-S3" & LF
       & "application (esp32-ada init), SDK example (./x new, in examples/)," & LF
-      & "or Alire crate, a program or a library (alr init --bin / --lib)." & LF
+      & "Alire crate, a program or a library (alr init --bin / --lib), or" & LF
+      & "an Ada program without Alire (a .gpr and src/, for gprbuild)." & LF
       & "The Location is remembered for next time." & LF
+      & LF
+      & "Project | Get ESP32-S3 SDK clones the SDK (its main branch, from" & LF
+      & "GitHub) into ada_esp32s3 in a Location (default: your home), or" & LF
+      & "uses one already there, and remembers it for New project and" & LF
+      & "esp32-ada.  It offers to set up the toolchain and to add the" & LF
+      & "SDK's export.sh to ~/.bashrc.  git pull in it updates it." & LF
       & LF
       & "# Native and ESP32-S3" & LF
       & "The target follows the project.  SDK examples and esp32-ada" & LF
@@ -195,6 +231,9 @@ package body Turbo.Help is
       & "  {{profile_opt}}  ' -P PROFILE' when a profile is set" & LF
       & "  {{gpr_opt}}      ' --gpr FILE' when Project | Project file chose one" & LF
       & "  {{port}} {{console}} {{profile}} {{dir}} {{root}} {{file}}" & LF
+      & "  {{file_name}}    the file's simple name (gnatprove -u)" & LF
+      & "  {{exe}}          a native project's program, as built" & LF
+      & "  {{tools_path}}   Alire's native GNAT + gprbuild, when not on PATH" & LF
       & LF
       & "Commands run through /bin/sh -c (on Windows: bash -c when bash" & LF
       & "is on PATH, as it is under MSYS2 or Git Bash; cmd /c otherwise)" & LF
@@ -215,14 +254,17 @@ package body Turbo.Help is
       & "window, keeping the last 10000 lines.  Paused, the window stands" & LF
       & "still (to scroll back) while the console is still read, so" & LF
       & "nothing is lost and the board never waits; resuming adds what" & LF
-      & "came meanwhile.  Run for a native program, and Run | GDB console," & LF
-      & "take over the terminal: Turbo Ada steps aside and comes back when" & LF
-      & "they exit.  Alt-F5 shows their output again afterwards." & LF
+      & "came meanwhile.  Run for a native program does the same with its" & LF
+      & "output (its input is empty; Esc ends it and what it started)." & LF
+      & "Run | Run on user screen, and Run | GDB console, take over the" & LF
+      & "terminal: Turbo Ada steps aside and comes back when they exit." & LF
+      & "Alt-F5 shows their output again afterwards." & LF
       & LF
       & "# Desktop shortcuts" & LF
       & "A desktop may keep some keys for itself: KDE switches desktops" & LF
       & "with Ctrl-F1..F4 and shows its windows on Ctrl-F9, so the IDE" & LF
-      & "never sees them.  Use the menu (Alt-R R runs, Alt-R P resets)," & LF
+      & "never sees them.  F11 runs too; or use the menu (Alt-R R runs," & LF
+      & "Alt-R P resets)," & LF
       & "Esc to stop the console, or free the keys in System Settings |" & LF
       & "Shortcuts (KWin: Switch to Desktop N, Toggle Present Windows)." & LF
       & "The debugger keys (F7, F8, ...) keep the IDE on screen." & LF

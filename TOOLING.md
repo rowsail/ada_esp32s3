@@ -27,6 +27,7 @@ parts (language intelligence, the IDF-free build) already live in ALS + `./x`.
 ./x analyze [<lib>] [--style]     # static analysis, new findings only (see below)
 ./x analyze <example>|FILE.adb... # an example's own code, or some files: every finding
 ./x setup-analyzer                # install adalang_analyzer (alr; builds Libadalang)
+./x prove [FILE...]               # SPARK: the whole proof pass, or those files (see below)
 ./x stack   <example> [--top N] [--run]   # worst-case stack per call chain
 ./x mem     <example>             # section sizes against the linker's bounds
 ./x config  <example> [show|--json]   # show flash/PSRAM size (the example's board.ads)
@@ -101,6 +102,17 @@ builds Libadalang, so the first install takes a while) and is not part of the
 pinned toolchain, so `./x test` cannot assume it. That is why it has its own
 verb; `./x setup-toolchain` offers to install it. `tools/analyzer-baselines/README.md` explains which checks are enabled
 and why each folded-in finding is not a bug.
+
+### SPARK proof
+
+The SPARK units are proved against native projects that list their sources
+(`libs/*/*_prove.gpr` and the host suites' projects), so there is no cross
+target in the way. `./x prove` runs the whole pass (`book/prove/prove.sh`,
+several minutes); `./x prove FILE.adb` finds the project that lists the file
+and proves that file alone with `gnatprove -u`, in seconds. Turbo Ada's
+Compile | Prove file and Prove project run these, and put what GNATprove
+could not prove in the Message window. GNATprove comes from Alire
+(`alr install gnatprove`, into `~/.alire/bin`).
 
 ### Starting your own project
 

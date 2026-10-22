@@ -36,6 +36,7 @@ package body Turbo.Menus is
    File_Items : aliased constant Item_List :=
      [I ("~N~ew", Cmd_New),
       I ("~O~pen...", Cmd_Open, "F3"),
+      I ("~R~eopen...", Cmd_Reopen),
       I ("~S~ave", Cmd_Save, "F2"),
       I ("Save ~a~s...", Cmd_Save_As),
       I ("Save a~l~l", Cmd_Save_All),
@@ -54,9 +55,10 @@ package body Turbo.Menus is
       I ("~P~aste", Cmd_Paste, "Shift-Ins"),
       I ("C~l~ear", Cmd_Clear, "Ctrl-Del"),
       I ("~S~elect all", Cmd_Select_All, "Ctrl-A"),
-      I ("~F~ormat", Cmd_Format),
+      I ("~F~ormat", Cmd_Format, "Shift-F11"),
       Sep,
       I ("Complete ~w~ord", Cmd_Complete, "Ctrl-Space"),
+      I ("Parameter ~i~nfo", Cmd_Signature, "Shift-F1"),
       I ("S~h~ow clipboard", Cmd_Show_Clipboard)];
 
    Search_Items : aliased constant Item_List :=
@@ -76,10 +78,13 @@ package body Turbo.Menus is
       I ("D~i~agnostics", Cmd_Diagnostics),
       Sep,
       I ("Spec/b~o~dy", Cmd_Find_Spec_Body, "Ctrl-F6"),
-      I ("Gr~e~p word in project", Cmd_Grep)];
+      I ("Gr~e~p word in project", Cmd_Grep),
+      I ("Find in fi~l~es...", Cmd_Find_In_Files),
+      I ("Repla~c~e in files...", Cmd_Replace_In_Files)];
 
    Run_Items : aliased constant Item_List :=
-     [I ("~R~un", Cmd_Run, "Ctrl-F9"),
+     [I ("~R~un", Cmd_Run, "Ctrl-F9/F11"),
+      I ("Run on ~u~ser screen", Cmd_Run_User_Screen),
       I ("~P~rogram reset", Cmd_Program_Reset, "Ctrl-F2"),
       I ("P~a~use output", Cmd_Pause_Output, "Shift-F2"),
       I ("~G~o to cursor", Cmd_Go_To_Cursor, "F4"),
@@ -117,12 +122,16 @@ package body Turbo.Menus is
       I ("~S~tack usage", Cmd_Stack),
       I ("~A~nalyze file", Cmd_Analyze_File),
       I ("Analyze ~p~roject", Cmd_Analyze),
+      I ("Pro~v~e file", Cmd_Prove_File),
+      I ("Prove pro~j~ect", Cmd_Prove),
       I ("~T~est", Cmd_Test)];
 
    Project_Items : aliased constant Item_List :=
      [I ("~O~pen project...", Cmd_Open_Project),
+      I ("~R~ecent projects...", Cmd_Recent_Projects),
       I ("~N~ew project...", Cmd_New_Project),
       I ("~V~iewer", Cmd_Project_Window),
+      I ("G~i~t...", Cmd_Git, "Alt-G"),
       Sep,
       I ("Edit ~m~anifest (alire.toml)", Cmd_Edit_Manifest),
       I ("Edit G~P~R file", Cmd_Edit_Gpr),
@@ -138,6 +147,7 @@ package body Turbo.Menus is
       I ("~U~pdate dependencies", Cmd_Alr_Update),
       I ("Sho~w~ crate", Cmd_Alr_Show),
       I ("~F~etch Alire (alr)...", Cmd_Alr_Fetch),
+      I ("Get ESP32-S3 SD~K~...", Cmd_Get_SDK),
       I ("Set up ~E~SP32-S3 toolchain", Cmd_Setup_Toolchain),
       Sep,
       I ("~I~nformation...", Cmd_Project_Info)];

@@ -1,3 +1,4 @@
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with GNAT.Expect;
 with GNAT.OS_Lib;
@@ -15,11 +16,12 @@ package body Turbo.Console is
    Pause  : Boolean := False;
    Hold   : Line_Vectors.Vector;
    Done   : Boolean := False;   --  the reader ended and all was taken
+   Group  : Boolean := False;   --  stop the command's whole process group
 
    Max_Held : constant := 20_000;
    --  Past this, a long pause keeps the newest lines.
 
-   procedure Start (Command, Dir : String; Ok : out Boolean) is
+   procedure Start (Command, Dir : String; Ok : out Boolean; Whole_Group : Boolean := False) is
       Args : GNAT.OS_Lib.Argument_List :=
         [new String'("-c"), new String'("cd " & Shell_Quote (Dir) & " && " & Command)];
    begin
@@ -30,6 +32,7 @@ package body Turbo.Console is
       end loop;
       Up := Ok;
       Done := False;
+      Group := Whole_Group;
    end Start;
 
    function Running return Boolean is (Up);
@@ -38,6 +41,22 @@ package body Turbo.Console is
 
    procedure Stop is
    begin
+      if Up and then Group then
+         --  The shell's children too (alr run's program, a run.sh's): the
+         --  spawned shell leads its own process group.
+         declare
+            Pid  : constant String :=
+              Ada.Strings.Fixed.Trim (GNAT.Expect.Process_Id'Image (GNAT.Expect.Get_Pid (P)), Ada.Strings.Left);
+            Args : GNAT.OS_Lib.Argument_List :=
+              [new String'("-c"), new String'("kill -TERM -- -" & Pid & " 2>/dev/null")];
+            Ignore : Integer;
+         begin
+            Ignore := GNAT.OS_Lib.Spawn ("/bin/sh", Args);
+            for A of Args loop
+               GNAT.OS_Lib.Free (A);
+            end loop;
+         end;
+      end if;
       if Up then
          Kill (P, Q, Up, 0.0);
       end if;

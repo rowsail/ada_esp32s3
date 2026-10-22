@@ -20,6 +20,10 @@ CLI="$HERE/../../bin/tada-cli"
 # A scratch Alire crate (the language server off: nothing in the background).
 W="$(mktemp -d)"
 trap 'rm -rf "$W"' EXIT
+# The user's options (recent files and projects, the SDK) go here, not in
+# the real ~/.config.  Not XDG_CONFIG_HOME: that would move alr's settings
+# (its toolchain choice) too.
+export TURBO_ADA_CONFIG="$W/config"
 mkdir -p "$W/src"
 cp demo.adb "$W/src/"
 cat > "$W/alire.toml" <<'TOML'
@@ -85,15 +89,54 @@ else
     echo "project viewer: skipped (no alr)"
 fi
 
+# Project | Project file: a second .gpr, chosen; the choice is kept and used.
+sed 's/project Demo is/project Demo_Tests is/; s/end Demo;/end Demo_Tests;/' \
+    "$W/demo.gpr" > "$W/demo_tests.gpr"
+echo "lsp.enabled=0" > "$W/.turbo_ada"
+"$CLI" -C "$W" ui src/demo.adb --script "$HERE/gprfile.txt"
+grep -qx "gpr=$W/demo_tests.gpr" "$W/.turbo_ada"
+"$CLI" -C "$W" project info | grep -q "^gpr: *$W/demo_tests.gpr"
+rm "$W/demo_tests.gpr"
+echo "lsp.enabled=0" > "$W/.turbo_ada"
+echo "project file: ok"
+
+# Search in files, Replace in files, File | Reopen.
+echo "lsp.enabled=0" > "$W/.turbo_ada"
+"$CLI" -C "$W" ui src/demo.adb --script "$HERE/search.txt"
+echo "search in files: ok"
+
+# Project | New project: an Ada program without Alire (a GPR project), built
+# and run.  Its own folder, outside the crate.
+G="$(mktemp -d)"
+trap 'rm -rf "$W" "$G"' EXIT
+"$CLI" -C "$G" ui --script "$HERE/newgpr.txt"
+[ -f "$G/hello_gpr/hello_gpr.gpr" ] && [ -x "$G/hello_gpr/bin/hello_gpr" ]
+"$CLI" -C "$G/hello_gpr" project info | grep -q "^kind: *GPR project"
+echo "gpr project: ok"
+
 # Project | New project: an esp32-ada project in a folder made for it (the
 # remembered location goes in a scratch config, not the user's).  Outside
 # the crate above, or the IDE would start in that.
 N="$(mktemp -d)"
-trap 'rm -rf "$W" "$N"' EXIT
-XDG_CONFIG_HOME="$W/config" "$CLI" -C "$N" ui --script "$HERE/newproject.txt"
+trap 'rm -rf "$W" "$G" "$N"' EXIT
+# A fresh config: New project would start in the location the GPR test used.
+TURBO_ADA_CONFIG="$W/config-new" "$CLI" -C "$N" ui --script "$HERE/newproject.txt"
 [ -f "$N/boards/blinky/app.gpr" ] && [ -f "$N/boards/blinky/src/main.adb" ]
-grep -qx "new.location=$N/boards" "$W/config/turbo-ada/options"
+grep -qx "new.location=$N/boards" "$W/config-new/options"
 echo "new project: ok"
+
+# Project | Get ESP32-S3 SDK, with no network: the Location holds an SDK
+# already (a link to this one), so it is used, not cloned.  Toolchain: no;
+# ~/.bashrc (a scratch HOME): yes.
+mkdir -p "$N/home" "$N/sdks"
+ln -s "$(cd "$HERE/../../../.." && pwd)" "$N/sdks/ada_esp32s3"
+HOME="$N/home" TURBO_ADA_CONFIG="$W/config2" "$CLI" -C "$N" ui \
+    -e "key Alt-P" -e "key K" -e "wait-for Get ESP32-S3 SDK" -e "key Alt-L" -e "key Ctrl-Y" \
+    -e "type $N/sdks" -e "key Enter" -e "wait-for Use that one?" -e "key Enter" \
+    -e "wait-for Set up its toolchain now?" -e "key Esc" -e "wait-for bashrc" -e "key Enter" -e quit
+grep -qx "sdk.path=$N/sdks/ada_esp32s3" "$W/config2/options"
+grep -qx ". $N/sdks/ada_esp32s3/export.sh >/dev/null" "$N/home/.bashrc"
+echo "get sdk: ok"
 
 # Compile | Analyze file, through alr's environment (an Alire crate).
 if command -v alr >/dev/null && { command -v adalang_analyzer >/dev/null \
@@ -121,6 +164,9 @@ if command -v alr >/dev/null; then
     echo "lsp.enabled=0" > "$W/.turbo_ada"     # without the first test's breakpoint
     "$CLI" -C "$W" ui src/demo.adb --script "$HERE/ui-debug.txt"
     echo "ui debug: ok"
+    echo "lsp.enabled=0" > "$W/.turbo_ada"
+    "$CLI" -C "$W" ui src/demo.adb --script "$HERE/run.txt"
+    echo "run in the output window: ok"
 else
     echo "ui debug: skipped (no alr for the IDE's Make)"
 fi

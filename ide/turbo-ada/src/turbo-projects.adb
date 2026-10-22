@@ -10,6 +10,7 @@ with Ada.Strings.Maps;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with GNAT.OS_Lib;
+with Turbo.Pipes;
 with Turbo.Term;
 
 package body Turbo.Projects is
@@ -64,7 +65,7 @@ package body Turbo.Projects is
 
    function Target return Target_Kind is
      (if (The_Kind = SDK_Example and then The_Suite /= Null_Unbounded_String)
-        or else The_Kind = Alire_Crate or else The_Kind = No_Project
+        or else The_Kind in Alire_Crate | GPR_Project | No_Project
       then Target_Native else Target_Esp32s3);
 
    function Target_Image return String is
@@ -82,7 +83,8 @@ package body Turbo.Projects is
            (if The_Suite /= Null_Unbounded_String then "ESP32-S3 SDK host test (native)"
             else "ESP32-S3 SDK example"),
          when Standalone  => "esp32-ada project",
-         when Alire_Crate => "Alire crate");
+         when Alire_Crate => "Alire crate",
+         when GPR_Project => "GPR project");
 
    function Name return String is
    begin
@@ -351,12 +353,24 @@ package body Turbo.Projects is
       return "";
    end Suite_Of;
 
+   function Has_Gpr (D : String) return Boolean is
+      S : Search_Type;
+   begin
+      Start_Search (S, D, "*.gpr", [Ordinary_File => True, others => False]);
+      return Found : constant Boolean := More_Entries (S) do
+         End_Search (S);
+      end return;
+   exception
+      when others => return False;
+   end Has_Gpr;
+
    procedure Detect (Start_Dir : String) is
       Start      : constant String := Full_Name (Start_Dir);
       D          : Unbounded_String := To_Unbounded_String (Start);
       SDK        : Unbounded_String;
       Nearest    : Unbounded_String;      --  innermost standalone/crate
       Near_Kind  : Project_Kind := No_Project;
+      Gpr_Dir    : Unbounded_String;      --  innermost folder with only a .gpr
    begin
       Reset;
       loop
@@ -372,6 +386,8 @@ package body Turbo.Projects is
                elsif Exists_File (Compose (Here, "alire.toml")) then
                   Nearest := D;
                   Near_Kind := Alire_Crate;
+               elsif Gpr_Dir = Null_Unbounded_String and then Has_Gpr (Here) then
+                  Gpr_Dir := D;
                end if;
             end if;
             if Is_SDK_Root (Here) then
@@ -429,6 +445,12 @@ package body Turbo.Projects is
          The_Kind := Near_Kind;
          The_Root := Nearest;
          The_Dir := Nearest;
+      elsif Gpr_Dir /= Null_Unbounded_String then
+         --  Outside the SDK only: there every library and example has a
+         --  .gpr, and is built the SDK's way.
+         The_Kind := GPR_Project;
+         The_Root := Gpr_Dir;
+         The_Dir := Gpr_Dir;
       else
          The_Kind := No_Project;
          The_Root := To_Unbounded_String (Start);
@@ -475,17 +497,34 @@ package body Turbo.Projects is
       when others => return "";
    end Own_SDK;
 
+   function Is_SDK (Dir : String) return Boolean is
+     (Dir /= "" and then Is_SDK_Root (Dir));
+
+   function SDK_Path return String is
+      Env : constant String :=
+        (if Ada.Environment_Variables.Exists ("ESP32S3_ADA_SDK")
+         then Ada.Environment_Variables.Value ("ESP32S3_ADA_SDK") else "");
+      Got : constant String := User_Option ("sdk.path");
+   begin
+      if The_Kind = SDK_Example then
+         return Root;
+      elsif Is_SDK (Env) then
+         return Env;
+      elsif Is_SDK (Got) then
+         return Got;
+      end if;
+      return Own_SDK;
+   end SDK_Path;
+
+   function Esp32_Ada_On_Path return Boolean is
+     (GNAT.OS_Lib.Locate_Exec_On_Path ("esp32-ada") /= null);
+
    function Esp32_Ada return String is
    begin
-      if GNAT.OS_Lib.Locate_Exec_On_Path ("esp32-ada") /= null then
+      if Esp32_Ada_On_Path then
          return "esp32-ada";
-      elsif Ada.Environment_Variables.Exists ("ESP32S3_ADA_SDK") then
-         return Ada.Environment_Variables.Value ("ESP32S3_ADA_SDK")
-           & "/tools/bin/esp32-ada";
-      elsif The_Kind = SDK_Example then
-         return Root & "/tools/bin/esp32-ada";
-      elsif Own_SDK /= "" then
-         return Own_SDK & "/tools/bin/esp32-ada";
+      elsif SDK_Path /= "" then
+         return SDK_Path & "/tools/bin/esp32-ada";
       end if;
       return "esp32-ada";
    end Esp32_Ada;
@@ -555,11 +594,29 @@ package body Turbo.Projects is
          when Act_Stack        => "Stack",
          when Act_Analyze      => "Analyze project",
          when Act_Analyze_File => "Analyze file",
+         when Act_Prove        => "Prove project",
+         when Act_Prove_File   => "Prove file",
          when Act_Test         => "Test",
          when Act_Board        => "Board",
          when Act_Alr_Update   => "alr update",
          when Act_Alr_Show     => "alr show",
          when Act_Alr_Deps     => "alr with");
+
+   function Analyze_File_Command (Setup : String) return String is
+   --  The analyzer reports on the whole project whatever files it is given
+   --  (as x's analyze_files knows), so keep only the file's findings: each
+   --  "/abs/file.adb:L:C: ..." line and the indented lines under it.
+   --  Status 1 is "findings", not a failure.
+     (Setup & "o=$(mktemp); adalang_analyzer -P{gpr} --recommended {file} > ""$o"" 2>&1; rc=$?; "
+      & "awk -v f={file} '/^\// { g = $0; sub(/:[0-9]+:[0-9]+:.*/, """", g); k = (g == f) } "
+      & "/^\// || /^  / { if (k) { print; if (/^\//) n++ }; next } { k = 0 } "
+      & "END { print n + 0 "" finding(s)"" }' ""$o""; rm -f ""$o""; [ $rc -le 1 ]");
+
+   function Prove_Command (Extra : String := "") return String is
+     ("PATH=""$HOME/.alire/bin:$PATH"" gnatprove -P {gpr} --level=1 -j0 --output=oneline"
+      & " --report=fail" & Extra & " -cargs -gnatef");
+   --  GNATprove (alr install gnatprove puts it in ~/.alire/bin): every
+   --  unproved check as a message, with full paths.
 
    Check_Template : constant String :=
      "gprbuild -c -u -f -q -P {gpr} {file} --relocate-build-tree={tmp} --root-dir={fsroot} -cargs -gnatc -gnatef";
@@ -580,6 +637,8 @@ package body Turbo.Projects is
                when Act_Test    => "./x --machine test host",
                when Act_Analyze => "./x --machine analyze",
                when Act_Analyze_File => "./x --machine analyze {file}{gpr_opt}",
+               when Act_Prove   => "./x --machine prove",
+               when Act_Prove_File => "./x --machine prove {file}",
                when others      => "");
       end if;
       case The_Kind is
@@ -599,6 +658,8 @@ package body Turbo.Projects is
                   when Act_Stack        => "./x --machine stack {example} --top 20",
                   when Act_Analyze      => "./x --machine analyze {example}{gpr_opt}",
                   when Act_Analyze_File => "./x --machine analyze {file}{gpr_opt}",
+                  when Act_Prove        => "./x --machine prove",
+                  when Act_Prove_File   => "./x --machine prove {file}",
                   when Act_Test         => "./x --machine test host",
                   when Act_Board        => "./x --machine config {example}",
                   when Act_Alr_Update   => "alr -n update",
@@ -643,12 +704,33 @@ package body Turbo.Projects is
                      "E=""$(alr -n printenv --unix)"" || exit 2; eval ""$E""; "
                      & "adalang_analyzer -P{gpr} --recommended || [ $? -eq 1 ]",
                   when Act_Analyze_File =>
+                     Analyze_File_Command ("E=""$(alr -n printenv --unix)"" || exit 2; eval ""$E""; "),
+                  when Act_Prove      =>
+                     "E=""$(alr -n printenv --unix)"" || exit 2; eval ""$E""; " & Prove_Command,
+                  when Act_Prove_File =>
                      "E=""$(alr -n printenv --unix)"" || exit 2; eval ""$E""; "
-                     & "adalang_analyzer -P{gpr} --recommended {file} || [ $? -eq 1 ]",
+                     & Prove_Command (" -u {file_name}"),
                   when Act_Alr_Update => "alr -n update",
                   when Act_Alr_Show   => "alr -n show",
                   when Act_Alr_Deps   => "alr -n with",
                   when others         => "");
+         when GPR_Project =>
+            --  The GNAT and gprbuild on PATH; Run is the program it built.
+            return
+              (case A is
+                  when Act_Build        => "PATH=""{tools_path}$PATH"" gprbuild -p -P {gpr}",
+                  when Act_Check        => Check_Template,
+                  when Act_Env          => "printf 'PATH=%s\n' ""{tools_path}$PATH""",
+                  when Act_Clean        => "PATH=""{tools_path}$PATH"" gprclean -r -P {gpr}",
+                  when Act_Run          => "{exe}",
+                  when Act_Analyze      =>
+                     "PATH=""{tools_path}$PATH"" adalang_analyzer -P{gpr} --recommended || [ $? -eq 1 ]",
+                  when Act_Analyze_File =>
+                     Analyze_File_Command ("PATH=""{tools_path}$PATH""; export PATH; "),
+                  when Act_Prove        => "PATH=""{tools_path}$PATH"" " & Prove_Command,
+                  when Act_Prove_File   =>
+                     "PATH=""{tools_path}$PATH"" " & Prove_Command (" -u {file_name}"),
+                  when others           => "");
          when No_Project =>
             return "";
       end case;
@@ -677,6 +759,47 @@ package body Turbo.Projects is
         & Replace_All (S (K + Key'Length .. S'Last), Key, By);
    end Replace_All;
 
+   function Native_Tools_Path return String is
+   --  "" when gprbuild is on PATH; else Alire's newest native GNAT and
+   --  gprbuild (alr toolchain --select puts them in its toolchains folder),
+   --  as "dir:dir:" to go before $PATH.
+      Home : constant String :=
+        (if Ada.Environment_Variables.Exists ("HOME") then Ada.Environment_Variables.Value ("HOME") else "");
+      Base : constant String := Home & "/.local/share/alire/toolchains";
+
+      function Newest (Prefix : String) return String is
+         S    : Search_Type;
+         E    : Directory_Entry_Type;
+         Best : Unbounded_String;
+      begin
+         Start_Search (S, Base, Prefix & "*", [Directory => True, others => False]);
+         while More_Entries (S) loop
+            Get_Next_Entry (S, E);
+            if Simple_Name (E) > To_String (Best)
+              and then Exists_File (Compose (Compose (Full_Name (E), "bin"), "gprbuild"))
+                       = (Prefix = "gprbuild_")
+            then
+               Best := To_Unbounded_String (Simple_Name (E));
+            end if;
+         end loop;
+         End_Search (S);
+         return (if Best = Null_Unbounded_String then "" else Base & "/" & To_String (Best) & "/bin:");
+      exception
+         when others => return "";
+      end Newest;
+   begin
+      declare
+         P : GNAT.OS_Lib.String_Access := GNAT.OS_Lib.Locate_Exec_On_Path ("gprbuild");
+         On_Path : constant Boolean := P /= null;
+      begin
+         GNAT.OS_Lib.Free (P);
+         if On_Path or else Home = "" or else not Exists_Dir (Base) then
+            return "";
+         end if;
+      end;
+      return Newest ("gnat_native_") & Newest ("gprbuild_");
+   end Native_Tools_Path;
+
    function Command_For (A : Action; File : String := "") return String is
       T : constant String := Template (A);
       R : Unbounded_String;
@@ -704,8 +827,13 @@ package body Turbo.Projects is
       then
          return "";
       end if;
-      if Ada.Strings.Fixed.Index (T, "{file}") > 0 and then File = "" then
+      if (Ada.Strings.Fixed.Index (T, "{file}") > 0 or else Ada.Strings.Fixed.Index (T, "{file_name}") > 0)
+        and then File = ""
+      then
          return "";
+      end if;
+      if Ada.Strings.Fixed.Index (T, "{exe}") > 0 and then Native_Executable = "" then
+         return "";                --  not built yet
       end if;
       R := To_Unbounded_String (T);
       Sub ("{port_opt}", (if Port = "" then "" else " -p " & Port));
@@ -722,7 +850,12 @@ package body Turbo.Projects is
       Sub ("{fsroot}", FS_Root);
       Sub ("{dir}", Dir);
       Sub ("{root}", Root);
+      Sub ("{file_name}", (if File = "" then "" else Simple_Name (File)));
       Sub ("{file}", File);
+      Sub ("{tools_path}", (if Ada.Strings.Fixed.Index (T, "{tools_path}") > 0
+                            then Native_Tools_Path else ""));
+      Sub ("{exe}", (if Ada.Strings.Fixed.Index (T, "{exe}") > 0
+                     then Turbo.Pipes.Shell_Quote (Native_Executable) else ""));
       return To_String (R);
    end Command_For;
 
@@ -1305,7 +1438,9 @@ package body Turbo.Projects is
       function Env (N : String) return String is
         (if Ada.Environment_Variables.Exists (N) then Ada.Environment_Variables.Value (N) else "");
    begin
-      if Env ("XDG_CONFIG_HOME") /= "" then
+      if Env ("TURBO_ADA_CONFIG") /= "" then
+         return Env ("TURBO_ADA_CONFIG") & "/options";
+      elsif Env ("XDG_CONFIG_HOME") /= "" then
          return Env ("XDG_CONFIG_HOME") & "/turbo-ada/options";
       elsif Env ("APPDATA") /= "" then
          return Env ("APPDATA") & "\turbo-ada\options";
@@ -1351,16 +1486,14 @@ package body Turbo.Projects is
       return (if M.Contains (Key) then M.Element (Key) else Default);
    end User_Option;
 
-   procedure Set_User_Option (Key, Value : String) is
+   procedure Write_User_Options (M : Option_Maps.Map) is
       use Ada.Text_IO;
       Name : constant String := User_Options_File;
-      M    : Option_Maps.Map := Read_User_Options;
       F    : File_Type;
    begin
       if Name = "" then
          return;
       end if;
-      M.Include (Key, Value);
       Create_Path (Containing_Directory (Name));
       Create (F, Out_File, Name);
       Put_Line (F, "# Turbo Ada: the user's options (safe to delete)");
@@ -1373,6 +1506,52 @@ package body Turbo.Projects is
          if Is_Open (F) then
             Close (F);
          end if;
+   end Write_User_Options;
+
+   procedure Set_User_Option (Key, Value : String) is
+      M : Option_Maps.Map := Read_User_Options;
+   begin
+      M.Include (Key, Value);
+      Write_User_Options (M);
    end Set_User_Option;
+
+   Recent_Max : constant := 12;
+
+   function Recent_Key (Kind : Recent_Kind; N : Positive) return String is
+     ((case Kind is when Recent_Files => "recent.file.", when Recent_Projects => "recent.project.")
+      & Ada.Strings.Fixed.Trim (N'Image, Ada.Strings.Left));
+
+   function Recent (Kind : Recent_Kind) return String_List is
+      M : constant Option_Maps.Map := Read_User_Options;
+      R : String_List;
+   begin
+      for N in 1 .. Recent_Max loop
+         exit when not M.Contains (Recent_Key (Kind, N));
+         R.Append (M.Element (Recent_Key (Kind, N)));
+      end loop;
+      return R;
+   end Recent;
+
+   procedure Add_Recent (Kind : Recent_Kind; Path : String) is
+      Old : constant String_List := Recent (Kind);
+      M   : Option_Maps.Map := Read_User_Options;
+      N   : Positive := 1;
+   begin
+      if Path = "" or else (not Old.Is_Empty and then Old.First_Element = Path) then
+         return;                  --  nothing to change: no write
+      end if;
+      M.Include (Recent_Key (Kind, 1), Path);
+      for P of Old loop
+         exit when N = Recent_Max;
+         if P /= Path then
+            N := N + 1;
+            M.Include (Recent_Key (Kind, N), P);
+         end if;
+      end loop;
+      for K in N + 1 .. Recent_Max loop
+         M.Exclude (Recent_Key (Kind, K));
+      end loop;
+      Write_User_Options (M);
+   end Add_Recent;
 
 end Turbo.Projects;

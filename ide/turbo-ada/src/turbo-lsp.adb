@@ -608,6 +608,8 @@ package body Turbo.LSP is
             &        """resolveSupport"":{""properties"":[""documentation"",""detail""]}}},"
             &     """documentSymbol"":{""hierarchicalDocumentSymbolSupport"":true},"
             &     """definition"":{},""references"":{},""rename"":{},"
+            &     """signatureHelp"":{""signatureInformation"":{""parameterInformation"":"
+            &        "{""labelOffsetSupport"":true},""activeParameterSupport"":true}},"
             &     """publishDiagnostics"":{}}}"
             & ",""initializationOptions"":{""ada"":{""projectFile"":"
             & Quote (Project_File) & "}}}",
