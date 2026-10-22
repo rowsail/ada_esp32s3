@@ -492,7 +492,9 @@ cmd_debug () {
     #  back to tools/.jtag_serial from the last flash, or no pin for a single board).
     #  --smp -> ESP_RTOS=hwthread so BOTH cores show up as gdb threads (essential
     #  for a dual-core hang: one core may have crashed while the other idles).
-    ESPPORT="$port" ${smp:+ESP_RTOS=hwthread} bash "$ROOT/tools/openocd.sh" >"$ocd_log" 2>&1 &
+    #  (Not "${smp:+ESP_RTOS=hwthread} bash": an expanded word is no assignment.)
+    [ -n "$smp" ] && export ESP_RTOS=hwthread
+    ESPPORT="$port" bash "$ROOT/tools/openocd.sh" >"$ocd_log" 2>&1 &
     ocd_pid=$!
     #  Expanded NOW: the trap runs at script exit, after this function's
     #  locals are gone (set -u would fail on them, and OpenOCD -- holding the
@@ -536,7 +538,8 @@ cmd_debug_server () {   # [-p PORT] [--smp] -- OpenOCD in the foreground until k
     #  S3's two hardware breakpoints, and a third is accepted yet never fires.
     #  The flash probe that needs fails on a core idling in WAITI, so halt it at
     #  reset first -- the IDE resets it again anyway.
-    ESPPORT="$port" ESP_FLASH_SIZE="${ESP_FLASH_SIZE:-auto}" ${smp:+ESP_RTOS=hwthread} \
+    [ -n "$smp" ] && export ESP_RTOS=hwthread
+    ESPPORT="$port" ESP_FLASH_SIZE="${ESP_FLASH_SIZE:-auto}" \
         exec bash "$ROOT/tools/openocd.sh" -c "init" -c "reset halt"
 }
 debug_info () {   # $1 = project dir -> GDB=, ELF=, MAIN= lines

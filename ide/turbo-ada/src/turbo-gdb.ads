@@ -92,13 +92,16 @@ package Turbo.GDB is
       Func     : Ada.Strings.Unbounded.Unbounded_String;
       Addr     : Ada.Strings.Unbounded.Unbounded_String;
       Detail   : Ada.Strings.Unbounded.Unbounded_String;  --  a signal's meaning, an exit code
+      Thread   : Ada.Strings.Unbounded.Unbounded_String;  --  GDB's thread-id; on the board, a core
    end record;
 
    procedure Poll;
    --  Take in what GDB, the server and the console sent.
 
    function Take_Stop (S : out Stop_Info) return Boolean;
-   --  True once for each stop of the target (with where).
+   --  True once for each stop of the target (with where).  On the board
+   --  (both cores as GDB threads) a stop that GDB put on core 1 is moved to
+   --  core 0: the steps are core 0's, and core 1 is mostly idle.
 
    package String_Vectors is new Ada.Containers.Indefinite_Vectors (Positive, String);
 

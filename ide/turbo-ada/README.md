@@ -188,9 +188,11 @@ brown is brown.
   evaluate/modify (Ada assignment, so records too), Alt-F4 inspect (the value
   laid out in full), Ctrl-F3 call stack. With no session, F7/F8/F4 (or Ctrl-F9
   with breakpoints set) build and flash the program, start OpenOCD
-  (`./x debug-server`) and GDB in its machine interface on the ELF
+  (`./x debug-server --smp`: both cores, each a GDB thread) and GDB in its
+  machine interface on the ELF
   (`./x debug-info`), reset the board and run it to the Ada main or the
-  cursor; the cyan bar shows where it stopped, and the board's console goes
+  cursor; the cyan bar shows where it stopped (on core 0: a stop GDB
+  reports on core 1, idling in the runtime, is moved to core 0), and the board's console goes
   to the Output window (Alt-F5). While it runs, F7/F8/F4 pause it. OpenOCD's
   flash breakpoints are on, so breakpoints in flash code are not limited to
   the chip's two hardware ones (they are patched into flash and taken out

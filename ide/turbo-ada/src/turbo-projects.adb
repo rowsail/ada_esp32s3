@@ -543,7 +543,7 @@ package body Turbo.Projects is
 
    function Debug_Server_Command return String is
      (if not Has_Board then ""
-      else (if The_Kind = Standalone then Esp32_Ada else "./x") & " debug-server"
+      else (if The_Kind = Standalone then Esp32_Ada else "./x") & " debug-server --smp"
            & (if Port = "" then "" else " -p " & Port));
 
    function Debug_Info_Command return String is

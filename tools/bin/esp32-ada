@@ -14,7 +14,7 @@
 #    esp32-ada run    [-p PORT] [-c CON] [-P PROFILE]   build + flash + monitor
 #    esp32-ada monitor [-p PORT] [-c CON]   open the serial console (115200)
 #    esp32-ada ports [--json]        the boards' serial ports, found by USB id
-#    esp32-ada debug-server [-p PORT] OpenOCD alone (for an IDE's own GDB)
+#    esp32-ada debug-server [-p PORT] [--smp]   OpenOCD alone (for an IDE's own GDB)
 #    esp32-ada debug-info            GDB=, ELF=, MAIN= for an IDE's debugger
 #    esp32-ada clean                 remove build artifacts
 #    esp32-ada config [...]          show/set flash + PSRAM size (this project's

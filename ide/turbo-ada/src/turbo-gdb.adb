@@ -246,6 +246,7 @@ package body Turbo.GDB is
             S.Detail := To_Unbounded_String
               (Doc.To_String (Doc.Get (Root, "signal-meaning"),
                               Doc.To_String (Doc.Get (Root, "exit-code"))));
+            S.Thread := To_Unbounded_String (Doc.To_String (Doc.Get (Root, "thread-id")));
          exception
             when Constraint_Error =>
                S.Line := 0;
@@ -386,6 +387,30 @@ package body Turbo.GDB is
       end if;
       S := Stops.First_Element;
       Stops.Delete_First;
+      --  OpenOCD halts both cores together, and the stop may be reported on
+      --  either; core 1 is then usually idling in the runtime's WAITI.  GDB
+      --  thread 1 is core 0: select it, and say where it is.
+      if not Native and then Length (S.Thread) > 0 and then To_String (S.Thread) /= "1" then
+         declare
+            R : Result;
+         begin
+            Command ("-thread-select 1", R);
+            if R.Ok then
+               declare
+                  Frame : constant JSON.Value := R.Doc.Get (R.Value, "frame");
+               begin
+                  S.Thread := To_Unbounded_String ("1");
+                  S.File := To_Unbounded_String (R.Doc.To_String (R.Doc.Get (Frame, "fullname")));
+                  S.Line := Natural'Value ("0" & R.Doc.To_String (R.Doc.Get (Frame, "line")));
+                  S.Func := To_Unbounded_String (R.Doc.To_String (R.Doc.Get (Frame, "func")));
+                  S.Addr := To_Unbounded_String (R.Doc.To_String (R.Doc.Get (Frame, "addr")));
+               exception
+                  when Constraint_Error =>
+                     S.Line := 0;
+               end;
+            end if;
+         end;
+      end if;
       return True;
    end Take_Stop;
 
